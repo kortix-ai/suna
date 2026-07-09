@@ -17,7 +17,7 @@ import {
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
-const MANIFEST_PATH = 'kortix.toml';
+const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Trigger Project',
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -509,19 +509,22 @@ function createApp() {
 }
 
 // ─── Manifest seeding helpers ──────────────────────────────────────────────
-// All trigger config lives in `kortix.toml` now. Tests seed manifest content
+// All trigger config lives in `kortix.yaml` now. Tests seed manifest content
 // directly into the in-memory repo — same shape the CRUD handlers read/write.
+// Fixtures are hand-written v2 YAML; every string value goes through
+// `JSON.stringify` so cron expressions (leading `*`), mustache prompts
+// (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version = 1\n[project]\nname = "Trigger Project"\n`;
+const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0
     ? MANIFEST_PREAMBLE
-    : `${MANIFEST_PREAMBLE}\n${triggerBlocks.join('\n\n')}\n`;
+    : `${MANIFEST_PREAMBLE}triggers:\n${triggerBlocks.join('\n')}\n`;
   repoFiles.set(MANIFEST_PATH, body);
 }
 
-/** Build a `[[triggers]]` block for a cron trigger. */
+/** Build a `triggers:` list-item block for a cron trigger. */
 function cronEntry(opts: {
   slug: string;
   name?: string;
@@ -532,19 +535,19 @@ function cronEntry(opts: {
   enabled?: boolean;
   prompt: string;
 }): string {
-  const lines = ['[[triggers]]', `slug = "${opts.slug}"`];
-  if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
-  lines.push('type = "cron"');
-  if (opts.agent !== undefined) lines.push(`agent = "${opts.agent}"`);
-  if (opts.model !== undefined) lines.push(`model = "${opts.model}"`);
-  if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
-  lines.push(`cron = "${opts.cron}"`);
-  if (opts.timezone !== undefined) lines.push(`timezone = "${opts.timezone}"`);
-  lines.push(`prompt = ${JSON.stringify(opts.prompt)}`);
+  const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
+  if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
+  lines.push('    type: cron');
+  if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
+  if (opts.model !== undefined) lines.push(`    model: ${JSON.stringify(opts.model)}`);
+  if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
+  lines.push(`    cron: ${JSON.stringify(opts.cron)}`);
+  if (opts.timezone !== undefined) lines.push(`    timezone: ${JSON.stringify(opts.timezone)}`);
+  lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
   return lines.join('\n');
 }
 
-/** Build a `[[triggers]]` block for a webhook trigger. */
+/** Build a `triggers:` list-item block for a webhook trigger. */
 function webhookEntry(opts: {
   slug: string;
   name?: string;
@@ -553,20 +556,20 @@ function webhookEntry(opts: {
   enabled?: boolean;
   prompt: string;
 }): string {
-  const lines = ['[[triggers]]', `slug = "${opts.slug}"`];
-  if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
-  lines.push('type = "webhook"');
-  if (opts.agent !== undefined) lines.push(`agent = "${opts.agent}"`);
-  if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
-  lines.push(`secret_env = "${opts.secretEnv}"`);
-  lines.push(`prompt = ${JSON.stringify(opts.prompt)}`);
+  const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
+  if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
+  lines.push('    type: webhook');
+  if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
+  if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
+  lines.push(`    secret_env: ${JSON.stringify(opts.secretEnv)}`);
+  lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
   return lines.join('\n');
 }
 
 describe('git-backed triggers — CRUD', () => {
   beforeEach(() => resetState());
 
-  test('POST /triggers commits a new cron trigger into kortix.toml and returns the listing', async () => {
+  test('POST /triggers commits a new cron trigger into kortix.yaml and returns the listing', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
@@ -585,14 +588,14 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls[0]!.path).toBe(MANIFEST_PATH);
     expect(commitCalls[0]!.message).toBe('chore: add trigger daily-digest');
 
-    // Manifest content reflects the new trigger as a [[triggers]] entry.
+    // Manifest content reflects the new trigger as a `triggers:` entry.
     const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).toContain('kortix_version = 1');
-    expect(written).toContain('[[triggers]]');
-    expect(written).toContain('slug = "daily-digest"');
-    expect(written).toContain('name = "Daily Digest"');
-    expect(written).toContain('type = "cron"');
-    expect(written).toContain('cron = "0 0 9 * * 1-5"');
+    expect(written).toContain('kortix_version: 1');
+    expect(written).toContain('triggers:');
+    expect(written).toContain('slug: daily-digest');
+    expect(written).toContain('name: Daily Digest');
+    expect(written).toContain('type: cron');
+    expect(written).toContain('cron: 0 0 9 * * 1-5');
     expect(written).toContain('Pull the deploy logs.');
 
     const body = await res.json();
@@ -700,7 +703,7 @@ describe('git-backed triggers — CRUD', () => {
     // "broken" entry is missing the required cron expression.
     seedManifest(
       cronEntry({ slug: 'good', name: 'Good', cron: '* * * * * *', prompt: 'body' }),
-      ['[[triggers]]', 'slug = "broken"', 'type = "cron"', 'prompt = "no cron field here"'].join('\n'),
+      ['  - slug: broken', '    type: cron', '    prompt: "no cron field here"'].join('\n'),
     );
 
     const app = createApp();
@@ -736,10 +739,10 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls[0]!.message).toBe('chore: update trigger one');
 
     const updated = repoFiles.get(MANIFEST_PATH)!;
-    expect(updated).toContain('name = "New name"');
-    expect(updated).toContain('enabled = false');
+    expect(updated).toContain('name: New name');
+    expect(updated).toContain('enabled: false');
     // Unchanged fields preserved from the existing spec.
-    expect(updated).toContain('cron = "0 */15 * * * *"');
+    expect(updated).toContain('cron: 0 */15 * * * *');
     expect(updated).toContain('old prompt');
   });
 
@@ -763,7 +766,7 @@ describe('git-backed triggers — CRUD', () => {
       slug: 'pinned-model',
       model: 'anthropic/claude-sonnet-4-6',
     });
-    expect(repoFiles.get(MANIFEST_PATH)).toContain('model = "anthropic/claude-sonnet-4-6"');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model: anthropic/claude-sonnet-4-6');
   });
 
   // Regression: a PATCH body containing ONLY `model` must still commit the
@@ -788,7 +791,7 @@ describe('git-backed triggers — CRUD', () => {
     expect(res.status).toBe(200);
     expect(commitCalls).toHaveLength(1);
     expect(commitCalls[0]!.message).toBe('chore: update trigger one');
-    expect(repoFiles.get(MANIFEST_PATH)).toContain('model = "openai/gpt-5"');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model: openai/gpt-5');
 
     const listing = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
     const body = await listing.json();
@@ -824,8 +827,8 @@ describe('git-backed triggers — CRUD', () => {
 
     // The manifest still exists, just without the deleted entry.
     const updated = repoFiles.get(MANIFEST_PATH)!;
-    expect(updated).not.toContain('slug = "one"');
-    expect(updated).toContain('slug = "two"');
+    expect(updated).not.toContain('slug: one');
+    expect(updated).toContain('slug: two');
   });
 
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {

@@ -9,7 +9,10 @@ import { unwrap } from './shared';
 export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
 
 /** Classified reason a snapshot build failed. */
+/** Mirrors apps/api/src/snapshots/error-classify.ts — keep in sync. */
 export type SnapshotErrorCategory =
+  /** Daytona org snapshot quota exhausted — infra, not repo-fixable. */
+  | 'quota'
   | 'dockerfile'
   | 'tunnel'
   | 'provider'
@@ -17,6 +20,7 @@ export type SnapshotErrorCategory =
   | 'runtime'
   | 'git'
   | 'unknown';
+
 
 /** A sandbox template: platform default + each `[[sandbox.templates]]` / UI-created entry. */
 export interface SandboxTemplate {
@@ -61,12 +65,21 @@ export interface SandboxTemplatesResponse {
 
 export interface ProjectSnapshotBuild {
   build_id: string;
+  /**
+   * The build-log slug. For a warm bake this is `<template>-warm`, which names NO
+   * template. Never feed this back to an API that expects a template slug — use
+   * `template_slug`.
+   */
   slug: string;
+  /** The template this build was for. Safe to pass to rebuild / session create. */
+  template_slug: string;
   snapshot_name: string;
   content_hash: string;
   status: ProjectSnapshotStatus;
   error: string | null;
   error_category: SnapshotErrorCategory | null;
+  /** Server-derived: can an in-sandbox agent plausibly fix this by editing the repo? */
+  fixable_by_agent: boolean;
   source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
   started_at: string;
   finished_at: string | null;

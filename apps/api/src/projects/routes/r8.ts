@@ -57,7 +57,10 @@ projectsApp.openapi(
     if (!UUID_V4_REGEX.test(sessionId))
       return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
+    // Floor 'session' (= project.session.start) so the human gate matches
+    // restart/stop and a custom role that withholds session.start is denied here
+    // (was 'read', which let any project-reader start sessions).
+    const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Per-agent gate: resuming a session provisions compute. A scoped agent
     // token must hold project.session.start (no-op for human/PAT tokens).
@@ -174,6 +177,10 @@ projectsApp.openapi(
     // Per-agent gate: same capability as start/restart — stopping is part of
     // the agent's session-lifecycle surface.
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    // Human gate: stopping has its own leaf (project.session.stop), distinct from
+    // start, so a custom role can allow one and withhold the other. Every
+    // built-in role holds it, so member/editor/manager are unaffected.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
     // Stop is reserved for the session owner or an account owner/admin, same policy
     // as restart.
@@ -650,12 +657,16 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    // request-changes is a human review decision on a CR, not a code push —
+    // gate it on project.review.act (the same leaf as /review/items/{id}/act),
+    // not gitops.push. Editor/manager hold both; a custom reviewer role with
+    // review.act but no gitops.push can now request changes.
     await assertProjectCapability(
       c,
       loaded.userId,
       loaded.row.accountId,
       projectId,
-      PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
+      PROJECT_ACTIONS.PROJECT_REVIEW_ACT,
     );
 
     const feedback = normalizeString(body.feedback ?? body.text);

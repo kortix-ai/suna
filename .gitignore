@@ -96,11 +96,10 @@ dump.rdb
 .cwc/
 test/
 
-# suna is itself a Kortix project: its root .kortix/ (Dockerfile + opencode
-# config dir) is committed and synced via git, so cloud sessions clone the real
-# config. Only the per-clone link state stays out. Other vendored .kortix dirs
-# stay ignored further down.
-.kortix/link.json
+# The root .kortix/ dogfood project moved to the company operator repo; keep
+# any local per-clone leftovers out. Other vendored .kortix dirs stay ignored
+# further down.
+.kortix/
 apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json

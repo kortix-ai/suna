@@ -1,6 +1,6 @@
 ---
 name: kortix-executor
-description: Use the Kortix Executor to reach external systems from a session. Prefer the `kortix executor` CLI for agent work, use `@kortix/executor-sdk` for durable TypeScript workflows and reusable skills, and treat the `kortix executor mcp` server as an optional compatibility face. Load whenever the user asks the agent to act in an external app/API, inspect available connectors/tools, add/configure a connector, or work with `[[connectors]]` in kortix.toml.
+description: Use the Kortix Executor to reach external systems from a session. Prefer the `kortix executor` CLI for agent work, use `@kortix/executor-sdk` for durable TypeScript workflows and reusable skills, and treat the `kortix executor mcp` server as an optional compatibility face. Load whenever the user asks the agent to act in an external app/API, inspect available connectors/tools, add/configure a connector, or work with `connectors:` in kortix.yaml.
 ---
 
 <skill name="kortix-executor">
@@ -42,7 +42,7 @@ Load this skill when the user wants to:
   computer, or inspect an inbox/thread.
 - See what integrations/connectors/tools are available.
 - Add or configure a connector, request a credential, or work with
-  `[[connectors]]` in `kortix.toml`.
+  `connectors:` in `kortix.yaml`.
 - Build a reusable integration workflow, script, skill, or agent that will call
   external systems repeatedly.
 
@@ -157,18 +157,18 @@ as named tools, so they usually do not need `request`.
 </complete-api-access>
 
 <adding-connectors>
-Connectors are defined in `kortix.toml` and synced into the Executor catalog.
+Connectors are defined in `kortix.yaml` and synced into the Executor catalog.
 Example:
 
-```toml
-[[connectors]]
-slug     = "stripe"
-name     = "Stripe API"
-provider = "openapi"
-spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
-  [connectors.auth]
-  type   = "bearer"
-  secret = "STRIPE_API_KEY"   # value entered through setup link, never in git
+```yaml
+connectors:
+  - slug: stripe
+    name: Stripe API
+    provider: openapi
+    spec: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
+    auth:
+      type: bearer
+      # secret value entered through setup link, never in git
 ```
 
 Providers:
@@ -191,6 +191,23 @@ Surface the returned setup URL to the user. Never ask the user to paste raw
 credentials into chat. For API-key style connectors, use setup-link flows
 (`request_secret` via the optional MCP face when available, or the equivalent
 Kortix connector/secret setup command when exposed by the CLI).
+
+**Connecting Slack is ONE command — do not use the executor for it.** Slack is
+a built-in channel (`slack`/`kortix_slack` are reserved slugs; `executor add`
+rejects them). When the user asks to connect Slack, run:
+
+```sh
+kortix channels connect
+```
+
+On Kortix Cloud that prints a one-click "Add to Slack" install link — surface
+the URL to the user and you are done. No Slack app to create, no manifest, no
+bot token, no signing secret, no secret-intake link. After the user clicks
+Allow, `kortix channels status` shows the connected workspace and the `slack`
+CLI + `kortix_slack.*` tools work immediately. Only if `connect` itself reports
+that one-click install is unavailable (self-host without the shared Slack app)
+does the manual path apply — it walks you through `kortix channels manifest` +
+`kortix channels connect --manual`.
 </adding-connectors>
 
 <rules>

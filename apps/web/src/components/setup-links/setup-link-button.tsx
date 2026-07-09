@@ -3,16 +3,27 @@
 import React, { useState } from 'react';
 import { KeyRound, Plug } from 'lucide-react';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
 import { SecretIntakeForm } from './secret-intake-form';
 import { ConnectorIntake } from './connector-intake';
-import type { SetupLinkKind } from './util';
+import { setupLinkChipLabel, type SetupLinkKind } from './util';
+
+function textOf(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  if (React.isValidElement(node)) {
+    return textOf((node.props as { children?: React.ReactNode }).children);
+  }
+  return '';
+}
 
 /**
  * In-chat renderer for an agent-minted setup link. Instead of navigating away,
@@ -30,7 +41,11 @@ export function SetupLinkButton({
 }) {
   const [open, setOpen] = useState(false);
   const Icon = kind === 'secret' ? KeyRound : Plug;
-  const fallbackLabel = kind === 'secret' ? 'Add secret' : 'Connect';
+  const label = setupLinkChipLabel(
+    textOf(children),
+    token,
+    kind === 'secret' ? 'Enter credentials' : 'Connect app',
+  );
 
   return (
     <>
@@ -38,34 +53,39 @@ export function SetupLinkButton({
         type="button"
         onClick={() => setOpen(true)}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-0.5',
-          'align-baseline text-sm font-medium text-foreground',
-          'hover:bg-muted transition-colors duration-150',
+          'inline-flex max-w-full items-center gap-1.5 rounded-full border bg-popover py-1 pr-3 pl-2',
+          'align-middle text-sm font-medium text-foreground',
+          'hover:bg-muted active:scale-[0.96]',
+          'transition-[background-color,scale] duration-150',
         )}
       >
-        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        {children || fallbackLabel}
+        <span className="bg-primary/[0.06] flex size-5 shrink-0 items-center justify-center rounded-full">
+          <Icon className="size-3 text-muted-foreground" />
+        </span>
+        <span className="truncate">{label}</span>
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
+      <Modal open={open} onOpenChange={setOpen}>
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>
               {kind === 'secret' ? 'Add a project secret' : 'Connect an app'}
-            </DialogTitle>
-            <DialogDescription>
+            </ModalTitle>
+            <ModalDescription>
               {kind === 'secret'
                 ? 'Enter the value below. It’s encrypted and the agent never sees it.'
                 : 'Authorize the app in one click — no keys touch the chat or the repo.'}
-            </DialogDescription>
-          </DialogHeader>
-          {kind === 'secret' ? (
-            <SecretIntakeForm token={token} compact />
-          ) : (
-            <ConnectorIntake token={token} compact />
-          )}
-        </DialogContent>
-      </Dialog>
+            </ModalDescription>
+          </ModalHeader>
+          <ModalBody className="max-h-[60vh] overflow-y-auto">
+            {kind === 'secret' ? (
+              <SecretIntakeForm token={token} compact />
+            ) : (
+              <ConnectorIntake token={token} compact />
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </>
   );
 }

@@ -1,33 +1,31 @@
 /**
- * Kortix trigger DSL — lives inside `kortix.toml` as `[[triggers]]` array
+ * Kortix trigger DSL — lives inside the project manifest (kortix.yaml; a
+ * legacy v1 project may instead use kortix.toml) as a `triggers:` list of
  * entries. The manifest at the repo root is THE source of truth for
  * trigger config; runtime state (last_fired_at, executions) stays in the
  * `project_trigger_runtime` DB table.
  *
- * Example shape:
+ * Example shape (kortix.yaml):
  *
- *   kortix_version = 1
+ *   kortix_version: 2
  *
- *   [project]
- *   name = "example"
+ *   project:
+ *     name: example
  *
- *   [[triggers]]
- *   slug = "daily-digest"
- *   name = "Daily digest"
- *   type = "cron"
- *   agent = "default"
- *   enabled = true
- *   cron = "0 0 9 * * 1-5"
- *   timezone = "UTC"
- *   prompt = """
- *   Generate the daily digest…
- *   """
+ *   triggers:
+ *     - slug: daily-digest
+ *       name: Daily digest
+ *       type: cron
+ *       agent: default
+ *       enabled: true
+ *       cron: "0 0 9 * * 1-5"
+ *       timezone: UTC
+ *       prompt: "Generate the daily digest…"
  *
- *   [[triggers]]
- *   slug = "slack"
- *   type = "webhook"
- *   secret_env = "WEBHOOK_SLACK_SECRET"
- *   prompt = "New {{ message.text }}"
+ *     - slug: slack
+ *       type: webhook
+ *       secret_env: WEBHOOK_SLACK_SECRET
+ *       prompt: "New {{ message.text }}"
  *
  * One file, one PR-review surface. Web-UI edits are read-modify-write on
  * this same file — see writeManifestTriggers / deleteManifestTrigger in
@@ -86,8 +84,9 @@ export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
   slug: string;
   /**
-   * Where the entry is sourced from. Always `kortix.toml#triggers.<slug>`
-   * now that triggers are centralized. The hash is just a hint for the UI;
+   * Where the entry is sourced from. Always `<manifest-file>#triggers.<slug>`
+   * now that triggers are centralized — `kortix.yaml` for v2 projects,
+   * `kortix.toml` for legacy v1 ones. The hash is just a hint for the UI;
    * the platform doesn't use it for routing.
    */
   path: string;
@@ -181,11 +180,12 @@ export interface LoadedTriggers {
 export async function readManifest(project: GitBackedProject): Promise<ParsedManifest | null> {
   let found: { path: string; content: string } | null;
   try {
-    // manifest_path DEFAULTS to kortix.toml at project creation, so we can't
-    // rely on it to point at yaml — we actively probe the .yaml/.yml siblings
-    // first (manifestCandidatePaths), which also keeps per-agent env/connector
-    // scoping ON for a yaml-only project (a missing [[agents]] read = grants
-    // resolve to null = unrestricted).
+    // manifest_path can still say kortix.toml (an older project, or a stale
+    // default) even when the file actually on disk is kortix.yaml — so we
+    // can't rely on it to point at the right format. We actively probe the
+    // .yaml/.yml siblings first (manifestCandidatePaths), which also keeps
+    // per-agent env/connector scoping ON for a yaml-only project (a missing
+    // `agents:` read = grants resolve to null = unrestricted).
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     found = await readManifestFromRepo(project, candidates, project.defaultBranch);
   } catch {
@@ -258,7 +258,10 @@ export function extractTriggers(manifest: ParsedManifest): LoadedTriggers {
         {
           slug: '(top-level)',
           path: filename,
-          error: '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
+          error:
+            manifest.format === 'yaml'
+              ? '`triggers` must be a list — write it as a YAML `triggers:` list, not a map or scalar.'
+              : '`triggers` must be an array of tables — use [[triggers]], not [triggers]',
         },
       ],
     };
@@ -321,12 +324,14 @@ export async function loadProjectTriggers(project: GitBackedProject): Promise<Lo
   return extractTriggers(manifest);
 }
 
-/* ─── Trigger ↔ TOML conversion ─────────────────────────────────────────── */
+/* ─── Trigger ↔ manifest-entry conversion ───────────────────────────────── */
 
 /**
- * Convert a TriggerSpec back to the TOML-shaped object that goes into the
- * `triggers` array. Inverse of `parseTriggerEntry`. Used by the CRUD path
- * to write back to kortix.toml after a UI edit.
+ * Convert a TriggerSpec back to the raw object that goes into the `triggers`
+ * array — the shape is format-agnostic (same object serializes to either a
+ * kortix.yaml list entry or a legacy kortix.toml `[[triggers]]` table).
+ * Inverse of `parseTriggerEntry`. Used by the CRUD path to write back to the
+ * project manifest after a UI edit.
  */
 export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unknown> {
   const entry: Record<string, unknown> = {

@@ -16,7 +16,7 @@
  *                  choice (projects.metadata.experimental[key]) over the
  *                  operator default. `enabled` always implies `available`.
  *
- * Per-project state is DB-only (projects.metadata) — never in kortix.toml. To
+ * Per-project state is DB-only (projects.metadata) — never in kortix.yaml. To
  * add a feature: append an entry below and gate its surface on
  * `resolveExperimentalFeature(metadata, key)`. The UI renders straight from
  * {@link buildExperimentalCatalog}, so a new entry lights up everywhere.
@@ -62,7 +62,7 @@ const FEATURES: readonly ExperimentalFeatureDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      "Deploy this project's repo as live apps. Adds the Apps shortcut and auto-deploys apps declared in kortix.toml.",
+      "Deploy this project's repo as live apps. Adds the Apps shortcut and auto-deploys apps declared in kortix.yaml.",
     stability: 'experimental',
     available: () => true,
     // Operator-wide default; flip KORTIX_APPS_EXPERIMENTAL to default the fleet on.

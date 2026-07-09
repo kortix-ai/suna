@@ -650,7 +650,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
 /**
  * Read a connector's per-tool policies for the dashboard/settings surface.
  *
- * Declared connectors are manifest-first (kortix.toml is their source of truth).
+ * Declared connectors are manifest-first (kortix.yaml is their source of truth).
  * Install-driven SYNTHETIC connectors (channel/computer) are never in the
  * manifest, so the manifest read returns null and the route would 404
  * ("connector not found") — even though the connector exists, works, and its
@@ -677,7 +677,7 @@ async function getConnectorPolicies(
 /**
  * Read a connector's definition for the editor. Same manifest-first / DB-fallback
  * rule as getConnectorPolicies: synthetic channel/computer connectors aren't in
- * kortix.toml, so reconstruct the view from the materialized row instead of 404ing.
+ * kortix.yaml, so reconstruct the view from the materialized row instead of 404ing.
  */
 async function getConnectorConfig(
   projectId: string,

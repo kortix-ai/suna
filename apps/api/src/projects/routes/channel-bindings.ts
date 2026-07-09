@@ -77,6 +77,10 @@ projectsApp.openapi(
     const projectId = c.req.param("projectId");
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Listing channel↔agent bindings exposes which connectors the project's
+    // channels talk through — connector-read info. Gate on connector.read so
+    // unchecking it in a custom role is denied. Every built-in role holds it.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
     const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
     const bindings = await listChannelBindingsForProject(projectId);
@@ -111,7 +115,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const bindingId = c.req.param("bindingId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.connector.write below is the real gate (was 'manage'
+    // → project.write, which over-gated a custom connector.write-only role).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     // No dedicated "channel binding write" leaf exists yet (the channel.* actions
     // in iam/actions.ts are scoped to resource_type='channel' and aren't wired

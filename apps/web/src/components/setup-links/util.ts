@@ -18,10 +18,12 @@ export function parseSetupLinkHref(
 ): { kind: SetupLinkKind; token: string } | null {
   if (!href) return null;
   let pathname = href;
+  let sameOrigin = true;
   if (/^https?:\/\//i.test(href)) {
     try {
       const u = new URL(href);
-      if (typeof window !== 'undefined' && u.origin !== window.location.origin) return null;
+      sameOrigin =
+        typeof window === 'undefined' || u.origin === window.location.origin;
       pathname = u.pathname;
     } catch {
       return null;
@@ -29,5 +31,29 @@ export function parseSetupLinkHref(
   }
   const m = pathname.match(/^\/(secret-intake|connect)\/([^/?#]+)/);
   if (!m) return null;
-  return { kind: m[1] === 'secret-intake' ? 'secret' : 'connector', token: decodeURIComponent(m[2]) };
+  const token = decodeURIComponent(m[2]);
+  // Links are minted against FRONTEND_URL, which can differ from the origin the
+  // app is being viewed on (staging, preview deploys, self-host behind another
+  // domain). A cross-origin URL is still ours when it carries the `ksl_` wire
+  // prefix — the token is HMAC-verified server-side, so intercepting can never
+  // hand a foreign form our data. Anything else stays a plain link.
+  if (!sameOrigin && !token.startsWith('ksl_')) return null;
+  return { kind: m[1] === 'secret-intake' ? 'secret' : 'connector', token };
+}
+
+/**
+ * Agents usually emit the setup link as a bare URL, so the markdown link text
+ * IS the URL — a few hundred opaque token characters. That never belongs on
+ * the chip. Only keep the author's text when it reads like a human label.
+ */
+export function setupLinkChipLabel(raw: string, token: string, fallback: string): string {
+  const text = raw.trim();
+  if (!text) return fallback;
+  const looksLikeUrl =
+    /^https?:\/\//i.test(text) ||
+    text.includes(token) ||
+    text.includes('/secret-intake/') ||
+    text.includes('/connect/') ||
+    (text.length > 48 && !text.includes(' '));
+  return looksLikeUrl ? fallback : text;
 }

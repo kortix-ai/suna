@@ -1,5 +1,5 @@
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
   ChangeRequestDetailResponse,
@@ -10,7 +10,7 @@ import type {
   ChangeRequestsListResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix cr <subcommand> [options]
+const HELP = help`Usage: kortix cr <subcommand> [options]
 
 Open, review, and merge Kortix change requests. A CR proposes merging one
 version (branch) into another inside a project. The CR layer is Kortix-
@@ -179,7 +179,7 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ChangeRequestsListResponse;
@@ -228,7 +228,7 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
 }
 
 async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
@@ -301,7 +301,7 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
 
 async function crDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
   const noColor = takeFlagBool(argv, ['--no-color']);
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -401,7 +401,7 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {
@@ -459,7 +459,7 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -483,7 +483,7 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
 }
 
 async function crClose(ref: string | undefined, opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
@@ -501,7 +501,7 @@ async function crClose(ref: string | undefined, opts: CtxOpts): Promise<number> 
 }
 
 async function crReopen(ref: string | undefined, opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;

@@ -64,7 +64,7 @@ kortix grants revoke <grant-id>
 kortix grants ls --json
 ```
 
-Prerequisite: a linked project (`kortix projects link`) whose `kortix.toml` declares an agent with a `[[agents]].scope` (its `env` / `connectors`). `kortix grants ls` lists those agents as grantable and shows each agent's declared secret/connector counts.
+Prerequisite: a linked project (`kortix projects link`) whose `kortix.yaml` declares an agent with an `agents.<name>` scope (its `env` / `connectors`). `kortix grants ls` lists those agents as grantable and shows each agent's declared secret/connector counts.
 
 **What to verify:** after `assign`, that member's next session picks up the declared secrets/connectors (and only those), even if the secret is otherwise restricted. That's the exact behavior the integration test asserts — the CLI just drives it by hand.
 
@@ -72,7 +72,7 @@ Prerequisite: a linked project (`kortix projects link`) whose `kortix.toml` decl
 
 ## 3. Manual walkthrough — the pyramid (dashboard)
 
-- **Step 1 — put resources on an agent.** Agents section → pick an agent → **Access scope** card. Managers can now edit **Secrets** and **Connectors** here (All · Specific · None); it writes the `[[agents]].env` / `.connectors` allowlists to `kortix.toml` for you — no hand-editing. (Editing `kortix.toml` directly still works and is equivalent.)
+- **Step 1 — put resources on an agent.** Agents section → pick an agent → **Access scope** card. Managers can now edit **Secrets** and **Connectors** here (All · Specific · None); it writes the `agents.<name>.env` / `.connectors` allowlists to `kortix.yaml` for you — no hand-editing. (Editing `kortix.yaml` directly still works and is equivalent.)
 - **Step 2 — assign people.** **Members → Resource access** assigns agents/skills to members/departments — the dashboard twin of `kortix grants assign`. Whoever you assign inherits exactly the secrets + connectors from step 1.
 - **Secret / connector modals** now offer only **Project-wide** or **Private** — the direct "specific members/departments" picker is gone. Targeted access flows through agent assignment. (A legacy secret still stored as a direct member share shows an amber "switch it" note.)
 

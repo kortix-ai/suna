@@ -116,7 +116,7 @@ function projectSummary(overrides: Partial<Record<string, unknown>> = {}) {
     repo_url: 'https://github.com/kortix/e2e-project',
     git_origin_url: 'https://git.kortix.test/proj_e2e',
     default_branch: 'main',
-    manifest_path: 'kortix.toml',
+    manifest_path: 'kortix.yaml',
     status: 'active',
     metadata: {},
     last_opened_at: null,
@@ -421,18 +421,24 @@ console.log(JSON.stringify({ cmd, args, body }));
     ]);
   }, 15_000);
 
-  test('top-level help is grouped into labeled sections', async () => {
+  test('top-level help is grouped into tiers and labeled sections', async () => {
     const result = await runCli(['--help']);
 
     expect(result.code).toBe(0);
+    // Tier bands separate what lives outside the project, inside the linked
+    // project, and the CLI tool itself (rendered as a labeled divider).
+    for (const tier of ['Account', 'The linked project', 'CLI']) {
+      expect(result.stdout).toContain(`\n  ${tier} ─`);
+    }
+    // Section headings within the tiers.
     for (const heading of [
-      'Project',
-      'Auth & hosts',
-      'Work',
-      'Resources',
-      'Agents',
+      'Authentication',
+      'Hosts & accounts',
+      'Projects',
+      'Author & ship',
+      'Agents & integrations',
+      'Sessions & work',
       'Access & permissions',
-      'CLI',
     ]) {
       expect(result.stdout).toContain(`\n  ${heading}\n`);
     }
@@ -443,7 +449,8 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     const sectionStart = result.stdout.indexOf('\n  Access & permissions\n');
     expect(sectionStart).toBeGreaterThan(-1);
-    const nextSectionStart = result.stdout.indexOf('\n  CLI\n');
+    // The CLI tier band closes out the linked-project tier.
+    const nextSectionStart = result.stdout.indexOf('\n  CLI ─');
     expect(nextSectionStart).toBeGreaterThan(sectionStart);
     const section = result.stdout.slice(sectionStart, nextSectionStart);
 
@@ -495,12 +502,37 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(help.stdout).not.toContain('tunnel <subcommand>');
     expect(help.stdout).not.toContain('Agent Tunnel');
 
-    // `tunnel` now falls through to the generic project-scaffold path
-    // (`kortix <project-name>`) instead of a dedicated tunnel command.
     const result = await runCli(['tunnel', '--help']);
-    expect(result.stdout).toContain('Usage: kortix [project-name] [options]');
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `tunnel`');
     expect(result.stdout).not.toContain('Agent Tunnel');
     expect(result.stdout).not.toContain('tunnelId');
+  });
+
+  test('an unknown command errors instead of scaffolding a project named after the typo', async () => {
+    const result = await runCli(['use']);
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `use`');
+    expect(result.stderr).toContain('kortix init <name>');
+    expect(result.stdout).not.toContain('Scaffolded');
+    expect(existsSync(join(tmp, 'use'))).toBe(false);
+  });
+
+  test('a near-miss of a real command gets a did-you-mean suggestion and no scaffold', async () => {
+    const result = await runCli(['inti']);
+
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `inti`');
+    expect(result.stderr).toContain('Did you mean');
+    expect(result.stderr).toContain('kortix init');
+    expect(existsSync(join(tmp, 'inti'))).toBe(false);
+  });
+
+  test('help no longer advertises the bare project-name scaffold form', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('<project-name>');
+    expect(help.stdout).toContain('init');
   });
 
   test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
@@ -533,7 +565,7 @@ console.log(JSON.stringify({ cmd, args, body }));
     );
 
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('`add` is not a kortix subcommand');
+    expect(result.stderr).toContain('unknown command `add`');
     expect(requests).toEqual([]);
   }, 15_000);
 
@@ -720,9 +752,16 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(noAuth.code).toBe(1);
     expect(noAuth.stderr).toContain('Not logged in');
 
+    // No project bound + logged in + exactly one project in the account →
+    // the always-bound invariant auto-binds it and the command proceeds
+    // instead of dead-ending with "No project linked".
     const noLink = await runCli(['marketplace', 'status', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
-    expect(noLink.code).toBe(1);
-    expect(noLink.stderr).toContain('No project linked');
+    expect(noLink.code).toBe(0);
+    expect(noLink.stderr).toContain('Default project:');
+    const boundConfig = JSON.parse(readFileSync(configFile, 'utf8'));
+    expect(boundConfig.hosts.test.default_project.project_id).toBe('proj_e2e');
+    delete boundConfig.hosts.test.default_project;
+    writeFileSync(configFile, JSON.stringify(boundConfig));
 
     const init = await runCli(['init', 'edge-e2e', '--yes', '--no-git']);
     expect(init.code).toBe(0);
@@ -746,9 +785,11 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     const add = await runCli(['add', 'pty', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(add.code).toBe(2);
-    expect(add.stderr).toContain('`add` is not a kortix subcommand');
+    expect(add.stderr).toContain('unknown command `add`');
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
+      ['GET', '/v1/projects?account_id=account_1', null],
+      ['GET', '/v1/projects/proj_e2e/marketplace', null],
       ['GET', '/v1/projects/missing', null],
       ['GET', '/v1/marketplace/items/does-not-exist', null],
       ['GET', '/v1/marketplace/items?query=does-not-exist', null],

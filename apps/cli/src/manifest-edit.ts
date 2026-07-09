@@ -24,7 +24,7 @@ type YamlDocument = ReturnType<typeof parseDocument>;
  */
 
 /** Resolve the on-disk manifest, preferring kortix.yaml. Returns the existing
- *  file (+ format), or the canonical kortix.toml default when none exists. */
+ *  file (+ format), or the canonical kortix.yaml default when none exists. */
 function resolveManifest(cwd: string = process.cwd()): {
   path: string;
   format: ManifestFormat;
@@ -34,7 +34,7 @@ function resolveManifest(cwd: string = process.cwd()): {
     const abs = resolve(cwd, cand.path);
     if (existsSync(abs)) return { path: abs, format: cand.format, exists: true };
   }
-  return { path: resolve(cwd, 'kortix.toml'), format: 'toml', exists: false };
+  return { path: resolve(cwd, 'kortix.yaml'), format: 'yaml', exists: false };
 }
 
 export function manifestFile(cwd: string = process.cwd()): string {

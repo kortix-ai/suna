@@ -8,14 +8,14 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import type {
   MeResponse,
   ProjectSession,
   ProjectSummary,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix doctor [options]
+const HELP = help`Usage: kortix doctor [options]
 
 End-to-end smoke test: confirms login → project resolves → optionally
 spins up a throwaway session, sends a message, and asserts the agent
@@ -78,7 +78,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   );
 
   // ── 2. /accounts/me ─────────────────────────────────────────────────────
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   try {
     const me = await ctx.client.get<MeResponse>('/accounts/me');

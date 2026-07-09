@@ -143,8 +143,8 @@ export async function listAgentServiceAccounts(
 }
 
 /**
- * Get-or-create the auto-provisioned STANDING IDENTITY for a kortix.toml
- * [[agents]] agent. Idempotent per (account, project, agent) via the partial
+ * Get-or-create the auto-provisioned STANDING IDENTITY for a kortix.yaml
+ * `agents:` agent. Idempotent per (account, project, agent) via the partial
  * unique index. The returned SA id is stamped onto the session's account_token
  * (service_account_id) so the agent authorizes AS this identity.
  *

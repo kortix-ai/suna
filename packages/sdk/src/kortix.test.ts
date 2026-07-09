@@ -5,11 +5,15 @@ import { listFiles as globalListFiles } from './files/client';
 import { ApiError } from './platform/api/errors';
 
 // Capture every outbound request the facade makes.
-let calls: { url: string; method: string }[] = [];
+let calls: { url: string; method: string; body?: unknown }[] = [];
 beforeEach(() => {
   calls = [];
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
-    calls.push({ url: String(url), method: opts.method ?? 'GET' });
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
+    calls.push({
+      url: String(url),
+      method: opts.method ?? 'GET',
+      body: typeof opts.body === 'string' ? JSON.parse(opts.body) : opts.body,
+    });
     return new Response(JSON.stringify({ ok: true, secrets: [], candidates: [], sessions: [] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -56,6 +60,28 @@ test('top-level projects.list hits /projects', async () => {
 test('session(...).audit hits the audit endpoint with the given limit', async () => {
   await kortix.session('PID123', 'SID456').audit(10);
   expect(last().url).toContain('/projects/PID123/sessions/SID456/audit?limit=10');
+});
+
+test('project(id).access.invite forwards a time-bound expiry to the backend', async () => {
+  const expiry = '2027-01-01T00:00:00.000Z';
+  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', expiry);
+  expect(last().url).toContain('/projects/PID123/access/invite');
+  expect(last().method).toBe('POST');
+  expect(last().body).toMatchObject({
+    email: 'teammate@essentia.com',
+    role: 'member',
+    expires_at: expiry,
+  });
+});
+
+test('project(id).access.invite omits expires_at for a permanent grant', async () => {
+  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member');
+  expect(last().body).not.toHaveProperty('expires_at');
+});
+
+test('project(id).access.invite sends expires_at:null to clear a bound', async () => {
+  await kortix.project('PID123').access.invite('teammate@essentia.com', 'member', null);
+  expect(last().body).toMatchObject({ expires_at: null });
 });
 
 // ── review / approvals / gateway / channels / apps / model-defaults / sandbox

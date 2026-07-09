@@ -4,7 +4,7 @@
  * The durable identity for "what kind of sandbox a session can boot from."
  * Templates live in `kortix.sandbox_templates`. The platform default is a
  * shared row (project_id NULL, is_shared=true) that any project can boot
- * from. Custom templates can be defined either in `kortix.toml` (synced to
+ * from. Custom templates can be defined either in `kortix.yaml` (synced to
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries a `provider` column; the matching
@@ -16,6 +16,7 @@ import { sandboxTemplates, projects } from '@kortix/db';
 import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
+import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
 import { SANDBOX_VERSION, config } from '../config';
@@ -196,7 +197,7 @@ export async function listTemplatesForProject(
 
   const last = tomlSyncCache.get(project.projectId) ?? 0;
   if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
-    await syncTomlTemplatesForProject(project);
+    await syncManifestTemplatesForProject(project);
     tomlSyncCache.set(project.projectId, Date.now());
   }
 
@@ -231,7 +232,18 @@ export async function listTemplatesForProject(
   return value;
 }
 
-/** Resolve a slug → ResolvedTemplate. Throws if slug missing. */
+/**
+ * A slug that resolves to no template. Typed so callers can answer 404 instead of
+ * folding a client mistake into a generic 502 alongside real provider failures.
+ */
+export class TemplateNotFoundError extends Error {
+  constructor(readonly slug: string) {
+    super(`No sandbox template with slug "${slug}" in this project.`);
+    this.name = 'TemplateNotFoundError';
+  }
+}
+
+/** Resolve a slug → ResolvedTemplate. Throws TemplateNotFoundError if slug missing. */
 export async function resolveTemplateBySlug(
   project: GitBackedProject,
   slug: string | undefined,
@@ -240,13 +252,13 @@ export async function resolveTemplateBySlug(
 
   // Fast path for the platform default — the overwhelming majority of boots.
   // The default template's identity is a constant (PLATFORM_DEFAULT_USER_DOCKERFILE),
-  // so it does NOT depend on the project's kortix.toml. `listTemplatesForProject`
-  // would run `syncTomlTemplatesForProject` → `readManifest` → a host-side git
+  // so it does NOT depend on the project's kortix.yaml. `listTemplatesForProject`
+  // would run `syncManifestTemplatesForProject` → `readManifest` → a host-side git
   // fetch of the repo (15-30s cold) on every boot once the 60s TTL lapses — and
   // boots are minutes apart, so it lapses every time. Slug "default" is reserved
-  // (the TOML sync skips it and the manifest schema forbids it), so a project can
-  // never shadow it: the shared row is always the answer. Resolve it from the DB
-  // directly and skip the git fetch entirely.
+  // (the manifest sync skips it and the manifest schema forbids it), so a project
+  // can never shadow it: the shared row is always the answer. Resolve it from the
+  // DB directly and skip the git fetch entirely.
   if (target === DEFAULT_SANDBOX_SLUG) {
     return resolveDefaultTemplate();
   }
@@ -254,7 +266,31 @@ export async function resolveTemplateBySlug(
   const items = await listTemplatesForProject(project);
   const match = items.find((t) => t.slug === target);
   if (match) return match;
-  throw new Error(`No sandbox template with slug "${target}" in this project.`);
+  throw new TemplateNotFoundError(target);
+}
+
+/**
+ * Resolve a slug that may have come from a BUILD LOG rather than a template.
+ *
+ * The warm bake records its build under `<template>-warm`, which is not a template
+ * (see WARM_BUILD_SLUG_SUFFIX). Every surface that hands a `latest_failure.slug` /
+ * `latest_build.slug` back to the API — Retry build, Fix with agent — lands here.
+ * Resolving the slug verbatim FIRST keeps a project that legitimately declares a
+ * template named `foo-warm` working; only when that misses do we treat the `-warm`
+ * as the derived-bake marker it usually is.
+ */
+export async function resolveTemplateForBuildSlug(
+  project: GitBackedProject,
+  slug: string | undefined,
+): Promise<ResolvedTemplate> {
+  try {
+    return await resolveTemplateBySlug(project, slug);
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError && slug && isWarmBuildSlug(slug)) {
+      return resolveTemplateBySlug(project, templateSlugFromBuildSlug(slug));
+    }
+    throw err;
+  }
 }
 
 /**
@@ -650,10 +686,10 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
 }
 
 /**
- * Upsert `[[sandbox.templates]]` entries from the project's kortix.toml into the DB.
+ * Upsert `sandbox.templates` entries from the project's kortix.yaml into the DB.
  * Best-effort: a broken manifest never blocks the boot path.
  */
-async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<void> {
+async function syncManifestTemplatesForProject(project: GitBackedProject): Promise<void> {
   try {
     const parsed = await readManifest(project);
     const tomlTemplates = extractSandboxTemplates(parsed?.raw ?? null);
@@ -691,7 +727,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
         });
     }
 
-    // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
+    // Persist `sandbox.default` → projects.metadata.default_sandbox_slug, so
     // session boot can cheaply pick the project's default template without a
     // git fetch. Only honor a default that names a template we just synced
     // (else it would point at nothing); clear it otherwise.
@@ -716,7 +752,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     }
   } catch (err) {
     console.warn(
-      `[templates] TOML sync failed for ${project.projectId}:`,
+      `[templates] manifest sync failed for ${project.projectId}:`,
       err instanceof Error ? err.message : err,
     );
   }

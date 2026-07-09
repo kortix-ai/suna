@@ -15,7 +15,8 @@ triggers:
     prompt: run it
 `;
 
-const TOML = `kortix_version = 1
+// Legacy v1 manifest format (kortix.toml).
+const LEGACY_TOML = `kortix_version = 1
 [project]
 name = "demo"
 `;
@@ -37,8 +38,8 @@ describe('parseManifestString / serializeManifest dual-format', () => {
     expect(parseManifestString(out, 'yaml', 'kortix.yaml').raw).toEqual(m.raw);
   });
 
-  test('default format is toml — backward compatible', () => {
-    const m = parseManifestString(TOML);
+  test('default format is legacy v1 toml — backward compatible', () => {
+    const m = parseManifestString(LEGACY_TOML);
     expect(m.format).toBe('toml');
     expect(m.path).toBe('kortix.toml');
     const out = serializeManifest(m);

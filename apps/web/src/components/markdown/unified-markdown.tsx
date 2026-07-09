@@ -597,6 +597,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             'font-medium text-kortix-blue',
             'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
             'transition-colors hover:decoration-kortix-blue',
+            '[overflow-wrap:anywhere]',
           );
 
           return (
@@ -643,6 +644,14 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
                 </HighlightedCode>
               </CodeBlock>
             );
+          }
+
+          // Agents sometimes wrap a setup link in backticks instead of a markdown
+          // link — same interception as `a` above, so the human still gets the
+          // in-chat form chip instead of a wall of token characters.
+          const inlineSetupLink = parseSetupLinkHref(code.trim());
+          if (inlineSetupLink) {
+            return <SetupLinkButton kind={inlineSetupLink.kind} token={inlineSetupLink.token} />;
           }
 
           return <ClickableInlineCode>{children}</ClickableInlineCode>;

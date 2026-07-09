@@ -160,3 +160,39 @@ describe('translateAnthropicResponse (non-streaming)', () => {
     });
   });
 });
+
+describe('translateAnthropicResponse (streaming)', () => {
+  function anthropicSse(...frames: string[]): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(frames.join('')));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  }
+
+  test('translates a mid-stream `error` event into an OpenAI-shaped error frame', async () => {
+    const upstream = anthropicSse(
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10}}}\n\n',
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+    );
+    const out = await translateAnthropicResponse(upstream, { streaming: true });
+    const text = await new Response(out.body).text();
+
+    // The error surfaces as a canonical `{error:{...}}` SSE frame that the probe /
+    // sseErrorFrame recognize — not swallowed into a silent empty stop.
+    expect(text).toContain('"error"');
+    const frame = text
+      .split('\n')
+      .find((l) => l.startsWith('data:') && l.includes('"error"'))!
+      .slice(5)
+      .trim();
+    const parsed = JSON.parse(frame) as { error: { message: string; type: string; code: string } };
+    expect(parsed.error.message).toBe('Overloaded');
+    expect(parsed.error.type).toBe('overloaded_error');
+    expect(parsed.error.code).toBe('overloaded_error');
+  });
+});

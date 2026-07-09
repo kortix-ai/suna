@@ -9,7 +9,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   OauthFlowStartResponse,
   OauthListResponse,
@@ -17,7 +17,7 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix providers <subcommand> [options]
+const HELP = help`Usage: kortix providers <subcommand> [options]
 
 Configure LLM providers for the linked Kortix project. Two paths:
 
@@ -118,7 +118,7 @@ export async function runProviders(argv: string[]): Promise<number> {
 }
 
 async function providersLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let oauthList: OauthListResponse;
@@ -201,7 +201,7 @@ async function providersLogin(
     );
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   // Kick off the device-code flow.
@@ -288,7 +288,7 @@ async function providersSet(
     );
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let value = key;
@@ -320,7 +320,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     process.stderr.write(`${status.err('Pass a provider.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let removedOauth = false;

@@ -37,7 +37,7 @@ export interface SessionSource {
   kind: SessionSourceKind;
   /** Human label, e.g. "Slack", "Scheduled". */
   label: string;
-  /** For trigger-fired sessions: the kortix.toml trigger slug. */
+  /** For trigger-fired sessions: the kortix.yaml trigger slug. */
   triggerSlug: string | null;
 }
 

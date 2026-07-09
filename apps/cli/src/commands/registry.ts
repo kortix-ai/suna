@@ -28,9 +28,9 @@ import {
   type RegistryLoaderOptions,
 } from '@kortix/registry';
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix registry <subcommand> [options]
+const HELP = help`Usage: kortix registry <subcommand> [options]
 
 Author and inspect Kortix registries (shadcn-compatible registry.json).
 
@@ -317,7 +317,7 @@ async function registryRemove(argv: string[], json: boolean): Promise<number> {
 
   // Cloud path: remove from a linked project's repo (commits the removal).
   if (project) {
-    const ctx = resolveProjectContext({ projectArg: project });
+    const ctx = await resolveProjectContext({ projectArg: project });
     if (!ctx) return 1;
     try {
       const res = await ctx.client.delete<{ removed: string; commit_sha?: string; branch?: string; file_count: number }>(

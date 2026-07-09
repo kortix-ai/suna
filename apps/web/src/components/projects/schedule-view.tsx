@@ -66,6 +66,8 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import { getEnv } from '@/lib/env-config';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
@@ -271,6 +273,8 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
 
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
+  const canWrite =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
   const queryKey = useMemo(() => ['project-triggers', projectId], [projectId]);
 
   const triggersQuery = useQuery({
@@ -331,7 +335,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
               )
         }
         action={
-          showContent ? (
+          showContent && canWrite ? (
             <Button
               size="sm"
               variant="secondary"
@@ -402,15 +406,17 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
               size="sm"
               title={meta.empty.title}
               action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setCreateOpen(true)}
-                  className="gap-1.5"
-                >
-                  <Icon.Plus className="size-3.5 shrink-0" />
-                  {meta.createButtonLabel}
-                </Button>
+                canWrite ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setCreateOpen(true)}
+                    className="gap-1.5"
+                  >
+                    <Icon.Plus className="size-3.5 shrink-0" />
+                    {meta.createButtonLabel}
+                  </Button>
+                ) : null
               }
             />
           ) : filtered.length === 0 ? (
@@ -513,6 +519,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
       <TriggerDetailSheet
         projectId={projectId}
         trigger={selectedTrigger}
+        canWrite={canWrite}
         open={!!selectedTrigger}
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
@@ -538,6 +545,7 @@ export function ScheduleView({ projectId, type }: { projectId: string; type: Tri
 function TriggerDetailSheet({
   projectId,
   trigger,
+  canWrite,
   open,
   onOpenChange,
   onDelete,
@@ -545,6 +553,7 @@ function TriggerDetailSheet({
 }: {
   projectId: string;
   trigger: ProjectTrigger | null;
+  canWrite: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
@@ -592,21 +601,33 @@ function TriggerDetailSheet({
             <h1 className="text-foreground text-xl font-semibold tracking-tight text-balance">
               {getTriggerName(trigger)}
             </h1>
-            <TriggerDetailToolbar
-              enabled={trigger.enabled}
-              firePending={fire.isPending}
-              togglePending={toggle.isPending}
-              fireLabel={tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}
-              onFire={() => fire.mutate()}
-              onToggle={() => toggle.mutate(!trigger.enabled)}
-              onDelete={onDelete}
-            />
+            {canWrite ? (
+              <TriggerDetailToolbar
+                enabled={trigger.enabled}
+                firePending={fire.isPending}
+                togglePending={toggle.isPending}
+                fireLabel={tHardcodedUi.raw('componentsProjectsTriggersView.line623JsxTextFireNow')}
+                onFire={() => fire.mutate()}
+                onToggle={() => toggle.mutate(!trigger.enabled)}
+                onDelete={onDelete}
+              />
+            ) : null}
           </header>
 
           <div className="space-y-8">
             {isCron ? <CronSection trigger={trigger} /> : <WebhookSection trigger={trigger} />}
-            <PromptTemplateSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
-            <AgentModelSection projectId={projectId} trigger={trigger} onMutated={onMutated} />
+            <PromptTemplateSection
+              projectId={projectId}
+              trigger={trigger}
+              canWrite={canWrite}
+              onMutated={onMutated}
+            />
+            <AgentModelSection
+              projectId={projectId}
+              trigger={trigger}
+              canWrite={canWrite}
+              onMutated={onMutated}
+            />
             <MetaSection trigger={trigger} />
           </div>
         </SheetBody>
@@ -673,10 +694,12 @@ function TriggerDetailToolbar({
 function AgentModelSection({
   projectId,
   trigger,
+  canWrite,
   onMutated,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
+  canWrite: boolean;
   onMutated: () => void;
 }) {
   const agents = useVisibleAgents({ projectId });
@@ -703,6 +726,28 @@ function AgentModelSection({
     },
     onError: (e: Error) => errorToast(e.message || 'Failed to update model'),
   });
+
+  if (!canWrite) {
+    return (
+      <section className="space-y-2">
+        <Label>Agent &amp; model</Label>
+        <PropertyTable
+          rows={[
+            {
+              label: 'Agent',
+              value: <span className="text-xs tracking-wide uppercase">{trigger.agent}</span>,
+            },
+            {
+              label: 'Model',
+              value: (
+                <span className="font-mono text-xs">{trigger.model ?? 'Agent default'}</span>
+              ),
+            },
+          ]}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4">
@@ -887,10 +932,12 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
 function PromptTemplateSection({
   projectId,
   trigger,
+  canWrite,
   onMutated,
 }: {
   projectId: string;
   trigger: ProjectTrigger;
+  canWrite: boolean;
   onMutated: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -917,7 +964,7 @@ function PromptTemplateSection({
         <Label>
           {tHardcodedUi.raw('componentsProjectsTriggersView.line817JsxAttrTitlePromptTemplate')}
         </Label>
-        {editing ? (
+        {!canWrite ? null : editing ? (
           <ButtonGroup>
             <Button
               variant="outline"
@@ -946,7 +993,7 @@ function PromptTemplateSection({
         )}
       </div>
 
-      {editing ? (
+      {canWrite && editing ? (
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

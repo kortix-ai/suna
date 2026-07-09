@@ -135,7 +135,7 @@ describe('computer connector — real DB e2e', () => {
   test('settings reads (policies/config) resolve the SYNTHETIC connector instead of 404ing', async () => {
     if (!seeded) return;
     // Reproduces the dashboard bug: a synthetic connector (channel/computer) is
-    // never declared in kortix.toml, so the manifest-only read returned null →
+    // never declared in kortix.yaml, so the manifest-only read returned null →
     // the route 404'd ("connector not found") on a connector that exists + works.
     // The fix falls back to the materialized DB row.
     const [conn] = await db

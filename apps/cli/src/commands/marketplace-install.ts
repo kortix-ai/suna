@@ -28,7 +28,7 @@ import {
 } from '@kortix/registry';
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { resolveLocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
 /** Shape returned by GET /v1/marketplace/items. */
 interface CatalogItem {
@@ -50,7 +50,7 @@ interface InstallResponse {
   capabilities: { secrets: string[]; connectors: string[]; tools: string[]; network: string[] };
 }
 
-const HELP = `Usage: kortix marketplace install <item> [options]
+const HELP = help`Usage: kortix marketplace install <item> [options]
 
 Install a marketplace item into this project. Items can be skills, agents,
 commands, tools, files, folders, or bundles.
@@ -245,7 +245,7 @@ function printPlan(resolved: ResolvedItem, plan: InstallPlan, flags: Flags): voi
 
 /** Install a marketplace item straight into a linked cloud project's repo. */
 async function installToProject(address: string, flags: Flags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
 
   let items: CatalogItem[];

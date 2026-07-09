@@ -47,7 +47,7 @@ All values are hex, converted from the source OKLCH tokens. Build on a neutral b
 ### Typography
 
 - **Sans (headings & body):** Roobert — fallback to **Inter**, then system sans; never serif or decorative display
-- **Mono (code & product nouns):** Roobert Mono — `kortix.toml`, sessions, CLI, paths, identifiers; fallback to system mono
+- **Mono (code & product nouns):** Roobert Mono — `kortix.yaml`, sessions, CLI, paths, identifiers; fallback to system mono
 - **Weights:** Regular, Medium, Semibold only (2–3 per surface); avoid Light at small sizes and Black except hero covers
 - **Scale:** Hero 56–72px / 40–54pt · Display 36–48px / 28–36pt · Heading 24–28px / 18–22pt · Body 16px / 11–12pt · Caption 12–14px / 9–10pt
 - **Note:** Roobert should be pre-installed for best results; it falls back cleanly to Inter when unavailable

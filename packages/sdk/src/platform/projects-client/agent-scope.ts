@@ -3,7 +3,7 @@ import { unwrap } from './shared';
 
 // ── Agent scope (the inheritance pyramid's declaration step) ───────────────
 // Bind specific secrets + connectors to an agent by writing its
-// `[[agents]].env` / `.connectors` allowlists into kortix.toml. Members
+// `agents.<name>.env` / `.connectors` allowlists into kortix.yaml. Members
 // assigned to that agent (Members → Resource access) inherit exactly this set.
 // Manager-gated server-side. `kortix_cli` is deliberately not settable here.
 

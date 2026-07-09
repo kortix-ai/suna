@@ -77,9 +77,9 @@ export function resolveLocalManifest(
 }
 
 /** Absolute path of the manifest — the existing file if any, else the canonical
- *  `kortix.toml` (used for "where to write / look" messages when none exists). */
+ *  `kortix.yaml` (used for "where to write / look" messages when none exists). */
 export function manifestPath(cwd: string = process.cwd()): string {
-  return resolveLocalManifest(cwd)?.path ?? resolve(cwd, 'kortix.toml');
+  return resolveLocalManifest(cwd)?.path ?? resolve(cwd, 'kortix.yaml');
 }
 
 /**

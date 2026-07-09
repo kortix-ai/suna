@@ -59,7 +59,7 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput variant="popover"` |
 | Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
 | Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
-| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | Final confirm only — not routine buttons |
+| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
 | Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `Loader2` or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
@@ -397,6 +397,7 @@ Standard content block (`agents-view.tsx` pattern):
 - ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
 - ✅ Expandable config → `Disclosure` + `Button variant="popover"`. ❌ custom accordion, ❌ nested `rounded-md` inside rounded parent.
 - ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
+- ✅ Destructive actions → `ConfirmDialog` (or the inline two-step Cancel/confirm swap, `channels-view.tsx`). ❌ firing a delete/revoke mutation directly from a `variant="destructive"` click.
 - ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
 - ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast`, raw sonner.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.

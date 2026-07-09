@@ -124,5 +124,12 @@ export function renderContext(): string {
         : `${C.faded}— none (run \`kortix projects use\`)${C.reset}`
     }`,
   );
+  // When a default project is bound, point at the switch verb (a linked cwd
+  // wins and can't be swapped with `projects use`, so only hint for defaults).
+  if (proj?.source === 'default') {
+    rows.push(
+      `  ${C.dim}${pad('', labelW)}${C.reset}  ${C.faded}switch with \`kortix projects use\`${C.reset}`,
+    );
+  }
   return rows.join('\n') + '\n';
 }

@@ -1,12 +1,13 @@
 'use client';
 
-import { Loader2, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import { SectionCard } from '@/components/ui/section-card';
+import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -23,11 +24,16 @@ import {
   useSetMeetBotName,
   useSetMeetVoice,
 } from '@/hooks/channels/use-meet-voices';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 
 export function MeetView({ projectId }: { projectId: string }) {
   const voicesQuery = useMeetVoices(projectId);
   const setVoice = useSetMeetVoice();
   const setBotName = useSetMeetBotName();
+  // Read-only unless the role can write connectors (meet is connector-backed);
+  // fails closed while the probe resolves.
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
 
@@ -92,84 +98,106 @@ export function MeetView({ projectId }: { projectId: string }) {
           </InfoBanner>
         ) : null}
 
-        <SectionCard
-          title="Bot name"
-          description="The display name the notetaker joins under. People wake it in the call by saying its first name."
-        >
-          {voicesQuery.isLoading ? (
-            <Skeleton className="h-10 w-full rounded-lg" />
-          ) : (
-            <div className="flex items-center gap-2">
-              <Input
-                size="lg"
-                value={botName}
-                onChange={(e) => setDraftName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onSaveName();
-                }}
-                placeholder={defaultBotName}
-                maxLength={80}
-                className="flex-1"
-              />
-              <Button
-                size="lg"
-                className="shrink-0"
-                disabled={setBotName.isPending || !nameDirty}
-                onClick={onSaveName}
-              >
-                Save
-              </Button>
-            </div>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Default voice"
-          description="Used for the bot's spoken replies in calls. Preview a voice before you set it."
-        >
-          {voicesQuery.isLoading ? (
-            <Skeleton className="h-11 w-full rounded-lg" />
-          ) : voices.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No voices available.</p>
-          ) : (
-            <div className="space-y-3">
+        <section className="space-y-4">
+          <Label>Bot name</Label>
+          <p className="text-muted-foreground -mt-2 text-xs">
+            The display name the notetaker joins under. People wake it in the call by saying its
+            first name.
+          </p>
+          <div className="bg-popover rounded-md border px-4 py-5">
+            {voicesQuery.isLoading ? (
+              <Skeleton className="h-10 w-full rounded-lg" />
+            ) : !canWrite ? (
+              <p className="text-foreground text-sm font-medium">
+                {(data?.bot_name ?? '').trim() || defaultBotName}
+              </p>
+            ) : (
               <div className="flex items-center gap-2">
-                <Select value={selected} onValueChange={onSelect} disabled={setVoice.isPending}>
-                  <SelectTrigger size="lg" className="flex-1">
-                    <SelectValue placeholder="Select a voice" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {voices.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        <span className="font-medium">{v.name}</span>
-                        <span className="text-muted-foreground ml-2">{v.desc}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
+                <Input
                   size="lg"
-                  className="shrink-0 gap-1.5"
-                  disabled={!selected || previewing !== null}
-                  onClick={() => selected && onPreview(selected)}
+                  value={botName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') onSaveName();
+                  }}
+                  placeholder={defaultBotName}
+                  maxLength={80}
+                  className="flex-1"
+                />
+                <Button
+                  size="lg"
+                  className="shrink-0"
+                  disabled={setBotName.isPending || !nameDirty}
+                  onClick={onSaveName}
                 >
-                  {previewing === selected ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Play className="size-4" />
-                  )}
-                  Preview
+                  Save
                 </Button>
               </div>
-              {selectedVoice ? (
-                <p className="text-muted-foreground text-xs">
-                  Current: {selectedVoice.name} — {selectedVoice.desc}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </SectionCard>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <Label>Default voice</Label>
+          <p className="text-muted-foreground -mt-2 text-xs">
+            Used for the bot's spoken replies in calls. Preview a voice before you set it.
+          </p>
+          <div className="bg-popover rounded-md border px-4 py-5">
+            {voicesQuery.isLoading ? (
+              <Skeleton className="h-11 w-full rounded-lg" />
+            ) : voices.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No voices available.</p>
+            ) : !canWrite ? (
+              <p className="text-muted-foreground text-sm">
+                {selectedVoice ? (
+                  <>
+                    <span className="text-foreground font-medium">{selectedVoice.name}</span> —{' '}
+                    {selectedVoice.desc}
+                  </>
+                ) : (
+                  'No voice selected.'
+                )}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Select value={selected} onValueChange={onSelect} disabled={setVoice.isPending}>
+                    <SelectTrigger size="lg" className="flex-1">
+                      <SelectValue placeholder="Select a voice" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {voices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          <span className="font-medium">{v.name}</span>
+                          <span className="text-muted-foreground ml-2">{v.desc}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="shrink-0 gap-1.5"
+                    disabled={!selected || previewing !== null}
+                    onClick={() => selected && onPreview(selected)}
+                  >
+                    {previewing === selected ? (
+                      <Loading className="size-4 shrink-0" />
+                    ) : (
+                      <Play className="size-4 shrink-0" />
+                    )}
+                    Preview
+                  </Button>
+                </div>
+                {selectedVoice ? (
+                  <p className="text-muted-foreground text-xs">
+                    Current: {selectedVoice.name} — {selectedVoice.desc}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </CustomizeSectionWrapper>
   );

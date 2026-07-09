@@ -767,7 +767,7 @@ function CreateAccountField({
   );
 
   return (
-    <div className="space-y-1.5" data-testid="project-create-account">
+    <div className="space-y-1.5 px-5" data-testid="project-create-account">
       <Label>Account</Label>
       {canSwitch ? (
         <DropdownMenu>

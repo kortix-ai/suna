@@ -6,7 +6,7 @@ import {
   takeFlagValue,
   takeFlagBool,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects apps routes) ───────────────────────
 
@@ -50,7 +50,7 @@ function experimentalGateMessage(): string {
   );
 }
 
-const HELP = `Usage: kortix apps <subcommand> [options]
+const HELP = help`Usage: kortix apps <subcommand> [options]
 
 Manage deployable apps (experimental) — mirrors the dashboard's Apps surface.
 Apps are declared in \`[[apps]]\` in kortix.yaml and deployed to a provider
@@ -118,7 +118,7 @@ export async function runApps(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}/apps`;
 

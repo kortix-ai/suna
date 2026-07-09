@@ -2,10 +2,10 @@
  * Tool-call policy engine — globbed pattern match, first-match-wins, layered
  * resolution. Mirrors executor.sh's model.
  *
- * Two scopes, both declared in kortix.toml (docs/specs/executor.md §8):
- *   • project-level `[[policies]]` — patterns are fully-qualified (`<slug>.<path>`),
+ * Two scopes, both declared in kortix.yaml (docs/specs/executor.md §8):
+ *   • project-level `policies:` — patterns are fully-qualified (`<slug>.<path>`),
  *     apply across ALL connectors, evaluated FIRST.
- *   • connector-level `[[connectors.policies]]` — patterns are relative
+ *   • connector-level `connectors[].policies` — patterns are relative
  *     (the connector slug is implicit), evaluated AFTER the project scope.
  *
  * If neither scope matches, the action falls back to a risk-derived default
@@ -15,7 +15,7 @@
  *
  * Pure + unit-tested. Glob grammar (case-insensitive): `*` everywhere, anchored.
  * The UI exposes only three shapes (`*`, `prefix.*`, exact); the engine supports
- * arbitrary `*` positions for power users authoring kortix.toml by hand.
+ * arbitrary `*` positions for power users authoring kortix.yaml by hand.
  */
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 type Risk = 'read' | 'write' | 'destructive';
@@ -104,7 +104,7 @@ export interface EffectiveResolveInput {
   projectPolicies: Policy[];
   connectorPolicies: Policy[];
   risk: Risk;
-  /** Project setting from `[policy].default_mode` in kortix.toml. */
+  /** Project setting from `policy.default_mode` in kortix.yaml. */
   defaultMode: DefaultMode;
   /** Connector marked `sensitive` — its reads default to require_approval too. */
   sensitive?: boolean;

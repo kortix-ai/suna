@@ -52,7 +52,7 @@ describe('project git materialization', () => {
       'print("courtlistener fixture")\n',
       'utf8',
     );
-    writeFileSync(join(source, 'kortix.toml'), '[project]\nname = "materialize-e2e"\n', 'utf8');
+    writeFileSync(join(source, 'kortix.yaml'), 'project:\n  name: materialize-e2e\n', 'utf8');
     git(['add', '.'], source);
     git(['commit', '-m', 'initial'], source);
 
@@ -65,13 +65,13 @@ describe('project git materialization', () => {
       projectId: '00000000-0000-4000-a000-000000000997',
       repoUrl: origin,
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
     };
 
     for (let i = 0; i < 5; i += 1) {
       const dir = await materializeRepoContext(project, commit);
       try {
-        expect(existsSync(join(dir, 'kortix.toml'))).toBe(true);
+        expect(existsSync(join(dir, 'kortix.yaml'))).toBe(true);
         expect(readFileSync(join(dir, 'src', 'nested', 'file-74.txt'), 'utf8')).toContain('fixture-74');
         expect(readFileSync(
           join(dir, '.kortix', 'opencode', 'skills', 'legal-writer', 'scripts', 'courtlistener.py'),

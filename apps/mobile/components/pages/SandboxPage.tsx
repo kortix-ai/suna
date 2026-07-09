@@ -205,7 +205,7 @@ function TemplateRow({
     : template.has_image
       ? `Image: ${template.image}`
       : `Dockerfile: ${template.dockerfile_path}`;
-  const sourceTag = template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.toml';
+  const sourceTag = template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.yaml';
   const editable = canManage && !!template.template_id && !template.is_default;
   const buildable = canManage && !!template.template_id;
 
@@ -597,7 +597,7 @@ export function SandboxPage({
             )}
           </View>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
-            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.toml.
+            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.yaml.
           </Text>
 
           {isLoading ? (
