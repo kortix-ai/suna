@@ -2,10 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useCallback, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { Streamdown } from 'streamdown';
 import { Check, Copy } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { codeToHtml, getSingletonHighlighter, type Highlighter, type ShikiTransformer } from 'shiki';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
@@ -35,48 +36,26 @@ import { toast } from '@/lib/toast';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 
-// Mermaid rendering is comparatively heavy (the renderer pulls Dialog/Button
-// chrome and lazily imports the multi-hundred-KB `mermaid` package on first
-// render). Most markdown never contains a diagram, so load the renderer
-// component lazily — it only enters the bundle once a ```mermaid block exists.
+// Mermaid pulls in a multi-hundred-KB renderer; load it only once a diagram exists.
 const MermaidRenderer = lazy(() =>
   import('@/components/ui/mermaid-renderer').then((mod) => ({
     default: mod.MermaidRenderer,
   })),
 );
 
-// Helper to check if a URL is internal (same origin)
 function isInternalUrl(href: string | undefined): boolean {
   if (!href) return false;
-
-  // External URLs (http/https/mailto/tel)
-  if (href.startsWith('http://') || href.startsWith('https://')) {
-    return false;
-  }
-
-  // Protocol links (mailto, tel, etc.)
-  if (href.includes('://')) {
-    return false;
-  }
-
-  // Internal links (starting with / or #)
+  if (href.startsWith('http://') || href.startsWith('https://')) return false;
+  if (href.includes('://')) return false;
   return href.startsWith('/') || href.startsWith('#');
 }
 
-// Helper to handle hash link clicks for smooth scrolling
 function handleHashClick(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
-  if (href.startsWith('#')) {
-    e.preventDefault();
-    const targetId = href.substring(1);
-    const element = document.getElementById(targetId);
-
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }
+  if (!href.startsWith('#')) return;
+  e.preventDefault();
+  document.getElementById(href.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// Header-bar copy button — always visible, low-key when idle, accent on hover.
 function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -93,105 +72,86 @@ function CopyButton({ code }: { code: string }) {
   return (
     <button
       onClick={handleCopy}
+      aria-label={copied ? 'Copied' : 'Copy code'}
       className={cn(
-        "inline-flex items-center justify-center h-7 w-7 rounded-md cursor-pointer",
-        "text-muted-foreground hover:text-foreground",
-        "hover:bg-muted-foreground/10",
-        "transition-colors duration-150",
-        "outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0",
+        'inline-flex size-7 items-center justify-center rounded-md',
+        'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
+        'cursor-pointer transition-colors active:scale-[0.97]',
+        'outline-none focus-visible:outline-none',
       )}
-      aria-label={copied ? "Copied!" : "Copy code"}
     >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
+      <span className="relative inline-flex size-3.5 items-center justify-center">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={copied ? 'check' : 'copy'}
+            initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+            exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+            transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+            className="absolute inset-0 inline-flex items-center justify-center"
+          >
+            {copied ? (
+              <Check className="size-3.5 text-kortix-green" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+          </motion.span>
+        </AnimatePresence>
+      </span>
     </button>
   );
 }
 
-// Maximum code length for Shiki syntax highlighting (characters).
-// Very large code blocks are expensive to highlight — truncate to keep UI responsive.
-const SHIKI_MAX_LENGTH = 50_000;
-
-// Markdown code blocks use the actrun website's Shiki palette — `slack-ochin`
-// (light) / `plastic` (dark). Both ship in Shiki's bundled theme set, so they
-// resolve by name (no JSON to load). This is intentionally SEPARATE from the
-// app-wide Pierre themes in `@/lib/shiki-theme` (which back the diff renderer,
-// file viewers, and thumbnails) — restyling markdown must never disturb those.
+// ─── Shiki highlighting ──────────────────────────────────────────────────────
+// Markdown code uses the bundled `slack-ochin` (light) / `plastic` (dark) themes,
+// kept separate from the app-wide Pierre themes in `@/lib/shiki-theme` (diff
+// renderer, file viewers, thumbnails) so restyling markdown never touches those.
 export const SHIKI_THEME_DARK = 'plastic';
 export const SHIKI_THEME_LIGHT = 'slack-ochin';
 
-// Normalise language aliases that Shiki might not recognise directly
+const SHIKI_MAX_LENGTH = 50_000;
+
 function normalizeLanguage(lang: string): string {
   const map: Record<string, string> = {
-    'htm': 'html',
-    'js': 'javascript',
-    'ts': 'typescript',
-    'jsx': 'jsx',
-    'tsx': 'tsx',
-    'py': 'python',
-    'rb': 'ruby',
-    'yml': 'yaml',
-    'sh': 'bash',
-    'shell': 'bash',
-    'zsh': 'bash',
-    'md': 'markdown',
+    htm: 'html', js: 'javascript', ts: 'typescript', jsx: 'jsx', tsx: 'tsx',
+    py: 'python', rb: 'ruby', yml: 'yaml', sh: 'bash', shell: 'bash', zsh: 'bash', md: 'markdown',
   };
   return map[lang.toLowerCase()] || lang.toLowerCase();
 }
 
-// Languages pre-loaded into the singleton highlighter at module init.
-// Anything not in this list lazy-loads on first use via `loadLanguage`.
-//
-// 'text' is included so fenced blocks without a language hint can still go
-// through Shiki — they pick up Pierre's `editor.foreground` / `background`
-// (the same colours the file viewer and thumbnails paint with), keeping
-// every code surface visually consistent.
+// Pre-loaded at init; anything else lazy-loads on first use. `text` lets no-hint
+// fences flow through Shiki so they pick up the same editor foreground as the rest.
 const PRELOAD_LANGS = [
-  'text',
-  'javascript', 'typescript', 'jsx', 'tsx',
-  'python', 'bash', 'json', 'css', 'html',
-  'markdown', 'yaml',
+  'text', 'javascript', 'typescript', 'jsx', 'tsx',
+  'python', 'bash', 'json', 'css', 'html', 'markdown', 'yaml',
 ];
 
-// Shared Shiki transformers — strip Shiki's wrapper background, tabindex, AND
-// any font-weight/font-style on token spans. The last bit is critical:
-// bold/italic glyphs are wider than regular ones, so themes that bold keywords
-// cause every token after a keyword to shift right when highlighting swaps
-// in. Forcing all tokens to the same weight/style means the highlighted DOM
-// occupies the exact same horizontal space as the plain-text fallback — the
-// swap becomes color-only.
+// Strip Shiki's wrapper background/tabindex and any per-token font-weight/style —
+// forcing a uniform weight keeps highlighted DOM the same width as plain text, so
+// the colour swap never shifts glyphs horizontally.
 const shikiTransformers: ShikiTransformer[] = [{
   pre(node) {
-    if (node.properties.style) {
-      node.properties.style = (node.properties.style as string)
-        .replace(/background-color:[^;]+;?/g, '');
+    if (typeof node.properties.style === 'string') {
+      node.properties.style = node.properties.style.replace(/background-color:[^;]+;?/g, '');
     }
     delete node.properties.tabindex;
   },
   span(node) {
-    const style = node.properties.style;
-    if (typeof style === 'string') {
-      node.properties.style = style
+    if (typeof node.properties.style === 'string') {
+      node.properties.style = node.properties.style
         .replace(/font-weight:[^;]+;?/g, '')
         .replace(/font-style:[^;]+;?/g, '');
     }
   },
 }];
 
-// Singleton highlighter — once resolved, exposes a SYNCHRONOUS `codeToHtml`.
-// Kicked off at module init so by the time the first code block renders, the
-// highlighter is usually ready and we can highlight in the useState initialiser
-// (no plain-text → highlighted flash).
+// Singleton highlighter — kicked off at module init so the grammar is usually
+// ready by first render, letting us highlight synchronously (no plain→colour flash).
 let highlighterReady: Highlighter | null = null;
 const loadedLangs = new Set<string>(PRELOAD_LANGS.map((l) => l.toLowerCase()));
 const langLoadPromises = new Map<string, Promise<void>>();
 
 const highlighterPromise: Promise<Highlighter> = getSingletonHighlighter({
-  // `slack-ochin` / `plastic` are bundled Shiki themes — reference them by name
-  // and Shiki loads them from its own theme set (no JSON needed).
   themes: [SHIKI_THEME_DARK, SHIKI_THEME_LIGHT],
   langs: PRELOAD_LANGS,
 }).then((h) => {
@@ -208,299 +168,114 @@ function ensureLangLoaded(h: Highlighter, lang: string): Promise<void> {
   if (existing) return existing;
   const p = h.loadLanguage(lang as never)
     .then(() => { loadedLangs.add(lang); })
-    .catch((err) => {
-      console.warn(`[unified-markdown] failed to load Shiki lang "${lang}":`, err?.message || err);
-    })
+    .catch((err) => console.warn(`[unified-markdown] failed to load Shiki lang "${lang}":`, err?.message || err))
     .finally(() => { langLoadPromises.delete(lang); });
   langLoadPromises.set(lang, p);
   return p;
 }
 
-/** Sync highlight — returns null if highlighter not ready or lang not loaded. */
-function highlightSync(code: string, language: string, theme: string): string | null {
-  if (!highlighterReady) return null;
-  const lang = normalizeLanguage(language);
-  if (!loadedLangs.has(lang)) return null;
-  const truncated = code.length > SHIKI_MAX_LENGTH
+function clampCode(code: string): string {
+  return code.length > SHIKI_MAX_LENGTH
     ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
     : code;
+}
+
+// Bounded cache keyed by (lang, theme, content signature). Survives the component
+// remounts Streamdown triggers per token, so repeat highlights are free.
+const shikiCache = new Map<string, string>();
+const shikiPending = new Map<string, Promise<string | null>>();
+const SHIKI_CACHE_MAX = 64;
+
+function shikiKey(code: string, lang: string, theme: string): string {
+  const sig = code.length <= 200 ? code : code.slice(0, 100) + code.slice(-100) + code.length;
+  return `${lang}:${theme}:${sig}`;
+}
+
+function cacheHtml(key: string, html: string) {
+  shikiCache.set(key, html);
+  if (shikiCache.size > SHIKI_CACHE_MAX) {
+    const oldest = shikiCache.keys().next().value;
+    if (oldest !== undefined) shikiCache.delete(oldest);
+  }
+}
+
+// Synchronous highlight when the grammar is ready (the common case). Returns null
+// while the highlighter is still initialising, so callers fall back to async.
+function highlightSync(code: string, language: string, theme: string): string | null {
+  const lang = normalizeLanguage(language);
+  const key = shikiKey(code, lang, theme);
+  const cached = shikiCache.get(key);
+  if (cached) return cached;
+  if (!highlighterReady || !loadedLangs.has(lang)) return null;
   try {
-    return highlighterReady.codeToHtml(truncated, { lang, theme, transformers: shikiTransformers });
+    const html = highlighterReady.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
+    cacheHtml(key, html);
+    return html;
   } catch {
     return null;
   }
 }
 
-// Syntax-highlighted code using Shiki
-//
-// Module-level cache so highlighted HTML survives component remounts
-// (streamdown unmounts/remounts code components on every token).
-// Also acts as a coalescing mechanism: only one Shiki call per unique
-// (code, lang, theme) triple is ever in-flight.
-const shikiCache = new Map<string, string>();      // key → html
-const shikiPending = new Map<string, Promise<string | null>>(); // key → in-flight promise
-const SHIKI_CACHE_MAX = 64;
-
-// Module-level: last highlighted result per language+theme.
-// Survives component remounts (which happen every ~33ms during streaming
-// because Streamdown unmounts/remounts code components on each token).
-// Without this, every mount starts with no highlight state and the
-// component-level debounce (100ms) is killed before it can fire (~33ms remount cycle).
-const lastHighlightedMap = new Map<string, { html: string; code: string }>();
-
-// Module-level throttle for Shiki calls during streaming.
-// Ensures we highlight at most once per 200ms per language+theme combination,
-// surviving component remounts. Without this, the component-level debounce
-// is always killed by the ~33ms remount cycle, preventing any highlighting.
-const hlThrottleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const hlThrottleLatest = new Map<string, { code: string; language: string; theme: string }>();
-
-function scheduleModuleHighlight(code: string, language: string, theme: string) {
-  const key = `${language}:${theme}`;
-  hlThrottleLatest.set(key, { code, language, theme });
-
-  // If timer already running, just update the latest code and wait
-  if (hlThrottleTimers.has(key)) return;
-
-  hlThrottleTimers.set(key, setTimeout(() => {
-    hlThrottleTimers.delete(key);
-    const latest = hlThrottleLatest.get(key);
-    if (!latest) return;
-    hlThrottleLatest.delete(key);
-
-    highlightAsync(latest.code, latest.language, latest.theme).then((html) => {
-      if (html) {
-        lastHighlightedMap.set(key, { html, code: latest.code });
-      }
-    });
-  }, 200));
-}
-
-function shikiKey(code: string, lang: string, theme: string) {
-  // Use a fast hash: first 100 + last 100 chars + length.
-  // Full code only matters for very small snippets.
-  const sig = code.length <= 200
-    ? code
-    : code.slice(0, 100) + code.slice(-100) + code.length;
-  return `${lang}:${theme}:${sig}`;
-}
-
-function evictOldest() {
-  if (shikiCache.size > SHIKI_CACHE_MAX) {
-    const first = shikiCache.keys().next().value;
-    if (first !== undefined) shikiCache.delete(first);
-  }
-}
-
 function highlightAsync(code: string, language: string, theme: string): Promise<string | null> {
-  const key = shikiKey(code, language, theme);
+  const lang = normalizeLanguage(language);
+  const key = shikiKey(code, lang, theme);
   const cached = shikiCache.get(key);
   if (cached !== undefined) return Promise.resolve(cached);
+  const inflight = shikiPending.get(key);
+  if (inflight) return inflight;
 
-  const pending = shikiPending.get(key);
-  if (pending) return pending;
-
-  const normalizedLang = normalizeLanguage(language);
-  const truncated = code.length > SHIKI_MAX_LENGTH
-    ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
-    : code;
-
-  // Prefer the singleton highlighter (sync once the lang grammar is loaded).
-  // Falls back to the convenience `codeToHtml` only if the singleton init failed.
   const p = highlighterPromise
     .then(async (h) => {
-      await ensureLangLoaded(h, normalizedLang);
-      return h.codeToHtml(truncated, { lang: normalizedLang, theme, transformers: shikiTransformers });
+      await ensureLangLoaded(h, lang);
+      return h.codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers });
     })
-    .catch(() => codeToHtml(truncated, { lang: normalizedLang, theme, transformers: shikiTransformers }))
-    .then((html) => {
-      evictOldest();
-      shikiCache.set(key, html);
-      shikiPending.delete(key);
-      return html;
-    })
+    .catch(() => codeToHtml(clampCode(code), { lang, theme, transformers: shikiTransformers }))
+    .then((html) => { cacheHtml(key, html); shikiPending.delete(key); return html; })
     .catch((err) => {
-      console.warn(`[HighlightedCode] Shiki failed for lang="${normalizedLang}":`, err?.message || err);
+      console.warn(`[unified-markdown] Shiki failed for lang="${lang}":`, err?.message || err);
       shikiPending.delete(key);
       return null;
     });
-
   shikiPending.set(key, p);
   return p;
 }
 
-// Find the best cached HTML for the current code by checking if any
-// cache entry is a prefix match (the code was shorter earlier during streaming).
-function findBestCachedHtml(code: string, language: string, theme: string): string | null {
-  // Exact match first
-  const exact = shikiCache.get(shikiKey(code, language, theme));
-  if (exact) return exact;
-  // Module-level prefix match from last highlighted result
-  const hlKey = `${language}:${theme}`;
-  const last = lastHighlightedMap.get(hlKey);
-  if (last && code.startsWith(last.code) && last.code.length > 0) return last.html;
-  return null;
-}
+const SHIKI_RESET = cn(
+  'text-sm font-mono leading-[1.65] whitespace-pre',
+  '[&_pre]:contents [&_code]:contents',
+  '[&_.line]:m-0 [&_.line]:p-0 [&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none',
+);
 
 export function HighlightedCode({ code, language, children }: { code: string; language: string; children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === 'dark' ? SHIKI_THEME_DARK : SHIKI_THEME_LIGHT;
-  const hlKey = `${language}:${theme}`;
-
-  // Track the latest highlighted HTML and the code it corresponds to.
-  // During streaming, code changes rapidly — we keep the previous highlight
-  // visible until a new one is ready (no flash to plain text).
-  //
-  // The initialiser checks (in order):
-  //   1. Shiki cache for exact match (instant)
-  //   2. Pre-loaded singleton highlighter for sync highlight (instant if lang preloaded)
-  //   3. Prefix-match against the last highlighted code for this lang+theme
-  // Steps 1 and 2 return highlighted HTML SYNCHRONOUSLY, so the very first
-  // render already paints with colours — no plain → highlighted swap, no shift.
-  const [highlighted, setHighlighted] = useState<{ html: string; code: string } | null>(() => {
-    const cached = shikiCache.get(shikiKey(code, language, theme));
-    if (cached) return { html: cached, code };
-    const sync = highlightSync(code, language, theme);
-    if (sync) {
-      shikiCache.set(shikiKey(code, language, theme), sync);
-      lastHighlightedMap.set(hlKey, { html: sync, code });
-      return { html: sync, code };
-    }
-    const last = lastHighlightedMap.get(hlKey);
-    if (last && code.startsWith(last.code) && last.code.length > 0) return last;
-    return null;
-  });
-  const versionRef = useRef(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const [html, setHtml] = useState<string | null>(() => highlightSync(code, language, theme));
 
   useEffect(() => {
-    // Exact cache hit — show immediately and update module state
-    const cached = shikiCache.get(shikiKey(code, language, theme));
-    if (cached) {
-      const result = { html: cached, code };
-      setHighlighted(result);
-      lastHighlightedMap.set(hlKey, result);
-      return;
-    }
-
-    // Singleton may have finished loading between render and effect — try sync
     const sync = highlightSync(code, language, theme);
-    if (sync) {
-      const result = { html: sync, code };
-      shikiCache.set(shikiKey(code, language, theme), sync);
-      lastHighlightedMap.set(hlKey, result);
-      setHighlighted(result);
-      return;
-    }
+    if (sync) { setHtml(sync); return; }
+    let alive = true;
+    highlightAsync(code, language, theme).then((result) => { if (alive && result) setHtml(result); });
+    return () => { alive = false; };
+  }, [code, language, theme]);
 
-    // Check module-level state for a better prefix match than current
-    const last = lastHighlightedMap.get(hlKey);
-    if (last && code.startsWith(last.code) && last.code.length > 0) {
-      setHighlighted(prev => {
-        if (!prev || last.code.length > prev.code.length || !code.startsWith(prev.code)) return last;
-        return prev;
-      });
-    }
-
-    const version = ++versionRef.current;
-
-    // Schedule module-level throttled highlight (survives component remounts).
-    // During streaming, Streamdown remounts this component every ~33ms which
-    // kills any component-level timers. The module-level throttle fires every
-    // ~200ms regardless, populating shikiCache and lastHighlightedMap so the
-    // next mount picks up the result via the useState initialiser above.
-    scheduleModuleHighlight(code, language, theme);
-
-    // Also schedule a component-level debounced highlight for when the component
-    // is stable (after streaming ends, component is no longer remounted by Streamdown).
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      highlightAsync(code, language, theme).then((result) => {
-        if (version === versionRef.current && result) {
-          const r = { html: result, code };
-          lastHighlightedMap.set(hlKey, r);
-          setHighlighted(r);
-        }
-      });
-    }, 100);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [code, language, theme, hlKey]);
-
-  const shikiResetClasses = cn(
-    "text-sm font-mono leading-[1.65] whitespace-pre",
-    // Collapse Shiki's wrapper elements so only .line spans render
-    "[&_pre]:contents [&_code]:contents",
-    // Reset .line spans: prevent global * { border-border } from causing visual artifacts
-    "[&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none",
-    "[&_.line]:m-0 [&_.line]:p-0",
-  );
-
-  // If we have a highlight for the EXACT current code, show it
-  if (highlighted && highlighted.code === code) {
-    return (
-      <code
-        className={shikiResetClasses}
-        dangerouslySetInnerHTML={{ __html: highlighted.html }}
-      />
-    );
+  if (html) {
+    return <code className={SHIKI_RESET} dangerouslySetInnerHTML={{ __html: html }} />;
   }
-
-  // If we have a highlight for a PREFIX of the current code (streaming — code grew),
-  // show the highlighted prefix + plain text tail. Tail span has no colour
-  // override so it inherits Pierre's editor foreground from the `<pre>`.
-  if (highlighted && code.startsWith(highlighted.code) && highlighted.code.length > 0) {
-    const tail = code.slice(highlighted.code.length);
-    return (
-      <code className={shikiResetClasses}>
-        <span dangerouslySetInnerHTML={{ __html: highlighted.html }} />
-        {tail && <span>{tail}</span>}
-      </code>
-    );
-  }
-
-  // No matching highlight yet — show plain text in Pierre's editor fg (the
-  // `<pre>` wrapping sets the colour; we deliberately don't override it).
-  return (
-    <code className="text-sm font-mono leading-[1.65] whitespace-pre">
-      {children}
-    </code>
-  );
+  return <code className="text-sm font-mono leading-[1.65] whitespace-pre">{children}</code>;
 }
 
-// Display label for the language pill — falls back to "text" for fenced
-// blocks without a language hint.
 function languageLabel(language: string): string {
   if (!language) return 'text';
   const lower = language.toLowerCase();
   const display: Record<string, string> = {
-    js: 'javascript',
-    ts: 'typescript',
-    py: 'python',
-    rb: 'ruby',
-    sh: 'bash',
-    shell: 'bash',
-    zsh: 'bash',
-    yml: 'yaml',
-    md: 'markdown',
-    htm: 'html',
+    js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
+    sh: 'bash', shell: 'bash', zsh: 'bash', yml: 'yaml', md: 'markdown', htm: 'html',
   };
   return display[lower] || lower;
 }
 
-// Card chrome for block code — header (language + copy) over the highlighted body.
-// Used by both the markdown renderer and the standalone `CodeHighlight` export.
-//
-// Colours come straight from Pierre's theme JSON so the code surface lines
-// up with every other Pierre-themed area (diffs, file viewer, thumbnails).
-// Pierre Dark / Pierre Light:
-//   body   bg  =  editor.background         (#ffffff / #070707)
-//   header bg  =  sideBar.background        (#f8f8f8 / #141415)
-//   border     =  panel.border-ish          (#eeeeef / #1f1f21)
-//   label fg   =  editorLineNumber          (#84848A — shared across modes)
-//   body fg    =  editor.foreground         (#070707 / #fbfbfb)
+// Flat code card: rounded-lg surface, dashed header (language + copy), highlighted body.
 function CodeBlock({
   code,
   language,
@@ -515,33 +290,19 @@ function CodeBlock({
   className?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "relative group not-prose my-5",
-        "rounded-lg overflow-hidden",
-        "bg-muted dark:bg-card",
-        className,
-      )}
-    >
-      <div
-        className={cn(
-          "flex items-center justify-between gap-2",
-          "py-1 pl-4 pr-1.5",
-          "border-b border-dashed border-border/70",
-        )}
-      >
-        <span className="text-xs font-medium tracking-wide uppercase text-muted-foreground select-none">
+    <div className={cn('group not-prose relative my-5 overflow-hidden rounded-lg bg-muted dark:bg-card', className)}>
+      <div className="flex items-center justify-between gap-2 border-b border-dashed border-border/70 py-1 pl-4 pr-1.5">
+        <span className="select-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {languageLabel(language)}
         </span>
         {code && !isStreaming && <CopyButton code={code} />}
       </div>
       <pre
         className={cn(
-          "p-4 max-h-[520px] overflow-auto",
-          "text-sm font-mono leading-[1.65]",
-          "text-foreground",
-          "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none",
-          "[&_.shiki]:!bg-transparent [&_span]:!bg-transparent [&_span]:border-none [&_span]:outline-none",
+          'max-h-[520px] overflow-auto py-4',
+          'text-sm font-mono leading-[1.65] text-foreground',
+          '[&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit',
+          '[&_.shiki]:!bg-transparent [&_span]:!bg-transparent [&_span]:border-none [&_span]:outline-none',
         )}
       >
         {children}
@@ -550,14 +311,11 @@ function CodeBlock({
   );
 }
 
-// KaTeX block for ```latex / ```tex / ```katex fences (rehype-katex only handles ```math).
+// KaTeX for ```latex / ```tex / ```katex fences (rehype-katex only handles ```math).
 function KaTeXBlock({ math }: { math: string }) {
   const rendered = useMemo(() => {
     try {
-      const html = katex.renderToString(math.trim(), {
-        ...KATEX_RENDER_OPTIONS,
-        displayMode: true,
-      });
+      const html = katex.renderToString(math.trim(), { ...KATEX_RENDER_OPTIONS, displayMode: true });
       return { html, error: null as string | null };
     } catch {
       return { html: null as string | null, error: math.trim() };
@@ -566,7 +324,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
   if (!rendered.html) {
     return (
-      <pre className="katex-math-block my-5 overflow-x-auto rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm font-mono text-muted-foreground">
+      <pre className="katex-math-block my-5 overflow-x-auto rounded-md border border-border bg-muted px-4 py-3 text-sm font-mono text-muted-foreground">
         {rendered.error}
       </pre>
     );
@@ -574,116 +332,85 @@ function KaTeXBlock({ math }: { math: string }) {
 
   return (
     <div
-      className="katex-math-block my-5 overflow-x-auto py-3 [&_.katex-display]:!my-0 [&_.katex-display]:!mx-0"
+      className="katex-math-block my-5 overflow-x-auto py-3 [&_.katex-display]:!mx-0 [&_.katex-display]:!my-0"
       dangerouslySetInnerHTML={{ __html: rendered.html }}
     />
   );
 }
 
-// File extension patterns for detecting clickable file paths in inline code
+// ─── Inline code ─────────────────────────────────────────────────────────────
 const FILE_EXTENSION_RE = /\.\w{1,10}$/;
 const COMMON_NON_FILES = new Set(['e.g.', 'i.e.', 'etc.', 'vs.', 'v1.', 'v2.']);
+const INLINE_CODE = 'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 dark:bg-card';
 
 function looksLikeUrl(text: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(text);
 }
 
-/** Heuristic: does this inline code text look like a file path? */
 function looksLikeFilePath(text: string): boolean {
   if (!text || text.length < 3 || text.length > 300) return false;
   if (text.includes(' ') || text.includes('\n')) return false;
-  // Never treat URLs as file paths.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return false;
   if (COMMON_NON_FILES.has(text.toLowerCase())) return false;
-  // Must contain at least one slash and have a file extension
   if (!text.includes('/')) return false;
   if (FILE_EXTENSION_RE.test(text)) return true;
-  // Also use the shared utility for broader detection
   return sharedLooksLikeFilePath(text);
 }
 
-/** Inline code that opens file preview modal when it looks like a file path */
+// Inline code that becomes a link (URLs) or opens a file preview (absolute paths).
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   const { proxyUrl } = useSandboxProxy();
   const text = String(children).trim();
   const isUrl = looksLikeUrl(text);
-  const isFile = looksLikeFilePath(text);
+  const isFile = !isUrl && looksLikeFilePath(text);
   const isAbsolute = text.startsWith('/');
-
-  const handleFileClick = useCallback(() => {
-    // Reject relative paths — they resolve to wrong locations and show empty files
-    if (!isAbsolute) {
-      toast.error(`Cannot open relative path: ${text}`);
-      return;
-    }
-    // Inside a session → reveal in the side-panel Files tab; else the modal.
-    const sessionId = getActivePanelSessionId();
-    if (sessionId) {
-      openFileInSessionPanel(sessionId, text);
-      return;
-    }
-    openPreview(text);
-  }, [text, openPreview, isAbsolute]);
-
-  // Proxy localhost URLs so the global <LocalhostLinkInterceptor> routes the
-  // click into the session's Browser tab. Without this, the raw localhost href
-  // matches the dev app's own origin and the interceptor's same-origin guard
-  // skips it (the "click does nothing" bug). Non-localhost URLs pass through.
-  const resolvedUrlHref = isUrl ? (proxyUrl(text) ?? text) : text;
-
-  const baseInline =
-    "px-1.5 py-[0.1rem] rounded text-[0.9rem] font-mono " +
-    "bg-muted dark:bg-card text-foreground/95";
 
   if (isUrl) {
     return (
-      <a
-        href={resolvedUrlHref}
+      <Link
+        href={proxyUrl(text) ?? text}
         target="_blank"
         rel="noopener noreferrer"
-        className={cn(
-          baseInline,
-          "inline-block cursor-pointer transition-colors",
-          "hover:text-blue-600 hover:bg-blue-50 hover:ring-blue-200/70",
-          "dark:hover:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:ring-blue-700/40",
-        )}
         title={`Open ${text} in a new tab`}
+        className={cn(INLINE_CODE, 'cursor-pointer transition-colors hover:text-kortix-blue')}
       >
         {children}
-      </a>
+      </Link>
     );
   }
 
   if (isFile) {
+    const openFile = () => {
+      if (!isAbsolute) {
+        toast.error(`Cannot open relative path: ${text}`);
+        return;
+      }
+      const sessionId = getActivePanelSessionId();
+      if (sessionId) openFileInSessionPanel(sessionId, text);
+      else openPreview(text);
+    };
     return (
       <code
-        className={cn(
-          baseInline,
-          "transition-colors",
-          isAbsolute
-            ? "cursor-pointer hover:text-blue-600 hover:bg-blue-50 hover:ring-blue-200/70 dark:hover:text-blue-400 dark:hover:bg-blue-900/20 dark:hover:ring-blue-700/40"
-            : "cursor-not-allowed opacity-70",
-        )}
-        onClick={handleFileClick}
-        title={isAbsolute ? `Click to preview ${text}` : `${text} — Relative path (cannot open)`}
         role="button"
+        onClick={isAbsolute ? openFile : undefined}
+        title={isAbsolute ? `Click to preview ${text}` : `${text} — relative path (cannot open)`}
+        className={cn(
+          INLINE_CODE,
+          'transition-colors',
+          isAbsolute ? 'cursor-pointer hover:text-kortix-blue' : 'cursor-not-allowed opacity-70',
+        )}
       >
         {children}
       </code>
     );
   }
 
-  return <code className={baseInline}>{children}</code>;
+  return <code className={INLINE_CODE}>{children}</code>;
 }
 
-/**
- * Standalone syntax-highlighted code block.
- *
- * Renders code directly with Shiki highlighting + copy button, bypassing the
- * markdown parser entirely. Useful for tool views that display raw file
- * content where markdown parsing could interfere with the output.
- */
+// Standalone highlighted code block — bypasses the markdown parser. Used by tool
+// views that render raw file content where markdown parsing would interfere.
 export function CodeHighlight({
   code,
   language,
@@ -705,28 +432,16 @@ export function CodeHighlight({
 export interface UnifiedMarkdownProps {
   content: string;
   className?: string;
-  isStreaming?: boolean; // Enable streaming animation for incomplete markdown
+  isStreaming?: boolean;
   /**
-   * Allow raw HTML (and inline SVG) embedded in the Markdown to be parsed into
-   * live DOM. Defaults to `true`. Set to `false` for file/source viewers so that
-   * embedded markup is shown as escaped text rather than broken,
-   * namespace-less DOM (avoids React's "<path> is unrecognized" warning).
+   * Parse embedded raw HTML/SVG into live DOM. Defaults to `true`; set `false`
+   * for file/source viewers so markup shows as escaped text instead of broken DOM.
    */
   allowHtml?: boolean;
 }
 
-/**
- * UNIFIED MARKDOWN RENDERER
- *
- * Single source of truth for all markdown rendering across the application.
- * Optimized for Kortix brand with Vercel-level UX/UI polish.
- *
- * Design principles:
- * - Clean, minimal aesthetic
- * - Consistent spacing rhythm
- * - Excellent readability in light & dark modes
- * - Brand-aligned colors and border radius
- */
+// Single source of truth for markdown rendering across the app — clean, minimal,
+// readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   content,
   className,
@@ -734,96 +449,56 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   allowHtml = true,
 }) => {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Resolve the active sandbox server so we can proxy localhost URLs
   const { proxyUrl } = useSandboxProxy();
+  const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
 
-  /** Rewrite a localhost:PORT URL through the sandbox proxy, or pass through. */
-  const proxy = useCallback(
-    (url: string | undefined) => proxyUrl(url),
-    [proxyUrl],
-  );
-
-  // Memoize the Streamdown components object so that Block's React.memo
-  // comparator sees stable function references for unchanged blocks.
-  // Without this, every content change (every ~33ms during streaming) creates
-  // new inline arrow functions → Block comparator fails reference equality →
-  // ALL blocks re-render → browser Selection/Range destroyed → text unselected.
-  // With memoized components, only the LAST block (whose content actually changed)
-  // re-renders, while completed blocks keep their DOM intact, preserving selection.
+  // Memoize the components object so Block's React.memo sees stable references and
+  // only the changed block re-renders during streaming (preserves text selection).
   const components = useMemo(() => ({
-    // ═══════════════════════════════════════════════════════════════
-    // HEADINGS - Clean hierarchy with proper weight distribution
-    // ═══════════════════════════════════════════════════════════════
-    // Flat, uniform heading treatment (matches the actrun website markdown):
-    // every level renders at the same weight/size with generous top spacing,
-    // no size ramp and no border under h1.
+    // Headings — flat, uniform (same weight/size at every level, no h1 border).
     h1: ({ children }: { children?: React.ReactNode }) => (
-      <h1 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h1>
+      <h1 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h1>
     ),
     h2: ({ children }: { children?: React.ReactNode }) => (
-      <h2 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h2>
+      <h2 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h2>
     ),
     h3: ({ children }: { children?: React.ReactNode }) => (
-      <h3 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h3>
+      <h3 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h3>
     ),
     h4: ({ children }: { children?: React.ReactNode }) => (
-      <h4 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h4>
+      <h4 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h4>
     ),
     h5: ({ children }: { children?: React.ReactNode }) => (
-      <h5 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h5>
+      <h5 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h5>
     ),
     h6: ({ children }: { children?: React.ReactNode }) => (
-      <h6 className="text-xl font-semibold text-foreground mt-10 mb-4 first:mt-0">
-        {children}
-      </h6>
+      <h6 className="mt-10 mb-4 text-xl font-semibold text-foreground first:mt-0">{children}</h6>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // PARAGRAPHS - Optimal line height for readability
-    // ═══════════════════════════════════════════════════════════════
     p: ({ children }: { children?: React.ReactNode }) => (
-      <div className="text-foreground/95 font-medium leading-relaxed my-4 first:mt-0 last:mb-0 [&:has(img)]:my-0">
+      <div className="my-4 font-medium leading-relaxed text-foreground/95 first:mt-0 last:mb-0 [&:has(img)]:my-0">
         {wrapChildrenWithPaths(children)}
       </div>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // LISTS - Clean bullets with proper spacing
-    // ═══════════════════════════════════════════════════════════════
     ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="my-4 pl-6 list-outside list-disc marker:text-muted-foreground/60 space-y-1 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
+      <ul className="my-4 space-y-1 pl-6 list-outside list-disc marker:text-muted-foreground/60 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
         {children}
       </ul>
     ),
     ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="my-4 pl-6 list-outside list-decimal marker:text-muted-foreground/60 marker:font-medium space-y-1 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
+      <ol className="my-4 space-y-1 pl-6 list-outside list-decimal marker:font-medium marker:text-muted-foreground/80 first:mt-0 last:mb-0 [&_p]:mb-2 [&_p]:last:mb-0">
         {children}
       </ol>
     ),
     li: ({ children }: { children?: React.ReactNode }) => (
-      <li className="text-foreground/95 font-medium leading-relaxed">
+      <li className="font-medium leading-relaxed text-foreground/95">
         {wrapChildrenWithPaths(children)}
       </li>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // LINKS - Subtle, professional styling with Next.js routing
-    // ═══════════════════════════════════════════════════════════════
+    // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
-      // Agent-minted setup links (secret intake / Pipedream Quick Connect) are
-      // rendered as an in-app modal trigger instead of a plain link, so the
-      // human fills it in without leaving the chat. (In Slack the same URL is
-      // just a tappable link — no interception there.)
       const setupLink = parseSetupLinkHref(href);
       if (setupLink) {
         return (
@@ -833,73 +508,36 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         );
       }
 
-      // Note: localhost:PORT click interception is handled globally by
-      // <LocalhostLinkInterceptor> — no per-link proxy logic needed here.
-      // We still set the proxied href so the browser status bar / hover
-      // tooltip shows the reachable URL.
-      const resolvedHref = proxy(href) ?? href;
-      const isInternal = isInternalUrl(resolvedHref);
-      const isHashLink = resolvedHref?.startsWith('#');
-      const linkClassName = cn(
-        "font-medium text-primary",
-        "underline decoration-primary/40 underline-offset-[3px] decoration-[1px]",
-        "hover:decoration-primary transition-colors duration-150"
+      const resolvedHref = proxy(href) ?? href ?? '#';
+      const isHash = resolvedHref.startsWith('#');
+      const isExternal = !isInternalUrl(resolvedHref);
+      const linkClass = cn(
+        'font-medium text-kortix-blue',
+        'underline decoration-kortix-blue/40 decoration-[1px] underline-offset-[3px]',
+        'transition-colors hover:decoration-kortix-blue',
       );
 
-      if (isHashLink) {
-        return (
-          <a
-            href={resolvedHref}
-            onClick={(e) => handleHashClick(e, resolvedHref ?? '')}
-            className={linkClassName}
-          >
-            {children}
-          </a>
-        );
-      }
-
-      // Localhost links are plain clickable links — the global
-      // <LocalhostLinkInterceptor> handles routing clicks to preview tabs.
-      // No inline iframe preview here; the show tool handles rich previews.
-
-      if (isInternal) {
-        return (
-          <Link
-            href={resolvedHref || '#'}
-            className={linkClassName}
-          >
-            {children}
-          </Link>
-        );
-      }
-
       return (
-        <a
+        <Link
           href={resolvedHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={linkClassName}
+          onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
+          className={linkClass}
+          {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         >
           {children}
-        </a>
+        </Link>
       );
     },
 
-    // ═══════════════════════════════════════════════════════════════
-    // CODE - Clean, readable code styling with copy button
-    // ═══════════════════════════════════════════════════════════════
+    // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
+    // through the shared card. `language || 'text'` routes no-hint fences via Shiki.
     code: ({ children, className: codeClassName }: { children?: React.ReactNode; className?: string }) => {
       const match = /language-(\w+)/.exec(codeClassName || '');
       const language = match ? match[1] : '';
       const code = String(children).replace(/\n$/, '');
-
-      // Detect block code: has language class OR contains newlines (multi-line)
-      const hasLanguageClass = codeClassName?.includes('language-');
-      const isMultiLine = code.includes('\n');
-      const isBlock = hasLanguageClass || isMultiLine;
+      const isBlock = codeClassName?.includes('language-') || code.includes('\n');
 
       if (isBlock) {
-        // Mermaid diagrams — render their own card chrome
         if (isMermaidCode(language, code)) {
           return (
             <Suspense fallback={null}>
@@ -907,18 +545,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
             </Suspense>
           );
         }
-
-        // KaTeX/LaTeX code blocks — render as math, also self-contained
         if (KATEX_FENCE_LANGUAGES.has(language.toLowerCase())) {
           return <KaTeXBlock math={code} />;
         }
-
-        // Everything else: shared card with header bar. `language || 'text'`
-        // routes no-hint fences through Shiki too — they don't get any
-        // syntax tokens (Shiki's `text` language is a no-op tokenizer) but
-        // they pick up Pierre's editor foreground/background, so plain-text
-        // fences match the rest of the code chrome instead of inheriting the
-        // surrounding paragraph colour.
         return (
           <CodeBlock code={code} language={language} isStreaming={isStreaming}>
             <HighlightedCode code={code} language={language || 'text'}>
@@ -928,63 +557,33 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         );
       }
 
-      // Inline code - subtle pill style, clickable if it looks like a file path
       return <ClickableInlineCode>{children}</ClickableInlineCode>;
     },
-    // `code` handler already returns the fully-styled block (CodeBlock / KaTeX /
-    // Mermaid). The default `<pre>` would double-wrap it, so we collapse it.
+    // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
     pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 
-    // ═══════════════════════════════════════════════════════════════
-    // BLOCKQUOTES - Clean side border
-    // ═══════════════════════════════════════════════════════════════
     blockquote: ({ children }: { children?: React.ReactNode }) => (
-      <blockquote className={cn(
-        "my-5 pl-6 italic",
-        "border-l-2 border-border",
-        "text-muted-foreground",
-        "[&>p]:my-2"
-      )}>
+      <blockquote className="my-5 border-l-2 border-border pl-6 italic text-muted-foreground [&>p]:my-2">
         {wrapChildrenWithPaths(children)}
       </blockquote>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // HORIZONTAL RULE - Subtle divider
-    // ═══════════════════════════════════════════════════════════════
-    hr: () => (
-      <hr className="my-6 border-0 border-t border-border/60" />
-    ),
+    hr: () => <hr className="my-6 h-px border-0 border-t border-border/60" />,
 
-    // ═══════════════════════════════════════════════════════════════
-    // TABLES - Clean, modern table design
-    // ═══════════════════════════════════════════════════════════════
     table: ({ children }: { children?: React.ReactNode }) => (
       <div className="my-5 overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-sm !m-0">
-          {children}
-        </table>
+        <table className="w-full text-sm !m-0">{children}</table>
       </div>
     ),
     thead: ({ children }: { children?: React.ReactNode }) => (
-      <thead className="bg-muted border-b border-border">
-        {children}
-      </thead>
+      <thead className="border-b border-border bg-muted">{children}</thead>
     ),
     tbody: ({ children }: { children?: React.ReactNode }) => (
-      <tbody className="divide-y divide-border">
-        {children}
-      </tbody>
+      <tbody className="divide-y divide-border">{children}</tbody>
     ),
-    tr: ({ children }: { children?: React.ReactNode }) => (
-      <tr>
-        {children}
-      </tr>
-    ),
+    tr: ({ children }: { children?: React.ReactNode }) => <tr>{children}</tr>,
     th: ({ children }: { children?: React.ReactNode }) => (
-      <th className="px-4 py-2 text-left font-semibold text-foreground">
-        {children}
-      </th>
+      <th className="px-4 py-2 text-left font-semibold text-foreground">{children}</th>
     ),
     td: ({ children }: { children?: React.ReactNode }) => (
       <td className="px-4 py-2 text-left font-normal text-foreground">
@@ -992,71 +591,44 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       </td>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // IMAGES - Polished with proper spacing and rounded corners
-    // ═══════════════════════════════════════════════════════════════
     img: ({ src, alt }: { src?: string; alt?: string }) => {
-      // Don't render img with empty src to avoid browser warning
       if (!src) return null;
-      // Proxy localhost:PORT image sources through the sandbox proxy
       const resolvedSrc = proxy(src) ?? src;
       return (
-        <span className="block my-5">
+        <span className="my-5 block">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={resolvedSrc}
             alt={alt || ''}
-            className={cn(
-              "max-w-full h-auto rounded-lg",
-              // Subtle depth via a pure-black/pure-white hairline outline (never a
-              // tinted neutral, which reads as dirt on the image edge).
-              "outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10",
-            )}
             loading="lazy"
+            className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
           />
         </span>
       );
     },
 
-    // ═══════════════════════════════════════════════════════════════
-    // TEXT FORMATTING - Proper emphasis styling
-    // ═══════════════════════════════════════════════════════════════
     strong: ({ children }: { children?: React.ReactNode }) => (
-      <strong className="font-semibold text-foreground">
-        {children}
-      </strong>
+      <strong className="font-semibold text-foreground">{children}</strong>
     ),
     em: ({ children }: { children?: React.ReactNode }) => (
-      <em className="italic text-foreground/90">
-        {children}
-      </em>
+      <em className="italic text-foreground/90">{children}</em>
     ),
     del: ({ children }: { children?: React.ReactNode }) => (
-      <del className="line-through text-muted-foreground decoration-muted-foreground/50">
-        {children}
-      </del>
+      <del className="text-muted-foreground line-through decoration-muted-foreground/50">{children}</del>
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // TASK LISTS - Checkbox styling (GFM)
-    // ═══════════════════════════════════════════════════════════════
+    // GFM task-list checkbox.
     input: ({ checked, ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
       <input
         type="checkbox"
         checked={checked}
         readOnly
-        className={cn(
-          "mr-2 h-4 w-4 rounded border-border",
-          "accent-secondary cursor-default",
-          "align-middle relative -top-[1px]"
-        )}
+        className="relative -top-[1px] mr-2 size-4 cursor-default rounded border-border align-middle accent-secondary"
         {...props}
       />
     ),
 
-    // ═══════════════════════════════════════════════════════════════
-    // RAW HTML SUPPORT (GFM allows raw HTML)
-    // ═══════════════════════════════════════════════════════════════
+    // Raw HTML passthrough (GFM) — leave KaTeX-owned nodes untouched.
     div: ({ children, style, className: divClassName, ...props }: React.HTMLAttributes<HTMLDivElement>) => {
       if (isKatexClassName(divClassName)) {
         return (
@@ -1066,11 +638,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         );
       }
       return (
-        <div
-          className={cn('text-sm text-foreground', divClassName)}
-          style={style as React.CSSProperties}
-          {...props}
-        >
+        <div className={cn('text-sm text-foreground', divClassName)} style={style as React.CSSProperties} {...props}>
           {children}
         </div>
       );
@@ -1084,11 +652,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         );
       }
       return (
-        <span
-          className={cn('text-foreground', spanClassName)}
-          style={style as React.CSSProperties}
-          {...props}
-        >
+        <span className={cn('text-foreground', spanClassName)} style={style as React.CSSProperties} {...props}>
           {children}
         </span>
       );
@@ -1099,11 +663,12 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   if (!safeContent) {
     return (
-      <div className={cn('text-muted-foreground text-sm', className)}>{tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}</div>
+      <div className={cn('text-sm text-muted-foreground', className)}>
+        {tHardcodedUi.raw('componentsMarkdownUnifiedMarkdown.line1115JsxTextNoContent')}
+      </div>
     );
   }
 
-  // Strip system tags, escape currency `$`, then auto-link plain URLs
   const finalContent = autoLinkUrls(stripKortixSystemTags(prepareMarkdownForKatex(safeContent)));
 
   return (
