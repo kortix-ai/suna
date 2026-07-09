@@ -1,5 +1,5 @@
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
   ChangeRequestDetailResponse,
@@ -10,7 +10,7 @@ import type {
   ChangeRequestsListResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix cr <subcommand> [options]
+const HELP = help`Usage: kortix cr <subcommand> [options]
 
 Open, review, and merge Kortix change requests. A CR proposes merging one
 version (branch) into another inside a project. The CR layer is Kortix-

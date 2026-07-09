@@ -11,7 +11,7 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
 
@@ -48,7 +48,7 @@ interface SnapshotBuild {
   finished_at: string | null;
 }
 
-const HELP = `Usage: kortix sandboxes <subcommand> [options]
+const HELP = help`Usage: kortix sandboxes <subcommand> [options]
 
 Manage the project's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +

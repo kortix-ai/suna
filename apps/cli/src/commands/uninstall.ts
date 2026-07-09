@@ -5,9 +5,9 @@ import { spawnSync } from 'node:child_process';
 
 import { authFileLocation, clearAuth, loadAuth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix uninstall [options]
+const HELP = help`Usage: kortix uninstall [options]
 
 Remove the Kortix CLI binary, the /usr/local/bin shim, the stored auth
 token, and (optionally) the ~/.kortix install directory.

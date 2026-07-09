@@ -5,7 +5,7 @@ import {
   takeFlagBool,
   emitJson,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Response shapes (mirror apps/api/src/projects git endpoints) ────────────
 
@@ -53,7 +53,7 @@ interface BranchInfo {
   behind: number | null;
 }
 
-const HELP = `Usage: kortix files <subcommand> [options]
+const HELP = help`Usage: kortix files <subcommand> [options]
 
 Browse the project's git repo — the same read-only view the dashboard shows
 (Files tab + version history). Operates on the default branch unless --ref
