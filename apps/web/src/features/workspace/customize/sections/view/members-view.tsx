@@ -26,6 +26,7 @@ import {
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { InlineMeta } from '@/components/ui/inline-meta';
+import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
 import {
@@ -260,6 +261,10 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
   const [emails, setEmails] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<ProjectRole>('member');
+  // Optional ISO time-bound: the granted role auto-revokes at this instant once
+  // the invitee joins. Empty = permanent. `datetime-local` yields a local
+  // wall-clock string; converted to ISO at submit.
+  const [expiresAt, setExpiresAt] = useState('');
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -269,7 +274,12 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
       Promise.all(
         list.map(async (addr) => {
           try {
-            const res = await inviteProjectMember(projectId, addr, role);
+            const res = await inviteProjectMember(
+              projectId,
+              addr,
+              role,
+              expiresAt ? new Date(expiresAt).toISOString() : null,
+            );
             return { email: addr, ok: true as const, res };
           } catch (err) {
             return {
@@ -436,7 +446,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
       <form onSubmit={handleSubmit}>
         <FieldGroup className="gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-end sm:gap-x-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_12rem_auto] sm:items-end sm:gap-x-3">
             <Field className="gap-1.5 p-0">
               <FieldLabel htmlFor="invite-email">Emails</FieldLabel>
               <InputGroup
@@ -510,6 +520,18 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
                   <ProjectRoleSelectItem role="manager" />
                 </SelectContent>
               </Select>
+            </Field>
+
+            <Field className="gap-1.5">
+              <FieldLabel htmlFor="invite-expiry">Expires (optional)</FieldLabel>
+              <Input
+                id="invite-expiry"
+                type="datetime-local"
+                value={expiresAt}
+                min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                disabled={inviteMutation.isPending}
+              />
             </Field>
 
             <Field className="gap-1.5">
@@ -744,6 +766,11 @@ function ProjectAccessCard({
                                 ? `Granted ${formatDate(member.granted_at)}`
                                 : 'No project access'}
                         </span>
+                        {member.expires_at ? (
+                          <span className="text-kortix-yellow">
+                            Expires {formatDate(member.expires_at)}
+                          </span>
+                        ) : null}
                       </InlineMeta>
                     </span>
                   </div>

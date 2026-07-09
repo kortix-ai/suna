@@ -97,6 +97,7 @@ accountsRouter.openapi(
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
       connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
       kortix_cli: (c.get('agentGrant') as { kortixCli?: string[] | 'all' } | null | undefined)?.kortixCli ?? null,
+      env: (c.get('agentGrant') as { env?: string[] | 'all' } | null | undefined)?.env ?? null,
     },
     accounts: memberships.map((m) => ({
       account_id: m.accountId,

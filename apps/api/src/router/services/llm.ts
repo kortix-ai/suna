@@ -1,4 +1,5 @@
 import { config, KORTIX_MARKUP } from '../../config';
+import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
 
 /**
@@ -67,8 +68,8 @@ export async function proxyToOpenRouter(
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': config.FRONTEND_URL || 'https://kortix.ai',
-      'X-Title': 'Kortix',
+      'HTTP-Referer': OPENROUTER_APP_REFERER,
+      'X-Title': OPENROUTER_APP_TITLE,
       ...traceHeaders,
     },
     body: JSON.stringify(forwardBody),

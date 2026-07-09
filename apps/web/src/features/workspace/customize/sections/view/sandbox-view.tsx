@@ -139,6 +139,18 @@ function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'f
   return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
+// Small, muted chip naming the sandbox provider (Daytona / Platinum / Managed)
+// a template/build belongs to — reads the provider field directly, capitalized.
+// Omitted entirely when the provider is unknown — we never render "Unknown".
+function ProviderBadge({ provider }: { provider: string | null | undefined }) {
+  if (!provider) return null;
+  return (
+    <Badge variant="muted" size="sm">
+      {provider.charAt(0).toUpperCase() + provider.slice(1)}
+    </Badge>
+  );
+}
+
 function formatBuildDuration(startedAt: string, finishedAt: string | null): string | null {
   if (!finishedAt) return null;
   const start = new Date(startedAt).getTime();
@@ -151,7 +163,7 @@ function formatBuildDuration(startedAt: string, finishedAt: string | null): stri
   return `${hours}h`;
 }
 
-function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
+function BuildRow({ build, provider }: { build: ProjectSnapshotBuild; provider?: string }) {
   const status = BUILD_STATUS_TILE[build.status];
   const { Icon } = status;
   const duration = formatBuildDuration(build.started_at, build.finished_at);
@@ -172,6 +184,7 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
           <Badge variant={status.badgeVariant} size="xs">
             {status.label}
           </Badge>
+          <ProviderBadge provider={provider} />
         </div>
         <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
           <span className="truncate font-mono">{build.snapshot_name}</span>
@@ -405,22 +418,21 @@ function TemplateRow({
           <Icon className="size-6 shrink-0" />
         </div>
         <div className="min-w-0 flex-1 space-y-0.5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium">{template.name}</span>
             <Badge variant="secondary" size="sm">
               {template.slug}
             </Badge>
-            <span className="text-muted-foreground/70 text-[10px] tracking-wide uppercase">
-              {sourceTag}
-            </span>
+            <ProviderBadge provider={template.provider} />
           </div>
-          <div className="text-muted-foreground gap-1 truncate text-[13px]">
-            {sub} &bull; {template.cpu} &bull;{' '}
-            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}
+          <div className="text-muted-foreground truncate text-[13px]">
+            {sub} &bull; {template.cpu}{' '}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}{' '}
             &bull; {template.memory_gb}{' '}
-            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f')}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiB9d1e488f')}{' '}
             &bull; {template.disk_gb}{' '}
-            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}
+            {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}{' '}
+            &bull; {sourceTag}
           </div>
         </div>
         <Badge
@@ -535,6 +547,10 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && !!latestReady;
   const isFullyEmpty = templates.length === 0 && builds.length === 0;
+
+  // Build-log rows carry no provider column of their own, so resolve it from the
+  // template the build was for (`template_slug`). Unknown → the badge is omitted.
+  const providerBySlug = new Map(templates.map((t) => [t.slug, t.provider]));
 
   const newTemplateAction = canManage ? (
     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setFormOpen(true)}>
@@ -689,7 +705,11 @@ export function SandboxView({ projectId }: { projectId: string }) {
                   ) : (
                     <ul className="space-y-2">
                       {builds.slice(0, 10).map((b) => (
-                        <BuildRow key={b.build_id} build={b} />
+                        <BuildRow
+                          key={b.build_id}
+                          build={b}
+                          provider={providerBySlug.get(b.template_slug)}
+                        />
                       ))}
                     </ul>
                   )}

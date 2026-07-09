@@ -178,6 +178,27 @@ describe('renderContext + host notice', () => {
     expect(out).toContain('project');
     expect(out).toContain('Alpha');
     expect(out).toContain('(default)');
+    // A bound default project points at the switch verb.
+    expect(out).toContain('switch with `kortix projects use`');
+  });
+
+  test('a directory-linked project does not show the default-project switch hint', () => {
+    writeConfig({
+      test: loggedInHost({
+        account_slug: 'kortix',
+        account_name: 'Kortix',
+        default_project: { project_id: 'proj_a', account_id: 'account_1', name: 'Alpha' },
+      }),
+    });
+    mkdirSync(join(tmp, '.kortix'), { recursive: true });
+    saveLink(
+      { project_id: 'proj_linked', account_id: 'account_1', linked_at: '2026-01-01T00:00:00.000Z' },
+      tmp,
+    );
+    process.chdir(tmp);
+    const out = stripAnsi(renderContext());
+    expect(out).toContain('(linked)');
+    expect(out).not.toContain('switch with');
   });
 
   test('context block nudges when account / default project are unset', () => {
