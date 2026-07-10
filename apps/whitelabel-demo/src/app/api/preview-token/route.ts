@@ -5,20 +5,26 @@
  * so the generic `/api/kortix/*` proxy can't carry a live dev server's HMR
  * socket (or anything else the sandbox serves over `ws://`). Instead, the
  * preview panel (in wrapper mode) opens the sandbox preview URL DIRECTLY
- * against `KORTIX_UPSTREAM`, authenticated with a token minted here —
- * `POST {upstream}/projects/:id/cli-token` using the operator's own
- * `KORTIX_API_KEY` — scoped to exactly the one project the caller owns.
+ * against `KORTIX_UPSTREAM`, authenticated with a token minted here — via the
+ * SDK's `kortix.project(id).tokens.create()` (`POST {upstream}/projects/:id/cli-token`)
+ * using the operator's own `KORTIX_API_KEY` — scoped to exactly the one
+ * project the caller owns. `createScopedKortix` (`@kortix/sdk/server`) is
+ * used instead of the shared `configureKortix()` singleton because this route
+ * serves concurrent requests carrying different end users' identities on one
+ * process — each call gets its own isolated config via `AsyncLocalStorage`.
  *
  * Ownership is checked BEFORE minting: a wrapper end user can only ever get a
  * token scoped to a project `isOwner()` confirms is theirs.
  *
  * Known tradeoff (documented, not silently ignored): this demo does not track
  * or revoke the minted `token_id`. A production wrapper should persist it and
- * `DELETE /projects/:id/cli-token/:tokenId` once the preview session ends (or
- * on a rotation schedule), so short-lived preview credentials don't
+ * call `kortix.project(id).tokens.revoke(tokenId)` once the preview session
+ * ends (or on a rotation schedule), so short-lived preview credentials don't
  * accumulate indefinitely on the account.
  */
 
+import { ApiError } from '@kortix/sdk';
+import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { isOwner, isValidProjectId } from '@/server/users';
@@ -52,27 +58,16 @@ export async function GET(req: NextRequest) {
   }
 
   const upstream = upstreamBase();
-  let upstreamRes: Response;
+  const kortix = createScopedKortix({ backendUrl: upstream, getToken: async () => apiKey });
+
+  let created: { secret_key: string; token_id: string };
   try {
-    upstreamRes = await fetch(`${upstream}/projects/${encodeURIComponent(projectId)}/cli-token`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: `lumen-preview-${Date.now()}` }),
-    });
-  } catch {
-    return Response.json({ error: 'Could not reach the Kortix API' }, { status: 502 });
+    created = await kortix.project(projectId).tokens.create({ name: `lumen-preview-${Date.now()}` });
+  } catch (err) {
+    const status = err instanceof ApiError && err.status ? err.status : 502;
+    const message = err instanceof Error ? err.message : 'Could not mint a preview token';
+    return Response.json({ error: message }, { status });
   }
 
-  const body = await upstreamRes.json().catch(() => null);
-  if (!upstreamRes.ok || !body?.secret_key) {
-    const message =
-      typeof body?.message === 'string'
-        ? body.message
-        : typeof body?.error === 'string'
-          ? body.error
-          : 'Could not mint a preview token';
-    return Response.json({ error: message }, { status: upstreamRes.status || 502 });
-  }
-
-  return Response.json({ token: body.secret_key as string, upstream, tokenId: body.token_id });
+  return Response.json({ token: created.secret_key, upstream, tokenId: created.token_id });
 }
