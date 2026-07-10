@@ -318,6 +318,113 @@ const CURATED_BUNDLES: RegistryItem[] = [
     registryDependencies: ["pdf", "docx", "xlsx", "presentations"],
     meta: { source: "kortix" },
   },
+  {
+    name: "legal-pack",
+    type: "registry:bundle",
+    title: "Legal Pack",
+    description:
+      "In-house legal team essentials: contract review, NDA triage, compliance, risk assessment, and legal drafting.",
+    categories: ["bundle", "legal"],
+    registryDependencies: [
+      "contract-review",
+      "nda-triage",
+      "compliance",
+      "risk-assessment",
+      "legal-writer",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "finance-close-pack",
+    type: "registry:bundle",
+    title: "Finance Close Pack",
+    description:
+      "Month-end close, end to end: reconciliations, journal entries, variance analysis, financial statements, and close-checklist management.",
+    categories: ["bundle", "finance"],
+    registryDependencies: [
+      "reconciliation",
+      "journal-entry-prep",
+      "variance-analysis",
+      "financial-statements",
+      "close-management",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "product-management-pack",
+    type: "registry:bundle",
+    title: "Product Management Pack",
+    description:
+      "Ship better product decisions: PRDs, roadmap planning, user research synthesis, metrics tracking, and stakeholder communication.",
+    categories: ["bundle", "product"],
+    registryDependencies: [
+      "feature-spec",
+      "roadmap-management",
+      "user-research-synthesis",
+      "metrics-tracking",
+      "stakeholder-comms",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "customer-support-pack",
+    type: "registry:bundle",
+    title: "Customer Support Pack",
+    description:
+      "Triage, resolve, and document support tickets: prioritized triage, empathetic response drafting, escalation briefs, and knowledge-base articles.",
+    categories: ["bundle", "support"],
+    registryDependencies: [
+      "ticket-triage",
+      "response-drafting",
+      "escalation",
+      "knowledge-management",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "health-pack",
+    type: "registry:bundle",
+    title: "Health Pack",
+    description:
+      "Your personal health data in one place: wearable metrics, electronic health records, and a unified health summary.",
+    categories: ["bundle", "health"],
+    registryDependencies: [
+      "personal-health",
+      "wearables-data",
+      "electronic-health-records",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "marketing-pack",
+    type: "registry:bundle",
+    title: "Marketing Pack",
+    description:
+      "Plan and produce on-brand campaigns: campaign planning, content creation, brand voice, and performance analytics.",
+    categories: ["bundle", "marketing"],
+    registryDependencies: [
+      "campaign-planning",
+      "content-creation",
+      "brand-voice",
+      "performance-analytics",
+    ],
+    meta: { source: "kortix" },
+  },
+  {
+    name: "recruiting-pack",
+    type: "registry:bundle",
+    title: "Recruiting Pack",
+    description:
+      "Run a recruiting pipeline: automated sourcing, resume ranking against a role, readiness-to-move scoring, and a shareable talent-pool leaderboard.",
+    categories: ["bundle", "recruiting"],
+    registryDependencies: [
+      "automated-sourcing",
+      "ats-ranker",
+      "rtm-ranker",
+      "talent-pool-rendering",
+    ],
+    meta: { source: "kortix" },
+  },
 ];
 
 let BASE: Catalog | null = null;

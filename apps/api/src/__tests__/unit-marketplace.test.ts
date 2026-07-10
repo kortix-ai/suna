@@ -40,6 +40,43 @@ describe('marketplace catalog', () => {
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
 
+  test('every curated bundle references only skills that exist in the catalog', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    const names = new Set(all.map((i) => i.name));
+    const bundles = all.filter((i) => i.type === 'registry:bundle');
+
+    // Guards against silently losing a pack in a future edit.
+    expect(bundles.length).toBeGreaterThanOrEqual(10);
+    for (const bundle of bundles) {
+      expect(bundle.dependencies.length).toBeGreaterThan(0);
+      for (const dep of bundle.dependencies) {
+        // A typo'd dependency renders as a ghost item in the UI instead of
+        // failing anywhere — this turns that into a hard failure.
+        expect(names.has(dep)).toBe(true);
+      }
+    }
+  });
+
+  test('curated bundle ids are the full role-pack set', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    const ids = all
+      .filter((i) => i.type === 'registry:bundle')
+      .map((i) => i.id)
+      .sort();
+    expect(ids).toEqual([
+      'kortix:customer-support-pack',
+      'kortix:documents-pack',
+      'kortix:finance-close-pack',
+      'kortix:health-pack',
+      'kortix:legal-pack',
+      'kortix:marketing-pack',
+      'kortix:product-management-pack',
+      'kortix:recruiting-pack',
+      'kortix:research-pack',
+      'kortix:sales-pack',
+    ]);
+  });
+
   test('lists only optional Kortix skills through the marketplace', async () => {
     const all = await listCatalogItems({ source: 'kortix' });
     const agentBrowser = all.find((i) => i.name === 'agent-browser');
