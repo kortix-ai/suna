@@ -4,7 +4,8 @@ import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemp
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { getSandboxProvider } from '../../snapshots/providers';
 import { withTimeout } from '../../shared/with-timeout';
-import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from '../../snapshots/templates';
+import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -42,7 +43,7 @@ projectsApp.openapi(
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   // PAT path: link an existing repo with a caller-supplied token — no GitHub
   // App install needed. This is the seamless `kortix ship` flow for a repo you
@@ -340,8 +341,8 @@ projectsApp.openapi(
 );
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
-// One platform-default image, optionally extended by `[[sandbox.templates]]` entries
-// in kortix.toml. Session boot is stateless: it computes the expected snapshot
+// One platform-default image, optionally extended by `sandbox: templates:` entries
+// in kortix.yaml. Session boot is stateless: it computes the expected snapshot
 // name from the resolved template, asks Daytona if it exists, builds if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
 // consulted by the boot path.
@@ -591,6 +592,13 @@ projectsApp.openapi(
       202,
     );
   } catch (err) {
+    // A slug that names no template is the caller's mistake, not a provider
+    // outage — folding it into 502 hid the real bug (a build slug like
+    // `default-warm` being sent where a template slug was required) behind a
+    // status that reads as "Daytona is down".
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: err.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
+    }
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 502);
   }
@@ -633,6 +641,26 @@ projectsApp.openapi(
     return c.json({ error: 'No failed snapshot build to fix.' }, 409);
   }
 
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category = failed.errorCategory ?? classifySnapshotError(errorText);
+  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
+
+  // Infra failures (quota, provider blip, timeout) are not repo-editable. Spinning up
+  // a fix session for one is worse than useless: the session must boot a sandbox from
+  // a snapshot, which is exactly what the failure prevented — so it fails to start the
+  // very session meant to diagnose it. Refuse loudly rather than 400 from deep inside
+  // session creation.
+  if (!info.fixableByAgent) {
+    return c.json(
+      {
+        error: `${info.title}: ${info.hint}`,
+        code: 'NOT_AGENT_FIXABLE',
+        category,
+      },
+      409,
+    );
+  }
+
   const hostBuild = builds.find((b) => b.status === 'ready');
   if (!hostBuild) {
     return c.json(
@@ -644,10 +672,6 @@ projectsApp.openapi(
       409,
     );
   }
-
-  const errorText = failed.error ?? 'Snapshot build failed';
-  const category = failed.errorCategory ?? classifySnapshotError(errorText);
-  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
 
   const prompt = [
     `The sandbox image build for the "${failed.slug}" template is failing, so new sessions on it can't boot. Diagnose and fix the root cause, then open a change request.`,
@@ -661,7 +685,7 @@ projectsApp.openapi(
     errorText.slice(0, 4000),
     '```',
     ``,
-    `The sandbox image is built from the template definition (see [[sandbox.templates]] in kortix.toml).`,
+    `The sandbox image is built from the template definition (see sandbox.templates in kortix.yaml).`,
     ``,
     `Steps:`,
     `1. Inspect the relevant Dockerfile and the build error above.`,
@@ -676,7 +700,9 @@ projectsApp.openapi(
       initial_prompt: prompt,
       name: 'Fix sandbox build',
       metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
-      sandbox_slug: hostBuild.slug,
+      // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
+      // which names no template, so session creation rejected it with a 400.
+      sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
     },
     request: requestAuditContext(c),
   });
@@ -852,8 +878,17 @@ projectsApp.openapi(
     diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
   };
 
+  // Ownership check BEFORE the write. updateTemplate keys the UPDATE on
+  // templateId alone, so without this a manager of their own project could
+  // mutate any other tenant's template by id (the post-write projectId check
+  // below only masks the response — the write had already committed). Mirrors
+  // the sibling DELETE handler.
+  const existing = await getTemplateById(templateId);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+  if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+
   try {
-    const updated = await updateTemplate(templateId, patch);
+    const updated = await updateTemplate(templateId, patch, projectId);
     if (!updated) return c.json({ error: 'Not found' }, 404);
     if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     return c.json({ template_id: updated.templateId, slug: updated.slug });

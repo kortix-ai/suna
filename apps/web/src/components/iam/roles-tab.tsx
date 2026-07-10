@@ -13,11 +13,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
-import Link from 'next/link';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
+import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -92,7 +92,9 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           title="Enterprise feature"
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href="/enterprise">Contact sales</Link>
+              <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
+                Contact sales
+              </a>
             </Button>
           }
         >
@@ -369,15 +371,21 @@ function RoleRow({
               </>
             ) : (
               <Hint
-                label={rbacEnabled ? `Duplicate ${role.name} into a new custom role` : RBAC_UPSELL_MESSAGE}
+                label={
+                  rbacEnabled
+                    ? `Start a custom role from ${role.name}'s capability set`
+                    : RBAC_UPSELL_MESSAGE
+                }
                 side="top"
                 className={rbacEnabled ? undefined : 'max-w-xs'}
               >
                 <span className="inline-flex">
+                  {/* Labeled (not icon-only): "Duplicate" is the documented path to
+                      "editor minus X" — it must be findable at a glance. */}
                   <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1.5 px-2.5 text-xs"
                     onClick={handleDuplicate}
                     disabled={duplicating || !rbacEnabled}
                     aria-label={`Duplicate role ${role.name}`}
@@ -387,6 +395,7 @@ function RoleRow({
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
+                    Duplicate
                   </Button>
                 </span>
               </Hint>

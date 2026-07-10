@@ -3,8 +3,6 @@ title: Connections
 description: Let the agent call your external tools, brokered server-side per project.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A **connection** (connector) lets a project's agent call an external tool or
 service — Slack, Gmail, a database, any HTTP/GraphQL API. Connections are
 per-project, and the agent can only use what you connect.
@@ -14,9 +12,11 @@ per-project, and the agent can only use what you connect.
   Slack), or **Computer** (a connected machine). The definition lives in git; the
   **credentials live in the platform, never in the repo**.
 - **Channel + Computer connectors auto-materialize.** Connecting Slack
-  ([Channels](/docs/concepts/channels)) creates a `slack` connector; connecting a
-  machine ([Computers](/docs/concepts/computers)) creates the `computer`
-  connector — no manifest entry needed. The Slack credential is the install
+  ([Channels](/docs/concepts/channels)) creates a `kortix_slack` connector
+  (provider `channel`); connecting a machine ([Computers](/docs/concepts/computers))
+  creates the `computer` connector — no manifest entry needed. The plain
+  `slack` slug is reserved and blocked from user-declared connectors so it
+  can't shadow the built-in channel. The Slack credential is the install
   token; the `computer` connector has no credential at all (the live tunnel is
   the credential), and per-machine access is granted in Computers.
 - **Credentials are shared.** One credential covers the whole project. (Legacy

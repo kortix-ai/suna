@@ -1,7 +1,7 @@
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
-// kortix.toml [sandbox]. We bill against that reserved spec × wall-clock time
+// kortix.yaml's `sandbox:` block. We bill against that reserved spec × wall-clock time
 // while the sandbox is `active`. Stopped / hibernated sandboxes do not accrue
 // charges in v1 (archive rate placeholder lives in tiers.ts for future use).
 //

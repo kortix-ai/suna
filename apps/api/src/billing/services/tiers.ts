@@ -55,8 +55,8 @@ export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 15;
 /** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 10;
 
-// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.toml
-// [sandbox]). The constants below are Daytona's PUBLISHED LIST rates (kept as
+// Per-second sandbox compute pricing, keyed off the reserved spec (kortix.yaml's
+// `sandbox:` block). The constants below are Daytona's PUBLISHED LIST rates (kept as
 // list so they're easy to re-sync from the pricing page). Our ACTUAL cost is
 // list × the volume discount Daytona gives us (DAYTONA_DISCOUNT). The debit
 // emitter charges:
@@ -151,10 +151,16 @@ export function getComputeDescription(serverType: string): string {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
-// Enterprise feature gates. Every self-serve tier (Free / Team) gets NONE;
-// the sales-assigned `enterprise` tier gets ALL. See TierEntitlements in
-// ../../types and the requireEntitlement() guard in the IAM routes.
-const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
+// Enterprise feature gates. The whole IAM surface — groups + custom
+// roles/policies (`rbac`), the identity providers (SAML SSO + SCIM), and
+// audit log access — is exclusive to the sales-assigned `enterprise` tier
+// (re-gated 2026-07-09; rbac was briefly open to every tier via #4326).
+// Non-entitled accounts see an upsell in the UI and a 402 from the
+// requireEntitlement() guard on create/update routes. Reads, revokes, and
+// deletes stay ungated so a downgraded account can still see and unwind what
+// it already has — existing grants keep resolving in the IAM engine.
+// See TierEntitlements in ../../types.
+const SELF_SERVE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
 const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
 
 const TIERS: Record<string, TierConfig> = {
@@ -169,7 +175,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 50,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   free: {
@@ -183,7 +189,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 50,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   pro: {
@@ -197,7 +203,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   // Billing v2 — per-member seat plan. $25 × seat_count / month.
@@ -214,7 +220,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 
   // ── Enterprise (sales-assigned, not self-serve) ──────────────────────────
@@ -252,7 +258,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 200,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_6_50: {
     name: 'tier_6_50',
@@ -265,7 +271,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 300,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_12_100: {
     name: 'tier_12_100',
@@ -278,7 +284,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 400,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_25_200: {
     name: 'tier_25_200',
@@ -291,7 +297,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 500,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_50_400: {
     name: 'tier_50_400',
@@ -304,7 +310,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 750,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_125_800: {
     name: 'tier_125_800',
@@ -317,7 +323,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 1000,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_200_1000: {
     name: 'tier_200_1000',
@@ -330,7 +336,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 1500,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
   tier_150_1200: {
     name: 'tier_150_1200',
@@ -343,7 +349,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 2000,
-    entitlements: NO_ENTERPRISE,
+    entitlements: SELF_SERVE,
   },
 };
 

@@ -1,4 +1,5 @@
 import { config, KORTIX_MARKUP } from '../../config';
+import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import type { ModelConfig } from '../config/models';
 import { getTraceHeaders } from '../../lib/request-context';
 
@@ -43,8 +44,8 @@ export async function proxyToAnthropic(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
       'anthropic-version': ANTHROPIC_VERSION,
-      'HTTP-Referer': config.FRONTEND_URL || 'https://kortix.ai',
-      'X-Title': 'Kortix',
+      'HTTP-Referer': OPENROUTER_APP_REFERER,
+      'X-Title': OPENROUTER_APP_TITLE,
       ...traceHeaders,
     },
     body: JSON.stringify(body),

@@ -25,6 +25,9 @@ import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
 
 interface TunnelScopeTogglesProps {
   tunnelId: string;
+  /** When false, the toggles and expiry select are shown but disabled — the
+   *  active scopes remain visible as read-only data. */
+  canWrite?: boolean;
 }
 
 function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
@@ -57,7 +60,7 @@ export function buildActiveScopeMap(permissions: TunnelPermission[] | undefined)
   return map;
 }
 
-export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
+export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTogglesProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: permissions, isLoading } = useTunnelPermissions(tunnelId);
   const grantMutation = useGrantTunnelPermission();
@@ -104,7 +107,7 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
         <span className="text-muted-foreground">
           {tHardcodedUi.raw('componentsTunnelTunnelScopeToggles.line79JsxTextNewGrantsExpireIn')}
         </span>
-        <Select value={expiryValue} onValueChange={setExpiryValue}>
+        <Select value={expiryValue} onValueChange={setExpiryValue} disabled={!canWrite}>
           <SelectTrigger variant="popover">
             <SelectValue />
           </SelectTrigger>
@@ -135,7 +138,7 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
                     key={scope.key}
                     scope={scope}
                     isActive={isActive}
-                    isPending={grantMutation.isPending || revokeMutation.isPending}
+                    disabled={!canWrite || grantMutation.isPending || revokeMutation.isPending}
                     onToggle={() => handleToggle(scope, isActive)}
                   />
                 );
@@ -151,17 +154,20 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
 function ScopeToggleRow({
   scope,
   isActive,
-  isPending,
+  disabled,
   onToggle,
 }: {
   scope: ScopeInfo;
   isActive: boolean;
-  isPending: boolean;
+  disabled: boolean;
   onToggle: () => void;
 }) {
   return (
     <label
-      className={cn('flex cursor-pointer items-center gap-3 rounded-md py-2 transition-colors')}
+      className={cn(
+        'flex items-center gap-3 rounded-md py-2 transition-colors',
+        disabled ? 'cursor-default' : 'cursor-pointer',
+      )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <code className="text-foreground font-mono text-xs">{scope.key}</code>
@@ -170,7 +176,7 @@ function ScopeToggleRow({
       <Switch
         checked={isActive}
         onCheckedChange={onToggle}
-        disabled={isPending}
+        disabled={disabled}
         className="shrink-0"
       />
     </label>

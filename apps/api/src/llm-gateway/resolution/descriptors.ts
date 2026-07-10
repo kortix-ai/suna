@@ -2,6 +2,7 @@ import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import type { ManagedModel } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
+import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import { getModelPricing } from '../../router/config/model-pricing';
 import {
   CHATGPT_CODEX_BASE_URL,
@@ -36,8 +37,8 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     apiKey: config.OPENROUTER_API_KEY,
     billingMode: 'credits',
     markup: llmPriceMarkup(),
-    appName: 'Kortix',
-    appReferer: config.KORTIX_URL,
+    appName: OPENROUTER_APP_TITLE,
+    appReferer: OPENROUTER_APP_REFERER,
     resolvedModel: managed.upstreamModelId,
     pricing: managedPricing(managed),
     ...(managed.openrouterProvider ? { bodyExtras: { provider: managed.openrouterProvider } } : {}),

@@ -44,7 +44,11 @@ export interface ConnectorSyncResult {
 
 export async function listConnectors(projectId: string) {
   return unwrap(
-    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`),
+    // Background read fired at workspace mount (project-home tiles, sidebar
+    // setup checklist) — never global-toast; callers render their own state.
+    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`, {
+      showErrors: false,
+    }),
   );
 }
 
@@ -103,7 +107,7 @@ export async function setConnectorPolicies(projectId: string, slug: string, poli
   );
 }
 
-/** The editable connection config for an existing connector (kortix.toml = source of truth). */
+/** The editable connection config for an existing connector (kortix.yaml = source of truth). */
 export interface ConnectorConfig {
   slug: string;
   provider: AdminConnector['provider'];
@@ -116,7 +120,7 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
 }
 
 export async function getConnectorConfig(projectId: string, slug: string) {
@@ -161,7 +165,7 @@ export interface ConnectorDraftInput {
    *  removed 2026-07-05). */
   credential?: 'shared';
   auth?: {
-    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1';
     in?: 'header' | 'query';
     name?: string;
     prefix?: string;

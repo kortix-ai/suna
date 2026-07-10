@@ -300,7 +300,7 @@ insert into kortix.projects (
   '$PROJECT_NAME',
   '$PROJECT_REPO_URL',
   'main',
-  'kortix.toml',
+  'kortix.yaml',
   'active',
   '{"self_host_e2e":true}'::jsonb
 );

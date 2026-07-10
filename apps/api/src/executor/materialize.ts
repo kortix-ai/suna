@@ -1,6 +1,6 @@
 /**
- * Materialization — map `[[connectors]]` + `[[policies]]` + `[policy]` specs
- * (from kortix.toml) onto the rows the platform stores (executor_connectors,
+ * Materialization — map `connectors:` + `policies:` + `policy:` specs
+ * (from kortix.yaml) onto the rows the platform stores (executor_connectors,
  * executor_connector_policies, executor_project_policies, executor_project_settings)
  * and onto the gateway's runtime view. Pure mapping + diff here (unit-tested);
  * the DB upsert + network catalog sync (fetch spec/introspection/listTools →

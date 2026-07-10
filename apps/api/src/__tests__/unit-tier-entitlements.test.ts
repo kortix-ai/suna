@@ -6,11 +6,14 @@ import {
   tierHasEntitlement,
 } from '../billing/services/tiers';
 
-// Locks in the plan-gating contract for the enterprise surfaces (SAML SSO,
-// SCIM, custom RBAC, audit access). Only the sales-assigned `enterprise` tier
-// unlocks them; every self-serve / legacy tier is fully gated. The IAM route
-// guard (requireEntitlement) and the /scim/v2 data-plane middleware both key
-// off tierHasEntitlement, so these invariants ARE the access-control policy.
+// Locks in the plan-gating contract for the enterprise surfaces: SAML SSO,
+// SCIM, groups + custom roles (`rbac`), and audit access. Only the
+// sales-assigned `enterprise` tier unlocks them; every self-serve / legacy
+// tier is gated (rbac re-gated 2026-07-09 — it was briefly open on every
+// tier). The IAM route guard (requireEntitlement) and the /scim/v2
+// data-plane middleware both key off tierHasEntitlement, so these
+// invariants ARE the access-control policy. Reads/revokes/deletes stay
+// ungated route-side so downgraded accounts can unwind what they have.
 describe('tier entitlements (enterprise gating)', () => {
   test('enterprise tier unlocks SSO + SCIM + RBAC + audit access', () => {
     expect(tierHasEntitlement('enterprise', 'sso')).toBe(true);
@@ -19,7 +22,7 @@ describe('tier entitlements (enterprise gating)', () => {
     expect(tierHasEntitlement('enterprise', 'auditAccess')).toBe(true);
   });
 
-  test('every non-enterprise tier is fully gated', () => {
+  test('every non-enterprise tier: identity, rbac, and audit are all gated', () => {
     for (const t of [
       'none',
       'free',
@@ -41,7 +44,7 @@ describe('tier entitlements (enterprise gating)', () => {
     }
   });
 
-  test('unknown tier names fail closed (default tier = none, no entitlements)', () => {
+  test('unknown tier names fail closed on every entitlement', () => {
     expect(tierHasEntitlement('does-not-exist', 'sso')).toBe(false);
     expect(tierHasEntitlement('does-not-exist', 'scim')).toBe(false);
     expect(getTierEntitlements('does-not-exist')).toEqual({

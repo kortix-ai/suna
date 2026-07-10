@@ -19,12 +19,12 @@ import {
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 
-const HELP = `Usage: kortix projects <subcommand>
+const HELP = help`Usage: kortix projects <subcommand>
 
 Subcommands:
   ls [--all]           List projects in the active account (--all spans every
@@ -376,7 +376,7 @@ async function projectsLink(arg?: string): Promise<number> {
 
   // Refuse to scatter `.kortix/link.json` into random directories. A
   // project is only "Kortix-linkable" if it already has a `.kortix/`
-  // dir (from `kortix init`) or a `kortix.toml` at the root.
+  // dir (from `kortix init`) or a `kortix.yaml` at the root.
   if (!isKortixProject()) {
     process.stderr.write(
       `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n`,
@@ -569,6 +569,10 @@ function formatRelative(iso: string): string {
 
 
 function openInBrowser(url: string): void {
+  // Only hand a real web URL to the OS opener — a value starting with '-' would
+  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
+  // so an unvalidated URL is a command-injection vector.
+  if (!/^https?:\/\//i.test(url)) return;
   const cmd =
     process.platform === 'darwin'
       ? 'open'

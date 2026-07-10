@@ -3,8 +3,6 @@ title: Projects
 description: A project is one git repository plus a kortix.yaml manifest.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A **project is one git repository** with a [manifest](/docs/reference/manifest)
 at its root — `kortix.yaml` by default. The repo is the project — files, history,
 agent config, and settings all live in git. No separate database to keep in sync.
@@ -12,7 +10,8 @@ agent config, and settings all live in git. No separate database to keep in sync
 <Callout type="info" title="kortix.yaml vs legacy kortix.toml">
 New projects get `kortix.yaml` (`kortix_version: 2`) from the starter template.
 Existing projects may still run `kortix.toml` (`kortix_version: 1`) — the
-platform reads both indefinitely. Migrate in-app via "Upgrade to kortix.yaml."
+platform reads both indefinitely. Migrate in-app via the Customize panel's
+**Upgrades** section — run **Migrate manifest to v2 (kortix.yaml)**.
 Full field-by-field comparison: [manifest reference](/docs/reference/manifest).
 </Callout>
 

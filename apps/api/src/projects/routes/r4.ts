@@ -202,7 +202,7 @@ projectsApp.openapi(
       );
     }
 
-    const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+    const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
     const result = await commitManifest(
       loaded.row,
       next,
@@ -322,7 +322,7 @@ projectsApp.openapi(
       );
       if ("error" in draft) return c.json({ error: draft.error }, 400);
 
-      const next = upsertTriggerInManifest(manifest, draftToSpec(draft));
+      const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
       const result = await commitManifest(
         loaded.row,
         next,
@@ -662,8 +662,12 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read' (membership); the connector.write leaf below is the real gate,
+    // so a custom role that unchecks connector.write is denied even if it holds
+    // project.write. Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
@@ -815,8 +819,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.connector.write is the real gate (see /email/connect).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
@@ -873,8 +879,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.connector.write is the real gate (see /email/connect).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
     const connectorSlug =
       c.req.query("connector_slug") ||
       c.req.query("profile_slug") ||
@@ -903,6 +911,19 @@ function normalizeAgentMailUsername(
   return trimmed || null;
 }
 
+// Small static check for the classic catastrophic-backtracking shapes —
+// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
+// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
+// persisted and later run against every inbound email sender.
+const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
+const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
+
+function hasCatastrophicBacktracking(pattern: string): boolean {
+  return (
+    NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern)
+  );
+}
+
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
@@ -912,6 +933,11 @@ function parseSenderPolicyBody(
       new RegExp(policy.allowedRegex);
     } catch {
       throw new Error("Email sender regex is invalid");
+    }
+    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
+      throw new Error(
+        "Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)",
+      );
     }
   }
   return policy;
@@ -1047,6 +1073,23 @@ projectsApp.openapi(
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
+    }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay turn events into another
+    // tenant's live session (IDOR).
+    const [turnStreamSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnStreamSession) {
+      return c.json({ error: "Not found" }, 404);
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1285,8 +1328,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (setting the bot
+    // name is project customization). Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const body = await readBody(c);
     const name = String(body.name ?? body.bot_name ?? "");
     const saved = await setProjectBotName(projectId, name);
@@ -1313,8 +1359,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (choosing the voice
+    // is project customization). Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const body = await readBody(c);
     const voiceId = String(body.voice ?? "");
     if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
@@ -1559,8 +1608,13 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (model defaults are
+    // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
+    // routes/model-defaults.ts (registered later in projects/index.ts) — both are
+    // gated here to be safe against route-registration order; dedupe is follow-up.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get("userId") as string;
 
@@ -1639,8 +1693,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (see PUT above; also
+    // mirrored in routes/model-defaults.ts).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");
@@ -1731,6 +1788,24 @@ projectsApp.openapi(
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
     }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay a question into another
+    // tenant's live session (IDOR).
+    const [turnQuestionSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnQuestionSession) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
     if (!Array.isArray(body.questions) || body.questions.length === 0) {
       return c.json({ error: "at least one question is required" }, 400);
     }
@@ -1807,7 +1882,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param("projectId");
     const slug = c.req.param("slug");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
+    // was 'manage' (= project.write) — which the floor `member` role LACKS even
+    // though it HOLDS trigger.fire, so a plain member could never fire a trigger
+    // (its designed fire grant was dead behind the floor). Now member/editor/
+    // manager all fire (all hold the leaf); a custom role without it is denied.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
 
@@ -1865,9 +1945,9 @@ projectsApp.openapi(
   },
 );
 
-// ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────
+// ── apps CRUD + deploy ───────────────────────────────────────────────────────
 //
-// Apps are declared in `[[apps]]` blocks inside kortix.toml. The manifest
+// Apps are declared as `apps:` list entries inside kortix.yaml. The manifest
 // is the source of truth; the `deployments` table stores deploy attempts
 // (one row per version per app). The sweep loop in ./app-sweep.ts auto-
 // deploys on manifest drift; the routes below give the UI and CLI a
@@ -1917,7 +1997,7 @@ projectsApp.openapi(
   },
 );
 
-// POST /v1/projects/:projectId/apps — add a new app to kortix.toml
+// POST /v1/projects/:projectId/apps — add a new app to kortix.yaml
 
 projectsApp.openapi(
   createRoute({

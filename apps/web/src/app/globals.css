@@ -9,23 +9,52 @@
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
+/* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
+   automatically and color has a single source of truth. `--color-fd-card`
+   deliberately maps to --popover: fumadocs cards and code-block chrome sit on
+   the flat elevated surface, not the washed-gray --card token. The `.dark`
+   selector is required so these win over the `.dark` block that ships in
+   fumadocs-ui/css/neutral.css. */
+:root,
+.dark {
+  --color-fd-background: var(--background);
+  --color-fd-foreground: var(--foreground);
+  --color-fd-muted: var(--muted);
+  --color-fd-muted-foreground: var(--muted-foreground);
+  --color-fd-popover: var(--popover);
+  --color-fd-popover-foreground: var(--popover-foreground);
+  --color-fd-card: var(--popover);
+  --color-fd-card-foreground: var(--popover-foreground);
+  --color-fd-border: var(--border);
+  --color-fd-primary: var(--primary);
+  --color-fd-primary-foreground: var(--primary-foreground);
+  --color-fd-secondary: var(--secondary);
+  --color-fd-secondary-foreground: var(--secondary-foreground);
+  --color-fd-accent: var(--accent);
+  --color-fd-accent-foreground: var(--accent-foreground);
+  --color-fd-ring: var(--ring);
+}
+
+/* Docs borders run a step darker than the app's hairline --border — the
+   default reads too faint on docs surfaces (callouts, tables, code chrome).
+   Scoped to the fumadocs layout root so the rest of the app keeps the lighter
+   token. --color-fd-border must be re-declared here: the :root mapping above
+   already resolved var(--border) at the root, so it would not pick up this
+   scoped override on its own. */
+#nd-docs-layout {
+  --border: oklch(0.86 0 0);
+  --color-fd-border: var(--border);
+}
+.dark #nd-docs-layout {
+  /* In dark theme a literally darker border would vanish into the background —
+     step lighter instead for the same contrast boost. */
+  --border: oklch(0.34 0.006 286.033);
+}
+
+/* Legacy --sidebar-* values used by the app's own sidebar components. The
+   canonical app token blocks further down redeclare these; kept here verbatim
+   from the original override block. */
 :root {
-  --color-fd-background: oklch(0.985 0 0);
-  --color-fd-foreground: oklch(0.145 0 0);
-  --color-fd-muted: oklch(0.955 0 0);
-  --color-fd-muted-foreground: oklch(0.45 0 0);
-  --color-fd-popover: oklch(1 0 0);
-  --color-fd-popover-foreground: oklch(0.145 0 0);
-  --color-fd-card: oklch(0.97 0 0);
-  --color-fd-card-foreground: oklch(0.145 0 0);
-  --color-fd-border: oklch(0.885 0 0 / 0.6);
-  --color-fd-primary: oklch(0.205 0 0);
-  --color-fd-primary-foreground: oklch(0.985 0 0);
-  --color-fd-secondary: oklch(0.955 0 0);
-  --color-fd-secondary-foreground: oklch(0.205 0 0);
-  --color-fd-accent: oklch(0.92 0 0 / 0.5);
-  --color-fd-accent-foreground: oklch(0.205 0 0);
-  --color-fd-ring: oklch(0.708 0 0);
   --sidebar: hsl(0 0% 98%);
   --sidebar-foreground: hsl(240 5.3% 26.1%);
   --sidebar-primary: hsl(240 5.9% 10%);
@@ -36,22 +65,6 @@
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 .dark {
-  --color-fd-background: oklch(0.18 0 0);
-  --color-fd-foreground: oklch(0.94 0 0);
-  --color-fd-muted: oklch(0.27 0 0);
-  --color-fd-muted-foreground: oklch(0.6 0 0);
-  --color-fd-popover: oklch(0.24 0 0);
-  --color-fd-popover-foreground: oklch(0.94 0 0);
-  --color-fd-card: oklch(0.21 0 0);
-  --color-fd-card-foreground: oklch(0.94 0 0);
-  --color-fd-border: oklch(0.3 0 0 / 0.5);
-  --color-fd-primary: oklch(0.94 0 0);
-  --color-fd-primary-foreground: oklch(0.18 0 0);
-  --color-fd-secondary: oklch(0.27 0 0);
-  --color-fd-secondary-foreground: oklch(0.94 0 0);
-  --color-fd-accent: oklch(0.35 0 0 / 0.5);
-  --color-fd-accent-foreground: oklch(0.94 0 0);
-  --color-fd-ring: oklch(0.5 0 0);
   --sidebar: hsl(240 5.9% 10%);
   --sidebar-foreground: hsl(240 4.8% 95.9%);
   --sidebar-primary: hsl(224.3 76.3% 48%);
@@ -61,34 +74,101 @@
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
-.dark #nd-sidebar {
-  --color-fd-muted: oklch(0.22 0 0);
-  --color-fd-secondary: oklch(0.25 0 0);
-  --color-fd-muted-foreground: oklch(0.6 0 0);
+
+/* ─── Docs polish layer ─── */
+/* Everything below is scoped to the fumadocs layout ids (#nd-*) so the rest
+   of the app is untouched. Quiet, flat, better-auth-grade surfaces. */
+
+/* Sidebar: one flat surface with the page, split by a hairline. */
+#nd-sidebar {
+  background-color: var(--background);
+  border-color: var(--border);
 }
 
-/* Fumadocs docs layout — fumadocs-ui builds these via cn() in layouts/docs,
-   so Tailwind's scanner never emits the md/lg arbitrary property utilities. */
-#nd-docs-layout {
-  --fd-sidebar-width: 0px;
+/* Nav rows: compact (~30px), quiet, rounded-md. Covers page links and folder
+   triggers — both carry the shared ps-(--sidebar-item-offset) item class.
+   padding-inline-start is left alone: it drives nested indentation. */
+#nd-sidebar a[data-active],
+#nd-sidebar button[class*='ps-(--sidebar-item-offset)'] {
+  border-radius: 6px;
+  padding-block: 5px;
+  color: var(--muted-foreground);
+}
+#nd-sidebar a[data-active]:hover,
+#nd-sidebar button[class*='ps-(--sidebar-item-offset)']:hover {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+/* Active page: foreground + primary tint (Kortix law: active = primary 5-8%). */
+#nd-sidebar a[data-active='true'] {
+  background-color: color-mix(in oklab, var(--primary) 6%, transparent);
+  color: var(--foreground);
+  font-weight: 500;
+}
+#nd-sidebar a[data-active='true']:hover {
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
 }
 
-@media (min-width: 768px) {
-  /* Desktop: navbar is md:hidden, so zero the nav-height offset that drives
-     pt-(--fd-nav-height) on #nd-docs-layout and --fd-sidebar-top on #nd-sidebar. */
-  :root:has(#nd-docs-layout) {
-    --fd-nav-height: 0px;
-  }
-
-  #nd-docs-layout {
-    --fd-sidebar-width: 268px;
-  }
+/* Section separator labels (Learn / Reference / SDK / Contribute): quiet.
+   Size is owned by DocsSidebarSeparator (docs-controls.tsx) — its text-sm
+   reaches both this desktop aside and the mobile drawer, so no font-size
+   here or the id specificity would override it on desktop only. */
+#nd-sidebar p[class*='ps-(--sidebar-item-offset)'] {
+  margin-top: 1.5rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 
-@media (min-width: 1024px) {
-  #nd-docs-layout {
-    --fd-sidebar-width: 286px;
-  }
+/* Prose rhythm: tighten the page title only; body sizes stay stock. */
+#nd-page h1 {
+  letter-spacing: -0.02em;
+}
+
+/* TOC-less pages (e.g. /docs): the article otherwise stretches past 1100px.
+   Cap it at a readable column; `md:mx-auto` on the article keeps it centered.
+   Pages with a TOC already sit under ~868px, so this is a no-op there.
+   padding-bottom: the stock article has none (pt-8 only) and our custom
+   prev/next footer replaces the built-in one that used to provide end space,
+   so without this the cards sit flush against the viewport bottom. */
+#nd-page article {
+  max-width: 56rem;
+  padding-bottom: 2rem;
+}
+
+/* Sidebar search shortcut: collapse the two bordered ⌘ / K chips into one
+   quiet "⌘K" hint. Scoped to the sidebar search toggle (data-search-full)
+   so prose <kbd> styling is untouched. */
+#nd-sidebar button[data-search-full] div:has(> kbd) {
+  gap: 0;
+}
+#nd-sidebar button[data-search-full] kbd {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* TOC rail ("On this page"): keep fumadocs' stock code chips but slim them —
+   the prose default pads 3px on every side, which makes each chip tall and
+   opens the rows up. Only the vertical padding drops; horizontal padding,
+   border, background and mono size stay stock. Covers the desktop rail
+   (#nd-toc) and the mobile popover (#nd-tocnav). */
+#nd-toc a code,
+#nd-tocnav a code {
+  padding-block: 1px;
+}
+
+/* Fumadocs cards + tab/code containers: rounded-md family, never rounded-xl. */
+#nd-page a[class*='bg-fd-card'],
+#nd-page div[class*='bg-fd-card'] {
+  border-radius: 8px;
+  border-color: var(--border);
+}
+/* Linked cards: colors-only hover onto the flat accent surface. */
+#nd-page a[class*='bg-fd-card']:hover {
+  background-color: var(--accent);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -1253,6 +1333,30 @@ html[data-desktop-platform='macos'] .kx-customize-header {
 }
 html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-header {
   padding-right: 124px;
+}
+
+/* Files page header (/projects/[id]/files) — the one page header that reaches
+   the top of the window with nothing above it, so it shares the title-bar row
+   with the OS window controls. Same no-extra-vertical-space approach as
+   .kx-customize-header, but the left indent also has to clear the shell's
+   floating sidebar toggle, which the Customize overlay doesn't have.
+
+   Below md the header already drops the title under the chrome (`pt-14`), so
+   both indents are scoped to md+ where the title shares the traffic-light row.
+   Raw px on purpose: the lights and the toggle are positioned in window px,
+   while rem drifts with the desktop zoom level. */
+@media (min-width: 768px) {
+  /* macOS: lights end at x=66, the shell's open-sidebar toggle spans 72→100.
+     Indent past both, leaving the same optical gap the web has at `pl-14`.
+     Only while collapsed — an expanded sidebar covers the lights itself. */
+  html[data-desktop-platform='macos'] .kx-files-header[data-sidebar-collapsed] {
+    padding-left: 112px;
+  }
+  /* Win/Linux: window controls live top-right, where the history / proposed-
+     changes / view-mode controls sit. Left stays at the web's `pl-14`. */
+  html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-files-header {
+    padding-right: 124px;
+  }
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start

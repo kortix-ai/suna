@@ -10,7 +10,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
-import { deletePersonalProjectSecret, deleteProjectSecret } from '@kortix/sdk/projects-client';
+import { deleteProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plug, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -23,11 +23,13 @@ export function ConnectedTab({
   connectedProviders,
   search,
   onAddProvider,
+  canWrite = false,
 }: {
   projectId: string;
   connectedProviders: LlmProviderEntry[];
   search: string;
   onAddProvider: () => void;
+  canWrite?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -44,10 +46,7 @@ export function ConnectedTab({
             ]
           : provider.envVars;
       await Promise.all(
-        names.flatMap((envVar) => [
-          deleteProjectSecret(projectId, envVar).catch(() => undefined),
-          deletePersonalProjectSecret(projectId, envVar).catch(() => undefined),
-        ]),
+        names.map((envVar) => deleteProjectSecret(projectId, envVar).catch(() => undefined)),
       );
       return provider;
     },
@@ -81,9 +80,13 @@ export function ConnectedTab({
             'componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet',
           )}
           action={
-            <Button variant="outline" size="sm" onClick={onAddProvider}>
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line302JsxTextAddProvider')}
-            </Button>
+            canWrite ? (
+              <Button variant="outline" size="sm" onClick={onAddProvider}>
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line302JsxTextAddProvider',
+                )}
+              </Button>
+            ) : undefined
           }
         />
       </div>
@@ -133,7 +136,7 @@ export function ConnectedTab({
                     : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
                 </p>
               </div>
-              {!provider.managed && (
+              {canWrite && !provider.managed && (
                 <Hint label="Disconnect">
                   <Button
                     type="button"

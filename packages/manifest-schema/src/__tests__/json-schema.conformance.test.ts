@@ -304,6 +304,13 @@ apps:
       'kortix_version = 1\n[[connectors]]\nslug = "x"\nprovider = "openapi"\nspec = "https://x/y.json"\n[connectors.auth]\ntype = "oauth2"\n',
   },
   {
+    name: 'connectors.auth.type oauth1 is a known enum value (openapi connector)',
+    format: 'toml',
+    valid: true,
+    input:
+      'kortix_version = 1\n[[connectors]]\nslug = "x"\nprovider = "openapi"\nspec = "https://x/y.json"\n[connectors.auth]\ntype = "oauth1"\n',
+  },
+  {
     name: 'channel connectors must not declare a non-"none" auth.type',
     format: 'toml',
     valid: false,
@@ -744,6 +751,13 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
 
   test('kortix_version 2 in a .toml file: imperative rejects (format-aware), schema accepts (format-blind)', () => {
     const toml = 'kortix_version = 2\ndefault_agent = "w"\n[agents.w]\n';
+    expect(validateManifest(toml, 'toml').valid).toBe(false);
+    expect(validateCombined(parseToml(toml))).toBe(true);
+  });
+
+  test('auth.type oauth1 on a non-openapi/http connector: imperative rejects, schema accepts', () => {
+    const toml =
+      'kortix_version = 1\n[[connectors]]\nslug = "g"\nprovider = "graphql"\nendpoint = "https://x/graphql"\n[connectors.auth]\ntype = "oauth1"\n';
     expect(validateManifest(toml, 'toml').valid).toBe(false);
     expect(validateCombined(parseToml(toml))).toBe(true);
   });

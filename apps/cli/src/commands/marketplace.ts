@@ -7,7 +7,7 @@
 import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { runMarketplaceInstall } from './marketplace-install.ts';
 
 interface CatalogItem {
@@ -80,7 +80,7 @@ interface MarketplaceFlags {
   dryRun: boolean;
 }
 
-const HELP = `Usage: kortix marketplace <subcommand> [options]
+const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
 Browse and install items from the Kortix marketplace.
 
@@ -252,7 +252,7 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
 }
 
 async function marketplaceStatus(flags: MarketplaceFlags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   let res: InstalledResponse;
   try {
@@ -282,7 +282,7 @@ async function marketplaceStatus(flags: MarketplaceFlags): Promise<number> {
 }
 
 async function marketplaceUpdates(flags: MarketplaceFlags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   let res: UpdatesResponse;
   try {
@@ -316,7 +316,7 @@ async function marketplaceUpdate(argv: string[], flags: MarketplaceFlags): Promi
     process.stderr.write(`${status.err('pass an item name or --all: kortix marketplace update pdf')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   let res: WriteResponse;
   try {
@@ -334,7 +334,7 @@ async function marketplaceUpdate(argv: string[], flags: MarketplaceFlags): Promi
 }
 
 async function marketplaceUpdateAll(flags: MarketplaceFlags): Promise<number> {
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   let res: UpdateAllResponse;
   try {
@@ -363,7 +363,7 @@ async function marketplaceRemove(argv: string[], flags: MarketplaceFlags): Promi
     process.stderr.write(`${status.err('pass an item name: kortix marketplace remove pdf')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   let res: WriteResponse;
   try {

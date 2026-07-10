@@ -62,7 +62,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Contract Project',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {
     github: {

@@ -7,11 +7,11 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-const DIGEST_HELP = `Usage: kortix sessions digest [options]
+const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
 in a time window and, for running sessions, reads the live OpenCode transcript
@@ -127,7 +127,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   }
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let sessions: ProjectSession[];

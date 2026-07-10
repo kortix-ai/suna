@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   addMarketplaceSource,
@@ -20,7 +20,26 @@ import {
   updateAllMarketplaceItems,
   updateMarketplaceItem,
   type AddSourceInput,
+  type ItemsPage,
 } from '@/lib/marketplace-client';
+
+// Default page size for `useInfiniteMarketplaceItems`. Re-exported from the
+// server-safe module so it stays coupled to the SSR first-page limits (a future
+// change can't silently misalign the company page's seeded offset math).
+export { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
+import { MARKETPLACE_ITEMS_PAGE_SIZE } from '@/lib/marketplace-public';
+
+/** Pure paging step for `useInfiniteMarketplaceItems`'s `getNextPageParam`,
+ *  extracted so it's unit-testable without spinning up react-query. Advances
+ *  the offset by `limit` per page already fetched, and stops once the server
+ *  reports no more items. */
+export function nextMarketplaceItemsPageParam(
+  lastPage: ItemsPage,
+  allPages: ItemsPage[],
+  limit: number,
+): number | undefined {
+  return lastPage.hasMore ? allPages.length * limit : undefined;
+}
 
 export function useMarketplaceItems(params: {
   query?: string;
@@ -44,6 +63,56 @@ export function useMarketplaceItems(params: {
     // No placeholderData: switching marketplace/type must not flash the previous
     // source's cards under the new header count (they'd disagree). Debounce
     // already coalesces keystrokes, so the skeleton is brief + honest.
+  });
+}
+
+/** Paged variant of `useMarketplaceItems` for infinite-scroll browsing (A3/A4
+ *  consumers). Flatten `data.pages.flatMap(p => p.items)` for the item list;
+ *  `data.pages[0]` still carries `total`/`loading`/`pending`/`sources`. */
+export function useInfiniteMarketplaceItems(
+  params: {
+    query?: string;
+    type?: string;
+    source?: string;
+    publicOnly?: boolean;
+    limit?: number;
+  },
+  options?: {
+    /** Seeds react-query's cache for this exact queryKey with an
+     *  already-fetched first page (e.g. an SSR/ISR bounded fetch), so the
+     *  client hydrates without a network round-trip or a loading flash. Only
+     *  consulted when this queryKey has no cached data yet — callers must
+     *  only pass this for the query params that actually match what was
+     *  server-rendered (A4). */
+    initialData?: () => { pages: ItemsPage[]; pageParams: number[] };
+  },
+) {
+  const publicOnly = params.publicOnly ?? false;
+  const limit = params.limit ?? MARKETPLACE_ITEMS_PAGE_SIZE;
+  return useInfiniteQuery({
+    queryKey: [
+      publicOnly ? 'marketplace-items-infinite-public' : 'marketplace-items-infinite',
+      params.query ?? '',
+      params.type ?? 'all',
+      params.source ?? 'all',
+      limit,
+    ],
+    queryFn: ({ pageParam }) =>
+      (publicOnly ? listPublicMarketplaceItems : listMarketplaceItems)({
+        query: params.query,
+        type: params.type,
+        source: params.source,
+        limit,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    initialData: options?.initialData,
+    getNextPageParam: (lastPage, allPages) =>
+      nextMarketplaceItemsPageParam(lastPage, allPages, limit),
+    staleTime: 60_000,
+    // Same cold-load poll as `useMarketplaceItems`, keyed off the first page
+    // (later pages don't carry fresh `loading`/`sources` info).
+    refetchInterval: (query) => (query.state.data?.pages?.[0]?.loading ? 1500 : false),
   });
 }
 

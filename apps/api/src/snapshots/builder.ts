@@ -18,9 +18,9 @@ import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState, type SandboxProviderAdapter } from './providers';
-import { config, normalizeProviderName, type SandboxProviderName } from '../config';
+import { config, type SandboxProviderName } from '../config';
 import { warmPrebakeProviders } from '../projects/lib/provider-precedence';
-import { perProjectWarmImageName, ppwarmReapTargets } from './ppwarm-names';
+import { perProjectWarmImageName, ppwarmReapTargets, warmBuildSlug } from './ppwarm-names';
 import {
   computeTemplateIdentity,
   listTemplatesForProject,
@@ -28,6 +28,7 @@ import {
   recordTemplateFailed,
   refreshTemplateState,
   resolveTemplateBySlug,
+  resolveTemplateForBuildSlug,
   type ResolvedTemplate,
 } from './templates';
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
@@ -388,12 +389,17 @@ const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
 /**
  * Force the next session to rebuild by deleting the provider-side snapshot
  * for a given slug. No-op if nothing is there.
+ *
+ * Accepts a BUILD slug (`default-warm`) as well as a template slug: the retry
+ * surfaces hand us whatever `latest_failure.slug` held, and the warm bake's build
+ * row is never a template. Deleting the base template's snapshot is the correct
+ * response either way — the warm image is re-baked from it.
  */
 export async function deleteSandboxImage(
   project: GitBackedProject,
   opts: { slug?: string } = {},
 ): Promise<{ deleted: boolean; snapshotName: string; slug: string }> {
-  const template = await resolveTemplateBySlug(project, opts.slug);
+  const template = await resolveTemplateForBuildSlug(project, opts.slug);
   const provider = getSandboxProvider(template.provider);
   const identity = await computeTemplateIdentity(project, template);
   const before = await provider.getSnapshotState(identity.snapshotName);
@@ -744,11 +750,10 @@ export async function kickProjectWarmPrebake(
   const providers = opts.provider
     ? [opts.provider]
     : warmPrebakeProviders({
-        // Canonicalise the stored pin (legacy 'daytona' → 'managed') so it matches
-        // ALLOWED_SANDBOX_PROVIDERS — exactly what session creation does before it
-        // routes on the pin. Without this a legacy-pinned project would fall through
-        // to the all-enabled branch (harmless, but not true parity).
-        projectPin: opts.projectPin ? normalizeProviderName(opts.projectPin) : null,
+        // Pre-warm the provider(s) a session on this project could land on —
+        // exactly what session creation resolves from the pin (an enabled pin ⇒
+        // that provider; no/stale pin ⇒ every enabled provider).
+        projectPin: opts.projectPin ?? null,
         allowed: config.ALLOWED_SANDBOX_PROVIDERS,
         isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
       });
@@ -980,7 +985,7 @@ export async function ensurePerProjectWarmImage(
     ? await openBuildLog({
         accountId: opts.accountId,
         projectId: project.projectId,
-        slug: `${DEFAULT_SANDBOX_SLUG}-warm`,
+        slug: warmBuildSlug(DEFAULT_SANDBOX_SLUG),
         snapshotName,
         contentHash: baseIdentity.contentHash,
         commitSha: tip,
@@ -1002,7 +1007,7 @@ export async function ensurePerProjectWarmImage(
       userDockerfile: baseIdentity.userDockerfile,
       entrypoint: template.entrypoint ? [template.entrypoint] : undefined,
       spec: { cpu: template.cpu, memoryGb: template.memoryGb, diskGb: template.diskGb },
-      slug: `${template.slug}-warm`,
+      slug: warmBuildSlug(template.slug),
       isShared: false,
       warmRepo,
     });

@@ -1,12 +1,13 @@
 'use client';
 
-import { ChevronDown, PackageSearch } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { PackageSearch } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import {
   Select,
@@ -16,8 +17,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { useMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
+import { useInfiniteMarketplaceItems, useMarketplaces } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
@@ -25,8 +27,42 @@ import { Search } from '@mynaui/icons-react';
 import Loading from '../../components/ui/loading';
 import { Icon } from '../icon/icon';
 import { AddMarketplaceModal } from './add-marketplace-modal';
+import {
+  buildMarketplaceGridRows,
+  flattenMarketplaceItems,
+  marketplaceGridRowKey,
+  resolveEffectiveMarketplaceType,
+  resolveMarketplaceQueryParams,
+  shouldFetchNextMarketplacePage,
+} from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
-import { TYPE_FILTERS, TYPE_SECTIONS } from './marketplace-meta';
+import { TYPE_FILTERS } from './marketplace-meta';
+
+/** Scroll host for the virtualized list. In production the caller supplies the
+ *  scroll ancestor (`externalScrollElement`, from `CustomizeSectionWrapper`), so
+ *  this is a plain non-scrolling wrapper and the ancestor scrolls. With no
+ *  ancestor (e.g. `/debug/marketplace`) it owns a viewport-fit `FadedScrollArea`
+ *  and hands its inner scroller back through `scrollRef`. */
+function MarketplaceScrollShell({
+  externalScrollElement,
+  scrollRef,
+  children,
+}: {
+  externalScrollElement: HTMLElement | null;
+  scrollRef: (node: HTMLDivElement | null) => void;
+  children: ReactNode;
+}) {
+  if (externalScrollElement) {
+    return <div className="relative w-full">{children}</div>;
+  }
+  return (
+    <div className="h-[calc(100dvh-8rem)] w-full">
+      <FadedScrollArea ref={scrollRef} fadeColor="from-background">
+        {children}
+      </FadedScrollArea>
+    </div>
+  );
+}
 
 export function MarketplaceBrowser({
   onAdd,
@@ -36,6 +72,7 @@ export function MarketplaceBrowser({
   sourceFilter,
   publicOnly = false,
   readOnly = false,
+  scrollContainerRef,
 }: {
   onAdd?: (item: MarketplaceItem) => void;
   installedNames?: Set<string>;
@@ -48,6 +85,13 @@ export function MarketplaceBrowser({
   publicOnly?: boolean;
   /** Hide project/source mutation affordances. */
   readOnly?: boolean;
+  /**
+   * The ancestor scroll container to virtualize against (e.g. forwarded from
+   * `CustomizeSectionWrapper`'s scrollable div). When omitted, the browser
+   * renders its own bounded, scrollable wrapper instead — used by routes
+   * (like `/debug/marketplace`) that don't sit inside that layout.
+   */
+  scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [query, setQuery] = useState('');
@@ -81,45 +125,74 @@ export function MarketplaceBrowser({
     () => TYPE_FILTERS.filter((f) => f.value === 'all' || (typeCounts[f.value] ?? 0) > 0),
     [typeCounts],
   );
-  const effectiveType = typeOptions.some((t) => t.value === type) ? type : 'all';
+  const effectiveType = resolveEffectiveMarketplaceType(type, typeOptions);
 
-  const itemsQuery = useMarketplaceItems({
-    query: debounced,
-    type: effectiveType,
-    source,
-    publicOnly,
-  });
-  const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
-  const grouped = effectiveType === 'all' && !debounced && source === 'all';
-  const streaming = !!(itemsQuery.data?.loading || marketplacesQuery.data?.loading);
-
-  const sections = useMemo(() => {
-    const byLabel = new Map<string, MarketplaceItem[]>();
-    for (const it of items) {
-      const label = TYPE_SECTIONS.find((s) => s.type === it.type)?.label ?? 'Other';
-      if (!byLabel.has(label)) byLabel.set(label, []);
-      byLabel.get(label)!.push(it);
-    }
-    const order = [...new Set(TYPE_SECTIONS.map((s) => s.label)), 'Other'];
-    return [...byLabel.entries()]
-      .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
-      .map(([label, list]) => ({ label, items: list }));
-  }, [items]);
-
-  const renderItemGrid = (list: MarketplaceItem[]) => (
-    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-      {list.map((item) => (
-        <div key={item.id} className="border-border overflow-hidden rounded-md border">
-          <MarketplaceItemRow
-            item={item}
-            installed={installedNames?.has(item.name)}
-            onAdd={readOnly ? undefined : onAdd}
-            onOpen={() => openItem(item.id)}
-          />
-        </div>
-      ))}
-    </div>
+  const itemsQuery = useInfiniteMarketplaceItems(
+    resolveMarketplaceQueryParams({ debounced, effectiveType, source, publicOnly }),
   );
+  const items = useMemo(
+    () => flattenMarketplaceItems(itemsQuery.data?.pages ?? []),
+    [itemsQuery.data],
+  );
+  const grouped = effectiveType === 'all' && !debounced && source === 'all';
+  const streaming = !!(itemsQuery.data?.pages[0]?.loading || marketplacesQuery.data?.loading);
+  const hasNextPage = !!itemsQuery.hasNextPage;
+  const isFetchingNextPage = itemsQuery.isFetchingNextPage;
+  const fetchNextPage = itemsQuery.fetchNextPage;
+
+  const rows = useMemo(() => buildMarketplaceGridRows({ items, grouped }), [items, grouped]);
+
+  // Resolve the scroll element the virtualizer measures against. Prefer the
+  // caller-supplied ancestor (`scrollContainerRef`, forwarded from
+  // `CustomizeSectionWrapper`'s scrollable div in production) over a
+  // class-name lookup, which silently breaks if that class ever changes or
+  // is absent (e.g. `/debug/marketplace`, which has no such ancestor). When
+  // no external ref is supplied, the browser owns and bounds its own scroll
+  // container below.
+  //
+  // Lazy initial state captures an already-attached ref (e.g. on a `browse`
+  // tab remount, where `CustomizeSectionWrapper` stays mounted) synchronously
+  // during render, and `useLayoutEffect` corrects the first mount (where the
+  // ancestor ref isn't attached yet) BEFORE paint — so the production path
+  // never renders the self-owned fallback wrapper for a frame.
+  const [externalScrollElement, setExternalScrollElement] = useState<HTMLElement | null>(
+    () => scrollContainerRef?.current ?? null,
+  );
+  useLayoutEffect(() => {
+    setExternalScrollElement(scrollContainerRef?.current ?? null);
+  }, [scrollContainerRef]);
+
+  const [ownScrollElement, setOwnScrollElement] = useState<HTMLDivElement | null>(null);
+  const scrollElement = externalScrollElement ?? ownScrollElement;
+
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 64,
+    overscan: 6,
+    getItemKey: (index) => marketplaceGridRowKey(rows[index], index),
+  });
+
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (
+          shouldFetchNextMarketplacePage(!!entry?.isIntersecting, {
+            hasNextPage,
+            isFetchingNextPage,
+          })
+        ) {
+          fetchNextPage();
+        }
+      },
+      { root: scrollElement, rootMargin: '200px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [scrollElement, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="space-y-5">
@@ -208,35 +281,68 @@ export function MarketplaceBrowser({
             )}
           />
         )
-      ) : grouped && sections.length > 0 ? (
-        <div className="space-y-5">
-          {sections.map((section) => (
-            <Disclosure
-              key={section.label}
-              open
-              className="group/section"
-              transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-            >
-              <DisclosureTrigger>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 py-1"
-                >
-                  <h3 className="text-foreground text-sm font-medium">{section.label}</h3>
-                  <div className="text-muted-foreground flex items-center gap-1.5">
-                    <span className="text-[12px] tabular-nums">{section.items.length}</span>
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/section:rotate-180" />
-                  </div>
-                </button>
-              </DisclosureTrigger>
-              <DisclosureContent contentClassName="pt-2">
-                {renderItemGrid(section.items)}
-              </DisclosureContent>
-            </Disclosure>
-          ))}
-        </div>
       ) : (
-        renderItemGrid(items)
+        <MarketplaceScrollShell
+          externalScrollElement={externalScrollElement}
+          scrollRef={setOwnScrollElement}
+        >
+          <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              if (!row) return null;
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  {row.kind === 'header' ? (
+                    <div className="flex items-center justify-between gap-2 py-1 pt-4 first:pt-0">
+                      <h3 className="text-foreground text-sm font-medium">{row.label}</h3>
+                      <span className="text-muted-foreground text-[12px] tabular-nums">
+                        {row.count}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 pb-2 md:grid-cols-3">
+                      {row.items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="border-border overflow-hidden rounded-md border"
+                        >
+                          <MarketplaceItemRow
+                            item={item}
+                            installed={installedNames?.has(item.name)}
+                            onAdd={readOnly ? undefined : onAdd}
+                            onOpen={() => openItem(item.id)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {/* Rendered INSIDE the scroll container so it's a descendant of the
+              IntersectionObserver's `root` (see below) on both paths — the
+              production path where `scrollElement` is the external ancestor
+              this whole div already sits inside, and the `/debug/marketplace`
+              fallback path where `scrollElement` IS this div. A sibling
+              sentinel would never intersect on the fallback path, since an
+              IO root only ever reports intersections for its own
+              descendants. */}
+          {hasNextPage && <div ref={sentinelRef} className="h-1" />}
+        </MarketplaceScrollShell>
+      )}
+
+      {items.length > 0 && isFetchingNextPage && (
+        <div className="text-muted-foreground/70 flex items-center justify-center gap-2 py-1 text-xs">
+          <Loading className="size-3.5 animate-spin" />
+          Loading more…
+        </div>
       )}
 
       {streaming && items.length > 0 && (

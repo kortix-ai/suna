@@ -160,11 +160,14 @@ export async function inviteProjectMember(
   projectId: string,
   email: string,
   role: ProjectRole,
+  /** Optional ISO-8601 time-bound: the granted role auto-revokes at this instant
+   *  once the invitee joins. Omit / null for a permanent grant. */
+  expiresAt?: string | null,
 ) {
   return unwrap(
     await backendApi.post<InviteProjectMemberResult>(
       `/projects/${projectId}/access/invite`,
-      { email, role },
+      { email, role, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}) },
     ),
   );
 }

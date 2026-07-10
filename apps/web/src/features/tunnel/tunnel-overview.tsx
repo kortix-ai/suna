@@ -115,7 +115,7 @@ function LoadingSkeleton() {
   );
 }
 
-export function TunnelOverview() {
+export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: connections = [], isLoading } = useTunnelConnections();
   const deleteMutation = useDeleteTunnelConnection();
@@ -163,7 +163,7 @@ export function TunnelOverview() {
         title="Computers"
         description="Connect local machines and grant agents permissioned access over a reverse tunnel."
       >
-        {hasConnections && (
+        {hasConnections && canWrite && (
           <div className="flex items-center justify-between gap-3">
             <ConnectCommandPanel />
           </div>
@@ -206,9 +206,11 @@ export function TunnelOverview() {
                   )}
                 </EmptyDescription>
               </EmptyHeader>
-              <EmptyContent className="max-w-md">
-                <ConnectCommandPanel />
-              </EmptyContent>
+              {canWrite && (
+                <EmptyContent className="max-w-md">
+                  <ConnectCommandPanel />
+                </EmptyContent>
+              )}
             </Empty>
           ) : filtered.length === 0 && searchQuery ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
@@ -293,7 +295,8 @@ export function TunnelOverview() {
           setSettingsOpen(open);
           if (!open) setSelectedTunnel(null);
         }}
-        onDelete={() => selectedTunnel && setDeleteTarget(selectedTunnel)}
+        canWrite={canWrite}
+        onDelete={canWrite ? () => selectedTunnel && setDeleteTarget(selectedTunnel) : undefined}
       />
 
       <DeleteConnectionDialog

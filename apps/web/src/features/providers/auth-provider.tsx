@@ -14,6 +14,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
 import { resetClientState } from '@/lib/utils/reset-client-state';
+import { safeGetItem, safeRemoveItem, safeSetItem } from '@/lib/storage/managed-storage';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -64,12 +65,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         // Track user ID for cross-account localStorage cleanup
         if (currentSession?.user?.id) {
-          const prevUserId = localStorage.getItem('kortix-last-user-id');
+          const prevUserId = safeGetItem('kortix-last-user-id');
           if (prevUserId && prevUserId !== currentSession.user.id) {
             console.log('[Auth] Initial session: user changed, clearing stale client state');
             await resetClientState();
           }
-          localStorage.setItem('kortix-last-user-id', currentSession.user.id);
+          safeSetItem('kortix-last-user-id', currentSession.user.id);
         }
       } catch (error) {
         console.warn('[AuthProvider] Failed to bootstrap initial session:', error);
@@ -98,14 +99,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
             // Clear stale sandbox/server state if a different user signs in
             // (e.g. signup in same browser without explicit logout first)
-            const prevUserId = localStorage.getItem('kortix-last-user-id');
+            const prevUserId = safeGetItem('kortix-last-user-id');
             const newUserId = newSession?.user?.id;
             if (newUserId && prevUserId && prevUserId !== newUserId) {
               console.log('[Auth] User changed, clearing stale client state');
               await resetClientState();
             }
             if (newUserId) {
-              localStorage.setItem('kortix-last-user-id', newUserId);
+              safeSetItem('kortix-last-user-id', newUserId);
             }
             break;
           }
@@ -113,7 +114,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setBootstrapAuthToken(null);
             setCachedAuthToken(null);
             await resetClientState();
-            localStorage.removeItem('kortix-last-user-id');
+            safeRemoveItem('kortix-last-user-id');
             break;
           case 'TOKEN_REFRESHED':
             if (newSession?.access_token) {

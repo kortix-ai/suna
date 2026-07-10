@@ -24,12 +24,14 @@ export function CatalogTab({
   search,
   subview,
   setSubview,
+  canWrite = false,
 }: {
   projectId: string;
   connectedIds: Set<string>;
   search: string;
   subview: CatalogSubview;
   setSubview: (next: CatalogSubview) => void;
+  canWrite?: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const filtered = useMemo(() => {
@@ -43,6 +45,13 @@ export function CatalogTab({
     );
   }, [search]);
 
+  // Read-only members can browse the list/detail but can't reach the write
+  // flows; fold connect/custom back to the list so a POST is never attempted.
+  if (!canWrite && (subview.kind === 'connect' || subview.kind === 'custom')) {
+    setSubview({ kind: 'list' });
+    return null;
+  }
+
   if (subview.kind === 'detail') {
     const provider = LLM_PROVIDER_BY_ID.get(subview.providerId);
     if (!provider) {
@@ -53,6 +62,7 @@ export function CatalogTab({
       <ProviderDetail
         provider={provider}
         isConnected={connectedIds.has(provider.id)}
+        canWrite={canWrite}
         onBack={() => setSubview({ kind: 'list' })}
         onConnect={() => setSubview({ kind: 'connect', providerId: provider.id })}
       />
@@ -87,22 +97,24 @@ export function CatalogTab({
 
   return (
     <div className="space-y-3 px-5 pt-3 pb-4">
-      <button type="button" className={`${ROW} border-dashed`} onClick={() => setSubview({ kind: 'custom' })}>
-        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
-          <Plus className="size-4 shrink-0" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-foreground truncate text-sm font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}
+      {canWrite && (
+        <button type="button" className={`${ROW} border-dashed`} onClick={() => setSubview({ kind: 'custom' })}>
+          <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
+            <Plus className="size-4 shrink-0" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground truncate text-sm font-medium">
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}
+            </div>
+            <p className="text-muted-foreground mt-0.5 truncate text-xs">
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn',
+              )}
+            </p>
           </div>
-          <p className="text-muted-foreground mt-0.5 truncate text-xs">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn',
-            )}
-          </p>
-        </div>
-        <ChevronRight className="text-muted-foreground/40 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
-      </button>
+          <ChevronRight className="text-muted-foreground/40 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+        </button>
+      )}
 
       {filtered.length === 0 ? (
         <EmptyState size="sm" title={search ? `No providers match "${search}"` : 'No providers'} />
@@ -145,11 +157,13 @@ export function CatalogTab({
 function ProviderDetail({
   provider,
   isConnected,
+  canWrite,
   onBack,
   onConnect,
 }: {
   provider: LlmProviderEntry;
   isConnected: boolean;
+  canWrite: boolean;
   onBack: () => void;
   onConnect: () => void;
 }) {
@@ -188,9 +202,11 @@ function ProviderDetail({
             {models.length === 1 ? '' : 's'}
           </p>
         </div>
-        <Button size="sm" className="shrink-0" onClick={onConnect}>
-          {isConnected ? 'Reconnect' : 'Connect'}
-        </Button>
+        {canWrite && (
+          <Button size="sm" className="shrink-0" onClick={onConnect}>
+            {isConnected ? 'Reconnect' : 'Connect'}
+          </Button>
+        )}
       </div>
 
       {helpHostname && provider.helpUrl && (

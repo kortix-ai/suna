@@ -43,17 +43,17 @@ export interface ProjectSecretsResponse {
   items: ProjectSecret[];
   /** Whether the requesting member can edit shared rows (vs only their own overrides). */
   can_manage?: boolean;
-  /** Env keys declared as required in the project's kortix.toml manifest. */
+  /** Env keys declared as required in the project's kortix.yaml manifest. */
   required: string[];
-  /** Env keys declared as optional in the project's kortix.toml manifest. */
+  /** Env keys declared as optional in the project's kortix.yaml manifest. */
   optional: string[];
   /**
-   * 'loaded'  → kortix.toml read successfully (env lists are authoritative).
+   * 'loaded'  → kortix.yaml read successfully (env lists are authoritative).
    * 'missing' → manifest file not present in the repo.
    * 'error'   → couldn't fetch/parse the repo (private repo, network, etc.).
    */
   manifest_status?: 'loaded' | 'missing' | 'error';
-  /** Path the API tried (defaults to "kortix.toml" but configurable per project). */
+  /** Path the API tried (defaults to "kortix.yaml" but configurable per project). */
   manifest_path?: string;
   /** Error string when manifest_status === 'error'. */
   manifest_error?: string;
@@ -63,6 +63,10 @@ export async function listProjectSecrets(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSecretsResponse>(
       `/projects/${projectId}/secrets`,
+      // Background read fired from member-visible surfaces (model picker, LLM
+      // providers, agent editor) — project.secret.read is editor-tier, so a
+      // plain member legitimately 403s here. Callers render their own state.
+      { showErrors: false },
     ),
   );
 }

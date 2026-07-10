@@ -59,7 +59,7 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 | Search fields | `apps/web/src/components/ui/input-group.tsx` | `InputGroupSearch` + `InputGroupSearchInput variant="popover"` |
 | Forms in panels | `apps/web/src/components/ui/field.tsx` | `Field`, `FieldLabel`, `FieldGroup`, `FieldDescription` |
 | Empty / error states | `apps/web/src/features/layout/section/empty-state.tsx`, `error-state.tsx` | `size="sm"` in customize sections |
-| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | Final confirm only — not routine buttons |
+| Confirm destructive | `apps/web/src/components/ui/confirm-dialog.tsx` | **Mandatory before any destructive mutation** — including `DropdownMenuItem variant="destructive"` items (see `secrets-view.tsx` delete, `gateway-keys.tsx` revoke). Only accepted alternative: the inline Cancel/confirm button swap used for channel disconnects (`channels-view.tsx`). Never mutate from a single click |
 | Loading / pending spinners | `apps/web/src/components/ui/loading.tsx` | `import Loading from '@/components/ui/loading'` — default `size-4`; use `className="size-4 shrink-0"` in dense buttons. **Never** `Loader2` or other icons |
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
@@ -201,6 +201,43 @@ Match the customize views — consistent sizes and variants:
 | Pending / in-flight state | `<Loading className="size-4 shrink-0" />` in buttons; `<Loading />` or `className="size-4 shrink-0"` in headers — **never** `Loader2` |
 
 Icons in buttons: `size-3.5 shrink-0` (dense) or `size-4` (header). Always `shrink-0` on icons. **Exception:** loading uses `Loading`, not an icon import.
+
+## Button icon-swap — buttery transitions (blur + scale + opacity)
+
+When a button swaps its icon on a state change (copy → copied, play → pause, follow → following), **never hard-swap** `{done ? <Check/> : <Copy/>}`. Cross-fade the two icons in the same box with **blur + scale + opacity** so it reads as one morph, not two objects blinking. `motion` (`motion/react`) is already a dependency — use it.
+
+Exact values (from [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md) → Contextual icon animations): **scale `0.25 → 1`, opacity `0 → 1`, blur `4px → 0`**, spring **`{ type: 'spring', duration: 0.3, bounce: 0 }`** (`bounce: 0` keeps it buttery, never playful). Always `initial={false}` so nothing animates on first paint.
+
+```tsx
+import { AnimatePresence, motion } from 'motion/react';
+
+<button
+  onClick={handleCopy}
+  aria-label={copied ? 'Copied' : 'Copy'}
+  className={cn(
+    'inline-flex size-7 items-center justify-center rounded-md',
+    'text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10',
+    'cursor-pointer transition-colors active:scale-[0.97]', // press feedback compounds with the swap
+  )}
+>
+  <span className="relative inline-flex size-3.5 items-center justify-center">
+    <AnimatePresence initial={false} mode="popLayout">
+      <motion.span
+        key={copied ? 'check' : 'copy'}
+        initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+        animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+        exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+        transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+        className="absolute inset-0 inline-flex items-center justify-center"
+      >
+        {copied ? <Check className="size-3.5 text-kortix-green" /> : <Copy className="size-3.5" />}
+      </motion.span>
+    </AnimatePresence>
+  </span>
+</button>
+```
+
+Rules: both icons share one fixed-size box (`relative size-3.5` parent, each child `absolute inset-0`) so they overlap and the blur bridges the crossfade. Pair it with `active:scale-[0.97]` press feedback and `transition-colors` hover — the three compound into the "buttery button". Confirmed status colour stays a `kortix-*` token (`text-kortix-green`), never raw palette. **Reference:** `CopyButton` in `apps/web/src/components/markdown/unified-markdown.tsx`.
 
 ## Spacing cheat sheet (from reference views)
 
@@ -360,6 +397,7 @@ Standard content block (`agents-view.tsx` pattern):
 - ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
 - ✅ Expandable config → `Disclosure` + `Button variant="popover"`. ❌ custom accordion, ❌ nested `rounded-md` inside rounded parent.
 - ✅ Modals → `Modal` from `modal.tsx`. ❌ `Dialog`/`DialogContent` in features.
+- ✅ Destructive actions → `ConfirmDialog` (or the inline two-step Cancel/confirm swap, `channels-view.tsx`). ❌ firing a delete/revoke mutation directly from a `variant="destructive"` click.
 - ✅ Tooltips → `Hint`. ❌ `Tooltip` primitives in features.
 - ✅ Toasts → `@/components/ui/toast` helpers. ❌ `@/lib/toast`, raw sonner.
 - ✅ Badges → `<Badge size="sm" variant="…">`. ❌ hand-rolled chip spans.

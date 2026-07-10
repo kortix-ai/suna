@@ -155,7 +155,7 @@ export async function mintSecretLink(opts: {
 }
 
 /**
- * Add (or update) a connector on the project NOW — committed to kortix.toml on
+ * Add (or update) a connector on the project NOW — committed to kortix.yaml on
  * main + synced server-side, exactly like the dashboard's "Add app". No change
  * request needed; it's live this session.
  */
@@ -170,7 +170,7 @@ export async function addConnector(
   );
 }
 
-/** Remove a connector from the project (kortix.toml on main + catalog). */
+/** Remove a connector from the project (kortix.yaml on main + catalog). */
 export async function removeConnector(slug: string, projectOverride?: string): Promise<void> {
   const { client, projectId } = executorProjectContext(projectOverride);
   await client.delete(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);

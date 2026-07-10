@@ -1105,6 +1105,13 @@ export interface SessionChatInputProps {
    * busy input shows a (non-clickable) stop button instead of nothing at all.
    */
   stopDisabled?: boolean;
+  /**
+   * The send is in flight but hasn't navigated/settled yet — swap the send
+   * button for a spinner (used by the project-home composer while the session
+   * create POST round-trips). Distinct from `isBusy`, which means "the agent is
+   * running" and shows a stop button instead.
+   */
+  isSending?: boolean;
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -1217,6 +1224,7 @@ export function SessionChatInput({
   isBusy = false,
   onStop,
   stopDisabled = false,
+  isSending = false,
   agents = [],
   selectedAgent = null,
   onAgentChange,
@@ -2305,7 +2313,12 @@ export function SessionChatInput({
                 disabled={submitDisabled || isBusy}
               />
 
-              {isBusy && (onStop || stopDisabled) && !lockForQuestion && (
+              {isSending && !lockForQuestion && (
+                <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
+                  <Loader2 className="size-4 animate-spin" />
+                </Button>
+              )}
+              {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
@@ -2345,7 +2358,7 @@ export function SessionChatInput({
                   </Tooltip>
                 </div>
               )}
-              {(!isBusy || lockForQuestion) && (
+              {!isSending && (!isBusy || lockForQuestion) && (
                 <div className="opacity-100">
                   {lockForQuestion && questionButtonLabel && !text.trim() ? (
                     <Button

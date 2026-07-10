@@ -1,21 +1,28 @@
+import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Icon } from '@/features/icon/icon';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider';
-import { Github } from 'lucide-react';
 import type { ReactNode } from 'react';
+
+import {
+  DocsCollapsedControls,
+  DocsSearchButton,
+  DocsSearchIconButton,
+  DocsSidebarCollapseButton,
+  DocsSidebarSeparator,
+} from './docs-controls';
 
 // Fumadocs wraps `nav.title` in a link to `nav.url` ("/docs"), so this must NOT
 // contain its own anchor — a nested <a> breaks hydration.
 function DocsLogo() {
   return (
-    <span className="flex items-center gap-2.5 no-underline">
+    <span className="flex items-center gap-2.5 no-underline ml-1">
       {/* The canonical full Kortix logo (symbol + wordmark), via the shared
           KortixLogo component so the docs stay in lockstep with the rest of
           the app's brand treatment. */}
       <KortixLogo variant="logomark" size={18} />
-      <span aria-hidden className="bg-fd-border h-3.5 w-px shrink-0" />
-      <span className="text-fd-muted-foreground text-[13px] font-medium tracking-tight">Docs</span>
     </span>
   );
 }
@@ -32,6 +39,15 @@ export default function Layout({ children }: { children: ReactNode }) {
         nav={{
           title: <DocsLogo />,
           url: '/docs',
+          // Our own collapse trigger — `sidebar.collapsible: false` below
+          // removes fumadocs' stock trigger + floating CollapsibleControl.
+          children: <DocsSidebarCollapseButton />,
+        }}
+        searchToggle={{
+          components: {
+            lg: <DocsSearchButton />,
+            sm: <DocsSearchIconButton />,
+          },
         }}
         links={[
           {
@@ -46,16 +62,32 @@ export default function Layout({ children }: { children: ReactNode }) {
             type: 'icon',
             text: 'GitHub',
             label: 'GitHub',
-            icon: <Github />,
+            icon: <Icon.Github />,
             url: 'https://github.com/kortix-ai/suna',
             external: true,
           },
         ]}
         sidebar={{
           defaultOpenLevel: 1,
-          collapsible: true,
+          // Collapse is still driven through useSidebar() by our own buttons
+          // (docs-controls.tsx); false only strips fumadocs' built-in chrome.
+          collapsible: false,
+          components: {
+            Separator: DocsSidebarSeparator,
+          },
+        }}
+        themeSwitch={{
+          // The app's own theme control (same one as the user menu) instead of
+          // the fumadocs switch. The app-level next-themes provider still owns
+          // persistence; RootProvider theme is disabled above.
+          component: (
+            <div className="ms-auto">
+              <ThemeToggle variant="compact" />
+            </div>
+          ),
         }}
       >
+        <DocsCollapsedControls />
         {children}
       </DocsLayout>
     </RootProvider>

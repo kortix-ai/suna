@@ -628,7 +628,7 @@ function ManifestBanner({ status, path, error, isDark }: { status?: string; path
   const bg = warn ? 'rgba(217,119,6,0.08)' : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)');
   const text =
     status === 'missing'
-      ? 'No kortix.toml manifest — declare required env keys to track them here.'
+      ? 'No kortix.yaml manifest — declare required env keys to track them here.'
       : error || 'Manifest could not be read.';
   return (
     <View style={{ marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: bg, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>

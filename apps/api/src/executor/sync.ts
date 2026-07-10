@@ -1,5 +1,5 @@
 /**
- * Connector materialization sweep — read `[[connectors]]` from kortix.toml,
+ * Connector materialization sweep — read `connectors:` from kortix.yaml,
  * fetch + normalize each connector's catalog, and upsert into the DB
  * (executor_connectors / _actions / _policies). Definitions live in git
  * (manifest = source of truth, like triggers); this populates the runtime view
@@ -37,6 +37,7 @@ import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-sto
 import { computerCatalog } from './computers';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { parseSpecDocument } from './spec-doc';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
@@ -51,9 +52,9 @@ export interface SyncResult {
 /**
  * Best-effort re-materialization after a channel platform install changes
  * (connect / disconnect). Persists the channel connector as a first-class
- * kortix.toml profile (or removes it on disconnect), then runs the normal sweep
+ * kortix.yaml profile (or removes it on disconnect), then runs the normal sweep
  * so it (dis)appears immediately — "connect Slack → the Slack connector shows
- * up". The kortix.toml write is best-effort: synthesizeChannelConnectors still
+ * up". The kortix.yaml write is best-effort: synthesizeChannelConnectors still
  * materializes the connector from the install, so a read-only / unreachable repo
  * keeps working. Never throws: a hiccup must not fail the install/uninstall.
  */
@@ -138,7 +139,7 @@ interface ResolvedCatalog {
 
 /**
  * Materialize a project's connectors from its manifest. Loads the project +
- * git auth (so private repos resolve), reads kortix.toml, then upserts.
+ * git auth (so private repos resolve), reads kortix.yaml, then upserts.
  */
 export async function syncProjectConnectors(projectId: string, accountId: string, opts: SyncOptions = {}): Promise<SyncResult> {
   const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -148,8 +149,8 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   const manifest = await readManifest(gitProject).catch(() => null);
 
   // Manifest-declared connectors + project policies are only reconciled when the
-  // kortix.toml is actually readable. A NULL manifest can mean "no repo / no
-  // kortix.toml" OR a transient git error — either way we must not treat it as
+  // kortix.yaml is actually readable. A NULL manifest can mean "no repo / no
+  // kortix.yaml" OR a transient git error — either way we must not treat it as
   // "zero declared connectors" and delete the project's real ones below.
   const errors: SyncResult['errors'] = [];
   let declaredSpecs: ConnectorSpec[] = [];
@@ -168,7 +169,7 @@ export async function syncProjectConnectors(projectId: string, accountId: string
 
   // Channel connectors (e.g. Slack) are INSTALL-driven, not manifest-driven:
   // connecting the platform IS the registration. So they materialize even when
-  // the project has no readable kortix.toml — "connect Slack → the `slack`
+  // the project has no readable kortix.yaml — "connect Slack → the `slack`
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
@@ -181,7 +182,7 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
   if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
-    return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.toml not found or unreadable' }] };
+    return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.yaml not found or unreadable' }] };
   }
 
   const existing = await db
@@ -267,7 +268,7 @@ async function upsertConnector(
     // `sensitive` lives inside `config` but is a CHEAP field: it isn't part of
     // manifestHashForConnector (deliberately — flipping it must not force a
     // catalog re-fetch), so on a hash-match reconcile we still patch that one
-    // key in place. Without this, the Sensitive toggle commits to kortix.toml
+    // key in place. Without this, the Sensitive toggle commits to kortix.yaml
     // but the DB config (what the gateway + admin UI read) never updates.
     const sensitivePatch = spec.sensitive
       ? sql`coalesce(${executorConnectors.config}, '{}'::jsonb) || '{"sensitive": true}'::jsonb`
@@ -377,6 +378,7 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
 async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
+    assertAllowedSourceAddress(spec);
     const res = await fetch(spec, {
       // Signal we accept either form; servers that content-negotiate may hand
       // back JSON, but we parse whatever comes regardless.
@@ -394,6 +396,7 @@ async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any
 
 async function loadHttpRoutes(project: GitBackedProject, spec: string | null): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
+  if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
   const raw = /^https?:\/\//i.test(spec)
     ? await (await fetch(spec)).text()
     : await readRepoFile(project, spec, project.defaultBranch);
@@ -403,6 +406,7 @@ async function loadHttpRoutes(project: GitBackedProject, spec: string | null): P
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {
+  assertAllowedSourceAddress(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -413,8 +417,8 @@ async function introspectGraphql(endpoint: string): Promise<any> {
 }
 
 /**
- * Replace the project's [[policies]] + [policy].default_mode with what
- * kortix.toml currently declares. Delete-then-insert (the manifest is the
+ * Replace the project's `policies:` list + `policy.default_mode` with what
+ * kortix.yaml currently declares. Delete-then-insert (the manifest is the
  * source of truth, so we don't preserve DB-only edits). Cheap — runs every
  * sync, no network call.
  */
@@ -440,6 +444,7 @@ async function reconcileProjectPolicies(
 }
 
 async function listMcpTools(url: string): Promise<any[]> {
+  assertAllowedSourceAddress(url);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },

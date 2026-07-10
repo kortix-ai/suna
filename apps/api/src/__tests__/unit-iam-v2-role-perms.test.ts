@@ -118,9 +118,10 @@ describe('IAM V2 — role helpers', () => {
 
 describe('IAM V2 — no unknown actions', () => {
   // IAM v1 per-capability leaves: backward-compat invariant. Editor must hold
-  // every write leaf (it had all of these via project.write before) and the
-  // Member floor role every read leaf (via project.read). Member must NOT gain any
-  // write leaf.
+  // every write leaf (it had all of these via project.write before). The floor
+  // Member role keeps MOST read leaves — EXCEPT file.read + secret.read, which
+  // moved to editor-tier (a member can run the agent/chat but can't browse the
+  // file tree or view secret values). Member must NOT gain any write leaf.
   test('per-capability leaves preserve the editor/member capability surface', () => {
     const writeLeaves = [
       PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
@@ -133,24 +134,33 @@ describe('IAM V2 — no unknown actions', () => {
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     ];
-    const readLeaves = [
+    // Reads the floor member role keeps.
+    const memberReadLeaves = [
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
       PROJECT_ACTIONS.PROJECT_SKILL_READ,
       PROJECT_ACTIONS.PROJECT_COMMAND_READ,
-      PROJECT_ACTIONS.PROJECT_FILE_READ,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
-      PROJECT_ACTIONS.PROJECT_SECRET_READ,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
+    ];
+    // Sensitive reads that are now editor-tier (member is denied).
+    const editorReadLeaves = [
+      PROJECT_ACTIONS.PROJECT_FILE_READ,
+      PROJECT_ACTIONS.PROJECT_SECRET_READ,
     ];
     for (const a of writeLeaves) {
       expect(projectRoleAllows('editor', a)).toBe(true);
       expect(projectRoleAllows('manager', a)).toBe(true);
       expect(projectRoleAllows('member', a)).toBe(false);
     }
-    for (const a of readLeaves) {
+    for (const a of memberReadLeaves) {
       expect(projectRoleAllows('member', a)).toBe(true);
       expect(projectRoleAllows('editor', a)).toBe(true);
+    }
+    for (const a of editorReadLeaves) {
+      expect(projectRoleAllows('member', a)).toBe(false);
+      expect(projectRoleAllows('editor', a)).toBe(true);
+      expect(projectRoleAllows('manager', a)).toBe(true);
     }
   });
 

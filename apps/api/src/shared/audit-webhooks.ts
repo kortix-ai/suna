@@ -7,6 +7,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { auditWebhooks } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { db } from './db';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
@@ -117,6 +118,18 @@ async function deliverOne(
   body: string,
   idempotencyKey: string,
 ): Promise<DeliveryResult> {
+  // SSRF guard: re-check at delivery time too, not just at create. Covers
+  // rows written before this guard existed and DNS-rebinding-style TOCTOU
+  // against the write-time check (write-time validation of the string can't
+  // catch a hostname that later resolves to a private/internal address).
+  try {
+    assertAllowedSourceAddress(hook.url);
+  } catch (err) {
+    const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    await recordFailure(hook.webhookId, msg);
+    return { ok: false, error: msg };
+  }
+
   const signature = sign(hook.secret, body);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);

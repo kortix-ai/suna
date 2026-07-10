@@ -391,8 +391,13 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  // Floor is 'read' (project membership); the real gate is the members.manage
+  // leaf below, so a custom role granting ONLY members.manage (no project.write)
+  // works, and — matching the sibling approve/reject routes — a plain editor
+  // (project.write but not members.manage) can't list pending access requests.
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
   const rows = await db
     .select()
@@ -624,7 +629,7 @@ projectsApp.openapi(
       if (existing) {
         // Merge bootstrap grants by project_id (later wins on role).
         const merged = [...(existing.bootstrapGrants ?? [])];
-        const idx = merged.findIndex((g) => g.project_id === projectId);
+        const idx = merged.findIndex((g) => 'project_id' in g && g.project_id === projectId);
         if (idx >= 0) merged[idx] = bootstrap;
         else merged.push(bootstrap);
         await tx
@@ -788,10 +793,12 @@ projectsApp.openapi(
   const now = Date.now();
   const items = rows
     .map((r) => {
-      const grant = (r.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
+      const grant = (r.bootstrapGrants ?? []).find(
+        (g) => 'project_id' in g && g.project_id === projectId,
+      );
       // Defensive — the WHERE already filtered for project_id, but the
       // type system doesn't know that, and a corrupt row shouldn't 500.
-      if (!grant) return null;
+      if (!grant || !('project_id' in grant)) return null;
       return {
         invite_id: r.inviteId,
         // Normalize a legacy `viewer`/`user` grant to `member` so the API never
@@ -861,7 +868,7 @@ projectsApp.openapi(
   }
 
   const remaining = (invite.bootstrapGrants ?? []).filter(
-    (g) => g.project_id !== projectId,
+    (g) => !('project_id' in g) || g.project_id !== projectId,
   );
 
   // Auto-cancel the whole invitation if (a) nothing else is being
@@ -930,8 +937,10 @@ projectsApp.openapi(
   if (invite.acceptedAt) {
     return c.json({ error: 'Invitation has already been accepted' }, 409);
   }
-  const grant = (invite.bootstrapGrants ?? []).find((g) => g.project_id === projectId);
-  if (!grant) {
+  const grant = (invite.bootstrapGrants ?? []).find(
+    (g) => 'project_id' in g && g.project_id === projectId,
+  );
+  if (!grant || !('project_id' in grant)) {
     return c.json({ error: 'Invitation does not target this project' }, 404);
   }
 
@@ -1121,8 +1130,11 @@ projectsApp.openapi(
     const body = await readBody(c);
     const feature = body.feature;
     const enabled = body.enabled;
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read' (membership); project.customize.write is the human gate below
+    // (was 'manage' → project.write, so unchecking customize.write did nothing).
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     // Per-agent gate: toggling experimental features is project config. A scoped
     // agent token must hold project.customize.write (no-op for humans/PATs).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
@@ -1179,8 +1191,11 @@ projectsApp.openapi(
     const body = await readBody(c);
     const raw = body.provider ?? body.sandbox_provider;
     const provider = raw === null || raw === undefined || raw === '' ? null : String(raw);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.customize.write is the human gate below (was
+    // 'manage' → project.write, so unchecking customize.write did nothing here).
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     if (provider !== null && !config.isProviderEnabled(provider as SandboxProviderName)) {
       return c.json({ error: `Unknown or disabled sandbox provider: ${provider}` }, 400);

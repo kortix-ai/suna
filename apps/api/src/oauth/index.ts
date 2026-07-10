@@ -5,6 +5,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
+import { hashOauthToken, oauthTokenHashCandidates } from './token-hash';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 import {
@@ -17,11 +18,8 @@ import {
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-// ─── Token Hashing ──────────────────────────────────────────────────────────
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
+// Token hashing lives in ./token-hash (hashOauthToken for minting,
+// oauthTokenHashCandidates for dual-read lookup during the legacy window).
 
 // ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
 
@@ -68,7 +66,6 @@ async function oauthTokenAuth(c: Context, next: Next) {
     throw new HTTPException(401, { message: 'Missing token' });
   }
 
-  const tokenHash = hashToken(token);
   const now = new Date();
 
   const [row] = await db
@@ -76,7 +73,7 @@ async function oauthTokenAuth(c: Context, next: Next) {
     .from(oauthAccessTokens)
     .where(
       and(
-        eq(oauthAccessTokens.tokenHash, tokenHash),
+        inArray(oauthAccessTokens.tokenHash, oauthTokenHashCandidates(token)),
         isNull(oauthAccessTokens.revokedAt),
       ),
     )
@@ -209,8 +206,8 @@ async function issueTokenPair(params: {
 }) {
   const accessToken = generateAccessToken();
   const refreshToken = generateRefreshToken();
-  const accessTokenHash = hashToken(accessToken);
-  const refreshTokenHash = hashToken(refreshToken);
+  const accessTokenHash = hashOauthToken(accessToken);
+  const refreshTokenHash = hashOauthToken(refreshToken);
 
   const now = new Date();
   const accessExpiresAt = new Date(now.getTime() + 3600 * 1000);
@@ -256,6 +253,13 @@ oauthApp.use('/authorize/consent', supabaseAuth);
 oauthApp.use('/userinfo', oauthTokenAuth);
 oauthApp.use('/claimable-machines', oauthTokenAuth);
 
+// oauth_clients.client_id is a uuid column. These endpoints are public (the
+// client authenticates via client_secret per the OAuth spec), so scanners probe
+// them with junk ids ("notreal"); an unvalidated string reaches Postgres as a
+// uuid parameter and throws 22P02 — surfacing as a prod "Failed query" 500
+// instead of the spec-correct invalid_client. Gate before the DB.
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ─── GET /authorize ─────────────────────────────────────────────────────────
 
 oauthApp.openapi(
@@ -295,6 +299,10 @@ oauthApp.openapi(
 
   if (codeChallengeMethod !== 'S256') {
     return c.json({ error: 'invalid_request', error_description: 'Only code_challenge_method=S256 is supported' }, 400);
+  }
+
+  if (!UUID_REGEX.test(clientId)) {
+    return c.json({ error: 'invalid_client', error_description: 'Client not found or inactive' }, 400);
   }
 
   const [client] = await db
@@ -514,6 +522,10 @@ oauthApp.openapi(
     return c.json({ error: 'rate_limit_exceeded', error_description: 'Too many token requests' }, 429);
   }
 
+  if (!UUID_REGEX.test(clientId)) {
+    return c.json({ error: 'invalid_client' }, 401);
+  }
+
   const [client] = await db
     .select()
     .from(oauthClients)
@@ -612,14 +624,12 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
     return c.json({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
   }
 
-  const refreshTokenHash = hashToken(refreshTokenRaw);
-
   const [refreshRow] = await db
     .select()
     .from(oauthRefreshTokens)
     .where(
       and(
-        eq(oauthRefreshTokens.tokenHash, refreshTokenHash),
+        inArray(oauthRefreshTokens.tokenHash, oauthTokenHashCandidates(refreshTokenRaw)),
         eq(oauthRefreshTokens.clientId, client.clientId),
         isNull(oauthRefreshTokens.revokedAt),
       ),

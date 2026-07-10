@@ -313,7 +313,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.requestProjectConnector(projectId, input),
       },
 
-      /** Validate a `kortix.toml` manifest's raw TOML text server-side (same schema `kortix ship`/CR-merge use). */
+      /** Validate a `kortix.yaml` (or legacy `kortix.toml`) manifest's raw text server-side — format is auto-resolved from the project's manifest path (same schema `kortix ship`/CR-merge use). */
       validateManifest: (raw: string) => P.validateProjectManifest(projectId, raw),
 
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */

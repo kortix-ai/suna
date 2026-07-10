@@ -1,25 +1,28 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import {
-  SharingPicker,
-  isSharingComplete,
-  type SharingSelection,
-} from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
-import { setPersonalProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, ExternalLink, Info, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ExternalLink, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { FormEvent, useMemo, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
 import { ChatGptSubscriptionConnect } from './chatgpt-subscription-connect';
 import { envVarPlaceholder, helpHostnameFromUrl, prettyFieldLabel } from './utils';
+
+// LLM provider credentials are ALWAYS project-wide. A per-user "Only me" key is
+// invisible to the LLM gateway's shared-row resolution, so every model turn
+// dies with "No upstream configured" while the picker still shows the provider
+// as connected (2026-07-07 prod incident). The server rejects personal
+// overrides for provider env vars; this form never offers the choice.
 
 export function ApiKeyConnectForm({
   projectId,
@@ -37,35 +40,21 @@ export function ApiKeyConnectForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(provider.envVars.map((v) => [v, ''])),
   );
-  const [sharing, setSharing] = useState<SharingSelection>({
-    mode: 'project',
-    memberIds: [],
-    groupIds: [],
-  });
   const [error, setError] = useState<string | null>(null);
 
   const upsert = useMutation({
     mutationFn: async () => {
       for (const envVar of provider.envVars) {
-        if (sharing.mode === 'private') {
-          await setPersonalProjectSecret(projectId, envVar, {
-            value: values[envVar] ?? '',
-            active: true,
-          });
-        } else {
-          // Project-wide is the only shared option now — secret sharing
-          // (restricting a shared value to specific members) was retired.
-          await upsertProjectSecret(projectId, {
-            name: envVar,
-            value: values[envVar] ?? '',
-          });
-        }
+        await upsertProjectSecret(projectId, {
+          name: envVar,
+          value: values[envVar] ?? '',
+        });
       }
     },
     onSuccess: () => {
       successToast(`${provider.label} connected`);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      refreshProjectProviderState(queryClient, projectId);
+      refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
@@ -83,10 +72,6 @@ export function ApiKeyConnectForm({
           ? 'API key is required'
           : `All ${provider.envVars.length} fields are required`,
       );
-      return;
-    }
-    if (!isSharingComplete(sharing)) {
-      setError('Pick at least one member, or choose another access option.');
       return;
     }
     upsert.mutate();
@@ -122,11 +107,7 @@ export function ApiKeyConnectForm({
       </div>
 
       {provider.id === 'openai' && (
-        <ChatGptSubscriptionConnect
-          projectId={projectId}
-          sharing={sharing}
-          onConnected={onConnected}
-        />
+        <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
       )}
 
       <form
@@ -154,7 +135,9 @@ export function ApiKeyConnectForm({
           </div>
         ))}
 
-        <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading hideMembers />
+        <p className="text-muted-foreground text-xs">
+          Project-wide — every member of this project can use this provider.
+        </p>
 
         {provider.helpUrl && helpHostname && (
           <a
@@ -178,24 +161,16 @@ export function ApiKeyConnectForm({
           </div>
         )}
 
-        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
-          <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
-          <p className="text-foreground/80 text-xs leading-relaxed">
-            {tHardcodedUi.raw(
-              'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
-            )}
-          </p>
-        </div>
+        <InfoBanner tone="warning" icon={Info} className="rounded-2xl">
+          {tHardcodedUi.raw(
+            'autoComponentsProjectsProjectProviderModalJsxTextASandboxPicks96cfb428',
+          )}
+        </InfoBanner>
 
-        <Button
-          type="submit"
-          size="sm"
-          className="px-4"
-          disabled={upsert.isPending || !allFilled || !isSharingComplete(sharing)}
-        >
+        <Button type="submit" size="sm" className="px-4" disabled={upsert.isPending || !allFilled}>
           {upsert.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loading className="mr-1.5 size-3.5 shrink-0" />
               {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}
             </>
           ) : (

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 466,
+  "count": 464,
   "routes": [
     {
       "method": "GET",
@@ -1633,14 +1633,6 @@
     {
       "method": "POST",
       "path": "/v1/router/image-search"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/router/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/router/llm/models"
     },
     {
       "method": "POST",

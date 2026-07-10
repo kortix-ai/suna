@@ -112,7 +112,7 @@ const META_TOOLS = [
   {
     name: 'connect',
     description:
-      'Get a 1-click Pipedream Quick Connect link for a connector that is declared but not yet authenticated, and SURFACE the returned url to the human in your reply. Use this the moment you add/need a Pipedream connector — never tell the human to open the dashboard. In the web UI the link opens a connect popup; in Slack it is a tappable link. No credential ever touches the sandbox. The connector must already exist in kortix.toml (add it + land the change request first).',
+      'Get a 1-click Pipedream Quick Connect link for a connector that is declared but not yet authenticated, and SURFACE the returned url to the human in your reply. Use this the moment you add/need a Pipedream connector — never tell the human to open the dashboard. In the web UI the link opens a connect popup; in Slack it is a tappable link. No credential ever touches the sandbox. The connector must already exist in kortix.yaml (add it + land the change request first).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -166,7 +166,7 @@ const META_TOOLS = [
   {
     name: 'add_connector',
     description:
-      'Add (or update) an integration connector on this project RIGHT NOW — committed to kortix.toml on main and synced server-side, exactly like the dashboard\'s "Add app". No change request needed; it is live this session. Use this to set up a new tool, then call `connect` (Pipedream) or `request_secret` for its credential. For Pipedream pass provider="pipedream" + app (e.g. "smartlead").',
+      'Add (or update) an integration connector on this project RIGHT NOW — committed to kortix.yaml on main and synced server-side, exactly like the dashboard\'s "Add app". No change request needed; it is live this session. Use this to set up a new tool, then call `connect` (Pipedream) or `request_secret` for its credential. For Pipedream pass provider="pipedream" + app (e.g. "smartlead").',
     inputSchema: {
       type: 'object',
       properties: {
@@ -204,7 +204,7 @@ const META_TOOLS = [
   {
     name: 'remove_connector',
     description:
-      'Remove a connector from this project (committed to kortix.toml on main + catalog). No change request needed.',
+      'Remove a connector from this project (committed to kortix.yaml on main + catalog). No change request needed.',
     inputSchema: {
       type: 'object',
       properties: { slug: { type: 'string', description: 'Connector slug to remove.' } },
@@ -401,7 +401,7 @@ async function runMetaTool(executor: ExecutorClient, name: string, args: Record<
             provider,
             applied: true,
             sync: res.sync,
-            instructions: `Live now (committed to kortix.toml on main + synced) — no change request needed. Next: call connect("${slug}") for a Pipedream app, or request_secret for an API key.`,
+            instructions: `Live now (committed to kortix.yaml on main + synced) — no change request needed. Next: call connect("${slug}") for a Pipedream app, or request_secret for an API key.`,
           }),
           isError: false,
         };

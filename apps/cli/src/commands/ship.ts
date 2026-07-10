@@ -9,7 +9,7 @@ import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type {
   ProjectSummary,
@@ -18,7 +18,7 @@ import type {
   ProjectSecretsResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix ship [options]
+const HELP = help`Usage: kortix ship [options]
 
 Stage everything, commit, and push your current branch to the project's git
 repo — in one command. Run it once to create the project, then run it again
@@ -195,8 +195,8 @@ export async function runShip(argv: string[]): Promise<number> {
   const client = clientFromAuth(auth);
 
   // ── Verify the manifest "compiles" before we touch the cloud ──────────────
-  // Parse + validate kortix.toml locally so a broken config fails fast — long
-  // before we create a project, commit, or push. Also yields the [env] spec
+  // Parse + validate kortix.yaml locally so a broken config fails fast — long
+  // before we create a project, commit, or push. Also yields the env: spec
   // we use to make sure required secrets are set.
   const prepared = prepareManifest(flags);
   if (!prepared.ok) return 1;
@@ -214,9 +214,9 @@ export async function runShip(argv: string[]): Promise<number> {
 }
 
 /**
- * Parse + statically validate the local kortix.toml (the "compile" check).
- * Returns `ok:false` to abort the ship, plus the parsed `[env]` spec so the
- * caller can reconcile required secrets. A TOML syntax error or a schema
+ * Parse + statically validate the local kortix.yaml (the "compile" check).
+ * Returns `ok:false` to abort the ship, plus the parsed `env:` spec so the
+ * caller can reconcile required secrets. A YAML syntax error or a schema
  * error blocks the ship unless `--no-verify` is passed; warnings never block.
  */
 function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
@@ -241,7 +241,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     return { ok: false, env: empty };
   }
 
-  // No kortix.toml at all (a `.kortix/`-only project) — nothing to verify.
+  // No kortix.yaml at all (a `.kortix/`-only project) — nothing to verify.
   if (!manifest) return { ok: true, env: empty };
 
   if (!flags.noVerify) {
@@ -721,7 +721,7 @@ async function shipExisting(
 
 // ── git helpers ─────────────────────────────────────────────────────────────
 
-/** The display name from kortix.toml's [project].name, if present. Lets a
+/** The display name from kortix.yaml's project.name, if present. Lets a
  *  first ship honor the manifest instead of defaulting to the folder name. */
 function manifestProjectName(): string | undefined {
   try {

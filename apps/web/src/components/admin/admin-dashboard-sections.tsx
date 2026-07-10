@@ -287,7 +287,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
                 )}
               </SelectItem>
               <SelectItem value="justavps">JustAVPS</SelectItem>
-              <SelectItem value="managed">Managed</SelectItem>
+              <SelectItem value="daytona">Daytona</SelectItem>
             </SelectContent>
           </Select>
           <Button

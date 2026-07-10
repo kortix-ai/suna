@@ -5,7 +5,7 @@ import { loadConfigWithFiles } from './project-resources';
 /**
  * The "assign human → agent" pyramid, read side. A member/department assigned to
  * an agent (an agent resource grant) inherits EVERYTHING that agent declares in
- * kortix.toml — its `env` secrets and `connectors` — as their own accessible
+ * kortix.yaml — its `env` secrets and `connectors` — as their own accessible
  * resources everywhere (the Secrets UI, any session, connector calls). No opt-in
  * flag: the assignment itself does it.
  */

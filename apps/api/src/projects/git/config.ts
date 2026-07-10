@@ -1,4 +1,5 @@
-// Project config introspection: parses kortix.toml + the OpenCode config dir
+// Project config introspection: parses the project manifest (kortix.yaml,
+// falling back to legacy kortix.toml) + the OpenCode config dir
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 
 import {
@@ -182,10 +183,10 @@ export function resolveConfigAgents(
           path: spec.file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
-          source: 'kortix.toml' as const,
+          source: 'kortix.yaml' as const,
           enabled: spec.enabled,
           // Surface the per-agent allowlists so the UI can show (read-only) what
-          // secrets/connectors/CLI powers each [[agents]] entry is scoped to.
+          // secrets/connectors/CLI powers each declared agent is scoped to.
           scope: {
             env: spec.env,
             connectors: spec.connectors,

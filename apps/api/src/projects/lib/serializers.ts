@@ -3,6 +3,12 @@ import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
 import { type SecretGrant, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
+import {
+  classifySnapshotError,
+  describeSnapshotError,
+  type SnapshotErrorCategory,
+} from '../../snapshots/error-classify';
+import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { type ProjectRole } from '../access';
 import { resolveAppsEnabled } from '../apps-config';
 import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
@@ -420,6 +426,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
 }
 
 
+// Display cap for user-supplied project names. Well under the projects.name
+// varchar(255) column so every write path (provision, GitHub link, PAT link)
+// fits the schema even after a linked repo's derived name is substituted.
+export const PROJECT_NAME_MAX_LENGTH = 120;
+
+export function clampProjectName(name: string): string {
+  return name.length > PROJECT_NAME_MAX_LENGTH ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd() : name;
+}
+
 export function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
@@ -440,14 +455,30 @@ export async function readBody(c: Context) {
 
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
+  // errorCategory is a free-form column; older rows predate the classifier.
+  const category = (b.errorCategory ??
+    (b.error ? classifySnapshotError(b.error) : null)) as SnapshotErrorCategory | null;
   return {
     build_id: b.buildId,
     slug: b.slug,
+    /**
+     * The TEMPLATE this build was for. `slug` may be a build-log pseudo-slug
+     * (`default-warm`) that names no template; clients that want to act on a build
+     * — rebuild it, boot a session on it — must use this, never `slug`.
+     */
+    template_slug: templateSlugFromBuildSlug(b.slug),
     snapshot_name: b.snapshotName,
     content_hash: b.contentHash,
     status: b.status,
     error: b.error,
-    error_category: b.errorCategory,
+    error_category: category,
+    /**
+     * Whether an in-sandbox agent could plausibly fix this by editing the repo.
+     * Server-derived so the UI can't drift from what the API will accept: infra
+     * failures (quota, provider, timeout) are not repo-editable, and a fix session
+     * can't even boot when the snapshot it needs is the thing that failed.
+     */
+    fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
     source: b.source,
     started_at: b.startedAt.toISOString(),
     finished_at: b.finishedAt?.toISOString() ?? null,

@@ -11,7 +11,7 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
 
@@ -48,7 +48,7 @@ interface SnapshotBuild {
   finished_at: string | null;
 }
 
-const HELP = `Usage: kortix sandboxes <subcommand> [options]
+const HELP = help`Usage: kortix sandboxes <subcommand> [options]
 
 Manage the project's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +
@@ -105,14 +105,14 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Template definitions live in kortix.toml `[[sandbox.templates]]` (source of
+  // ── Template definitions live in kortix.yaml `[[sandbox.templates]]` (source of
   //    truth). add/update/rm edit the LOCAL file — `kortix ship` applies +
   //    builds. Only build/rebuild/health/builds/fix are cloud actions. ────────
   if (sub === 'add' || sub === 'create') return sandboxAddLocal(positional[0], f);
   if (sub === 'update' || sub === 'edit') return sandboxUpdateLocal(positional[0], f);
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
 
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 
@@ -230,7 +230,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
 }
 
-// ── Local kortix.toml `[[sandbox.templates]]` edits (source of truth) ────────────────
+// ── Local kortix.yaml `[[sandbox.templates]]` edits (source of truth) ────────────────
 
 function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a template slug');

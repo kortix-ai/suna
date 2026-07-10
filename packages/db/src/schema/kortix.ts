@@ -27,10 +27,10 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
 ]);
 
 export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
-  // 'managed' is the canonical name for the managed cloud backend. 'daytona' is
-  // the legacy alias for the SAME backend, kept valid forever so existing rows
-  // and any external caller still sending 'daytona' never break. New rows write
-  // 'managed'; read paths accept both (config.isManagedProviderName).
+  // 'daytona' is the managed cloud backend's identity — new rows write 'daytona'.
+  // 'managed' remains a valid enum value only because the ADD VALUE migration that
+  // introduced it can't be dropped in Postgres; it's a harmless defensive leftover
+  // from the reverted daytona→managed rename (read paths still accept it).
   'managed',
   'daytona',
   'local_docker',
@@ -209,12 +209,17 @@ export const accountInvitations = kortixSchema.table(
      *  Multiple grants are allowed — the same email could be invited
      *  to several projects at once via repeated calls (they upsert).
      *  Legacy rows may carry the retired 'user'/'viewer' role; readers
-     *  fold both into 'member' via parseProjectRole. */
-    bootstrapGrants: jsonb('bootstrap_grants').$type<Array<{
-      project_id: string;
-      role: 'manager' | 'editor' | 'member';
-      expires_at?: string | null;
-    }>>(),
+     *  fold both into 'member' via parseProjectRole.
+     *  Also carries `{ group_id }` entries: a SCIM Group membership pushed for a
+     *  user who hasn't logged in yet (a pending invite, no user row) is parked
+     *  here and materialized into account_group_members on acceptance — same
+     *  ride-along pattern as project grants. */
+    bootstrapGrants: jsonb('bootstrap_grants').$type<
+      Array<
+        | { project_id: string; role: 'manager' | 'editor' | 'member'; expires_at?: string | null }
+        | { group_id: string }
+      >
+    >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true })
@@ -285,7 +290,7 @@ export const projects = kortixSchema.table(
     name: varchar('name', { length: 255 }).notNull(),
     repoUrl: text('repo_url').notNull(),
     defaultBranch: varchar('default_branch', { length: 255 }).default('main').notNull(),
-    manifestPath: text('manifest_path').default('kortix.toml').notNull(),
+    manifestPath: text('manifest_path').default('kortix.yaml').notNull(),
     status: projectStatusEnum('status').default('active').notNull(),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
@@ -539,7 +544,7 @@ export const projectSessions = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     branchName: text('branch_name').notNull(),
     baseRef: text('base_ref').default('main').notNull(),
-    sandboxProvider: sandboxProviderEnum('sandbox_provider').default('managed').notNull(),
+    sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
     opencodeSessionId: text('opencode_session_id'),
@@ -986,7 +991,7 @@ export const sessionSandboxes = kortixSchema.table(
     sessionId: text('session_id').notNull().unique(),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
-    provider: sandboxProviderEnum('provider').default('managed').notNull(),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     baseUrl: text('base_url'),
     status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
@@ -1056,7 +1061,7 @@ export const providerEvents = kortixSchema.table(
  * still asks the provider directly, so cache drift is harmless.
  *
  * Sources of truth:
- *   - kortix.toml `[[sandbox.templates]]` entries → upserted into this table on read
+ *   - kortix.yaml `sandbox.templates` entries → upserted into this table on read
  *     so TOML stays code-as-truth. The upsert keys on (project_id, slug).
  *   - UI-created templates → live here only (no TOML), marked source='ui'.
  *
@@ -1081,7 +1086,7 @@ export const sandboxTemplates = kortixSchema.table(
     /** Where the template came from: 'platform' | 'toml' | 'ui'. */
     source: text('source').default('toml').notNull(),
     /** 'daytona' (others to follow). */
-    provider: text('provider').default('managed').notNull(),
+    provider: text('provider').default('daytona').notNull(),
 
     // ─── Image definition (exactly one of image / dockerfilePath) ──────────
     /** Public Docker image reference (e.g. python:3.12-slim). */
@@ -1178,7 +1183,7 @@ export const sandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    provider: sandboxProviderEnum('provider').default('managed').notNull(),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     status: sandboxStatusEnum('status').default('provisioning').notNull(),
     baseUrl: text('base_url').notNull(),
@@ -1351,7 +1356,7 @@ export const deployments = kortixSchema.table(
     accountId: uuid('account_id').notNull(),
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     // Optional link back to a Git-backed project + the [[apps]] slug inside
-    // its kortix.toml. Populated by the /v1/projects/:id/apps path; nullable
+    // its kortix.yaml manifest. Populated by the /v1/projects/:id/apps path; nullable
     // for historical deployment rows and future non-project deployment sources.
     projectId: uuid('project_id'),
     appSlug: varchar('app_slug', { length: 128 }),
@@ -1473,7 +1478,7 @@ export const accountTokens = kortixSchema.table(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     /** Per-agent authorization grant for a sandbox session token: which Kortix
      *  CLI/API actions + connector profiles the running agent may use. Resolved
-     *  from kortix.toml's [[agents]] overlay at session birth. The launching
+     *  from the kortix.yaml `agents` map at session birth. The launching
      *  user's role is still enforced by route IAM, so effective access is
      *  user role ∩ agentGrant. Null for non-agent tokens (laptop CLI PATs,
      *  etc.) — which keep role-only access. */
@@ -3009,7 +3014,7 @@ export const serviceAccounts = kortixSchema.table(
     /** Set for an auto-provisioned AGENT identity: the project the agent lives
      *  in. NULL for a manually-created (human-managed) service account. */
     projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
-    /** The kortix.toml [[agents]] name this SA is the standing identity for.
+    /** The kortix.yaml `agents` entry name this SA is the standing identity for.
      *  NULL for a manual service account. (account_id, project_id, agent_name)
      *  is unique so get-or-create is idempotent per agent. */
     agentName: text('agent_name'),
@@ -3108,7 +3113,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
 
 /* ─── Executor (connectors) ───────────────────────────────────────────────
  * One unified connector layer the agent reaches via the Executor (CLI/MCP/SDK).
- * Connectors are DEFINED in kortix.toml ([[connectors]]) and materialized here
+ * Connectors are DEFINED in kortix.yaml (`connectors`) and materialized here
  * on push (manifest = config source of truth, like triggers). Credentials are
  * project_secrets (scope handled by sharing above); the Pipedream connection
  * binding is also a project secret. See docs/specs/executor.md.
@@ -3334,7 +3339,7 @@ export const executorConnectorPolicies = kortixSchema.table(
 
 /**
  * Project-scoped tool-call policies — materialized from top-level [[policies]]
- * in kortix.toml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
+ * in kortix.yaml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
  * across ALL connectors in the project; evaluated BEFORE any connector-scoped
  * rule. See docs/specs/executor.md §8.
  */
@@ -3364,7 +3369,7 @@ export const executorDefaultModeEnum = kortixSchema.enum('executor_default_mode'
 
 /**
  * One row per project — non-policy executor settings (just `default_mode`
- * today). Materialized from [policy] in kortix.toml; missing block = allow_all
+ * today). Materialized from `policy` in kortix.yaml; missing block = allow_all
  * for back-compat with existing projects.
  */
 export const executorProjectSettings = kortixSchema.table(

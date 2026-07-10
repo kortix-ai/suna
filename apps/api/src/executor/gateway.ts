@@ -137,7 +137,8 @@ export interface GatewayDeps {
   waitForApprovalDecision?(
     executionId: string,
     timeoutMs: number,
-  ): Promise<'approved' | 'denied' | 'timeout'>;
+    expect?: { sessionId: string | null; connectorId: string; actionPath: string },
+  ): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'>;
   /** "Allow for this session" check: has this session already approved THIS
    *  connector + action for the rest of the session? A hit turns a
    *  `require_approval` into a silent run (no hold, no re-prompt). Only ever
@@ -490,7 +491,30 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         // re-issues the call and keeps pausing INDEFINITELY (like a question).
         // Unattended (no session) never waits.
         if (executionId && input.sessionId && deps.waitForApprovalDecision) {
-          const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS);
+          const outcome = await deps.waitForApprovalDecision(executionId, APPROVAL_WAIT_MS, {
+            sessionId: input.sessionId,
+            connectorId: connector.connectorId,
+            actionPath: `${input.connectorSlug}.${input.actionPath}`,
+          });
+          if (outcome === 'mismatch') {
+            // The supplied approvalExecutionId does not belong to THIS
+            // (session, connector, action). Never honor another row's approval —
+            // open a fresh pending gate that a human must actually resolve.
+            const freshId = await audit(
+              deps,
+              input,
+              connector.connectorId,
+              'pending_approval',
+              action.risk,
+              { reason: 'policy_require_approval', policy_source: decision.source },
+            );
+            return {
+              status: 'pending_approval',
+              reason: 'policy_require_approval',
+              executionId: freshId ?? undefined,
+              retryable: true,
+            };
+          }
           if (outcome === 'denied') {
             // Mark the decision as consumed by this live waiter — the resolve
             // endpoint's server-side resume uses that marker to know the turn

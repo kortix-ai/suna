@@ -3,11 +3,9 @@ title: Manifest reference
 description: The project manifest — every table, field, default, and validation rule, for both kortix.yaml (v2) and kortix.toml (v1, legacy).
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 The one file the platform treats as authoritative for a project. For the plain-language version, see [Projects](/docs/concepts/projects).
 
-The manifest lives at the repo root — `kortix.yaml` (v2, the current default for new projects) or `kortix.toml` (v1, legacy, still fully supported for existing projects). Any repo with a valid manifest at the root is a Kortix project. The parser is permissive — it never throws on a bad entry: bad triggers and apps go into an `errors` list alongside the good ones, and unknown top-level keys are ignored (park your own metadata freely).
+The manifest lives at the repo root — `kortix.yaml` (v2, the current default for new projects), its `kortix.yml` short-extension sibling, or `kortix.toml` (v1, legacy, still fully supported for existing projects). Any repo with a valid manifest at the root is a Kortix project. When more than one candidate file is present, the platform resolves them in priority order — `.yaml` first, then `.yml`, then `.toml` — and reads the first one it finds. The parser is permissive — it never throws on a bad entry: bad triggers and apps go into an `errors` list alongside the good ones, and unknown top-level keys are ignored (park your own metadata freely).
 
 <Callout type="info" title="The canonical schema">
   Either version, the always-current, machine-checkable spec is the public JSON Schema — generated straight from `@kortix/manifest-schema`, the same package behind `kortix validate` and the CR-merge gate, so it can't drift from what the platform actually enforces:
@@ -147,6 +145,14 @@ kortix_version: 2
 
 `kortix_version` is the required schema version. A manifest declaring a version higher than the platform knows about is rejected outright — the platform won't silently misread future fields. `kortix_version: 2` requires YAML (`.yaml`); a `.toml` file declaring `kortix_version: 2` is a validation error pointing at the migration flow. When the platform writes the manifest back after a dashboard edit, it ensures `kortix_version` is the first key.
 
+### `runtime:` (v2 only)
+
+Optional top-level string, v2 only. Today the only legal value is `opencode` — the default when omitted — reserved so a future runtime (e.g. a hypothetical `runtime: claude`) is a one-line manifest change rather than a schema break. It has no other effect yet.
+
+```yaml
+runtime: opencode
+```
+
 ## What's parsed where
 
 | Surface           | v2 (`kortix.yaml`)                                        | v1 (`kortix.toml`, legacy)                               |
@@ -157,7 +163,7 @@ kortix_version: 2
 | Session bootstrap | `env:` (advisory — surfaced to dashboard, not enforced)      | `[env]`                                                  |
 | Connector sync    | `connectors:`                                                | `[[connectors]]`                                        |
 | Agent governance  | `agents:` (governance-only name→block map — server-side launch roster + connector/`kortix_cli`/`secrets`/`skills` grants) | `[[agents]]` (array of tables, same grant fields plus dead `model`/`file`) |
-| Apps deploy sweep | `apps:` (when `KORTIX_APPS_EXPERIMENTAL=true`)               | `[[apps]]` (same flag)                                   |
+| Apps deploy sweep | `apps:` (gated per-project — see [below](#apps--apps-experimental)) | `[[apps]]` (same gate)                                   |
 | Dashboard UI      | All of the above + the raw manifest                          | Same                                                     |
 | *(removed)*       | `channels:` does not exist in the v2 schema — see [below](#channels-removed-in-v2) | `[[channels]]` parses and round-trips but no runtime path reads it |
 
@@ -240,6 +246,7 @@ memory = 4
 | `name`       | string | slug             | Display label shown in the dashboard picker.                          |
 | `dockerfile` | string | —                | Repo-relative path. **Mutually exclusive** with `image`.              |
 | `image`      | string | —                | Public Docker image, tag- or digest-pinned (no bare `latest`). **Mutually exclusive** with `dockerfile`. |
+| `entrypoint` | string | —                | Overrides the container entrypoint the snapshot boots with. Optional — when omitted, the Kortix runtime layer's own entrypoint is used. |
 | `cpu`        | int    | provider default | vCPU cores.                                                           |
 | `memory`     | int    | provider default | RAM in GiB.                                                           |
 | `disk`       | int    | provider default | Disk in GiB.                                                          |
@@ -300,7 +307,7 @@ server / LLM-gateway catalog rather than a sandbox-local OpenCode provider list.
 
 ## `triggers:` / `[[triggers]]`
 
-Each entry spawns a fresh session that runs `prompt` as its initial message. Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
+Each entry fires a session that runs `prompt` as its initial message — a fresh session by default, or the trigger's prior session when `session_mode: reuse` (see below). Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
 
 ```yaml
 triggers:
@@ -312,16 +319,18 @@ triggers:
 
 ### Common fields
 
-| Field     | Required | Type   | Default     | Notes                                                          |
-| --------- | -------- | ------ | ----------- | -------------------------------------------------------------- |
-| `slug`    | yes      | string | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
-| `type`    | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
-| `prompt`  | yes      | string | —           | Mustache-style template.                                      |
-| `name`    | no       | string | `slug`      | Human label.                                                  |
-| `agent`   | no       | string | `"default"` | Agent name. Legacy projects resolve this through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
-| `enabled` | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
+| Field          | Required | Type   | Default     | Notes                                                          |
+| -------------- | -------- | ------ | ----------- | -------------------------------------------------------------- |
+| `slug`         | yes      | string | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
+| `type`         | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
+| `prompt`       | yes      | string | —           | Mustache-style template.                                      |
+| `name`         | no       | string | `slug`      | Human label.                                                  |
+| `agent`        | no       | string | `"default"` | Agent name. Legacy projects resolve this through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
+| `enabled`      | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
+| `model`        | no       | string | —           | Wire form `provider/model` (e.g. `anthropic/claude-sonnet-5`). Pins the fired session to that model, taking precedence over the agent/account/platform default chain. Unlike the dead v1 `[[agents]].model`, this one is live. |
+| `session_mode` | no       | string | `"fresh"`   | `"fresh"` or `"reuse"` (camelCase `sessionMode` also accepted). `"reuse"` continues the trigger's existing session on each fire instead of spawning a new one. |
 
-Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
+Cron-only: `cron` (6-field croner `second minute hour day month weekday`) or a one-off `run_at` (camelCase `runAt`, an ISO-8601 datetime, e.g. `2026-06-01T09:00:00Z`) — exactly one of the two is required; `run_at` fires the trigger once at that instant instead of on a recurring schedule. `timezone` (IANA name, default `"UTC"`) applies to `cron`. Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 
 The parser accepts only canonical trigger field names. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
 
@@ -389,16 +398,21 @@ Provider-specific fields:
 - **openapi** — `spec` (required: URL or repo-relative path).
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
 - **http** — `base_url` (required), `spec` (optional).
-- **channel** — `platform` (required, e.g. `slack`). Chat platforms. You rarely
-  declare these by hand — connecting Slack ([Channels](/docs/concepts/channels))
-  **auto-materializes** the `slack` connector (credential = the install token,
-  resolved server-side), so the agent can call it through the Executor and you
-  manage it in Connectors.
+- **channel** — `platform` (required) = `slack` \| `email` \| `meet`. Chat
+  platforms. You rarely declare these by hand — connecting one
+  ([Channels](/docs/concepts/channels)) **auto-materializes** the connector
+  (credential = the install token, resolved server-side), so the agent can call
+  it through the Executor and you manage it in Connectors.
 - **computer** — connected machines over the Agent Computer Tunnel.
   **Synth-only: you cannot declare it by hand.** Connecting a machine
   ([Computers](/docs/concepts/computers)) auto-materializes a single `computer`
   connector that fronts all your machines (it has no credential — the live tunnel
   is the credential; per-machine access is granted in Computers).
+
+Reserved slugs: `kortix_slack`, `kortix_email`, `kortix_meet` (each locked to
+`provider: channel`) and `computer` (locked to `provider: computer`) are
+platform-owned — declaring one of these slugs with any other provider is a
+validation error, the same rule that keeps `computer` synth-only above.
 
 ### `connectors.auth`
 
@@ -487,9 +501,9 @@ In v1, a trigger, channel, or session that names no agent (or names the literal 
 `model` and `file` round-trip through a v1 manifest (dashboard edits preserve them) but neither is consulted by the runtime. Don't rely on them to change what a session actually does. Both are removed outright in v2 (that behavior lives in the agent's own `.md` file).
 </Callout>
 
-## `apps:` / `[[apps]]` (experimental)
+## `apps:` / `[[apps]]` (experimental) [#apps--apps-experimental]
 
-Gated behind `KORTIX_APPS_EXPERIMENTAL=true`. With the flag off, `/apps` routes return 404 (JSON error explaining the flag) and the deploy sweep skips every project — entries are parsed but never acted on. Each entry declares a deployable surface alongside the agent, fly.toml-style. The platform dispatches through a provider adapter (Freestyle today; pluggable) and records each deploy in the `deployments` table.
+Gated **per project**, not by a single global switch. Apps is one entry in the platform's experimental-feature registry: each project has an explicit choice — on or off — toggled from Customize → Settings, stored in `projects.metadata` (never in the manifest). `KORTIX_APPS_EXPERIMENTAL` is only the *operator-wide default* applied when a project hasn't made an explicit choice; a project can enable Apps even when that env var is `false`, and can opt out even when it's `true`. With the effective gate off for a project, its `/apps` routes return 404 (JSON error pointing at Customize → Settings) and the deploy sweep skips it — entries are parsed but never acted on; the sweep evaluates every active project individually rather than skipping the whole fleet when the operator default is off. Each entry declares a deployable surface alongside the agent, fly.toml-style. The platform dispatches through a provider adapter (Freestyle today; pluggable) and records each deploy in the `deployments` table.
 
 ```yaml
 apps:

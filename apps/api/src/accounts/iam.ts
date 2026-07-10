@@ -12,7 +12,8 @@
 // Custom roles + policies were REBUILT from scratch in Phase 3 of
 // feat/iam-rbac-v1 (June 2026, ./iam/custom-roles.ts): DB-backed custom
 // roles (iam_roles / iam_role_actions) and role bindings (iam_policies) are
-// live, Enterprise-entitlement-gated ('rbac'), and read by the V2 engine
+// live, available on every tier (the 'rbac' entitlement is granted to all
+// plans since 2026-07-08), and read by the V2 engine
 // (../iam/engine-v2.ts), which unions their granted actions additively on
 // top of the fixed built-in preset roles. These tables are NOT dead.
 //

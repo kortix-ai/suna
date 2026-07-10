@@ -1,7 +1,7 @@
 /**
  * `kortix validate` — standalone manifest validator.
  *
- * Reads ./kortix.toml (or --file <path>), runs the canonical
+ * Reads ./kortix.yaml (or --file <path>), runs the canonical
  * `@kortix/manifest-schema` validator, and prints a colored report.
  *
  *   exit 0   — no errors (warnings may be present)
@@ -21,9 +21,9 @@ import {
   validateManifest,
 } from '@kortix/manifest-schema';
 import { resolveLocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix validate [options]
+const HELP = help`Usage: kortix validate [options]
 
 Statically validate the project's kortix.yaml against the canonical schema.
 
@@ -84,10 +84,10 @@ export function runValidate(argv: string[]): number {
   }
 
   // Explicit --file wins; otherwise resolve the project's manifest, preferring
-  // kortix.yaml over kortix.toml (falls back to kortix.toml for the not-found msg).
+  // kortix.yaml over kortix.toml (falls back to kortix.yaml for the not-found msg).
   const filePath = flags.file
     ? resolve(process.cwd(), flags.file)
-    : (resolveLocalManifest(process.cwd())?.path ?? resolve(process.cwd(), 'kortix.toml'));
+    : (resolveLocalManifest(process.cwd())?.path ?? resolve(process.cwd(), 'kortix.yaml'));
   if (!existsSync(filePath)) {
     if (flags.json) {
       process.stdout.write(

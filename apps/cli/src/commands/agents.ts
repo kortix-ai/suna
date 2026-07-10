@@ -5,7 +5,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/model-defaults.ts).
 interface ModelDefaults {
@@ -16,7 +16,7 @@ interface ModelDefaults {
   resolvedForCaller: string | null;
 }
 
-const HELP = `Usage: kortix agents <subcommand> [options]
+const HELP = help`Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project. Today: which MODEL each agent
 runs on — the dynamic gateway default (scope=agent), applied instantly with no
@@ -58,7 +58,7 @@ export async function runAgents(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
+  const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}/model-defaults`;
 

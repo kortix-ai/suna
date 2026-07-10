@@ -5,15 +5,18 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { supabaseAuth } from '../middleware/auth';
+import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
 import {
   _resetExternalCache,
   assertAllowedSourceAddress,
   catalogStatus,
+  clampMarketplaceItemsLimit,
   getCatalogItemDetail,
   getCatalogItemFile,
   listCatalogItemsLive,
+  listCatalogItemsPage,
   listFeaturedMarketplaces,
   listMarketplaces,
   registerMarketplaceSourceProvider,
@@ -39,7 +42,13 @@ marketplaceApp.openapi(
     tags: ['marketplace'],
     summary: 'GET /marketplace/items',
     request: {
-      query: z.object({ query: z.string().optional(), type: z.string().optional(), source: z.string().optional() }),
+      query: z.object({
+        query: z.string().optional(),
+        type: z.string().optional(),
+        source: z.string().optional(),
+        limit: z.string().optional(),
+        offset: z.string().optional(),
+      }),
     },
     responses: {
       200: json(z.any(), 'Catalog items'),
@@ -47,10 +56,34 @@ marketplaceApp.openapi(
   }),
   async (c: any) => {
     const q = c.req.query();
+    // Pagination is opt-in: only a present, numeric `limit` triggers slicing —
+    // absent/non-numeric `limit` must still return the full filtered list
+    // (existing callers, e.g. the web's default-project-skills lookup, filter
+    // client-side and rely on getting everything back). A present-but-out-of-
+    // range `limit` (e.g. 0, negative, >200) still opts in, clamped to [1,200].
+    // 200 (not 100) so the explore landing's `MARKETPLACE_EXPLORE_LANDING_LIMIT`
+    // (120) is actually honored instead of silently truncated by this clamp.
+    const parsedLimit = q.limit !== undefined ? Number.parseInt(q.limit, 10) : NaN;
+    const hasLimit = Number.isFinite(parsedLimit);
+    const parsedOffset = q.offset !== undefined ? Number.parseInt(q.offset, 10) : NaN;
+    const offset = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+    if (hasLimit) {
+      const limit = clampMarketplaceItemsLimit(parsedLimit);
+      const { items, total } = await listCatalogItemsPage({
+        query: q.query,
+        type: q.type,
+        source: q.source,
+        limit,
+        offset,
+      });
+      // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
+      // poll, and show a spinner per still-resolving source.
+      return c.json({ items, total, hasMore: offset + items.length < total, ...catalogStatus() });
+    }
     const items = await listCatalogItemsLive({ query: q.query, type: q.type, source: q.source });
     // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
     // poll, and show a spinner per still-resolving source.
-    return c.json({ items, ...catalogStatus() });
+    return c.json({ items, total: items.length, hasMore: false, ...catalogStatus() });
   },
 );
 
@@ -133,6 +166,17 @@ marketplaceApp.use('/sources', supabaseAuth);
 marketplaceApp.use('/sources/*', supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
+// Mutating this list is a platform-admin action (GET stays open to any
+// authenticated user); gate POST/DELETE the same way admin/index.ts and
+// ops/index.ts do, without touching the GET listing above.
+marketplaceApp.use('/sources', async (c, next) => {
+  if (c.req.method === 'POST') return requireAdmin(c, next);
+  await next();
+});
+marketplaceApp.use('/sources/*', async (c, next) => {
+  if (c.req.method === 'DELETE') return requireAdmin(c, next);
+  await next();
+});
 
 marketplaceApp.openapi(
   createRoute({

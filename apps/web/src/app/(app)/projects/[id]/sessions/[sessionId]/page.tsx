@@ -4,7 +4,6 @@ import { useTranslations } from 'next-intl';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
-import { useReducedMotion } from 'motion/react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -14,7 +13,6 @@ import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
-import { shouldShowStartError } from '@/features/session/session-start-gate';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
@@ -117,7 +115,6 @@ export default function ProjectSessionPage() {
   // ── Crossfade: the instant shell fades out as the real chat fades in ──────
   // A fully-interactive shell (welcome wallpaper + live input) renders at a SINGLE
   // stable tree position for the whole pre-ready lifecycle, so it never remounts.
-  const prefersReducedMotion = useReducedMotion() ?? false;
   const [chatReady, setChatReady] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
   const [shellSubmitted, setShellSubmitted] = useState(false);
@@ -146,12 +143,6 @@ export default function ProjectSessionPage() {
   useEffect(() => {
     if (chatReady) clearSessionFresh(sessionId);
   }, [chatReady, sessionId]);
-  // Reduced motion cuts instead of crossfading (motion-reduce:transition-none),
-  // so the loader layer's opacity change fires no transitionend — unmount it
-  // here instead of waiting for the handler below.
-  useEffect(() => {
-    if (chatReady && prefersReducedMotion) setLoaderMounted(false);
-  }, [chatReady, prefersReducedMotion]);
 
   // Terminal/gated states fully REPLACE the content (no chat to fade to).
   const gated = !authLoading && !!user && noPlan;
@@ -192,15 +183,15 @@ export default function ProjectSessionPage() {
       );
     }
 
-    if (shouldShowStartError(session.startError, isFresh)) {
-      const sessionMissing = session.startError!.status === 404;
+    if (session.startError) {
+      const sessionMissing = session.startError.status === 404;
       return (
         <InlineSessionError
           title="Couldn't start session"
           message={
             sessionMissing
               ? 'This session is no longer available, or you do not have access to it.'
-              : session.startError!.message
+              : session.startError.message
           }
         />
       );
@@ -234,7 +225,7 @@ export default function ProjectSessionPage() {
         {canMountChat && (
           <div
             className={cn(
-              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out motion-reduce:transition-none',
+              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
               chatReady ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
           >
@@ -257,7 +248,7 @@ export default function ProjectSessionPage() {
               if (chatReady) setLoaderMounted(false);
             }}
             className={cn(
-              'absolute inset-0 flex flex-col transition-opacity duration-300 ease-out motion-reduce:transition-none',
+              'absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
@@ -269,7 +260,11 @@ export default function ProjectSessionPage() {
                 onSubmit={() => setShellSubmitted(true)}
               />
             ) : (
-              <SessionStartingLoader projectId={projectId} sessionId={sessionId} />
+              <SessionStartingLoader
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+              />
             )}
           </div>
         )}

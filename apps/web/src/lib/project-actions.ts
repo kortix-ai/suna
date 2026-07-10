@@ -11,10 +11,11 @@
  * Gating rule (IAM v1): a capability is DEACTIVATED for a group by giving
  * its custom role a permission set that OMITS the capability's leaf. The UI
  * reflects that by hiding/disabling the section whose `read`/`write` leaf the
- * role no longer grants. Therefore every `read` leaf used below MUST be one the
- * built-in Member role is seeded with (role-perms.ts `PROJECT_MEMBER_BASELINE`)
- * and every `write` leaf one Editor is seeded with — otherwise a normal
- * member/editor would be stranded out of a section they should still see.
+ * role no longer grants. Sections whose read leaf is in the Member baseline
+ * (role-perms.ts `PROJECT_MEMBER_BASELINE`) are visible to every project role;
+ * `secrets` gates on project.secret.read, which is DELIBERATELY editor-tier
+ * (the sensitive file/secret reads moved off the floor `member` role), so that
+ * section — like the standalone Files page — hides for plain members by design.
  */
 
 import type { CustomizeSection } from '@/lib/customize-sections';
@@ -150,27 +151,28 @@ export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly ProjectAction[] = Array.fr
 
 /**
  * Whether a section is visible in the rail, given the current user's resolved
- * capabilities (`caps[action].allowed`). Customization is an editor+
- * capability, so a section shows only when the user can customize
- * (`project.customize.write`, i.e. editor or manager) AND still holds that
- * section's own read leaf (so a custom role that omits a read leaf keeps
- * hiding just that section). A plain `member` (read-only floor) lacks
- * customize.write → sees none of them. Files is NOT here — it's the
- * standalone /projects/[id]/files page, reachable by any member.
+ * capabilities (`caps[action].allowed`). Visibility gates on the section's own
+ * READ leaf: a role that can READ a section SEES it — read-only if it lacks the
+ * section's WRITE leaf (the mutating controls inside each view gate on
+ * write / can_manage SEPARATELY). This mirrors the read/write split declared in
+ * CUSTOMIZE_SECTION_ACCESS above and the backend's granular capability model —
+ * so a custom role granted e.g. `secret.read` sees the Secrets section
+ * read-only, and a role that omits a read leaf hides just that one section.
+ * (Previously this ALSO required `project.customize.write`, which blanked the
+ * whole panel for every read-only / granular role — the bug this fixes.) This
+ * is a VISIBILITY layer only; the API re-checks every mutation. Files is NOT
+ * here — it's the standalone /projects/[id]/files page, gated on project.file.read.
  */
 export function isCustomizeSectionVisible(
   s: CustomizeSection,
   can: (action: ProjectAction) => boolean,
 ): boolean {
-  const a = CUSTOMIZE_SECTION_ACCESS[s];
-  return can(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE) && can(a.read);
+  return can(CUSTOMIZE_SECTION_ACCESS[s].read);
 }
 
-/** Distinct actions to probe for section visibility — every read leaf plus the
- *  editor+ `customize.write` gate — in one batched capability call. */
+/** Distinct READ leaves to probe for section visibility — one batched capability
+ *  call over every section the rail might show. (Edit controls inside each
+ *  section gate separately on can_manage / the section's own write leaf.) */
 export const CUSTOMIZE_SECTION_GATE_ACTIONS: readonly ProjectAction[] = Array.from(
-  new Set<ProjectAction>([
-    ...Object.values(CUSTOMIZE_SECTION_ACCESS).map((a) => a.read),
-    PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  ]),
+  new Set<ProjectAction>(Object.values(CUSTOMIZE_SECTION_ACCESS).map((a) => a.read)),
 );

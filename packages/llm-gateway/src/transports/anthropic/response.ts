@@ -150,6 +150,21 @@ function translateStreaming(response: Response): Response {
             } else if (t === 'message_delta') {
               if (evt.delta?.stop_reason) finishReason = FINISH_REASON[evt.delta.stop_reason] ?? 'stop';
               if (evt.usage?.output_tokens != null) usage.completion_tokens = evt.usage.output_tokens;
+            } else if (t === 'error') {
+              // Anthropic reports a mid-flight failure (overloaded, request too
+              // large, etc.) as an `error` event on an otherwise-200 stream. Emit
+              // it as an OpenAI-shaped error frame — matching the openai-responses
+              // transport — so the probe/relay surface the real cause instead of
+              // laundering it into a generic empty "stop".
+              const err = evt.error ?? {};
+              const errChunk = {
+                error: {
+                  message: typeof err.message === 'string' ? err.message : 'anthropic upstream error',
+                  type: typeof err.type === 'string' ? err.type : 'upstream_error',
+                  code: typeof err.type === 'string' ? err.type : 'upstream_error',
+                },
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`));
             } else if (t === 'message_stop') {
               const finalChunk = {
                 id,

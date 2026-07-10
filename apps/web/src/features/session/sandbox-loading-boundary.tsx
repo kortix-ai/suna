@@ -17,6 +17,7 @@
  */
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { useEffect } from 'react';
 
 /** Transient errors thrown while the sandbox/opencode runtime is still booting. */
@@ -28,15 +29,16 @@ function isRuntimeNotReadyError(error: Error): boolean {
 function RuntimeLoadingFallback({ reset }: { reset: () => void }) {
   // The runtime URL lands within a second or two of provisioning. Soft-reset the
   // boundary on a short interval so the subtree re-renders and picks it up the
-  // moment it's ready — no hard reload, no manual "Try again". A minimal centered
-  // spinner (not the full boot loader) so it reads as "still loading", not a crash.
+  // moment it's ready — no hard reload, no manual "Try again". Render the one
+  // canonical Kortix loader (same as ProjectAccessLoading) so the whole project
+  // route shows a single, consistent loader rather than a stray spinner.
   useEffect(() => {
     const t = setInterval(reset, 800);
     return () => clearInterval(t);
   }, [reset]);
   return (
     <div className="flex h-full min-h-[50vh] w-full flex-1 items-center justify-center">
-      <span className="border-muted-foreground/25 border-t-foreground size-6 animate-spin rounded-full border-2" />
+      <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
     </div>
   );
 }

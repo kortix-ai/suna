@@ -1428,10 +1428,18 @@ export async function listFeaturedMarketplaces(): Promise<
 // ── public read API ────────────────────────────────────────────────────────
 type ItemQuery = { query?: string; type?: string; source?: string };
 
-// Launch scope: the marketplace is the skill library. Agents, commands, tools,
-// bundles, and support files may still exist in registries for compatibility
-// and dependency resolution, but they are not browse/install choices.
-const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill"]);
+// The one-click importables the marketplace surfaces to users: skills, agents,
+// commands, and bundles (curated starters / use-cases). Tools, rules, and other
+// support files still exist in registries for dependency resolution but aren't
+// browse/install choices on their own. Install is capability-gated per committed
+// file path (see projects/routes/r10 assertCommitCapabilities), so widening this
+// set never bypasses authz.
+const MARKETPLACE_VISIBLE_TYPES = new Set<string>([
+  "registry:skill",
+  "registry:agent",
+  "registry:command",
+  "registry:bundle",
+]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
@@ -1462,6 +1470,46 @@ function filterCatalogItems(
   });
 }
 
+/** Maximum `limit` the `/marketplace/items` route accepts, once a caller opts
+ *  into pagination. Bounds the payload/memory a single request can demand
+ *  while leaving headroom above `MARKETPLACE_EXPLORE_LANDING_LIMIT` (120, in
+ *  the web's `marketplace-public.ts`) so that SSR fetch is actually honored
+ *  instead of silently truncated by this clamp. */
+export const MARKETPLACE_ITEMS_MAX_LIMIT = 200;
+
+/** Clamps a parsed `limit` query value into `[1, MARKETPLACE_ITEMS_MAX_LIMIT]`.
+ *  Extracted from the route handler so the clamp boundary is unit-testable
+ *  without spinning up an HTTP server or a catalog with 200+ real items. */
+export function clampMarketplaceItemsLimit(parsedLimit: number): number {
+  return Math.min(Math.max(parsedLimit, 1), MARKETPLACE_ITEMS_MAX_LIMIT);
+}
+
+/** Pure filter + optional slice — the sliceable core of `listCatalogItemsPage`,
+ *  factored out so it can be unit-tested against an injected `CatalogItem[]`
+ *  without touching `mergedCatalog()` (which does a live GitHub scan).
+ *  Pagination is opt-in: `limit` only slices when it is a positive finite
+ *  number; otherwise the full filtered list is returned (`total` unaffected
+ *  either way — it is always the pre-slice filtered count). */
+export function pageCatalogItems(
+  items: CatalogItem[],
+  opts: ItemQuery & { limit?: number; offset?: number },
+): { items: CatalogItem[]; total: number } {
+  const filtered = filterCatalogItems(items, opts);
+  const total = filtered.length;
+  const hasLimit =
+    typeof opts.limit === "number" &&
+    Number.isFinite(opts.limit) &&
+    opts.limit > 0;
+  if (!hasLimit) return { items: filtered, total };
+  const offset =
+    typeof opts.offset === "number" &&
+    Number.isFinite(opts.offset) &&
+    opts.offset > 0
+      ? opts.offset
+      : 0;
+  return { items: filtered.slice(offset, offset + (opts.limit as number)), total };
+}
+
 /** Complete catalog (waits for every source). Use where the full set must be
  *  present — programmatic consumers, tests. */
 export async function listCatalogItems(
@@ -1476,6 +1524,16 @@ export async function listCatalogItemsLive(
   opts: ItemQuery = {},
 ): Promise<CatalogItem[]> {
   return filterCatalogItems((await mergedCatalog()).items, opts);
+}
+
+/** Progressive catalog, paginated. Opt-in: pass `limit` to slice; omit it (or
+ *  pass an invalid value) to get the full filtered list, matching
+ *  `listCatalogItemsLive`'s existing full-list contract. `total` is always the
+ *  pre-slice filtered count. */
+export async function listCatalogItemsPage(
+  opts: ItemQuery & { limit?: number; offset?: number },
+): Promise<{ items: CatalogItem[]; total: number }> {
+  return pageCatalogItems((await mergedCatalog()).items, opts);
 }
 
 export async function getCatalogEntry(

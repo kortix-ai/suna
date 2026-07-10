@@ -2,21 +2,14 @@
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  SharingPicker,
-  isSharingComplete,
-  type SharingSelection,
-} from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
-import {
-  setPersonalProjectSecret,
-  upsertProjectSecret,
-} from '@kortix/sdk/projects-client';
+import { upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, Copy, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Copy } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { FormEvent, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 
 import type { CustomFormState } from './types';
 import { buildCustomProviderSnippet } from './utils';
@@ -39,11 +32,6 @@ export function CustomProviderForm({
     apiKey: '',
     modelId: '',
     modelName: '',
-  });
-  const [sharing, setSharing] = useState<SharingSelection>({
-    mode: 'project',
-    memberIds: [],
-    groupIds: [],
   });
   const [error, setError] = useState<string | null>(null);
   const [savedSnippet, setSavedSnippet] = useState<{
@@ -79,22 +67,13 @@ export function CustomProviderForm({
         ? `CUSTOM_${trimmed.providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`
         : null;
       if (secretName) {
-        if (!isSharingComplete(sharing)) {
-          throw new Error('Pick at least one member, or choose another access option.');
-        }
-        if (sharing.mode === 'private') {
-          await setPersonalProjectSecret(projectId, secretName, {
-            value: trimmed.apiKey,
-            active: true,
-          });
-        } else {
-          // Project-wide is the only shared option now — secret sharing
-          // (restricting a shared value to specific members) was retired.
-          await upsertProjectSecret(projectId, {
-            name: secretName,
-            value: trimmed.apiKey,
-          });
-        }
+        // LLM provider credentials are always project-wide (see
+        // api-key-connect-form.tsx) — a per-user key is invisible to the
+        // gateway's shared-row resolution and breaks every model turn.
+        await upsertProjectSecret(projectId, {
+          name: secretName,
+          value: trimmed.apiKey,
+        });
       }
 
       const snippet = buildCustomProviderSnippet({
@@ -204,7 +183,9 @@ export function CustomProviderForm({
         </div>
 
         {form.apiKey.trim() && (
-          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading hideMembers />
+          <p className="text-muted-foreground text-xs">
+            Project-wide — every member of this project can use this provider.
+          </p>
         )}
         <div>
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
@@ -269,15 +250,10 @@ export function CustomProviderForm({
           </div>
         )}
 
-        <Button
-          type="submit"
-          size="sm"
-          className="px-4"
-          disabled={save.isPending || (Boolean(form.apiKey.trim()) && !isSharingComplete(sharing))}
-        >
+        <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
           {save.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loading className="mr-1.5 size-3.5 shrink-0" />
               {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}
             </>
           ) : (
@@ -314,7 +290,7 @@ function CustomProviderSnippetView({
 
   return (
     <div className="space-y-3 px-5 pt-3 pb-5">
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3.5 py-3">
+      <div className="border-kortix-green/30 bg-kortix-green/[0.04] rounded-2xl border px-3.5 py-3">
         <div className="text-foreground text-sm font-medium">
           {secretName ? 'API key saved' : 'Snippet ready'}
         </div>

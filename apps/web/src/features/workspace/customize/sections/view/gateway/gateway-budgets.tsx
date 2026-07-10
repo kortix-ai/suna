@@ -72,7 +72,13 @@ type EditTarget =
   | { scope: 'project' }
   | { scope: 'member'; subjectUserId: string; email: string | null };
 
-export function GatewayBudgets({ projectId }: { projectId: string }) {
+export function GatewayBudgets({
+  projectId,
+  canWrite = false,
+}: {
+  projectId: string;
+  canWrite?: boolean;
+}) {
   const { data } = useGatewayBudgets(projectId);
   const setBudget = useSetGatewayBudget(projectId);
   const delBudget = useDeleteGatewayBudget(projectId);
@@ -123,9 +129,11 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
           title="Project budget"
           description="Cap total spend across everyone in this project's gateway"
           action={
-            <Button size="sm" variant="outline" onClick={() => setEditing({ scope: 'project' })}>
-              {projectBudget ? 'Edit' : 'Set budget'}
-            </Button>
+            canWrite ? (
+              <Button size="sm" variant="outline" onClick={() => setEditing({ scope: 'project' })}>
+                {projectBudget ? 'Edit' : 'Set budget'}
+              </Button>
+            ) : undefined
           }
         >
           {projectBudget ? (
@@ -154,15 +162,17 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
                     </span>
                   </div>
                   <Meter spent={projectSpend} limit={projectBudget.limit_usd} />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => remove(projectBudget.budget_id)}
-                      className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      Remove budget
-                    </button>
-                  </div>
+                  {canWrite && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => remove(projectBudget.budget_id)}
+                        className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        Remove budget
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })()
@@ -191,6 +201,7 @@ export function GatewayBudgets({ projectId }: { projectId: string }) {
                   member={m}
                   maxCost={Math.max(1e-9, ...members.map((x) => x.cost))}
                   budget={memberBudget(m.user_id)}
+                  canWrite={canWrite}
                   onSetCap={() =>
                     m.user_id &&
                     setEditing({ scope: 'member', subjectUserId: m.user_id, email: m.email })
@@ -238,12 +249,14 @@ function MemberRow({
   member,
   maxCost,
   budget,
+  canWrite,
   onSetCap,
   onRemove,
 }: {
   member: GatewayMemberSpend;
   maxCost: number;
   budget: GatewayBudgetRow | null;
+  canWrite: boolean;
   onSetCap: () => void;
   onRemove: (id: string) => void;
 }) {
@@ -271,19 +284,20 @@ function MemberRow({
           </div>
         )}
       </div>
-      {budget ? (
-        <button
-          type="button"
-          onClick={() => onRemove(budget.budget_id)}
-          className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Remove
-        </button>
-      ) : (
-        <Button size="sm" variant="ghost" className="shrink-0" onClick={onSetCap}>
-          Set cap
-        </Button>
-      )}
+      {canWrite &&
+        (budget ? (
+          <button
+            type="button"
+            onClick={() => onRemove(budget.budget_id)}
+            className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Remove
+          </button>
+        ) : (
+          <Button size="sm" variant="ghost" className="shrink-0" onClick={onSetCap}>
+            Set cap
+          </Button>
+        ))}
     </div>
   );
 }

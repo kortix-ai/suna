@@ -32,7 +32,6 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { createTurnAutoResumer } from './turn-auto-resume'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -336,26 +335,35 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
-  // Transient provider/stream failures (a host stall killed mid-stream, a 5xx
-  // after opencode's own retries) get auto-resumed instead of ending the turn —
-  // the error only reaches the user when it's permanent, when the resume can't
-  // be delivered, or when the rolling retry budget is exhausted.
-  const autoResumer = createTurnAutoResumer({
-    opencode,
-    cfg,
-    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
-  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    void (async () => {
-      if (await autoResumer.maybeResume(opencodeSessionId, error)) return
-      await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
-    })().catch((err) =>
+    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError }
+  // On (re)subscribe, reconcile the pinned root's last turn: if it already
+  // COMPLETED (idle) before this subscription was live — the fast-boot race,
+  // where a trivial first turn finishes inside the prompt→subscribe gap — relay
+  // a synthetic turn-end so the turn still finalizes. Idempotent: relayTurnEnd
+  // dedups per completed turn, so the natural session.idle (if it wasn't dropped)
+  // and this reconcile collapse to a single finalize; a reconnect after the turn
+  // relayed is a no-op.
+  const onConnected = () => {
+    void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
+    )
+  }
+  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
-    await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
+    // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
+    // `connected` promise to the initial-session path, which awaits it before
+    // firing prompt_async. This guarantees the subscription is live before the
+    // first turn is launched, so a fast trivial turn can't reach session.idle in
+    // an unsubscribed gap (the event-loss race). The reconcile on connect is the
+    // backstop for any residual gap.
+    const loop = startOpencodeEventLoop(opencode, cfg, eventHandlers)
+    loopStarted = true
+    await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark, loop.connected).catch((err) => {
       bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
       logger.warn('[boot] initial opencode session setup failed', err)
     })
@@ -363,7 +371,6 @@ async function startSessionRuntime(
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-      startOpencodeEventLoop(opencode, cfg, eventHandlers)
       return
     }
   }
@@ -371,7 +378,9 @@ async function startSessionRuntime(
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-    startOpencodeEventLoop(opencode, cfg, eventHandlers)
+    // Only start the loop if the initial-session branch didn't already (avoids a
+    // duplicate subscription when the initial session was requested but failed).
+    if (!loopStarted) startOpencodeEventLoop(opencode, cfg, eventHandlers)
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
@@ -659,6 +668,12 @@ async function maybeCreateInitialOpencodeSession(
   opencodePort: number,
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
+  // Resolves when the /event SSE subscription is live. The first turn's
+  // prompt_async is held until this resolves so a fast trivial turn cannot reach
+  // session.idle before anyone is subscribed (the event-loss race). Optional so
+  // the reused-root / no-prompt paths (which never fire a new turn) don't depend
+  // on it; a missing promise just skips the wait.
+  eventLoopConnected?: Promise<void>,
 ): Promise<void> {
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
@@ -722,6 +737,19 @@ async function maybeCreateInitialOpencodeSession(
   void relayBootstrapPinToApi(sessionId)
 
   if (prompt && !alreadyDelivered) {
+    // Hold the first turn until the /event subscription is live so a fast
+    // trivial turn can't reach session.idle in an unsubscribed gap. Bounded so a
+    // stuck subscribe never blocks boot — the reconcile-on-connect backstop still
+    // finalizes a turn that finishes before the (late) subscribe. The timer is
+    // cleared when `connected` wins so it never dangles holding the event loop.
+    if (eventLoopConnected) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([
+        eventLoopConnected,
+        new Promise<void>((r) => { timer = setTimeout(r, 10_000) }),
+      ])
+      if (timer) clearTimeout(timer)
+    }
     const model = resolveOpencodeModel()
     const promptRes = await fetch(
       `${baseUrl}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(workspace)}`,
@@ -1090,7 +1118,22 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
 // including subagent (Task tool) children — so we ignore any whose sessionID
 // isn't the root turn session. Only relevant for Slack-originated sessions
 // (SLACK_* env is injected by the Slack dispatcher); a no-op everywhere else.
-async function relayTurnEndToApi(
+// Turn-end dedup: the last (opencodeSessionId, turnSignature) we already relayed.
+// The signature is the completed turn's identity (last assistant message's
+// completed timestamp), so a turn is finalized EXACTLY ONCE no matter which path
+// observes it — the natural session.idle, the reconcile-on-subscribe backstop, or
+// a duplicate idle from opencode. A genuinely NEW turn has a new completed
+// timestamp → a fresh signature → it relays normally. session.error is never
+// deduped here (it carries no completed signature and the API's claimFinalize is
+// the single-winner backstop). Cleared implicitly by moving to a new signature.
+const relayedTurnSignatures = new Set<string>()
+
+/** Test-only: clear the per-turn dedup set between cases. */
+export function __resetRelayedTurnSignatures(): void {
+  relayedTurnSignatures.clear()
+}
+
+export async function relayTurnEndToApi(
   opencodeSessionId: string,
   status: 'idle' | 'error',
   opencode: Pick<Opencode, 'getInternalUrl'>,
@@ -1104,13 +1147,30 @@ async function relayTurnEndToApi(
   // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
-  // Resolve the turn's error. session.error already hands us one; an idle end
-  // (e.g. retries exhausted, then idle) carries none, so read the root turn's
-  // last assistant message — exactly what the web UI shows — and upgrade idle→
-  // error when it failed. This is what turns a blank "ended without a reply" in
-  // Slack into "out of credits" / rate-limit / the real error.
-  const error = eventError ?? (await readRootTurnError(opencodeSessionId, opencode, cfg))
+  // Resolve the turn's error + completed signature in one read. session.error
+  // already hands us the error; an idle end (e.g. retries exhausted, then idle)
+  // carries none, so read the root turn's last assistant message — exactly what
+  // the web UI shows — and upgrade idle→error when it failed. This is what turns
+  // a blank "ended without a reply" in Slack into "out of credits" / rate-limit /
+  // the real error. The completed timestamp doubles as the per-turn dedup key.
+  const turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
+  const error = eventError ?? turn.error
   const effectiveStatus = error ? 'error' : status
+
+  // Exactly-once per completed turn: an idle turn (natural OR reconciled on
+  // subscribe) relays a single time. The signature is only RECORDED after a
+  // confirmed relay (below), so a transient API outage that fails all retries
+  // never permanently suppresses the reconcile backstop — a later observation of
+  // the same turn can still relay it. Errors have no completed signature, so they
+  // always pass through and rely on the API's single-winner claimFinalize.
+  const dedupSig =
+    effectiveStatus === 'idle' && turn.completedAt != null
+      ? `${opencodeSessionId}:${turn.completedAt}`
+      : null
+  if (dedupSig && relayedTurnSignatures.has(dedupSig)) {
+    logger.info('[opencode-events] turn-end already relayed for this turn; skipping', { opencodeSessionId })
+    return
+  }
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
@@ -1143,6 +1203,10 @@ async function relayTurnEndToApi(
         signal: AbortSignal.timeout(15_000),
       })
       if (res.ok) {
+        // Record the dedup signature ONLY on a confirmed relay — a res.ok is a
+        // definitive answer from apps/api (relayed, or already-finalized), so a
+        // later observation of the same completed turn is a safe no-op to skip.
+        if (dedupSig) relayedTurnSignatures.add(dedupSig)
         const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
@@ -1156,47 +1220,88 @@ async function relayTurnEndToApi(
   logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
 }
 
-// Read the ROOT turn's failure, if any, from its last assistant message — the
-// same `AssistantMessage.error` the web UI renders. opencode's session.error
-// event already carries this for a hard failure, but a run that exhausts retries
-// (e.g. out of credits / rate-limited) can end on `session.idle` with the error
-// only on the message; this is what lets Slack still say *why* instead of going
-// silent. Best-effort: any miss/parse failure returns undefined (treated as a
-// clean end), so this never turns a healthy turn into a phantom failure.
-async function readRootTurnError(
+interface RootTurnState {
+  /** The turn's failure (from the last assistant message), if any. */
+  error?: OpencodeTurnError
+  /** The last assistant message's completion time — the turn's completed
+   *  identity, used as the exactly-once dedup key. null while the turn is still
+   *  running (assistant message present but not completed) or before any reply. */
+  completedAt: number | null
+}
+
+// Read the ROOT turn's outcome from its last assistant message — the same
+// `AssistantMessage.error` the web UI renders — plus its completion timestamp.
+// opencode's session.error event already carries the error for a hard failure,
+// but a run that exhausts retries (e.g. out of credits / rate-limited) can end on
+// `session.idle` with the error only on the message; this is what lets Slack still
+// say *why* instead of going silent. The `completedAt` is the per-turn dedup key
+// so a turn finalizes exactly once regardless of which path observes its end.
+// Best-effort: any miss/parse failure returns a clean, un-completed state, so this
+// never turns a healthy turn into a phantom failure.
+async function readRootTurnState(
   opencodeSessionId: string,
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
-): Promise<OpencodeTurnError | undefined> {
+): Promise<RootTurnState> {
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}/message?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return undefined
+    if (!res.ok) return { completedAt: null }
     const rows = (await res.json()) as Array<{
       info?: {
         role?: string
+        time?: { completed?: number }
         error?: {
           name?: string
           data?: { message?: string; statusCode?: number; isRetryable?: boolean; providerID?: string }
         }
       }
     }>
-    if (!Array.isArray(rows)) return undefined
+    if (!Array.isArray(rows)) return { completedAt: null }
     // The most recent assistant message decides the turn's outcome. Crucially,
     // stop at the turn boundary: if a USER message is the newest row (a pending or
     // follow-up turn that hasn't produced an assistant reply yet), treat the run
-    // as clean — never walk back into a PRIOR turn's already-superseded error and
-    // relay it as this turn's failure.
+    // as clean/incomplete — never walk back into a PRIOR turn's already-superseded
+    // error and relay it as this turn's failure.
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
-      if (info?.role === 'user') return undefined
+      if (info?.role === 'user') return { completedAt: null }
       if (info?.role !== 'assistant') continue
-      return info.error ? flattenOpencodeError(info.error) : undefined
+      return {
+        error: info.error ? flattenOpencodeError(info.error) : undefined,
+        completedAt: info.time?.completed ?? null,
+      }
     }
-    return undefined
+    return { completedAt: null }
   } catch {
-    return undefined
+    return { completedAt: null }
   }
+}
+
+// Reconcile-on-subscribe backstop for the fast-boot event-loss race. When the
+// /event SSE connects, the FIRST turn may have already reached session.idle in
+// the prompt→subscribe gap (a fast boot + a trivial prompt), so the idle event
+// was fired before anyone was listening and is gone. Read the pinned root's
+// last-turn state directly: if it has already COMPLETED (an assistant message
+// with a completion time), relay a synthetic turn-end so the turn finalizes even
+// though its live event was missed. relayTurnEndToApi dedups by the completed
+// signature, so if the natural idle WASN'T dropped this is a no-op — finalize is
+// independent of subscription timing, and fires exactly once. A no-op outside
+// Slack (relayTurnEndToApi returns early with no relay context) and while the
+// turn is still running (completedAt null).
+export async function reconcileFinishedFirstTurn(
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<void> {
+  if (!slackRelayContext()) return
+  const rootId = readPinnedOpencodeSessionId()
+  if (!rootId) return
+  const turn = await readRootTurnState(rootId, opencode, cfg)
+  // Only reconcile a turn that has actually completed; a still-running turn will
+  // finalize via its own (now-subscribed) session.idle.
+  if (turn.completedAt == null) return
+  logger.info('[opencode-events] reconciling turn that completed before subscribe', { rootId, completedAt: turn.completedAt })
+  await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
 }
 
 // Is this opencode session the ROOT turn session (not a subagent child)? A root

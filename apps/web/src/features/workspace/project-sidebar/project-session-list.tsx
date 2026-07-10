@@ -24,6 +24,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import {
+  getSessionDisplayTitle,
+  resolveSessionListViewState,
+  shortRelative,
+  shouldPollProjectSessions,
+  sortSessionsByCreatedAt,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { Icon } from '@/features/icon/icon';
 import {
   listProjectSessions,
@@ -55,8 +62,6 @@ interface ProjectSessionListProps {
   filter?: SessionFilterValue;
 }
 
-const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = ['queued', 'branching', 'provisioning'];
-
 const SESSION_RELATIVE_TIME_CLASS =
   'text-muted-foreground/60 block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
 
@@ -70,10 +75,6 @@ const SOURCE_ICONS: Record<
   schedule: CalendarClock,
   webhook: Webhook,
 };
-
-function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
-  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
-}
 
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
@@ -107,7 +108,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
     staleTime: 10_000,
@@ -117,9 +118,10 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   });
 
   const restartMutation = useMutation({
-    mutationFn: (sessionId: string) => restartProjectSession(projectId, sessionId),
-    onSuccess: () => {
-      successToast('Restarting session…');
+    mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
+      restartProjectSession(projectId, sessionId),
+    onSuccess: (_data, { label }) => {
+      successToast(`Restarting "${label}"…`);
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (err) => {
@@ -128,9 +130,10 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   });
 
   const stopMutation = useMutation({
-    mutationFn: (sessionId: string) => stopProjectSession(projectId, sessionId),
-    onSuccess: () => {
-      successToast('Session stopped');
+    mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
+      stopProjectSession(projectId, sessionId),
+    onSuccess: (_data, { label }) => {
+      successToast(`"${label}" stopped`);
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (err) => {
@@ -138,25 +141,44 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     },
   });
 
-  if (isLoading) {
+  const sessions = sortSessionsByCreatedAt(data ?? []);
+  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
+  // this list only applies the chosen filter.
+  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
+
+  const viewState = resolveSessionListViewState({
+    isLoading,
+    isError,
+    totalCount: sessions.length,
+    visibleCount: visibleSessions.length,
+  });
+
+  if (viewState === 'loading') {
     return <ProjectSessionListSkeleton />;
   }
 
-  if (error) {
+  if (viewState === 'error') {
+    const message = error instanceof Error ? error.message : undefined;
     return (
-      <div className="text-destructive/80 px-2 py-2 text-xs">
-        {tHardcodedUi.raw(
-          'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
+      <div className="space-y-1.5 px-2 py-2">
+        <p className="text-destructive/80 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectSessionList.line120JsxTextFailedToLoadSessions',
+          )}
+        </p>
+        {message && (
+          <p className="text-muted-foreground/70 truncate text-xs" title={message}>
+            {message}
+          </p>
         )}
+        <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => refetch()}>
+          Retry
+        </Button>
       </div>
     );
   }
 
-  const sessions = (data ?? [])
-    .slice()
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-  if (sessions.length === 0) {
+  if (viewState === 'empty') {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
         {tHardcodedUi.raw('componentsProjectsProjectSessionList.line132JsxTextNoSessionsYet')}
@@ -164,11 +186,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
     );
   }
 
-  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
-  // this list only applies the chosen filter.
-  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
-
-  if (visibleSessions.length === 0) {
+  if (viewState === 'no-matches') {
     return (
       <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
         {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSessionListJsxText1fba7ca0')}
@@ -194,13 +212,14 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
                 onRename={(id, name) => setSessionToRename({ id, name })}
-                onRestart={(id) => restartMutation.mutate(id)}
+                onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
                 isRestarting={
-                  restartMutation.isPending && restartMutation.variables === session.session_id
+                  restartMutation.isPending &&
+                  restartMutation.variables?.sessionId === session.session_id
                 }
-                onStop={(id) => stopMutation.mutate(id)}
+                onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
                 isStopping={
-                  stopMutation.isPending && stopMutation.variables === session.session_id
+                  stopMutation.isPending && stopMutation.variables?.sessionId === session.session_id
                 }
               />
               {children.length > 0 && isActive && (
@@ -260,9 +279,9 @@ interface ProjectSessionRowProps {
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
-  onRestart: (sessionId: string) => void;
+  onRestart: (sessionId: string, label: string) => void;
   isRestarting: boolean;
-  onStop: (sessionId: string) => void;
+  onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
   childCount?: number;
 }
@@ -313,7 +332,10 @@ function ProjectSessionRow({
         <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 self-stretch">
           <SessionStatusDot status={session.status} />
 
-          <span className={cn('min-w-0 flex-1 truncate text-sm', isActive && 'font-medium')}>
+          <span
+            title={displayTitle}
+            className={cn('min-w-0 flex-1 truncate text-sm', isActive && 'font-medium')}
+          >
             {displayTitle}
           </span>
 
@@ -400,18 +422,18 @@ function ProjectSessionRow({
                 <DropdownMenuItem
                   className="cursor-pointer"
                   disabled={isRestarting}
-                  onSelect={() => deferAfterClose(() => onRestart(session.session_id))}
+                  onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
                 >
-                  {isRestarting ? <Loading /> : <RotateCcw />}
+                  {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
                   Restart
                 </DropdownMenuItem>
                 {session.status === 'running' && session.can_manage_sharing !== false && (
                   <DropdownMenuItem
                     className="cursor-pointer"
                     disabled={isStopping}
-                    onSelect={() => deferAfterClose(() => onStop(session.session_id))}
+                    onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
                   >
-                    {isStopping ? <Loading /> : <Square />}
+                    {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
                     Stop
                   </DropdownMenuItem>
                 )}
@@ -456,7 +478,9 @@ function ProjectSubsessionRow({
         )}
       >
         <span className="bg-muted-foreground/40 h-1 w-1 shrink-0 rounded-full" />
-        <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{title}</span>
+        <span title={title} className={cn('flex-1 truncate', isActive && 'font-medium')}>
+          {title}
+        </span>
         {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
       </div>
     </Link>
@@ -506,37 +530,4 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
       </div>
     </Hint>
   );
-}
-
-function getSessionDisplayTitle(session: ProjectSession): string {
-  const legacyMetadataName =
-    typeof session.metadata?.session_name === 'string'
-      ? (session.metadata.session_name as string)
-      : null;
-  const titleCandidate =
-    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim();
-
-  if (titleCandidate) return titleCandidate;
-  return session.branch_name ? session.branch_name.slice(0, 14) : 'session';
-}
-
-function shortRelative(input: string): string {
-  if (input === 'less than a minute') return 'now';
-  const match = input.match(/^(\d+)\s+(second|minute|hour|day|month|year)s?$/);
-  if (!match) return input;
-  if (match[1] === '0' && match[2] === 'second') return 'now';
-  const [, n, unit] = match;
-  const suffix =
-    unit === 'second'
-      ? 's'
-      : unit === 'minute'
-        ? 'm'
-        : unit === 'hour'
-          ? 'h'
-          : unit === 'day'
-            ? 'd'
-            : unit === 'month'
-              ? 'mo'
-              : 'y';
-  return `${n}${suffix}`;
 }

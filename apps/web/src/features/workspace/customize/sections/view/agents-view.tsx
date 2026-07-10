@@ -2,6 +2,8 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
@@ -14,7 +16,8 @@ import {
 import { formatMode } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { toast } from '@/lib/toast';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
@@ -27,18 +30,20 @@ import {
 } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Loader2, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
+import { Bot, Check, ShieldCheck, Sparkles, User, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
 export function AgentsView({ projectId }: { projectId: string }) {
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_AGENT_WRITE).allowed === true;
   return (
     <ConfigEntityView<Agent>
       projectId={projectId}
       kind="agent"
       noun="agent"
       layout="split"
+      canWrite={canWrite}
       title="Agents"
       searchPlaceholder="Search agents"
       emptyIcon={Bot}
@@ -216,7 +221,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
             onSelect={(m) => {
               if (m) {
                 void defaults.setAgentDefault(agentName, m);
-                toast.success(`${agentName} → ${nameOf(m)}`);
+                successToast(`${agentName} → ${nameOf(m)}`);
               } else {
                 void defaults.clearAgentDefault(agentName);
               }
@@ -229,7 +234,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
               className="h-7 px-2 text-xs"
               onClick={() => {
                 void defaults.clearAgentDefault(agentName);
-                toast.success(`${agentName} follows the default model again`);
+                successToast(`${agentName} follows the default model again`);
               }}
             >
               Reset to default
@@ -350,11 +355,11 @@ function AgentScopeCard({
   const save = useMutation({
     mutationFn: () => setAgentScope(projectId, agentName, { env, connectors }),
     onSuccess: () => {
-      toast.success(`Scope updated for ${agentName}`);
+      successToast(`Scope updated for ${agentName}`);
       // Refetch the project config so the committed scope (this card's source) updates.
       queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
     },
-    onError: (e: Error) => toast.error(e.message || 'Failed to update scope'),
+    onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
   });
 
   // Non-managers get the read-only mirror (the old presentation).
@@ -423,7 +428,7 @@ function AgentScopeCard({
             disabled={!dirty || save.isPending}
             onClick={() => save.mutate()}
           >
-            {save.isPending && <Loader2 className="size-3.5 animate-spin" />}
+            {save.isPending && <Loading className="size-3.5 shrink-0" />}
             Save scope
           </Button>
         </div>
@@ -484,7 +489,7 @@ function ScopeEditor({
   const selected = value === 'all' ? new Set<string>() : new Set(value);
   const optionIds = new Set(options.map((o) => o.id));
   // Selected names that aren't in the current option list (deleted resource, or
-  // typed via kortix.toml) — keep them visible so they can be unchecked.
+  // typed via kortix.yaml) — keep them visible so they can be unchecked.
   const orphanRows = [...selected]
     .filter((id) => !optionIds.has(id))
     .map((id) => ({ id, label: id }));
@@ -561,7 +566,7 @@ function ScopeEditor({
                     {isSel && <Check className="size-3" />}
                   </span>
                   <span className="min-w-0 flex-1 truncate font-mono">{o.label}</span>
-                  {isOrphan && <span className="text-amber-600 dark:text-amber-400">missing</span>}
+                  {isOrphan && <span className="text-kortix-orange">missing</span>}
                 </button>
               );
             })}

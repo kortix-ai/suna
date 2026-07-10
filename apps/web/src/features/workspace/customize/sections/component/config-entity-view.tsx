@@ -49,6 +49,14 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   /** Lowercase singular used in inline copy ("No matches", "{noun} body is empty"). */
   noun: string;
 
+  /**
+   * Whether the viewer may create/edit entities. Defaults to `true` so any
+   * caller that doesn't gate stays unchanged. When `false` the section renders
+   * READ-ONLY — the "New" and "Edit" mutating controls are hidden — so a role
+   * holding only the READ leaf sees the list + detail without buttons that 403.
+   */
+  canWrite?: boolean;
+
   className?: string;
   // Section shell
   title: string;
@@ -79,7 +87,7 @@ export interface ConfigEntityViewProps<T extends ConfigEntity> {
   renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
 
-  /** Section-level context rendered above the search (e.g. kortix.toml manifest). */
+  /** Section-level context rendered above the search (e.g. kortix.yaml manifest). */
   renderContext?: (config: ProjectConfigSummary) => ReactNode;
 
   /**
@@ -118,6 +126,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
     emptyBodyLabel,
     renderContext,
     layout = 'accordion',
+    canWrite = true,
     className,
   } = props;
 
@@ -193,20 +202,22 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       title={emptyTitle}
       action={
         <div className="flex flex-col items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => configure.start(newConfigPrompt(kind))}
-            disabled={configure.pending}
-          >
-            {configure.pending ? (
-              <Loading className="size-3.5 shrink-0" />
-            ) : (
-              <Plus className="size-3.5 shrink-0" />
-            )}
-            Create {noun}
-          </Button>
+          {canWrite ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => configure.start(newConfigPrompt(kind))}
+              disabled={configure.pending}
+            >
+              {configure.pending ? (
+                <Loading className="size-3.5 shrink-0" />
+              ) : (
+                <Plus className="size-3.5 shrink-0" />
+              )}
+              Create {noun}
+            </Button>
+          ) : null}
           {emptyDocsHref ? (
             <Button asChild variant="ghost" size="sm" className="gap-1.5">
               <a href={emptyDocsHref} target="_blank" rel="noopener noreferrer">
@@ -248,6 +259,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
                   renderDetailMeta={renderDetailMeta}
                   renderDetailExtra={renderDetailExtra}
                   emptyBodyLabel={emptyBodyLabel}
+                  canWrite={canWrite}
                 />
               </li>
             ))}
@@ -339,6 +351,7 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
                 renderDetailTitle={renderDetailTitle}
                 renderDetailMeta={renderDetailMeta}
                 emptyBodyLabel={emptyBodyLabel}
+                canWrite={canWrite}
                 split
               />
             </div>
@@ -377,19 +390,21 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       action={
         <div className="flex items-center gap-1.5">
           <MarketplaceSectionButton projectId={projectId} />
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => configure.start(newConfigPrompt(kind))}
-            disabled={configure.pending}
-          >
-            {configure.pending ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-            New
-          </Button>
+          {canWrite ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => configure.start(newConfigPrompt(kind))}
+              disabled={configure.pending}
+            >
+              {configure.pending ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              New
+            </Button>
+          ) : null}
         </div>
       }
     >
@@ -417,6 +432,7 @@ interface EntityDisclosureProps<T extends ConfigEntity> {
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
+  canWrite: boolean;
 }
 
 function EntityDisclosure<T extends ConfigEntity>({
@@ -431,6 +447,7 @@ function EntityDisclosure<T extends ConfigEntity>({
   renderDetailMeta,
   renderDetailExtra,
   emptyBodyLabel,
+  canWrite,
 }: EntityDisclosureProps<T>) {
   const [open, setOpen] = useState(false);
   const trailing = renderRowTrailing?.(entity, config);
@@ -456,6 +473,7 @@ function EntityDisclosure<T extends ConfigEntity>({
           renderDetailMeta={renderDetailMeta}
           renderDetailExtra={renderDetailExtra}
           emptyBodyLabel={emptyBodyLabel}
+          canWrite={canWrite}
         />
       </DisclosureContent>
     </Disclosure>
@@ -471,6 +489,8 @@ interface EntityDetailProps<T extends ConfigEntity> {
   renderDetailMeta?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   renderDetailExtra?: (entity: T, config: ProjectConfigSummary) => ReactNode;
   emptyBodyLabel: string;
+  /** Read-only viewers (READ leaf, no WRITE) hide the "Edit" control. */
+  canWrite: boolean;
   /** Master-detail mode: render the source in the middle and `renderDetailExtra`
    *  as a right-hand aside, instead of stacking the extra above the source. */
   split?: boolean;
@@ -485,6 +505,7 @@ function EntityDetail<T extends ConfigEntity>({
   renderDetailMeta,
   renderDetailExtra,
   emptyBodyLabel,
+  canWrite,
   split,
 }: EntityDetailProps<T>) {
   const configure = useConfigureThread(projectId);
@@ -558,6 +579,7 @@ function EntityDetail<T extends ConfigEntity>({
         onEdit={() => configure.start(editConfigPrompt(kind, entity.name, entity.path))}
         editing={configure.pending}
         copyDisabled={!fileQuery.data?.content}
+        canWrite={canWrite}
       />
     </div>
   );
@@ -588,24 +610,28 @@ function DetailToolbarActions({
   onEdit,
   editing,
   copyDisabled,
+  canWrite,
 }: {
   onCopy: () => void;
   onEdit: () => void;
   editing: boolean;
   copyDisabled: boolean;
+  canWrite: boolean;
 }) {
   return (
     <ButtonGroup className="shrink-0">
-      <Hint label="Edit">
-        <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
-          {editing ? (
-            <Loading className="size-3.5 shrink-0" />
-          ) : (
-            <Pencil className="size-3.5 shrink-0" />
-          )}
-          Edit
-        </Button>
-      </Hint>
+      {canWrite ? (
+        <Hint label="Edit">
+          <Button variant="outline" size="sm" onClick={onEdit} disabled={editing}>
+            {editing ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <Pencil className="size-3.5 shrink-0" />
+            )}
+            Edit
+          </Button>
+        </Hint>
+      ) : null}
       <Hint label="Copy source">
         <Button variant="outline" size="icon" onClick={onCopy} disabled={copyDisabled}>
           <Copy className="size-3.5 shrink-0" />

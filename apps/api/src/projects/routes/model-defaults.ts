@@ -1,5 +1,5 @@
 // Model-defaults CRUD — the SDK/UI surface for setting the default model at
-// account (personal), project, and agent scope. The committed kortix.toml holds
+// account (personal), project, and agent scope. The committed kortix.yaml holds
 // an agent's/trigger's declarative model; these routes manage the dynamic,
 // per-account defaults the gateway resolves `auto` against.
 //
@@ -16,8 +16,9 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from "../../repositories/model-preferences";
-import { loadProjectForUser } from "../lib/access";
+import { assertProjectCapability, loadProjectForUser } from "../lib/access";
 import { projectsApp } from "../lib/app";
+import { PROJECT_ACTIONS } from "../../iam";
 
 /** A storable default must be a concrete model — a managed id (bare or
  *  kortix/-prefixed), or a `provider/model` BYOK/direct wire — never the
@@ -81,8 +82,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (model defaults are
+    // project customization). Built-in editor/manager hold the leaf.
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const accountId = loaded.row.accountId as string;
     const userId = c.get("userId") as string;
 
@@ -121,8 +125,10 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
+    // Floor 'read'; project.customize.write is the real gate (see PUT above).
+    const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
     const accountId = loaded.row.accountId as string;
     const scope = c.req.query("scope");
     const agentName = c.req.query("agentName");

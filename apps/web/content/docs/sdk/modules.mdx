@@ -3,8 +3,6 @@ title: Modules
 description: The @kortix/sdk subpath imports — files, session runtime, the opencode client, auth, REST, and the live stores.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Most app code should use the [`createKortix`](/docs/sdk/the-client) facade and the
 [React hooks](/docs/sdk/react) — they cover the whole surface and keep auth,
 caching, and runtime resolution wired for you. The subpath modules below are the
@@ -22,15 +20,22 @@ Each is a separate entry point, so you only pull in what you import:
 | `@kortix/sdk/auth` | `authenticatedFetch` + token accessors |
 | `@kortix/sdk/projects-client` | the raw REST functions the facade wraps |
 | `@kortix/sdk/api-client` | `backendApi` — the low-level typed HTTP client |
-| `@kortix/sdk/server-store` | active runtime/sandbox state |
+| `@kortix/sdk/server-store` | the active runtime resolution surface |
 | `@kortix/sdk/sync-store` | the live message/part/status store |
+| `@kortix/sdk/turns` | turn-grouping, cost/token, and message-status helpers |
+| `@kortix/sdk/platform-client` | the instance admin surface — lifecycle, members, invites, backups, SSH, updates |
+| `@kortix/sdk/server` | Node/Bun-only request-scoped config isolation for multi-tenant backends |
+| `@kortix/sdk/event-stream`, `@kortix/sdk/sandbox-connection-store`, `@kortix/sdk/opencode-pending-store`, `@kortix/sdk/config`, `@kortix/sdk/feature-flags`, `@kortix/sdk/fresh-sessions`, `@kortix/sdk/instance-routes`, `@kortix/sdk/opencode-errors`, `@kortix/sdk/idb-sync-cache` | internal plumbing the layers above are built from — see [below](#other-subpaths-internal-plumbing) |
 
 <Callout type="warn">
 A session is the unit of work and **owns its runtime** — there is no top-level
-"sandbox" object. The word never appears in the public surface;
-`@kortix/sdk/session` *is* the runtime surface. Host code imports only from
-`@kortix/sdk/*` — never `@opencode-ai/sdk`, never raw `backendApi` /
-`authenticatedFetch` from elsewhere.
+"sandbox" object in the app-facing API. `@kortix/sdk/session` *is* the runtime
+surface a host reaches for. The one exception is internal: `sandbox-connection-store`
+(see [below](#other-subpaths-internal-plumbing)) tracks low-level health/reconnect
+state for the sandbox process itself and uses "sandbox" in its name — it's
+plumbing `useSession` consumes, not something host code should import directly.
+Host code imports only from `@kortix/sdk/*` — never `@opencode-ai/sdk`, never raw
+`backendApi` / `authenticatedFetch` from elsewhere.
 </Callout>
 
 ## `@kortix/sdk/files`
@@ -182,9 +187,10 @@ thread. They're documented for the in-progress `apps/web` migration and advanced
 cases; new hosts should not reach for them.
 </Callout>
 
-The two zustand stores the runtime layer keeps. `server-store` tracks the **active
-runtime** — which sandbox/server is current and how to reach it; `sync-store`
-holds the **live thread state** that SSE events stream into.
+The two zustand stores the runtime layer keeps. `server-store` is a thin,
+read-only view over the **active runtime** — which sandbox the app is currently
+talking to and how to reach it, owned by the active session via `useSession`;
+`sync-store` holds the **live thread state** that SSE events stream into.
 
 ```ts
 import { useServerStore, getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
@@ -194,13 +200,141 @@ const runtimeUrl = getActiveOpenCodeUrl();                    // outside React
 const messages = useSyncStore((s) => s.messages[sessionId]); // in React
 ```
 
-`server-store` also exports `getActiveServer`, `getActiveSandboxId`,
-`switchToInstance` / `switchToInstanceAsync`, and `activateServerSelection` — the
-machinery that points the SDK at a session's runtime. `sync-store` exports
-`useSyncStore` plus the `ascendingId` id generator. **When to use:** reading
-runtime state outside React, or subscribing to raw store slices. In React UI,
-prefer the [hooks](/docs/sdk/react) (`useSessionSync`) — they derive
+`server-store` also exports `getSandboxUrlForExternalId`, `getPublicShareUrlForToken`,
+`deriveSubdomainOpts`, `getActiveDbSandboxId`, `getActiveOpenCodeUrl`,
+`getActiveSandboxId`, and `getBackendPort` — the resolution helpers behind
+`getActiveServerUrl()`. There's no "active server" to switch between anymore: an
+older multi-instance registry and server-switching layer were removed, and a
+session's runtime is resolved fresh each time from `current-runtime`. `sync-store`
+exports `useSyncStore` plus the `ascendingId` id generator. **When to use:**
+reading runtime state outside React, or subscribing to raw store slices. In React
+UI, prefer the [hooks](/docs/sdk/react) (`useSessionSync`) — they derive
 render-stable views over `sync-store` for you.
+
+## `@kortix/sdk/turns`
+
+Pure, framework-free helpers for turning a session's flat message list into
+turns (one user message + its assistant replies), plus the cost, token, and
+status math shared by web and mobile. No React, no store — just functions over
+plain message/part shapes.
+
+```ts
+import { groupMessagesIntoTurns, getTurnCost, getSessionCost } from '@kortix/sdk/turns';
+
+const turns = groupMessagesIntoTurns(messages);           // pairs users with their replies
+const cost = getTurnCost(turnParts, pricingLookup);        // { cost, tokens } for one turn
+const total = getSessionCost(messages, pricingLookup);      // billed cost for the whole session
+```
+
+Also: the `isTextPart` / `isToolPart` / `isFilePart` / … part-type guards,
+`computeStatusFromPart` and `getTurnStatus` (turn/session status derivation),
+`getToolInfo` and `getPermissionForTool` / `getQuestionForTool` (tool-call
+presentation and pending-request matching), `formatCost`, `formatTokens`,
+`formatDuration`, `stripAnsi`, and the session-tree helpers `childMapByParent`
+/ `sortSessions` / `allDescendantIds`. **When to use:** rendering a chat
+transcript, a cost/usage summary, or a session tree outside the shape the React
+hooks already give you — most hosts get this for free through
+[`useSessionSync`](/docs/sdk/react).
+
+## `@kortix/sdk/platform-client`
+
+The instance/sandbox admin surface: lifecycle (`ensureSandbox`, `restartSandbox`,
+`stopSandbox`, …), members and scopes, invites, backups, SSH access, and update
+management, plus the URL builders they share. This is the API the instance-admin
+UI is built on, not something a typical session-scoped host needs — several of
+its member/invite functions are now stubs that throw, pointing callers at the
+newer project-access surface instead (a legacy layer kept for older call sites,
+not something to build new code on).
+
+```ts
+import { restartSandbox, listSandboxes } from '@kortix/sdk/platform-client';
+
+const sandboxes = await listSandboxes();
+await restartSandbox(sandboxes[0].sandbox_id);
+```
+
+**When to use:** building or extending the instance/admin surface. Session and
+project code should use the [facade](/docs/sdk/the-client) instead.
+
+## `@kortix/sdk/server`
+
+Node/Bun-only. Fixes a real hazard: `configureKortix()`/`createKortix()` store
+the platform config — including the bearer-token getter — in a single
+process-wide global, which is unsafe for a server handling concurrent requests
+for different users (two in-flight requests can clobber each other's token).
+`createScopedKortix` and `runWithKortix` isolate that config per request using
+Node's `AsyncLocalStorage`, for a third-party backend that wraps Kortix on
+behalf of multiple tenants at once ("Kortix as a Backend").
+
+```ts
+import { createScopedKortix } from '@kortix/sdk/server';
+
+export async function handler(req: Request) {
+  const kortix = createScopedKortix({ backendUrl, getToken: () => tokenFor(req) });
+  return kortix.projects.list();
+}
+```
+
+<Callout type="warn">
+Never import this subpath from a browser bundle — it statically pulls in
+`node:async_hooks`. It's unrelated to `@kortix/sdk/server-store`, which is a
+browser-side zustand store for the active runtime.
+</Callout>
+
+**When to use:** a Node/Bun server process proxying Kortix for multiple
+end users concurrently. A single-tenant server, a CLI, or a browser host should
+use the root `@kortix/sdk` config seam instead.
+
+## Session transcripts
+
+`formatTranscript` is a root `@kortix/sdk` export (not a subpath) — a pure,
+DOM-free `SessionInfo`/`MessageWithParts[]` → Markdown formatter, ported from
+the OpenCode TUI, so any host (web, mobile, a CLI) can export the same
+transcript.
+
+```ts
+import { formatTranscript, getTranscriptFilename, DEFAULT_TRANSCRIPT_OPTIONS } from '@kortix/sdk';
+
+const markdown = formatTranscript(sessionInfo, messages, DEFAULT_TRANSCRIPT_OPTIONS);
+const filename = getTranscriptFilename(sessionInfo.id); // "session-<id>.md"
+```
+
+This formats messages you already have client-side. For the compact,
+**server-generated** transcript (no tool inputs/outputs), see
+[`s.transcript()`](/docs/sdk/sessions#audit--transcript) on the session handle
+— that one is callable with project-scoped session tokens.
+
+## Other subpaths (internal plumbing)
+
+The remaining `@kortix/sdk/*` subpaths are small, mostly internal modules the
+layers above are built from. A normal host doesn't import these directly, but
+they're real, shipped exports:
+
+- **`@kortix/sdk/event-stream`** — `openEventStream`, the framework-free SSE
+  connect/reconnect/coalesce primitive the SDK's live-update plumbing (the
+  React event hooks, and ultimately `sync-store`'s updates) is built on.
+- **`@kortix/sdk/sandbox-connection-store`** — a zustand store tracking sandbox
+  health/reconnect bookkeeping (`useSandboxConnectionStore`, `setSandboxStatus`,
+  `incrementSandboxFail`, recovery-phase tracking). The one place "sandbox"
+  appears as a concept in the public surface — see the callout above.
+- **`@kortix/sdk/opencode-pending-store`** — a zustand store of in-flight
+  permission/question requests from the runtime (`useOpenCodePendingStore`),
+  deduped against ones the user already answered.
+- **`@kortix/sdk/config`** — `configureKortix`, `platformConfig`, `isConfigured`;
+  the same module the root `@kortix/sdk` entry re-exports, reachable directly.
+- **`@kortix/sdk/feature-flags`** — resolves `featureFlags` (e.g.
+  `enableAutoModel`, `enableProjects`) from `configureKortix({ featureFlags })`
+  overrides, then `NEXT_PUBLIC_*` env, then defaults.
+- **`@kortix/sdk/fresh-sessions`** — an in-memory `markSessionFresh` /
+  `isSessionFresh` set so a just-created session renders the instant shell
+  instead of the resume loader.
+- **`@kortix/sdk/instance-routes`** — the `kortix-active-instance` cookie and
+  path helpers (`buildInstancePath`, `extractInstanceRoute`, …) for
+  instance-scoped app routes.
+- **`@kortix/sdk/opencode-errors`** — normalizes OpenCode `ConfigInvalidError`
+  payloads into a readable message (`formatOpenCodeRuntimeError`).
+- **`@kortix/sdk/idb-sync-cache`** — the IndexedDB persistence layer behind
+  `sync-store`'s stale-while-revalidate cold-load cache.
 
 ## Next
 

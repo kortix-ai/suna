@@ -1,33 +1,30 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import {
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/features/workspace/shared/sharing-picker';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
 } from '@kortix/sdk/projects-client';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { AlertCircle, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
 
+// ChatGPT subscription logins connect project-wide, like every other LLM
+// provider credential (kortix policy: no per-user access choice at the LLM
+// level). The server's default sharing intent is project-wide.
 export function ChatGptSubscriptionConnect({
   projectId,
-  sharing,
   onConnected,
 }: {
   projectId: string;
-  sharing: SharingSelection;
   onConnected: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -51,18 +48,12 @@ export function ChatGptSubscriptionConnect({
   }, []);
 
   const handleConnect = useCallback(async () => {
-    if (!isSharingComplete(sharing)) {
-      setError('Pick at least one member, or choose another access option.');
-      return;
-    }
     cancelledRef.current = false;
     setError(null);
     setChallenge(null);
     setPhase('waiting');
     try {
-      const start = await startProjectProviderOAuth(projectId, 'openai', {
-        sharing: selectionToIntent(sharing),
-      });
+      const start = await startProjectProviderOAuth(projectId, 'openai', {});
       if (cancelledRef.current) return;
       setChallenge({ url: start.verification_url, code: start.user_code });
       if (start.verification_url) {
@@ -85,7 +76,7 @@ export function ChatGptSubscriptionConnect({
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-          refreshProjectProviderState(queryClient, projectId);
+          refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected();
           return;
         }
@@ -113,7 +104,7 @@ export function ChatGptSubscriptionConnect({
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }, [projectId, sharing, queryClient, onConnected]);
+  }, [projectId, queryClient, onConnected]);
 
   const waiting = phase === 'waiting';
 
@@ -179,14 +170,14 @@ export function ChatGptSubscriptionConnect({
             </div>
           )}
           <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loading className="size-3.5 shrink-0" />
             {challenge ? 'Waiting for you to finish in the browser…' : 'Connecting to OpenAI…'}
           </div>
         </div>
       )}
 
       {phase === 'done' && (
-        <div className="text-foreground/80 mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs">
+        <div className="text-foreground/80 border-kortix-green/20 bg-kortix-green/[0.06] mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs">
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
           )}

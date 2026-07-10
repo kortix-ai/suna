@@ -9,7 +9,7 @@
 **One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
-[![Version](https://img.shields.io/badge/version-0.9.5-111111.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.9.98-111111.svg)](VERSION)
 [![Docs](https://img.shields.io/badge/Docs-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
@@ -101,7 +101,7 @@ Kortix runs on your own infrastructure — laptop, VPS, your VPC, or fully air-g
 
 ```bash
 kortix self-host start
-kortix hosts use local     # ↔  kortix hosts use cloud
+kortix hosts use selfhost  # ↔  kortix hosts use cloud
 ```
 
 The first interactive setup asks only for the integration credentials that unlock managed git, GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are generated for you.
@@ -158,7 +158,7 @@ These files are for **local development only**. The deployed **production** infr
 
 CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
 
-Apps live under `apps/` (`web`, `api`, `cli`, `desktop`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
 
 ---
 

@@ -54,7 +54,15 @@ export function registerDisposableKey(key: string): void {
 }
 
 function hasWindow(): boolean {
-  return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+  // typeof does NOT swallow a throwing accessor: with third-party storage
+  // blocked (iframe partitioning, Safari private mode) reading `localStorage`
+  // itself throws SecurityError, and this runs OUTSIDE the safe* try blocks -
+  // so the probe must catch.
+  try {
+    return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+  } catch {
+    return false;
+  }
 }
 
 /** Every localStorage key currently present (snapshot — safe to mutate during). */

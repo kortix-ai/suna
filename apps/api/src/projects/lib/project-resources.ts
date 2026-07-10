@@ -1,7 +1,7 @@
 /**
  * Project resource registry + per-resource list filtering.
  *
- * Agents and skills are file-based (kortix.toml [[agents]] / .opencode/agent/*.md
+ * Agents and skills are file-based (kortix.yaml `agents:` / .opencode/agent/*.md
  * and .opencode/skills/<slug>/SKILL.md), so their stable identity is:
  *   - agent  → its `name` (also what service_accounts.agent_name keys on);
  *   - skill  → its directory `slug` (derived from the SKILL.md path), which is
@@ -155,7 +155,7 @@ export function buildResourceDenier(
   okSkill: Set<string>,
 ): ResourceDenier | null {
   // Denied agents → block their exact file (opencode agents are single .md
-  // files; a kortix.toml agent has no separate file, only the shared manifest).
+  // files; a kortix.yaml agent has no separate file, only the shared manifest).
   const deniedExact = new Set<string>();
   for (const a of config.agents ?? []) {
     if (!okAgent.has(a.name) && a.source === 'opencode' && a.path) deniedExact.add(trimPath(a.path));

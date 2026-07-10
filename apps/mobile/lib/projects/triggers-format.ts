@@ -34,7 +34,7 @@ export const TIMEZONES = [
   'Australia/Sydney',
 ];
 
-/** kortix.toml-style slug: lowercase, [a-z0-9_-], trimmed, ≤128, fallback. */
+/** kortix.yaml-style slug: lowercase, [a-z0-9_-], trimmed, ≤128, fallback. */
 export function slugify(name: string): string {
   const s = name
     .toLowerCase()

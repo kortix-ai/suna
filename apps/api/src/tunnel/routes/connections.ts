@@ -24,7 +24,29 @@ import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
 
-function serializeConnection(conn: typeof tunnelConnections.$inferSelect) {
+/**
+ * Explicit column selection for reads/returns — deliberately EXCLUDES
+ * setupTokenHash (a scrypt hash of the one-time setup token) so it never
+ * leaks into list/get/update responses.
+ */
+const SAFE_CONNECTION_COLUMNS = {
+  tunnelId: tunnelConnections.tunnelId,
+  accountId: tunnelConnections.accountId,
+  sandboxId: tunnelConnections.sandboxId,
+  name: tunnelConnections.name,
+  status: tunnelConnections.status,
+  capabilities: tunnelConnections.capabilities,
+  machineInfo: tunnelConnections.machineInfo,
+  relayOwnerId: tunnelConnections.relayOwnerId,
+  relayOwnerInstance: tunnelConnections.relayOwnerInstance,
+  relayOwnerStartedAt: tunnelConnections.relayOwnerStartedAt,
+  relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+  lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+  createdAt: tunnelConnections.createdAt,
+  updatedAt: tunnelConnections.updatedAt,
+};
+
+function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, 'setupTokenHash'>) {
   const isLive = isTunnelConnectionLive(conn);
   return {
     ...conn,
@@ -54,7 +76,7 @@ export function createConnectionsRouter() {
       const { ownerClause } = await getTunnelReadContext(c);
 
       const connections = await db
-        .select()
+        .select(SAFE_CONNECTION_COLUMNS)
         .from(tunnelConnections)
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
@@ -113,7 +135,7 @@ export function createConnectionsRouter() {
           status: 'offline',
           setupTokenHash,
         })
-        .returning();
+        .returning(SAFE_CONNECTION_COLUMNS);
 
       // Materialize the account's `computer` Executor connector (first machine).
       void reconcileComputerConnectors(accountId);
@@ -140,7 +162,7 @@ export function createConnectionsRouter() {
       const tunnelId = c.req.param('tunnelId');
 
       const [connection] = await db
-        .select()
+        .select(SAFE_CONNECTION_COLUMNS)
         .from(tunnelConnections)
         .where(
           and(
@@ -202,7 +224,7 @@ export function createConnectionsRouter() {
             ownerClause,
           ),
         )
-        .returning();
+        .returning(SAFE_CONNECTION_COLUMNS);
 
       if (!updated) {
         return c.json({ error: 'Tunnel connection not found' }, 404);

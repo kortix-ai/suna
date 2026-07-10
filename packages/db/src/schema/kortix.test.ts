@@ -243,9 +243,9 @@ describe('projects table', () => {
     expect(col?.default).toBe('main');
   });
 
-  test('manifest_path defaults to kortix.toml', () => {
+  test('manifest_path defaults to kortix.yaml', () => {
     const col = getTableConfig(projects).columns.find((c) => c.name === 'manifest_path');
-    expect(col?.default).toBe('kortix.toml');
+    expect(col?.default).toBe('kortix.yaml');
   });
 
   test('status defaults to active', () => {
@@ -308,9 +308,9 @@ describe('sandboxes table', () => {
     expect(primaryColumn(sandboxes)).toBe('sandbox_id');
   });
 
-  test('provider defaults to managed', () => {
+  test('provider defaults to daytona', () => {
     const col = getTableConfig(sandboxes).columns.find((c) => c.name === 'provider');
-    expect(col?.default).toBe('managed');
+    expect(col?.default).toBe('daytona');
   });
 
   test('status defaults to provisioning', () => {

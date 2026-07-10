@@ -59,7 +59,12 @@ export function useLegacyMachines(opts?: { enabled?: boolean; accountId?: string
     queryFn: async () => {
       const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
       return unwrap(
-        await backendApi.get<LegacyEligibility>(`/projects/legacy-migration/eligibility${qs}`),
+        // Background eligibility probe on the projects grid — a user who just
+        // joined (or left) an account can race the account switch and 403;
+        // the Migrate card simply doesn't render, never a global toast.
+        await backendApi.get<LegacyEligibility>(`/projects/legacy-migration/eligibility${qs}`, {
+          showErrors: false,
+        }),
       );
     },
     enabled: opts?.enabled ?? true,

@@ -2,10 +2,10 @@ import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { activeHostName, defaultProject, listHosts } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import type { MeResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix whoami [options]
+const HELP = help`Usage: kortix whoami [options]
 
 Print the currently authenticated user + active account on the
 selected host.
@@ -121,6 +121,9 @@ export async function runWhoami(argv: string[]): Promise<number> {
     }
     if (ctx?.kortix_cli != null) {
       process.stdout.write(`  ${C.dim}kortix_cli ${C.reset}${formatGrant(ctx.kortix_cli)}\n`);
+    }
+    if (ctx?.env != null) {
+      process.stdout.write(`  ${C.dim}env       ${C.reset}${formatGrant(ctx.env)}\n`);
     }
     process.stdout.write('\n');
     return 0;

@@ -96,16 +96,30 @@ function isUuid(value: string): boolean {
 export async function waitForApprovalDecision(
   executionId: string,
   timeoutMs: number,
-): Promise<'approved' | 'denied' | 'timeout'> {
+  expect?: { sessionId: string | null; connectorId: string; actionPath: string },
+): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'> {
   const deadline = Date.now() + timeoutMs;
   const POLL_MS = 1000;
+  // Bind the approval row to the (session, connector, action) actually being
+  // authorized. A client supplies approvalExecutionId in the request body; without
+  // this binding it could point at ANY resolved execution row to auto-approve an
+  // unrelated sensitive call (confused-deputy replay of the require_approval gate).
+  const conds = [eq(executorExecutions.executionId, executionId)];
+  if (expect) {
+    if (expect.sessionId) conds.push(eq(executorExecutions.sessionId, expect.sessionId));
+    conds.push(eq(executorExecutions.connectorId, expect.connectorId));
+    conds.push(eq(executorExecutions.actionPath, expect.actionPath));
+  }
   while (Date.now() < deadline) {
     const [row] = await db
       .select({ status: executorExecutions.status, resolvedAt: executorExecutions.resolvedAt })
       .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, executionId))
+      .where(and(...conds))
       .limit(1);
-    if (row?.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
+    // No row under the expected binding → the supplied id belongs to a different
+    // session/connector/action (or doesn't exist). Never wait on it.
+    if (!row) return 'mismatch';
+    if (row.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';
@@ -582,27 +596,44 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
   return out;
 }
 
-async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+async function resolveProjectUserWith(
+  c: Context,
+  projectId: string,
+  action: 'project.connector.read' | 'project.connector.write',
+): Promise<{ accountId: string; userId: string } | null> {
   if (!isUuid(projectId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
   const [proj] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
   if (!proj) return null;
-  // Connector administration (create/delete connectors, write shared credentials,
-  // grants/policies) is project.connector.write — NOT the coarse, fold-exempt
-  // project.write. Thread the acting token (iamTokenId) so the agent-grant fold
-  // fires: a scoped agent-session token must actually hold connector.write to
-  // manage connectors, and a custom role can withhold it from humans too.
+  // Thread the acting token (iamTokenId) so the agent-grant fold fires: a
+  // scoped agent-session token must actually hold the leaf, and a custom role
+  // can withhold it from humans too.
   const actingTokenId = (c.get('iamTokenId') as string | undefined) ?? undefined;
   const decision = await authorize(
     userId,
     proj.accountId,
-    'project.connector.write',
+    action,
     { type: 'project', id: projectId },
     actingTokenId,
   );
   if (!decision.allowed) return null;
   return { accountId: proj.accountId, userId };
+}
+
+// Connector administration (create/delete connectors, write shared credentials,
+// grants/policies) is project.connector.write — NOT the coarse, fold-exempt
+// project.write.
+async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+  return resolveProjectUserWith(c, projectId, 'project.connector.write');
+}
+
+// The connectors LIST is read-tier: project.connector.read is in the member
+// baseline (the Connectors/Channels rail sections gate visibility on it), so a
+// plain member can see which connectors exist and their status. The list never
+// carries credential values — only whether one is set.
+async function resolveReader(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+  return resolveProjectUserWith(c, projectId, 'project.connector.read');
 }
 
 /** Admin list — sharing + credential mode + whether the shared credential is set.
@@ -650,7 +681,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
 /**
  * Read a connector's per-tool policies for the dashboard/settings surface.
  *
- * Declared connectors are manifest-first (kortix.toml is their source of truth).
+ * Declared connectors are manifest-first (kortix.yaml is their source of truth).
  * Install-driven SYNTHETIC connectors (channel/computer) are never in the
  * manifest, so the manifest read returns null and the route would 404
  * ("connector not found") — even though the connector exists, works, and its
@@ -677,7 +708,7 @@ async function getConnectorPolicies(
 /**
  * Read a connector's definition for the editor. Same manifest-first / DB-fallback
  * rule as getConnectorPolicies: synthetic channel/computer connectors aren't in
- * kortix.toml, so reconstruct the view from the materialized row instead of 404ing.
+ * kortix.yaml, so reconstruct the view from the materialized row instead of 404ing.
  */
 async function getConnectorConfig(
   projectId: string,
@@ -715,6 +746,7 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   makeGatewayDeps: () => makeDbGatewayDeps(),
   listCatalog,
   resolveAdmin,
+  resolveReader,
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.

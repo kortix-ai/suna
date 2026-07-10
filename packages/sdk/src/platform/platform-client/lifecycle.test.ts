@@ -58,7 +58,7 @@ const project1: KortixProject = {
   name: 'Project One',
   repo_url: 'https://github.com/acme/one',
   default_branch: 'main',
-  manifest_path: 'kortix.toml',
+  manifest_path: 'kortix.yaml',
   status: 'active',
   metadata: {},
   last_opened_at: null,
@@ -181,9 +181,9 @@ function wireNoProjects() {
 
 // ─── getProviders ────────────────────────────────────────────────────────────
 
-test('getProviders is pure — no network, always managed', async () => {
+test('getProviders is pure — no network, always daytona', async () => {
   const result = await getProviders();
-  expect(result).toEqual({ providers: ['managed'], default: 'managed' });
+  expect(result).toEqual({ providers: ['daytona'], default: 'daytona' });
   expect(calls.length).toBe(0);
 });
 

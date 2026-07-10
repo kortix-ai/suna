@@ -2,8 +2,8 @@ import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../cha
 /**
  * Auto-materialize channel connectors from platform installs.
  *
- * A channel connector (Slack today) doesn't need a `[[connectors]]` entry in
- * kortix.toml — connecting the platform IS the registration. When a project has
+ * A channel connector (Slack today) doesn't need a `connectors:` entry in
+ * kortix.yaml — connecting the platform IS the registration. When a project has
  * a Slack install but hasn't explicitly declared a `channel` connector for it,
  * we synthesize a ConnectorSpec here so the materializer treats it like any
  * other connector: it gets DB rows, a fixed action catalog, policies, and
@@ -58,7 +58,7 @@ function channelAlreadyDeclared(
 
 /**
  * Synthetic channel ConnectorSpecs for platforms this project has installed but
- * not explicitly declared in kortix.toml — connecting the platform IS the
+ * not explicitly declared in kortix.yaml — connecting the platform IS the
  * registration. We never shadow an explicit declaration: a hand-written
  * `channel` connector (or anything already using the slug) keeps full control.
  */

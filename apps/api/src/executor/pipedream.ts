@@ -3,13 +3,13 @@
  * for SaaS apps). Adapted from the pre-refactor provider (commit 9078f28e).
  *
  * Model fit: a connector with provider="pipedream" declares `app` + `account` in
- * kortix.toml. The OAuth lives on Pipedream's side; we store only the connected
+ * kortix.yaml. The OAuth lives on Pipedream's side; we store only the connected
  * **account id** as a `scope='connector'` project secret (the binding) — so it's
  * shareable like any connector credential and never injected into the sandbox.
  * The catalog (app actions) is fetched from Pipedream and normalized. Execution
  * goes through the Connect `actions/run` API. See docs/specs/executor.md §5.
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { upsertCredential } from './credentials';
 import type { PipedreamActionLike } from './types';
@@ -307,7 +307,10 @@ export async function finalizePipedreamConnection(opts: {
 export function verifyWebhookSig(extUserId: string, sig: string | null): boolean {
   if (!config.PIPEDREAM_WEBHOOK_SECRET || !sig) return false;
   const expected = createHmac('sha256', config.PIPEDREAM_WEBHOOK_SECRET).update(extUserId).digest('hex');
-  return expected === sig;
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const sigBuf = Buffer.from(sig, 'hex');
+  if (expectedBuf.length !== sigBuf.length) return false;
+  return timingSafeEqual(sigBuf, expectedBuf);
 }
 
 /** Fetch the app's action catalog (raw, for normalizePipedream). */

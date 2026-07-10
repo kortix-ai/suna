@@ -10,9 +10,9 @@ const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 // A second principal on the SAME project with the 'editor' role — the floor
-// `member` role has every READ leaf but NOT project.connector.write (that's
-// editor+), so the "human/legacy token with no agent grant still passes"
-// cases for connector-write-gated routes need an editor, not the floor member.
+// `member` role has most READ leaves but NOT file.read / secret.read / any write
+// (those are editor+), so the "human/legacy token with no agent grant still
+// passes" cases for those routes need an editor, not the floor member.
 const EDITOR = crypto.randomUUID();
 
 const minted: string[] = [];
@@ -112,12 +112,20 @@ const CASES: Case[] = [
   { name: 'commit detail', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits/deadbeef` },
   { name: 'commit diff', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/commits/deadbeef/diff` },
   { name: 'version diff', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/version-diff?from=a&into=b` },
+  { name: 'triggers list', leaf: PROJECT_ACTIONS.PROJECT_TRIGGER_READ, path: () => `/v1/projects/${PROJECT}/triggers` },
+];
+
+// EDITOR-TIER reads: project.file.read + project.secret.read were moved OUT of
+// the floor `member` role into editor, so a bare member is 403 here (they can
+// run the agent/chat but not browse the file tree or view secret values); an
+// editor passes. Same agent-grant fold as the member-tier CASES above.
+const EDITOR_TIER_READ_CASES: Case[] = [
   { name: 'files list', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files` },
   { name: 'files archive', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/archive` },
   { name: 'files search', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/search?q=x` },
   { name: 'files content', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/content?path=README.md` },
   { name: 'files history', leaf: PROJECT_ACTIONS.PROJECT_FILE_READ, path: () => `/v1/projects/${PROJECT}/files/history?path=README.md` },
-  { name: 'triggers list', leaf: PROJECT_ACTIONS.PROJECT_TRIGGER_READ, path: () => `/v1/projects/${PROJECT}/triggers` },
+  { name: 'secrets list', leaf: PROJECT_ACTIONS.PROJECT_SECRET_READ, path: () => `/v1/projects/${PROJECT}/secrets` },
 ];
 
 describe('HTTP enforcement — project read-leaf gates (agent-grant fold now reachable)', () => {
@@ -139,6 +147,32 @@ describe('HTTP enforcement — project read-leaf gates (agent-grant fold now rea
 
       test('full-role member token with NO grant (human/legacy) → passes the gate (not 403)', async () => {
         const secret = await mintToken(null);
+        const res = await getReq(c.path(), secret);
+        expect(res.status).not.toBe(403);
+      });
+    });
+  }
+});
+
+describe('HTTP enforcement — editor-tier read gates (file.read / secret.read moved off member)', () => {
+  for (const c of EDITOR_TIER_READ_CASES) {
+    describe(c.name, () => {
+      test('floor MEMBER (no file/secret read) → 403', async () => {
+        const secret = await mintToken(null);
+        const res = await getReq(c.path(), secret);
+        expect(res.status).toBe(403);
+        const body = await res.json().catch(() => ({}));
+        expect(JSON.stringify(body)).toContain(c.leaf);
+      });
+
+      test('EDITOR (has the read leaf) → passes the gate (not 403)', async () => {
+        const secret = await mintEditorToken(null);
+        const res = await getReq(c.path(), secret);
+        expect(res.status).not.toBe(403);
+      });
+
+      test('agent (editor) granted the exact leaf → passes the gate (not 403)', async () => {
+        const secret = await mintEditorToken({ agent: 'scoped-bot', kortixCli: [c.leaf], connectors: [] });
         const res = await getReq(c.path(), secret);
         expect(res.status).not.toBe(403);
       });

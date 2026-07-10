@@ -52,7 +52,7 @@ async function resolveOwnerRawEnv(
       projectId,
       repoUrl: project.repoUrl ?? '',
       defaultBranch: project.defaultBranch,
-      manifestPath: project.manifestPath ?? 'kortix.toml',
+      manifestPath: project.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     }).catch(() => null);
     const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;

@@ -8,6 +8,7 @@
 
 import { readFile as fsReadFile } from 'node:fs/promises';
 import {
+  assertFetchableUrl,
   describeRegistry,
   parseItemAddress,
   rawGithubUrl,
@@ -66,6 +67,10 @@ function posixDirname(p: string): string {
 }
 
 async function fetchText(url: string, fetchImpl: typeof fetch): Promise<string> {
+  // SSRF guard: every URL this package fetches is (transitively) user-supplied
+  // — a raw `url` registry/item address, or derived from one. Refuse anything
+  // that isn't https on a public host before it ever reaches the network.
+  assertFetchableUrl(url);
   const res = await fetchImpl(url);
   if (!res.ok) throw new Error(`fetch ${url} → HTTP ${res.status}`);
   return res.text();
@@ -172,7 +177,7 @@ async function listGithubTree(
 }
 
 /** Map with bounded concurrency (no external dep) — caps simultaneous fetches. */
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   const worker = async (): Promise<void> => {
