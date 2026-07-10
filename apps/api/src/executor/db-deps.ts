@@ -96,16 +96,30 @@ function isUuid(value: string): boolean {
 export async function waitForApprovalDecision(
   executionId: string,
   timeoutMs: number,
-): Promise<'approved' | 'denied' | 'timeout'> {
+  expect?: { sessionId: string | null; connectorId: string; actionPath: string },
+): Promise<'approved' | 'denied' | 'timeout' | 'mismatch'> {
   const deadline = Date.now() + timeoutMs;
   const POLL_MS = 1000;
+  // Bind the approval row to the (session, connector, action) actually being
+  // authorized. A client supplies approvalExecutionId in the request body; without
+  // this binding it could point at ANY resolved execution row to auto-approve an
+  // unrelated sensitive call (confused-deputy replay of the require_approval gate).
+  const conds = [eq(executorExecutions.executionId, executionId)];
+  if (expect) {
+    if (expect.sessionId) conds.push(eq(executorExecutions.sessionId, expect.sessionId));
+    conds.push(eq(executorExecutions.connectorId, expect.connectorId));
+    conds.push(eq(executorExecutions.actionPath, expect.actionPath));
+  }
   while (Date.now() < deadline) {
     const [row] = await db
       .select({ status: executorExecutions.status, resolvedAt: executorExecutions.resolvedAt })
       .from(executorExecutions)
-      .where(eq(executorExecutions.executionId, executionId))
+      .where(and(...conds))
       .limit(1);
-    if (row?.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
+    // No row under the expected binding → the supplied id belongs to a different
+    // session/connector/action (or doesn't exist). Never wait on it.
+    if (!row) return 'mismatch';
+    if (row.resolvedAt) return row.status === 'denied' ? 'denied' : 'approved';
     await new Promise((r) => setTimeout(r, POLL_MS));
   }
   return 'timeout';

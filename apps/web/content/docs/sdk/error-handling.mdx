@@ -3,8 +3,6 @@ title: Error handling
 description: The typed error hierarchy — ApiError, AuthError, BillingError, RequestTooLargeError — and how to catch, branch on, and format them for the UI.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Every REST call made through `createKortix(...)` or `backendApi` rejects with a
 real `Error` subclass — never a plain object. `catch` it, `instanceof` it, and
 branch on `.status`/`.code`. These are the **same classes** on every host: a

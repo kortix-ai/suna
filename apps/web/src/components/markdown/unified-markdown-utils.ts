@@ -35,6 +35,7 @@ export function languageLabel(language: string): string {
   if (!language) return 'text';
   const lower = language.toLowerCase();
   const display: Record<string, string> = {
+    plaintext: 'text',
     js: 'javascript',
     ts: 'typescript',
     py: 'python',

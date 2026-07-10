@@ -49,6 +49,10 @@ describe('languageLabel', () => {
     expect(languageLabel('')).toBe('text');
   });
 
+  test('shiki defaultLanguage "plaintext" collapses to text', () => {
+    expect(languageLabel('plaintext')).toBe('text');
+  });
+
   test('expands short aliases and lowercases the rest', () => {
     expect(languageLabel('js')).toBe('javascript');
     expect(languageLabel('TS')).toBe('typescript');

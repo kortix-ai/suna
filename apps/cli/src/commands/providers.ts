@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 import { ApiError } from '../api/client.ts';
@@ -9,6 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { openInBrowser } from '../browser.ts';
 import { C, help, pad, status } from '../style.ts';
 import type {
   OauthFlowStartResponse,
@@ -390,28 +390,6 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-function openInBrowser(url: string): void {
-  const platform = process.platform;
-  let cmd: string;
-  let args: string[];
-  if (platform === 'darwin') {
-    cmd = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else {
-    cmd = 'xdg-open';
-    args = [url];
-  }
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    child.unref();
-  } catch {
-    /* user can copy the URL from stdout */
-  }
 }
 
 /** Read a secret with input echo suppressed when possible. Falls back to
