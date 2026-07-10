@@ -390,3 +390,33 @@ bundles (the CRITICAL above); CI runs of the new workflow steps on Actions.
 **Shippable to production: NOT YET** — pending Jay: CDN-claim decision,
 README domain decision (`api.kortix.ai` vs `.com`), CI-gate fixes, and the
 Task 9 Step 6 browser gate.
+
+**Fix wave (same session, after Jay's decisions).** Jay chose: wire the CDN
+pipeline, `api.kortix.com`, both CI gates now.
+
+- `33f45e6f8` — `stage-npm-publish.mjs` promotes `browser`/`unpkg`/`jsdelivr`
+  if present and hard-fails (`process.exit(1)`) when a promoted path is
+  missing from the build (TDD in `stage-npm-publish.test.mjs`, RED watched,
+  24/24). The load-bearing build fix went into `publish-npm-package.sh`
+  (staging runs BEFORE `npm publish`, so `prepublishOnly` alone fires too
+  late); `prepublishOnly && tsup` kept as defense-in-depth; the two other
+  staging call sites (`smoke-install.mjs`, CI dry-pack loop) also build
+  bundles — required, or the new validation would redline them. Tarball
+  simulation: both bundles in the tarball, top-level CDN fields staged,
+  manifests restored byte-identical. Siblings (llm-catalog, executor-sdk)
+  provably unaffected (promote-if-present; pinned by test).
+- `695908713` — README standardized on `api.kortix.com` (Jay's call).
+- `e48a48489` — `package-tests.yml`: SDK typecheck step + `build:bundles`
+  before the test run, so `bundle.test.ts` executes in CI (1062/0/69).
+
+**Final re-review: "Ready to merge — Yes."** All findings closed by the named
+mechanisms; the two call-site fixes judged required, not scope creep. Minor
+follow-ups noted: triple bundle build in one CI job (~1 min redundant,
+idempotent); redundant rebuild via prepublishOnly inside the scripted release.
+
+**Remaining before the branch is DONE-done: Task 9 Step 6 only** (Jay: real
+browser + live stack + real PAT/sandbox → D2a streaming through the IIFE
+global, D3 `instanceof Kortix.ApiError` under the bundle).
+
+**Shippable to production: NOT YET** — solely on the unverified D2a/D3
+browser gate. Everything else is implemented, reviewed, and green.
