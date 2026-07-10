@@ -34,15 +34,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Stepper,
-  StepperIndicator,
-  StepperItem,
-  StepperSeparator,
-  StepperTitle,
-  StepperTrigger,
-} from '@/components/ui/stepper';
 import { useAccountState } from '@/hooks/billing/use-account-state';
+import { cn } from '@/lib/utils';
 import { getEnv } from '@/lib/env-config';
 import {
   type CreatedScimToken,
@@ -774,46 +767,46 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
       </div>
 
       <div className="grid gap-10 md:grid-cols-[240px_minmax(0,1fr)]">
-        <Stepper
-          orientation="vertical"
-          value={activeStep}
-          onValueChange={setActiveStep}
-          count={guide.steps.length - 1}
-          className="flex w-full flex-col"
-        >
-          {guide.steps.map((s, i) => (
-            // Reference structure (dev-view.tsx): the StepperItem holds ONLY
-            // the indicator + connecting line; the title is a sibling — the
-            // primitive stacks item children vertically in this orientation.
-            <div key={s.id} className="flex gap-3">
-              <StepperItem step={i} completed={completed.includes(s.id)} className="items-center">
-                <StepperTrigger>
-                  <StepperIndicator className="size-6 text-xs tabular-nums">
-                    {completed.includes(s.id) ? <Check className="size-3" /> : i + 1}
-                  </StepperIndicator>
-                </StepperTrigger>
-                <StepperSeparator className="m-0" />
-              </StepperItem>
+        {/* Vercel-style rail: no connector line — soft-green done circles,
+            solid active circle, muted upcoming. Whole row is the target. */}
+        <nav aria-label="Setup steps" className="space-y-1 self-start">
+          {guide.steps.map((s, i) => {
+            const isDone = completed.includes(s.id);
+            const isActive = i === activeStep;
+            return (
               <button
+                key={s.id}
                 type="button"
                 onClick={() => setActiveStep(i)}
-                className={`min-w-0 flex-1 pt-1 text-left ${
-                  i === guide.steps.length - 1 ? 'pb-1' : 'pb-7'
-                }`}
+                aria-current={isActive ? 'step' : undefined}
+                className="group hover:bg-muted/40 flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors"
               >
-                <StepperTitle
-                  className={
-                    i === activeStep
-                      ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground transition-colors'
-                  }
+                <span
+                  className={cn(
+                    'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums transition-colors',
+                    isDone
+                      ? 'bg-kortix-green/15 text-kortix-green'
+                      : isActive
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted text-muted-foreground',
+                  )}
+                >
+                  {isDone ? <Check className="size-3.5" /> : i + 1}
+                </span>
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-sm transition-colors',
+                    isActive
+                      ? 'text-foreground font-medium'
+                      : 'text-muted-foreground group-hover:text-foreground',
+                  )}
                 >
                   {s.title}
-                </StepperTitle>
+                </span>
               </button>
-            </div>
-          ))}
-        </Stepper>
+            );
+          })}
+        </nav>
 
         <div className="min-w-0">
           <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
