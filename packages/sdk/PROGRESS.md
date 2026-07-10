@@ -135,7 +135,7 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | --- | ------------------------------------------------------- | ----------- | ---------- | ------------ | ------------------------ |
 | 0   | Docs: spec, plan, `AGENTS.md`, prompt, this file        | **DONE**    | `01AzJBSa` | 2026-07-10   | `6cd4d6e4e`              |
 | 1   | Assert the two export maps agree                        | **DONE**    | `ab099b6a` | 2026-07-10   | `ecb78a113`              |
-| 2   | Install smoke test — pack, install, import              | IN PROGRESS (Jay: pack `@kortix/llm-catalog` alongside at the same synthetic version, install both tarballs; cleanup into `finally`) | `ab099b6a` | 2026-07-10   | —                        |
+| 2   | Install smoke test — pack, install, import              | BLOCKED (2nd finding: plan asserts `createServerKortix` from `./server` — export does not exist; real name is `createScopedKortix`. Decision with Jay) | `ab099b6a` | 2026-07-10   | —                        |
 | 3   | Public-export snapshot                                  | NOT STARTED | —          | —            | —                        |
 | 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | NOT STARTED | —          | —            | —                        |
 | 5   | Axis 2 — root canonical, subpaths deprecated            | NOT STARTED | —          | —            | —                        |
@@ -212,6 +212,9 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `01AzJBSa` | Bare `process.env` read in the isomorphic core → `ReferenceError` in a `<script>` bundle                      | `platform/platform-client/shared.ts:29` — fixed in Task 7                       |
 | 2026-07-10 | `01AzJBSa` | The tripwire walks **imports**; it cannot see globals (`process`/`window`/`document`)                         | `src/index.isomorphic.test.ts` — fixed in Task 7                                |
 | 2026-07-10 | `01AzJBSa` | Nothing installs and imports the tarball. `npm pack --dry-run` lists contents only                            | `.github/workflows/package-tests.yml` — Task 2                                  |
+| 2026-07-10 | `ab099b6a` | Plan's smoke script can't install: staged `workspace:*` dep pins `@kortix/llm-catalog@0.0.0-smoke`, absent from npm. Fixed per Jay: pack + install the sibling tarball alongside | `packages/sdk/scripts/smoke-install.mjs` — Task 2 |
+| 2026-07-10 | `ab099b6a` | **`createServerKortix` does not exist.** Plan (`:253,991`) and spec (`:158`) assert it from `./server`; real exports are `createScopedKortix`, `runWithKortix`, `getScopedConfig` (`src/server.ts`). Also affects Task 6's Lumen snippet | `docs/superpowers/{plans,specs}/2026-07-10-*` — Task 2/6 |
+| 2026-07-10 | `ab099b6a` | Docs prose says 25 subpaths / 21 legacy; reality is 23 export keys / 20 legacy. Plan's enumerated key lists (Task 5 Step 9) match reality exactly | `packages/sdk/package.json` |
 
 
 ---
@@ -306,3 +309,21 @@ script sits uncommitted at `packages/sdk/scripts/smoke-install.mjs`.
 **Also found** — docs prose says 25 subpaths / 21 legacy; reality is 23 export
 keys / 20 legacy. The plan's enumerated key lists (Task 5 Step 9) match reality
 exactly, so the plan's literal instructions are unaffected.
+
+**Task 2 resumed and BLOCKED a second time.** Jay approved packing the
+workspace sibling (`@kortix/llm-catalog` staged at the same synthetic version,
+both tarballs installed together — hermetic, mirrors the lockstep release);
+that fix works and the ETARGET failure is gone. The smoke then failed at the
+final ESM import with a NEW finding:
+
+```
+SyntaxError: The requested module '@kortix/sdk/server' does not provide an
+export named 'createServerKortix'
+```
+
+`createServerKortix` exists nowhere in the SDK — it is a plan/spec authoring
+error (plan `:253,991`; spec `:158`). The real `./server` exports are
+`createScopedKortix` (`src/server.ts:123`), `runWithKortix`, `getScopedConfig`.
+Task 6's Lumen snippet uses the same phantom name. Decision with Jay: assert
+the real name and correct the docs, or add `createServerKortix` as new API.
+Tautology in `package-exports.test.ts` removed per Jay (`4e39bb11e`).
