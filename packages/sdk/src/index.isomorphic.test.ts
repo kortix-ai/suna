@@ -324,3 +324,18 @@ test('core/ never touches a bare process/window/document/localStorage global', (
     });
   }
 });
+
+test('examples/ pull no react, no DOM, no framework', () => {
+  const examplesDir = join(SRC_ROOT, '..', 'examples');
+  const importRe = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]/g;
+  for (const file of readdirSync(examplesDir)) {
+    if (!file.endsWith('.ts') || file.endsWith('.d.ts')) continue;
+    const source = readFileSync(join(examplesDir, file), 'utf8');
+    for (const match of source.matchAll(importRe)) {
+      const spec = match[1];
+      if (spec.startsWith('.')) continue; // relative into ../src, already covered
+      const forbidden = FORBIDDEN_MODULES.find((m) => spec === m || spec.startsWith(`${m}/`));
+      expect(forbidden ? `examples/${file} imports "${spec}"` : null).toBeNull();
+    }
+  }
+});
