@@ -47,8 +47,8 @@ export interface ProjectDockProps {
   onOpenMore: () => void;
   /** Omit to disable the long-press (non-thread states). */
   onLongPressLabel?: () => void;
-  /** When set, renders a change-request circle next to the `+` (web parity:
-   *  the session header's changes action). Pass only in thread states. */
+  /** When set, adds an "Open change request" row to the expanded menu (web
+   *  parity: the session header's changes action). Pass only in thread states. */
   onOpenChangeRequest?: () => void;
 }
 

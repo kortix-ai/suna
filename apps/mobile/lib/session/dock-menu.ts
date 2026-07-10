@@ -103,7 +103,7 @@ export function dockPillLabel(args: {
 
 export type ChatActionId =
   | 'rename' | 'share' | 'restart' | 'export' | 'compact'
-  | 'changeRequest' | 'viewChanges' | 'diagnostics' | 'archive' | 'delete';
+  | 'viewChanges' | 'diagnostics' | 'archive' | 'delete';
 
 export interface ChatAction {
   id: ChatActionId;
@@ -121,14 +121,13 @@ export interface ChatActionGates {
   hasProjectSession: boolean;
   /** `can_manage_sharing !== false` on that row. */
   canManageSharing: boolean;
-  /** The session has an associated change request. */
-  hasChangeRequest: boolean;
 }
 
 /**
- * Mirrors BottomBar's original gating exactly: Rename/Share/Delete need a
- * resolved project-session row, Share additionally needs can_manage_sharing,
- * and Open-change-request needs one to exist.
+ * Mirrors BottomBar's original gating: Rename/Share/Delete need a resolved
+ * project-session row, and Share additionally needs can_manage_sharing.
+ * "Open change request" is NOT here — it lives on the dock menu itself
+ * (ProjectDock's onOpenChangeRequest row), so it isn't duplicated in this sheet.
  */
 export function chatActionItems(gates: ChatActionGates): ChatAction[] {
   if (!gates.hasSession) return [];
@@ -145,12 +144,6 @@ export function chatActionItems(gates: ChatActionGates): ChatAction[] {
   actions.push({ id: 'export', label: 'Export transcript', icon: 'export' });
   actions.push({ id: 'compact', label: 'Compact', icon: 'compact' });
 
-  if (gates.hasChangeRequest) {
-    actions.push({
-      id: 'changeRequest', label: 'Open change request',
-      icon: 'changeRequest', secondary: true,
-    });
-  }
   actions.push({ id: 'viewChanges', label: 'View changes', icon: 'viewChanges', secondary: true });
   actions.push({ id: 'diagnostics', label: 'Diagnostics', icon: 'diagnostics', secondary: true });
   actions.push({ id: 'archive', label: 'Archive', icon: 'archive', secondary: true });

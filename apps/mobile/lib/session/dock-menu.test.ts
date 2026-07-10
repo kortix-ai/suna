@@ -63,7 +63,7 @@ describe('dockPillLabel', () => {
 describe('chatActionItems gating', () => {
   const full = {
     hasSession: true, hasProjectSession: true,
-    canManageSharing: true, hasChangeRequest: true,
+    canManageSharing: true,
   };
   const ids = (g: Parameters<typeof chatActionItems>[0]) => chatActionItems(g).map((a) => a.id);
 
@@ -73,7 +73,7 @@ describe('chatActionItems gating', () => {
   test('full gates expose every action', () => {
     expect(ids(full)).toEqual([
       'rename', 'share', 'restart', 'export', 'compact',
-      'changeRequest', 'viewChanges', 'diagnostics', 'archive', 'delete',
+      'viewChanges', 'diagnostics', 'archive', 'delete',
     ]);
   });
   test('no project session hides rename, share and delete', () => {
@@ -88,10 +88,8 @@ describe('chatActionItems gating', () => {
     expect(got).not.toContain('share');
     expect(got).toContain('rename');
   });
-  test('no change request hides only changeRequest', () => {
-    const got = ids({ ...full, hasChangeRequest: false });
-    expect(got).not.toContain('changeRequest');
-    expect(got).toContain('viewChanges');
+  test('"Open change request" is not in the sheet — it lives on the dock menu', () => {
+    expect(ids(full)).not.toContain('changeRequest');
   });
   test('delete is the only destructive action and comes last', () => {
     const actions = chatActionItems(full);
@@ -100,6 +98,6 @@ describe('chatActionItems gating', () => {
   });
   test('secondary actions are exactly the ones hidden behind More', () => {
     const secondary = chatActionItems(full).filter((a) => a.secondary).map((a) => a.id);
-    expect(secondary).toEqual(['changeRequest', 'viewChanges', 'diagnostics', 'archive']);
+    expect(secondary).toEqual(['viewChanges', 'diagnostics', 'archive']);
   });
 });

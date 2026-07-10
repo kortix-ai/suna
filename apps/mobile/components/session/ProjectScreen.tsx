@@ -735,9 +735,8 @@ export function ProjectScreen() {
       hasSession: !!activeSessionId,
       hasProjectSession: !!activeProjectSession,
       canManageSharing: activeProjectSession?.can_manage_sharing !== false,
-      hasChangeRequest: openCrCount > 0,
     }),
-    [activeSessionId, activeProjectSession, openCrCount]
+    [activeSessionId, activeProjectSession]
   );
 
   const handleChatAction = useCallback(
@@ -758,9 +757,6 @@ export function ProjectScreen() {
         case 'compact':
           handleCompactSession();
           break;
-        case 'changeRequest':
-          void handleOpenChangeRequest();
-          break;
         case 'viewChanges':
           viewChangesSheetRef.current?.present();
           break;
@@ -778,7 +774,6 @@ export function ProjectScreen() {
     [
       handleRestartActiveSession,
       handleCompactSession,
-      handleOpenChangeRequest,
       handleArchive,
       handleDeleteActiveSession,
       activeSessionId,
