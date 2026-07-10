@@ -156,27 +156,66 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'basic-saml',
         title: 'Basic SAML configuration',
         intro:
-          'In the app: Single sign-on → SAML → edit "Basic SAML Configuration" and paste these two values.',
-        showSpValues: true,
-        bullets: [
-          'Identifier (Entity ID) → the first value below (mark it Default).',
-          'Reply URL (Assertion Consumer Service URL) → the second value below.',
-          'Sign on URL → your Kortix sign-in page, e.g. https://app.kortix.com/auth.',
-          'Leave Relay State and Logout URL empty, then Save.',
+          'In the left navigation menu, select the "Single sign-on" tab. Click on the "SAML" tile.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/basic-saml-1.png',
+            alt: 'Select SAML as the single sign-on method',
+          },
+          {
+            kind: 'text',
+            text: 'The "Set up Single Sign-On with SAML" page opens. Locate the "Basic SAML Configuration" section and click the "Edit" icon in its top right corner.',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/basic-saml-2.png',
+            alt: 'Basic SAML Configuration section with the Edit button',
+          },
+          {
+            kind: 'text',
+            text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the panel — mark the Identifier as Default. Set "Sign on URL" to your Kortix sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the panel.',
+          },
         ],
+        showSpValues: true,
+        doneLabel: 'I’ve completed basic SAML configuration',
       },
       {
         id: 'email-claim',
         title: 'Fix the email claim',
         intro:
-          'In "Attributes & Claims", edit the emailaddress claim and change its source attribute from user.mail to user.userprincipalname.',
+          'On the same page, locate the "Attributes & Claims" section and click its "Edit" icon.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/email-claim-1.png',
+            alt: 'Attributes & Claims section with the Edit button',
+          },
+          {
+            kind: 'text',
+            text: 'Click the claim ending in "emailaddress" (its value reads user.mail). Change its "Source attribute" to user.userprincipalname, then "Save".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/email-claim-2.png',
+            alt: 'Manage claim panel with the source attribute dropdown',
+          },
+        ],
         warning:
           'Entra maps email to user.mail by default, which is EMPTY for accounts without a mailbox (any *.onmicrosoft.com user). An empty email breaks sign-in with no useful error — the UPN is always populated.',
+        doneLabel: 'I’ve pointed the email claim at userPrincipalName',
       },
       {
         id: 'group-claim',
         title: 'Add the group claim',
-        intro: 'Still in "Attributes & Claims": Add a group claim, and rename it to memberOf.',
+        intro: 'Still in "Attributes & Claims", click "Add a group claim".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/group-claim-1.png',
+            alt: 'Group Claims panel in Attributes & Claims',
+          },
+        ],
         bullets: [
           'Which groups: "Groups assigned to the application" (keeps the claim small).',
           'Source attribute: "Cloud-only group display names" for readable names.',
@@ -184,19 +223,45 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
         warning:
           'Display names and assigning groups to the app require Entra ID P1/P2. On the Free tier pick "Security groups" + "Group ID" instead — groups arrive as Object IDs (GUIDs), and you map those GUIDs in Kortix. Both work; names are just easier to read.',
+        doneLabel: 'I’ve added the memberOf group claim',
       },
       {
         id: 'assign-users',
         title: 'Assign users and groups',
         intro:
-          'In the app: Users and groups → Add user/group. Only assigned users can sign in through this application.',
+          'In the left navigation menu, select "Users and groups". Only assigned users can sign in through this application.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/assign-users-1.png',
+            alt: 'Users and groups in the Manage section',
+          },
+          {
+            kind: 'text',
+            text: 'Click "Add user/group", select the users or groups that should sign in to Kortix, then click "Assign".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/assign-users-2.png',
+            alt: 'Selecting users and groups to assign to the application',
+          },
+        ],
         note: 'Assigning a whole group (rather than individual users) requires Entra ID P1/P2.',
+        doneLabel: 'I’ve assigned users to the application',
       },
       {
         id: 'metadata',
         title: 'Copy the federation metadata',
         intro:
-          'In Single sign-on → section 3 "SAML Certificates": copy the App Federation Metadata Url (or download the Federation Metadata XML file).',
+          'In "Single sign-on", scroll to section 3 "SAML Certificates" and copy the "App Federation Metadata Url" (or download the "Federation Metadata XML" file).',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/metadata-1.png',
+            alt: 'SAML Certificates section with the App Federation Metadata Url',
+          },
+        ],
+        doneLabel: 'I’ve copied the federation metadata',
       },
       importStep('memberOf'),
       testStep('Removed from the Entra group → the mapped Kortix access is gone on next sign-in.'),
