@@ -738,12 +738,17 @@ export async function syncSubscription(accountId: string) {
   return { success: true, message: 'Subscription synced' };
 }
 
-export async function getCheckoutSessionDetails(sessionId: string) {
+export async function getCheckoutSessionDetails(accountId: string, sessionId: string) {
   const stripe = getStripe();
 
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['total_details.breakdown'],
   });
+
+  const sessionAccountId = session.metadata?.account_id;
+  if (!sessionAccountId || sessionAccountId !== accountId) {
+    throw new BillingError('Checkout session does not belong to this account', 404);
+  }
 
   const discount = session.total_details?.breakdown?.discounts?.[0];
 

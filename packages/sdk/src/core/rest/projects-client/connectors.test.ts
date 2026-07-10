@@ -53,6 +53,20 @@ test('listConnectors throws on a failed response', async () => {
   await expect(listConnectors('P1')).rejects.toBeTruthy();
 });
 
+test('listConnectors is a silent background read — a 403 never hits the global error sink', async () => {
+  // Fired at workspace mount (project-home tiles, sidebar setup checklist);
+  // callers render their own state, never a global toast.
+  const onError = mock(() => {});
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+  try {
+    nextResponse = { status: 403, body: { error: 'forbidden' } };
+    await expect(listConnectors('P1')).rejects.toBeTruthy();
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
 test('syncConnectors POSTs an empty body to the sync endpoint', async () => {
   nextResponse = { status: 200, body: { synced: 2, errors: [] } };
   const result = await syncConnectors('P1');

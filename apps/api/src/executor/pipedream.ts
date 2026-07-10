@@ -9,7 +9,7 @@
  * The catalog (app actions) is fetched from Pipedream and normalized. Execution
  * goes through the Connect `actions/run` API. See docs/specs/executor.md §5.
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { upsertCredential } from './credentials';
 import type { PipedreamActionLike } from './types';
@@ -307,7 +307,10 @@ export async function finalizePipedreamConnection(opts: {
 export function verifyWebhookSig(extUserId: string, sig: string | null): boolean {
   if (!config.PIPEDREAM_WEBHOOK_SECRET || !sig) return false;
   const expected = createHmac('sha256', config.PIPEDREAM_WEBHOOK_SECRET).update(extUserId).digest('hex');
-  return expected === sig;
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const sigBuf = Buffer.from(sig, 'hex');
+  if (expectedBuf.length !== sigBuf.length) return false;
+  return timingSafeEqual(sigBuf, expectedBuf);
 }
 
 /** Fetch the app's action catalog (raw, for normalizePipedream). */

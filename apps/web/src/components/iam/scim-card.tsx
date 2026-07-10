@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Loader2, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from '@/lib/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
@@ -100,12 +101,23 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   return (
     <section className="rounded-xl border border-border/70 bg-card">
       <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-          <RefreshCw className="text-muted-foreground h-4 w-4" />
-          {tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}
-        </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <RefreshCw className="text-muted-foreground h-4 w-4" />
+              {tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
+          </div>
+          {canManage && (
+            // Step-by-step Directory Sync setup per IdP (mirrors the SSO
+            // wizard) — mints the token and hands over the Tenant URL inline.
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href={`/accounts/${accountId}/scim-setup`}>Guided setup</Link>
+            </Button>
+          )}
+        </div>
       </header>
 
       <div className="space-y-4 px-6 py-5">

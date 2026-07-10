@@ -34,6 +34,7 @@ import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
+import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -203,13 +204,16 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
-  // Groups/Roles/Policies stay visible for discoverability (unlike SSO/SCIM,
-  // which are hidden outright) but their create/grow actions are gated on
-  // this flag — mirrors the server's 402 (see requireEntitlement, 'rbac') so
-  // an admin never submits a create that the backend will reject. Reads,
-  // revokes, and deletes are deliberately left ungated server-side and stay
-  // fully functional regardless of this flag.
+  // The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated.
+  // Tabs/sections stay VISIBLE for discoverability, but a non-entitled
+  // account sees the EnterpriseUpsell card in place of the feature — mirrors
+  // the server's 402 (requireEntitlement) so an admin never touches a control
+  // the backend will reject. While the account state is still loading we
+  // render nothing gated (skeleton) to avoid flashing the upsell at
+  // enterprise accounts.
   const rbacEnabled = !!entitlements?.rbac;
+  const auditEnabled = !!entitlements?.auditAccess;
+  const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -373,26 +377,44 @@ export default function AccountSettingsPage() {
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-6">
-              <GroupsTab
-                accountId={account.account_id}
-                canCreate={canCreateGroup}
-                rbacEnabled={rbacEnabled}
-              />
+              {entitlementsLoading ? (
+                <Skeleton className="h-64 w-full rounded-2xl" />
+              ) : rbacEnabled ? (
+                <GroupsTab
+                  accountId={account.account_id}
+                  canCreate={canCreateGroup}
+                  rbacEnabled={rbacEnabled}
+                />
+              ) : (
+                <EnterpriseUpsell feature="groups" />
+              )}
             </TabsContent>
 
             {canManageRoles && (
               <TabsContent value="roles" className="space-y-6">
-                <RolesTab
-                  accountId={account.account_id}
-                  canManage={canManageRoles}
-                  rbacEnabled={rbacEnabled}
-                />
+                {entitlementsLoading ? (
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                ) : rbacEnabled ? (
+                  <RolesTab
+                    accountId={account.account_id}
+                    canManage={canManageRoles}
+                    rbacEnabled={rbacEnabled}
+                  />
+                ) : (
+                  <EnterpriseUpsell feature="roles" />
+                )}
               </TabsContent>
             )}
 
             {canReadAudit && (
               <TabsContent value="audit" className="space-y-6">
-                <AuditTab accountId={account.account_id} />
+                {entitlementsLoading ? (
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                ) : auditEnabled ? (
+                  <AuditTab accountId={account.account_id} />
+                ) : (
+                  <EnterpriseUpsell feature="audit" />
+                )}
               </TabsContent>
             )}
 
@@ -472,11 +494,15 @@ export default function AccountSettingsPage() {
                     accountId={account.account_id}
                     canManage={canWriteAccount}
                   />
-                  {enterpriseIdentityEnabled && (
+                  {entitlementsLoading ? (
+                    <Skeleton className="h-40 w-full rounded-2xl" />
+                  ) : enterpriseIdentityEnabled ? (
                     <>
                       <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
                       <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                     </>
+                  ) : (
+                    <EnterpriseUpsell feature="identity" />
                   )}
                 </SettingsGroup>
 

@@ -656,11 +656,32 @@ function buildMenu() {
 
 /* ─── IPC: native bridge (consumed via the __TAURI__ shim in preload.js) ───*/
 
+// The preload exposes the native bridge to whatever page is loaded in the main
+// window — including sandbox-preview / tunnel content, which is untrusted
+// (agent- or attacker-rendered). Only the Kortix app shell may drive privileged
+// commands; otherwise a preview page could call e.g. set_frontend_url to
+// permanently repoint the whole desktop app at an attacker origin. Derive the
+// SENDER's current origin and require it be a main-app host.
+function isTrustedSender(event) {
+  try {
+    const url =
+      event.senderFrame?.url ||
+      BrowserWindow.fromWebContents(event.sender)?.webContents?.getURL() ||
+      '';
+    return isMainAppHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
   // set_frontend_url) work unchanged.
   ipcMain.handle('kortix:invoke', (event, cmd, args = {}) => {
+    if (!isTrustedSender(event)) {
+      throw new Error('Unauthorized IPC sender');
+    }
     switch (cmd) {
       case 'set_zoom': {
         const scale = Math.min(3, Math.max(0.5, Number(args.scale) || 1));
@@ -670,7 +691,10 @@ function registerIpc() {
       }
       case 'open_external': {
         const url = String(args.url || '');
-        if (url) shell.openExternal(url);
+        // Only ever hand http(s) URLs to the OS shell — never file:, custom
+        // schemes, or crafted protocol URLs. (Sender is already origin-gated
+        // above; this is defense in depth, matching setWindowOpenHandler.)
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url);
         return null;
       }
       case 'get_frontend_url':
@@ -699,6 +723,9 @@ function registerIpc() {
 
   // Window controls (Tauri `getCurrentWindow().*`).
   ipcMain.handle('kortix:window', (event, action) => {
+    if (!isTrustedSender(event)) {
+      throw new Error('Unauthorized IPC sender');
+    }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return false;
     switch (action) {

@@ -11,15 +11,13 @@ import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical } from 'lucide-react';
 
+import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { getEnterpriseDemo, setEnterpriseDemo } from '@/lib/iam-client';
-
-const REQUEST_ACCESS_HREF =
-  'mailto:marko@kortix.ai?subject=Kortix%20Enterprise%20—%20access%20request';
 
 interface EnterpriseDemoCardProps {
   accountId: string;
@@ -92,7 +90,9 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             upgrade to the Enterprise plan.
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
-            <a href={REQUEST_ACCESS_HREF}>Request enterprise access</a>
+            <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
+              Request enterprise access
+            </a>
           </Button>
         </div>
       </header>

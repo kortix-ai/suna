@@ -878,8 +878,17 @@ projectsApp.openapi(
     diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
   };
 
+  // Ownership check BEFORE the write. updateTemplate keys the UPDATE on
+  // templateId alone, so without this a manager of their own project could
+  // mutate any other tenant's template by id (the post-write projectId check
+  // below only masks the response — the write had already committed). Mirrors
+  // the sibling DELETE handler.
+  const existing = await getTemplateById(templateId);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+  if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+
   try {
-    const updated = await updateTemplate(templateId, patch);
+    const updated = await updateTemplate(templateId, patch, projectId);
     if (!updated) return c.json({ error: 'Not found' }, 404);
     if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     return c.json({ template_id: updated.templateId, slug: updated.slug });

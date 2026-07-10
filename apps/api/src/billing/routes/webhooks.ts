@@ -1,9 +1,19 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { timingSafeEqual } from 'node:crypto';
 import { config } from '../../config';
 import { processStripeWebhook, processRevenueCatWebhook } from '../services/webhooks';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 
 export const webhooksRouter = makeOpenApiApp();
+
+// Constant-time compare, mirroring platform/webhooks/sandbox-webhooks.ts's
+// safeEqual — never throws on length mismatch, no early-exit timing leak.
+function safeEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
 
 // Public, signature-verified. Raw request body is required for Stripe signature
 // verification, so we deliberately DO NOT declare a JSON `request.body` schema
@@ -48,7 +58,7 @@ webhooksRouter.openapi(
     }
 
     const authHeader = c.req.header('Authorization');
-    if (!authHeader || authHeader !== `Bearer ${config.REVENUECAT_WEBHOOK_SECRET}`) {
+    if (!authHeader || !safeEqual(authHeader, `Bearer ${config.REVENUECAT_WEBHOOK_SECRET}`)) {
       return c.json({ error: 'Unauthorized' }, 401);
     }
 

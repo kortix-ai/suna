@@ -13,11 +13,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
-import Link from 'next/link';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
+import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -92,7 +92,9 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           title="Enterprise feature"
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href="/enterprise">Contact sales</Link>
+              <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
+                Contact sales
+              </a>
             </Button>
           }
         >

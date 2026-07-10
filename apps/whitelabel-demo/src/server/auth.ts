@@ -128,5 +128,11 @@ export function checkDemoCredentials(email: string, password: string): boolean {
   if (!password) return false;
   const expected = process.env.DEMO_PASSWORD;
   if (!expected) return true;
-  return password === expected;
+
+  // Constant-time compare (mirrors sign()/verifySession() above) — `===` on
+  // strings short-circuits on the first mismatched byte, leaking the correct
+  // password's length/prefix through response-timing.
+  const a = Buffer.from(password);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

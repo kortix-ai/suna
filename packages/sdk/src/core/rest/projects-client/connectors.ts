@@ -44,7 +44,11 @@ export interface ConnectorSyncResult {
 
 export async function listConnectors(projectId: string) {
   return unwrap(
-    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`),
+    // Background read fired at workspace mount (project-home tiles, sidebar
+    // setup checklist) — never global-toast; callers render their own state.
+    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`, {
+      showErrors: false,
+    }),
   );
 }
 

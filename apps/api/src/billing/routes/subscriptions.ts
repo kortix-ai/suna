@@ -337,11 +337,15 @@ subscriptionsRouter.openapi(
     summary: 'Get details for a Stripe checkout session',
     ...auth,
     request: { params: z.object({ sessionId: z.string() }) },
-    responses: { 200: json(OpaqueSchema, 'Checkout session details') },
+    responses: {
+      200: json(OpaqueSchema, 'Checkout session details'),
+      ...errors(404),
+    },
   }),
   async (c) => {
+    const accountId = await resolveScopedAccountId(c, 'query');
     const sessionId = c.req.param('sessionId');
-    const result = await getCheckoutSessionDetails(sessionId);
+    const result = await getCheckoutSessionDetails(accountId, sessionId);
     return c.json(result);
   },
 );
