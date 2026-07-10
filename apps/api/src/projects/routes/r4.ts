@@ -911,6 +911,19 @@ function normalizeAgentMailUsername(
   return trimmed || null;
 }
 
+// Small static check for the classic catastrophic-backtracking shapes —
+// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
+// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
+// persisted and later run against every inbound email sender.
+const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
+const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
+
+function hasCatastrophicBacktracking(pattern: string): boolean {
+  return (
+    NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern)
+  );
+}
+
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
@@ -920,6 +933,11 @@ function parseSenderPolicyBody(
       new RegExp(policy.allowedRegex);
     } catch {
       throw new Error("Email sender regex is invalid");
+    }
+    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
+      throw new Error(
+        "Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)",
+      );
     }
   }
   return policy;
@@ -1055,6 +1073,23 @@ projectsApp.openapi(
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
+    }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay turn events into another
+    // tenant's live session (IDOR).
+    const [turnStreamSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnStreamSession) {
+      return c.json({ error: "Not found" }, 404);
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1753,6 +1788,24 @@ projectsApp.openapi(
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
     }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay a question into another
+    // tenant's live session (IDOR).
+    const [turnQuestionSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnQuestionSession) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
     if (!Array.isArray(body.questions) || body.questions.length === 0) {
       return c.json({ error: "at least one question is required" }, 400);
     }

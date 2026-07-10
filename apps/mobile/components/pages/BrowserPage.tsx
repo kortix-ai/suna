@@ -16,7 +16,7 @@ import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { getAuthToken } from '@/api/config';
+import { API_URL, getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
@@ -158,6 +158,20 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     setUrlInput(formatDisplayUrl(url));
   }, [urlInput, getProxyUrl]);
 
+  // Only the trusted sandbox-proxy/API origin may ever see the live Supabase
+  // Authorization header. Any other origin (a typed URL, an external link
+  // followed inside the WebView, a redirect off-host) must not receive it —
+  // otherwise the session token leaks to arbitrary third-party servers.
+  const isTrustedProxyOrigin = useCallback((url: string): boolean => {
+    try {
+      const target = new URL(url);
+      const trusted = new URL(API_URL);
+      return target.protocol === trusted.protocol && target.host === trusted.host;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#888' : '#999';
   const barBg = isDark ? '#1E1E22' : '#F4F4F5';
@@ -248,7 +262,9 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             ref={webViewRef}
             source={{
               uri: currentUrl,
-              headers: { Authorization: `Bearer ${authToken}` },
+              headers: isTrustedProxyOrigin(currentUrl)
+                ? { Authorization: `Bearer ${authToken}` }
+                : undefined,
             }}
             onNavigationStateChange={handleNavigationChange}
             onLoadStart={() => setIsLoading(true)}

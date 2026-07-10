@@ -691,7 +691,10 @@ function registerIpc() {
       }
       case 'open_external': {
         const url = String(args.url || '');
-        if (url) shell.openExternal(url);
+        // Only ever hand http(s) URLs to the OS shell — never file:, custom
+        // schemes, or crafted protocol URLs. (Sender is already origin-gated
+        // above; this is defense in depth, matching setWindowOpenHandler.)
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url);
         return null;
       }
       case 'get_frontend_url':
