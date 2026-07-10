@@ -52,6 +52,7 @@ import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 import { buildScimBaseUrl } from '@/lib/scim-url';
 import {
   type GuideStep,
+  type ProviderConfig,
   PROVIDER_GUIDES,
   SCIM_PROVIDER_GUIDES,
   getProviderGuide,
@@ -226,23 +227,24 @@ function ProviderSelect({
 function ImportForm({
   accountId,
   providerName,
-  defaultClaim,
+  config,
   alreadyConnected,
   onDone,
 }: {
   accountId: string;
   providerName: string;
-  defaultClaim: string;
+  config: ProviderConfig;
   alreadyConnected: boolean;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(providerName);
   const [domain, setDomain] = useState('');
-  const [claim, setClaim] = useState(defaultClaim);
+  const [claim, setClaim] = useState(config.groupClaimName);
   const [autoCreate, setAutoCreate] = useState(true);
   const [autoProvision, setAutoProvision] = useState(false);
-  const [metaKind, setMetaKind] = useState<'url' | 'xml'>('url');
+  // Default to the form this IdP actually hands out (Google: XML only).
+  const [metaKind, setMetaKind] = useState<'url' | 'xml'>(config.preferredMetadata ?? 'url');
   const [metaUrl, setMetaUrl] = useState('');
   const [metaXml, setMetaXml] = useState('');
 
@@ -251,7 +253,7 @@ function ImportForm({
       importSsoProviderFromMetadata(accountId, {
         name: name.trim(),
         primary_domain: domain.trim().toLowerCase(),
-        group_claim_name: claim.trim() || defaultClaim,
+        group_claim_name: claim.trim() || config.groupClaimName,
         auto_create_members: autoCreate,
         auto_provision_groups: autoProvision,
         ...(metaKind === 'xml' ? { metadata_xml: metaXml.trim() } : { metadata_url: metaUrl.trim() }),
@@ -304,6 +306,9 @@ function ImportForm({
           className="font-mono text-xs"
           disabled={mutation.isPending}
         />
+        {/* Per-provider truth about the VALUES inside the claim — Entra sends
+            GUIDs, Okta/Google send names — so admins map the right thing. */}
+        <p className="text-muted-foreground text-xs">{config.groupValueHint}</p>
       </div>
 
       <div className="space-y-1.5">
@@ -336,7 +341,7 @@ function ImportForm({
           <Input
             value={metaUrl}
             onChange={(e) => setMetaUrl(e.target.value)}
-            placeholder="https://…/federationmetadata.xml"
+            placeholder={config.metadataUrlPlaceholder ?? 'https://…/saml/metadata.xml'}
             className="text-xs"
             disabled={mutation.isPending}
           />
@@ -475,7 +480,7 @@ function StepBody({
   spUrls,
   accountId,
   providerName,
-  defaultClaim,
+  config,
   alreadyConnected,
   onCompleteStep,
   onFinish,
@@ -485,7 +490,7 @@ function StepBody({
   spUrls: SamlSpUrls | null;
   accountId: string;
   providerName: string;
-  defaultClaim: string;
+  config: ProviderConfig;
   alreadyConnected: boolean;
   onCompleteStep: () => void;
   onFinish: () => void;
@@ -516,7 +521,7 @@ function StepBody({
         <ImportForm
           accountId={accountId}
           providerName={providerName}
-          defaultClaim={defaultClaim}
+          config={config}
           alreadyConnected={alreadyConnected}
           onDone={onCompleteStep}
         />
@@ -690,7 +695,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               spUrls={spUrls}
               accountId={accountId}
               providerName={guide.name}
-              defaultClaim={guide.defaultGroupClaim}
+              config={guide.config}
               alreadyConnected={!!providerQuery.data}
               onCompleteStep={() => markDone(step.id)}
               onFinish={finish}

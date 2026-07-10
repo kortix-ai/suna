@@ -52,16 +52,41 @@ describe('provider guides', () => {
     // Empty user.mail on onmicrosoft.com accounts → email claim must be UPN.
     expect(text).toContain('user.userprincipalname');
     // Group claim name must match what Kortix is configured with.
-    expect(entra.defaultGroupClaim).toBe('memberOf');
+    expect(entra.config.groupClaimName).toBe('memberOf');
     // Display names / group assignment need a paid Entra tier.
     expect(text).toContain('P1/P2');
     // GUID fallback for Free-tier tenants.
     expect(text).toContain('Object IDs');
   });
 
-  test('Okta and Google default to the groups claim', () => {
-    expect(getProviderGuide('okta')!.defaultGroupClaim).toBe('groups');
-    expect(getProviderGuide('google')!.defaultGroupClaim).toBe('groups');
+  // The per-provider config matrix — these values genuinely DIFFER between
+  // IdPs and a wrong one silently breaks group sync. Entra live-verified;
+  // Okta/Google per official docs.
+  test('per-provider config: group claim names', () => {
+    expect(getProviderGuide('entra')!.config.groupClaimName).toBe('memberOf');
+    expect(getProviderGuide('okta')!.config.groupClaimName).toBe('groups');
+    expect(getProviderGuide('google')!.config.groupClaimName).toBe('groups');
+    expect(getProviderGuide('custom')!.config.groupClaimName).toBe('groups');
+  });
+
+  test('per-provider config: group VALUE formats (GUIDs vs names)', () => {
+    expect(getProviderGuide('entra')!.config.groupValueHint).toContain('GUIDs');
+    expect(getProviderGuide('okta')!.config.groupValueHint).toContain('NAMES');
+    expect(getProviderGuide('google')!.config.groupValueHint).toContain('NAMES');
+    // Google only sends explicitly selected groups, capped at 75.
+    expect(getProviderGuide('google')!.config.groupValueHint).toContain('75');
+  });
+
+  test('per-provider config: metadata form (Google is XML-download only)', () => {
+    expect(getProviderGuide('entra')!.config.preferredMetadata).toBe('url');
+    expect(getProviderGuide('okta')!.config.preferredMetadata).toBe('url');
+    expect(getProviderGuide('google')!.config.preferredMetadata).toBe('xml');
+    expect(getProviderGuide('google')!.config.metadataSource).toContain('does not host');
+  });
+
+  test('the Okta guide adds an explicit email attribute statement', () => {
+    const text = JSON.stringify(getProviderGuide('okta')!.steps);
+    expect(text).toContain('user.email');
   });
 
   test('unknown provider ids resolve to null (wizard falls back to the picker)', () => {

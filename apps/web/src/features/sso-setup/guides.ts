@@ -30,12 +30,39 @@ export interface GuideStep {
   kind?: StepKind;
 }
 
+/**
+ * Per-provider configuration facts. These DIFFER between IdPs and a wrong
+ * default silently breaks group sync — encode them once, carefully, here:
+ *
+ * | provider | group claim | group VALUES               | metadata        |
+ * | entra    | memberOf    | Object IDs (GUIDs)*        | hosted URL      |
+ * | okta     | groups      | group names                | hosted URL      |
+ * | google   | groups      | names, selected only, ≤75  | XML download    |
+ *
+ * (*) Entra emits display names only with "Groups assigned to the
+ * application" + "Cloud-only group display names", which needs P1/P2 —
+ * live-verified on a real tenant. Okta emits Okta GroupName values; Google
+ * emits the names of ONLY the groups explicitly selected in the mapping.
+ */
+export interface ProviderConfig {
+  /** Attribute name the IdP emits for groups — Kortix's group_claim_name MUST equal it. */
+  groupClaimName: string;
+  /** What the group VALUES look like — i.e. what an admin pastes into a group mapping. */
+  groupValueHint: string;
+  /** Which metadata form the IdP hands out — drives the import form's default.
+   *  SAML guides set these; SCIM guides omit them (no metadata in that flow). */
+  preferredMetadata?: 'url' | 'xml';
+  /** Where in the IdP console the metadata lives. */
+  metadataSource?: string;
+  /** Placeholder for the metadata URL input (only when preferredMetadata is 'url'). */
+  metadataUrlPlaceholder?: string;
+}
+
 export interface ProviderGuide {
   id: 'entra' | 'okta' | 'google' | 'custom';
   name: string;
   blurb: string;
-  /** Default group-claim attribute name this IdP emits (prefills the import form). */
-  defaultGroupClaim: string;
+  config: ProviderConfig;
   steps: GuideStep[];
 }
 
@@ -68,7 +95,15 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'entra',
     name: 'Microsoft Entra ID (Azure AD)',
     blurb: 'SAML via an Entra enterprise application',
-    defaultGroupClaim: 'memberOf',
+    config: {
+      groupClaimName: 'memberOf',
+      groupValueHint:
+        'Entra sends group Object IDs (GUIDs) by default — map those GUIDs, or emit display names via "Groups assigned to the application" (needs Entra ID P1/P2).',
+      preferredMetadata: 'url',
+      metadataSource: 'Single sign-on → section 3 "SAML Certificates" → App Federation Metadata Url',
+      metadataUrlPlaceholder:
+        'https://login.microsoftonline.com/<tenant-id>/federationmetadata/2007-06/federationmetadata.xml?appid=…',
+    },
     steps: [
       {
         id: 'create-app',
@@ -134,7 +169,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'okta',
     name: 'Okta',
     blurb: 'SAML via an Okta app integration',
-    defaultGroupClaim: 'groups',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Okta sends group NAMES (the Okta GroupName), exactly as they appear in the Okta admin console — map those names.',
+      preferredMetadata: 'url',
+      metadataSource: 'App → Sign On tab → "Identity Provider metadata" link',
+      metadataUrlPlaceholder: 'https://<org>.okta.com/app/<app-id>/sso/saml/metadata',
+    },
     steps: [
       {
         id: 'create-app',
@@ -154,11 +196,18 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         ],
       },
       {
+        id: 'email-attribute',
+        title: 'Add the email attribute',
+        intro:
+          'Still on "Configure SAML", under "Attribute Statements" add: Name email → Value user.email.',
+        note: 'Belt and braces: the NameID already carries the email, but an explicit email attribute keeps sign-in working if the NameID format ever changes.',
+      },
+      {
         id: 'group-claim',
         title: 'Add the group attribute',
         intro:
-          'In the same SAML settings, under "Group Attribute Statements": name it groups, filter "Matches regex" with .* (or a narrower filter for the groups you want to send).',
-        note: 'The attribute NAME (groups) is what you enter as the group claim when connecting to Kortix.',
+          'Under "Group Attribute Statements": Name groups, filter "Matches regex" with .* (or a narrower filter for just the groups you want to send).',
+        note: 'Okta sends the matching groups by NAME — those names are what you map in Kortix. The attribute name (groups) is what Kortix reads as the group claim.',
       },
       {
         id: 'assign-users',
@@ -179,7 +228,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'google',
     name: 'Google Workspace',
     blurb: 'SAML via a custom Google Workspace app',
-    defaultGroupClaim: 'groups',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Google sends group NAMES — and only for the groups you explicitly selected in the mapping (up to 75). A group you forgot to select is silently never sent.',
+      preferredMetadata: 'xml',
+      metadataSource:
+        'The "Google Identity Provider details" step → Download metadata (GoogleIDPMetadata.xml). Google does not host a metadata URL.',
+    },
     steps: [
       {
         id: 'create-app',
@@ -190,7 +246,8 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'metadata',
         title: 'Download the IdP metadata',
         intro:
-          'On the "Google Identity Provider details" step, click Download metadata and keep the XML — you’ll paste it into Kortix at the connect step.',
+          'On the "Google Identity Provider details" step, click Download metadata and keep the XML file — you’ll paste its contents into Kortix at the connect step.',
+        note: 'Google only offers the XML download — there is no hosted metadata URL.',
       },
       {
         id: 'basic-saml',
@@ -207,7 +264,9 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'group-claim',
         title: 'Map the groups attribute',
         intro:
-          'On the attribute mapping step, under "Group membership" pick the groups to send and name the app attribute groups.',
+          'On the attribute mapping step, under "Group membership (optional)" select the groups to send and set the App attribute to groups.',
+        warning:
+          'Google only sends groups you EXPLICITLY select here (max 75). Add every group you plan to map in Kortix — an unselected group is silently omitted from the claim.',
       },
       {
         id: 'assign-users',
@@ -222,7 +281,14 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'custom',
     name: 'Custom SAML',
     blurb: 'Any SAML 2.0 identity provider',
-    defaultGroupClaim: 'groups',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Group values arrive exactly as your IdP emits them (names or IDs) — create Kortix mappings from what actually arrives.',
+      preferredMetadata: 'url',
+      metadataSource: 'Your IdP’s SAML metadata export (URL or XML)',
+      metadataUrlPlaceholder: 'https://…/saml/metadata.xml',
+    },
     steps: [
       {
         id: 'basic-saml',
@@ -289,7 +355,11 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'entra',
     name: 'Microsoft Entra ID (Azure AD)',
     blurb: 'Automatic provisioning from your Entra tenant',
-    defaultGroupClaim: 'memberOf',
+    config: {
+      groupClaimName: 'memberOf',
+      groupValueHint:
+        'Groups pushed via SCIM are created in Kortix under their Entra display names.',
+    },
     steps: [
       {
         id: 'before',
@@ -348,7 +418,11 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'okta',
     name: 'Okta',
     blurb: 'Automatic provisioning from Okta',
-    defaultGroupClaim: 'groups',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint:
+        'Groups pushed via Push Groups are created in Kortix under their Okta names.',
+    },
     steps: [
       {
         id: 'before',
@@ -390,7 +464,10 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
     id: 'custom',
     name: 'Custom SCIM 2.0',
     blurb: 'Any SCIM 2.0-capable identity provider',
-    defaultGroupClaim: 'groups',
+    config: {
+      groupClaimName: 'groups',
+      groupValueHint: 'Pushed groups are created in Kortix under their displayName.',
+    },
     steps: [
       scimTokenStep,
       {
