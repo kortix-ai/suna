@@ -111,6 +111,37 @@ function saveCompleted(flow: Flow, accountId: string, provider: string, ids: str
   }
 }
 
+// ─── Metadata stash: the metadata-input step captures the IdP metadata and
+// the import step arrives prefilled — paste once, never re-hunt the value. ──
+
+type MetadataStash = { kind: 'url' | 'xml'; value: string };
+
+function metadataStashKey(accountId: string, provider: string) {
+  return `kortix:sso-setup:${accountId}:${provider}:metadata`;
+}
+
+function loadMetadataStash(accountId: string, provider: string): MetadataStash | null {
+  try {
+    const raw = window.localStorage.getItem(metadataStashKey(accountId, provider));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if ((parsed?.kind === 'url' || parsed?.kind === 'xml') && typeof parsed.value === 'string') {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMetadataStash(accountId: string, provider: string, stash: MetadataStash) {
+  try {
+    window.localStorage.setItem(metadataStashKey(accountId, provider), JSON.stringify(stash));
+  } catch {
+    // Non-critical — the import step just won't prefill.
+  }
+}
+
 async function copyValue(value: string, msg: string) {
   try {
     await navigator.clipboard.writeText(value);
@@ -356,16 +387,136 @@ function ProviderSelect({
   );
 }
 
+// ─── Metadata-input step (Vercel's "Set Identity Provider Metadata") ────────
+
+function MetadataInputStep({
+  accountId,
+  providerId,
+  config,
+  doneLabel,
+  onDone,
+}: {
+  accountId: string;
+  providerId: string;
+  config: ProviderConfig;
+  doneLabel: string;
+  onDone: () => void;
+}) {
+  const [mode, setMode] = useState<'url' | 'xml'>(config.preferredMetadata ?? 'url');
+  const [url, setUrl] = useState('');
+  const [xml, setXml] = useState('');
+
+  // Restore a previously pasted value (revisit / resume).
+  useEffect(() => {
+    const stash = loadMetadataStash(accountId, providerId);
+    if (!stash) return;
+    setMode(stash.kind);
+    if (stash.kind === 'url') setUrl(stash.value);
+    else setXml(stash.value);
+  }, [accountId, providerId]);
+
+  const value = mode === 'url' ? url : xml;
+  const ready =
+    mode === 'url' ? /^https?:\/\/.+/i.test(url.trim()) : xml.trim().length > 40;
+
+  const persist = (kind: 'url' | 'xml', v: string) =>
+    saveMetadataStash(accountId, providerId, { kind, value: v.trim() });
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(
+          [
+            ['url', 'Dynamic configuration', 'Recommended — a metadata URL'],
+            ['xml', 'Manual configuration', 'Paste the metadata XML'],
+          ] as const
+        ).map(([m, title, sub]) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            aria-pressed={mode === m}
+            className={cn(
+              'rounded-md border px-4 py-3 text-left transition-colors',
+              mode === m
+                ? 'border-foreground bg-popover'
+                : 'border-border/60 bg-card hover:border-border text-muted-foreground',
+            )}
+          >
+            <span className={cn('block text-sm font-medium', mode === m && 'text-foreground')}>
+              {title}
+            </span>
+            <span className="text-muted-foreground block text-xs">{sub}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="border-border/60 bg-popover space-y-1.5 rounded-md border p-4">
+        <Label>{mode === 'url' ? 'Identity provider metadata URL' : 'Identity provider metadata XML'}</Label>
+        {mode === 'url' ? (
+          <Input
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              persist('url', e.target.value);
+            }}
+            placeholder={config.metadataUrlPlaceholder ?? 'https://'}
+            className="text-xs"
+          />
+        ) : (
+          <textarea
+            value={xml}
+            onChange={(e) => {
+              setXml(e.target.value);
+              persist('xml', e.target.value);
+            }}
+            placeholder="<EntityDescriptor …>…</EntityDescriptor>"
+            rows={5}
+            className="border-border bg-background focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1"
+          />
+        )}
+      </div>
+
+      <div className="border-border/70 bg-popover flex items-center justify-between gap-3 rounded-md border py-3 pr-3 pl-4">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={cn(
+              'flex size-6 shrink-0 items-center justify-center rounded-full transition-colors',
+              ready ? 'bg-kortix-green/15' : 'bg-muted',
+            )}
+          >
+            <Check className={cn('size-3.5', ready ? 'text-kortix-green' : 'text-muted-foreground')} />
+          </span>
+          <span className="text-foreground truncate text-sm">{doneLabel}</span>
+        </span>
+        <Button
+          onClick={() => {
+            persist(mode, value);
+            onDone();
+          }}
+          disabled={!ready}
+          className="shrink-0 gap-1.5"
+        >
+          Continue
+          <ArrowRight className="size-3.5 shrink-0" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── SSO: inline metadata import ───────────────────────────────────────────
 
 function ImportForm({
   accountId,
+  providerId,
   providerName,
   config,
   alreadyConnected,
   onDone,
 }: {
   accountId: string;
+  providerId: string;
   providerName: string;
   config: ProviderConfig;
   alreadyConnected: boolean;
@@ -381,6 +532,15 @@ function ImportForm({
   const [metaKind, setMetaKind] = useState<'url' | 'xml'>(config.preferredMetadata ?? 'url');
   const [metaUrl, setMetaUrl] = useState('');
   const [metaXml, setMetaXml] = useState('');
+
+  // Prefill from the metadata-input step's stash — paste once, arrive ready.
+  useEffect(() => {
+    const stash = loadMetadataStash(accountId, providerId);
+    if (!stash || !stash.value) return;
+    setMetaKind(stash.kind);
+    if (stash.kind === 'url') setMetaUrl(stash.value);
+    else setMetaXml(stash.value);
+  }, [accountId, providerId]);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -613,6 +773,7 @@ function StepBody({
   step,
   spUrls,
   accountId,
+  providerId,
   providerName,
   config,
   alreadyConnected,
@@ -623,6 +784,7 @@ function StepBody({
   step: GuideStep;
   spUrls: SamlSpUrls | null;
   accountId: string;
+  providerId: string;
   providerName: string;
   config: ProviderConfig;
   alreadyConnected: boolean;
@@ -700,9 +862,18 @@ function StepBody({
 
       {step.note && <p className="text-muted-foreground text-xs">{step.note}</p>}
 
-      {step.kind === 'import' ? (
+      {step.kind === 'metadata-input' ? (
+        <MetadataInputStep
+          accountId={accountId}
+          providerId={providerId}
+          config={config}
+          doneLabel={step.doneLabel ?? 'I’ve added the identity provider metadata'}
+          onDone={onCompleteStep}
+        />
+      ) : step.kind === 'import' ? (
         <ImportForm
           accountId={accountId}
+          providerId={providerId}
           providerName={providerName}
           config={config}
           alreadyConnected={alreadyConnected}
@@ -900,6 +1071,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               step={step}
               spUrls={spUrls}
               accountId={accountId}
+              providerId={guide.id}
               providerName={guide.name}
               config={guide.config}
               alreadyConnected={!!providerQuery.data}

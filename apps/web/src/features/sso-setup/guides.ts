@@ -6,13 +6,15 @@
  * Object IDs vs names, P1/P2 requirements) so no admin rediscover them.
  *
  * Step kinds:
- *  - 'instructions' — things the admin does in the IdP console
- *  - 'import'       — the inline "connect to Kortix" form (metadata import)
- *  - 'scim-token'   — mint a SCIM bearer token inline (Directory Sync flow)
- *  - 'test'         — the final verify step
+ *  - 'instructions'   — things the admin does in the IdP console
+ *  - 'metadata-input' — capture the IdP metadata (URL or XML) inline; the
+ *                       value is stashed and prefills the import step
+ *  - 'import'         — the inline "connect to Kortix" form (metadata import)
+ *  - 'scim-token'     — mint a SCIM bearer token inline (Directory Sync flow)
+ *  - 'test'           — the final verify step
  */
 
-export type StepKind = 'instructions' | 'import' | 'scim-token' | 'test';
+export type StepKind = 'instructions' | 'metadata-input' | 'import' | 'scim-token' | 'test';
 
 /**
  * Rich step content — prose and console screenshots interleaved in reading
@@ -285,9 +287,10 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'metadata',
-        title: 'Copy the federation metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
         intro:
-          'In "Single sign-on", scroll to section 3 "SAML Certificates" and copy the "App Federation Metadata Url" (or download the "Federation Metadata XML" file).',
+          'In "Single sign-on", scroll to section 3 "SAML Certificates" and copy the "App Federation Metadata Url". Paste it below to continue.',
         content: [
           {
             kind: 'image',
@@ -295,7 +298,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             alt: 'SAML Certificates section with the App Federation Metadata Url',
           },
         ],
-        doneLabel: 'I’ve copied the federation metadata',
+        doneLabel: 'I’ve added the identity provider metadata URL',
       },
       importStep('memberOf'),
       testStep('Removed from the Entra group → the mapped Kortix access is gone on next sign-in.'),
@@ -405,9 +408,18 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'metadata',
-        title: 'Copy the metadata URL',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
         intro:
-          'On the app’s Sign On tab, find the SAML Metadata / "Identity Provider metadata" link and copy its URL.',
+          'On the app’s "Sign On" tab, in the "Metadata details" section, locate the "Metadata URL" and click "Copy". Paste it below to continue.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/metadata-1.png',
+            alt: 'Sign On tab with the Metadata URL and Copy button',
+          },
+        ],
+        doneLabel: 'I’ve added the identity provider metadata URL',
       },
       importStep('groups'),
       testStep(),
@@ -433,10 +445,12 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'metadata',
-        title: 'Download the IdP metadata',
+        title: 'Set identity provider metadata',
+        kind: 'metadata-input',
         intro:
-          'On the "Google Identity Provider details" step, click Download metadata and keep the XML file — you’ll paste its contents into Kortix at the connect step.',
+          'On the "Google Identity Provider details" step, click "Download metadata" and paste the XML file’s contents below to continue.',
         note: 'Google only offers the XML download — there is no hosted metadata URL.',
+        doneLabel: 'I’ve added the identity provider metadata',
       },
       {
         id: 'basic-saml',
