@@ -3,8 +3,6 @@ title: Authentication
 description: Two concepts only — an API key (account-wide or project-scoped) for anything programmatic, or a Supabase JWT for web apps.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Kortix has exactly two ways to authenticate: a **session** (you logged in) and an
 **API key** (everything programmatic — the SDK, the CLI, your backend, CI). The SDK
 takes one via `getToken`, which it sends as `Authorization: Bearer <token>`.
