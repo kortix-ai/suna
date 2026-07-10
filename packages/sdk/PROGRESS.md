@@ -135,7 +135,7 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | --- | ------------------------------------------------------- | ----------- | ---------- | ------------ | ------------------------ |
 | 0   | Docs: spec, plan, `AGENTS.md`, prompt, this file        | **DONE**    | `01AzJBSa` | 2026-07-10   | `6cd4d6e4e`              |
 | 1   | Assert the two export maps agree                        | **DONE**    | `ab099b6a` | 2026-07-10   | `ecb78a113`              |
-| 2   | Install smoke test — pack, install, import              | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
+| 2   | Install smoke test — pack, install, import              | BLOCKED (smoke script can't resolve `@kortix/llm-catalog@0.0.0-smoke` — workspace dep pinned to synthetic version absent from npm; decision with Jay) | `ab099b6a` | 2026-07-10   | —                        |
 | 3   | Public-export snapshot                                  | NOT STARTED | —          | —            | —                        |
 | 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | NOT STARTED | —          | —            | —                        |
 | 5   | Axis 2 — root canonical, subpaths deprecated            | NOT STARTED | —          | —            | —                        |
@@ -274,3 +274,35 @@ npm view @kortix/sdk version         → 0.9.100
 
 **Shippable to production: YES** (docs only).
 **Next:** Task 1.
+
+### 2026-07-10 — session `ab099b6a`
+
+Executing the v2 chain via subagent-driven development. Docs committed
+(`6cd4d6e4e`); baseline re-verified (typecheck exit 0; 1046 pass / 0 fail / 65
+files).
+
+**Task 1 DONE** (`ecb78a113`) — `src/package-exports.test.ts`, probe-verified
+RED then green. Suite now **1048 pass / 66 files**. Review clean, one
+plan-mandated finding for Jay: the plan's test code contains a tautological
+assertion (`package-exports.test.ts:30`) that asserts nothing.
+
+**Task 2 BLOCKED at the kickoff's hard stop #1** — the smoke script's
+first-ever run failed in Step 2:
+
+```
+npm error notarget No matching version found for @kortix/llm-catalog@0.0.0-smoke
+```
+
+Root cause: `stage-npm-publish.mjs` rewrites `workspace:*` deps to the lockstep
+version. Under `VERSION=0.0.0-smoke` the tarball depends on
+`@kortix/llm-catalog@0.0.0-smoke`, which is not on npm, so `npm install
+<tarball>` cannot resolve. This is the plan's known risk #2 realised — a design
+gap in the smoke script (AGENTS.md documents the pinning behaviour), not a bug
+in the published artifact. Real releases co-publish both packages, so prod
+installs are unaffected. Also found: the script leaks the packed `.tgz` on
+failure (cleanup sits outside `finally`). Fix decision is Jay's; the verbatim
+script sits uncommitted at `packages/sdk/scripts/smoke-install.mjs`.
+
+**Also found** — docs prose says 25 subpaths / 21 legacy; reality is 23 export
+keys / 20 legacy. The plan's enumerated key lists (Task 5 Step 9) match reality
+exactly, so the plan's literal instructions are unaffected.
