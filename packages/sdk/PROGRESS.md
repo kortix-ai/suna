@@ -142,8 +142,8 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | 6   | Dogfood `whitelabel-demo` (acceptance gate)             | **DONE**    | `ab099b6a` | 2026-07-10   | `db30c6df3`+`19e500e50`  |
 | 7   | Portability — ban bare globals in `core/`               | **DONE**    | `ab099b6a` | 2026-07-10   | `189428df7`+`a485ad401`  |
 | 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | **DONE**    | `ab099b6a` | 2026-07-10   | `c7bca7a7e`              |
-| 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | IN PROGRESS (steps 1–5 only; Step 6 = hard stop #4, needs Jay + live stack + real browser) | `ab099b6a` | 2026-07-10   | —                        |
-| 10  | Docs — README, CHANGELOG, API-MAP                       | NOT STARTED | —          | —            | —                        |
+| 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | IN PROGRESS (steps 1–5 DONE `549d597a0`, review clean; Step 6 = hard stop #4, awaiting Jay + live stack + real browser; D2a/D3 unclaimed) | `ab099b6a` | 2026-07-10   | `549d597a0` (partial)    |
+| 10  | Docs — README, CHANGELOG, API-MAP                       | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
 
 
 Statuses: `NOT STARTED` · `IN PROGRESS` · `BLOCKED (reason)` · `DONE (sha)` · `WON'T DO (reason)`
@@ -187,6 +187,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B3  | **Host-local React hooks that belong in the SDK.** `apps/web` hand-rolls hooks over client fns the SDK already exposes — violating "hosts are thin". | `apps/web/src/hooks/{transcription/use-transcription,projects/use-project-gateway,channels/use-channel-bindings}.ts`. `@kortix/sdk/react` has only `use-gateway-catalog-sync.ts`. | OPEN                                                                               |
 | B4  | `**.name` on `ApiError` is duck-typed by legacy sniffers.** Changing it is a *silent runtime* break, not a compile break.                            | `src/platform/api/errors.ts:59` — `this.name = 'ApiError'`, with a comment noting legacy sniffers                                                                                 | WON'T DO for now — documented in `AGENTS.md`; revisit only with a deprecation path |
 | B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                             | `src/opencode/kortix-master.ts`                                                                                                                                                   | OPEN                                                                               |
+| B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | OPEN |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
