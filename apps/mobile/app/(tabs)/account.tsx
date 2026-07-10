@@ -18,6 +18,7 @@ import { Icon } from '@/components/ui/icon';
 import { Avatar } from '@/components/ui/Avatar';
 import { ListRow } from '@/components/ui/list-row';
 import { haptics } from '@/lib/haptics';
+import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
 
 interface AccountRow {
   key: string;
@@ -76,6 +77,7 @@ export default function AccountTab() {
   const { user, signOut, isSigningOut } = useAuthContext();
   const { t } = useLanguage();
   const router = useRouter();
+  const tabBarClearance = useTabBarClearance();
 
   const displayName =
     user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
@@ -126,7 +128,7 @@ export default function AccountTab() {
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance }}
       >
         <View className="items-center px-5 pb-6 pt-8">
           <Avatar size={64} fallbackText={displayName} />

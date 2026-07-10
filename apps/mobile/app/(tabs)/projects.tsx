@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import { Alert, Animated, FlatList, Platform, Pressable, RefreshControl, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, FlatList, Pressable, RefreshControl, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import { useToast } from '@/components/ui/toast-provider';
 import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
 import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
+import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
 import { useAuthContext } from '@/contexts';
 import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -56,6 +57,7 @@ export default function ProjectsTab() {
   const isDark = colorScheme === 'dark';
   const toast = useToast();
   const { user, signOut, isSigningOut } = useAuthContext();
+  const tabBarClearance = useTabBarClearance();
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const [query, setQuery] = React.useState('');
@@ -280,7 +282,7 @@ export default function ProjectsTab() {
 
       {loading ? (
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
           <View className="flex-1 px-4 pt-4">
             {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -290,7 +292,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : projectsQuery.isError ? (
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
@@ -304,7 +306,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showEmpty ? (
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
@@ -325,7 +327,7 @@ export default function ProjectsTab() {
         </ScrollView>
       ) : showNoResults ? (
         <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
@@ -340,7 +342,7 @@ export default function ProjectsTab() {
           data={filtered}
           keyExtractor={(item) => item.project_id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 12, paddingBottom: Platform.OS === 'android' ? 110 : 28 }}
+          contentContainerStyle={{ paddingTop: 12, paddingBottom: tabBarClearance }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}
           keyboardShouldPersistTaps="handled"
         />
