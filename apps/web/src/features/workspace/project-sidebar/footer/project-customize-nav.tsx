@@ -7,6 +7,8 @@ import { useCallback, useEffect } from 'react';
 
 import Hint from '@/components/ui/hint';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { useIsMobile } from '@/hooks/utils';
 import { useCustomizeStore } from '@/stores/customize-store';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
@@ -99,12 +101,20 @@ export function ProjectCustomizeRailItem() {
   );
 }
 
-/** Top-level Files entry — sits ABOVE Customize and is shown to every member
- *  (files aren't part of customization). Navigates to the standalone page. */
+/** Top-level Files entry — sits ABOVE Customize (files aren't part of
+ *  customization). Hidden when the caller lacks `project.file.read`: that leaf
+ *  is editor-tier (IAM v1 moved the sensitive file/secret reads off the floor
+ *  `member` role), so showing it to a plain member would just land them on a
+ *  page whose every read 403s. Optimistic while the probe loads — the entry
+ *  only disappears on an explicit deny. */
 export function ProjectFilesNavItem() {
   const onClick = useFilesActivate();
   const pathname = usePathname();
+  const params = useParams<{ id: string }>();
+  const canReadFiles = useProjectCan(params?.id, PROJECT_ACTIONS.PROJECT_FILE_READ);
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
+
+  if (!canReadFiles.allowed && !canReadFiles.isLoading) return null;
 
   return (
     <SidebarMenuItem>
