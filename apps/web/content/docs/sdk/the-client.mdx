@@ -11,97 +11,97 @@ method, grouped by resource.
 ```ts
 const kortix = createKortix({ backendUrl, getToken });
 
-kortix.accounts          // account / team operations
-kortix.accountInvites    // invite lifecycle by token alone (accept/decline)
-kortix.projects          // top-level project operations
-kortix.project(id)       // id-bound project handle (every sub-resource)
-kortix.session(pid, sid) // id-bound session handle  →  see Sessions
-kortix.github            // GitHub App install + repo linking (account-scoped)
-kortix.billing           // credits / subscription / tier / transactions (read surface)
-kortix.sandboxShares     // public share links for a sandbox port
-kortix.transcribe        // speech-to-text
-kortix.connectStatus     // is easy-connect (Pipedream) configured?
-kortix.marketplace       // public marketplace catalog (browse, not project-scoped)
-kortix.validateToken     // pasted-API-key UX check
-kortix.config            // the platform config in effect (diagnostics)
-kortix.runtime()         // the opencode client for the active runtime (escape hatch)
+kortix.accounts; // account / team operations
+kortix.accountInvites; // invite lifecycle by token alone (accept/decline)
+kortix.projects; // top-level project operations
+kortix.project(id); // id-bound project handle (every sub-resource)
+kortix.session(pid, sid); // id-bound session handle  →  see Sessions
+kortix.github; // GitHub App install + repo linking (account-scoped)
+kortix.billing; // credits / subscription / tier / transactions (read surface)
+kortix.sandboxShares; // public share links for a sandbox port
+kortix.transcribe; // speech-to-text
+kortix.connectStatus; // is easy-connect (Pipedream) configured?
+kortix.marketplace; // public marketplace catalog (browse, not project-scoped)
+kortix.validateToken; // pasted-API-key UX check
+kortix.config; // the platform config in effect (diagnostics)
+kortix.runtime(); // the opencode client for the active runtime (escape hatch)
 ```
 
 ## Accounts — `kortix.accounts`
 
-| method | what |
-|---|---|
-| `list()` | accounts you belong to |
-| `get(accountId)` | one account |
-| `create({ name })` | create an account / team |
-| `updateName(accountId, name)` | rename |
-| `members(accountId)` | list members |
-| `invite(accountId, input)` | invite a member |
-| `updateMemberRole(accountId, userId, role)` | change a member's role |
-| `removeMember(accountId, userId)` | remove a member |
-| `invites(accountId)` | pending invites |
-| `cancelInvite(accountId, inviteId)` | cancel a pending invite |
-| `resendInvite(accountId, inviteId)` | resend a pending invite |
-| `leave(accountId)` | leave the account |
+| method                                      | what                     |
+| ------------------------------------------- | ------------------------ |
+| `list()`                                    | accounts you belong to   |
+| `get(accountId)`                            | one account              |
+| `create({ name })`                          | create an account / team |
+| `updateName(accountId, name)`               | rename                   |
+| `members(accountId)`                        | list members             |
+| `invite(accountId, input)`                  | invite a member          |
+| `updateMemberRole(accountId, userId, role)` | change a member's role   |
+| `removeMember(accountId, userId)`           | remove a member          |
+| `invites(accountId)`                        | pending invites          |
+| `cancelInvite(accountId, inviteId)`         | cancel a pending invite  |
+| `resendInvite(accountId, inviteId)`         | resend a pending invite  |
+| `leave(accountId)`                          | leave the account        |
 
 `accounts.tokens` mints account-scoped CLI PATs (`kortix_pat_...`):
 
-| method | what |
-|---|---|
-| `tokens.list(accountId?)` | list personal access tokens |
-| `tokens.create(input)` | mint a new token — `{ accountId, name, expiresAt?, projectId? }` |
-| `tokens.revoke(tokenId, accountId?)` | revoke a token |
+| method                               | what                                                             |
+| ------------------------------------ | ---------------------------------------------------------------- |
+| `tokens.list(accountId?)`            | list personal access tokens                                      |
+| `tokens.create(input)`               | mint a new token — `{ accountId, name, expiresAt?, projectId? }` |
+| `tokens.revoke(tokenId, accountId?)` | revoke a token                                                   |
 
 `accounts.audit` is the enterprise audit log — events, export, and SIEM webhooks:
 
-| method | what |
-|---|---|
-| `audit.log(accountId, params?)` | audit events |
-| `audit.export(accountId, params?)` | CSV/JSONL export |
-| `audit.webhooks.list(accountId)` | configured SIEM webhooks |
-| `audit.webhooks.create(accountId, input)` | add a webhook |
-| `audit.webhooks.update(accountId, webhookId, input)` | edit a webhook |
-| `audit.webhooks.remove(accountId, webhookId)` | delete a webhook |
+| method                                               | what                     |
+| ---------------------------------------------------- | ------------------------ |
+| `audit.log(accountId, params?)`                      | audit events             |
+| `audit.export(accountId, params?)`                   | CSV/JSONL export         |
+| `audit.webhooks.list(accountId)`                     | configured SIEM webhooks |
+| `audit.webhooks.create(accountId, input)`            | add a webhook            |
+| `audit.webhooks.update(accountId, webhookId, input)` | edit a webhook           |
+| `audit.webhooks.remove(accountId, webhookId)`        | delete a webhook         |
 
 ## Account invites — `kortix.accountInvites`
 
 Reached by invite token alone — the invitee may not be an account member (or even
 signed in) yet, so these take only an `inviteId`, not an `accountId`.
 
-| method | what |
-|---|---|
+| method               | what                               |
+| -------------------- | ---------------------------------- |
 | `describe(inviteId)` | preview an invite before accepting |
-| `accept(inviteId)` | accept it |
-| `decline(inviteId)` | decline it |
+| `accept(inviteId)`   | accept it                          |
+| `decline(inviteId)`  | decline it                         |
 
 ## Projects — `kortix.projects`
 
-| method | what |
-|---|---|
-| `list()` | your projects |
-| `listForAccount(accountId)` | projects in an account |
-| `get(id)` · `detail(id)` | summary · full detail |
-| `create(input)` | create a project |
-| `createRepo(input)` | create a project backed by a brand-new Kortix-managed GitHub repo |
-| `provision(id)` | provision its runtime |
-| `update(id, input)` · `archive(id)` | update settings · archive |
-| `llmCatalog(id)` | available models |
-| `sandboxTemplates(id)` | sandbox build templates (Dockerfile/image/warm-pool) |
-| `sandboxHealth(id)` | sandbox-image build health |
-| `sessions(id)` · `createSession(id, input?)` | list · create sessions |
+| method                                       | what                                                              |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| `list()`                                     | your projects                                                     |
+| `listForAccount(accountId)`                  | projects in an account                                            |
+| `get(id)` · `detail(id)`                     | summary · full detail                                             |
+| `create(input)`                              | create a project                                                  |
+| `createRepo(input)`                          | create a project backed by a brand-new Kortix-managed GitHub repo |
+| `provision(id)`                              | provision its runtime                                             |
+| `update(id, input)` · `archive(id)`          | update settings · archive                                         |
+| `llmCatalog(id)`                             | available models                                                  |
+| `sandboxTemplates(id)`                       | sandbox build templates (Dockerfile/image/warm-pool)              |
+| `sandboxHealth(id)`                          | sandbox-image build health                                        |
+| `sessions(id)` · `createSession(id, input?)` | list · create sessions                                            |
 
 ## GitHub — `kortix.github`
 
 Account-scoped GitHub App installation and repository linking (not project-scoped).
 
-| method | what |
-|---|---|
-| `getInstallation(accountId)` | this account's GitHub App installation |
-| `listInstallations(accountId)` | installations reachable by the current user |
-| `saveInstallation(input)` | record an installation against the account |
-| `deleteInstallation(accountId, installationId?)` | unlink an installation |
-| `listRepositories(accountId, installationId?)` | repos the installation can see |
-| `linkRepository(input)` | link a repo to a project |
+| method                                           | what                                        |
+| ------------------------------------------------ | ------------------------------------------- |
+| `getInstallation(accountId)`                     | this account's GitHub App installation      |
+| `listInstallations(accountId)`                   | installations reachable by the current user |
+| `saveInstallation(input)`                        | record an installation against the account  |
+| `deleteInstallation(accountId, installationId?)` | unlink an installation                      |
+| `listRepositories(accountId, installationId?)`   | repos the installation can see              |
+| `linkRepository(input)`                          | link a repo to a project                    |
 
 ## Billing — `kortix.billing`
 
@@ -109,35 +109,35 @@ Reads for credits, subscription, tier, and transaction history — enough to dri
 entitlement-gating and a billing/usage UI. Checkout, the customer portal, and
 credit-purchase mutations are Stripe flows and stay app-owned.
 
-| method | what |
-|---|---|
-| `accountState(accountId?)` · `accountStateMinimal(accountId?)` | full · minimal billing state |
-| `transactions(params?)` | transaction history |
-| `transactionsSummary(params?)` | summarized totals |
-| `creditBreakdown(accountId?)` | credit balance by source |
-| `usageHistory(params?)` | usage over time |
-| `tierConfigurations()` | available plan tiers |
-| `checkout.createSession(input)` | start a Stripe Checkout session |
-| `checkout.confirmSession(sessionId, accountId?)` | confirm it post-redirect |
-| `subscription.createPortalSession(returnUrl, accountId?)` | open the Stripe customer portal |
-| `subscription.cancel(feedback?, accountId?)` · `subscription.reactivate(accountId?)` | cancel · reactivate |
-| `subscription.scheduleDowngrade(targetTierKey, commitmentType?, accountId?)` | schedule a downgrade |
-| `subscription.cancelScheduledChange(accountId?)` | cancel a scheduled change |
-| `subscription.prorationPreview(newPriceId, accountId?)` | preview a plan-change proration |
-| `credits.purchase(input)` | one-off credit purchase |
-| `credits.autoTopupSettings(accountId?)` | current auto-topup config |
-| `credits.configureAutoTopup(input)` | configure recurring auto-topup |
+| method                                                                               | what                            |
+| ------------------------------------------------------------------------------------ | ------------------------------- |
+| `accountState(accountId?)` · `accountStateMinimal(accountId?)`                       | full · minimal billing state    |
+| `transactions(params?)`                                                              | transaction history             |
+| `transactionsSummary(params?)`                                                       | summarized totals               |
+| `creditBreakdown(accountId?)`                                                        | credit balance by source        |
+| `usageHistory(params?)`                                                              | usage over time                 |
+| `tierConfigurations()`                                                               | available plan tiers            |
+| `checkout.createSession(input)`                                                      | start a Stripe Checkout session |
+| `checkout.confirmSession(sessionId, accountId?)`                                     | confirm it post-redirect        |
+| `subscription.createPortalSession(returnUrl, accountId?)`                            | open the Stripe customer portal |
+| `subscription.cancel(feedback?, accountId?)` · `subscription.reactivate(accountId?)` | cancel · reactivate             |
+| `subscription.scheduleDowngrade(targetTierKey, commitmentType?, accountId?)`         | schedule a downgrade            |
+| `subscription.cancelScheduledChange(accountId?)`                                     | cancel a scheduled change       |
+| `subscription.prorationPreview(newPriceId, accountId?)`                              | preview a plan-change proration |
+| `credits.purchase(input)`                                                            | one-off credit purchase         |
+| `credits.autoTopupSettings(accountId?)`                                              | current auto-topup config       |
+| `credits.configureAutoTopup(input)`                                                  | configure recurring auto-topup  |
 
 ## Sandbox shares — `kortix.sandboxShares`
 
 Public share links for a single exposed sandbox port (sandbox-scoped, not
 project-scoped).
 
-| method | what |
-|---|---|
-| `list(sandboxId)` | active share links |
-| `create(input)` | create a share link — `{ sandboxId, port, ttl?, label? }` |
-| `revoke(sandboxId, token)` | revoke one |
+| method                     | what                                                      |
+| -------------------------- | --------------------------------------------------------- |
+| `list(sandboxId)`          | active share links                                        |
+| `create(input)`            | create a share link — `{ sandboxId, port, ttl?, label? }` |
+| `revoke(sandboxId, token)` | revoke one                                                |
 
 ## Transcription — `kortix.transcribe`
 
@@ -155,16 +155,16 @@ Public marketplace catalog browsing, plus the authed "add a source" surface.
 Top-level and read-only — distinct from `project(id).marketplace`, which
 installs an item onto a specific project's branch.
 
-| method | what |
-|---|---|
-| `items(options?)` | browse catalog items |
-| `item(id)` | one catalog item |
-| `itemFile(id, path)` | a file inside a catalog item |
-| `marketplaces()` | all marketplaces |
-| `featured()` | featured marketplaces |
-| `sources.list()` | configured marketplace sources |
-| `sources.add(input)` | add a source |
-| `sources.remove(id)` | remove a source |
+| method               | what                           |
+| -------------------- | ------------------------------ |
+| `items(options?)`    | browse catalog items           |
+| `item(id)`           | one catalog item               |
+| `itemFile(id, path)` | a file inside a catalog item   |
+| `marketplaces()`     | all marketplaces               |
+| `featured()`         | featured marketplaces          |
+| `sources.list()`     | configured marketplace sources |
+| `sources.add(input)` | add a source                   |
+| `sources.remove(id)` | remove a source                |
 
 ## Validate token — `kortix.validateToken`
 
@@ -190,108 +190,108 @@ Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `s
 
 Auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand.
 
-| method | what |
-|---|---|
-| `list()` | project CLI tokens |
-| `create(input?)` | mint a new one |
-| `revoke(tokenId)` | revoke one |
+| method            | what               |
+| ----------------- | ------------------ |
+| `list()`          | project CLI tokens |
+| `create(input?)`  | mint a new one     |
+| `revoke(tokenId)` | revoke one         |
 
 ### `p.setupLinks` — agent-minted setup links
 
 Hand a human a link to enter a secret value or 1-click connect an app, without
 giving them full project access.
 
-| method | what |
-|---|---|
-| `requestSecret(input)` | link to collect a secret value |
-| `requestConnector(input)` | link to connect an app |
+| method                    | what                           |
+| ------------------------- | ------------------------------ |
+| `requestSecret(input)`    | link to collect a secret value |
+| `requestConnector(input)` | link to connect an app         |
 
 ### `p.secrets` — project secrets / env
 
-| method | what |
-|---|---|
-| `list()` | all project secrets |
-| `upsert({ name, value })` | create / update a secret |
-| `remove(name)` | delete a secret |
+| method                     | what                      |
+| -------------------------- | ------------------------- |
+| `list()`                   | all project secrets       |
+| `upsert({ name, value })`  | create / update a secret  |
+| `remove(name)`             | delete a secret           |
 | `setPersonal(name, value)` | a per-user override value |
-| `removePersonal(name)` | remove the override |
-| `setGitCredential(input)` | git auth credential |
+| `removePersonal(name)`     | remove the override       |
+| `setGitCredential(input)`  | git auth credential       |
 
 ### `p.access` — members, invites, requests
 
-| method | what |
-|---|---|
-| `list()` | members with access |
-| `invite(email, role)` | invite a user |
-| `update(userId, role)` | change a role |
-| `revoke(userId)` | remove access |
-| `pendingInvites()` | outstanding invites |
-| `resendInvite(inviteId)` · `revokeInvite(inviteId)` | resend · revoke an invite |
-| `requests()` | pending access requests |
-| `approveRequest(id)` · `rejectRequest(id)` | approve · reject a request |
-| `groupGrants()` | IAM group grants on the project |
-| `attachGroupGrant(input)` | grant an IAM group access to the project |
-| `updateGroupGrant(input)` | change a group grant's role |
-| `detachGroupGrant(groupId)` | remove a group grant |
+| method                                              | what                                     |
+| --------------------------------------------------- | ---------------------------------------- |
+| `list()`                                            | members with access                      |
+| `invite(email, role)`                               | invite a user                            |
+| `update(userId, role)`                              | change a role                            |
+| `revoke(userId)`                                    | remove access                            |
+| `pendingInvites()`                                  | outstanding invites                      |
+| `resendInvite(inviteId)` · `revokeInvite(inviteId)` | resend · revoke an invite                |
+| `requests()`                                        | pending access requests                  |
+| `approveRequest(id)` · `rejectRequest(id)`          | approve · reject a request               |
+| `groupGrants()`                                     | IAM group grants on the project          |
+| `attachGroupGrant(input)`                           | grant an IAM group access to the project |
+| `updateGroupGrant(input)`                           | change a group grant's role              |
+| `detachGroupGrant(groupId)`                         | remove a group grant                     |
 
 `p.access.resourceGrants` grants a member or group access to one specific
 resource (an agent, a skill, a secret) rather than the whole project:
 
-| method | what |
-|---|---|
-| `resourceGrants.list()` | per-resource grants |
-| `resourceGrants.create(input)` | grant a member/group access to a resource |
-| `resourceGrants.remove(grantId)` | revoke a resource grant |
+| method                           | what                                      |
+| -------------------------------- | ----------------------------------------- |
+| `resourceGrants.list()`          | per-resource grants                       |
+| `resourceGrants.create(input)`   | grant a member/group access to a resource |
+| `resourceGrants.remove(grantId)` | revoke a resource grant                   |
 
 ### `p.connectors` — tool / MCP connectors
 
-| method | what |
-|---|---|
-| `list()` | configured connectors |
-| `config(connectorId)` | one connector's config |
-| `create(input)` | add a connector |
-| `remove(connectorId)` | delete a connector |
-| `sync()` | re-sync connectors |
-| `setName(connectorId, name)` | rename a connector |
-| `setCredentialMode(connectorId, mode)` | switch how its credential is sourced |
-| `setCredential(connectorId, input)` | set its credential value |
-| `setSensitive(connectorId, sensitive)` | mark it sensitive (extra approval gating) |
-| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
+| method                                                              | what                                      |
+| ------------------------------------------------------------------- | ----------------------------------------- |
+| `list()`                                                            | configured connectors                     |
+| `config(connectorId)`                                               | one connector's config                    |
+| `create(input)`                                                     | add a connector                           |
+| `remove(connectorId)`                                               | delete a connector                        |
+| `sync()`                                                            | re-sync connectors                        |
+| `setName(connectorId, name)`                                        | rename a connector                        |
+| `setCredentialMode(connectorId, mode)`                              | switch how its credential is sourced      |
+| `setCredential(connectorId, input)`                                 | set its credential value                  |
+| `setSensitive(connectorId, sensitive)`                              | mark it sensitive (extra approval gating) |
+| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies          |
 
 `p.connectors.pipedream` drives the easy-connect (Pipedream) app-catalog handshake:
 
-| method | what |
-|---|---|
-| `pipedream.listApps(params?)` | browsable app catalog |
-| `pipedream.connect(input)` | start a connect flow |
-| `pipedream.finalize(input)` | finalize it into a connector |
+| method                        | what                         |
+| ----------------------------- | ---------------------------- |
+| `pipedream.listApps(params?)` | browsable app catalog        |
+| `pipedream.connect(input)`    | start a connect flow         |
+| `pipedream.finalize(input)`   | finalize it into a connector |
 
 <Callout>
-Connectors are how tools reach a session (the **Executor** surface). The
-runtime-side MCP management hooks are being folded into this — see the
-[note in React hooks](/docs/sdk/react#mcp-servers). The deeper Executor-connector
-surface is still being brought into the SDK.
+  Connectors are how tools reach a session (the **Executor** surface). The runtime-side MCP
+  management hooks are being folded into this — see the [note in React
+  hooks](/docs/sdk/react#mcp-servers). The deeper Executor-connector surface is still being brought
+  into the SDK.
 </Callout>
 
 ### `p.policies` — project policies
 
-| method | what |
-|---|---|
-| `list()` | the project's policies |
+| method          | what                   |
+| --------------- | ---------------------- |
+| `list()`        | the project's policies |
 | `set(policies)` | replace the policy set |
 
 ### `p.triggers` — automations (cron / webhook)
 
 A trigger fires an agent action on a schedule or an inbound webhook.
 
-| method | what |
-|---|---|
-| `list()` | all triggers |
-| `create(input)` | create — `{ name, type: 'cron' \| 'webhook', prompt_template, slug?, agent?, model?, cron?, run_at?, timezone?, secret_env? }` |
-| `update(triggerId, input)` | edit a trigger |
-| `remove(triggerId)` | delete a trigger |
-| `fire(triggerId)` | run it now |
-| `setActivation(triggerId, active)` | enable / disable |
+| method                             | what                                                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `list()`                           | all triggers                                                                                                                   |
+| `create(input)`                    | create — `{ name, type: 'cron' \| 'webhook', prompt_template, slug?, agent?, model?, cron?, run_at?, timezone?, secret_env? }` |
+| `update(triggerId, input)`         | edit a trigger                                                                                                                 |
+| `remove(triggerId)`                | delete a trigger                                                                                                               |
+| `fire(triggerId)`                  | run it now                                                                                                                     |
+| `setActivation(triggerId, active)` | enable / disable                                                                                                               |
 
 `name` and `prompt_template` are required; `slug` is optional and auto-derived
 from `name` when omitted. `cron`/`run_at` (mutually exclusive) and `timezone`
@@ -303,62 +303,62 @@ webhook HMAC secret) applies to `type: 'webhook'`.
 Installs an item's files (+ lock) straight onto the project's default branch.
 `registry.*` is a compatibility alias of `marketplace.*` — identical handlers.
 
-| method | what |
-|---|---|
-| `marketplace.list()` | installed items |
-| `marketplace.install(id)` | install a catalog item |
-| `marketplace.updates()` | available updates |
-| `marketplace.update(name)` | update one item |
-| `marketplace.updateAll()` | update everything |
-| `marketplace.remove(name)` | uninstall an item |
+| method                     | what                   |
+| -------------------------- | ---------------------- |
+| `marketplace.list()`       | installed items        |
+| `marketplace.install(id)`  | install a catalog item |
+| `marketplace.updates()`    | available updates      |
+| `marketplace.update(name)` | update one item        |
+| `marketplace.updateAll()`  | update everything      |
+| `marketplace.remove(name)` | uninstall an item      |
 
 ### `p.files` — repo files (read)
 
 Read-only access to the project's git tree through the API. For read **and write**
-files *inside a running session's workspace*, use the session's file ops — see
+files _inside a running session's workspace_, use the session's file ops — see
 [Modules → files](/docs/sdk/modules#kortix-sdk-files).
 
-| method | what |
-|---|---|
-| `list(options?)` | the repo tree |
-| `read(path, ref?)` | a file's contents at an optional git ref |
-| `search(query)` | search the repo |
-| `archive(options?)` | download a tarball |
-| `history(path)` | a file's git history |
+| method              | what                                     |
+| ------------------- | ---------------------------------------- |
+| `list(options?)`    | the repo tree                            |
+| `read(path, ref?)`  | a file's contents at an optional git ref |
+| `search(query)`     | search the repo                          |
+| `archive(options?)` | download a tarball                       |
+| `history(path)`     | a file's git history                     |
 
 ### `p.git` — history
 
-| method | what |
-|---|---|
-| `commits()` | the commit log |
-| `commit(sha)` | one commit |
-| `commitDiff(sha)` | a commit's diff |
-| `branches()` | branches |
+| method                  | what                  |
+| ----------------------- | --------------------- |
+| `commits()`             | the commit log        |
+| `commit(sha)`           | one commit            |
+| `commitDiff(sha)`       | a commit's diff       |
+| `branches()`            | branches              |
 | `versionDiff(from, to)` | diff between two refs |
 
 ### `p.changeRequests` — the review queue
 
 A change request is how a session's work merges back to the default branch.
 
-| method | what |
-|---|---|
-| `list()` | open change requests |
-| `get(crId)` | one change request |
-| `diff(crId)` | its diff |
-| `mergePreview(crId)` | preview the merge result |
-| `open(input)` | open a change request |
-| `merge(crId, input?)` | merge it |
-| `close(crId, input?)` | close without merging |
-| `reopen(crId, input?)` | reopen a closed one |
+| method                        | what                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `list()`                      | open change requests                                                                                          |
+| `get(crId)`                   | one change request                                                                                            |
+| `diff(crId)`                  | its diff                                                                                                      |
+| `mergePreview(crId)`          | preview the merge result                                                                                      |
+| `open(input)`                 | open a change request                                                                                         |
+| `merge(crId, input?)`         | merge it                                                                                                      |
+| `close(crId, input?)`         | close without merging                                                                                         |
+| `reopen(crId, input?)`        | reopen a closed one                                                                                           |
 | `requestChanges(crId, input)` | request changes (Review Center) — records feedback and optionally delivers it back to the originating session |
 
 ### `p.sessions` — and the session handle
 
-| method | what |
-|---|---|
-| `list()` | the project's sessions |
-| `create(input?)` | create a session |
-| `session(sid)` | → the session handle (same as `kortix.session(id, sid)`) |
+| method           | what                                                     |
+| ---------------- | -------------------------------------------------------- |
+| `list()`         | the project's sessions                                   |
+| `create(input?)` | create a session                                         |
+| `session(sid)`   | → the session handle (same as `kortix.session(id, sid)`) |
 
 The session handle is the heart of the runtime — see **[Sessions](/docs/sdk/sessions)**.
 
@@ -367,80 +367,80 @@ The session handle is the heart of the runtime — see **[Sessions](/docs/sdk/se
 The per-project human-in-the-loop inbox: change requests, tool approvals, and
 agent outputs/decisions waiting on a person.
 
-| method | what |
-|---|---|
-| `list(params?)` | review items |
-| `get(reviewItemId)` | one review item |
-| `submit(input)` | submit a new review item |
+| method                     | what                            |
+| -------------------------- | ------------------------------- |
+| `list(params?)`            | review items                    |
+| `get(reviewItemId)`        | one review item                 |
+| `submit(input)`            | submit a new review item        |
 | `act(reviewItemId, input)` | act on one (approve/reject/etc) |
-| `bulkAct(input)` | act on several at once |
+| `bulkAct(input)`           | act on several at once          |
 
 ### `p.approvals` — the executor approval inbox
 
 The manager inbox of executor-gated actions awaiting approve/deny — backs the
 permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
 
-| method | what |
-|---|---|
-| `list(options?)` | pending approvals |
+| method                                   | what                                                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `list(options?)`                         | pending approvals                                                                                    |
 | `resolve(executionId, decision, scope?)` | approve or deny one — `decision: 'approve' \| 'deny'`, `scope: 'once' \| 'session' \| 'session_all'` |
-| `sessionsNeedingInput(options?)` | sessions currently blocked on a decision |
+| `sessionsNeedingInput(options?)`         | sessions currently blocked on a decision                                                             |
 
 ### `p.gateway` — LLM observability
 
 Request logs, cost/latency rollups, budgets, and gateway API keys for this
 project's LLM traffic.
 
-| method | what |
-|---|---|
-| `logs(opts?)` | request log entries |
-| `log(logId)` | one log entry |
-| `overview(days?)` · `series(days?)` · `breakdown(days?)` | rollups over a window |
-| `sessions(days?)` | per-session cost/usage |
-| `errors(days?)` | recent gateway errors |
-| `budgets()` | configured budgets |
-| `setBudget(input)` · `deleteBudget(budgetId)` | create/edit · remove a budget |
-| `keys()` | gateway API keys |
-| `createKey(name)` · `revokeKey(keyId)` | mint · revoke a key |
-| `playground(prompt, models)` | run one prompt against up to 6 models side by side |
+| method                                                   | what                                               |
+| -------------------------------------------------------- | -------------------------------------------------- |
+| `logs(opts?)`                                            | request log entries                                |
+| `log(logId)`                                             | one log entry                                      |
+| `overview(days?)` · `series(days?)` · `breakdown(days?)` | rollups over a window                              |
+| `sessions(days?)`                                        | per-session cost/usage                             |
+| `errors(days?)`                                          | recent gateway errors                              |
+| `budgets()`                                              | configured budgets                                 |
+| `setBudget(input)` · `deleteBudget(budgetId)`            | create/edit · remove a budget                      |
+| `keys()`                                                 | gateway API keys                                   |
+| `createKey(name)` · `revokeKey(keyId)`                   | mint · revoke a key                                |
+| `playground(prompt, models)`                             | run one prompt against up to 6 models side by side |
 
 ### `p.channels` — Slack / email / Meet
 
 Integration surfaces that let an agent act as a Slack app, an email address, or
 a meeting bot.
 
-| method | what |
-|---|---|
-| `slack.installation()` | current Slack installation |
-| `slack.connect(input)` · `slack.disconnect()` | connect · disconnect |
-| `slack.mode()` · `slack.manifest()` | current mode · app manifest |
-| `slack.getFile(url)` | download a Slack-hosted file via the server-side proxy |
-| `slack.uploadFile(input)` | upload a file to Slack via the server-side proxy |
-| `email.installation(connectorSlug?)` | current email installation |
-| `email.connect(input)` · `email.disconnect(connectorSlug?)` | connect · disconnect |
-| `email.mode()` | current mode |
-| `email.updatePolicy(input)` | update the send/reply policy |
-| `meet.voices()` | available bot voices |
-| `meet.setVoice(voice)` · `meet.previewVoice(voiceId)` | set · preview a voice |
-| `meet.setBotName(name)` | rename the meeting bot |
-| `meet.speak(botId, text, voice?)` | make the bot speak text in a live meeting |
+| method                                                      | what                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------ |
+| `slack.installation()`                                      | current Slack installation                             |
+| `slack.connect(input)` · `slack.disconnect()`               | connect · disconnect                                   |
+| `slack.mode()` · `slack.manifest()`                         | current mode · app manifest                            |
+| `slack.getFile(url)`                                        | download a Slack-hosted file via the server-side proxy |
+| `slack.uploadFile(input)`                                   | upload a file to Slack via the server-side proxy       |
+| `email.installation(connectorSlug?)`                        | current email installation                             |
+| `email.connect(input)` · `email.disconnect(connectorSlug?)` | connect · disconnect                                   |
+| `email.mode()`                                              | current mode                                           |
+| `email.updatePolicy(input)`                                 | update the send/reply policy                           |
+| `meet.voices()`                                             | available bot voices                                   |
+| `meet.setVoice(voice)` · `meet.previewVoice(voiceId)`       | set · preview a voice                                  |
+| `meet.setBotName(name)`                                     | rename the meeting bot                                 |
+| `meet.speak(botId, text, voice?)`                           | make the bot speak text in a live meeting              |
 
 ### `p.apps` — deployments
 
 The `/projects/:id/apps/*` family — deploy a service out of the project's repo.
 
-| method | what |
-|---|---|
-| `list()` | deployed apps |
-| `create(input)` | define a new app |
-| `update(slug, input)` | edit its config |
-| `remove(slug)` | delete it |
-| `deploy(slug)` · `stop(slug)` | deploy · stop |
-| `logs(slug)` | its logs |
+| method                        | what             |
+| ----------------------------- | ---------------- |
+| `list()`                      | deployed apps    |
+| `create(input)`               | define a new app |
+| `update(slug, input)`         | edit its config  |
+| `remove(slug)`                | delete it        |
+| `deploy(slug)` · `stop(slug)` | deploy · stop    |
+| `logs(slug)`                  | its logs         |
 
 <Callout type="warn">
-`apps.updateConfig(input)` still exists for parity with the underlying client
-but is **deprecated** — use `p.updateExperimentalFeature('apps', enabled)` instead.
+  `apps.updateConfig(input)` still exists for parity with the underlying client but is
+  **deprecated** — use `p.updateExperimentalFeature('apps', enabled)` instead.
 </Callout>
 
 ### `p.updateExperimentalFeature` — feature flags
@@ -452,28 +452,28 @@ but is **deprecated** — use `p.updateExperimentalFeature('apps', enabled)` ins
 
 Account/agent/project-scoped model defaults, resolved by the gateway.
 
-| method | what |
-|---|---|
-| `get()` | the resolved defaults |
-| `set(input)` | set a default at some scope |
-| `clear(params)` | clear an override |
+| method          | what                        |
+| --------------- | --------------------------- |
+| `get()`         | the resolved defaults       |
+| `set(input)`    | set a default at some scope |
+| `clear(params)` | clear an override           |
 
 ### `p.sandbox` — templates and snapshot builds
 
 Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the project
 handle itself: Dockerfile/image/warm-pool templates and their snapshot builds.
 
-| method | what |
-|---|---|
-| `list()` | sandboxes for this project |
-| `snapshots()` | built snapshots |
-| `rebuildSnapshot(slug?)` | rebuild a snapshot |
-| `fixWithAgent()` | ask an agent to fix a broken sandbox build |
-| `createTemplate(input)` | add a build template |
-| `updateTemplate(templateId, input)` | edit one |
-| `removeTemplate(templateId)` | delete one |
-| `buildTemplate(templateId)` | build it |
-| `setProvider(provider)` | pin/clear the per-project sandbox provider (`null` follows the platform default) |
+| method                              | what                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `list()`                            | sandboxes for this project                                                       |
+| `snapshots()`                       | built snapshots                                                                  |
+| `rebuildSnapshot(slug?)`            | rebuild a snapshot                                                               |
+| `fixWithAgent()`                    | ask an agent to fix a broken sandbox build                                       |
+| `createTemplate(input)`             | add a build template                                                             |
+| `updateTemplate(templateId, input)` | edit one                                                                         |
+| `removeTemplate(templateId)`        | delete one                                                                       |
+| `buildTemplate(templateId)`         | build it                                                                         |
+| `setProvider(provider)`             | pin/clear the per-project sandbox provider (`null` follows the platform default) |
 
 ## Escape hatch
 
