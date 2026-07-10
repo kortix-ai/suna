@@ -58,6 +58,39 @@ telegramWebhookApp.openapi(
 },
 );
 
+// Gate for the Telegram equivalent of Slack's SLACK_REQUIRE_USER_IDENTITY: the
+// webhook otherwise runs every agent turn AS THE ACCOUNT OWNER for whoever can
+// message the bot, with no sender check. Defaults OFF (current behavior — every
+// project chatting via Telegram today keeps working unchanged); an operator
+// turns it on only after wiring an allowlist (see isKnownTelegramSender below).
+// Read live (not module-scope) so it's cheap to flip per-request in tests.
+function telegramRequireUserIdentity(): boolean {
+  return ['true', '1', 'yes', 'on'].includes(
+    (process.env.TELEGRAM_REQUIRE_USER_IDENTITY ?? '').trim().toLowerCase(),
+  );
+}
+
+// "Bound identity" here is a per-project allowlist of Telegram user ids, stored
+// in the existing projects.metadata jsonb column (no schema change) at
+// metadata.telegram.allowedUserIds. There is no product surface to populate
+// this yet — see risk note in the PR. Until one exists, enabling the flag
+// rejects every sender for a project with no allowlist configured, which is
+// the safe direction to fail in.
+function isKnownTelegramSender(
+  project: { metadata: unknown },
+  message: TelegramMessage,
+): boolean {
+  const senderId = message.from?.id;
+  if (senderId === undefined || senderId === null) return false;
+  const metadata = project.metadata as
+    | { telegram?: { allowedUserIds?: unknown } }
+    | null
+    | undefined;
+  const allowedUserIds = metadata?.telegram?.allowedUserIds;
+  if (!Array.isArray(allowedUserIds)) return false;
+  return allowedUserIds.some((id) => String(id) === String(senderId));
+}
+
 async function spawnAgentTurn(
   projectId: string,
   update: TelegramUpdate,
@@ -69,6 +102,15 @@ async function spawnAgentTurn(
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return;
+
+  if (telegramRequireUserIdentity() && !isKnownTelegramSender(project, message)) {
+    console.warn(
+      '[telegram-webhook] rejecting unbound sender for project',
+      projectId,
+      message.from?.id,
+    );
+    return;
+  }
 
   const userId = await resolveProjectAutomationActor(project.accountId);
   if (!userId) {

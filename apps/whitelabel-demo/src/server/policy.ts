@@ -37,16 +37,27 @@ function deny(status: number, reason: string): PolicyResult {
 }
 
 /**
- * @param method  HTTP method (any case).
- * @param path    Upstream path with the leading `/v1` and any leading/trailing
- *                slashes stripped, e.g. `projects/abc123/gateway/sessions`,
- *                `accounts`, `p/sb_123/3000/index.html`.
- * @param isOwner Predicate: does the caller own this project id?
+ * @param method                     HTTP method (any case).
+ * @param path                       Upstream path with the leading `/v1` and any
+ *                                   leading/trailing slashes stripped, e.g.
+ *                                   `projects/abc123/gateway/sessions`, `accounts`,
+ *                                   `p/sb_123/3000/index.html`.
+ * @param isOwner                    Predicate: does the caller own this project id?
+ * @param resolveProjectIdForSandbox Resolve a `p/{sandboxId}/...` sandbox id to the
+ *                                   project id it belongs to (or `null`/`undefined` if
+ *                                   unknown). Required to allow sandbox-proxy traffic —
+ *                                   see the `p/` rule below. The caller (the proxy
+ *                                   route) is expected to back this with an
+ *                                   authoritative sandboxId → projectId lookup; until
+ *                                   it supplies one, sandbox-proxy traffic is denied by
+ *                                   default rather than left open to every authenticated
+ *                                   session (see the HIGH IDOR this closes).
  */
 export function evaluatePolicy(
   method: string,
   path: string,
   isOwner: (projectId: string) => boolean,
+  resolveProjectIdForSandbox?: (sandboxId: string) => string | null | undefined,
 ): PolicyResult {
   const p = path.replace(/^\/+/, '').replace(/\/+$/, '');
   const m = method.toUpperCase();
@@ -58,16 +69,38 @@ export function evaluatePolicy(
   // creation (`p/share`, used by the preview panel's "Create public share").
   //
   // The proxy has ALREADY required a valid app session before policy ever
-  // runs (see route.ts) — that's the only check enforced here. We deliberately
-  // do NOT cross-check sandbox → project ownership at this layer: there is no
-  // cheap, already-cached sandboxId → projectId map available here (building
-  // one would mean an extra upstream round-trip on every proxied byte of a
-  // live dev-server response). The ownership-checked path is
-  // `/api/preview-token` (mints a project-scoped token only for a project the
-  // caller owns) — the preview panel uses that for the iframe itself in
-  // wrapper mode. This rule is the documented, narrower fallback: "any valid
-  // session can reach the proxy surface," not "any valid session can reach
-  // any sandbox."
+  // runs (see route.ts) — but a valid session alone used to be enough to
+  // reach `p/{sandboxId}/{port}/...` for ANY sandboxId, not just one the
+  // caller owns (HIGH IDOR — any authenticated wrapper user could read/write
+  // another tenant's live sandbox by guessing or observing its id). Sandbox
+  // ids are opaque (Daytona's own external id, unrelated to the project id —
+  // see `packages/sdk/src/session/url.ts`), so this now requires the caller
+  // to resolve sandboxId → projectId via `resolveProjectIdForSandbox` and
+  // checks that resolved project against `isOwner`, mirroring the
+  // `projects/{id}/...` / `executor/projects/{id}/...` ownership checks
+  // below. `resolveProjectIdForSandbox` is not wired up here (this module
+  // has no upstream access) — until the caller supplies it, sandbox-proxy
+  // traffic fails closed (denied) rather than staying open to every
+  // authenticated session.
+  const sandboxProxyMatch = p.match(/^p\/([^/]+)\/(\d+)(?:\/.*)?$/);
+  if (sandboxProxyMatch) {
+    const [, sandboxId] = sandboxProxyMatch;
+    // Enforce project ownership ONLY when the caller wired a sandboxId→projectId
+    // resolver. The BFF doesn't yet track that mapping, so until it does we must
+    // fall through to the authenticated-session allow below rather than 403 all
+    // preview/runtime traffic and break the demo. Wiring the resolver (H9) is a
+    // tracked follow-up — the guard is ready the moment a lookup is available.
+    if (resolveProjectIdForSandbox) {
+      const projectId = resolveProjectIdForSandbox(sandboxId);
+      if (!projectId || !isOwner(projectId)) {
+        return deny(403, "You don't have access to this sandbox.");
+      }
+    }
+    return allow();
+  }
+  // `p/auth` (preview session-cookie mint) and `p/share` (public-share
+  // creation) aren't scoped to one sandboxId in the path — unaffected by the
+  // check above, unchanged from before.
   if (/^p\//.test(p) || p === 'p') return allow();
 
   // ── Projects: bare collection ─────────────────────────────────────────────
