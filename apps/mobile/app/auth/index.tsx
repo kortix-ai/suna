@@ -501,7 +501,7 @@ export default function AuthScreen() {
                 autoComplete="one-time-code"
                 returnKeyType="go"
                 onSubmitEditing={handleVerifyOtp}
-                className="mt-8 text-center"
+                className="mt-8 bg-card text-center dark:bg-input"
               />
 
               <View className="flex-1" />
@@ -554,6 +554,7 @@ export default function AuthScreen() {
                   onSubmitEditing={() => {
                     if (!showPasswordField) handleSubmit();
                   }}
+                  className="bg-card dark:bg-input"
                 />
 
                 {showPasswordField && (
@@ -567,6 +568,7 @@ export default function AuthScreen() {
                     onSubmitEditing={() => {
                       if (!isSignup) handleSubmit();
                     }}
+                    className="bg-card dark:bg-input"
                   />
                 )}
 
@@ -579,6 +581,7 @@ export default function AuthScreen() {
                     autoComplete="new-password"
                     returnKeyType="go"
                     onSubmitEditing={handleSignUp}
+                    className="bg-card dark:bg-input"
                   />
                 )}
               </View>
