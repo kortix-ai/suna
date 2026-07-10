@@ -81,20 +81,16 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
   const Icon = copy.icon;
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
+    <section className="border-border/70 bg-card rounded-md border">
       <div className="flex flex-col items-center px-6 py-12 text-center">
-        <div className="bg-muted/60 relative flex h-12 w-12 items-center justify-center rounded-full">
-          <Icon className="text-muted-foreground h-5 w-5" />
-          <span className="bg-background border-border/70 absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full border">
-            <Lock className="text-muted-foreground h-3 w-3" />
+        <div className="bg-muted/60 relative flex size-12 items-center justify-center rounded-full">
+          <Icon className="text-muted-foreground size-5" />
+          <span className="bg-background border-border/70 absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full border">
+            <Lock className="text-muted-foreground size-3" />
           </span>
         </div>
 
-        <Badge
-          variant="outline"
-          size="sm"
-          className="border-amber-500/40 bg-amber-500/10 mt-4 text-[10px] font-normal text-amber-700 dark:text-amber-300"
-        >
+        <Badge variant="kortix" size="sm" className="mt-4">
           Enterprise
         </Badge>
 
@@ -104,7 +100,7 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
         <ul className="mt-5 space-y-2 text-left">
           {copy.points.map((point) => (
             <li key={point} className="text-muted-foreground flex items-start gap-2 text-sm">
-              <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
               <span>{point}</span>
             </li>
           ))}
@@ -113,7 +109,7 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
         <Button asChild size="sm" className="mt-6 gap-1.5">
           <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
             Request a demo
-            <ArrowUpRight className="h-3.5 w-3.5" />
+            <ArrowUpRight className="size-3.5 shrink-0" />
           </a>
         </Button>
         <p className="text-muted-foreground mt-2 text-xs">

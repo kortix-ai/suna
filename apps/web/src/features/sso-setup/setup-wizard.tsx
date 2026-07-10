@@ -8,7 +8,7 @@
 // no bouncing to settings with values in a notepad. Step completion persists
 // per account+flow+provider in localStorage.
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -27,6 +27,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -104,9 +105,9 @@ function saveCompleted(flow: Flow, accountId: string, provider: string, ids: str
 async function copyValue(value: string, msg: string) {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success(msg);
+    successToast(msg);
   } catch {
-    toast.warning('Copy failed — select and copy manually');
+    warningToast('Copy failed — select and copy manually');
   }
 }
 
@@ -124,7 +125,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           aria-label={`Copy ${label}`}
           onClick={() => copyValue(value, `${label} copied`)}
         >
-          <Copy className="h-3.5 w-3.5" />
+          <Copy className="size-3.5 shrink-0" />
         </Button>
       </div>
     </div>
@@ -134,7 +135,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
 function SpValueRows({ urls }: { urls: SamlSpUrls | null }) {
   if (!urls) return null;
   return (
-    <div className="border-border/60 bg-card/50 space-y-3 rounded-lg border p-4">
+    <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
       <CopyRow label="Identifier (Entity ID)" value={urls.entityId} />
       <CopyRow label="Reply URL (ACS)" value={urls.acsUrl} />
     </div>
@@ -186,9 +187,9 @@ function ProviderSelect({
           </InfoBanner>
         </div>
       )}
-      <div className="border-border/70 bg-card mt-8 overflow-hidden rounded-xl border">
+      <div className="border-border/70 bg-card mt-8 overflow-hidden rounded-md border">
         <div className="border-border/60 relative border-b">
-          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2" />
+          <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -207,7 +208,7 @@ function ProviderSelect({
               <span className="text-foreground block text-sm font-medium">{g.name}</span>
               <span className="text-muted-foreground block truncate text-xs">{g.blurb}</span>
             </span>
-            <ArrowRight className="text-muted-foreground h-4 w-4 shrink-0" />
+            <ArrowRight className="text-muted-foreground size-4 shrink-0" />
           </button>
         ))}
         {guides.length === 0 && (
@@ -256,11 +257,11 @@ function ImportForm({
         ...(metaKind === 'xml' ? { metadata_xml: metaXml.trim() } : { metadata_url: metaUrl.trim() }),
       }),
     onSuccess: () => {
-      toast.success('Identity provider connected');
+      successToast('Identity provider connected');
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       onDone();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to connect the provider'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to connect the provider'),
   });
 
   const metadataReady =
@@ -322,8 +323,8 @@ function ImportForm({
                 disabled={mutation.isPending}
                 className={
                   metaKind === k
-                    ? 'bg-secondary text-foreground px-2.5 py-1 text-[11px] font-medium'
-                    : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-[11px]'
+                    ? 'bg-secondary text-foreground px-2.5 py-1 text-xs font-medium'
+                    : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-xs'
                 }
               >
                 {label}
@@ -346,7 +347,7 @@ function ImportForm({
             placeholder="<EntityDescriptor …>…</EntityDescriptor>"
             disabled={mutation.isPending}
             rows={5}
-            className="border-border bg-background focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-[11px] outline-none focus-visible:ring-1"
+            className="border-border bg-background focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1"
           />
         )}
       </div>
@@ -356,12 +357,12 @@ function ImportForm({
           type="checkbox"
           checked={autoCreate}
           onChange={(e) => setAutoCreate(e.target.checked)}
-          className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+          className="border-border accent-primary mt-0.5 size-3.5 shrink-0 rounded"
           disabled={mutation.isPending}
         />
         <span>
           <span className="font-medium">Auto-create members</span>
-          <span className="text-muted-foreground block text-[11px]">
+          <span className="text-muted-foreground block text-xs">
             Anyone who signs in via SSO from your domain becomes a member automatically.
           </span>
         </span>
@@ -371,19 +372,24 @@ function ImportForm({
           type="checkbox"
           checked={autoProvision}
           onChange={(e) => setAutoProvision(e.target.checked)}
-          className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+          className="border-border accent-primary mt-0.5 size-3.5 shrink-0 rounded"
           disabled={mutation.isPending}
         />
         <span>
           <span className="font-medium">Auto-provision groups</span>
-          <span className="text-muted-foreground block text-[11px]">
+          <span className="text-muted-foreground block text-xs">
             Create a Kortix group for every group your IdP sends — no per-group mapping.
           </span>
         </span>
       </label>
 
-      <Button onClick={() => mutation.mutate()} disabled={!ready || mutation.isPending}>
-        {mutation.isPending ? 'Connecting…' : 'Connect provider'}
+      <Button
+        onClick={() => mutation.mutate()}
+        disabled={!ready || mutation.isPending}
+        className="gap-1.5"
+      >
+        {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+        Connect provider
       </Button>
     </div>
   );
@@ -411,30 +417,30 @@ function ScimTokenStep({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
     onSuccess: (token) => {
       setMinted(token);
-      toast.success('SCIM token minted — copy it now');
+      successToast('SCIM token minted — copy it now');
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to mint the token'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to mint the token'),
   });
 
   return (
     <div className="space-y-4">
-      <div className="border-border/60 bg-card/50 space-y-3 rounded-lg border p-4">
+      <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
         <CopyRow label="Tenant URL" value={tenantUrl} />
-        <p className="text-muted-foreground text-[11px]">
+        <p className="text-muted-foreground text-xs">
           Your identity provider appends /Users and /Groups to this URL.
         </p>
       </div>
 
       {minted ? (
-        <div className="border-border/60 bg-card/50 space-y-3 rounded-lg border p-4">
+        <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
           <CopyRow label="Secret token" value={minted.secret} />
-          <p className="text-amber-700 dark:text-amber-300 text-[11px]">
+          <p className="text-kortix-orange text-xs">
             Shown once — after you leave this step only the prefix ({minted.public_prefix}) is
             visible. Manage or revoke it from the SCIM card in settings.
           </p>
           <Button onClick={onDone}>
             I’ve copied both values
-            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+            <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
           </Button>
         </div>
       ) : (
@@ -448,8 +454,12 @@ function ScimTokenStep({
             disabled={name.trim().length === 0 || mutation.isPending}
             className="gap-1.5"
           >
-            <KeyRound className="h-3.5 w-3.5" />
-            {mutation.isPending ? 'Minting…' : 'Mint token'}
+            {mutation.isPending ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <KeyRound className="size-3.5 shrink-0" />
+            )}
+            Mint token
           </Button>
         </div>
       )}
@@ -518,19 +528,19 @@ function StepBody({
             <Button asChild variant="outline">
               <a href="/auth" target="_blank" rel="noreferrer">
                 Open the sign-in page
-                <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                <ExternalLink className="ml-1.5 size-3.5 shrink-0" />
               </a>
             </Button>
           )}
           <Button onClick={onFinish}>
             Finish
-            <Check className="ml-1.5 h-3.5 w-3.5" />
+            <Check className="ml-1.5 size-3.5 shrink-0" />
           </Button>
         </div>
       ) : (
         <Button onClick={onCompleteStep}>
           I’ve completed this step
-          <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
         </Button>
       )}
     </div>
@@ -571,7 +581,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   }, [accountId, flow, guide]);
 
   if (accountStateQuery.isLoading) {
-    return <Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-2xl" />;
+    return <Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-md" />;
   }
   if (!entitled) {
     return (
@@ -617,7 +627,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     <div className="mx-auto w-full max-w-5xl">
       <div className="mb-8 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="text-muted-foreground h-4 w-4" />
+          <ShieldCheck className="text-muted-foreground size-4" />
           <span className="text-foreground text-sm font-medium">{guide.name}</span>
           <span className="text-muted-foreground text-xs">
             · {flow === 'sso' ? 'SAML SSO' : 'Directory Sync'}
@@ -625,12 +635,12 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={startOver} className="gap-1.5">
-            <RotateCcw className="h-3.5 w-3.5" />
+            <RotateCcw className="size-3.5 shrink-0" />
             Start over
           </Button>
           <Button asChild variant="ghost" size="sm">
             <Link href={`/accounts/${accountId}/${config.route}`}>
-              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              <ArrowLeft className="mr-1.5 size-3.5 shrink-0" />
               Change provider
             </Link>
           </Button>
@@ -650,7 +660,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               <div className="flex flex-col items-center self-stretch">
                 <StepperTrigger>
                   <StepperIndicator>
-                    {completed.includes(s.id) ? <Check className="h-3 w-3" /> : i + 1}
+                    {completed.includes(s.id) ? <Check className="size-3" /> : i + 1}
                   </StepperIndicator>
                 </StepperTrigger>
                 <StepperSeparator />
@@ -669,7 +679,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
         </Stepper>
 
         <div className="min-w-0">
-          <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+          <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
             Step {activeStep + 1} of {guide.steps.length}
           </p>
           <h2 className="text-foreground mt-1 text-xl font-semibold">{step.title}</h2>
@@ -693,7 +703,7 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               className="mt-6 gap-1.5"
               onClick={() => setActiveStep(activeStep - 1)}
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
+              <ArrowLeft className="size-3.5 shrink-0" />
               Back
             </Button>
           )}
