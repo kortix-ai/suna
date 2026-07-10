@@ -12,11 +12,11 @@ import {
   View,
   FlatList,
   ScrollView,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
   Animated,
+  Easing,
   Platform,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
@@ -25,6 +25,7 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -65,6 +66,7 @@ import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
+import { KortixLogo } from '@/components/ui/KortixLogo';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
@@ -74,6 +76,8 @@ import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
+  /** Project name for the fresh-session hero — "Give {name} something real to work on." */
+  projectName?: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -81,18 +85,32 @@ interface SessionPageProps {
   isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
+  /**
+   * 'header'   — the legacy top bar (back/title/drawer buttons). Default, so
+   *              ProjectScreenLegacy is unaffected.
+   * 'floating' — no header; a floating menu button, and bottom padding for the dock.
+   */
+  chrome?: 'header' | 'floating';
   /** Hides drawer buttons, model/variant selectors — used for onboarding */
   onboardingMode?: boolean;
   /** Skip callback shown in header during onboarding */
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, chrome = 'header', onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Onboarding always uses header chrome (no dock, no floating menu). Explicit guard against any call site
+  // that might accidentally pass both onboardingMode and chrome="floating".
+  const effectiveChrome = onboardingMode ? 'header' : chrome;
+  const { height: windowHeight } = useWindowDimensions();
+  // Top inset for the message list. Floating chrome has no header, so the
+  // list would start under the status bar and the floating menu button —
+  // inset it below them (insets.top + 8 button offset + 40 button + 12 gap).
+  // Header chrome keeps the original 16pt breathing room below the header.
+  const listTopInset = effectiveChrome === 'floating' ? insets.top + 60 : 16;
   const { sandboxUrl } = useSandboxContext();
   const flatListRef = useRef<FlatList>(null);
   const setTabState = useTabStore((s) => s.setTabState);
@@ -493,14 +511,17 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const prevTurnCount = useRef(turns.length);
   useEffect(() => {
     if (turns.length > prevTurnCount.current) {
-      // New turn added — scroll it to the top of the viewport
+      // New turn added — scroll it to the top of the viewport. In floating
+      // chrome the viewport starts at the screen top, so offset by the list's
+      // top inset to keep the bubble clear of the status bar + menu button.
       const targetIndex = turns.length - 1;
+      const viewOffset = effectiveChrome === 'floating' ? listTopInset : 0;
       setTimeout(() => {
         try {
           flatListRef.current?.scrollToIndex({
             index: targetIndex,
             viewPosition: 0,
-            viewOffset: 0,
+            viewOffset,
             animated: true,
           });
         } catch {
@@ -509,7 +530,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       }, 150);
     }
     prevTurnCount.current = turns.length;
-  }, [turns.length]);
+  }, [turns.length, effectiveChrome, listTopInset]);
 
   // Restore scroll position when reopening this tab/session.
   useEffect(() => {
@@ -776,118 +797,121 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       behavior="padding"
       className="bg-background"
     >
-      {/* Header — matches dashboard layout exactly */}
-      <View
-        style={{ paddingTop: insets.top, paddingBottom: 36 }}
-        className="px-4 bg-chrome-background"
-      >
-        <View className="flex-row items-center">
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onOpenDrawer}
-              className="mr-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
-            </TouchableOpacity>
-          )}
-          <View className="flex-1 flex-row items-center">
-            {/* Status dot before the title (matches web session-list):
-                amber when a question is waiting, green while working,
-                hidden otherwise. */}
-            {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
-              <View
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
-                  marginRight: 8,
-                }}
-              />
-            )}
-            {isEditingTitle ? (
-              <TextInput
-                ref={titleInputRef}
-                value={titleDraft}
-                onChangeText={setTitleDraft}
-                onBlur={commitTitleEdit}
-                onSubmitEditing={commitTitleEdit}
-                returnKeyType="done"
-                blurOnSubmit
-                maxLength={200}
-                placeholder="Session title"
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)'}
-                style={{
-                  flex: 1,
-                  fontSize: 16,
-                  fontFamily: 'Roobert-Medium',
-                  color: isDark ? '#F8F8F8' : '#121215',
-                  padding: 0,
-                  margin: 0,
-                }}
-              />
-            ) : (
-              <TouchableOpacity
-                onPress={beginTitleEdit}
-                disabled={onboardingMode}
-                activeOpacity={onboardingMode ? 1 : 0.7}
-                className="flex-1"
-                hitSlop={{ top: 8, bottom: 8 }}
+      {effectiveChrome === 'header' ? (
+        /* Header — flat bar on the page surface, matches PageHeader */
+        <View
+          style={{ paddingTop: insets.top, paddingBottom: 12 }}
+          className="px-4 bg-background"
+        >
+          <View className="flex-row items-center">
+            {!onboardingMode && (
+              <Button
+                variant="secondary"
+                size="icon"
+                onPress={onOpenDrawer}
+                accessibilityLabel="Open menu"
+                className="mr-3"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Text
-                  className="text-base font-medium text-muted-foreground"
-                  numberOfLines={1}
+                <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
+              </Button>
+            )}
+            <View className="flex-1 flex-row items-center">
+              {/* Status dot before the title (matches web session-list):
+                  amber when a question is waiting, green while working,
+                  hidden otherwise. */}
+              {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
+                <View
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
+                    marginRight: 8,
+                  }}
+                />
+              )}
+              {isEditingTitle ? (
+                <TextInput
+                  ref={titleInputRef}
+                  value={titleDraft}
+                  onChangeText={setTitleDraft}
+                  onBlur={commitTitleEdit}
+                  onSubmitEditing={commitTitleEdit}
+                  returnKeyType="done"
+                  blurOnSubmit
+                  maxLength={200}
+                  placeholder="Session title"
+                  placeholderTextColor={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)'}
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    fontFamily: 'Roobert-Medium',
+                    color: isDark ? '#F8F8F8' : '#121215',
+                    padding: 0,
+                    margin: 0,
+                  }}
+                />
+              ) : (
+                <TouchableOpacity
+                  onPress={beginTitleEdit}
+                  disabled={onboardingMode}
+                  activeOpacity={onboardingMode ? 1 : 0.7}
+                  className="flex-1"
+                  hitSlop={{ top: 8, bottom: 8 }}
                 >
-                  {title}
+                  <Text
+                    className="text-base font-medium text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {title}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {!onboardingMode && (
+              <TouchableOpacity
+                onPress={onOpenRightDrawer}
+                className="ml-3 p-1"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="ellipsis-horizontal" size={20} />
+              </TouchableOpacity>
+            )}
+            {onboardingMode && onSkipOnboarding && (
+              <TouchableOpacity
+                onPress={onSkipOnboarding}
+                className="ml-3 py-1 px-3"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
+                  Skip
                 </Text>
               </TouchableOpacity>
             )}
           </View>
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onOpenRightDrawer}
-              className="ml-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="apps-outline" size={20} />
-            </TouchableOpacity>
-          )}
-          {onboardingMode && onSkipOnboarding && (
-            <TouchableOpacity
-              onPress={onSkipOnboarding}
-              className="ml-3 py-1 px-3"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
-                Skip
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
+      ) : (
+        /* Floating menu button — the only chrome above the content. */
+        <View
+          className="absolute left-4 z-10"
+          style={{ top: insets.top + 8 }}
+          pointerEvents="box-none">
+          <Button variant="secondary" size="icon" onPress={onOpenDrawer} accessibilityLabel="Open menu" hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon as={MenuIcon} size={20} className="text-foreground" />
+          </Button>
+        </View>
+      )}
 
-      {/* Messages + Fresh Session Hero */}
-      <View
-        style={{
-          flex: 1,
-          marginTop: -24,
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
-          overflow: 'hidden',
-          borderTopWidth: 2,
-          borderLeftWidth: 2,
-          borderRightWidth: 2,
-          borderColor: isDark ? '#222222' : '#e6e6e5',
-        }}
-        className="bg-background"
-      >
+      {/* Messages + Fresh Session Hero — flat continuation of the page
+          surface (the rounded "sheet" card treatment was removed app-wide). */}
+      <View style={{ flex: 1 }} className="bg-background">
         <FlatList
           ref={flatListRef}
           data={turns}
           renderItem={renderTurn}
           keyExtractor={(item, index) => `${item.userMessage.info.id}:${index}`}
-          contentContainerStyle={{ paddingTop: 16 }}
+          contentContainerStyle={{ paddingTop: listTopInset }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
@@ -947,7 +971,11 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
                   // Fill remaining viewport so the last turn's user bubble
                   // sits at the top. Subtract: header (~60+insets), input (~90+insets),
                   // footer bar (~50), and the actual measured last turn height.
-                  height: Math.max(0, windowHeight - insets.top - insets.bottom - 195 - lastTurnHeight),
+                  // 'floating' chrome has no header but adds the ~48pt+8pt tab
+                  // dock below the composer (+64), and its container no longer
+                  // overlaps upward by 24 (no -24 sheet margin), so the
+                  // reserved chrome grows by 88 total.
+                  height: Math.max(0, windowHeight - insets.top - insets.bottom - (effectiveChrome === 'floating' ? 283 : 195) - lastTurnHeight),
                 }}
               />
             </View>
@@ -957,7 +985,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
               flatListRef.current?.scrollToIndex({
                 index: info.index,
                 viewPosition: 0,
-                viewOffset: 0,
+                viewOffset: effectiveChrome === 'floating' ? listTopInset : 0,
                 animated: true,
               });
             }, 200);
@@ -965,10 +993,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         />
 
         <FreshSessionHero
-          isDark={isDark}
+          projectName={projectName}
           opacity={heroOpacity}
           visible={showFreshHero}
-          windowWidth={windowWidth}
+          isDark={isDark}
         />
       </View>
 
@@ -991,7 +1019,15 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       )}
 
       {/* Bottom area — question prompt OR chat input */}
-      <View style={onboardingMode ? { paddingBottom: insets.bottom } : undefined}>
+      <View
+        style={
+          onboardingMode
+            ? { paddingBottom: insets.bottom }
+            : effectiveChrome === 'floating'
+              ? { paddingBottom: insets.bottom + 64 }
+              : undefined
+        }
+      >
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
@@ -1067,59 +1103,40 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   );
 }
 
-function getGreetingLabel(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
+// Shared by the two nested spans below — RN nested <Text> doesn't inherit
+// styles from the ui/Text base classes, so the face/size must be restated on
+// the inner span. Mirrors ProjectHome's hero typography.
+const HERO_TEXT_CLASS = 'font-roobert-medium text-2xl tracking-tight text-center';
 
+/**
+ * FreshSessionHero — Kortix symbol with the greeting beneath it, centered in
+ * the message area. Same hero as ProjectHome, with session-specific copy.
+ */
 function FreshSessionHero({
-  isDark,
+  projectName,
   opacity,
   visible,
-  windowWidth,
+  isDark,
 }: {
-  isDark: boolean;
+  projectName?: string;
   opacity: Animated.Value;
   visible: boolean;
-  windowWidth: number;
+  isDark: boolean;
 }) {
-  const Symbol = isDark ? KortixSymbolWhite : KortixSymbolBlack;
-  const greeting = useMemo(() => getGreetingLabel(), []);
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslateY = useRef(new Animated.Value(14)).current;
-  const leftOffset = (windowWidth - 393) / 2;
+  const displayName = projectName?.trim() || 'this project';
+  const translateY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
     if (visible) {
-      logoOpacity.setValue(0);
-      textOpacity.setValue(0);
-      textTranslateY.setValue(14);
-
-      // Logo: fade-in only
-      Animated.timing(logoOpacity, {
-        toValue: 1,
-        duration: 520,
+      translateY.setValue(10);
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
-
-      // Greeting: fade + gentle rise
-      Animated.parallel([
-        Animated.timing(textOpacity, {
-          toValue: 1,
-          duration: 620,
-          useNativeDriver: true,
-        }),
-        Animated.timing(textTranslateY, {
-          toValue: 0,
-          duration: 760,
-          useNativeDriver: true,
-        }),
-      ]).start();
     }
-  }, [visible, logoOpacity, textOpacity, textTranslateY]);
+  }, [visible, translateY]);
 
   return (
     <Animated.View
@@ -1130,50 +1147,19 @@ function FreshSessionHero({
         left: 0,
         right: 0,
         bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
         opacity,
       }}
     >
-      {/* Logo + greeting share the same absolutely-positioned box so the
-          text stays centered in the logo regardless of screen height. */}
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: -80 + leftOffset,
-          width: 554,
-          height: 462,
-        }}
-      >
-        <Animated.View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            opacity: Animated.multiply(logoOpacity, 0.4),
-          }}
-        >
-          <Symbol width={554} height={462} />
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            ...StyleSheet.absoluteFillObject,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: textOpacity,
-            transform: [{ translateY: textTranslateY }],
-          }}
-        >
-          <RNText
-            style={{
-              fontSize: 14,
-              fontFamily: 'Roobert',
-              color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
-              letterSpacing: 0.28,
-            }}
-          >
-            {greeting}
-          </RNText>
-        </Animated.View>
-      </View>
+      <Animated.View style={{ transform: [{ translateY }], alignItems: 'center', gap: 16 }}>
+        <KortixLogo size={38} color={isDark ? 'dark' : 'light'} />
+        <Text className={`${HERO_TEXT_CLASS} text-muted-foreground`}>
+          Give <Text className={`${HERO_TEXT_CLASS} text-foreground`}>{displayName}</Text> something
+          real to work on.
+        </Text>
+      </Animated.View>
     </Animated.View>
   );
 }

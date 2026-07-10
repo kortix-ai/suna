@@ -1,56 +1,42 @@
 /**
  * ProjectHome — the "project home" state of the project screen.
  *
- * Landing state: greeting + Ask composer + starter chips + this
- * project's recent sessions. Purely presentational — it owns no
- * data-mutation/connect logic. The parent (ProjectScreen) passes callbacks
- * that reuse the legacy create+connect flow.
+ * Perplexity-style landing: the Kortix symbol and a quiet greeting sit
+ * dead-center, starter-prompt chips and the Ask composer are pinned to the
+ * bottom above the floating dock. Purely presentational — the parent
+ * (ProjectScreen) owns the create+connect flow. Sessions live in the left
+ * drawer.
+ *
+ * Layout rhythm: the bottom block shares the dock's px-3 gutter, and its
+ * bottom padding clears the dock exactly (8 offset + 48 pill + 12 gap).
  */
 
 import * as React from 'react';
-import { View, ScrollView, Pressable, Platform } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft, MoreHorizontal } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
+import { Menu } from 'lucide-react-native';
+import { chalkColors } from '@kortix/shared';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { Composer } from '@/components/ui/composer';
-import { ListRow } from '@/components/ui/list-row';
-import { useProjectSessions } from '@/lib/projects/hooks';
-import type { ProjectSession } from '@/lib/projects/projects-client';
-import { formatRelativeTime } from '@/lib/ui/format';
+import { KortixLogo } from '@/components/ui/KortixLogo';
+import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 export interface ProjectHomeProps {
   projectId: string;
-  /** Parent handles connect/navigation for an existing session. */
-  onOpenSession: (session: ProjectSession) => void;
   /** Parent handles the create+connect flow for a brand-new session. */
   onSubmitNewSession: (text: string) => void;
-  onBack?: () => void;
-  /** Parent opens the "···" tools menu (built in another task). */
-  onOpenTools?: () => void;
+  onOpenDrawer: () => void;
 }
 
-const STARTER_PROMPTS: string[] = [
-  'Summarize a document',
-  'Write a script',
-  'Explain a concept',
-  'Plan a task',
-  'Draft an email',
-  'Research a topic',
-];
-
-function sessionTitle(session: ProjectSession): string {
-  return session.custom_name ?? session.name ?? 'Untitled';
-}
-
-export function ProjectHome(props: ProjectHomeProps) {
-  const { projectId, onOpenSession, onSubmitNewSession, onBack, onOpenTools } = props;
+export function ProjectHome({ onSubmitNewSession, onOpenDrawer }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
   const [draft, setDraft] = React.useState('');
-
-  const { data: sessions = [] } = useProjectSessions(projectId);
 
   const handleSubmit = React.useCallback(() => {
     const trimmed = draft.trim();
@@ -59,82 +45,74 @@ export function ProjectHome(props: ProjectHomeProps) {
     setDraft('');
   }, [draft, onSubmitNewSession]);
 
-  const handleStarterPress = React.useCallback((prompt: string) => {
-    setDraft(prompt);
-  }, []);
-
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
+      {/* Floating menu button — the only chrome above the content. */}
       <View
-        className="bg-sidebar border-b border-border flex-row items-center gap-3 px-4 pb-3"
-        style={{ paddingTop: insets.top + 8 }}>
-        <Pressable
-          onPress={onBack}
-          hitSlop={8}
-          className="h-8 w-8 items-center justify-center rounded-full active:bg-foreground/5">
-          <Icon as={ChevronLeft} size={22} className="text-foreground" />
-        </Pressable>
-        <View className="flex-1">
-          <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
-            New chat
-          </Text>
-        </View>
-        <Pressable
-          onPress={onOpenTools}
-          hitSlop={8}
-          className="h-8 w-8 items-center justify-center rounded-full active:bg-foreground/5">
-          <Icon as={MoreHorizontal} size={20} className="text-foreground" />
-        </Pressable>
+        className="absolute left-4 z-10"
+        style={{ top: insets.top + 8 }}
+        pointerEvents="box-none">
+        <Button
+          variant="secondary"
+          size="icon"
+          onPress={onOpenDrawer}
+          accessibilityLabel="Open menu"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Icon as={Menu} size={20} className="text-foreground" />
+        </Button>
       </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={insets.top}>
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="flex-grow px-5 pb-8"
-          keyboardShouldPersistTaps="handled">
-          {/* Hero */}
-          <View className="flex-1 justify-center gap-4 py-8">
-            <Text className="font-roobert-semibold text-2xl text-foreground text-center">
-              What can I help with?
-            </Text>
+      <KeyboardAvoidingView className="flex-1" behavior="padding">
+        {/* Hero — symbol + greeting, centered in the space above the composer */}
+        <View className="flex-1 items-center justify-center gap-4 px-8">
+          <KortixLogo size={38} color={colorScheme === 'dark' ? 'dark' : 'light'} />
+          <Text
+            variant="h3"
+            className="font-roobert-medium text-muted-foreground text-center">
+            What can I help with?
+          </Text>
+        </View>
 
-            <Composer value={draft} onChangeText={setDraft} onSubmit={handleSubmit} />
+        {/* Bottom block — chips + composer, sharing the dock's px-3 gutter */}
+        <View className="px-3" style={{ paddingBottom: insets.bottom + 68 }}>
+          {/* Starter chips — one scrollable row, hidden once the user types.
+              Bleeds to the screen edges (-mx-3) so the scroll isn't clipped
+              mid-gutter; icons take their web chalk color (light chalk tone
+              in dark mode, where the web's dark foreground would vanish). */}
+          {draft.length === 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              className="-mx-3 mb-3 flex-grow-0"
+              contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
+              {STARTER_PROMPTS.map((p) => {
+                const chalk = chalkColors(p.label);
+                return (
+                  <Button
+                    key={p.id}
+                    variant="outline"
+                    size="sm"
+                    onPress={() => onSubmitNewSession(p.prompt)}>
+                    <Icon
+                      as={p.icon}
+                      size={14}
+                      color={colorScheme === 'dark' ? chalk.background : chalk.foreground}
+                    />
+                    <Text className="text-muted-foreground">{p.label}</Text>
+                  </Button>
+                );
+              })}
+            </ScrollView>
+          )}
 
-            <View className="flex-row flex-wrap gap-2">
-              {STARTER_PROMPTS.map((prompt) => (
-                <Pressable
-                  key={prompt}
-                  onPress={() => handleStarterPress(prompt)}
-                  className="rounded-md border-[1.5px] border-border px-3 py-2 active:bg-foreground/5">
-                  <Text className="font-roobert text-sm text-foreground">{prompt}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* Recent sessions */}
-          {sessions.length > 0 ? (
-            <View className="mt-2">
-              <Text className="font-roobert-medium text-xs uppercase tracking-wide text-muted-foreground px-1 pb-2">
-                Recent
-              </Text>
-              <View className="rounded-xl bg-sidebar overflow-hidden">
-                {sessions.map((session) => (
-                  <ListRow
-                    key={session.session_id}
-                    title={sessionTitle(session)}
-                    subtitle={formatRelativeTime(session.updated_at)}
-                    onPress={() => onOpenSession(session)}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
-        </ScrollView>
+          <Composer
+            value={draft}
+            onChangeText={setDraft}
+            onSubmit={handleSubmit}
+            placeholder="Ask anything"
+          />
+        </View>
       </KeyboardAvoidingView>
     </View>
   );

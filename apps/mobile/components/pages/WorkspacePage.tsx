@@ -38,12 +38,14 @@ import {
   FileText,
   Blocks,
   ArrowUpRight,
+  MoreHorizontal,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
+import { Icon } from '@/components/ui/icon';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -172,11 +174,15 @@ interface WorkspacePageProps {
   isDrawerOpen?: boolean;
   isRightDrawerOpen?: boolean;
   onCreateSessionWithPrompt?: (title: string, prompt: string) => void;
+  /** Called when the page-context ("···") menu should open — mirrors
+   *  FilesPage's onRequestMenu. Rendered as its own header action so it
+   *  doesn't collide with `onOpenRightDrawer` (the More sheet). */
+  onRequestMenu?: () => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt }, ref) {
+export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt, onRequestMenu }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -587,6 +593,20 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        rightActions={
+          onRequestMenu ? (
+            <Pressable
+              onPress={() => {
+                haptics.tap();
+                onRequestMenu();
+              }}
+              className="p-2 rounded-xl active:opacity-70"
+              hitSlop={8}
+            >
+              <Icon as={MoreHorizontal} size={18} color={fg} strokeWidth={2} />
+            </Pressable>
+          ) : undefined
+        }
       />
 
       <PageContent>

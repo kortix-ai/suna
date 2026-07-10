@@ -55,6 +55,33 @@ const SIZE_MAP = {
   xlarge: 120,
 } as const;
 
+// The shipped animation is white. Light mode needs a black loader, and
+// lottie-react-native's colorFilters keypath matching is unreliable across
+// platforms/versions (the loader rendered white-on-white in light mode), so
+// recolor the animation data itself — deterministic on every renderer.
+const WHITE_SOURCE = require('@/components/animations/loading.json');
+
+function recolorLottie(source: unknown, rgb: [number, number, number]) {
+  const clone = JSON.parse(JSON.stringify(source));
+  const walk = (node: any) => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node && typeof node === 'object') {
+      // 'fl' = fill, 'st' = stroke; static colors keep their alpha channel.
+      if ((node.ty === 'fl' || node.ty === 'st') && Array.isArray(node.c?.k)) {
+        node.c.k = node.c.k.length > 3 ? [...rgb, node.c.k[3]] : [...rgb];
+      }
+      Object.values(node).forEach(walk);
+    }
+  };
+  walk(clone);
+  return clone;
+}
+
+const BLACK_SOURCE = recolorLottie(WHITE_SOURCE, [0, 0, 0]);
+
 /**
  * KortixLoader - A unified loading animation component
  * 
@@ -95,43 +122,23 @@ export function KortixLoader({
 }: KortixLoaderProps) {
   const { colorScheme } = useColorScheme();
   const loaderSize = customSize || SIZE_MAP[size];
-  
-  // Determine which theme to use
+
+  // Determine which theme to use: white loader on dark, black loader on light.
   const effectiveTheme = forceTheme || colorScheme;
-  
-  // Apply color filter based on theme
-  // The Lottie is originally white, we invert for light mode
-  const colorFilters = effectiveTheme === 'dark' 
-    ? undefined // Keep white for dark mode
-    : [
-        {
-          keypath: 'Shape Layer 1',
-          color: '#000000', // Black for light mode
-        },
-        {
-          keypath: 'Shape Layer 2',
-          color: '#000000',
-        },
-        {
-          keypath: 'Shape Layer 3',
-          color: '#000000',
-        },
-        {
-          keypath: 'Shape Layer 4',
-          color: '#000000',
-        },
-      ];
+  const source = effectiveTheme === 'dark' ? WHITE_SOURCE : BLACK_SOURCE;
 
   return (
     <View className={cn('items-center justify-center', className)} style={style}>
       <LottieView
+        // Remount when the theme flips — LottieView doesn't reliably reload
+        // a changed `source` in place.
+        key={effectiveTheme}
         ref={lottieRef}
-        source={require('@/components/animations/loading.json')}
+        source={source}
         style={{ width: loaderSize, height: loaderSize }}
         autoPlay={autoPlay}
         loop={loop}
         speed={speed}
-        colorFilters={colorFilters}
       />
     </View>
   );

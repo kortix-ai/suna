@@ -18,24 +18,47 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { View, Alert } from 'react-native';
-import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
+
+import { useQueryClient } from '@tanstack/react-query';
 
 import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions, useCreateSession } from '@/lib/platform/hooks';
+import {
+  useSessions,
+  useCreateSession,
+  useArchiveSession,
+} from '@/lib/platform/hooks';
+import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+import { useSyncStore } from '@/lib/opencode/sync-store';
 import { SessionPage } from '@/components/session/SessionPage';
 import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
-import { PageHeader } from '@/components/ui/page-header';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
+import { Menu } from 'lucide-react-native';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
 import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
 import { SessionShareSheet } from '@/components/session/SessionShareSheet';
 import { TabsOverview } from '@/components/session/TabsOverview';
 import { ProjectHome } from '@/components/session/ProjectHome';
-import { ToolsMenuSheet } from '@/components/session/ToolsMenuSheet';
+import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
+import { ProjectDock } from '@/components/session/ProjectDock';
+import { ProjectMoreSheet } from '@/components/session/ProjectMoreSheet';
+import { ChatActionsSheet } from '@/components/session/ChatActionsSheet';
+import {
+  PageContextMenuSheet,
+  type PageContextMenuTarget,
+} from '@/components/session/PageContextMenuSheet';
+import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
+import { Drawer } from 'react-native-drawer-layout';
+import {
+  dockPillLabel,
+  type ChatActionGates,
+  type ChatActionId,
+} from '@/lib/session/dock-menu';
 import type { SheetRef } from '@/components/ui/sheet';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
@@ -43,8 +66,14 @@ import {
   useProjectSessions,
   useCreateProjectSession,
   useProject,
+  useChangeRequests,
+  projectKeys,
 } from '@/lib/projects/hooks';
-import { startProjectSession, restartProjectSession } from '@/lib/projects/projects-client';
+import {
+  startProjectSession,
+  restartProjectSession,
+  deleteProjectSession,
+} from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
@@ -191,17 +220,19 @@ export function ProjectScreen() {
     if (projectId) useTabStore.getState().setScope(projectId);
   }, [projectId]);
 
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const router = useRouter();
   const { sandboxUrl, switchSandbox } = useSandboxContext();
 
   // Sheets (web-parity bottom sheets, reused verbatim).
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const renameSessionSheetRef = useRef<BottomSheetModal>(null);
   const shareSessionSheetRef = useRef<BottomSheetModal>(null);
-  // "···" tools menu.
-  const toolsRef = useRef<SheetRef>(null);
+  const viewChangesSheetRef = useRef<BottomSheetModal>(null);
+  // Dock-raised sheets: the "More…" grid, the chat-actions sheet, and the
+  // per-page context menu.
+  const moreRef = useRef<SheetRef>(null);
+  const chatActionsRef = useRef<SheetRef>(null);
+  const pageMenuRef = useRef<SheetRef>(null);
+  const [pageMenuTarget, setPageMenuTarget] = useState<PageContextMenuTarget | null>(null);
   // Page refs (some tool pages drive imperative actions).
   const filesPageRef = useRef<FilesPageRef>(null);
   const workspacePageRef = useRef<WorkspacePageRef>(null);
@@ -244,6 +275,12 @@ export function ProjectScreen() {
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
   const { data: sessions = [] } = useSessions(sessionSandboxUrl);
   const createSession = useCreateSession(sandboxUrl);
+  const archiveSession = useArchiveSession(sandboxUrl);
+  const compactSession = useCompactSession();
+  const queryClient = useQueryClient();
+  // Open change-request count — the "Changes" badge in the More sheet.
+  const openCrCount =
+    useChangeRequests(projectId ?? null, 'open').data?.change_requests.length ?? 0;
 
   // Split sessions into active (TabsOverview grid).
   const activeSessions = useMemo(
@@ -523,6 +560,231 @@ export function ProjectScreen() {
     [projectSessions, activeSessionId]
   );
 
+  // ── Chat-action handlers (ported verbatim from ProjectScreenLegacy) ──
+
+  const handleOpenChangeRequest = useCallback(async () => {
+    const ps = activeProjectSession;
+    // Target the chat that's on screen (SessionPage is bound to the context
+    // sandbox + activeSessionId); the row's pin is only a fallback. Sending to
+    // ps.opencode_session_id could hit a session other than the visible one
+    // (e.g. a fork), so the prompt would never appear in the open thread.
+    const targetSandboxUrl = sandboxUrl || ps?.sandbox_url;
+    const targetSessionId = activeSessionId || ps?.opencode_session_id;
+
+    if (!targetSandboxUrl || !targetSessionId) {
+      Alert.alert(
+        'Open change request',
+        'Open a running session before asking the agent to create a change request.'
+      );
+      return;
+    }
+
+    haptics.tap();
+    const baseRef = ps?.base_ref || 'main';
+    const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
+
+    // Optimistic user bubble + busy status, exactly like SessionPage's send —
+    // the prompt showing up in the thread IS the confirmation, no alert.
+    useSyncStore.getState().addOptimisticMessage(targetSessionId, {
+      info: {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        sessionID: targetSessionId,
+        time: { created: Date.now() },
+      },
+      parts: [
+        {
+          type: 'text',
+          id: `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          text: prompt,
+        },
+      ],
+    });
+    useSyncStore.getState().setStatus(targetSessionId, { type: 'busy' });
+
+    const sent = await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
+    if (!sent) {
+      useSyncStore.getState().setStatus(targetSessionId, { type: 'idle' });
+      Alert.alert('Could not reach the agent', 'Please try again from the active session.');
+    }
+  }, [activeProjectSession, sandboxUrl, activeSessionId]);
+
+  const handleRestartActiveSession = useCallback(() => {
+    // Kortix id — restartProjectSession, the connecting screen, and
+    // ensureAndOpen all operate in the Kortix id space, not the OpenCode one.
+    const sid = activeProjectSession?.session_id;
+    if (!sid || restartingSession) return;
+    Alert.alert(
+      'Restart Session',
+      'This tears down and re-provisions the session runtime. Your conversation is kept, but anything running in the sandbox (dev servers, terminals) will stop.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restart',
+          style: 'destructive',
+          onPress: async () => {
+            haptics.tap();
+            setRestartingSession(true);
+            erroredSessionRef.current = sid;
+            ensuringRef.current = null;
+            setConnectError(null);
+            setConnectingProjectSessionId(sid);
+            try {
+              await restartProjectSession(projectId, sid);
+              erroredSessionRef.current = null;
+              void ensureAndOpen(sid);
+            } catch (err: any) {
+              erroredSessionRef.current = sid;
+              setConnectError({
+                title: 'Restart failed',
+                message: err?.message || 'Could not restart the session runtime. Please try again.',
+              });
+            } finally {
+              setRestartingSession(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [activeProjectSession, restartingSession, projectId, ensureAndOpen]);
+
+  // Delete the active session (web parity: deleteProjectSession — destroys the
+  // sandbox, the git branch is preserved server-side). API takes the Kortix
+  // UUID; the tab is keyed by the OpenCode id, and closeTab (not just
+  // deselect) so no dead pill survives in the persisted tab strip.
+  const handleDeleteActiveSession = useCallback(() => {
+    const ps = activeProjectSession;
+    if (!ps) return;
+    const title = ps.custom_name || ps.name || 'this session';
+    Alert.alert(
+      'Delete session?',
+      `This will permanently destroy the sandbox for "${title}". This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            haptics.tap();
+            try {
+              await deleteProjectSession(projectId, ps.session_id);
+              if (ps.opencode_session_id) {
+                closeTab(ps.opencode_session_id);
+              } else if (useTabStore.getState().activeSessionId) {
+                navigateToSession(null);
+              }
+              queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+              haptics.success();
+            } catch (err: any) {
+              haptics.warning();
+              Alert.alert('Delete failed', err?.message || 'Could not delete the session.');
+            }
+          },
+        },
+      ]
+    );
+  }, [activeProjectSession, projectId, closeTab, navigateToSession, queryClient]);
+
+  const handleArchive = useCallback(
+    (sessionId: string) => {
+      Alert.alert('Archive Session', 'Move this session to archived?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: () => {
+            if (useTabStore.getState().activeSessionId === sessionId) {
+              navigateToSession(null);
+            }
+            archiveSession.mutate(sessionId);
+          },
+        },
+      ]);
+    },
+    [archiveSession, navigateToSession]
+  );
+
+  const handleCompactSession = useCallback(() => {
+    if (activeSessionId && sandboxUrl) {
+      Alert.alert(
+        'Compact Session',
+        'This will summarize older messages using AI to free up context space. Key information is preserved, but original messages will be condensed into a compact summary.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Compact',
+            onPress: () => {
+              compactSession.mutate(
+                { sandboxUrl, sessionId: activeSessionId },
+                {
+                  onError: (err) => {
+                    Alert.alert('Compact Failed', err.message || 'Failed to compact session.');
+                  },
+                }
+              );
+            },
+          },
+        ]
+      );
+    }
+  }, [activeSessionId, sandboxUrl, compactSession]);
+
+  // Gating for the chat-actions sheet. Kept memoized: ChatActionsSheet memoizes
+  // its item list off this object, so an inline literal would defeat it.
+  const chatActionGates: ChatActionGates = useMemo(
+    () => ({
+      hasSession: !!activeSessionId,
+      hasProjectSession: !!activeProjectSession,
+      canManageSharing: activeProjectSession?.can_manage_sharing !== false,
+      hasChangeRequest: openCrCount > 0,
+    }),
+    [activeSessionId, activeProjectSession, openCrCount]
+  );
+
+  const handleChatAction = useCallback(
+    (id: ChatActionId) => {
+      switch (id) {
+        case 'rename':
+          renameSessionSheetRef.current?.present();
+          break;
+        case 'share':
+          shareSessionSheetRef.current?.present();
+          break;
+        case 'restart':
+          handleRestartActiveSession();
+          break;
+        case 'export':
+          exportTranscriptSheetRef.current?.present();
+          break;
+        case 'compact':
+          handleCompactSession();
+          break;
+        case 'changeRequest':
+          void handleOpenChangeRequest();
+          break;
+        case 'viewChanges':
+          viewChangesSheetRef.current?.present();
+          break;
+        case 'diagnostics':
+          log.log('TODO: diagnostics');
+          break;
+        case 'archive':
+          if (activeSessionId) handleArchive(activeSessionId);
+          break;
+        case 'delete':
+          handleDeleteActiveSession();
+          break;
+      }
+    },
+    [
+      handleRestartActiveSession,
+      handleCompactSession,
+      handleOpenChangeRequest,
+      handleArchive,
+      handleDeleteActiveSession,
+      activeSessionId,
+    ]
+  );
+
   // Drive the connecting state. ensureAndOpen polls /start and opens the chat.
   // It guards against concurrent runs, so re-firing on re-render is harmless. A
   // session that ended in an error is skipped so we don't immediately re-loop it;
@@ -569,18 +831,36 @@ export function ProjectScreen() {
     [projectId, isDashboardSending, createProjectSession, navigateToSession, showUpgradeForError]
   );
 
-  // ── Presentation glue ──
-  const openToolsMenu = useCallback(() => {
-    haptics.tap();
-    toolsRef.current?.open();
-  }, []);
+  // Left drawer open state. The drawer itself is added in a later task; this
+  // state is here to satisfy ProjectHome's onOpenDrawer callback.
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Shared drawer/right-drawer props for tool pages + headers. There is no
-  // drawer in the single-column UI — the header buttons surface the tools menu.
+  // ── Presentation glue ──
+
+  // The self-contained left drawer. It MUST mount through renderDrawerContent so
+  // its subtree (AccountMenuSheet + CommandPalette) stays alive while the drawer
+  // is visually closed — its rows call onClose() before opening those overlays.
+  const renderDrawer = useCallback(
+    () => (
+      <ProjectLeftDrawer
+        projectId={projectId}
+        activeProjectSessionId={activeProjectSessionId}
+        sessionSandboxUrl={sessionSandboxUrl}
+        onNewSession={handleNewSession}
+        onOpenProjectSession={handleOpenProjectSession}
+        onClose={() => setDrawerOpen(false)}
+      />
+    ),
+    [projectId, activeProjectSessionId, sessionSandboxUrl, handleNewSession, handleOpenProjectSession]
+  );
+
+  // Tool pages keep PageHeader. Its hamburger opens the left drawer; its
+  // apps-grid button opens the dock's menu as a sheet (no floating dock on
+  // deep pages).
   const pageChrome = {
-    onOpenDrawer: openToolsMenu,
-    onOpenRightDrawer: openToolsMenu,
-    isDrawerOpen: false,
+    onOpenDrawer: () => setDrawerOpen(true),
+    onOpenRightDrawer: () => moreRef.current?.open(),
+    isDrawerOpen: drawerOpen,
     isRightDrawerOpen: false,
   };
 
@@ -589,8 +869,26 @@ export function ProjectScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-1 bg-background">
-        {showTabsOverview ? (
+      <Drawer
+        open={drawerOpen}
+        onOpen={() => setDrawerOpen(true)}
+        onClose={() => setDrawerOpen(false)}
+        drawerType="slide"
+        drawerStyle={{
+          width: '80%',
+          backgroundColor: 'transparent',
+          shadowColor: 'transparent',
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 0,
+        }}
+        overlayStyle={{ backgroundColor: 'transparent' }}
+        swipeEdgeWidth={80}
+        swipeMinDistance={30}
+        renderDrawerContent={renderDrawer}>
+        <View className="flex-1 bg-background">
+          {showTabsOverview ? (
           /* Session history grid — opened from the "···" tools menu */
           <TabsOverview
             sessions={activeSessions}
@@ -618,7 +916,10 @@ export function ProjectScreen() {
               onBack={handlePageBack}
               {...pageChrome}
               onFileSelectionChange={() => {}}
-              onRequestMenu={openToolsMenu}
+              onRequestMenu={() => {
+                setPageMenuTarget({ page: 'files' });
+                pageMenuRef.current?.open();
+              }}
             />
           ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] ? (
             <MemoryPage page={PAGE_TABS[activePageId]} onBack={handlePageBack} {...pageChrome} />
@@ -730,6 +1031,10 @@ export function ProjectScreen() {
               page={PAGE_TABS[activePageId]}
               onBack={handlePageBack}
               {...pageChrome}
+              onRequestMenu={() => {
+                setPageMenuTarget({ page: 'workspace' });
+                pageMenuRef.current?.open();
+              }}
               onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
             />
           ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] ? (
@@ -751,63 +1056,92 @@ export function ProjectScreen() {
              "···" tools menu. */
           <SessionPage
             sessionId={activeSessionId}
+            projectName={project?.name}
             onBack={handleBack}
-            onOpenDrawer={openToolsMenu}
-            onOpenRightDrawer={openToolsMenu}
-            isDrawerOpen={false}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            chrome="floating"
+            isDrawerOpen={drawerOpen}
             isRightDrawerOpen={false}
           />
         ) : connectingProjectSessionId ? (
-          /* Connecting — a project session is provisioning (or errored) */
+          /* Connecting — a project session is provisioning (or errored).
+             Same chrome as the project home and the thread: no top bar, just
+             the floating global hamburger opening the left drawer. */
           <View style={{ flex: 1 }} className="bg-background">
-            <PageHeader
-              title={projectName}
-              onOpenDrawer={openToolsMenu}
-              onOpenRightDrawer={openToolsMenu}
-              isDrawerOpen={false}
-              isRightDrawerOpen={false}
-            />
             <View
-              style={{
-                flex: 1,
-                marginTop: -24,
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                overflow: 'hidden',
-                borderTopWidth: 1.5,
-                borderLeftWidth: 1.5,
-                borderRightWidth: 1.5,
-                borderColor: isDark ? '#222222' : '#e6e6e5',
-              }}
-              className="bg-background">
-              <SessionConnecting
-                statusLabel={connectingStatusLabel}
-                error={connectError}
-                onRestart={handleRestartSession}
-                restarting={restartingSession}
-              />
+              className="absolute left-4 z-10"
+              style={{ top: insets.top + 8 }}
+              pointerEvents="box-none">
+              <Button
+                variant="secondary"
+                size="icon"
+                onPress={() => setDrawerOpen(true)}
+                accessibilityLabel="Open menu"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon as={Menu} size={20} className="text-foreground" />
+              </Button>
             </View>
+            <SessionConnecting
+              statusLabel={connectingStatusLabel}
+              error={connectError}
+              onRestart={handleRestartSession}
+              restarting={restartingSession}
+            />
           </View>
         ) : (
           /* Project home — greeting + composer + recent sessions */
           <ProjectHome
             projectId={projectId}
-            onOpenSession={handleOpenProjectSession}
             onSubmitNewSession={handleDashboardSend}
-            onOpenTools={openToolsMenu}
-            onBack={() => router.back()}
+            onOpenDrawer={() => setDrawerOpen(true)}
           />
         )}
-      </View>
 
-      {/* Tools menu ("···") — Files/Terminal/Browser/Agents/history + rename/
-          share/export, wired to the same sheets the legacy screen uses. */}
-      <ToolsMenuSheet
-        ref={toolsRef}
-        onRename={() => renameSessionSheetRef.current?.present()}
-        onShare={() => shareSessionSheetRef.current?.present()}
-        onExport={() => exportTranscriptSheetRef.current?.present()}
+          {/* Floating dock — only in the project-home and thread states. Renders
+              inside the Drawer child, over the content and above the composer. */}
+          {!activePageId && !showTabsOverview && !connectingProjectSessionId ? (
+            <ProjectDock
+              label={dockPillLabel({
+                inThread: !!activeSessionId,
+                chatTitle: activeProjectSession?.custom_name ?? activeProjectSession?.name ?? null,
+                projectName,
+              })}
+              onNewChat={handleNewSession}
+              onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
+              onOpenMore={() => moreRef.current?.open()}
+              onLongPressLabel={activeSessionId ? () => chatActionsRef.current?.open() : undefined}
+              onOpenChangeRequest={
+                activeSessionId ? () => void handleOpenChangeRequest() : undefined
+              }
+            />
+          ) : null}
+        </View>
+      </Drawer>
+
+      {/* Dock-raised sheets — the "More…" grid, the chat-actions sheet, and the
+          per-page context menu. ProjectMoreSheet supersedes the old ToolsMenuSheet. */}
+      <ProjectMoreSheet
+        ref={moreRef}
+        onNavigate={(pageId) => useTabStore.getState().navigateToPage(pageId)}
+        changesBadgeCount={openCrCount}
       />
+
+      <ChatActionsSheet
+        ref={chatActionsRef}
+        title={activeProjectSession?.custom_name ?? activeProjectSession?.name ?? 'This chat'}
+        gates={chatActionGates}
+        onAction={handleChatAction}
+      />
+
+      <PageContextMenuSheet
+        ref={pageMenuRef}
+        target={pageMenuTarget}
+        workspaceRef={workspacePageRef}
+        filesRef={filesPageRef}
+        onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
+      />
+
+      <ViewChangesSheet ref={viewChangesSheetRef} sessionId={activeSessionId} />
 
       <ExportTranscriptSheet ref={exportTranscriptSheetRef} sessionId={activeSessionId} />
       <SessionRenameSheet

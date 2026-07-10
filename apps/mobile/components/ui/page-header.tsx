@@ -1,13 +1,13 @@
 /**
  * PageHeader — unified top header for every page in the mobile app.
  *
- * Matches the session page header: bg-muted surface, lucide hamburger on the
- * left (flips to X when the drawer is open), muted-foreground title, and
- * apps-grid icon on the right (flips to X when the right drawer is open).
+ * Flat bar on the page's own background: lucide hamburger on the left (flips
+ * to X when the drawer is open), muted-foreground title, and a "···" more
+ * button on the right (opens the dock's More sheet; flips to X when open).
  *
  * Pages that need additional action buttons (Files, Running Services, etc.)
  * render them through the `rightActions` slot. To replace the default
- * apps-grid right button entirely, pass `hideRightDrawerToggle`.
+ * right button entirely, pass `hideRightDrawerToggle`.
  */
 
 import * as React from 'react';
@@ -15,6 +15,7 @@ import { TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 export interface PageHeaderProps {
@@ -25,12 +26,12 @@ export interface PageHeaderProps {
 
   /** Left hamburger handler. Omit to hide the left icon entirely. */
   onOpenDrawer?: () => void;
-  /** Right apps-grid handler. Omit or combine with `hideRightDrawerToggle`. */
+  /** Right "···" more-button handler. Omit or combine with `hideRightDrawerToggle`. */
   onOpenRightDrawer?: () => void;
 
   /** Drawer state — hamburger rotates to X when true. */
   isDrawerOpen?: boolean;
-  /** Right-drawer state — apps-grid rotates to X when true. */
+  /** Right-drawer state — the "···" icon rotates to X when true. */
   isRightDrawerOpen?: boolean;
 
   /** Extra action buttons rendered to the LEFT of the right-drawer toggle.
@@ -41,9 +42,7 @@ export interface PageHeaderProps {
    *  `rightActions`). */
   hideRightDrawerToggle?: boolean;
 
-  /** Extra bottom padding. The default (36) matches the session header so
-   *  a `<PageContent>` below can tuck under with rounded corners. Override
-   *  to 12 for pages that don't use `<PageContent>` (flat layout). */
+  /** Extra bottom padding below the title row. */
   paddingBottom?: number;
 
   /** Optional className passed to the outer View (e.g. to override bg). */
@@ -60,7 +59,7 @@ export function PageHeader({
   isRightDrawerOpen,
   rightActions,
   hideRightDrawerToggle,
-  paddingBottom = 36,
+  paddingBottom = 12,
   className,
 }: PageHeaderProps) {
   const insets = useSafeAreaInsets();
@@ -85,14 +84,19 @@ export function PageHeader({
   return (
     <View
       style={{ paddingTop: insets.top, paddingBottom }}
-      className={`px-4 bg-chrome-background ${className ?? ''}`}
+      className={`px-4 bg-background ${className ?? ''}`}
     >
       <View className="flex-row items-center">
-        {/* Left — hamburger (flips to X when drawer is open) */}
+        {/* Left — hamburger (flips to X when drawer is open). Same rounded
+            secondary icon button as the floating menu button on the session
+            page and project home. */}
         {onOpenDrawer && (
-          <TouchableOpacity
+          <Button
+            variant="secondary"
+            size="icon"
             onPress={onOpenDrawer}
-            className="mr-3 p-1"
+            accessibilityLabel="Open menu"
+            className="mr-3"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <AnimatedToggleIcon
@@ -101,7 +105,7 @@ export function PageHeader({
               icon="menu-lucide"
               size={ICON_SIZE}
             />
-          </TouchableOpacity>
+          </Button>
         )}
 
         {/* Title — flexes to fill remaining space */}
@@ -120,7 +124,7 @@ export function PageHeader({
             <AnimatedToggleIcon
               open={!!isRightDrawerOpen}
               color={iconColor}
-              icon="apps-outline"
+              icon="ellipsis-horizontal"
               size={ICON_SIZE}
             />
           </TouchableOpacity>
