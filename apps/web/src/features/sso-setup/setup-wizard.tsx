@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronRight,
   Copy,
   ExternalLink,
   KeyRound,
@@ -21,6 +22,7 @@ import {
   Search,
   ShieldCheck,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -53,11 +55,23 @@ import { buildScimBaseUrl } from '@/lib/scim-url';
 import {
   type GuideStep,
   type ProviderConfig,
+  type ProviderGuide,
   PROVIDER_GUIDES,
   SCIM_PROVIDER_GUIDES,
   getProviderGuide,
   getScimGuide,
 } from './guides';
+
+// Monochrome brand marks (same currentColor + dark:invert technique as the
+// LLM provider pickers — see features/providers/provider-branding.tsx). The
+// dedicated google-workspace mark exists because provider-icons/google.svg is
+// the Gemini star, not the Workspace G.
+const PROVIDER_ICONS: Record<ProviderGuide['id'], string> = {
+  entra: '/provider-icons/azure.svg',
+  okta: '/provider-icons/okta.svg',
+  google: '/provider-icons/google-workspace.svg',
+  custom: '/provider-icons/generic-provider.svg',
+};
 
 type Flow = 'sso' | 'scim';
 
@@ -203,13 +217,22 @@ function ProviderSelect({
             key={g.id}
             type="button"
             onClick={() => onPick(g.id)}
-            className="border-border/40 hover:bg-muted/40 flex w-full items-center justify-between gap-3 border-b px-5 py-4 text-left last:border-b-0"
+            className="group border-border/40 hover:bg-muted/40 flex w-full items-center gap-3.5 border-b px-4 py-3.5 text-left transition-colors last:border-b-0"
           >
-            <span className="min-w-0">
+            <span className="border-border/60 bg-background flex size-10 shrink-0 items-center justify-center rounded-md border">
+              <Image
+                src={PROVIDER_ICONS[g.id]}
+                alt=""
+                width={20}
+                height={20}
+                className="object-contain dark:invert"
+              />
+            </span>
+            <span className="min-w-0 flex-1">
               <span className="text-foreground block text-sm font-medium">{g.name}</span>
               <span className="text-muted-foreground block truncate text-xs">{g.blurb}</span>
             </span>
-            <ArrowRight className="text-muted-foreground size-4 shrink-0" />
+            <ChevronRight className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
           </button>
         ))}
         {guides.length === 0 && (
