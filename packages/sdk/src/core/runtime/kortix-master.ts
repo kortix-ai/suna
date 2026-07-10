@@ -574,7 +574,12 @@ export async function getProjectActivity(baseUrl: string, projectId: string, lim
 // Projects — /kortix/projects
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface KortixProject {
+/**
+ * A project inside the sandbox's kortix-master daemon — the `/kortix/projects`
+ * board surface (tasks, tickets, milestones), NOT the Kortix platform project.
+ * The platform's project is `KortixProject` in `core/rest/projects-client`.
+ */
+export interface KortixMasterProject {
   id: string;
   name: string;
   path: string;
@@ -592,22 +597,32 @@ export interface KortixProject {
   };
 }
 
-export interface PatchKortixProjectInput {
+/**
+ * @deprecated Renamed to `KortixMasterProject` — it models the kortix-master
+ * daemon's board project, not the Kortix platform project (which keeps the name
+ * `KortixProject`, exported from the root barrel). Removed in the next major.
+ */
+export type KortixProject = KortixMasterProject;
+
+export interface PatchKortixMasterProjectInput {
   name?: string;
   description?: string;
   user_handle?: string | null;
 }
 
-export async function listKortixProjects(baseUrl: string): Promise<KortixProject[]> {
-  return kortixMasterRequest<KortixProject[]>(baseUrl, '/kortix/projects');
+/** @deprecated Renamed to `PatchKortixMasterProjectInput`. Removed in the next major. */
+export type PatchKortixProjectInput = PatchKortixMasterProjectInput;
+
+export async function listKortixProjects(baseUrl: string): Promise<KortixMasterProject[]> {
+  return kortixMasterRequest<KortixMasterProject[]>(baseUrl, '/kortix/projects');
 }
 
-export async function getKortixProject(baseUrl: string, id: string): Promise<KortixProject> {
-  return kortixMasterRequest<KortixProject>(baseUrl, `/kortix/projects/${encodeURIComponent(id)}`);
+export async function getKortixProject(baseUrl: string, id: string): Promise<KortixMasterProject> {
+  return kortixMasterRequest<KortixMasterProject>(baseUrl, `/kortix/projects/${encodeURIComponent(id)}`);
 }
 
-export async function getKortixProjectBySession(baseUrl: string, sessionId: string): Promise<KortixProject> {
-  return kortixMasterRequest<KortixProject>(baseUrl, `/kortix/projects/by-session/${encodeURIComponent(sessionId)}`);
+export async function getKortixProjectBySession(baseUrl: string, sessionId: string): Promise<KortixMasterProject> {
+  return kortixMasterRequest<KortixMasterProject>(baseUrl, `/kortix/projects/by-session/${encodeURIComponent(sessionId)}`);
 }
 
 export async function listKortixProjectSessions(baseUrl: string, projectId: string): Promise<unknown[]> {
@@ -624,9 +639,9 @@ export async function deleteKortixProject(
 export async function patchKortixProject(
   baseUrl: string,
   id: string,
-  body: PatchKortixProjectInput,
-): Promise<KortixProject> {
-  return kortixMasterRequest<KortixProject>(baseUrl, `/kortix/projects/${encodeURIComponent(id)}`, {
+  body: PatchKortixMasterProjectInput,
+): Promise<KortixMasterProject> {
+  return kortixMasterRequest<KortixMasterProject>(baseUrl, `/kortix/projects/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
   });
