@@ -230,3 +230,41 @@ for (const subpath of SUBPATH_TIERS) {
     });
   }
 }
+
+// ── Path-based tier rule ────────────────────────────────────────────────────
+// The whole point of the core/ | browser/ | node/ | react/ layout: a file's
+// directory declares what it may import. This is checkable by PATH, with no
+// list to maintain — which is what makes the tier boundary hard to cross by
+// accident rather than merely discouraged.
+import { readdirSync, statSync } from 'node:fs';
+
+function walkDir(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...walkDir(full));
+    else if (full.endsWith('.ts') && !full.endsWith('.test.ts')) out.push(full);
+  }
+  return out;
+}
+
+test('core/ never imports from browser/, node/, or react/', () => {
+  const coreDir = join(SRC_ROOT, 'core');
+  if (!existsSync(coreDir)) return; // pre-restructure: nothing to check
+  const importRe = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]/g;
+  for (const file of walkDir(coreDir)) {
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(importRe)) {
+      const spec = match[1];
+      const resolved = spec.startsWith('.') ? resolve(dirname(file), spec) : null;
+      const crosses =
+        resolved &&
+        (resolved.startsWith(join(SRC_ROOT, 'browser')) ||
+          resolved.startsWith(join(SRC_ROOT, 'node')) ||
+          resolved.startsWith(join(SRC_ROOT, 'react')));
+      expect(
+        crosses ? `${file.slice(SRC_ROOT.length + 1)} imports "${spec}" — crosses a tier boundary` : null,
+      ).toBeNull();
+    }
+  }
+});
