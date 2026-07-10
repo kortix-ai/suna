@@ -307,9 +307,17 @@ test('core/ never touches a bare process/window/document/localStorage global', (
       // matched text itself rather than a nonexistent `hit[1]`.
       const globalName = hit[0].match(/^(process|window|document|localStorage|sessionStorage)/)?.[1];
       const guardRe = new RegExp(`typeof\\s+${globalName}\\b`);
+      // Only CODE lines count as guards — a comment merely mentioning
+      // `typeof window` (same not-a-comment check as the hit line above)
+      // must not suppress a genuinely bare read sitting below it.
       const guardedNearby = lines
         .slice(Math.max(0, i - GUARD_WINDOW), i + 1)
-        .some((candidate) => guardRe.test(candidate));
+        .some(
+          (candidate) =>
+            !candidate.trimStart().startsWith('*') &&
+            !candidate.trimStart().startsWith('//') &&
+            guardRe.test(candidate),
+        );
       expect(
         guardedNearby ? null : `${file.slice(SRC_ROOT.length + 1)}:${i + 1} bare global \`${hit[0]}\``,
       ).toBeNull();
