@@ -28,6 +28,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -182,6 +183,64 @@ function CopyRow({ label, value }: { label: string; value: string }) {
           <Copy className="size-3.5 shrink-0" />
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Claim-mapping table (Vercel layout): Name (+Required) → Source Attribute,
+ * copy buttons on both sides so the admin never types an attribute path.
+ */
+function ClaimsTable({
+  rows,
+}: {
+  rows: Array<{ name: string; source: string; required?: boolean }>;
+}) {
+  return (
+    <div className="border-border/60 bg-popover overflow-hidden rounded-md border">
+      <div className="border-border/40 text-muted-foreground grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2 border-b px-4 py-2 text-xs font-medium">
+        <span>Name</span>
+        <span>Source attribute</span>
+      </div>
+      <ul className="divide-border/40 divide-y">
+        {rows.map((row) => (
+          <li
+            key={row.name}
+            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-4 py-2"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <code className="text-foreground truncate font-mono text-xs">{row.name}</code>
+              {row.required && (
+                <Badge variant="outline" size="xs" className="shrink-0">
+                  Required
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 shrink-0"
+                aria-label={`Copy claim name ${row.name}`}
+                onClick={() => copyValue(row.name, 'Claim name copied')}
+              >
+                <Copy className="size-3" />
+              </Button>
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <ArrowRight className="text-muted-foreground/60 size-3 shrink-0" />
+              <code className="text-foreground truncate font-mono text-xs">{row.source}</code>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 shrink-0"
+                aria-label={`Copy source attribute ${row.source}`}
+                onClick={() => copyValue(row.source, 'Source attribute copied')}
+              >
+                <Copy className="size-3" />
+              </Button>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -576,6 +635,9 @@ function StepBody({
         ) : block.kind === 'sp-values' ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <SpValueRows key={i} urls={spUrls} />
+        ) : block.kind === 'claims-table' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <ClaimsTable key={i} rows={block.rows} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <GuideImage key={i} src={block.src} alt={block.alt} />

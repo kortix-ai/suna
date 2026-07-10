@@ -26,7 +26,12 @@ export type StepBlock =
   | { kind: 'image'; src: string; alt: string }
   /** The copyable SP values (Entity ID + ACS), positioned inline — Vercel
    *  places them between the edit-panel prose and the filled-panel shot. */
-  | { kind: 'sp-values' };
+  | { kind: 'sp-values' }
+  /** Claim-mapping table: Name (+Required) → Source Attribute, both copyable. */
+  | {
+      kind: 'claims-table';
+      rows: Array<{ name: string; source: string; required?: boolean }>;
+    };
 
 export interface GuideStep {
   id: string;
@@ -190,28 +195,46 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'email-claim',
-        title: 'Fix the email claim',
+        title: 'Configure attributes and claims',
         intro:
-          'On the same page, locate the "Attributes & Claims" section and click its "Edit" icon.',
+          'On the same page, locate the "Attributes & Claims" section and click the "Edit" icon in its top right corner.',
         content: [
           {
             kind: 'image',
-            src: '/sso-setup/entra/email-claim-1.png',
+            src: '/sso-setup/entra/claims-1.png',
             alt: 'Attributes & Claims section with the Edit button',
           },
           {
             kind: 'text',
-            text: 'Click the claim ending in "emailaddress" (its value reads user.mail). Change its "Source attribute" to user.userprincipalname, then "Save".',
+            text: 'Ensure the claims listed below are configured. Most exist by default — the one you almost always have to CHANGE is "emailaddress": edit it and switch its source attribute from user.mail to user.userprincipalname.',
+          },
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'emailaddress', source: 'user.userprincipalname', required: true },
+              { name: 'Unique User Identifier', source: 'user.userprincipalname', required: true },
+              { name: 'givenname', source: 'user.givenname' },
+              { name: 'surname', source: 'user.surname' },
+            ],
+          },
+          {
+            kind: 'text',
+            text: 'Below is how a claim looks in the Azure claim editor — make sure the "Namespace" value ends in /claims.',
           },
           {
             kind: 'image',
-            src: '/sso-setup/entra/email-claim-2.png',
-            alt: 'Manage claim panel with the source attribute dropdown',
+            src: '/sso-setup/entra/claims-2.png',
+            alt: 'Manage claim panel showing the namespace and source attribute',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/claims-3.png',
+            alt: 'Attributes & Claims list with the configured claims',
           },
         ],
         warning:
           'Entra maps email to user.mail by default, which is EMPTY for accounts without a mailbox (any *.onmicrosoft.com user). An empty email breaks sign-in with no useful error — the UPN is always populated.',
-        doneLabel: 'I’ve pointed the email claim at userPrincipalName',
+        doneLabel: 'I’ve configured the attributes and claims',
       },
       {
         id: 'group-claim',
