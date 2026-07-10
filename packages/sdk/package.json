@@ -29,28 +29,33 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./server": "./src/node/server.ts",
     "./react": "./src/react/index.ts",
-    "./opencode-client": "./src/core/runtime/client.ts",
-    "./config": "./src/core/http/config.ts",
-    "./auth": "./src/core/http/auth.ts",
-    "./api-client": "./src/core/http/api-client.ts",
-    "./projects-client": "./src/core/rest/projects-client/index.ts",
-    "./feature-flags": "./src/core/http/feature-flags.ts",
-    "./fresh-sessions": "./src/core/http/fresh-sessions.ts",
-    "./instance-routes": "./src/core/http/instance-routes.ts",
-    "./opencode-errors": "./src/core/http/opencode-errors.ts",
-    "./idb-sync-cache": "./src/browser/cache/idb-sync-cache.ts",
-    "./platform-client": "./src/core/rest/platform-client/index.ts",
-    "./server-store": "./src/browser/stores/server-store.ts",
-    "./sync-store": "./src/browser/stores/sync-store.ts",
-    "./event-stream": "./src/core/stream/event-stream.ts",
-    "./sandbox-connection-store": "./src/browser/stores/sandbox-connection-store.ts",
-    "./opencode-pending-store": "./src/browser/stores/opencode-pending-store.ts",
-    "./files": "./src/core/files/client.ts",
-    "./session": "./src/core/session/index.ts",
-    "./session/url": "./src/core/session/url.ts",
-    "./turns": "./src/core/turns/index.ts"
+    "./server": "./src/node/server.ts",
+    "./internal/sync-store": "./src/internal/sync-store.ts",
+    "./internal/server-store": "./src/internal/server-store.ts",
+    "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
+    "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
+    "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
+    "./opencode-client": "./src/deprecated/opencode-client.ts",
+    "./config": "./src/deprecated/config.ts",
+    "./auth": "./src/deprecated/auth.ts",
+    "./api-client": "./src/deprecated/api-client.ts",
+    "./projects-client": "./src/deprecated/projects-client.ts",
+    "./feature-flags": "./src/deprecated/feature-flags.ts",
+    "./fresh-sessions": "./src/deprecated/fresh-sessions.ts",
+    "./instance-routes": "./src/deprecated/instance-routes.ts",
+    "./opencode-errors": "./src/deprecated/opencode-errors.ts",
+    "./platform-client": "./src/deprecated/platform-client.ts",
+    "./event-stream": "./src/deprecated/event-stream.ts",
+    "./files": "./src/deprecated/files.ts",
+    "./session": "./src/deprecated/session.ts",
+    "./session/url": "./src/deprecated/session-url.ts",
+    "./turns": "./src/deprecated/turns.ts",
+    "./sync-store": "./src/deprecated/sync-store.ts",
+    "./server-store": "./src/deprecated/server-store.ts",
+    "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
+    "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
+    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -58,70 +63,93 @@
     "types": "./dist/index.d.ts",
     "exports": {
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-      "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
-      "./opencode-client": {
-        "types": "./dist/core/runtime/client.d.ts",
-        "import": "./dist/core/runtime/client.js"
+      "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
+      "./internal/sync-store": {
+        "types": "./dist/internal/sync-store.d.ts",
+        "import": "./dist/internal/sync-store.js"
       },
-      "./config": { "types": "./dist/core/http/config.d.ts", "import": "./dist/core/http/config.js" },
-      "./auth": { "types": "./dist/core/http/auth.d.ts", "import": "./dist/core/http/auth.js" },
+      "./internal/server-store": {
+        "types": "./dist/internal/server-store.d.ts",
+        "import": "./dist/internal/server-store.js"
+      },
+      "./internal/sandbox-connection-store": {
+        "types": "./dist/internal/sandbox-connection-store.d.ts",
+        "import": "./dist/internal/sandbox-connection-store.js"
+      },
+      "./internal/opencode-pending-store": {
+        "types": "./dist/internal/opencode-pending-store.d.ts",
+        "import": "./dist/internal/opencode-pending-store.js"
+      },
+      "./internal/idb-sync-cache": {
+        "types": "./dist/internal/idb-sync-cache.d.ts",
+        "import": "./dist/internal/idb-sync-cache.js"
+      },
+      "./opencode-client": {
+        "types": "./dist/deprecated/opencode-client.d.ts",
+        "import": "./dist/deprecated/opencode-client.js"
+      },
+      "./config": { "types": "./dist/deprecated/config.d.ts", "import": "./dist/deprecated/config.js" },
+      "./auth": { "types": "./dist/deprecated/auth.d.ts", "import": "./dist/deprecated/auth.js" },
       "./api-client": {
-        "types": "./dist/core/http/api-client.d.ts",
-        "import": "./dist/core/http/api-client.js"
+        "types": "./dist/deprecated/api-client.d.ts",
+        "import": "./dist/deprecated/api-client.js"
       },
       "./projects-client": {
-        "types": "./dist/core/rest/projects-client/index.d.ts",
-        "import": "./dist/core/rest/projects-client/index.js"
+        "types": "./dist/deprecated/projects-client.d.ts",
+        "import": "./dist/deprecated/projects-client.js"
       },
       "./feature-flags": {
-        "types": "./dist/core/http/feature-flags.d.ts",
-        "import": "./dist/core/http/feature-flags.js"
+        "types": "./dist/deprecated/feature-flags.d.ts",
+        "import": "./dist/deprecated/feature-flags.js"
       },
       "./fresh-sessions": {
-        "types": "./dist/core/http/fresh-sessions.d.ts",
-        "import": "./dist/core/http/fresh-sessions.js"
+        "types": "./dist/deprecated/fresh-sessions.d.ts",
+        "import": "./dist/deprecated/fresh-sessions.js"
       },
       "./instance-routes": {
-        "types": "./dist/core/http/instance-routes.d.ts",
-        "import": "./dist/core/http/instance-routes.js"
+        "types": "./dist/deprecated/instance-routes.d.ts",
+        "import": "./dist/deprecated/instance-routes.js"
       },
       "./opencode-errors": {
-        "types": "./dist/core/http/opencode-errors.d.ts",
-        "import": "./dist/core/http/opencode-errors.js"
-      },
-      "./idb-sync-cache": {
-        "types": "./dist/browser/cache/idb-sync-cache.d.ts",
-        "import": "./dist/browser/cache/idb-sync-cache.js"
+        "types": "./dist/deprecated/opencode-errors.d.ts",
+        "import": "./dist/deprecated/opencode-errors.js"
       },
       "./platform-client": {
-        "types": "./dist/core/rest/platform-client/index.d.ts",
-        "import": "./dist/core/rest/platform-client/index.js"
-      },
-      "./server-store": {
-        "types": "./dist/browser/stores/server-store.d.ts",
-        "import": "./dist/browser/stores/server-store.js"
-      },
-      "./sync-store": {
-        "types": "./dist/browser/stores/sync-store.d.ts",
-        "import": "./dist/browser/stores/sync-store.js"
+        "types": "./dist/deprecated/platform-client.d.ts",
+        "import": "./dist/deprecated/platform-client.js"
       },
       "./event-stream": {
-        "types": "./dist/core/stream/event-stream.d.ts",
-        "import": "./dist/core/stream/event-stream.js"
+        "types": "./dist/deprecated/event-stream.d.ts",
+        "import": "./dist/deprecated/event-stream.js"
+      },
+      "./files": { "types": "./dist/deprecated/files.d.ts", "import": "./dist/deprecated/files.js" },
+      "./session": { "types": "./dist/deprecated/session.d.ts", "import": "./dist/deprecated/session.js" },
+      "./session/url": {
+        "types": "./dist/deprecated/session-url.d.ts",
+        "import": "./dist/deprecated/session-url.js"
+      },
+      "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
+      "./sync-store": {
+        "types": "./dist/deprecated/sync-store.d.ts",
+        "import": "./dist/deprecated/sync-store.js"
+      },
+      "./server-store": {
+        "types": "./dist/deprecated/server-store.d.ts",
+        "import": "./dist/deprecated/server-store.js"
       },
       "./sandbox-connection-store": {
-        "types": "./dist/browser/stores/sandbox-connection-store.d.ts",
-        "import": "./dist/browser/stores/sandbox-connection-store.js"
+        "types": "./dist/deprecated/sandbox-connection-store.d.ts",
+        "import": "./dist/deprecated/sandbox-connection-store.js"
       },
       "./opencode-pending-store": {
-        "types": "./dist/browser/stores/opencode-pending-store.d.ts",
-        "import": "./dist/browser/stores/opencode-pending-store.js"
+        "types": "./dist/deprecated/opencode-pending-store.d.ts",
+        "import": "./dist/deprecated/opencode-pending-store.js"
       },
-      "./files": { "types": "./dist/core/files/client.d.ts", "import": "./dist/core/files/client.js" },
-      "./session": { "types": "./dist/core/session/index.d.ts", "import": "./dist/core/session/index.js" },
-      "./session/url": { "types": "./dist/core/session/url.d.ts", "import": "./dist/core/session/url.js" },
-      "./turns": { "types": "./dist/core/turns/index.d.ts", "import": "./dist/core/turns/index.js" }
+      "./idb-sync-cache": {
+        "types": "./dist/deprecated/idb-sync-cache.d.ts",
+        "import": "./dist/deprecated/idb-sync-cache.js"
+      }
     },
     "files": ["dist", "README.md"]
   },

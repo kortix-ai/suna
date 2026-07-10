@@ -142,26 +142,36 @@ interface Subpath {
 
 const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
-  { name: './opencode-client', file: 'core/runtime/client.ts', tier: 'isomorphic-core' },
-  { name: './config', file: 'core/http/config.ts', tier: 'isomorphic-core' },
-  { name: './auth', file: 'core/http/auth.ts', tier: 'isomorphic-core' },
-  { name: './api-client', file: 'core/http/api-client.ts', tier: 'isomorphic-core' },
-  { name: './projects-client', file: 'core/rest/projects-client/index.ts', tier: 'isomorphic-core' },
-  { name: './feature-flags', file: 'core/http/feature-flags.ts', tier: 'isomorphic-core' },
-  { name: './fresh-sessions', file: 'core/http/fresh-sessions.ts', tier: 'isomorphic-core' },
-  { name: './instance-routes', file: 'core/http/instance-routes.ts', tier: 'isomorphic-core' },
-  { name: './opencode-errors', file: 'core/http/opencode-errors.ts', tier: 'isomorphic-core' },
-  { name: './idb-sync-cache', file: 'browser/cache/idb-sync-cache.ts', tier: 'browser-only' },
-  { name: './platform-client', file: 'core/rest/platform-client/index.ts', tier: 'isomorphic-core' },
-  { name: './server-store', file: 'browser/stores/server-store.ts', tier: 'browser-only' },
-  { name: './sync-store', file: 'browser/stores/sync-store.ts', tier: 'browser-only' },
-  { name: './event-stream', file: 'core/stream/event-stream.ts', tier: 'isomorphic-core' },
-  { name: './sandbox-connection-store', file: 'browser/stores/sandbox-connection-store.ts', tier: 'browser-only' },
-  { name: './opencode-pending-store', file: 'browser/stores/opencode-pending-store.ts', tier: 'browser-only' },
-  { name: './files', file: 'core/files/client.ts', tier: 'isomorphic-core' },
-  { name: './session', file: 'core/session/index.ts', tier: 'isomorphic-core' },
-  { name: './session/url', file: 'core/session/url.ts', tier: 'isomorphic-core' },
-  { name: './turns', file: 'core/turns/index.ts', tier: 'isomorphic-core' },
+
+  // The ./internal/* stores — apps/web's zustand machinery, outside semver.
+  { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },
+  { name: './internal/server-store', file: 'internal/server-store.ts', tier: 'browser-only' },
+  { name: './internal/sandbox-connection-store', file: 'internal/sandbox-connection-store.ts', tier: 'browser-only' },
+  { name: './internal/opencode-pending-store', file: 'internal/opencode-pending-store.ts', tier: 'browser-only' },
+  { name: './internal/idb-sync-cache', file: 'internal/idb-sync-cache.ts', tier: 'browser-only' },
+
+  // The 20 legacy subpaths, now @deprecated shims under src/deprecated/.
+  // Store shims stay browser-only; everything else is isomorphic-core.
+  { name: './opencode-client', file: 'deprecated/opencode-client.ts', tier: 'isomorphic-core' },
+  { name: './config', file: 'deprecated/config.ts', tier: 'isomorphic-core' },
+  { name: './auth', file: 'deprecated/auth.ts', tier: 'isomorphic-core' },
+  { name: './api-client', file: 'deprecated/api-client.ts', tier: 'isomorphic-core' },
+  { name: './projects-client', file: 'deprecated/projects-client.ts', tier: 'isomorphic-core' },
+  { name: './feature-flags', file: 'deprecated/feature-flags.ts', tier: 'isomorphic-core' },
+  { name: './fresh-sessions', file: 'deprecated/fresh-sessions.ts', tier: 'isomorphic-core' },
+  { name: './instance-routes', file: 'deprecated/instance-routes.ts', tier: 'isomorphic-core' },
+  { name: './opencode-errors', file: 'deprecated/opencode-errors.ts', tier: 'isomorphic-core' },
+  { name: './idb-sync-cache', file: 'deprecated/idb-sync-cache.ts', tier: 'browser-only' },
+  { name: './platform-client', file: 'deprecated/platform-client.ts', tier: 'isomorphic-core' },
+  { name: './server-store', file: 'deprecated/server-store.ts', tier: 'browser-only' },
+  { name: './sync-store', file: 'deprecated/sync-store.ts', tier: 'browser-only' },
+  { name: './event-stream', file: 'deprecated/event-stream.ts', tier: 'isomorphic-core' },
+  { name: './sandbox-connection-store', file: 'deprecated/sandbox-connection-store.ts', tier: 'browser-only' },
+  { name: './opencode-pending-store', file: 'deprecated/opencode-pending-store.ts', tier: 'browser-only' },
+  { name: './files', file: 'deprecated/files.ts', tier: 'isomorphic-core' },
+  { name: './session', file: 'deprecated/session.ts', tier: 'isomorphic-core' },
+  { name: './session/url', file: 'deprecated/session-url.ts', tier: 'isomorphic-core' },
+  { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
 ];
 
 test('SUBPATH_TIERS matches package.json exports (minus "." and "./react")', () => {
