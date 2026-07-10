@@ -98,6 +98,14 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Install smoke test — pack, install, import (@kortix/sdk)
+        run: |
+          set -euo pipefail
+          # `npm pack --dry-run` above lists tarball CONTENTS. stage-npm-publish
+          # asserts publishConfig paths exist in dist/. Neither proves the
+          # published package actually RESOLVES and IMPORTS. This does.
+          pnpm --filter @kortix/sdk run smoke:install
+
       - name: Guard against focused tests
         run: |
           set -euo pipefail

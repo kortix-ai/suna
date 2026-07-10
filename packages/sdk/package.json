@@ -130,7 +130,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "bun test src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
-    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths"
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "smoke:install": "node scripts/smoke-install.mjs"
   },
   "devDependencies": {
     "@tanstack/react-query": "^5.75.2",
