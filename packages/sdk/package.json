@@ -162,7 +162,7 @@
     "test": "bun test src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
-    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",
     "smoke:install": "node scripts/smoke-install.mjs"
   },
   "devDependencies": {

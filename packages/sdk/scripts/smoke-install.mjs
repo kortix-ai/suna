@@ -44,7 +44,11 @@ let catalogTarballPath;
 
 try {
   console.log('→ building dist/');
-  run('pnpm', ['run', 'build'], PKG_DIR);
+  // build:bundles also emits the tsup browser bundles (dist/kortix.esm.min.js,
+  // dist/kortix.global.js) that publishConfig.browser/unpkg/jsdelivr point at.
+  // stage() below promotes those fields and verifies they exist in dist/, so
+  // they must be built before staging — plain `build` only runs tsc.
+  run('pnpm', ['run', 'build:bundles'], PKG_DIR);
   run('pnpm', ['run', 'build'], CATALOG_DIR);
 
   console.log('→ staging the published manifests');
