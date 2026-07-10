@@ -39,9 +39,9 @@ describe('SSO card — service provider details block', () => {
     expect(source).toContain('Service provider details');
   });
 
-  test('surfaces the Entity ID (metadata) and ACS (reply URL) paths', () => {
-    expect(source).toContain('/auth/v1/sso/saml/metadata');
-    expect(source).toContain('/auth/v1/sso/saml/acs');
+  test('derives the SP values from the shared saml-sp lib (paths live there)', () => {
+    expect(source).toContain("from '@/lib/saml-sp'");
+    expect(source).toContain('buildSamlSpUrls(getEnv().SUPABASE_URL)');
   });
 
   test('uses neutral labels, never naming the delegated identity provider', () => {
@@ -63,7 +63,8 @@ describe('SSO card — service provider details block', () => {
   });
 
   test('hides the block rather than render a broken URL when the origin is unavailable', () => {
-    expect(source).toContain('function buildSamlSpUrls(');
-    expect(source).toContain('return null');
+    // Null-origin handling is unit-tested in lib/saml-sp.test.ts; the card
+    // just guards the render on the derived value.
+    expect(source).toContain('{!provider && spUrls && <SpDetails');
   });
 });

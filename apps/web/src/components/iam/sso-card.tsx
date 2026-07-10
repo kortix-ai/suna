@@ -11,6 +11,7 @@ import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, Copy, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -47,51 +48,7 @@ import {
   upsertSsoProvider,
 } from '@/lib/iam-client';
 
-/**
- * Resolve the Supabase URL to an ABSOLUTE origin for display purposes.
- *
- * `getEnv().SUPABASE_URL` may be root-relative (e.g. "/supabase") in the
- * sandbox preview, where the browser deliberately hits the same origin it
- * was served from. Mirrors `resolveBrowserSupabaseUrl` in
- * `lib/supabase/client.ts` — duplicated locally (not imported/exported)
- * since that helper isn't exported and this component doesn't otherwise
- * depend on the supabase client module.
- */
-function resolveSupabaseOrigin(url: string | undefined): string | null {
-  if (!url) return null;
-  if (url.startsWith('/')) {
-    if (typeof window === 'undefined') return null;
-    try {
-      return new URL(url, window.location.origin).toString().replace(/\/$/, '');
-    } catch {
-      return null;
-    }
-  }
-  if (!/^https?:\/\//i.test(url)) return null;
-  return url.replace(/\/$/, '');
-}
-
-interface SamlSpUrls {
-  entityId: string;
-  acsUrl: string;
-}
-
-/**
- * The two values every SAML IdP (Entra, Okta) asks for when registering us as
- * a service provider. Both are pure functions of the deployment's Supabase
- * origin — same for every account, derivable before any provider is
- * configured. Returns null when the origin can't be resolved (e.g. SSR,
- * unavailable sandbox proxy) so callers can hide the block rather than render
- * a broken URL.
- */
-function buildSamlSpUrls(supabaseUrl: string | undefined): SamlSpUrls | null {
-  const origin = resolveSupabaseOrigin(supabaseUrl);
-  if (!origin) return null;
-  return {
-    entityId: `${origin}/auth/v1/sso/saml/metadata`,
-    acsUrl: `${origin}/auth/v1/sso/saml/acs`,
-  };
-}
+import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 
 async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
   try {
@@ -231,16 +188,23 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
             </p>
           </div>
-          {canManage && (
-            <Button
-              variant={provider ? 'outline' : 'default'}
-              onClick={() => setEditOpen(true)}
-              size="sm"
-              className="shrink-0"
-            >
-              {provider ? 'Edit' : 'Configure'}
-            </Button>
-          )}
+          {canManage &&
+            (provider ? (
+              <Button
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+                size="sm"
+                className="shrink-0"
+              >
+                Edit
+              </Button>
+            ) : (
+              // New providers go through the guided setup wizard (per-IdP
+              // steps + inline import) instead of the bare dialog.
+              <Button asChild size="sm" className="shrink-0">
+                <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
+              </Button>
+            ))}
         </div>
       </header>
 
