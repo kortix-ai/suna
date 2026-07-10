@@ -219,6 +219,8 @@ is scope creep; losing them is worse. Land them here, then tell the user.
 | 2026-07-10 | `ab099b6a` | Plan's `createCliToken` facade name is fictional; real facade method is `kortix.project(id).tokens.create(input?)` (→ `createProjectCliToken`). `gateway.sessions(days?)` was correct | `packages/sdk/src/core/client/kortix.ts:303` — found in Task 6 |
 | 2026-07-10 | `ab099b6a` | Demo e2e harness memoizes builds on `.next/BUILD_ID` — e2e runs silently exercise STALE builds after source changes; must clear `.next` (or fix the harness) for trustworthy runs | `apps/whitelabel-demo/tests/e2e/harness.ts` (`ensureBuilt()`) |
 | 2026-07-10 | `ab099b6a` | Original preview-token malformed-200 guard was itself broken: `upstreamRes.status \|\| 502` returns 200 on that path, so the "error" response shipped as HTTP 200. Fixed by the Task 6 rewrite (now a real 502, e2e-covered) | `apps/whitelabel-demo/src/app/api/preview-token/route.ts` (pre-`19e500e50`) |
+| 2026-07-10 | `ab099b6a` | **CRITICAL (final review): the CDN claim is unfulfillable by the release pipeline.** Publish runs tsc only (`publish-npm-package.sh:36`; `prepublishOnly` tsc-only) so tsup bundles never land in the tarball; `stage-npm-publish.mjs:37` promotes only `type/main/types/exports/files/bin`, so `browser`/`unpkg`/`jsdelivr` stay nested in `publishConfig` where npm/unpkg/jsDelivr never look; nothing validates them at release. Plan flaw (plan `:1253-1278` said "pass through untouched"), faithfully implemented. Decision with Jay: wire the pipeline vs walk back the README/CHANGELOG claim | `scripts/{publish-npm-package.sh,stage-npm-publish.mjs}`, `packages/sdk/{README,CHANGELOG}.md` |
+| 2026-07-10 | `ab099b6a` | `bundle.test.ts` never executes in CI (no workflow runs `build:bundles` → both tests skip forever) and NO workflow runs `pnpm --filter @kortix/sdk typecheck` at all (examples' "typechecked in CI" claim is local-only). Two cheap CI steps close both | `.github/workflows/package-tests.yml` |
 
 
 ---
@@ -331,3 +333,60 @@ error (plan `:253,991`; spec `:158`). The real `./server` exports are
 Task 6's Lumen snippet uses the same phantom name. Decision with Jay: assert
 the real name and correct the docs, or add `createServerKortix` as new API.
 Tautology in `package-exports.test.ts` removed per Jay (`4e39bb11e`).
+
+**Continuation of session `ab099b6a` — the full chain.** Jay resolved both
+Task 2 stops (pack the `@kortix/llm-catalog` sibling into the smoke install;
+assert the real `createScopedKortix`, docs corrected in `2a7a3e56c`). From
+there the chain ran task-by-task with a fresh implementer + independent
+reviewer per task, fixes re-reviewed:
+
+- **Task 2 DONE** `7220e9587` — first-ever pack→install→import, hermetic
+  (both tarballs), wired into CI.
+- **Task 3 DONE** `84e15ca72` — snapshot (23 subpaths / 833 runtime names)
+  approved by Jay at hard stop #2. Suite 1049/67.
+- **Task 4 DONE** `25068d272..4c6f7102c` (4 commits) — 146 files moved into
+  core/browser/node + turns split; snapshot byte-identical; tier tripwire
+  armed. Fixed a real pre-existing order-dependent `mock.module` isolation
+  bug by rewriting `core/files/client.test.ts` mocking (zero `expect()` lines
+  changed — verified twice). Suite 1050/67.
+- **Task 5 DONE** `b5e588dbc`+`aafbdf91b` (orchestrator-implemented) —
+  `KortixMasterProject` rename with aliases; canonical root barrel (26→518
+  root names); 20 deprecated shims + 5 ./internal/*; both maps rewritten to
+  28 keys; snapshot growth (+523/-0) accepted by Jay at hard stop #3. Suite
+  1058/68; hosts compile untouched.
+- **Task 6 DONE** `db30c6df3`+`19e500e50` — demo on root entry;
+  `createScopedKortix` replaces raw transport (real names: `tokens.create`,
+  `gateway.sessions`); fix restored the malformed-200 guard as a true 502
+  with a RED-watched e2e (44/3/0 on a fresh build).
+- **Task 7 DONE** `189428df7`+`a485ad401` — bare-globals tripwire (guard
+  window per-global, comment-safe after probe-RED fix); `safeEnv` →
+  `core/http/env.ts`; `shared.ts:29` fixed. Suite 1059/68.
+- **Task 8 DONE** `c7bca7a7e` — tsup bundles (`kortix.esm.min.js`,
+  `kortix.global.js` IIFE via `outExtension` — tsup would otherwise emit
+  `.global.global.js`); zero `node:` specifiers in either bundle. Built
+  suite 1061/69.
+- **Task 9 steps 1–5 DONE** `549d597a0` — `07-vanilla.ts` (render loop
+  corrected to the real API per examples/04), `08-cdn.html`, examples
+  tripwire (+B6: the regex is blind to side-effect imports). Suite 1062/69
+  built. **Step 6 (browser + live stack, D2a/D3) awaits Jay — hard stop #4.**
+- **Task 10 DONE** `6e9cc9f5a` — README/CHANGELOG/API-MAP; count corrected
+  to 20; `createScopedKortix` documented; RN-streaming not claimed.
+
+**Final whole-branch review: "With fixes."** Purely-additive surface
+re-verified independently. One CRITICAL: the README/CHANGELOG CDN claim is
+unfulfillable by the release pipeline (see Discovered table) — wire it or
+walk it back before merge. Important: bundle tests never run in CI;
+no CI job runs the SDK typecheck. Minors triaged as follow-ups.
+
+**Verified this session (final state):** typecheck exit 0; unbuilt suite
+1060 pass / 2 skip / 69 files; built suite 1062 pass / 0 fail / 69 files;
+`smoke:install` ✔; whitelabel-demo typecheck 0 + e2e 44/3/0; apps/web zero
+SDK resolution errors.
+
+**Unverified:** D2a/D3 (browser streaming + `instanceof` under the IIFE) —
+Task 9 Step 6, needs Jay's live stack; the release pipeline path for the
+bundles (the CRITICAL above); CI runs of the new workflow steps on Actions.
+
+**Shippable to production: NOT YET** — pending Jay: CDN-claim decision,
+README domain decision (`api.kortix.ai` vs `.com`), CI-gate fixes, and the
+Task 9 Step 6 browser gate.
