@@ -215,7 +215,13 @@ export async function ensureAutoProvisionedGroup(args: {
     .limit(1);
   if (mapped) return mapped.groupId;
 
-  // Find-or-create the group (unique on account+name).
+  // Find-or-create the group (unique on account+name). On a name collision
+  // the insert no-ops via onConflictDoNothing — the fallback lookup MUST
+  // stay scoped to source='sso' so we can never adopt a pre-existing
+  // MANUAL (possibly privileged) group just because an admin happened to
+  // name it the same as an incoming IdP claim value. If no sso-sourced
+  // group exists after the conflict, we skip provisioning for this claim
+  // rather than annex the manual one.
   const [created] = await db
     .insert(accountGroups)
     .values({
@@ -232,7 +238,11 @@ export async function ensureAutoProvisionedGroup(args: {
       .select({ groupId: accountGroups.groupId })
       .from(accountGroups)
       .where(
-        and(eq(accountGroups.accountId, args.accountId), eq(accountGroups.name, claimValue)),
+        and(
+          eq(accountGroups.accountId, args.accountId),
+          eq(accountGroups.name, claimValue),
+          eq(accountGroups.source, 'sso'),
+        ),
       )
       .limit(1);
     groupId = existing?.groupId;
