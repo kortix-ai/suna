@@ -42,7 +42,10 @@ describe('provider guides', () => {
 
   test('every guide shows the copyable SP values at least once', () => {
     for (const g of PROVIDER_GUIDES) {
-      expect(g.steps.some((s) => s.showSpValues)).toBe(true);
+      const shows = g.steps.some(
+        (s) => s.showSpValues || s.content?.some((b) => b.kind === 'sp-values'),
+      );
+      expect(shows).toBe(true);
     }
   });
 

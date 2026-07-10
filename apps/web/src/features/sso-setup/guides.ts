@@ -23,7 +23,10 @@ export type StepKind = 'instructions' | 'import' | 'scim-token' | 'test';
  */
 export type StepBlock =
   | { kind: 'text'; text: string }
-  | { kind: 'image'; src: string; alt: string };
+  | { kind: 'image'; src: string; alt: string }
+  /** The copyable SP values (Entity ID + ACS), positioned inline — Vercel
+   *  places them between the edit-panel prose and the filled-panel shot. */
+  | { kind: 'sp-values' };
 
 export interface GuideStep {
   id: string;
@@ -174,10 +177,15 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
           },
           {
             kind: 'text',
-            text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the panel — mark the Identifier as Default. Set "Sign on URL" to your Kortix sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the panel.',
+            text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the "Basic SAML Configuration" panel — mark the Identifier as Default, and set "Sign on URL" to your Kortix sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the edit panel.',
+          },
+          { kind: 'sp-values' },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/basic-saml-3.png',
+            alt: 'Basic SAML Configuration panel with the Identifier and Reply URL filled in',
           },
         ],
-        showSpValues: true,
         doneLabel: 'I’ve completed basic SAML configuration',
       },
       {

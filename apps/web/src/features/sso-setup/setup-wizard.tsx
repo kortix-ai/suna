@@ -580,6 +580,9 @@ function StepBody({
           <p key={i} className="text-foreground text-sm leading-relaxed">
             <InstructionText text={block.text} />
           </p>
+        ) : block.kind === 'sp-values' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <SpValueRows key={i} urls={spUrls} />
         ) : (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <GuideImage key={i} src={block.src} alt={block.alt} />
