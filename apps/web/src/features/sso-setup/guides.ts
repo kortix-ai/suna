@@ -31,7 +31,15 @@ export type StepBlock =
    *  says "Audience URI (SP Entity ID)" / "Single sign-on URL" — show the
    *  words the admin sees in the console. acsFirst flips the order to match
    *  the IdP form's field order. */
-  | { kind: 'sp-values'; entityIdLabel?: string; acsLabel?: string; acsFirst?: boolean }
+  | {
+      kind: 'sp-values';
+      entityIdLabel?: string;
+      acsLabel?: string;
+      acsFirst?: boolean;
+      /** Also show the SP-initiated sign-on URL (the app origin + /auth) —
+       *  Entra's Basic SAML Configuration has a field for it. */
+      includeSignOnUrl?: boolean;
+    }
   /** Claim-mapping table: Name (+Required) → Source Attribute, both copyable. */
   | {
       kind: 'claims-table';
@@ -114,8 +122,9 @@ const testStep = (extra?: string): GuideStep => ({
     'Open the sign-in page in a private window, enter a test user’s work email, and complete the sign-in at your identity provider.',
   bullets: [
     'The user lands in Kortix as an auto-provisioned member.',
-    'Their IdP groups appear under Groups (after you map them, or automatically with auto-provision).',
-    'Access changes in the IdP apply on their next sign-in.',
+    'Map their IdP groups on the "SAML SSO" card → "Group mappings" (claim value → Kortix group), then grant those groups project roles — a synced group confers no access until you grant it one.',
+    'On the user’s next sign-in their groups reconcile and the granted roles apply.',
+    'Access changes in the IdP apply on their next sign-in — removing them from a group revokes the mapped access.',
     ...(extra ? [extra] : []),
   ],
 });
@@ -189,7 +198,7 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
             kind: 'text',
             text: 'Copy the "Identifier (Entity ID)" and the "Reply URL (Assertion Consumer Service URL)" below and paste them into the "Basic SAML Configuration" panel — mark the Identifier as Default, and set "Sign on URL" to your Kortix sign-in page. Leave Relay State and Logout URL empty. Click "Save" and close the edit panel.',
           },
-          { kind: 'sp-values' },
+          { kind: 'sp-values', includeSignOnUrl: true },
           {
             kind: 'image',
             src: '/sso-setup/entra/basic-saml-3.png',

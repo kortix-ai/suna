@@ -281,13 +281,21 @@ function SpValueRows({
   entityIdLabel = 'Identifier (Entity ID)',
   acsLabel = 'Reply URL (ACS)',
   acsFirst = false,
+  includeSignOnUrl = false,
 }: {
   urls: SamlSpUrls | null;
   /** Per-IdP field names — show the words the admin sees in their console. */
   entityIdLabel?: string;
   acsLabel?: string;
   acsFirst?: boolean;
+  includeSignOnUrl?: boolean;
 }) {
+  // The SP-initiated sign-in page is this app's own origin — the exact value
+  // we set live ({origin}/auth), computed instead of described.
+  const signOnUrl = useMemo(
+    () => (typeof window === 'undefined' ? null : `${window.location.origin}/auth`),
+    [],
+  );
   if (!urls) return null;
   const entityRow = <CopyRow label={entityIdLabel} value={urls.entityId} />;
   const acsRow = <CopyRow label={acsLabel} value={urls.acsUrl} />;
@@ -295,6 +303,7 @@ function SpValueRows({
     <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
       {acsFirst ? acsRow : entityRow}
       {acsFirst ? entityRow : acsRow}
+      {includeSignOnUrl && signOnUrl && <CopyRow label="Sign on URL" value={signOnUrl} />}
     </div>
   );
 }
@@ -815,6 +824,7 @@ function StepBody({
             entityIdLabel={block.entityIdLabel}
             acsLabel={block.acsLabel}
             acsFirst={block.acsFirst}
+            includeSignOnUrl={block.includeSignOnUrl}
           />
         ) : block.kind === 'claims-table' ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
