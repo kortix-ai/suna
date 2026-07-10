@@ -551,7 +551,7 @@ export default function RootLayout() {
         }
       } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
         // Thread sharing is no longer supported in-app; ignore share deep links.
-        console.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
+        log.warn('⚠️ Share link received but sharing is no longer supported:', parsedUrl.path);
         isHandlingDeepLink = false;
       } else {
         log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
@@ -620,14 +620,6 @@ export default function RootLayout() {
                                       }}>
                                       <Stack.Screen name="index" options={{ animation: 'none' }} />
                                       <Stack.Screen
-                                        name="setting-up"
-                                        options={{ animation: 'fade', gestureEnabled: false }}
-                                      />
-                                      <Stack.Screen
-                                        name="onboarding"
-                                        options={{ animation: 'fade', gestureEnabled: false }}
-                                      />
-                                      <Stack.Screen
                                         name="(tabs)"
                                         options={{ animation: 'fade', gestureEnabled: false }}
                                       />
@@ -648,7 +640,6 @@ export default function RootLayout() {
                                       />
                                       <Stack.Screen name="plans" />
                                       <Stack.Screen name="billing" />
-                                      <Stack.Screen name="usage" />
                                       <Stack.Screen
                                         name="accounts/index"
                                         options={{ fullScreenGestureEnabled: true }}
@@ -665,8 +656,6 @@ export default function RootLayout() {
                                         name="accounts/[id]/members/[userId]"
                                         options={{ fullScreenGestureEnabled: true }}
                                       />
-                                      <Stack.Screen name="trigger-detail" />
-                                      <Stack.Screen name="worker-config" />
                                     </Stack>
                                   </AuthProtection>
                                 </View>

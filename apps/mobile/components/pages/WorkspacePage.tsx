@@ -298,7 +298,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
     return c;
   }, [allItems]);
 
-  // Expose refetch and openSettings for BottomBar menu
+  // Expose refetch and openSettings via ref for menu actions
   useImperativeHandle(ref, () => ({
     refetch: refetchAll,
     openSettings: (tab) => settingsSheetRef.current?.present(tab),

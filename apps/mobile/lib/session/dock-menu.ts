@@ -15,7 +15,7 @@ export type DockIconKey =
   | 'changes' | 'members'
   // chat actions
   | 'rename' | 'share' | 'restart' | 'export' | 'compact'
-  | 'changeRequest' | 'viewChanges' | 'diagnostics' | 'archive' | 'delete';
+  | 'changeRequest' | 'viewChanges' | 'archive' | 'delete';
 
 export interface DockMenuItem {
   kind: 'item';
@@ -103,7 +103,7 @@ export function dockPillLabel(args: {
 
 export type ChatActionId =
   | 'rename' | 'share' | 'restart' | 'export' | 'compact'
-  | 'viewChanges' | 'diagnostics' | 'archive' | 'delete';
+  | 'viewChanges' | 'archive' | 'delete';
 
 export interface ChatAction {
   id: ChatActionId;
@@ -145,7 +145,6 @@ export function chatActionItems(gates: ChatActionGates): ChatAction[] {
   actions.push({ id: 'compact', label: 'Compact', icon: 'compact' });
 
   actions.push({ id: 'viewChanges', label: 'View changes', icon: 'viewChanges', secondary: true });
-  actions.push({ id: 'diagnostics', label: 'Diagnostics', icon: 'diagnostics', secondary: true });
   actions.push({ id: 'archive', label: 'Archive', icon: 'archive', secondary: true });
 
   if (gates.hasProjectSession) {

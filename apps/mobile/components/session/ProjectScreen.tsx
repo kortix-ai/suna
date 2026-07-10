@@ -12,8 +12,8 @@
  * ProjectScreenLegacy (roughly lines 904–1780). Only the presentation (the old
  * three-pane drawer JSX) is replaced.
  *
- * Guarded behind USE_NEW_PROJECT_UI in app/projects/[id].tsx — the flag stays
- * false; the legacy screen keeps rendering until parity is confirmed.
+ * Rendered unconditionally from app/projects/[id].tsx — the legacy screen and
+ * its USE_NEW_PROJECT_UI flag have been removed now that parity is confirmed.
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
@@ -759,9 +759,6 @@ export function ProjectScreen() {
           break;
         case 'viewChanges':
           viewChangesSheetRef.current?.present();
-          break;
-        case 'diagnostics':
-          log.log('TODO: diagnostics');
           break;
         case 'archive':
           if (activeSessionId) handleArchive(activeSessionId);

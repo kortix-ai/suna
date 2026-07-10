@@ -1131,10 +1131,6 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
 
         document.getElementById('loading').style.display = 'none';
         document.getElementById('container').innerHTML = result.value;
-
-        if (result.messages && result.messages.length > 0) {
-          console.log('Mammoth messages:', result.messages);
-        }
       } catch (err) {
         console.error('DOCX render error:', err);
         document.getElementById('loading').style.display = 'none';

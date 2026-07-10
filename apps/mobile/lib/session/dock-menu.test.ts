@@ -73,7 +73,7 @@ describe('chatActionItems gating', () => {
   test('full gates expose every action', () => {
     expect(ids(full)).toEqual([
       'rename', 'share', 'restart', 'export', 'compact',
-      'viewChanges', 'diagnostics', 'archive', 'delete',
+      'viewChanges', 'archive', 'delete',
     ]);
   });
   test('no project session hides rename, share and delete', () => {
@@ -91,6 +91,9 @@ describe('chatActionItems gating', () => {
   test('"Open change request" is not in the sheet — it lives on the dock menu', () => {
     expect(ids(full)).not.toContain('changeRequest');
   });
+  test('diagnostics is not in the sheet — it was a no-op action', () => {
+    expect(ids(full)).not.toContain('diagnostics');
+  });
   test('delete is the only destructive action and comes last', () => {
     const actions = chatActionItems(full);
     expect(actions.filter((a) => a.destructive).map((a) => a.id)).toEqual(['delete']);
@@ -98,6 +101,6 @@ describe('chatActionItems gating', () => {
   });
   test('secondary actions are exactly the ones hidden behind More', () => {
     const secondary = chatActionItems(full).filter((a) => a.secondary).map((a) => a.id);
-    expect(secondary).toEqual(['viewChanges', 'diagnostics', 'archive']);
+    expect(secondary).toEqual(['viewChanges', 'archive']);
   });
 });

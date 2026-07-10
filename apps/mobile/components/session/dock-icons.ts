@@ -7,7 +7,7 @@
 import {
   Archive, Bot, ChevronsUpDown, Compass, Download, FolderOpen, GitBranch,
   GitCompare, GitPullRequest, Key, Layers, Link2, MessageSquare, MoreHorizontal,
-  Pencil, Puzzle, RefreshCw, Settings, Share2, Sparkles, Stethoscope, Terminal,
+  Pencil, Puzzle, RefreshCw, Settings, Share2, Sparkles, Terminal,
   Trash2, Users, Brain, Box, Clock, Code,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -42,7 +42,6 @@ export const DOCK_ICONS: Record<DockIconKey, LucideIcon> = {
   compact: Layers,
   changeRequest: GitPullRequest,
   viewChanges: GitCompare,
-  diagnostics: Stethoscope,
   archive: Archive,
   delete: Trash2,
 };
