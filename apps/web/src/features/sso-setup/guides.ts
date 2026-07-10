@@ -443,8 +443,26 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'assign-users',
-        title: 'Assign people and groups',
-        intro: 'Finish the wizard, then on the app’s Assignments tab assign the users and groups that may sign in.',
+        title: 'Assign groups to the SAML app',
+        intro:
+          'On the application settings page, select the "Assignments" tab. Click "Assign" and select "Assign to Groups" (or "Assign to People" for individual users).',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/assign-users-1.png',
+            alt: 'Assignments tab with the Assign dropdown open',
+          },
+          {
+            kind: 'text',
+            text: 'Assign the appropriate groups to the application. When you are finished, click "Done". Only assigned users can sign in through this application.',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/assign-users-2.png',
+            alt: 'Assign to Groups dialog with groups being assigned',
+          },
+        ],
+        doneLabel: 'I’ve assigned users and groups',
       },
       {
         id: 'metadata',
