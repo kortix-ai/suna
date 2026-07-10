@@ -126,6 +126,33 @@ async function copyValue(value: string, msg: string) {
   }
 }
 
+/**
+ * Instruction text with the quoted IdP-console labels ("Basic SAML
+ * Configuration", "Create your own application") rendered as code chips —
+ * the admin scans for exactly those strings in the other tab.
+ */
+function InstructionText({ text }: { text: string }) {
+  const parts = text.split(/"([^"]+)"/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <code
+            // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
+            key={i}
+            className="bg-muted/60 text-foreground rounded px-1 py-0.5 font-mono text-xs"
+          >
+            {part}
+          </code>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static text, stable order
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1.5">
@@ -518,14 +545,27 @@ function StepBody({
   onCompleteStep: () => void;
   onFinish: () => void;
 }) {
+  // The test step's bullets are a verification CHECKLIST (unordered outcomes);
+  // every other step's bullets are a numbered sequence of console actions.
+  const isChecklist = step.kind === 'test';
+
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">{step.intro}</p>
+      <p className="text-muted-foreground text-sm">
+        <InstructionText text={step.intro} />
+      </p>
 
       {step.bullets && (
-        <ol className="text-foreground list-decimal space-y-1.5 pl-5 text-sm">
-          {step.bullets.map((b) => (
-            <li key={b}>{b}</li>
+        <ol className="space-y-2.5">
+          {step.bullets.map((b, n) => (
+            <li key={b} className="flex items-start gap-3">
+              <span className="bg-muted text-muted-foreground mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-medium tabular-nums">
+                {isChecklist ? <Check className="size-3" /> : n + 1}
+              </span>
+              <span className="text-foreground min-w-0 text-sm leading-relaxed">
+                <InstructionText text={b} />
+              </span>
+            </li>
           ))}
         </ol>
       )}
@@ -747,17 +787,26 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
               onFinish={finish}
             />
           </div>
-          {activeStep > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-6 gap-1.5"
-              onClick={() => setActiveStep(activeStep - 1)}
-            >
-              <ArrowLeft className="size-3.5 shrink-0" />
-              Back
-            </Button>
-          )}
+          <div className="border-border/40 mt-8 flex items-center justify-between gap-3 border-t pt-4">
+            {activeStep > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setActiveStep(activeStep - 1)}
+              >
+                <ArrowLeft className="size-3.5 shrink-0" />
+                Back
+              </Button>
+            ) : (
+              <span />
+            )}
+            <span className="text-muted-foreground text-xs">
+              {activeStep < guide.steps.length - 1
+                ? `Next: ${guide.steps[activeStep + 1]!.title}`
+                : 'Last step'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
