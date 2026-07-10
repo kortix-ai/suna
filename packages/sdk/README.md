@@ -26,7 +26,7 @@ npm install @kortix/sdk
 ```ts
 import { createKortix } from '@kortix/sdk';
 
-const kortix = createKortix({ backendUrl: 'https://api.kortix.ai/v1', getToken });
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
 await kortix.projects.list();
 ```
 
@@ -66,7 +66,7 @@ table for the full list (20 of them).
 import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.ai/v1',
+  backendUrl: 'https://api.kortix.com/v1',
   getToken: () => supabase.auth.getSession().then(s => s.data.session?.access_token ?? null),
 });
 
