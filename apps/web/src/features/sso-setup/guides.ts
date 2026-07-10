@@ -389,17 +389,57 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
       },
       {
         id: 'email-attribute',
-        title: 'Add the email attribute',
+        title: 'Configure SAML attributes',
         intro:
-          'Still on "Configure SAML", under "Attribute Statements" add: Name email → Value user.email.',
+          'Return to the application (Applications → your app) and make sure the "Sign On" tab is selected.',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/email-attribute-1.png',
+            alt: 'Application settings page with the Sign On tab selected',
+          },
+          {
+            kind: 'text',
+            text: 'Click "Show legacy configuration" to expand it, then click "Edit" next to "Profile attribute statements".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/email-attribute-2.png',
+            alt: 'Show legacy configuration expanded with profile and group attribute statements',
+          },
+          { kind: 'text', text: 'Create the following attribute mapping statements:' },
+          {
+            kind: 'claims-table',
+            rows: [
+              { name: 'email', source: 'user.email', required: true },
+              { name: 'firstName', source: 'user.firstName' },
+              { name: 'lastName', source: 'user.lastName' },
+            ],
+          },
+          { kind: 'text', text: 'In the end, it should look like this. Click "Save".' },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/email-attribute-3.png',
+            alt: 'Profile attribute statements filled with email, firstName, and lastName',
+          },
+        ],
         note: 'Belt and braces: the NameID already carries the email, but an explicit email attribute keeps sign-in working if the NameID format ever changes.',
+        doneLabel: 'I’ve configured the SAML attributes',
       },
       {
         id: 'group-claim',
         title: 'Add the group attribute',
         intro:
-          'Under "Group Attribute Statements": Name groups, filter "Matches regex" with .* (or a narrower filter for just the groups you want to send).',
+          'In the same "Show legacy configuration" panel, under "Group attribute statements", add: Name groups, filter "Matches regex" with .* (or a narrower filter for just the groups you want to send). Click "Save".',
+        content: [
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/group-claim-1.png',
+            alt: 'Group attribute statements form below the profile attribute statements',
+          },
+        ],
         note: 'Okta sends the matching groups by NAME — those names are what you map in Kortix. The attribute name (groups) is what Kortix reads as the group claim.',
+        doneLabel: 'I’ve added the groups attribute',
       },
       {
         id: 'assign-users',
