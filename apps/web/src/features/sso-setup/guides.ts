@@ -14,11 +14,24 @@
 
 export type StepKind = 'instructions' | 'import' | 'scim-token' | 'test';
 
+/**
+ * Rich step content — prose and console screenshots interleaved in reading
+ * order (the Vercel/WorkOS wizard layout). Screenshots are OUR OWN captures
+ * (from the kortixssotest test tenants) under /public/sso-setup/<provider>/ —
+ * never another vendor's doc assets; the UI hides an image until its file
+ * exists, so blocks can land before the capture run.
+ */
+export type StepBlock =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; src: string; alt: string };
+
 export interface GuideStep {
   id: string;
   title: string;
   /** Lead paragraph shown under the step title. */
   intro: string;
+  /** Rich interleaved prose/screenshot blocks, rendered after the intro. */
+  content?: StepBlock[];
   /** Ordered sub-instructions ("1. click X → Y"). */
   bullets?: string[];
   /** Render the copyable SP values (Entity ID + ACS URL) in this step. */
@@ -27,10 +40,10 @@ export interface GuideStep {
   warning?: string;
   /** Muted footnote. */
   note?: string;
-  /** Screenshot of the IdP console for this step. OUR OWN captures (from the
-   *  kortixssotest test tenants) under /public/sso-setup/<provider>/ — never
-   *  another vendor's doc assets. Rendered between the bullets and callouts. */
+  /** Screenshot of the IdP console for this step (single-image steps). */
   image?: { src: string; alt: string };
+  /** Completion-bar label, e.g. "I've created an enterprise application". */
+  doneLabel?: string;
   kind?: StepKind;
 }
 
@@ -113,11 +126,31 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'create-app',
         title: 'Create an enterprise application',
         intro: 'Sign in to the Microsoft Entra admin center (entra.microsoft.com) as an admin of your tenant.',
-        bullets: [
-          'Left nav → Entra ID → Enterprise apps → New application.',
-          'Choose "Create your own application".',
-          'Name it (e.g. "Kortix"), select "Integrate any other application you don’t find in the gallery (Non-gallery)", and Create.',
+        content: [
+          {
+            kind: 'text',
+            text: 'In the left navigation menu, expand the "Entra ID" section. Select the "Enterprise apps" tab. Click "New application".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/create-app-1.png',
+            alt: 'Entra admin center — Enterprise applications list with New application highlighted',
+          },
+          {
+            kind: 'text',
+            text: 'On the "Browse Microsoft Entra Gallery" page, click "Create your own application".',
+          },
+          {
+            kind: 'text',
+            text: 'Enter an appropriate app name, such as "Kortix". Select the "Integrate any other application you don\'t find in the gallery (Non-gallery)" option. Click "Create".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/entra/create-app-2.png',
+            alt: 'Create your own application panel with the Non-gallery option selected',
+          },
         ],
+        doneLabel: 'I’ve created an enterprise application',
       },
       {
         id: 'basic-saml',

@@ -153,6 +153,25 @@ function InstructionText({ text }: { text: string }) {
   );
 }
 
+/**
+ * Console screenshot for a guide step. Hides itself until the asset exists
+ * (guides can declare image blocks before the capture run lands the PNGs) —
+ * a broken-image frame would read as a bug.
+ */
+function GuideImage({ src, alt }: { src: string; alt: string }) {
+  const [missing, setMissing] = useState(false);
+  if (missing) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setMissing(true)}
+      className="border-border/60 w-full rounded-md border"
+    />
+  );
+}
+
 function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1.5">
@@ -555,6 +574,18 @@ function StepBody({
         <InstructionText text={step.intro} />
       </p>
 
+      {step.content?.map((block, i) =>
+        block.kind === 'text' ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <p key={i} className="text-foreground text-sm leading-relaxed">
+            <InstructionText text={block.text} />
+          </p>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+          <GuideImage key={i} src={block.src} alt={block.alt} />
+        ),
+      )}
+
       {step.bullets && (
         <ol className="space-y-2.5">
           {step.bullets.map((b, n) => (
@@ -618,10 +649,22 @@ function StepBody({
           </Button>
         </div>
       ) : (
-        <Button onClick={onCompleteStep}>
-          I’ve completed this step
-          <ArrowRight className="ml-1.5 size-3.5 shrink-0" />
-        </Button>
+        // Vercel-style completion bar: the step's outcome as a checkable
+        // statement + Continue.
+        <div className="border-border/70 bg-popover flex items-center justify-between gap-3 rounded-md border py-3 pr-3 pl-4">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="bg-kortix-green/15 flex size-6 shrink-0 items-center justify-center rounded-full">
+              <Check className="text-kortix-green size-3.5" />
+            </span>
+            <span className="text-foreground truncate text-sm">
+              {step.doneLabel ?? 'I’ve completed this step'}
+            </span>
+          </span>
+          <Button onClick={onCompleteStep} className="shrink-0 gap-1.5">
+            Continue
+            <ArrowRight className="size-3.5 shrink-0" />
+          </Button>
+        </div>
       )}
     </div>
   );
