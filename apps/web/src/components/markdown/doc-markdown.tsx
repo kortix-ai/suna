@@ -402,7 +402,7 @@ export function CodeHighlight({
   );
 }
 
-export interface UnifiedMarkdownProps {
+export interface DocMarkdownProps {
   content: string;
   className?: string;
   isStreaming?: boolean;
@@ -413,9 +413,10 @@ export interface UnifiedMarkdownProps {
   allowHtml?: boolean;
 }
 
-// Single source of truth for markdown rendering across the app — clean, minimal,
-// readable in both themes.
-export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
+// Docs-owned markdown renderer — a copy of unified-markdown.tsx so the docs
+// evolve independently of the app renderer (which changes only in the
+// `markdown` worktree). Same code, docs name.
+export const DocMarkdown = React.memo<DocMarkdownProps>(
   ({ content, className, isStreaming = false, allowHtml = true }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
@@ -713,4 +714,4 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
   },
 );
 
-UnifiedMarkdown.displayName = 'UnifiedMarkdown';
+DocMarkdown.displayName = 'DocMarkdown';
