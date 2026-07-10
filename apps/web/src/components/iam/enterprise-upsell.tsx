@@ -83,14 +83,12 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
   return (
     <section className="border-border/70 bg-card rounded-md border">
       <div className="flex flex-col items-center px-6 py-12 text-center">
-        <div className="bg-muted/60 relative flex size-12 items-center justify-center rounded-full">
-          <Icon className="text-muted-foreground size-5" />
-          <span className="bg-background border-border/70 absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full border">
-            <Lock className="text-muted-foreground size-3" />
-          </span>
-        </div>
+        <span className="bg-kortix-base/15 flex size-12 items-center justify-center rounded-md">
+          <Icon className="text-foreground size-5" />
+        </span>
 
         <Badge variant="kortix" size="sm" className="mt-4">
+          <Lock />
           Enterprise
         </Badge>
 
