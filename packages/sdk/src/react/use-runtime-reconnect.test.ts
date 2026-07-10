@@ -17,7 +17,7 @@ import {
   incrementSandboxFail,
   resetSandboxFail,
   useSandboxConnectionStore,
-} from '../state/sandbox-connection-store';
+} from '../browser/stores/sandbox-connection-store';
 
 function probe(overrides: Partial<ProbeResultLike>): ProbeResultLike {
   return { status: 200, ok: true, health: null, body: '', ...overrides };

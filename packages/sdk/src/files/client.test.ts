@@ -6,7 +6,7 @@ import { setCurrentRuntime } from '../state/current-runtime';
 // uses (spread the real module so every other importer's exports stay
 // intact). The active-sandbox base URL ('http://sbx.test') is driven through
 // the REAL `state/current-runtime` seam (`setCurrentRuntime`, in `beforeEach`
-// below) rather than a `mock.module('../state/server-store', ...)` override —
+// below) rather than a `mock.module('../browser/stores/server-store', ...)` override —
 // this used to mock that whole module away, but `getActiveOpenCodeUrl` is
 // re-exported from `./server-store/active` (`export { getActiveOpenCodeUrl }
 // from './server-store/active'` in `server-store.ts`), and mocking either the

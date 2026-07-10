@@ -32,7 +32,7 @@ mock.module('../opencode/client', () => ({
   }),
 }));
 
-import { useOpenCodePendingStore } from '../state/opencode-pending-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import { BillingError } from '../platform/api/errors';
 import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
 import {

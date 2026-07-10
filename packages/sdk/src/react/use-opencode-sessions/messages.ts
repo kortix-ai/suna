@@ -3,7 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
 import { logger } from '../../platform/logger';
-import { useSyncStore } from '../../state/sync-store';
+import { useSyncStore } from '../../browser/stores/sync-store';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
 import { unwrap } from './shared';

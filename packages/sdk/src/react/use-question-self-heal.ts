@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { getClient } from '../opencode/client';
-import { useOpenCodePendingStore } from '../state/opencode-pending-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import type { MessageWithPartsLike, ToolPartLike } from '../turns/types';
 
 /**

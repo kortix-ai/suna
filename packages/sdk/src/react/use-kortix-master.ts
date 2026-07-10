@@ -35,7 +35,7 @@ import {
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
-import { useServerStore } from '../state/server-store';
+import { useServerStore } from '../browser/stores/server-store';
 import {
   // Credentials
   listCredentials,

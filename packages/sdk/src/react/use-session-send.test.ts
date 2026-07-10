@@ -54,7 +54,7 @@ afterEach(() => {
   delete (globalThis as any).sessionStorage;
 });
 
-import { useSyncStore } from '../state/sync-store';
+import { useSyncStore } from '../browser/stores/sync-store';
 import { readStartStash, writeStartStash } from './session-start-stash';
 import {
   abandonOptimisticSend,

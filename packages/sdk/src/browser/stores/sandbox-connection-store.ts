@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { logger } from "../platform/logger";
+import { logger } from "../../platform/logger";
 
 export type SandboxConnectionStatus =
 	| "connecting"

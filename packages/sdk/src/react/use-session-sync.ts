@@ -18,9 +18,9 @@ type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'pat
 import {
 	type MessageWithParts,
 	useSyncStore,
-} from "../state/sync-store";
-import { useSandboxConnectionStore } from "../state/sandbox-connection-store";
-import { loadSessionFromIDB, saveSessionToIDB } from "../state/idb-sync-cache";
+} from "../browser/stores/sync-store";
+import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
+import { loadSessionFromIDB, saveSessionToIDB } from "../browser/cache/idb-sync-cache";
 import { canQueryOpenCodeSession } from "./use-opencode-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];

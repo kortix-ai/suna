@@ -26,9 +26,9 @@
  * that call's async continuation (every `await` inside it), correctly
  * isolated from any other concurrent call in the same process.
  */
-import { createKortix, type Kortix } from './kortix';
-import { runScoped, runWithKortix, getScopedConfig } from './platform/config-node';
-import type { KortixPlatformConfig } from './platform/config';
+import { createKortix, type Kortix } from '../kortix';
+import { runScoped, runWithKortix, getScopedConfig } from '../platform/config-node';
+import type { KortixPlatformConfig } from '../platform/config';
 
 export { runWithKortix, getScopedConfig };
 

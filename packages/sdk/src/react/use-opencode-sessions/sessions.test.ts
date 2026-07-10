@@ -4,7 +4,7 @@ import type { Session } from '@opencode-ai/sdk/v2/client';
 // (module resolution for a static import happens before the rest of this
 // file's top-level code executes) — used as the mock's backing state so
 // `onMutate`/`onError` assertions see genuine store mutations.
-import { useOpenCodeCompactionStore as realCompactionStore } from '../../state/opencode-compaction-store';
+import { useOpenCodeCompactionStore as realCompactionStore } from '../../browser/stores/opencode-compaction-store';
 
 // react-query's `useQuery`/`useMutation` are mocked down to identity functions
 // (return the config object passed in) so the hooks under test can be called
@@ -53,7 +53,7 @@ mock.module('../../opencode/client', () => ({
 // "Invalid hook call". Replace the reactive wrapper with a plain selector
 // call against the REAL store's `getState()`/`setState()`, so `onMutate`/
 // `onError` still exercise genuine store mutations.
-mock.module('../../state/opencode-compaction-store', () => ({
+mock.module('../../browser/stores/opencode-compaction-store', () => ({
   useOpenCodeCompactionStore: Object.assign(
     (selector: (s: ReturnType<typeof realCompactionStore.getState>) => unknown) =>
       selector(realCompactionStore.getState()),

@@ -13,8 +13,8 @@ import {
   setSandboxVersion,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-} from '../state/sandbox-connection-store';
-import { useServerStore } from '../state/server-store';
+} from '../browser/stores/sandbox-connection-store';
+import { useServerStore } from '../browser/stores/server-store';
 
 /**
  * Number of consecutive failures before marking as unreachable

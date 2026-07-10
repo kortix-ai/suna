@@ -23,12 +23,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { RuntimeNotReadyError } from '../opencode/client';
-import { useOpenCodePendingStore } from '../state/opencode-pending-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   setOpenCodeHealth,
   setSandboxStatus,
-} from '../state/sandbox-connection-store';
-import { getSandboxUrlForExternalId } from '../state/server-store';
+} from '../browser/stores/sandbox-connection-store';
+import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { setCurrentRuntime } from '../state/current-runtime';
 import {
   isSessionStartError,

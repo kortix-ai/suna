@@ -141,7 +141,7 @@ interface Subpath {
 }
 
 const SUBPATH_TIERS: Subpath[] = [
-  { name: './server', file: 'server.ts', tier: 'node-allowed' },
+  { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
   { name: './opencode-client', file: 'opencode/client.ts', tier: 'isomorphic-core' },
   { name: './config', file: 'platform/config.ts', tier: 'isomorphic-core' },
   { name: './auth', file: 'platform/auth.ts', tier: 'isomorphic-core' },
@@ -151,13 +151,13 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './fresh-sessions', file: 'platform/fresh-sessions.ts', tier: 'isomorphic-core' },
   { name: './instance-routes', file: 'platform/instance-routes.ts', tier: 'isomorphic-core' },
   { name: './opencode-errors', file: 'platform/opencode-errors.ts', tier: 'isomorphic-core' },
-  { name: './idb-sync-cache', file: 'state/idb-sync-cache.ts', tier: 'browser-only' },
+  { name: './idb-sync-cache', file: 'browser/cache/idb-sync-cache.ts', tier: 'browser-only' },
   { name: './platform-client', file: 'platform/platform-client/index.ts', tier: 'isomorphic-core' },
-  { name: './server-store', file: 'state/server-store.ts', tier: 'browser-only' },
-  { name: './sync-store', file: 'state/sync-store.ts', tier: 'browser-only' },
+  { name: './server-store', file: 'browser/stores/server-store.ts', tier: 'browser-only' },
+  { name: './sync-store', file: 'browser/stores/sync-store.ts', tier: 'browser-only' },
   { name: './event-stream', file: 'state/event-stream.ts', tier: 'isomorphic-core' },
-  { name: './sandbox-connection-store', file: 'state/sandbox-connection-store.ts', tier: 'browser-only' },
-  { name: './opencode-pending-store', file: 'state/opencode-pending-store.ts', tier: 'browser-only' },
+  { name: './sandbox-connection-store', file: 'browser/stores/sandbox-connection-store.ts', tier: 'browser-only' },
+  { name: './opencode-pending-store', file: 'browser/stores/opencode-pending-store.ts', tier: 'browser-only' },
   { name: './files', file: 'files/client.ts', tier: 'isomorphic-core' },
   { name: './session', file: 'session/index.ts', tier: 'isomorphic-core' },
   { name: './session/url', file: 'session/url.ts', tier: 'isomorphic-core' },

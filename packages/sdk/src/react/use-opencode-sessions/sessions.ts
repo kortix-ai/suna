@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
 import { isOpenCodeConfigInvalidError } from '../../platform/opencode-errors';
 import { markSessionFresh } from '../../platform/fresh-sessions';
-import { useOpenCodeCompactionStore } from '../../state/opencode-compaction-store';
+import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';

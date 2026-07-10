@@ -53,7 +53,7 @@ mock.module('../platform/auth', () => ({
 }));
 
 const FAKE_SERVER_URL = 'https://sbx.test';
-mock.module('../state/server-store', () => ({
+mock.module('../browser/stores/server-store', () => ({
   useServerStore: Object.assign(
     (selector: (s: { getActiveServerUrl: () => string }) => unknown) =>
       selector({ getActiveServerUrl: () => FAKE_SERVER_URL }),
