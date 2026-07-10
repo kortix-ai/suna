@@ -137,8 +137,8 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | 1   | Assert the two export maps agree                        | **DONE**    | `ab099b6a` | 2026-07-10   | `ecb78a113`              |
 | 2   | Install smoke test — pack, install, import              | **DONE**    | `ab099b6a` | 2026-07-10   | `7220e9587`              |
 | 3   | Public-export snapshot                                  | **DONE** (snapshot approved by Jay at hard stop #2) | `ab099b6a` | 2026-07-10   | `84e15ca72`              |
-| 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
-| 5   | Axis 2 — root canonical, subpaths deprecated            | NOT STARTED | —          | —            | —                        |
+| 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | **DONE**    | `ab099b6a` | 2026-07-10   | `4c6f7102c` (4 commits from `25068d272`) |
+| 5   | Axis 2 — root canonical, subpaths deprecated            | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
 | 6   | Dogfood `whitelabel-demo` (acceptance gate)             | NOT STARTED | —          | —            | —                        |
 | 7   | Portability — ban bare globals in `core/`               | NOT STARTED | —          | —            | —                        |
 | 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | NOT STARTED | —          | —            | —                        |
