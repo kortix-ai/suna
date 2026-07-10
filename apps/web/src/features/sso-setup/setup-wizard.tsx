@@ -1,10 +1,12 @@
 'use client';
 
-// Guided SSO setup — Vercel-style wizard. Screen 1 picks the identity
-// provider; screen 2 walks the provider-specific steps (guides.ts) with a
-// vertical stepper, copyable SP values, and an INLINE final import step that
-// actually registers the IdP (no bouncing back to settings with values in a
-// notepad). Step completion persists per account+provider in localStorage.
+// Guided identity setup — Vercel-style wizards for SAML SSO and Directory
+// Sync (SCIM). Screen 1 picks the identity provider; screen 2 walks the
+// provider-specific steps (guides.ts) with a vertical stepper, copyable
+// values, and INLINE pivotal steps: SSO imports the IdP metadata right in the
+// wizard, Directory Sync mints the SCIM bearer token right in the wizard —
+// no bouncing to settings with values in a notepad. Step completion persists
+// per account+flow+provider in localStorage.
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +16,8 @@ import {
   Check,
   Copy,
   ExternalLink,
+  KeyRound,
+  RotateCcw,
   Search,
   ShieldCheck,
 } from 'lucide-react';
@@ -37,17 +41,51 @@ import {
 } from '@/components/ui/stepper';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { getEnv } from '@/lib/env-config';
-import { getSsoProvider, importSsoProviderFromMetadata } from '@/lib/iam-client';
+import {
+  type CreatedScimToken,
+  createScimToken,
+  getSsoProvider,
+  importSsoProviderFromMetadata,
+} from '@/lib/iam-client';
 import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
-import { PROVIDER_GUIDES, type GuideStep, getProviderGuide } from './guides';
+import { buildScimBaseUrl } from '@/lib/scim-url';
+import {
+  type GuideStep,
+  PROVIDER_GUIDES,
+  SCIM_PROVIDER_GUIDES,
+  getProviderGuide,
+  getScimGuide,
+} from './guides';
 
-function storageKey(accountId: string, provider: string) {
-  return `kortix:sso-setup:${accountId}:${provider}`;
+type Flow = 'sso' | 'scim';
+
+const FLOW_CONFIG: Record<
+  Flow,
+  { route: string; heading: string; subheading: string; entitlement: 'sso' | 'scim' }
+> = {
+  sso: {
+    route: 'sso-setup',
+    heading: 'Select your identity provider',
+    subheading: 'Let your team sign in with the identity provider you already run.',
+    entitlement: 'sso',
+  },
+  scim: {
+    route: 'scim-setup',
+    heading: 'Set up Directory Sync',
+    subheading: 'Provision and deprovision accounts automatically from your identity provider.',
+    entitlement: 'scim',
+  },
+};
+
+// Explicit literals (not a template) so the keys stay greppable.
+function storageKey(flow: Flow, accountId: string, provider: string) {
+  const prefix = flow === 'sso' ? 'kortix:sso-setup' : 'kortix:scim-setup';
+  return `${prefix}:${accountId}:${provider}`;
 }
 
-function loadCompleted(accountId: string, provider: string): string[] {
+function loadCompleted(flow: Flow, accountId: string, provider: string): string[] {
   try {
-    const raw = window.localStorage.getItem(storageKey(accountId, provider));
+    const raw = window.localStorage.getItem(storageKey(flow, accountId, provider));
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
   } catch {
@@ -55,9 +93,9 @@ function loadCompleted(accountId: string, provider: string): string[] {
   }
 }
 
-function saveCompleted(accountId: string, provider: string, ids: string[]) {
+function saveCompleted(flow: Flow, accountId: string, provider: string, ids: string[]) {
   try {
-    window.localStorage.setItem(storageKey(accountId, provider), JSON.stringify(ids));
+    window.localStorage.setItem(storageKey(flow, accountId, provider), JSON.stringify(ids));
   } catch {
     // Non-critical — the wizard still works, progress just isn't remembered.
   }
@@ -105,19 +143,23 @@ function SpValueRows({ urls }: { urls: SamlSpUrls | null }) {
 
 // ─── Screen 1: provider select ─────────────────────────────────────────────
 
-function ProviderSelect({ onPick }: { onPick: (id: string) => void }) {
+function ProviderSelect({ flow, onPick }: { flow: Flow; onPick: (id: string) => void }) {
   const [query, setQuery] = useState('');
+  const all = flow === 'sso' ? PROVIDER_GUIDES : SCIM_PROVIDER_GUIDES;
   const guides = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return PROVIDER_GUIDES;
-    return PROVIDER_GUIDES.filter((g) => `${g.name} ${g.blurb}`.toLowerCase().includes(q));
-  }, [query]);
+    if (!q) return all;
+    return all.filter((g) => `${g.name} ${g.blurb}`.toLowerCase().includes(q));
+  }, [all, query]);
 
   return (
     <div className="mx-auto w-full max-w-xl">
       <h1 className="text-foreground text-center text-2xl font-semibold">
-        Select your identity provider
+        {FLOW_CONFIG[flow].heading}
       </h1>
+      <p className="text-muted-foreground mt-2 text-center text-sm">
+        {FLOW_CONFIG[flow].subheading}
+      </p>
       <div className="border-border/70 bg-card mt-8 overflow-hidden rounded-xl border">
         <div className="border-border/60 relative border-b">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2" />
@@ -144,7 +186,7 @@ function ProviderSelect({ onPick }: { onPick: (id: string) => void }) {
         ))}
         {guides.length === 0 && (
           <p className="text-muted-foreground px-5 py-6 text-sm">
-            No match — pick Custom SAML for any SAML 2.0 identity provider.
+            No match — pick the Custom option for any standards-based provider.
           </p>
         )}
       </div>
@@ -152,7 +194,7 @@ function ProviderSelect({ onPick }: { onPick: (id: string) => void }) {
   );
 }
 
-// ─── Screen 2: the guide ───────────────────────────────────────────────────
+// ─── SSO: inline metadata import ───────────────────────────────────────────
 
 function ImportForm({
   accountId,
@@ -321,7 +363,78 @@ function ImportForm({
   );
 }
 
+// ─── Directory Sync: inline token mint ─────────────────────────────────────
+
+function ScimTokenStep({
+  accountId,
+  providerName,
+  onDone,
+}: {
+  accountId: string;
+  providerName: string;
+  onDone: () => void;
+}) {
+  const [name, setName] = useState(`${providerName} provisioning`);
+  const [minted, setMinted] = useState<CreatedScimToken | null>(null);
+  const tenantUrl = useMemo(
+    () => buildScimBaseUrl(accountId, getEnv().BACKEND_URL),
+    [accountId],
+  );
+
+  const mutation = useMutation({
+    mutationFn: () => createScimToken(accountId, { name: name.trim() }),
+    onSuccess: (token) => {
+      setMinted(token);
+      toast.success('SCIM token minted — copy it now');
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to mint the token'),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="border-border/60 bg-card/50 space-y-3 rounded-lg border p-4">
+        <CopyRow label="Tenant URL" value={tenantUrl} />
+        <p className="text-muted-foreground text-[11px]">
+          Your identity provider appends /Users and /Groups to this URL.
+        </p>
+      </div>
+
+      {minted ? (
+        <div className="border-border/60 bg-card/50 space-y-3 rounded-lg border p-4">
+          <CopyRow label="Secret token" value={minted.secret} />
+          <p className="text-amber-700 dark:text-amber-300 text-[11px]">
+            Shown once — after you leave this step only the prefix ({minted.public_prefix}) is
+            visible. Manage or revoke it from the SCIM card in settings.
+          </p>
+          <Button onClick={onDone}>
+            I’ve copied both values
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-56 space-y-1.5">
+            <Label>Token name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={mutation.isPending} />
+          </div>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={name.trim().length === 0 || mutation.isPending}
+            className="gap-1.5"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            {mutation.isPending ? 'Minting…' : 'Mint token'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Step body ───────────────────────────────────────────────────────────────
+
 function StepBody({
+  flow,
   step,
   spUrls,
   accountId,
@@ -331,6 +444,7 @@ function StepBody({
   onCompleteStep,
   onFinish,
 }: {
+  flow: Flow;
   step: GuideStep;
   spUrls: SamlSpUrls | null;
   accountId: string;
@@ -370,14 +484,18 @@ function StepBody({
           alreadyConnected={alreadyConnected}
           onDone={onCompleteStep}
         />
+      ) : step.kind === 'scim-token' ? (
+        <ScimTokenStep accountId={accountId} providerName={providerName} onDone={onCompleteStep} />
       ) : step.kind === 'test' ? (
         <div className="flex flex-wrap items-center gap-3">
-          <Button asChild variant="outline">
-            <a href="/auth" target="_blank" rel="noreferrer">
-              Open the sign-in page
-              <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-            </a>
-          </Button>
+          {flow === 'sso' && (
+            <Button asChild variant="outline">
+              <a href="/auth" target="_blank" rel="noreferrer">
+                Open the sign-in page
+                <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+              </a>
+            </Button>
+          )}
           <Button onClick={onFinish}>
             Finish
             <Check className="ml-1.5 h-3.5 w-3.5" />
@@ -395,15 +513,16 @@ function StepBody({
 
 // ─── The wizard ────────────────────────────────────────────────────────────
 
-export function SsoSetupWizard({ accountId }: { accountId: string }) {
+function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const providerId = searchParams?.get('provider') ?? null;
-  const guide = getProviderGuide(providerId);
+  const guide = flow === 'sso' ? getProviderGuide(providerId) : getScimGuide(providerId);
+  const config = FLOW_CONFIG[flow];
 
   const accountStateQuery = useAccountState({ accountId, enabled: !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
-  const ssoEntitled = !!entitlements?.sso;
+  const entitled = !!entitlements?.[config.entitlement];
 
   const providerQuery = useQuery({
     queryKey: ['iam-sso-provider', accountId],
@@ -419,16 +538,16 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
   // Restore progress when a guide opens; jump to the first incomplete step.
   useEffect(() => {
     if (!guide) return;
-    const done = loadCompleted(accountId, guide.id);
+    const done = loadCompleted(flow, accountId, guide.id);
     setCompleted(done);
     const firstOpen = guide.steps.findIndex((s) => !done.includes(s.id));
     setActiveStep(firstOpen === -1 ? guide.steps.length - 1 : firstOpen);
-  }, [accountId, guide]);
+  }, [accountId, flow, guide]);
 
   if (accountStateQuery.isLoading) {
     return <Skeleton className="mx-auto h-96 w-full max-w-3xl rounded-2xl" />;
   }
-  if (!ssoEntitled) {
+  if (!entitled) {
     return (
       <div className="mx-auto w-full max-w-xl">
         <EnterpriseUpsell feature="identity" />
@@ -439,7 +558,8 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
   if (!guide) {
     return (
       <ProviderSelect
-        onPick={(id) => router.replace(`/accounts/${accountId}/sso-setup?provider=${id}`)}
+        flow={flow}
+        onPick={(id) => router.replace(`/accounts/${accountId}/${config.route}?provider=${id}`)}
       />
     );
   }
@@ -447,9 +567,15 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
   const markDone = (stepId: string) => {
     const next = completed.includes(stepId) ? completed : [...completed, stepId];
     setCompleted(next);
-    saveCompleted(accountId, guide.id, next);
+    saveCompleted(flow, accountId, guide.id, next);
     const idx = guide.steps.findIndex((s) => s.id === stepId);
     if (idx >= 0 && idx < guide.steps.length - 1) setActiveStep(idx + 1);
+  };
+
+  const startOver = () => {
+    setCompleted([]);
+    saveCompleted(flow, accountId, guide.id, []);
+    setActiveStep(0);
   };
 
   const finish = () => {
@@ -465,13 +591,22 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
         <div className="flex items-center gap-2">
           <ShieldCheck className="text-muted-foreground h-4 w-4" />
           <span className="text-foreground text-sm font-medium">{guide.name}</span>
+          <span className="text-muted-foreground text-xs">
+            · {flow === 'sso' ? 'SAML SSO' : 'Directory Sync'}
+          </span>
         </div>
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/accounts/${accountId}/sso-setup`}>
-            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
-            Change provider
-          </Link>
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={startOver} className="gap-1.5">
+            <RotateCcw className="h-3.5 w-3.5" />
+            Start over
+          </Button>
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`/accounts/${accountId}/${config.route}`}>
+              <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+              Change provider
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-10 md:grid-cols-[240px_minmax(0,1fr)]">
@@ -506,11 +641,13 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
         </Stepper>
 
         <div className="min-w-0">
-          <h2 className="text-foreground text-xl font-semibold">
-            Step {activeStep + 1}: {step.title}
-          </h2>
+          <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+            Step {activeStep + 1} of {guide.steps.length}
+          </p>
+          <h2 className="text-foreground mt-1 text-xl font-semibold">{step.title}</h2>
           <div className="mt-4">
             <StepBody
+              flow={flow}
               step={step}
               spUrls={spUrls}
               accountId={accountId}
@@ -521,8 +658,27 @@ export function SsoSetupWizard({ accountId }: { accountId: string }) {
               onFinish={finish}
             />
           </div>
+          {activeStep > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-6 gap-1.5"
+              onClick={() => setActiveStep(activeStep - 1)}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back
+            </Button>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+export function SsoSetupWizard({ accountId }: { accountId: string }) {
+  return <WizardCore accountId={accountId} flow="sso" />;
+}
+
+export function ScimSetupWizard({ accountId }: { accountId: string }) {
+  return <WizardCore accountId={accountId} flow="scim" />;
 }

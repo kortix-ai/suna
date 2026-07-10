@@ -8,10 +8,11 @@
  * Step kinds:
  *  - 'instructions' — things the admin does in the IdP console
  *  - 'import'       — the inline "connect to Kortix" form (metadata import)
- *  - 'test'         — the final verify-your-login step
+ *  - 'scim-token'   — mint a SCIM bearer token inline (Directory Sync flow)
+ *  - 'test'         — the final verify step
  */
 
-export type StepKind = 'instructions' | 'import' | 'test';
+export type StepKind = 'instructions' | 'import' | 'scim-token' | 'test';
 
 export interface GuideStep {
   id: string;
@@ -250,4 +251,165 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
 export function getProviderGuide(id: string | null | undefined): ProviderGuide | null {
   if (!id) return null;
   return PROVIDER_GUIDES.find((g) => g.id === id) ?? null;
+}
+
+// ─── Directory Sync (SCIM) guides ────────────────────────────────────────────
+//
+// Same shape, different flow: instead of the metadata import the pivotal step
+// is minting a SCIM bearer token inline ('scim-token') and pasting it + the
+// Tenant URL into the IdP's provisioning screen. The Entra guide encodes the
+// live-tested run: Provision on demand (P2), Block sign-in as the deactivate
+// signal, and the not-yet-signed-in membership caveat.
+
+const scimTokenStep: GuideStep = {
+  id: 'token',
+  title: 'Mint a SCIM token',
+  kind: 'scim-token',
+  intro:
+    'Create the bearer token your identity provider will authenticate with, and copy the Tenant URL it posts to.',
+  warning:
+    'The token is shown ONCE — copy it now. To rotate later: mint a new token, update the IdP, then revoke the old one from the SCIM card.',
+};
+
+const scimTestStep = (extra?: string): GuideStep => ({
+  id: 'test',
+  title: 'Verify provisioning',
+  kind: 'test',
+  intro: 'Push a test user from your identity provider and confirm the lifecycle end to end.',
+  bullets: [
+    'A pushed user appears under Members (as a pending invite until their first sign-in).',
+    'Deactivating the user in the IdP removes their membership and revokes their tokens.',
+    'Pushed groups appear under Groups — grant them project roles to confer access.',
+    ...(extra ? [extra] : []),
+  ],
+});
+
+export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
+  {
+    id: 'entra',
+    name: 'Microsoft Entra ID (Azure AD)',
+    blurb: 'Automatic provisioning from your Entra tenant',
+    defaultGroupClaim: 'memberOf',
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        intro:
+          'Directory Sync pushes users and groups from Entra proactively — deactivations apply without waiting for a sign-in.',
+        bullets: [
+          'Use the same enterprise application you created for SAML SSO.',
+          'Automatic provisioning requires Entra ID P1/P2 (trial works).',
+          'Connect SAML SSO first so provisioned users can actually sign in.',
+        ],
+      },
+      scimTokenStep,
+      {
+        id: 'connect',
+        title: 'Connect provisioning in Entra',
+        intro: 'In your enterprise application: Provisioning → Get started.',
+        bullets: [
+          'Provisioning Mode: Automatic.',
+          'Tenant URL → the Tenant URL from the previous step.',
+          'Secret Token → the token from the previous step.',
+          'Click "Test Connection", then Save.',
+        ],
+        warning:
+          'Paste the Tenant URL exactly as shown — it is NOT the regular API URL (no /v1 suffix). A hand-built URL is the #1 cause of a failing Test Connection.',
+      },
+      {
+        id: 'mappings',
+        title: 'Check the attribute mappings',
+        intro:
+          'The default mappings work. The one that matters: userName must map to the user’s email (userPrincipalName) — it is how Kortix matches accounts.',
+      },
+      {
+        id: 'scope',
+        title: 'Assign who gets provisioned',
+        intro:
+          'In Users and groups, assign the users/groups to provision. Keep Scope on "Sync only assigned users and groups".',
+        note: 'Assigning a whole group requires Entra ID P1/P2.',
+      },
+      {
+        id: 'provision',
+        title: 'Push a test user',
+        intro:
+          'Use "Provision on demand" (instant, P1/P2) to push one assigned user now — or "Start provisioning" for the regular ~40-minute cycles.',
+        bullets: [
+          'Provision on demand → pick the user → Provision.',
+          'All four stages (Import, Scope, Match, Perform action) should report Success.',
+        ],
+      },
+      scimTestStep(
+        'To deactivate from Entra: set the user’s "Block sign in" (Account enabled = off), then provision them again.',
+      ),
+    ],
+  },
+  {
+    id: 'okta',
+    name: 'Okta',
+    blurb: 'Automatic provisioning from Okta',
+    defaultGroupClaim: 'groups',
+    steps: [
+      {
+        id: 'before',
+        title: 'Before you start',
+        intro: 'Use the same Okta app integration you created for SAML SSO.',
+        bullets: ['Connect SAML SSO first so provisioned users can sign in.'],
+      },
+      scimTokenStep,
+      {
+        id: 'enable-scim',
+        title: 'Enable SCIM on the app',
+        intro: 'In the Okta admin console, open the app → General → App Settings → Edit.',
+        bullets: [
+          'Provisioning: SCIM → Save.',
+          'A Provisioning tab appears → Configure API Integration → Enable API integration.',
+          'SCIM connector base URL → the Tenant URL from the token step.',
+          'Unique identifier field for users: userName.',
+          'Authentication mode: HTTP Header → paste the token → Test Connector Configuration → Save.',
+        ],
+      },
+      {
+        id: 'to-app',
+        title: 'Turn on the sync actions',
+        intro: 'On the Provisioning tab → To App → Edit.',
+        bullets: [
+          'Enable Create Users, Update User Attributes, and Deactivate Users → Save.',
+        ],
+      },
+      {
+        id: 'assign',
+        title: 'Assign people and push groups',
+        intro:
+          'Assignments → assign the people/groups to provision. Use the Push Groups tab to sync group memberships.',
+      },
+      scimTestStep(),
+    ],
+  },
+  {
+    id: 'custom',
+    name: 'Custom SCIM 2.0',
+    blurb: 'Any SCIM 2.0-capable identity provider',
+    defaultGroupClaim: 'groups',
+    steps: [
+      scimTokenStep,
+      {
+        id: 'configure',
+        title: 'Point your IdP at Kortix',
+        intro: 'Configure your identity provider’s SCIM client with these settings.',
+        bullets: [
+          'Base / Tenant URL → the Tenant URL from the token step (the IdP appends /Users and /Groups).',
+          'Authentication: Bearer token (the minted secret).',
+          'Matching attribute: userName = the user’s email.',
+          'Supported: SCIM 2.0 Users + Groups, PATCH, and `attribute eq "value"` filters. Bulk is not supported.',
+        ],
+      },
+      scimTestStep(),
+    ],
+  },
+];
+
+export function getScimGuide(id: string | null | undefined): ProviderGuide | null {
+  if (!id) return null;
+  return SCIM_PROVIDER_GUIDES.find((g) => g.id === id) ?? null;
 }

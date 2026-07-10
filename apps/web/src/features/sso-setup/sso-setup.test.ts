@@ -4,12 +4,21 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PROVIDER_GUIDES, getProviderGuide } from './guides';
+import {
+  PROVIDER_GUIDES,
+  SCIM_PROVIDER_GUIDES,
+  getProviderGuide,
+  getScimGuide,
+} from './guides';
 
 const dir = import.meta.dir;
 const wizardSource = readFileSync(join(dir, 'setup-wizard.tsx'), 'utf8');
 const cardSource = readFileSync(
   join(dir, '../../components/iam/sso-card.tsx'),
+  'utf8',
+);
+const scimCardSource = readFileSync(
+  join(dir, '../../components/iam/scim-card.tsx'),
   'utf8',
 );
 
@@ -72,7 +81,7 @@ describe('setup wizard wiring', () => {
   });
 
   test('progress persists per account + provider', () => {
-    expect(wizardSource).toContain('kortix:sso-setup:');
+    expect(wizardSource).toContain('kortix:sso-setup');
   });
 
   test('non-entitled accounts see the enterprise upsell, not the wizard', () => {
@@ -83,5 +92,68 @@ describe('setup wizard wiring', () => {
 describe('sso card entry point', () => {
   test('Configure routes new providers into the guided wizard', () => {
     expect(cardSource).toContain('/sso-setup');
+  });
+});
+
+describe('directory sync (SCIM) guides', () => {
+  test('cover Entra, Okta, and Custom SCIM', () => {
+    expect(SCIM_PROVIDER_GUIDES.map((g) => g.id).sort()).toEqual(['custom', 'entra', 'okta']);
+  });
+
+  test('every guide mints the token inline before configuring the IdP, and ends with verify', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      const kinds = g.steps.map((s) => s.kind);
+      expect(kinds).toContain('scim-token');
+      expect(kinds[kinds.length - 1]).toBe('test');
+      // Token must come before every instructions step that references it.
+      expect(kinds.indexOf('scim-token')).toBeLessThan(kinds.lastIndexOf(undefined as never));
+    }
+  });
+
+  test('the Entra guide encodes the live-tested provisioning run', () => {
+    const entra = getScimGuide('entra')!;
+    const text = JSON.stringify(entra.steps);
+    expect(text).toContain('Provision on demand');
+    expect(text).toContain('Block sign in');
+    expect(text).toContain('P1/P2');
+    // The hand-built-URL trap (Tenant URL has no /v1).
+    expect(text).toContain('no /v1 suffix');
+  });
+
+  test('deactivation semantics are spelled out (membership removed, tokens revoked)', () => {
+    for (const g of SCIM_PROVIDER_GUIDES) {
+      const text = JSON.stringify(g.steps);
+      expect(text).toContain('revokes their tokens');
+    }
+  });
+
+  test('unknown ids resolve to null (wizard falls back to the picker)', () => {
+    expect(getScimGuide('bogus')).toBeNull();
+    expect(getScimGuide(null)).toBeNull();
+  });
+});
+
+describe('directory sync wizard wiring', () => {
+  test('mints the SCIM token inline and shows the Tenant URL', () => {
+    expect(wizardSource).toContain('createScimToken');
+    expect(wizardSource).toContain('buildScimBaseUrl');
+    expect(wizardSource).toContain('Tenant URL');
+  });
+
+  test('scim progress persists under its own key', () => {
+    expect(wizardSource).toContain('kortix:scim-setup');
+  });
+
+  test('scim flow gates on the scim entitlement', () => {
+    expect(wizardSource).toContain("entitlement: 'scim'");
+  });
+
+  test('both wizards are exported from one core', () => {
+    expect(wizardSource).toContain('export function SsoSetupWizard');
+    expect(wizardSource).toContain('export function ScimSetupWizard');
+  });
+
+  test('the SCIM card links into the guided setup', () => {
+    expect(scimCardSource).toContain('/scim-setup');
   });
 });
