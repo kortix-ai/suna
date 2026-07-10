@@ -616,6 +616,7 @@ const scimTestStep = (extra?: string): GuideStep => ({
     'A pushed user appears under Members (as a pending invite until their first sign-in).',
     'Deactivating the user in the IdP removes their membership and revokes their tokens.',
     'Pushed groups appear under Groups — grant them project roles to confer access.',
+    'Group membership for a user who hasn’t signed in yet is held on their invite and applies automatically at their FIRST sign-in — an empty group before that is expected, not a failure.',
     ...(extra ? [extra] : []),
   ],
 });
@@ -666,8 +667,8 @@ export const SCIM_PROVIDER_GUIDES: ProviderGuide[] = [
         id: 'scope',
         title: 'Assign who gets provisioned',
         intro:
-          'In Users and groups, assign the users/groups to provision. Keep Scope on "Sync only assigned users and groups".',
-        note: 'Assigning a whole group requires Entra ID P1/P2.',
+          'In "Users and groups", assign the users/groups to provision. Keep "Scope" on "Sync only assigned users and groups".',
+        note: 'The Scope selector only appears under Settings AFTER you save the provisioning credentials — if you don’t see it, save first. Assigning a whole group requires Entra ID P1/P2.',
       },
       {
         id: 'provision',
