@@ -23,7 +23,7 @@
  * accumulate indefinitely on the account.
  */
 
-import { ApiError } from '@kortix/sdk';
+import { ApiError, type CreatedProjectCliToken } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
@@ -60,13 +60,21 @@ export async function GET(req: NextRequest) {
   const upstream = upstreamBase();
   const kortix = createScopedKortix({ backendUrl: upstream, getToken: async () => apiKey });
 
-  let created: { secret_key: string; token_id: string };
+  let created: CreatedProjectCliToken;
   try {
     created = await kortix.project(projectId).tokens.create({ name: `lumen-preview-${Date.now()}` });
   } catch (err) {
     const status = err instanceof ApiError && err.status ? err.status : 502;
     const message = err instanceof Error ? err.message : 'Could not mint a preview token';
     return Response.json({ error: message }, { status });
+  }
+
+  // The SDK only rejects non-2xx responses — it doesn't validate field
+  // presence. A malformed 200 without `secret_key` must fail loud here: the
+  // preview panel only checks `res.ok`, so passing it through would silently
+  // build a broken preview URL.
+  if (!created?.secret_key) {
+    return Response.json({ error: 'Could not mint a preview token' }, { status: 502 });
   }
 
   return Response.json({ token: created.secret_key, upstream, tokenId: created.token_id });
