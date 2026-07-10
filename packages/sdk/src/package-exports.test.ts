@@ -27,7 +27,6 @@ test('every publishConfig entry declares both types and import', () => {
       'types',
     ]);
     const { types, import: imp } = entry as { types: string; import: string };
-    expect(`${subpath} types`).toBe(`${subpath} types`);
     expect(types.startsWith('./dist/') && types.endsWith('.d.ts')).toBe(true);
     expect(imp.startsWith('./dist/') && imp.endsWith('.js')).toBe(true);
   }
