@@ -245,12 +245,25 @@ function ClaimsTable({
   );
 }
 
-function SpValueRows({ urls }: { urls: SamlSpUrls | null }) {
+function SpValueRows({
+  urls,
+  entityIdLabel = 'Identifier (Entity ID)',
+  acsLabel = 'Reply URL (ACS)',
+  acsFirst = false,
+}: {
+  urls: SamlSpUrls | null;
+  /** Per-IdP field names — show the words the admin sees in their console. */
+  entityIdLabel?: string;
+  acsLabel?: string;
+  acsFirst?: boolean;
+}) {
   if (!urls) return null;
+  const entityRow = <CopyRow label={entityIdLabel} value={urls.entityId} />;
+  const acsRow = <CopyRow label={acsLabel} value={urls.acsUrl} />;
   return (
     <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
-      <CopyRow label="Identifier (Entity ID)" value={urls.entityId} />
-      <CopyRow label="Reply URL (ACS)" value={urls.acsUrl} />
+      {acsFirst ? acsRow : entityRow}
+      {acsFirst ? entityRow : acsRow}
     </div>
   );
 }
@@ -633,8 +646,14 @@ function StepBody({
             <InstructionText text={block.text} />
           </p>
         ) : block.kind === 'sp-values' ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
-          <SpValueRows key={i} urls={spUrls} />
+          <SpValueRows
+            // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
+            key={i}
+            urls={spUrls}
+            entityIdLabel={block.entityIdLabel}
+            acsLabel={block.acsLabel}
+            acsFirst={block.acsFirst}
+          />
         ) : block.kind === 'claims-table' ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: static guide data, stable order
           <ClaimsTable key={i} rows={block.rows} />

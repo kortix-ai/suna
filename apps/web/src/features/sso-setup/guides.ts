@@ -24,9 +24,12 @@ export type StepKind = 'instructions' | 'import' | 'scim-token' | 'test';
 export type StepBlock =
   | { kind: 'text'; text: string }
   | { kind: 'image'; src: string; alt: string }
-  /** The copyable SP values (Entity ID + ACS), positioned inline — Vercel
-   *  places them between the edit-panel prose and the filled-panel shot. */
-  | { kind: 'sp-values' }
+  /** The copyable SP values (Entity ID + ACS), positioned inline. Labels are
+   *  per-IdP: Entra says "Identifier (Entity ID)" / "Reply URL (ACS)", Okta
+   *  says "Audience URI (SP Entity ID)" / "Single sign-on URL" — show the
+   *  words the admin sees in the console. acsFirst flips the order to match
+   *  the IdP form's field order. */
+  | { kind: 'sp-values'; entityIdLabel?: string; acsLabel?: string; acsFirst?: boolean }
   /** Claim-mapping table: Name (+Required) → Source Attribute, both copyable. */
   | {
       kind: 'claims-table';
@@ -313,20 +316,73 @@ export const PROVIDER_GUIDES: ProviderGuide[] = [
     steps: [
       {
         id: 'create-app',
-        title: 'Create a SAML app integration',
-        intro: 'In the Okta admin console: Applications → Applications → Create App Integration.',
-        bullets: ['Sign-in method: SAML 2.0 → Next.', 'Name it (e.g. "Kortix") and continue.'],
+        title: 'Create a SAML integration',
+        intro: 'Sign in to the Okta admin console.',
+        content: [
+          {
+            kind: 'text',
+            text: 'In the left navigation menu, expand the "Applications" section and select the "Applications" tab.',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/create-app-1.png',
+            alt: 'Okta admin console with the Applications section expanded',
+          },
+          { kind: 'text', text: 'Click "Create App Integration".' },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/create-app-2.png',
+            alt: 'Applications page with the Create App Integration button',
+          },
+          {
+            kind: 'text',
+            text: 'In the "Create a new app integration" dialog, select "SAML 2.0". Click "Next".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/create-app-3.png',
+            alt: 'Create a new app integration dialog with SAML 2.0 selected',
+          },
+          {
+            kind: 'text',
+            text: 'The "Create SAML Integration" wizard opens. On the "General Settings" step, enter an appropriate app name, such as "Kortix" — optionally upload an app logo. Click "Next".',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/create-app-4.png',
+            alt: 'General Settings step with the app name field',
+          },
+        ],
+        doneLabel: 'I’ve created a SAML app integration',
       },
       {
         id: 'basic-saml',
-        title: 'SAML settings',
-        intro: 'On the "Configure SAML" step, paste these two values.',
-        showSpValues: true,
-        bullets: [
-          'Single sign-on URL → the Reply URL (ACS) below (check "Use this for Recipient URL and Destination URL").',
-          'Audience URI (SP Entity ID) → the Identifier (Entity ID) below.',
-          'Name ID format: EmailAddress. Application username: Email.',
+        title: 'Configure SAML',
+        intro:
+          'On the "Configure SAML" step, locate the "Single sign-on URL" and "Audience URI (SP Entity ID)" fields. Copy the values below and paste them into their respective fields.',
+        content: [
+          {
+            kind: 'sp-values',
+            acsLabel: 'Single sign-on URL',
+            entityIdLabel: 'Audience URI (SP Entity ID)',
+            acsFirst: true,
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/basic-saml-1.png',
+            alt: 'Configure SAML step with the Single sign-on URL and Audience URI fields',
+          },
+          {
+            kind: 'text',
+            text: 'Check "Use this for Recipient URL and Destination URL". Set "Name ID format" to EmailAddress and "Application username" to Email — Kortix matches accounts by email.',
+          },
+          {
+            kind: 'image',
+            src: '/sso-setup/okta/basic-saml-2.png',
+            alt: 'Name ID format and Application username settings',
+          },
         ],
+        doneLabel: 'I’ve configured the SAML settings',
       },
       {
         id: 'email-attribute',
