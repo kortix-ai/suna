@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import 'react-native-url-polyfill/auto';
@@ -7,68 +7,11 @@ import { log } from '@/lib/logger';
 
 /**
  * Supabase Configuration
- *
+ * 
  * Configure with environment variables:
  * - EXPO_PUBLIC_SUPABASE_URL
  * - EXPO_PUBLIC_SUPABASE_ANON_KEY
  */
-
-// expo-secure-store persists individual items in the OS Keychain (iOS) /
-// Keystore (Android) instead of plaintext AsyncStorage, but each item is
-// capped at ~2048 bytes — well under a Supabase session (access + refresh
-// token + user metadata). Chunk values across multiple secure items and
-// reassemble on read so the full session still fits.
-const SECURE_STORE_CHUNK_SIZE = 1800;
-const SECURE_STORE_CHUNK_COUNT_SUFFIX = '.chunks';
-
-class ChunkedSecureStorage {
-  async getItem(key: string): Promise<string | null> {
-    const countRaw = await SecureStore.getItemAsync(`${key}${SECURE_STORE_CHUNK_COUNT_SUFFIX}`);
-    const count = countRaw ? parseInt(countRaw, 10) : NaN;
-    if (!Number.isFinite(count) || count <= 0) {
-      return null;
-    }
-
-    const parts: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const part = await SecureStore.getItemAsync(`${key}.${i}`);
-      if (part === null) {
-        // Missing/corrupted chunk — treat the whole value as unreadable
-        // rather than returning a truncated session token.
-        return null;
-      }
-      parts.push(part);
-    }
-    return parts.join('');
-  }
-
-  async setItem(key: string, value: string): Promise<void> {
-    await this.removeItem(key);
-
-    const chunks: string[] = [];
-    for (let i = 0; i < value.length; i += SECURE_STORE_CHUNK_SIZE) {
-      chunks.push(value.slice(i, i + SECURE_STORE_CHUNK_SIZE));
-    }
-    await Promise.all(chunks.map((chunk, i) => SecureStore.setItemAsync(`${key}.${i}`, chunk)));
-    await SecureStore.setItemAsync(`${key}${SECURE_STORE_CHUNK_COUNT_SUFFIX}`, String(chunks.length));
-  }
-
-  async removeItem(key: string): Promise<void> {
-    const countRaw = await SecureStore.getItemAsync(`${key}${SECURE_STORE_CHUNK_COUNT_SUFFIX}`);
-    const count = countRaw ? parseInt(countRaw, 10) : 0;
-    const deletions: Promise<void>[] = [
-      SecureStore.deleteItemAsync(`${key}${SECURE_STORE_CHUNK_COUNT_SUFFIX}`),
-    ];
-    if (Number.isFinite(count) && count > 0) {
-      for (let i = 0; i < count; i++) {
-        deletions.push(SecureStore.deleteItemAsync(`${key}.${i}`));
-      }
-    }
-    await Promise.all(deletions);
-  }
-}
-
-const secureStorage = new ChunkedSecureStorage();
 
 const supabaseUrl = resolveLocalUrl(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -85,9 +28,7 @@ if (!supabaseAnonKey || supabaseAnonKey === 'YOUR_SUPABASE_ANON_KEY' || supabase
 }
 
 /**
- * Supabase client instance with a SecureStore-backed (Keychain/Keystore)
- * storage adapter for session persistence, so auth tokens never sit in
- * plaintext on-device storage.
+ * Supabase client instance with AsyncStorage for session persistence
  */
 export const supabase = (() => {
   try {
@@ -97,7 +38,7 @@ export const supabase = (() => {
 
     return createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        storage: secureStorage,
+        storage: AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
