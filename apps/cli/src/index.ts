@@ -7,6 +7,8 @@ import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runDoctor } from './commands/doctor.ts';
+import { runDump } from './commands/dump.ts';
 import { runEnv } from './commands/env.ts';
 import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
@@ -17,6 +19,8 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
+import { runProviders } from './commands/providers.ts';
+import { runProxy } from './commands/proxy.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -137,6 +141,11 @@ const TIERS: readonly CommandTier[] = [
           { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
           { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
           {
+            name: 'providers',
+            args: '<subcommand>',
+            blurb: 'Configure LLM providers for this project (OAuth or API key)',
+          },
+          {
             name: 'channels',
             args: '<subcommand>',
             blurb: 'Connect Slack to this project — `connect` prints a one-click install link',
@@ -169,6 +178,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
+          },
+          {
+            name: 'proxy',
+            args: '<subcommand>',
+            blurb: 'Share a port inside a session sandbox via a public URL',
           },
           { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
@@ -203,6 +217,11 @@ const TIERS: readonly CommandTier[] = [
       {
         title: '',
         commands: [
+          {
+            name: 'doctor',
+            blurb: 'End-to-end smoke test: auth → project → session → agent reply',
+          },
+          { name: 'dump', blurb: 'Print a redacted debug summary for support' },
           { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
           { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
           { name: 'help', blurb: 'Show this help' },
@@ -340,11 +359,17 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
+  if (argv[0] === 'providers') {
+    return runProviders(argv.slice(1));
+  }
   if (argv[0] === 'sessions') {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
     return runSessionsChat(argv.slice(1));
+  }
+  if (argv[0] === 'proxy') {
+    return runProxy(argv.slice(1));
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
@@ -388,6 +413,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
   }
+  if (argv[0] === 'doctor') {
+    return runDoctor(argv.slice(1));
+  }
+  if (argv[0] === 'dump') {
+    return runDump(argv.slice(1));
+  }
   if (argv[0] === 'update') {
     return runUpdate(argv.slice(1));
   }
@@ -424,12 +455,14 @@ const KNOWN_COMMANDS = [
   'projects',
   'sessions',
   'chat',
+  'proxy',
   'files',
   'cr',
   'triggers',
   'connectors',
   'secrets',
   'env',
+  'providers',
   'channels',
   'sandboxes',
   'marketplace',
@@ -440,6 +473,8 @@ const KNOWN_COMMANDS = [
   'access',
   'roles',
   'grants',
+  'doctor',
+  'dump',
   'update',
   'uninstall',
   'help',

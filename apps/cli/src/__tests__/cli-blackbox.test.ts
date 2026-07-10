@@ -535,6 +535,74 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(help.stdout).toContain('init');
   });
 
+  test('doctor, providers, and proxy are wired (not unknown commands)', async () => {
+    const doctor = await runCli(['doctor', '--help']);
+    expect(doctor.code).toBe(0);
+    expect(doctor.stdout).toContain('Usage: kortix doctor');
+    expect(doctor.stderr).not.toContain('unknown command');
+
+    const providers = await runCli(['providers', '--help']);
+    expect(providers.code).toBe(0);
+    expect(providers.stdout).toContain('Usage: kortix providers');
+    expect(providers.stderr).not.toContain('unknown command');
+
+    const proxy = await runCli(['proxy', '--help']);
+    expect(proxy.code).toBe(0);
+    expect(proxy.stdout).toContain('Usage: kortix proxy');
+    expect(proxy.stderr).not.toContain('unknown command');
+  }, 20_000);
+
+  test('top-level help lists the newly wired commands', async () => {
+    const help = await runCli(['--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('doctor');
+    expect(help.stdout).toContain('dump');
+    expect(help.stdout).toContain('providers');
+    expect(help.stdout).toContain('proxy');
+  }, 15_000);
+
+  test('dump --offline --json emits a redacted, machine-readable report', async () => {
+    const configFile = writeConfig('https://api.example.test');
+    const result = await runCli(['dump', '--offline', '--json'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
+    expect(result.code).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.cli_version).toBeDefined();
+    expect(report.platform).toContain('/');
+    expect(report.config_file).toContain('config.json');
+    expect(report.auth.logged_in).toBe(true);
+    expect(report.auth.user_email).toBe('user@example.test');
+    // --offline must skip the network probe entirely.
+    expect(report.identity_probe).toBeNull();
+    // The token value must never appear anywhere in the output.
+    expect(result.stdout).not.toContain('tok_blackbox');
+  }, 15_000);
+
+  test('dump reports not-logged-in without a token and never leaks it', async () => {
+    const path = join(tmp, 'empty-config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.example.test',
+            token: '',
+            user_id: '',
+            user_email: '',
+            account_id: '',
+            logged_in_at: '',
+          },
+        },
+      }),
+      'utf8',
+    );
+    const result = await runCli(['dump', '--offline'], tmp, { KORTIX_CONFIG_FILE: path });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('not logged in');
+  }, 15_000);
+
   test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
     // Regression guard: `main()` used to scan the ENTIRE argv for a bare
     // `--version`/`-v` and print the CLI's own version banner before any
