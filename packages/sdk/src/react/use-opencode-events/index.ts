@@ -3,8 +3,8 @@
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { clearConfigOverrides } from '../use-opencode-config';
 import { saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
-import { logger } from '../../platform/logger';
-import { getClient, resetClient } from '../../opencode/client';
+import { logger } from '../../core/http/logger';
+import { getClient, resetClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
@@ -19,7 +19,7 @@ import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
 import { useEventStreamRefs } from './use-event-stream-refs';
-import { openEventStream } from '../../state/event-stream';
+import { openEventStream } from '../../core/stream/event-stream';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and

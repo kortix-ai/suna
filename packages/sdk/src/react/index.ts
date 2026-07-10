@@ -27,7 +27,7 @@ export {
   isBillingError,
   formatBillingErrorForUI,
   type BillingErrorUI,
-} from '../platform/api/errors';
+} from '../core/http/api/errors';
 
 // Fork-draft stash — see `session-start-stash.ts` for the full contract. Not
 // (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
@@ -51,7 +51,7 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from '../state/event-stream';
+} from '../core/stream/event-stream';
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six

@@ -2,9 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { stripTrailingSlashes } from '../platform/strings';
-import { getClient } from '../opencode/client';
+import { getClient } from '../core/runtime/client';
 import { getActiveOpenCodeUrl } from '../browser/stores/server-store';
-import { getAuthToken } from '../platform/auth';
+import { getAuthToken } from '../core/http/auth';
 import type { Pty } from '@opencode-ai/sdk/v2/client';
 import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 

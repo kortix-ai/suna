@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { getClient } from "../opencode/client";
+import { getClient } from "../core/runtime/client";
 import { useSyncStore } from "../browser/stores/sync-store";
 import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
 import {

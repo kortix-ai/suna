@@ -101,7 +101,7 @@ import {
   reconcileServices,
   registerService,
   systemReload,
-} from '../opencode/client';
+} from '../core/runtime/client';
 import type {
   CredentialItem,
   CredentialWithValue,
@@ -135,7 +135,7 @@ import type {
   RegisterSandboxServicePayload,
   SandboxServiceAction,
   SystemReloadMode,
-} from '../opencode/client';
+} from '../core/runtime/client';
 
 // Re-export the request/response types unchanged — hosts that today import
 // them from `@kortix/sdk/opencode-client` (via the web hook files) keep that

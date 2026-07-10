@@ -7,7 +7,7 @@ import type {
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { useEffect, useRef } from "react";
-import { getClient } from "../opencode/client";
+import { getClient } from "../core/runtime/client";
 // Inlined verbatim from web's `@/ui/types` — FileDiff is a derived type, NOT
 // exported by @opencode-ai/sdk/v2/client. SDK-port: keep type shape identical.
 type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {

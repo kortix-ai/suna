@@ -22,7 +22,7 @@ export {
   isConfigured,
   type KortixPlatformConfig,
   type KortixFeatureFlagOverrides,
-} from './platform/config';
+} from './core/http/config';
 
 /**
  * The opinionated single entry point. `createKortix({ getToken })` wires the
@@ -36,11 +36,11 @@ export {
   type ProjectHandle,
   type SessionHandle,
   type SessionModel,
-} from './kortix';
+} from './core/client/kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
-export { files } from './files/client';
-export type * from './files/types';
+export { files } from './core/files/client';
+export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
@@ -66,7 +66,7 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { SessionHealthResponse, SessionHealthResult } from './session/health';
+export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -75,7 +75,7 @@ export type { SessionHealthResponse, SessionHealthResult } from './session/healt
  * surface (TS's declaration emit needs this to describe `SessionHandle`'s
  * `ensureReady()` return type without reaching into an internal module path).
  */
-export type { SessionRuntimeEntry } from './state/session-runtime-registry';
+export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
@@ -91,7 +91,7 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from './state/event-stream';
+} from './core/stream/event-stream';
 
 /**
  * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
@@ -112,7 +112,7 @@ export {
   formatBillingErrorForUI,
   type ApiErrorFields,
   type BillingErrorUI,
-} from './platform/api/errors';
+} from './core/http/api/errors';
 
 /**
  * Exhaustive part/turn classification for building chat UIs — framework-free.
@@ -150,7 +150,7 @@ export {
   classifyTurn,
   humanizeToolName,
   toolInfo,
-} from './turns/index';
+} from './core/turns';
 
 /**
  * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
@@ -180,7 +180,7 @@ export {
   type KortixChatQuestionInfo,
   type KortixChatQuestionOption,
   type KortixChatToolRef,
-} from './state/chat-events';
+} from './core/stream/chat-events';
 
 /**
  * Domain result types from the REST facade (`kortix.project(id).*` /
@@ -283,7 +283,7 @@ export type {
   // Auth validate helper
   AccountIdentity,
   ValidateTokenResult,
-} from './platform/projects-client';
+} from './core/rest/projects-client';
 
 /**
  * Linear-time trailing-slash strip shared with hosts — see
@@ -313,4 +313,4 @@ export {
   type ToolViewModel,
   type WebSearchResultItem,
   toolViewModel,
-} from './turns/view-model';
+} from './core/turns/view-model';

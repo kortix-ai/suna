@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../opencode/client';
+import { getClient } from '../core/runtime/client';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-import type { MessageWithPartsLike, ToolPartLike } from '../turns/types';
+import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
 
 /**
  * True when any assistant message has a `question` tool part still

@@ -6,7 +6,7 @@
  * { cacheKey, userId, sessionId, messages, parts, updatedAt }.
  */
 
-import { platformConfig } from '../../platform/config';
+import { platformConfig } from '../../core/http/config';
 
 const DB_NAME = "kortix-session-cache";
 const DB_VERSION = 2;

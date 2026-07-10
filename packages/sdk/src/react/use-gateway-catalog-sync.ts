@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listProjectSecrets } from '../platform/projects-client';
+import { listProjectSecrets } from '../core/rest/projects-client';
 import { refreshProjectProviderState } from './provider-refresh';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 

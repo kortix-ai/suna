@@ -1,18 +1,18 @@
 import { create } from 'zustand';
 
-import { getActiveOpenCodeUrl } from '../../state/server-store/active';
-import type { ServerStore } from '../../state/server-store/types';
+import { getActiveOpenCodeUrl } from '../../core/session/server-store/active';
+import type { ServerStore } from '../../core/session/server-store/types';
 
 // Re-export the public surface that lives in sibling modules so importers of
 // '../browser/stores/server-store' (and '@kortix/sdk/server-store') stay unchanged.
-export { getSandboxUrlForExternalId, getPublicShareUrlForToken } from '../../state/server-store/url-helpers';
+export { getSandboxUrlForExternalId, getPublicShareUrlForToken } from '../../core/session/server-store/url-helpers';
 export {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
   getActiveOpenCodeUrl,
   getActiveSandboxId,
   getBackendPort,
-} from '../../state/server-store/active';
+} from '../../core/session/server-store/active';
 
 /**
  * server-store — a thin, read-only view over the per-session runtime.

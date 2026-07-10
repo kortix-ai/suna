@@ -44,7 +44,7 @@ mock.module('@tanstack/react-query', () => ({
 // `client.provider.list()` / `client.session.summarize()` /
 // `client.session.fork()` / `client.session.command()` resolve to.
 let clientImpl: Record<string, unknown> = {};
-mock.module('../../opencode/client', () => ({
+mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
 }));
 

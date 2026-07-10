@@ -31,7 +31,7 @@ let calls: Call[] = [];
 let nextResponse: () => Response = () =>
   new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
 
-mock.module('../platform/auth', () => ({
+mock.module('../core/http/auth', () => ({
   getAuthToken: async () => 'test-token',
   getAuthTokenWithRetry: async () => 'test-token',
   authenticatedFetch: async (

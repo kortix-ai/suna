@@ -10,7 +10,7 @@ let promptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; re
   async () => ({ data: {} });
 let getClientThrows: Error | null = null;
 
-mock.module('../opencode/client', () => ({
+mock.module('../core/runtime/client', () => ({
   getClient: () => {
     if (getClientThrows) throw getClientThrows;
     return {
@@ -22,7 +22,7 @@ mock.module('../opencode/client', () => ({
   },
 }));
 
-mock.module('../platform/logger', () => ({
+mock.module('../core/http/logger', () => ({
   logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
 }));
 

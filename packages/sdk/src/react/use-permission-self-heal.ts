@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../opencode/client';
+import { getClient } from '../core/runtime/client';
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-import type { MessageWithPartsLike, ToolPartLike } from '../turns/types';
+import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
 
 /** A tool stuck in `running` this long with nothing pending is suspicious —
  * long enough that ordinary tool startup never trips it. */

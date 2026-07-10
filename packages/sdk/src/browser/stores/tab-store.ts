@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '../../platform/instance-routes';
+import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '../../core/http/instance-routes';
 import { safeLocalStorage } from '../../platform/storage/managed-storage';
 
 // ============================================================================

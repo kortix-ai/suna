@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
-import { logger } from '../../platform/logger';
+import { getClient } from '../../core/runtime/client';
+import { logger } from '../../core/http/logger';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';

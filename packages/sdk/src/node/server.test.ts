@@ -1,6 +1,6 @@
 import { test, expect, beforeEach } from 'bun:test';
 import { runWithKortix, createScopedKortix } from './server';
-import { backendApi } from '../platform/api-client';
+import { backendApi } from '../core/http/api-client';
 
 // Importing `./server` pulls in `./platform/config-node`, which registers the
 // AsyncLocalStorage resolver as an import-time side effect — this file is

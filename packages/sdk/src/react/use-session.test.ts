@@ -20,7 +20,7 @@ class RuntimeNotReadyError extends Error {
   }
 }
 
-mock.module('../opencode/client', () => ({
+mock.module('../core/runtime/client', () => ({
   RuntimeNotReadyError,
   getClient: () => ({
     permission: { reply: (args: unknown) => permissionReplyImpl(args) },
@@ -33,7 +33,7 @@ mock.module('../opencode/client', () => ({
 }));
 
 import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
-import { BillingError } from '../platform/api/errors';
+import { BillingError } from '../core/http/api/errors';
 import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
 import {
   answerQuestion,
@@ -44,8 +44,8 @@ import {
   sendStateOnError,
   shouldRetrySessionStart,
 } from './use-session';
-import { clearSessionFresh, markSessionFresh } from '../platform/fresh-sessions';
-import { SessionStartError } from '../platform/projects-client';
+import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
+import { SessionStartError } from '../core/rest/projects-client';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
   useOpenCodePendingStore.getState().addQuestion({

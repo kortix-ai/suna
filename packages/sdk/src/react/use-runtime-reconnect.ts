@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { getSupabaseAccessToken } from '../platform/auth';
-import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../session';
+import { getSupabaseAccessToken } from '../core/http/auth';
+import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../core/session';
 import {
   incrementSandboxFail,
   markInitialCheckDone,

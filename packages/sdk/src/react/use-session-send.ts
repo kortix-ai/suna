@@ -36,7 +36,7 @@
 
 import type { Message, Part } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useState } from 'react';
-import { getClient } from '../opencode/client';
+import { getClient } from '../core/runtime/client';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
