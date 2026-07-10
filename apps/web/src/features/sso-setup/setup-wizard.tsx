@@ -693,28 +693,39 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
           value={activeStep}
           onValueChange={setActiveStep}
           count={guide.steps.length - 1}
-          className="gap-0"
+          className="flex w-full flex-col"
         >
           {guide.steps.map((s, i) => (
-            <StepperItem key={s.id} step={i} completed={completed.includes(s.id)} className="items-start">
-              <div className="flex flex-col items-center self-stretch">
+            // Reference structure (dev-view.tsx): the StepperItem holds ONLY
+            // the indicator + connecting line; the title is a sibling — the
+            // primitive stacks item children vertically in this orientation.
+            <div key={s.id} className="flex gap-3">
+              <StepperItem step={i} completed={completed.includes(s.id)} className="items-center">
                 <StepperTrigger>
-                  <StepperIndicator>
+                  <StepperIndicator className="size-6 text-xs tabular-nums">
                     {completed.includes(s.id) ? <Check className="size-3" /> : i + 1}
                   </StepperIndicator>
                 </StepperTrigger>
-                <StepperSeparator />
-              </div>
-              <StepperTrigger className="ml-3 pb-6">
+                <StepperSeparator className="m-0" />
+              </StepperItem>
+              <button
+                type="button"
+                onClick={() => setActiveStep(i)}
+                className={`min-w-0 flex-1 pt-1 text-left ${
+                  i === guide.steps.length - 1 ? 'pb-1' : 'pb-7'
+                }`}
+              >
                 <StepperTitle
                   className={
-                    i === activeStep ? 'text-foreground text-left' : 'text-muted-foreground text-left'
+                    i === activeStep
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground transition-colors'
                   }
                 >
                   {s.title}
                 </StepperTitle>
-              </StepperTrigger>
-            </StepperItem>
+              </button>
+            </div>
           ))}
         </Stepper>
 
