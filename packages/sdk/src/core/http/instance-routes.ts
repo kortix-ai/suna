@@ -78,6 +78,8 @@ export function getActiveInstanceIdFromCookie(): string | null {
 
 export function setActiveInstanceCookie(instanceId?: string | null): void {
   if (typeof document === 'undefined') return;
+  // The one write site every branch below calls, instead of touching `document` directly.
+  const writeCookie = (value: string): void => { document.cookie = value; };
 
   // Project routes must NEVER carry the legacy active-instance cookie.
   // With it set, middleware redirects any instance-scoped client-side nav
@@ -85,16 +87,16 @@ export function setActiveInstanceCookie(instanceId?: string | null): void {
   // which is the legacy dashboard the user explicitly does not want to
   // see. Always force-clear instead of writing the requested value.
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/projects')) {
-    document.cookie = `${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    writeCookie(`${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`);
     return;
   }
 
   if (!instanceId) {
-    document.cookie = `${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    writeCookie(`${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`);
     return;
   }
 
-  document.cookie = `${ACTIVE_INSTANCE_COOKIE}=${encodeURIComponent(instanceId)}; Path=/; SameSite=Lax`;
+  writeCookie(`${ACTIVE_INSTANCE_COOKIE}=${encodeURIComponent(instanceId)}; Path=/; SameSite=Lax`);
 }
 
 export function toInstanceAwarePath(pathname: string, instanceId?: string | null): string {

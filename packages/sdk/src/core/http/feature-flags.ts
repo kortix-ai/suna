@@ -1,6 +1,7 @@
 import { AUTO_MODEL_ENABLED } from '@kortix/llm-catalog';
 
 import { platformConfig } from './config';
+import { safeEnv } from './env';
 
 function parseEnvBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (value == null) return defaultValue;
@@ -8,19 +9,6 @@ function parseEnvBoolean(value: string | undefined, defaultValue: boolean): bool
   if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
   return defaultValue;
-}
-
-/**
- * Safe `process.env.<name>` read. Non-Next hosts (React Native, a bare browser
- * bundle, a CLI) may not define a `process` global at all — touching
- * `process.env` there throws a ReferenceError, not just returns `undefined`.
- */
-function safeEnv(name: string): string | undefined {
-  try {
-    return typeof process !== 'undefined' ? process.env?.[name] : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**

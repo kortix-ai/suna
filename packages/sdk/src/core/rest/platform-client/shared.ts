@@ -9,6 +9,7 @@
 import { authenticatedFetch } from '../../http/auth';
 import { platformConfig } from '../../http/config';
 import { ApiError, parseBillingError } from '../../http/api/errors';
+import { safeEnv } from '../../http/env';
 import {
   listProjectSessions,
   listProjects,
@@ -25,8 +26,10 @@ import { SANDBOX_PORTS, type SandboxInfo, type SandboxProviderName } from './typ
  */
 export function getPlatformUrl(): string {
   // Server-side: prefer BACKEND_URL (internal Docker hostname) over
-  // NEXT_PUBLIC_BACKEND_URL (browser-facing localhost, unreachable from container)
-  const backendUrl = process.env.BACKEND_URL || platformConfig().backendUrl;
+  // NEXT_PUBLIC_BACKEND_URL (browser-facing localhost, unreachable from container).
+  // `safeEnv` because this module is isomorphic-core: a bare `process.env` read
+  // throws a ReferenceError in a browser <script> bundle and on React Native.
+  const backendUrl = safeEnv('BACKEND_URL') || platformConfig().backendUrl;
   if (backendUrl) {
     return backendUrl;
   }

@@ -278,3 +278,41 @@ test('core/ never imports from browser/, node/, or react/', () => {
     }
   }
 });
+
+test('core/ never touches a bare process/window/document/localStorage global', () => {
+  const coreDir = join(SRC_ROOT, 'core');
+  if (!existsSync(coreDir)) return;
+  // A bare global read throws a ReferenceError on React Native, in a CLI, and in
+  // a bare browser <script> bundle. Guarded reads (`typeof x !== 'undefined'`)
+  // are fine — this only flags a member access with no guard on the same line.
+  const BARE = /(?<!typeof\s)(?<![.\w])(process|window|document|localStorage|sessionStorage)\s*\./g;
+  // Widened from a same-line-only guard check: in practice the `typeof x !==
+  // 'undefined'` guard often sits a line or two above the read it protects —
+  // an `if (typeof window !== 'undefined' && window.foo) { … }` block whose
+  // body reads `window` again a line later (kortix.ts:100→102), or an
+  // early-return guard immediately above the read it covers
+  // (instance-routes.ts:68→70, :74→75). Look back up to GUARD_WINDOW lines for
+  // a `typeof <that specific captured global>` mention before flagging —
+  // scoped to the SAME global name (not "any of the four") so an unrelated
+  // guard for a different global sitting nearby can't mask a real bare read.
+  const GUARD_WINDOW = 3;
+  for (const file of walkDir(coreDir)) {
+    const lines = readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;
+      const hit = line.match(BARE);
+      if (!hit) return;
+      // `hit` comes from a global-flag `.match()`, which returns only whole
+      // matches (no capture groups) — pull the global name back out of the
+      // matched text itself rather than a nonexistent `hit[1]`.
+      const globalName = hit[0].match(/^(process|window|document|localStorage|sessionStorage)/)?.[1];
+      const guardRe = new RegExp(`typeof\\s+${globalName}\\b`);
+      const guardedNearby = lines
+        .slice(Math.max(0, i - GUARD_WINDOW), i + 1)
+        .some((candidate) => guardRe.test(candidate));
+      expect(
+        guardedNearby ? null : `${file.slice(SRC_ROOT.length + 1)}:${i + 1} bare global \`${hit[0]}\``,
+      ).toBeNull();
+    });
+  }
+});
