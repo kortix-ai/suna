@@ -17,6 +17,49 @@ The REST API has an auto-generated reference at
 
 ---
 
+## Install
+
+```bash
+npm install @kortix/sdk
+```
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl: 'https://api.kortix.ai/v1', getToken });
+await kortix.projects.list();
+```
+
+## No bundler, no framework
+
+The published package ships a browser IIFE bundle alongside its ESM `dist/` —
+no build step required:
+
+```html
+<script src="https://unpkg.com/@kortix/sdk"></script>
+<script>
+  const kortix = Kortix.createKortix({ backendUrl, getToken });
+</script>
+```
+
+## Entry points
+
+`@kortix/sdk` is the canonical entry — everything framework-free lives there.
+Three others exist, each for a reason that fits in one sentence:
+
+| Entry | Why it can't live at root |
+|---|---|
+| `@kortix/sdk/react` | React is a peer dependency |
+| `@kortix/sdk/server` | imports `node:async_hooks` |
+| `@kortix/sdk/internal/*` | unsupported, outside semver |
+
+Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
+`@deprecated`. Import from the root instead — see **API-MAP.md**'s Stability
+table for the full list (20 of them).
+
+> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
+> no `response.body`. Tracked; do not depend on it yet.
+
 ## Quick start
 
 ```ts
