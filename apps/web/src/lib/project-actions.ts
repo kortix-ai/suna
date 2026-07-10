@@ -11,10 +11,11 @@
  * Gating rule (IAM v1): a capability is DEACTIVATED for a group by giving
  * its custom role a permission set that OMITS the capability's leaf. The UI
  * reflects that by hiding/disabling the section whose `read`/`write` leaf the
- * role no longer grants. Therefore every `read` leaf used below MUST be one the
- * built-in Member role is seeded with (role-perms.ts `PROJECT_MEMBER_BASELINE`)
- * and every `write` leaf one Editor is seeded with — otherwise a normal
- * member/editor would be stranded out of a section they should still see.
+ * role no longer grants. Sections whose read leaf is in the Member baseline
+ * (role-perms.ts `PROJECT_MEMBER_BASELINE`) are visible to every project role;
+ * `secrets` gates on project.secret.read, which is DELIBERATELY editor-tier
+ * (the sensitive file/secret reads moved off the floor `member` role), so that
+ * section — like the standalone Files page — hides for plain members by design.
  */
 
 import type { CustomizeSection } from '@/lib/customize-sections';

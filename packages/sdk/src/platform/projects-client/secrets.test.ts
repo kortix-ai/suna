@@ -46,6 +46,20 @@ test('listProjectSecrets throws when the response is unsuccessful', async () => 
   await expect(listProjectSecrets('P1')).rejects.toBeTruthy();
 });
 
+test('listProjectSecrets is a silent background read — a 403 never hits the global error sink', async () => {
+  // project.secret.read is editor-tier: plain members legitimately 403 from
+  // member-visible surfaces (model picker, LLM providers). No global toast.
+  const onError = mock(() => {});
+  configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+  try {
+    nextResponse = { status: 403, body: { message: 'forbidden' } };
+    await expect(listProjectSecrets('P1')).rejects.toBeTruthy();
+    expect(onError).not.toHaveBeenCalled();
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
 test('upsertProjectSecret POSTs name/value as the raw body', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
   await upsertProjectSecret('P1', { name: 'FOO', value: 'bar' });
