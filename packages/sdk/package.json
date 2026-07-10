@@ -151,6 +151,9 @@
         "import": "./dist/deprecated/idb-sync-cache.js"
       }
     },
+    "browser": "./dist/kortix.esm.min.js",
+    "unpkg": "./dist/kortix.global.js",
+    "jsdelivr": "./dist/kortix.global.js",
     "files": ["dist", "README.md"]
   },
   "files": ["dist", "src", "README.md"],
@@ -158,6 +161,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
     "test": "bun test src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "build:bundles": "pnpm run build && tsup",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "smoke:install": "node scripts/smoke-install.mjs"
   },
@@ -166,6 +170,7 @@
     "@types/react": "^19.1.17",
     "react": "^19.1.0",
     "tsc-alias": "^1.8.17",
+    "tsup": "^8.5.1",
     "typescript": "^5.4.0"
   }
 }
