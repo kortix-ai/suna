@@ -27,6 +27,10 @@ export interface GuideStep {
   warning?: string;
   /** Muted footnote. */
   note?: string;
+  /** Screenshot of the IdP console for this step. OUR OWN captures (from the
+   *  kortixssotest test tenants) under /public/sso-setup/<provider>/ — never
+   *  another vendor's doc assets. Rendered between the bullets and callouts. */
+  image?: { src: string; alt: string };
   kind?: StepKind;
 }
 

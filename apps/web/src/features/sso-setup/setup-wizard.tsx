@@ -507,6 +507,18 @@ function StepBody({
         </ol>
       )}
 
+      {step.image && (
+        // Our own IdP-console captures (public/sso-setup/<provider>/) — plain
+        // <img> like other static assets; screenshots keep their light chrome
+        // in both themes.
+        <img
+          src={step.image.src}
+          alt={step.image.alt}
+          loading="lazy"
+          className="border-border/60 w-full rounded-md border"
+        />
+      )}
+
       {step.showSpValues && <SpValueRows urls={spUrls} />}
 
       {step.warning && (
