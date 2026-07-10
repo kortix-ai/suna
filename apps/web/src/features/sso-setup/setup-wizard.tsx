@@ -143,7 +143,17 @@ function SpValueRows({ urls }: { urls: SamlSpUrls | null }) {
 
 // ─── Screen 1: provider select ─────────────────────────────────────────────
 
-function ProviderSelect({ flow, onPick }: { flow: Flow; onPick: (id: string) => void }) {
+function ProviderSelect({
+  flow,
+  accountId,
+  ssoConnected,
+  onPick,
+}: {
+  flow: Flow;
+  accountId: string;
+  ssoConnected: boolean;
+  onPick: (id: string) => void;
+}) {
   const [query, setQuery] = useState('');
   const all = flow === 'sso' ? PROVIDER_GUIDES : SCIM_PROVIDER_GUIDES;
   const guides = useMemo(() => {
@@ -160,6 +170,22 @@ function ProviderSelect({ flow, onPick }: { flow: Flow; onPick: (id: string) => 
       <p className="text-muted-foreground mt-2 text-center text-sm">
         {FLOW_CONFIG[flow].subheading}
       </p>
+      {flow === 'scim' && !ssoConnected && (
+        <div className="mt-6">
+          <InfoBanner
+            tone="info"
+            title="Set up SAML SSO first"
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/accounts/${accountId}/sso-setup`}>Set up SSO</Link>
+              </Button>
+            }
+          >
+            Directory Sync provisions accounts, but without SSO those users have no way to sign
+            in. Connecting SAML first is strongly recommended.
+          </InfoBanner>
+        </div>
+      )}
       <div className="border-border/70 bg-card mt-8 overflow-hidden rounded-xl border">
         <div className="border-border/60 relative border-b">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2" />
@@ -559,6 +585,8 @@ function WizardCore({ accountId, flow }: { accountId: string; flow: Flow }) {
     return (
       <ProviderSelect
         flow={flow}
+        accountId={accountId}
+        ssoConnected={!!providerQuery.data}
         onPick={(id) => router.replace(`/accounts/${accountId}/${config.route}?provider=${id}`)}
       />
     );

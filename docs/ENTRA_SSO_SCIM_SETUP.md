@@ -59,6 +59,13 @@ Kortix account bearer (owner/admin JWT or PAT).
 
 ## Part A — SAML single sign-on
 
+> **Prefer the guided setup.** The dashboard walks these exact steps
+> interactively — Account → **Settings** → **SAML SSO** → **Configure** opens a
+> per-IdP wizard (Entra, Okta, Google, custom SAML) with the copy-paste values
+> inline and the metadata import as the final step. Directory Sync has the
+> same: **SCIM Provisioning** → **Guided setup**. This document remains the
+> reference for the details behind each step.
+
 Kortix delegates SAML assertion validation to Supabase Auth, so the IdP metadata
 is registered **with Supabase**, and Kortix stores the resulting provider id.
 
