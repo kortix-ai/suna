@@ -26,21 +26,6 @@ resource "aws_iam_role_policy_attachment" "cluster" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-# Allow the control plane to use the Secrets envelope-encryption CMK
-# (aws_kms_key.eks_secrets in main.tf). EKS calls KMS as the cluster role.
-resource "aws_iam_role_policy" "cluster_kms_secrets" {
-  name = "${var.name}-cluster-kms-secrets"
-  role = aws_iam_role.cluster.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["kms:Encrypt", "kms:Decrypt", "kms:DescribeKey", "kms:CreateGrant"]
-      Resource = aws_kms_key.eks_secrets.arn
-    }]
-  })
-}
-
 # ── Node role (managed node group EC2 instances) ──────────────────────────────
 data "aws_iam_policy_document" "node_assume" {
   statement {

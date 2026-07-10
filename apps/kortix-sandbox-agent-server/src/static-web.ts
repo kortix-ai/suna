@@ -1,8 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
 
-import { loadConfig } from './config'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from './kortix-user-context'
 import { logger } from './logger'
 
 /**
@@ -312,40 +310,6 @@ function buildHelpHtml(baseUrl: string): string {
 </html>`
 }
 
-/**
- * Same contract as the main daemon's auth gate (see proxy.ts): every request
- * must carry an X-Kortix-User-Context signed with the sandbox's KORTIX_TOKEN.
- * This server is a second, independently-bound Bun.serve listener on
- * 0.0.0.0:3211 — it does NOT sit behind proxy.ts's `app.use('*', ...)`
- * middleware, so without its own check here it would serve arbitrary files
- * under ALLOWED_ROOTS to anyone who can reach the port directly, bypassing
- * tenant auth entirely. The API's reverse proxy forwards the header on every
- * request (see routes/proxy-utils.ts buildUpstreamHeaders), including the
- * per-asset /abs/* fetches a served HTML page triggers.
- */
-function checkAuth(req: Request): Response | null {
-  const cfg = loadConfig()
-  if (!cfg.sandboxToken) {
-    logger.warn('[static-web] rejecting request: KORTIX_TOKEN not configured')
-    return new Response(JSON.stringify({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    })
-  }
-
-  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER)
-  const result = verifyKortixUserContext(header, cfg.sandboxToken)
-  if (!result.ok) {
-    logger.warn('[static-web] reject', { reason: result.reason, path: new URL(req.url).pathname })
-    return new Response(JSON.stringify({ error: 'unauthorized', reason: result.reason }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    })
-  }
-
-  return null
-}
-
 function handleRequest(req: Request, port: number): Response {
   const url = new URL(req.url)
   const baseUrl = resolvePublicBaseUrl(req, url)
@@ -356,16 +320,12 @@ function handleRequest(req: Request, port: number): Response {
     return new Response(null, { status: 204, headers: corsHeaders })
   }
 
-  // Health check — deliberately unauthenticated, mirrors /kortix/health on
-  // the main daemon.
+  // Health check
   if (pathname === '/health') {
     return new Response(JSON.stringify({ status: 'ok', port }), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders },
     })
   }
-
-  const authError = checkAuth(req)
-  if (authError) return authError
 
   // Root — help page
   if (pathname === '/' || pathname === '/index.html') {

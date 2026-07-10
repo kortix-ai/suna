@@ -28,34 +28,10 @@ terraform {
   }
 }
 
-# ── Secrets envelope encryption (customer-managed KMS key) ────────────────────
-# Beyond the default etcd-volume encryption, envelope-encrypt Kubernetes Secrets
-# objects with a rotating CMK. SOC 2 / Trivy AVD-AWS-0039. NOTE: enabling
-# encryption_config on an EXISTING cluster is a one-way, in-place change — review
-# the terraform plan before applying to a live cluster.
-resource "aws_kms_key" "eks_secrets" {
-  description             = "Envelope encryption for ${var.name} EKS Secrets"
-  deletion_window_in_days = 30
-  enable_key_rotation     = true
-  tags                    = var.tags
-}
-
-resource "aws_kms_alias" "eks_secrets" {
-  name          = "alias/${var.name}-eks-secrets"
-  target_key_id = aws_kms_key.eks_secrets.key_id
-}
-
 resource "aws_eks_cluster" "this" {
   name     = var.name
   role_arn = aws_iam_role.cluster.arn
   version  = var.cluster_version
-
-  encryption_config {
-    resources = ["secrets"]
-    provider {
-      key_arn = aws_kms_key.eks_secrets.arn
-    }
-  }
 
   vpc_config {
     subnet_ids              = var.control_plane_subnet_ids
