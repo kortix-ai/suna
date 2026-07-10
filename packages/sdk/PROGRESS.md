@@ -140,8 +140,8 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | **DONE**    | `ab099b6a` | 2026-07-10   | `4c6f7102c` (4 commits from `25068d272`) |
 | 5   | Axis 2 — root canonical, subpaths deprecated            | **DONE** (snapshot growth accepted by Jay at hard stop #3) | `ab099b6a` | 2026-07-10   | `b5e588dbc`+`aafbdf91b`  |
 | 6   | Dogfood `whitelabel-demo` (acceptance gate)             | **DONE**    | `ab099b6a` | 2026-07-10   | `db30c6df3`+`19e500e50`  |
-| 7   | Portability — ban bare globals in `core/`               | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
-| 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | NOT STARTED | —          | —            | —                        |
+| 7   | Portability — ban bare globals in `core/`               | **DONE**    | `ab099b6a` | 2026-07-10   | `189428df7`+`a485ad401`  |
+| 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
 | 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | NOT STARTED | —          | —            | —                        |
 | 10  | Docs — README, CHANGELOG, API-MAP                       | NOT STARTED | —          | —            | —                        |
 
