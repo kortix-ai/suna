@@ -5,6 +5,21 @@ description: "Canonical reference for a Kortix project: the platform model (repo
 
 <skill name="kortix-system">
 
+<live-skills>
+The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
+**system skills** — `kortix-system`, `kortix-executor`, `kortix-memory`,
+`kortix-slack`, `kortix-computer` — are served fresh by the CLI, so their
+instructions are always current (no re-install, no image re-bake):
+
+- `kortix skills` — list the Kortix system skills.
+- `kortix skills get <name>` — print one skill's current SKILL.md body.
+
+Before answering anything about Kortix internals — the executor/connectors,
+project memory, Slack/channels, or reaching a connected computer — load the
+matching skill with `kortix skills get <name>` and follow it. Prefer this over
+any stale local copy; the CLI reflects the platform version you're running on.
+</live-skills>
+
 <overview>
 A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
