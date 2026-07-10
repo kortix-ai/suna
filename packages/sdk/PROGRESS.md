@@ -143,7 +143,7 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | 7   | Portability — ban bare globals in `core/`               | **DONE**    | `ab099b6a` | 2026-07-10   | `189428df7`+`a485ad401`  |
 | 8   | `tsup` bundles — CDN ESM + `window.Kortix`              | **DONE**    | `ab099b6a` | 2026-07-10   | `c7bca7a7e`              |
 | 9   | Examples — `07-vanilla.ts`, `08-cdn.html`               | IN PROGRESS (steps 1–5 DONE `549d597a0`, review clean; Step 6 = hard stop #4, awaiting Jay + live stack + real browser; D2a/D3 unclaimed) | `ab099b6a` | 2026-07-10   | `549d597a0` (partial)    |
-| 10  | Docs — README, CHANGELOG, API-MAP                       | IN PROGRESS | `ab099b6a` | 2026-07-10   | —                        |
+| 10  | Docs — README, CHANGELOG, API-MAP                       | **DONE**    | `ab099b6a` | 2026-07-10   | `6e9cc9f5a`              |
 
 
 Statuses: `NOT STARTED` · `IN PROGRESS` · `BLOCKED (reason)` · `DONE (sha)` · `WON'T DO (reason)`
