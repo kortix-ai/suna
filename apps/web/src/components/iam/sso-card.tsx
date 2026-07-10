@@ -7,9 +7,11 @@ import { useTranslations } from 'next-intl';
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
+import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +47,69 @@ import {
   listSsoGroupMappings,
   upsertSsoProvider,
 } from '@/lib/iam-client';
+
+import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
+
+async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(successMsg);
+  } catch {
+    toast.warning('Copy failed — select and copy manually');
+  }
+}
+
+/**
+ * "Service provider details" block — the Entity ID + Reply URL (ACS) admins
+ * paste into their IdP's SAML configuration. Shown both before a provider is
+ * configured (admins need these values first) and inside the configure/edit
+ * dialog. Deliberately does not mention the delegated identity provider by
+ * name — see sso-card.test.ts.
+ */
+function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }) {
+  return (
+    <div className={className}>
+      <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
+      <p className="text-muted-foreground mt-0.5 text-[11px]">
+        Paste these into your identity provider's SAML configuration.
+      </p>
+      <div className="mt-3 space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Identifier (Entity ID)</Label>
+          <div className="flex items-center gap-2">
+            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+              {urls.entityId}
+            </code>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Copy Identifier (Entity ID)"
+              onClick={() => copyToClipboard(urls.entityId, 'Entity ID copied')}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Reply URL (ACS)</Label>
+          <div className="flex items-center gap-2">
+            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+              {urls.acsUrl}
+            </code>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Copy Reply URL (ACS)"
+              onClick={() => copyToClipboard(urls.acsUrl, 'Reply URL copied')}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface SsoCardProps {
   accountId: string;
@@ -95,10 +160,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   const provider = providerQuery.data;
   const mappings = mappingsQuery.data ?? [];
+  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
   return (
     <section className="border-border/70 bg-card rounded-xl border">
-      <header className={provider ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
+      <header className={provider || spUrls ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
@@ -122,18 +188,27 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
             </p>
           </div>
-          {canManage && (
-            <Button
-              variant={provider ? 'outline' : 'default'}
-              onClick={() => setEditOpen(true)}
-              size="sm"
-              className="shrink-0"
-            >
-              {provider ? 'Edit' : 'Configure'}
-            </Button>
-          )}
+          {canManage &&
+            (provider ? (
+              <Button
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+                size="sm"
+                className="shrink-0"
+              >
+                Edit
+              </Button>
+            ) : (
+              // New providers go through the guided setup wizard (per-IdP
+              // steps + inline import) instead of the bare dialog.
+              <Button asChild size="sm" className="shrink-0">
+                <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
+              </Button>
+            ))}
         </div>
       </header>
+
+      {!provider && spUrls && <SpDetails urls={spUrls} className="px-6 py-4" />}
 
       {provider && (
         <div className="px-6 py-4">
@@ -422,6 +497,8 @@ function EditProviderDialog({
     /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
     (importing ? metadataReady : true);
 
+  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
+
   return (
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-lg">
@@ -433,6 +510,13 @@ function EditProviderDialog({
               : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you.'}
           </DialogDescription>
         </DialogHeader>
+
+        {spUrls && (
+          <SpDetails
+            urls={spUrls}
+            className="border-border/60 bg-muted/20 rounded-lg border px-3 py-3"
+          />
+        )}
 
         <div className="space-y-4">
           <div className="space-y-1.5">

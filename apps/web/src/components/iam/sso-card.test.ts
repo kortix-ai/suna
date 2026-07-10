@@ -33,3 +33,38 @@ describe('SSO card — no internal provider plumbing in the UI', () => {
     expect(source).toContain('importSsoProviderFromMetadata');
   });
 });
+
+describe('SSO card — service provider details block', () => {
+  test('renders a "Service provider details" block', () => {
+    expect(source).toContain('Service provider details');
+  });
+
+  test('derives the SP values from the shared saml-sp lib (paths live there)', () => {
+    expect(source).toContain("from '@/lib/saml-sp'");
+    expect(source).toContain('buildSamlSpUrls(getEnv().SUPABASE_URL)');
+  });
+
+  test('uses neutral labels, never naming the delegated identity provider', () => {
+    expect(source).toContain('Identifier (Entity ID)');
+    expect(source).toContain('Reply URL (ACS)');
+    expect(source).not.toContain('Supabase Studio');
+    expect(source).not.toContain('SupabaseStudio');
+  });
+
+  test('offers a copy affordance for each SP value', () => {
+    expect(source).toContain('Copy Identifier (Entity ID)');
+    expect(source).toContain('Copy Reply URL (ACS)');
+    expect(source).toContain('copyToClipboard');
+  });
+
+  test('renders the block before a provider is configured, and inside the configure/edit dialog', () => {
+    expect(source).toContain('{!provider && spUrls && <SpDetails');
+    expect(source).toContain('{spUrls && (\n          <SpDetails');
+  });
+
+  test('hides the block rather than render a broken URL when the origin is unavailable', () => {
+    // Null-origin handling is unit-tested in lib/saml-sp.test.ts; the card
+    // just guards the render on the derived value.
+    expect(source).toContain('{!provider && spUrls && <SpDetails');
+  });
+});

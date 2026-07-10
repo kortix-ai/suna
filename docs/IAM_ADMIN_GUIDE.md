@@ -348,15 +348,22 @@ access only through the grants **you** create — a synced group grants nothing 
 
 **Prerequisites:** the `sso` entitlement (Enterprise tier, or the self-serve
 *Enterprise demo* toggle — section 10), account owner/admin on the Kortix side, admin on
-the IdP side. Kortix delegates SAML validation to its Supabase Auth layer — the SP
-**Entity ID** and **ACS URL** your IdP asks for come from the Supabase project's SAML
-configuration (self-hosted operators own that project; see the Entra runbook).
+the IdP side. Kortix delegates SAML validation to its Supabase Auth layer, but you never
+need to touch that layer directly — the SP **Entity ID** and **ACS URL** your IdP asks
+for are shown, with copy buttons, on the SAML SSO card's **Service provider details**
+before you configure anything. *(Self-hosted operators can alternatively read them
+straight from the Supabase project's SAML configuration — see the Entra runbook — but
+the card is the source every customer should use.)* Both values are safe to hand to your
+IdP admin: the Entity ID / metadata URL is a public-by-design SAML endpoint that IdPs
+must be able to fetch, and it exposes no account data; a custom auth domain can brand it
+later.
 
 ### Connect your IdP (self-serve)
 
 1. **In the IdP**, create a SAML app (Okta: *SAML 2.0 app*; Entra: *Enterprise
-   Application → Single sign-on → SAML*) using the SP Entity ID + ACS URL from your
-   Supabase SAML config. Download the **IdP metadata XML** (or copy its URL).
+   Application → Single sign-on → SAML*) using the SP Entity ID + ACS URL copied from
+   the SAML SSO card's **Service provider details**. Download the **IdP metadata XML**
+   (or copy its URL).
 2. **In Kortix:** `/accounts/{accountId}?tab=settings` → **Identity & directory** →
    **SAML SSO** → **Configure** (the card appears once the `sso` entitlement is live).
 3. In the default **Import IdP metadata** mode, paste the metadata XML or URL and set:
