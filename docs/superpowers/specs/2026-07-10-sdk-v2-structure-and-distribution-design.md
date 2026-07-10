@@ -155,7 +155,7 @@ No exported name changes. Consumers see nothing.
 ```ts
 import { createKortix, classifyTurn, ApiError } from '@kortix/sdk'
 import { useSession }                           from '@kortix/sdk/react'
-import { createServerKortix }                   from '@kortix/sdk/server'
+import { createScopedKortix }                   from '@kortix/sdk/server'
 import { useSyncStore }                         from '@kortix/sdk/internal/sync-store'
 ```
 

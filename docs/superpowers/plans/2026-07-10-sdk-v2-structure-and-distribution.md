@@ -250,10 +250,10 @@ try {
     join(workdir, 'smoke.mjs'),
     [
       "import { createKortix, ApiError, classifyTurn } from '@kortix/sdk';",
-      "import { createServerKortix } from '@kortix/sdk/server';",
+      "import { createScopedKortix } from '@kortix/sdk/server';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
       "if (typeof classifyTurn !== 'function') throw new Error('classifyTurn is not a function');",
-      "if (typeof createServerKortix !== 'function') throw new Error('createServerKortix missing');",
+      "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
       "const k = createKortix({ backendUrl: 'http://smoke.test/v1', getToken: async () => null });",
       "if (typeof k.projects.list !== 'function') throw new Error('facade is not wired');",
@@ -988,9 +988,9 @@ Expected: exit 0. Fix any "duplicate identifier" from two `from '@kortix/sdk'` l
 Both endpoints already exist in the SDK. Replace the raw `fetch` at `src/app/api/preview-token/route.ts:57` with the SDK server client:
 
 ```ts
-import { createServerKortix } from '@kortix/sdk/server';
+import { createScopedKortix } from '@kortix/sdk/server';
 
-const kortix = createServerKortix({ backendUrl: upstreamBase(), getToken: async () => apiKey });
+const kortix = createScopedKortix({ backendUrl: upstreamBase(), getToken: async () => apiKey });
 const token = await kortix.project(projectId).tokens.createCliToken({
   name: `lumen-preview-${Date.now()}`,
 });

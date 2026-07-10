@@ -135,7 +135,7 @@ assert. **Do not run out of order. Do not parallelise.** Dependencies are strict
 | --- | ------------------------------------------------------- | ----------- | ---------- | ------------ | ------------------------ |
 | 0   | Docs: spec, plan, `AGENTS.md`, prompt, this file        | **DONE**    | `01AzJBSa` | 2026-07-10   | `6cd4d6e4e`              |
 | 1   | Assert the two export maps agree                        | **DONE**    | `ab099b6a` | 2026-07-10   | `ecb78a113`              |
-| 2   | Install smoke test — pack, install, import              | BLOCKED (2nd finding: plan asserts `createServerKortix` from `./server` — export does not exist; real name is `createScopedKortix`. Decision with Jay) | `ab099b6a` | 2026-07-10   | —                        |
+| 2   | Install smoke test — pack, install, import              | IN PROGRESS (Jay: assert the real `createScopedKortix`; plan+spec corrected) | `ab099b6a` | 2026-07-10   | —                        |
 | 3   | Public-export snapshot                                  | NOT STARTED | —          | —            | —                        |
 | 4   | Axis 1 — internal restructure (`core`/`browser`/`node`) | NOT STARTED | —          | —            | —                        |
 | 5   | Axis 2 — root canonical, subpaths deprecated            | NOT STARTED | —          | —            | —                        |
