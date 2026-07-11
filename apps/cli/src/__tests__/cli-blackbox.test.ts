@@ -718,6 +718,23 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(false);
   });
 
+  test('init --packs seeds only the selected role-pack skills', async () => {
+    const result = await runCli(['init', 'pack-project', '--packs', 'legal-pack', '--yes', '--no-git']);
+    expect(result.code).toBe(0);
+    const root = join(tmp, 'pack-project');
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'legal-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'contract-review', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'campaign-planning', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
+  }, 20_000);
+
+  test('init --packs rejects an unknown role pack', async () => {
+    const result = await runCli(['init', 'bad-pack', '--packs', 'not-a-pack', '--yes', '--no-git']);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown role pack');
+    expect(existsSync(join(tmp, 'bad-pack'))).toBe(false);
+  }, 15_000);
+
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {
     const result = await runCli([
       'init',

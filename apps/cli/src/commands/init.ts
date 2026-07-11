@@ -1,33 +1,34 @@
-import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
-  DEFAULT_STARTER_TEMPLATE_ID,
-  getMarketplaceFiles,
-  listGeneralKnowledgeWorkerSkills,
-  STARTER_TEMPLATE_IDS,
-  type StarterTemplateId,
-} from '@kortix/starter';
-import {
-  applyInstall,
-  buildRegistry,
-  planInstall,
   type BuildSource,
   type RegistryItem,
   type ResolvedItem,
+  applyInstall,
+  buildRegistry,
+  planInstall,
 } from '@kortix/registry';
-
-import { applyScaffold } from '../scaffold.ts';
-import { prompt, confirm } from '../prompts.ts';
-import { selectMultiFromList } from '../tui-select.ts';
 import {
-  wireCodingAgents,
-  SUPPORTED_AGENTS,
-  DEFAULT_PRIMARY,
+  DEFAULT_STARTER_TEMPLATE_ID,
+  SKILL_PACK_IDS,
+  STARTER_TEMPLATE_IDS,
+  type StarterTemplateId,
+  getMarketplaceFiles,
+  listGeneralKnowledgeWorkerSkills,
+} from '@kortix/starter';
+
+import {
   type CodingAgent,
+  DEFAULT_PRIMARY,
+  SUPPORTED_AGENTS,
+  wireCodingAgents,
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
+import { confirm, prompt } from '../prompts.ts';
+import { applyScaffold } from '../scaffold.ts';
 import { C, help, status } from '../style.ts';
+import { selectMultiFromList } from '../tui-select.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
@@ -72,6 +73,8 @@ Options:
   --marketplace <list> Comma-separated marketplace skills to install into the
                        new project. Use "none" to skip. Interactive mode
                        opens a preselected picker.
+  --packs <list>       Comma-separated role packs to seed skills from on top of
+                       the minimal template (e.g. legal-pack,sales-pack).
   --no-git             Don't run \`git init\` in the new project directory.
   -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
@@ -83,6 +86,7 @@ interface InitFlags {
   agents?: CodingAgent[];
   template?: StarterTemplateId;
   marketplace?: string[];
+  packs?: string[];
   force: boolean;
   overwrite: boolean;
   noGit: boolean;
@@ -178,6 +182,16 @@ function parseFlags(argv: string[]): InitFlags {
         i += 1;
         break;
       }
+      case '--pack':
+      case '--packs': {
+        const next = argv[i + 1];
+        if (!next || next.startsWith('-')) {
+          throw new Error(`kortix: ${arg} requires a comma-separated list of role packs`);
+        }
+        f.packs = normalizePackList(next);
+        i += 1;
+        break;
+      }
       default:
         if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
         // Positional project name (the directory to create), like create-next-app.
@@ -191,13 +205,41 @@ function parseFlags(argv: string[]): InitFlags {
 
 function normalizeMarketplaceList(raw: string): string[] {
   if (raw.trim().toLowerCase() === 'none') return [];
-  return [...new Set(raw.split(',').map((part) => part.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function normalizePackList(raw: string): string[] {
+  const ids = [
+    ...new Set(
+      raw
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  ];
+  for (const id of ids) {
+    if (!SKILL_PACK_IDS.includes(id)) {
+      throw new Error(
+        `kortix: unknown role pack "${id}" — valid packs: ${SKILL_PACK_IDS.join(', ')}`,
+      );
+    }
+  }
+  return ids;
 }
 
 function normalizeProjectName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return 'kortix-project';
-  return trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project';
+  return (
+    trimmed.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[-\s]+|[-\s]+$/g, '') || 'kortix-project'
+  );
 }
 
 function dirIsGitRepo(path: string): boolean {
@@ -274,8 +316,14 @@ function defaultStarterMarketplaceItems(): RegistryItem[] {
   return (registry.items ?? [])
     .filter((item) => item.meta?.defaultProjectInstall === true)
     .sort((a, b) => {
-      const ao = typeof a.meta?.defaultProjectInstallOrder === 'number' ? a.meta.defaultProjectInstallOrder : 999;
-      const bo = typeof b.meta?.defaultProjectInstallOrder === 'number' ? b.meta.defaultProjectInstallOrder : 999;
+      const ao =
+        typeof a.meta?.defaultProjectInstallOrder === 'number'
+          ? a.meta.defaultProjectInstallOrder
+          : 999;
+      const bo =
+        typeof b.meta?.defaultProjectInstallOrder === 'number'
+          ? b.meta.defaultProjectInstallOrder
+          : 999;
       return ao - bo || a.name.localeCompare(b.name);
     });
 }
@@ -345,7 +393,9 @@ export async function runInit(argv: string[]): Promise<number> {
   if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
-    process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
+    process.stderr.write(
+      `kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`,
+    );
     return 2;
   } else {
     const answer = await prompt(`Project name`, 'my-kortix-project');
@@ -447,10 +497,12 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Scaffold ─────────────────────────────────────────────────────────
+  const skillPacks = flags.packs ?? [];
   const result = applyScaffold({
     repoRoot: cwd,
     projectName,
     template,
+    skillPacks,
     preserveExisting: !flags.overwrite,
   });
   let marketplaceInstall: { written: string[]; skipped: string[] } = { written: [], skipped: [] };
@@ -490,13 +542,15 @@ export async function runInit(argv: string[]): Promise<number> {
   // ── Report ───────────────────────────────────────────────────────────
   const lines: string[] = [];
   lines.push(`Initialized Kortix project "${projectName}" in ${cwd}`);
-  const totalWritten = result.written.length + marketplaceInstall.written.length + agentInstall.written.length;
+  const totalWritten =
+    result.written.length + marketplaceInstall.written.length + agentInstall.written.length;
   lines.push(`Wrote ${totalWritten} file${totalWritten === 1 ? '' : 's'}:`);
   for (const f of result.written) lines.push(`  + ${f}`);
   for (const f of marketplaceInstall.written) lines.push(`  + ${f}`);
   for (const f of agentInstall.written) lines.push(`  + ${f}`);
 
-  const totalSkipped = result.skipped.length + marketplaceInstall.skipped.length + agentInstall.skipped.length;
+  const totalSkipped =
+    result.skipped.length + marketplaceInstall.skipped.length + agentInstall.skipped.length;
   if (totalSkipped > 0) {
     lines.push(
       `Preserved ${totalSkipped} existing file${totalSkipped === 1 ? '' : 's'} (pass --overwrite to replace):`,
