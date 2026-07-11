@@ -195,16 +195,31 @@
       }
     },
     {
-      "name": "standup-agent",
+      "name": "leaderboard-agent",
       "type": "registry:agent",
-      "title": "Async standup agent",
-      "description": "Gathers each person's Linear and GitHub activity and posts a concise team standup to Slack.",
+      "title": "Weekly leaderboard agent",
+      "description": "Posts a weekly ENG/PRODUCT shipping brief to Slack: a ranked merged-PR leaderboard, shipping streaks, what shipped, and the async standup thread.",
       "categories": ["operations"],
       "files": [
         {
-          "path": "runtime/agents/standup-agent.md",
+          "path": "runtime/agents/leaderboard.md",
           "type": "registry:file",
-          "target": "@agents/standup-agent.md"
+          "target": "@agents/leaderboard.md"
+        }
+      ],
+      "meta": { "source": "kortix" }
+    },
+    {
+      "name": "weekly-leaderboard-skill",
+      "type": "registry:skill",
+      "title": "Weekly leaderboard",
+      "description": "The weekly shipping-brief runbook: window, PR-count sources, the leaderboard + streak format, the standup thread, the ledger, and Slack posting mechanics.",
+      "categories": ["operations"],
+      "files": [
+        {
+          "path": "runtime/skills/weekly-leaderboard",
+          "type": "registry:file",
+          "target": "@skills/weekly-leaderboard"
         }
       ],
       "meta": { "source": "kortix" }
@@ -212,54 +227,71 @@
     {
       "name": "standup-summary",
       "type": "registry:template",
-      "title": "Async standups in Slack",
-      "description": "A daily cron that collects each person's Linear and GitHub activity, nudges anyone with nothing recorded, and posts a concise team standup to Slack. Read-only across the tools.",
+      "title": "Weekly shipping leaderboard + standup",
+      "description": "A weekly cron that posts an ENG/PRODUCT shipping brief to Slack — a ranked merged-PR leaderboard with week-on-week deltas and shipping streaks, what shipped, and an async standup thread — and keeps a running ledger. Reads GitHub, posts to Slack.",
       "categories": ["operations", "use-case"],
-      "registryDependencies": ["standup-agent"],
+      "registryDependencies": ["leaderboard-agent", "weekly-leaderboard-skill"],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with read access to the repos you count PRs from (used by the gh CLI)"
+      },
       "inputs": [
         {
-          "key": "cadence",
-          "label": "When to post the standup",
-          "type": "cron",
-          "default": "0 0 9 * * 1-5",
-          "help": "Defaults to every weekday at 9:00 AM.",
+          "key": "target_repos",
+          "label": "Repos to count merged PRs from",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "Space-separated, e.g. \"acme/app acme/company\".",
           "required": true
         },
         {
-          "key": "standup_channel",
-          "label": "Slack channel for the standup",
+          "key": "slack_channel",
+          "label": "Slack channel to post the brief to",
           "type": "channel",
-          "help": "Where the daily standup is posted.",
+          "default": "#eng",
+          "help": "Where the weekly brief + standup thread land.",
+          "required": true
+        },
+        {
+          "key": "team_mentions",
+          "label": "Who to @-mention on the standup thread",
+          "type": "text",
+          "default": "@here",
+          "help": "e.g. \"@alice @bob @carol\".",
+          "required": false
+        },
+        {
+          "key": "cadence",
+          "label": "When to post the weekly brief",
+          "type": "cron",
+          "default": "0 0 9 * * 1",
+          "help": "Defaults to every Monday at 09:00 UTC.",
           "required": true
         }
       ],
       "meta": {
         "source": "kortix",
         "icon": "standup-summary",
-        "capabilities": {
-          "connectors": ["linear", "github"]
-        },
         "template": {
           "agents": {
-            "standup-agent": {
-              "connectors": ["linear", "github"]
+            "leaderboard": {
+              "secrets": ["GH_TOKEN"],
+              "skills": ["weekly-leaderboard", "kortix-slack"],
+              "kortix_cli": ["project.cr.open"]
             }
           },
-          "connectors": [
-            { "slug": "linear", "provider": "pipedream", "app": "linear" },
-            { "slug": "github", "provider": "pipedream", "app": "github" }
-          ],
           "channels": ["slack"],
           "triggers": [
             {
-              "slug": "daily-standup",
-              "name": "Daily standup",
+              "slug": "weekly-leaderboard",
+              "name": "Weekly leaderboard",
               "type": "cron",
-              "agent": "standup-agent",
+              "agent": "leaderboard",
               "cron": "{{cadence}}",
-              "prompt": "Gather each team member's Linear issue activity and GitHub PRs/commits since the last standup, summarize one concise block per person (shipped, in progress, blocked), note anyone with nothing recorded, and post the standup to {{standup_channel}}. Read-only across Linear and GitHub; the Slack post is the only write."
+              "session_mode": "reuse",
+              "prompt": "Load the `weekly-leaderboard` skill and post this week's ENG/PRODUCT shipping brief to {{slack_channel}}. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/weekly-digests.md` (last week's leaderboard + streaks) and last week's standup thread. Count merged PRs per person across {{target_repos}} with gh (excluding bots), compute deltas and streaks against the ledger, gather Slack context, and post exactly one Block Kit brief (header, snapshot, what shipped, ranked PR leaderboard, streaks, Slack signal). Then reply in-thread with the async standup prompt (mention {{team_mentions}}), update the ledger, and land a scoped `memory: leaderboard` change request."
             }
-          ]
+          ],
+          "env_optional": ["GH_TOKEN"]
         }
       }
     },
