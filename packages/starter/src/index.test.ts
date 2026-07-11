@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  getStarterFiles,
-  normalizeStarterTemplateId,
-  listGeneralKnowledgeWorkerSkills,
-  STARTER_TEMPLATE_IDS,
   DEFAULT_STARTER_TEMPLATE_ID,
   KORTIX_MANAGED_SKILL_NAMES,
-  getMarketplaceFiles,
-  isKortixManagedSkillName,
+  SKILL_PACKS,
+  SKILL_PACK_IDS,
+  STARTER_TEMPLATE_IDS,
   type StarterFile,
+  getMarketplaceFiles,
+  getSkillPack,
+  getStarterFiles,
+  isKortixManagedSkillName,
+  listGeneralKnowledgeWorkerSkills,
+  normalizeStarterTemplateId,
+  resolveSkillPackSkills,
 } from './index';
 
 function byPath(files: StarterFile[]): Map<string, string> {
@@ -81,7 +85,10 @@ describe('getStarterFiles', () => {
   });
 
   test('interpolates the projectName placeholder', () => {
-    const files = getStarterFiles({ projectName: 'My Cool Project', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'My Cool Project',
+      template: 'general-knowledge-worker',
+    });
     const memory = byPath(files).get('.kortix/memory/MEMORY.md');
     expect(memory).toBeDefined();
     expect(memory!).toContain('My Cool Project');
@@ -90,7 +97,11 @@ describe('getStarterFiles', () => {
 
   test('defaults repoFullName when omitted', () => {
     const withoutRepo = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    const withRepo = getStarterFiles({ projectName: 'X', template: 'minimal', repoFullName: 'me/mine' });
+    const withRepo = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      repoFullName: 'me/mine',
+    });
     const joinedDefault = withoutRepo.map((f) => f.content).join('\n');
     const joinedCustom = withRepo.map((f) => f.content).join('\n');
     if (joinedDefault.includes('your-org/your-repo') || joinedCustom.includes('me/mine')) {
@@ -113,8 +124,14 @@ describe('getStarterFiles', () => {
   });
 
   test('minimal template files are a subset of general-knowledge-worker paths', () => {
-    const minimalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path));
-    const generalPaths = new Set(getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map((f) => f.path));
+    const minimalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'minimal' }).map((f) => f.path),
+    );
+    const generalPaths = new Set(
+      getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' }).map(
+        (f) => f.path,
+      ),
+    );
     for (const p of minimalPaths) {
       expect(generalPaths.has(p)).toBe(true);
     }
@@ -127,7 +144,10 @@ describe('getStarterFiles', () => {
   });
 
   test('produces no content containing a leftover {{projectName}} token', () => {
-    const files = getStarterFiles({ projectName: 'Determinism', template: 'general-knowledge-worker' });
+    const files = getStarterFiles({
+      projectName: 'Determinism',
+      template: 'general-knowledge-worker',
+    });
     for (const file of files) {
       expect(file.content.includes('{{projectName}}')).toBe(false);
     }
@@ -146,7 +166,9 @@ describe('getStarterFiles', () => {
 
   test('default starter does not ship general knowledge worker skills', () => {
     const files = getStarterFiles({ projectName: 'X' });
-    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(
+      false,
+    );
     expect(files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
@@ -216,5 +238,83 @@ describe('listGeneralKnowledgeWorkerSkills', () => {
   test('entries are unique', () => {
     const skills = listGeneralKnowledgeWorkerSkills();
     expect(new Set(skills).size).toBe(skills.length);
+  });
+});
+
+describe('SKILL_PACKS', () => {
+  test('every pack references only real general-knowledge-worker skills', () => {
+    const known = new Set(listGeneralKnowledgeWorkerSkills());
+    for (const pack of SKILL_PACKS) {
+      expect(pack.skills.length).toBeGreaterThan(0);
+      for (const skill of pack.skills) {
+        expect(known.has(skill)).toBe(true);
+      }
+    }
+  });
+
+  test('SKILL_PACK_IDS matches the pack ids and getSkillPack resolves', () => {
+    expect([...SKILL_PACK_IDS]).toEqual(SKILL_PACKS.map((p) => p.id));
+    expect(getSkillPack('legal-pack')?.title).toBe('Legal');
+    expect(getSkillPack('nope')).toBeUndefined();
+  });
+
+  test('resolveSkillPackSkills unions + dedupes and throws on an unknown id', () => {
+    const union = resolveSkillPackSkills(['documents-pack', 'legal-pack']);
+    expect(union.has('pdf')).toBe(true);
+    expect(union.has('legal-writer')).toBe(true);
+    expect(() => resolveSkillPackSkills(['made-up-pack'])).toThrow();
+  });
+});
+
+describe('getStarterFiles with skillPacks', () => {
+  test('injects only the selected pack skills on top of the minimal floor', () => {
+    const files = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      skillPacks: ['legal-pack'],
+    });
+    const paths = new Set(files.map((f) => f.path));
+    // base runtime floor still present
+    expect(paths.has('kortix.yaml')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(true);
+    // legal-pack skills present
+    expect(paths.has('.kortix/opencode/skills/legal-writer/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/contract-review/SKILL.md')).toBe(true);
+    // unrelated general-knowledge-worker skills absent
+    expect(paths.has('.kortix/opencode/skills/campaign-planning/SKILL.md')).toBe(false);
+    expect(paths.has('.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  });
+
+  test('unions multiple packs', () => {
+    const files = getStarterFiles({
+      projectName: 'X',
+      template: 'minimal',
+      skillPacks: ['legal-pack', 'documents-pack'],
+    });
+    const paths = new Set(files.map((f) => f.path));
+    expect(paths.has('.kortix/opencode/skills/legal-writer/SKILL.md')).toBe(true);
+    expect(paths.has('.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
+  });
+
+  test('no skillPacks is byte-identical to plain minimal', () => {
+    const withEmpty = getStarterFiles({ projectName: 'X', template: 'minimal', skillPacks: [] });
+    const plain = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    expect(withEmpty).toEqual(plain);
+  });
+
+  test('skillPacks is ignored when the full general-knowledge-worker template is selected', () => {
+    const full = getStarterFiles({ projectName: 'X', template: 'general-knowledge-worker' });
+    const fullWithPacks = getStarterFiles({
+      projectName: 'X',
+      template: 'general-knowledge-worker',
+      skillPacks: ['legal-pack'],
+    });
+    expect(fullWithPacks.map((f) => f.path)).toEqual(full.map((f) => f.path));
+  });
+
+  test('an unknown pack id throws', () => {
+    expect(() =>
+      getStarterFiles({ projectName: 'X', template: 'minimal', skillPacks: ['not-real'] }),
+    ).toThrow();
   });
 });

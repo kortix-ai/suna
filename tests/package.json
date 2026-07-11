@@ -26,6 +26,7 @@
     "playwright:install": "playwright install chromium",
     "ke2e": "bun bin/ke2e.ts",
     "coverage": "bun bin/ke2e.ts coverage",
+    "cli-parity": "bun bin/ke2e.ts cli-parity",
     "gc": "bun bin/ke2e.ts gc",
     "report": "bun bin/ke2e.ts report",
     "list": "bun bin/ke2e.ts list",

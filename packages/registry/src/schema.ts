@@ -46,6 +46,7 @@ export const KORTIX_ITEM_TYPES = [
   'registry:memory', // seed memory files
   'registry:project', // a whole Kortix project (full repo scaffold)
   'registry:bundle', // a curated set of other items (a "starter"/use-case)
+  'registry:blueprint', // a skill + a PROPOSED (disabled) trigger — never auto-runs
 ] as const;
 
 export const ALL_ITEM_TYPES = [...SHADCN_ITEM_TYPES, ...KORTIX_ITEM_TYPES] as const;
@@ -109,6 +110,29 @@ export interface RegistryItemFile {
   content?: string;
 }
 
+/**
+ * A blueprint's proposed automation. Installed as a DISABLED trigger in the
+ * project's kortix.yaml — the human enables it later from the Triggers surface.
+ */
+export interface BlueprintProposedTrigger {
+  /** Base slug — uniquified against the project's existing trigger slugs. */
+  slug: string;
+  name: string;
+  type: 'cron' | 'webhook';
+  /** Agent name (default: "default"). */
+  agent?: string;
+  /** cron only: 6-field croner expression (mutually exclusive with runAt). */
+  cron?: string;
+  /** cron only: ISO-8601 one-off instant. */
+  runAt?: string;
+  /** cron only: IANA timezone (default UTC). */
+  timezone?: string;
+  /** webhook only: the project_secrets key holding the HMAC signing secret. */
+  secretEnv?: string;
+  /** Prompt body; may reference {{slots.<name>}} placeholders. */
+  promptTemplate: string;
+}
+
 export interface RegistryItem {
   $schema?: string;
   /** Unique slug within the registry. */
@@ -145,6 +169,18 @@ export interface RegistryItem {
    *   visibility   — "global" | "company" | "repo" (gallery scoping hint)
    */
   meta?: Record<string, unknown>;
+  /**
+   * registry:blueprint only. Installed as a DISABLED trigger appended to the
+   * project's kortix.yaml — the installer forces enabled:false regardless of
+   * this content, so a blueprint can never install as a live automation.
+   */
+  proposedTrigger?: BlueprintProposedTrigger;
+  /**
+   * registry:blueprint only. Slot params substituted into
+   * proposedTrigger.promptTemplate ({{slots.<key>}}) at install time; a
+   * provided value wins, otherwise the default is used.
+   */
+  slots?: Record<string, { label?: string; default: string }>;
 }
 
 export interface RegistryJson {

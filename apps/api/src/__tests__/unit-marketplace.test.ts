@@ -3,8 +3,11 @@ import { describe, expect, test } from 'bun:test';
 // Keep the catalog hermetic — don't load the built-in default marketplaces
 // (which would hit the network) unless a test explicitly opts in.
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
+import { compareInstalled } from '@kortix/registry';
+import { SKILL_PACKS } from '@kortix/starter';
 import {
   DEFAULT_MARKETPLACES,
+  _resetExternalCache,
   assertAllowedSourceAddress,
   getCatalogItemDetail,
   githubLoaderOptions,
@@ -12,9 +15,7 @@ import {
   listMarketplaces,
   marketplaceIdOf,
   registerMarketplaceSourceProvider,
-  _resetExternalCache,
 } from '../marketplace/catalog';
-import { compareInstalled } from '@kortix/registry';
 import { buildInstall, buildInstallBatch, resolveItemFiles } from '../marketplace/install-service';
 
 describe('marketplace catalog', () => {
@@ -40,6 +41,60 @@ describe('marketplace catalog', () => {
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
 
+  test('every curated bundle references only skills that exist in the catalog', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    const names = new Set(all.map((i) => i.name));
+    const bundles = all.filter((i) => i.type === 'registry:bundle');
+
+    // Guards against silently losing a pack in a future edit.
+    expect(bundles.length).toBeGreaterThanOrEqual(10);
+    for (const bundle of bundles) {
+      expect(bundle.dependencies.length).toBeGreaterThan(0);
+      for (const dep of bundle.dependencies) {
+        // A typo'd dependency renders as a ghost item in the UI instead of
+        // failing anywhere — this turns that into a hard failure.
+        expect(names.has(dep)).toBe(true);
+      }
+    }
+  });
+
+  test('curated bundle ids are the full role-pack set', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    const ids = all
+      .filter((i) => i.type === 'registry:bundle')
+      .map((i) => i.id)
+      .sort();
+    expect(ids).toEqual([
+      'kortix:customer-support-pack',
+      'kortix:documents-pack',
+      'kortix:finance-close-pack',
+      'kortix:health-pack',
+      'kortix:legal-pack',
+      'kortix:marketing-pack',
+      'kortix:product-management-pack',
+      'kortix:recruiting-pack',
+      'kortix:research-pack',
+      'kortix:sales-pack',
+    ]);
+  });
+
+  test('curated bundles stay in sync with @kortix/starter SKILL_PACKS', async () => {
+    const all = await listCatalogItems({ source: 'kortix' });
+    const bundles = all.filter((i) => i.type === 'registry:bundle');
+    const packById = new Map(SKILL_PACKS.map((p) => [p.id, p]));
+
+    // Same set of ids (bundle `name` === pack `id`).
+    expect(bundles.map((b) => b.name).sort()).toEqual([...packById.keys()].sort());
+
+    // Same skill lists — the CLI `init --packs` and the marketplace bundle
+    // install the same skills for a given role.
+    for (const bundle of bundles) {
+      const pack = packById.get(bundle.name);
+      expect(pack).toBeDefined();
+      expect([...bundle.dependencies].sort()).toEqual([...pack!.skills].sort());
+    }
+  });
+
   test('lists only optional Kortix skills through the marketplace', async () => {
     const all = await listCatalogItems({ source: 'kortix' });
     const agentBrowser = all.find((i) => i.name === 'agent-browser');
@@ -53,26 +108,31 @@ describe('marketplace catalog', () => {
     expect(all.find((i) => i.name === 'web_search')).toBeUndefined();
     expect(all.find((i) => i.name === 'scrape_webpage')).toBeUndefined();
     expect(all.find((i) => i.name === 'image_search')).toBeUndefined();
-    expect(all
-      .filter((i) => i.defaultProjectInstall)
-      .map((i) => i.name)
-      .sort()).toEqual([
-        'agent-browser',
-        'deep-research',
-        'document-review',
-        'docx',
-        'pdf',
-        'presentations',
-        'research-report',
-        'website-building',
-        'xlsx',
-      ]);
+    expect(
+      all
+        .filter((i) => i.defaultProjectInstall)
+        .map((i) => i.name)
+        .sort(),
+    ).toEqual([
+      'agent-browser',
+      'deep-research',
+      'document-review',
+      'docx',
+      'pdf',
+      'presentations',
+      'research-report',
+      'website-building',
+      'xlsx',
+    ]);
     expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
   });
 
   test('marks only kortix-* runtime skills as Kortix-managed', async () => {
     const all = await listCatalogItems();
-    const managed = all.filter((i) => i.managedBy === 'kortix').map((i) => i.name).sort();
+    const managed = all
+      .filter((i) => i.managedBy === 'kortix')
+      .map((i) => i.name)
+      .sort();
 
     expect(managed).toEqual([
       'kortix-computer',
@@ -131,8 +191,12 @@ describe('marketplace catalog', () => {
 
   test('surfaces capability hints (secrets / tools) on known skills', async () => {
     const all = await listCatalogItems();
-    expect(all.find((i) => i.name === 'elevenlabs')?.capabilities.secrets).toContain('ELEVENLABS_API_KEY');
-    expect(all.find((i) => i.name === 'replicate')?.capabilities.secrets).toContain('REPLICATE_API_TOKEN');
+    expect(all.find((i) => i.name === 'elevenlabs')?.capabilities.secrets).toContain(
+      'ELEVENLABS_API_KEY',
+    );
+    expect(all.find((i) => i.name === 'replicate')?.capabilities.secrets).toContain(
+      'REPLICATE_API_TOKEN',
+    );
     expect(all.find((i) => i.name === 'deep-research')?.capabilities.tools).toContain('web_search');
     // A plain skill has no special permissions.
     expect(all.find((i) => i.name === 'pdf')?.capabilities.secrets.length).toBe(0);
@@ -163,7 +227,9 @@ describe('marketplace catalog', () => {
   });
 
   test('buildInstall(agent-browser) installs the default marketplace skill', async () => {
-    const agentBrowser = (await listCatalogItems({ query: 'agent-browser', source: 'kortix' })).find((i) => i.name === 'agent-browser')!;
+    const agentBrowser = (
+      await listCatalogItems({ query: 'agent-browser', source: 'kortix' })
+    ).find((i) => i.name === 'agent-browser')!;
     const built = await buildInstall({
       id: agentBrowser.id,
       configDir: '.kortix/opencode',
@@ -190,7 +256,74 @@ describe('marketplace catalog', () => {
     for (const dep of ['deep-research', 'research-report', 'openalex-paper-search']) {
       expect(names).toContain(dep);
     }
-    expect(built.files.filter((f) => f.path.endsWith('/SKILL.md')).length).toBeGreaterThanOrEqual(3);
+    expect(built.files.filter((f) => f.path.endsWith('/SKILL.md')).length).toBeGreaterThanOrEqual(
+      3,
+    );
+  });
+
+  test('blueprints are browseable in the marketplace', async () => {
+    const blueprints = await listCatalogItems({ type: 'blueprint' });
+    expect(blueprints.some((i) => i.name === 'daily-research-brief')).toBe(true);
+    expect(blueprints.every((i) => i.type === 'registry:blueprint')).toBe(true);
+  });
+
+  test('buildInstall(blueprint) with no manifest installs the skill only, no trigger', async () => {
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+    });
+    expect(built.installed.map((i) => i.name)).toContain('deep-research');
+    expect(built.proposedTrigger).toBeUndefined();
+    expect(built.files.some((f) => f.path === 'kortix.yaml')).toBe(false);
+  });
+
+  test('buildInstall(blueprint) appends a DISABLED trigger, substitutes slots, never clobbers', async () => {
+    const manifest = 'kortix_version: 2\nproject:\n  name: Test Co\ntriggers: []\n';
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+      existingManifestRaw: manifest,
+      manifestPath: 'kortix.yaml',
+      slotValues: { topic: 'AI agents' },
+    });
+    // the skill is still installed
+    expect(built.installed.map((i) => i.name)).toContain('deep-research');
+    expect(built.proposedTrigger?.slug).toBe('daily-research-brief');
+    const yaml = built.files.find((f) => f.path === 'kortix.yaml');
+    expect(yaml).toBeDefined();
+    // appended as a DISABLED trigger
+    expect(yaml!.content).toContain('daily-research-brief');
+    expect(yaml!.content).toContain('enabled: false');
+    // slot substituted; no leftover placeholder
+    expect(yaml!.content).toContain('AI agents');
+    expect(yaml!.content).not.toContain('{{slots');
+    // original keys preserved — never clobbers
+    expect(yaml!.content).toContain('Test Co');
+    expect(yaml!.content).toContain('kortix_version');
+  });
+
+  test('buildInstall(blueprint) uniquifies its slug against an existing trigger', async () => {
+    const manifest =
+      'kortix_version: 2\ntriggers:\n  - slug: daily-research-brief\n    name: Existing\n    type: cron\n    agent: default\n    enabled: true\n    cron: "0 0 6 * * *"\n    timezone: UTC\n    prompt: keep me\n';
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+      existingManifestRaw: manifest,
+      manifestPath: 'kortix.yaml',
+    });
+    expect(built.proposedTrigger?.slug).toBe('daily-research-brief-2');
+    const yaml = built.files.find((f) => f.path === 'kortix.yaml')!;
+    expect(yaml.content).toContain('keep me'); // existing trigger untouched
+    expect(yaml.content).toContain('daily-research-brief-2');
   });
 
   test('update detection — installed item compares up-to-date against its source', async () => {
@@ -220,7 +353,9 @@ describe('marketplace catalog', () => {
   test('buildInstall merges into an existing lock instead of clobbering it', async () => {
     const existing = JSON.stringify({
       version: 2,
-      items: { 'prior-skill': { type: 'registry:skill', source: 'x', sourceType: 'local', files: [] } },
+      items: {
+        'prior-skill': { type: 'registry:skill', source: 'x', sourceType: 'local', files: [] },
+      },
     });
     const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
     const built = await buildInstall({
@@ -262,7 +397,8 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
 
   function stub(map: Record<string, string>) {
     const fetchStub = (async (url: unknown) => {
-      const key = typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
+      const key =
+        typeof url === 'object' && url && 'url' in url ? String((url as Request).url) : String(url);
       const body = map[key];
       if (body == null) return new Response('not found', { status: 404 });
       return new Response(body, { status: 200 });
@@ -285,7 +421,13 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
             name: 'hello-ext',
             type: 'registry:skill',
             title: 'Hello (external)',
-            files: [{ path: 'hello/SKILL.md', type: 'registry:file', target: '@skills/hello-ext/SKILL.md' }],
+            files: [
+              {
+                path: 'hello/SKILL.md',
+                type: 'registry:file',
+                target: '@skills/hello-ext/SKILL.md',
+              },
+            ],
           },
         ],
       }),
@@ -308,7 +450,9 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
         legacyLockRaw: null,
         now: '2026-06-16T00:00:00.000Z',
       });
-      const skillFile = built.files.find((f) => f.path === '.kortix/opencode/skills/hello-ext/SKILL.md');
+      const skillFile = built.files.find(
+        (f) => f.path === '.kortix/opencode/skills/hello-ext/SKILL.md',
+      );
       expect(skillFile).toBeTruthy();
       expect(skillFile!.content).toContain('Hi from an external registry');
     } finally {
@@ -342,7 +486,9 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
             name: 'db-ext',
             type: 'registry:skill',
             title: 'DB ext',
-            files: [{ path: 'db/SKILL.md', type: 'registry:file', target: '@skills/db-ext/SKILL.md' }],
+            files: [
+              { path: 'db/SKILL.md', type: 'registry:file', target: '@skills/db-ext/SKILL.md' },
+            ],
           },
         ],
       }),

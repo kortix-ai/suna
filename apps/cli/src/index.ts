@@ -7,6 +7,8 @@ import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runDoctor } from './commands/doctor.ts';
+import { runDump } from './commands/dump.ts';
 import { runEnv } from './commands/env.ts';
 import { runExecutor } from './commands/executor.ts';
 import { runFiles } from './commands/files.ts';
@@ -17,6 +19,8 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runProjects } from './commands/projects.ts';
+import { runProviders } from './commands/providers.ts';
+import { runProxy } from './commands/proxy.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -26,6 +30,7 @@ import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
+import { runSkills } from './commands/skills.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -123,6 +128,11 @@ const TIERS: readonly CommandTier[] = [
             args: '[--version 1|2]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
           },
+          {
+            name: 'skills',
+            args: '<subcommand>',
+            blurb: 'Author project skills (`skills new` scaffolds a SKILL.md)',
+          },
         ],
       },
       {
@@ -134,8 +144,21 @@ const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
           },
-          { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
-          { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
+          {
+            name: 'secrets',
+            args: '<subcommand>',
+            blurb: 'Manage project secrets (project-scoped)',
+          },
+          {
+            name: 'env',
+            args: '<subcommand>',
+            blurb: 'Pull/push project secrets as a dotenv file',
+          },
+          {
+            name: 'providers',
+            args: '<subcommand>',
+            blurb: 'Configure LLM providers for this project (OAuth or API key)',
+          },
           {
             name: 'channels',
             args: '<subcommand>',
@@ -157,20 +180,39 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
           },
           ...(appsExperimentalEnabled()
-            ? [{ name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' }]
+            ? [
+                {
+                  name: 'apps',
+                  args: '<subcommand>',
+                  blurb: 'Manage deployable apps (experimental)',
+                },
+              ]
             : []),
         ],
       },
       {
         title: 'Sessions & work',
         commands: [
-          { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
+          {
+            name: 'sessions',
+            args: '<subcommand>',
+            blurb: 'List, create, restart project sessions',
+          },
           {
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
-          { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
+          {
+            name: 'proxy',
+            args: '<subcommand>',
+            blurb: 'Share a port inside a session sandbox via a public URL',
+          },
+          {
+            name: 'files',
+            args: '<subcommand>',
+            blurb: 'Browse repo files, commits, branches, diffs',
+          },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
         ],
@@ -191,7 +233,8 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'grants',
             args: '<subcommand>',
-            blurb: "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
+            blurb:
+              "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
           },
         ],
       },
@@ -203,6 +246,11 @@ const TIERS: readonly CommandTier[] = [
       {
         title: '',
         commands: [
+          {
+            name: 'doctor',
+            blurb: 'End-to-end smoke test: auth → project → session → agent reply',
+          },
+          { name: 'dump', blurb: 'Print a redacted debug summary for support' },
           { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
           { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
           { name: 'help', blurb: 'Show this help' },
@@ -307,6 +355,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'schema') {
     return runSchema(argv.slice(1));
   }
+  if (argv[0] === 'skills') {
+    return runSkills(argv.slice(1));
+  }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
   }
@@ -340,11 +391,17 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'env') {
     return runEnv(argv.slice(1));
   }
+  if (argv[0] === 'providers') {
+    return runProviders(argv.slice(1));
+  }
   if (argv[0] === 'sessions') {
     return runSessions(argv.slice(1));
   }
   if (argv[0] === 'chat') {
     return runSessionsChat(argv.slice(1));
+  }
+  if (argv[0] === 'proxy') {
+    return runProxy(argv.slice(1));
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
@@ -388,6 +445,12 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'grants') {
     return runGrants(argv.slice(1));
   }
+  if (argv[0] === 'doctor') {
+    return runDoctor(argv.slice(1));
+  }
+  if (argv[0] === 'dump') {
+    return runDump(argv.slice(1));
+  }
   if (argv[0] === 'update') {
     return runUpdate(argv.slice(1));
   }
@@ -414,6 +477,7 @@ const KNOWN_COMMANDS = [
   'deploy',
   'validate',
   'schema',
+  'skills',
   'self-host',
   'login',
   'logout',
@@ -424,12 +488,14 @@ const KNOWN_COMMANDS = [
   'projects',
   'sessions',
   'chat',
+  'proxy',
   'files',
   'cr',
   'triggers',
   'connectors',
   'secrets',
   'env',
+  'providers',
   'channels',
   'sandboxes',
   'marketplace',
@@ -440,6 +506,8 @@ const KNOWN_COMMANDS = [
   'access',
   'roles',
   'grants',
+  'doctor',
+  'dump',
   'update',
   'uninstall',
   'help',
@@ -471,7 +539,11 @@ function closestCommand(input: string): string | undefined {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.
-    if (distance <= 2 && distance < needle.length && (best === undefined || distance < best.distance)) {
+    if (
+      distance <= 2 &&
+      distance < needle.length &&
+      (best === undefined || distance < best.distance)
+    ) {
       best = { name, distance };
     }
   }

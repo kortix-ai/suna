@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { getStarterFiles, type StarterFile, type StarterTemplateId } from '@kortix/starter';
+import { type StarterFile, type StarterTemplateId, getStarterFiles } from '@kortix/starter';
 
 export interface ScaffoldInput {
   /** Absolute path of the destination directory. Must already exist. */
@@ -12,6 +12,8 @@ export interface ScaffoldInput {
   repoFullName?: string;
   /** Starter variant. Defaults to the minimal Kortix runtime floor. */
   template?: StarterTemplateId;
+  /** Optional role-pack ids to inject on top of the minimal floor. */
+  skillPacks?: readonly string[];
   /**
    * If true, skip writing any file whose path already exists at the
    * destination. Used by `kortix init` against a repo that may already
@@ -36,6 +38,7 @@ export function applyScaffold(input: ScaffoldInput): ScaffoldResult {
     projectName: input.projectName,
     repoFullName: input.repoFullName,
     template: input.template,
+    skillPacks: input.skillPacks,
   });
 
   const written: string[] = [];

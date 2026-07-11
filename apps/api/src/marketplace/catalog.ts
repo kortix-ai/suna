@@ -13,11 +13,10 @@
  */
 
 import {
-  getMarketplaceFiles,
-  getStarterFiles,
-  isKortixManagedSkillName,
-} from "@kortix/starter";
-import {
+  type BuildSource,
+  type RegistryItem,
+  type RegistryJson,
+  type RegistryRef,
   buildRegistry,
   describeRegistry,
   loadItem,
@@ -25,12 +24,9 @@ import {
   parseRegistryAddress,
   rawGithubUrl,
   resolveOpencodeDir,
-  type BuildSource,
-  type RegistryItem,
-  type RegistryJson,
-  type RegistryRef,
-} from "@kortix/registry";
-import type { MarketplaceSource } from "./sources-store";
+} from '@kortix/registry';
+import { getMarketplaceFiles, getStarterFiles, isKortixManagedSkillName } from '@kortix/starter';
+import type { MarketplaceSource } from './sources-store';
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -60,8 +56,8 @@ export interface CatalogItem {
   /** The user-added source row this came from (for exact Remove matching); absent for base/env. */
   sourceId?: string;
   /** First-party runtime skill managed by Kortix, not an ordinary optional install. */
-  managedBy?: "kortix";
-  updatePolicy?: "kortix-managed";
+  managedBy?: 'kortix';
+  updatePolicy?: 'kortix-managed';
   defaultProjectInstall?: boolean;
   defaultProjectInstallOrder?: number;
   hidden?: boolean;
@@ -102,24 +98,24 @@ interface Catalog {
 // ── capability hints ───────────────────────────────────────────────────────
 const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
   elevenlabs: {
-    secrets: ["ELEVENLABS_API_KEY"],
-    network: ["api.elevenlabs.io"],
+    secrets: ['ELEVENLABS_API_KEY'],
+    network: ['api.elevenlabs.io'],
   },
   replicate: {
-    secrets: ["REPLICATE_API_TOKEN"],
-    network: ["api.replicate.com"],
+    secrets: ['REPLICATE_API_TOKEN'],
+    network: ['api.replicate.com'],
   },
-  whisper: { secrets: ["GROQ_API_KEY"], network: ["api.groq.com"] },
-  "deep-research": { tools: ["web_search"] },
-  "research-assistant": { tools: ["web_search"] },
-  "research-report": { tools: ["web_search"] },
-  "account-research": { tools: ["web_search"] },
-  "customer-research": { tools: ["web_search"] },
-  "competitive-intelligence": { tools: ["web_search"] },
-  "draft-outreach": { tools: ["web_search"] },
-  "domain-research": { network: ["rdap.org", "whois"] },
-  "agent-browser": { tools: ["agent-browser"] },
-  media: { tools: ["media"] },
+  whisper: { secrets: ['GROQ_API_KEY'], network: ['api.groq.com'] },
+  'deep-research': { tools: ['web_search'] },
+  'research-assistant': { tools: ['web_search'] },
+  'research-report': { tools: ['web_search'] },
+  'account-research': { tools: ['web_search'] },
+  'customer-research': { tools: ['web_search'] },
+  'competitive-intelligence': { tools: ['web_search'] },
+  'draft-outreach': { tools: ['web_search'] },
+  'domain-research': { network: ['rdap.org', 'whois'] },
+  'agent-browser': { tools: ['agent-browser'] },
+  media: { tools: ['media'] },
 };
 
 export function capabilitiesOf(item: RegistryItem): ItemCapabilities {
@@ -160,9 +156,9 @@ let marketplaceLabelsCache: Map<string, string> | null = null;
 function marketplaceLabels(): Map<string, string> {
   if (marketplaceLabelsCache) return marketplaceLabelsCache;
   const labels = new Map<string, string>([
-    ["kortix", "Kortix"],
-    ["anthropics/skills", "Anthropic Skills"],
-    ["anthropics/knowledge-work-plugins", "Anthropic Knowledge Work"],
+    ['kortix', 'Kortix'],
+    ['anthropics/skills', 'Anthropic Skills'],
+    ['anthropics/knowledge-work-plugins', 'Anthropic Knowledge Work'],
   ]);
   for (const f of FEATURED_MARKETPLACES) labels.set(f.address, f.label);
   marketplaceLabelsCache = labels;
@@ -172,22 +168,20 @@ function marketplaceLabels(): Map<string, string> {
 /** Display label for a registry/marketplace (base → "Kortix", external → curated name). */
 export function marketplaceLabelOf(registry: string): string {
   const id = marketplaceIdOf(registry);
-  return marketplaceLabels().get(id) ?? (id === "kortix" ? "Kortix" : id);
+  return marketplaceLabels().get(id) ?? (id === 'kortix' ? 'Kortix' : id);
 }
 
 /** GitHub owner from a marketplace id, when it looks like `owner/repo` (for avatars). */
 function ownerOf(marketplaceId: string): string | undefined {
-  return marketplaceId !== "kortix" &&
-    marketplaceId.includes("/") &&
-    !marketplaceId.includes("://")
-    ? marketplaceId.split("/")[0]
+  return marketplaceId !== 'kortix' && marketplaceId.includes('/') && !marketplaceId.includes('://')
+    ? marketplaceId.split('/')[0]
     : undefined;
 }
 
 function entryToCatalogItem(e: CatalogEntry): CatalogItem {
   const marketplaceId = marketplaceIdOf(e.registry);
   const defaultProjectInstallOrder =
-    typeof e.item.meta?.defaultProjectInstallOrder === "number"
+    typeof e.item.meta?.defaultProjectInstallOrder === 'number'
       ? e.item.meta.defaultProjectInstallOrder
       : undefined;
   return {
@@ -207,11 +201,8 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     marketplaceLabel: marketplaceLabelOf(e.registry),
     owner: ownerOf(marketplaceId),
     sourceId: e.sourceId,
-    managedBy: e.item.meta?.managedBy === "kortix" ? "kortix" : undefined,
-    updatePolicy:
-      e.item.meta?.updatePolicy === "kortix-managed"
-        ? "kortix-managed"
-        : undefined,
+    managedBy: e.item.meta?.managedBy === 'kortix' ? 'kortix' : undefined,
+    updatePolicy: e.item.meta?.updatePolicy === 'kortix-managed' ? 'kortix-managed' : undefined,
     defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
     defaultProjectInstallOrder,
     hidden: e.item.meta?.hidden === true,
@@ -219,14 +210,14 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
 }
 
 function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
-  if (a.type === "registry:bundle" && b.type !== "registry:bundle") return -1;
-  if (b.type === "registry:bundle" && a.type !== "registry:bundle") return 1;
+  if (a.type === 'registry:bundle' && b.type !== 'registry:bundle') return -1;
+  if (b.type === 'registry:bundle' && a.type !== 'registry:bundle') return 1;
   return a.name.localeCompare(b.name);
 }
 
 function readmeOf(item: RegistryItem): string | null {
   const skill = item.files?.find((f) => /SKILL\.md$/.test(f.target ?? f.path));
-  return typeof skill?.content === "string" ? skill.content : null;
+  return typeof skill?.content === 'string' ? skill.content : null;
 }
 
 // ── base catalog (sync, starter + curated bundles) ─────────────────────────
@@ -240,7 +231,7 @@ function memSource(map: Map<string, string>): BuildSource {
       return c;
     },
     isDirectory: (p) => {
-      const clean = p.replace(/\/+$/, "");
+      const clean = p.replace(/\/+$/, '');
       return keys.some((k) => k.startsWith(`${clean}/`)) && !map.has(p);
     },
   };
@@ -249,25 +240,23 @@ function memSource(map: Map<string, string>): BuildSource {
 function buildStarterRegistry(): RegistryJson {
   const files = [
     ...getStarterFiles({
-      projectName: "Kortix Starter",
-      template: "general-knowledge-worker",
+      projectName: 'Kortix Starter',
+      template: 'general-knowledge-worker',
     }),
     ...getMarketplaceFiles(),
   ];
   const map = new Map(files.map((f) => [f.path, f.content] as const));
   const { registry } = buildRegistry({
-    name: "kortix-starter",
+    name: 'kortix-starter',
     source: memSource(map),
   });
   for (const item of registry.items ?? []) {
-    if (item.type === "registry:skill" && isKortixManagedSkillName(item.name)) {
-      item.categories = [
-        ...new Set([...(item.categories ?? []), "kortix-managed"]),
-      ];
+    if (item.type === 'registry:skill' && isKortixManagedSkillName(item.name)) {
+      item.categories = [...new Set([...(item.categories ?? []), 'kortix-managed'])];
       item.meta = {
         ...(item.meta ?? {}),
-        managedBy: "kortix",
-        updatePolicy: "kortix-managed",
+        managedBy: 'kortix',
+        updatePolicy: 'kortix-managed',
       };
     }
     for (const f of item.files ?? []) {
@@ -280,43 +269,190 @@ function buildStarterRegistry(): RegistryJson {
 
 const CURATED_BUNDLES: RegistryItem[] = [
   {
-    name: "research-pack",
-    type: "registry:bundle",
-    title: "Research Pack",
+    name: 'research-pack',
+    type: 'registry:bundle',
+    title: 'Research Pack',
     description:
-      "Everything for evidence-based research: deep research, cited reports, and academic paper search.",
-    categories: ["bundle", "research"],
-    registryDependencies: [
-      "deep-research",
-      "research-report",
-      "openalex-paper-search",
-    ],
-    meta: { source: "kortix" },
+      'Everything for evidence-based research: deep research, cited reports, and academic paper search.',
+    categories: ['bundle', 'research'],
+    registryDependencies: ['deep-research', 'research-report', 'openalex-paper-search'],
+    meta: { source: 'kortix' },
   },
   {
-    name: "sales-pack",
-    type: "registry:bundle",
-    title: "Sales Pack",
+    name: 'sales-pack',
+    type: 'registry:bundle',
+    title: 'Sales Pack',
     description:
-      "Outbound-ready: account research, outreach drafting, call prep, and competitive analysis.",
-    categories: ["bundle", "sales"],
+      'Outbound-ready: account research, outreach drafting, call prep, and competitive analysis.',
+    categories: ['bundle', 'sales'],
     registryDependencies: [
-      "account-research",
-      "draft-outreach",
-      "call-prep",
-      "competitive-analysis",
+      'account-research',
+      'draft-outreach',
+      'call-prep',
+      'competitive-analysis',
     ],
-    meta: { source: "kortix" },
+    meta: { source: 'kortix' },
   },
   {
-    name: "documents-pack",
-    type: "registry:bundle",
-    title: "Documents Pack",
+    name: 'documents-pack',
+    type: 'registry:bundle',
+    title: 'Documents Pack',
+    description: 'Read and write real office files: PDF, Word, Excel, and presentations.',
+    categories: ['bundle', 'documents'],
+    registryDependencies: ['pdf', 'docx', 'xlsx', 'presentations'],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'legal-pack',
+    type: 'registry:bundle',
+    title: 'Legal Pack',
     description:
-      "Read and write real office files: PDF, Word, Excel, and presentations.",
-    categories: ["bundle", "documents"],
-    registryDependencies: ["pdf", "docx", "xlsx", "presentations"],
-    meta: { source: "kortix" },
+      'In-house legal team essentials: contract review, NDA triage, compliance, risk assessment, and legal drafting.',
+    categories: ['bundle', 'legal'],
+    registryDependencies: [
+      'contract-review',
+      'nda-triage',
+      'compliance',
+      'risk-assessment',
+      'legal-writer',
+    ],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'finance-close-pack',
+    type: 'registry:bundle',
+    title: 'Finance Close Pack',
+    description:
+      'Month-end close, end to end: reconciliations, journal entries, variance analysis, financial statements, and close-checklist management.',
+    categories: ['bundle', 'finance'],
+    registryDependencies: [
+      'reconciliation',
+      'journal-entry-prep',
+      'variance-analysis',
+      'financial-statements',
+      'close-management',
+    ],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'product-management-pack',
+    type: 'registry:bundle',
+    title: 'Product Management Pack',
+    description:
+      'Ship better product decisions: PRDs, roadmap planning, user research synthesis, metrics tracking, and stakeholder communication.',
+    categories: ['bundle', 'product'],
+    registryDependencies: [
+      'feature-spec',
+      'roadmap-management',
+      'user-research-synthesis',
+      'metrics-tracking',
+      'stakeholder-comms',
+    ],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'customer-support-pack',
+    type: 'registry:bundle',
+    title: 'Customer Support Pack',
+    description:
+      'Triage, resolve, and document support tickets: prioritized triage, empathetic response drafting, escalation briefs, and knowledge-base articles.',
+    categories: ['bundle', 'support'],
+    registryDependencies: [
+      'ticket-triage',
+      'response-drafting',
+      'escalation',
+      'knowledge-management',
+    ],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'health-pack',
+    type: 'registry:bundle',
+    title: 'Health Pack',
+    description:
+      'Your personal health data in one place: wearable metrics, electronic health records, and a unified health summary.',
+    categories: ['bundle', 'health'],
+    registryDependencies: ['personal-health', 'wearables-data', 'electronic-health-records'],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'marketing-pack',
+    type: 'registry:bundle',
+    title: 'Marketing Pack',
+    description:
+      'Plan and produce on-brand campaigns: campaign planning, content creation, brand voice, and performance analytics.',
+    categories: ['bundle', 'marketing'],
+    registryDependencies: [
+      'campaign-planning',
+      'content-creation',
+      'brand-voice',
+      'performance-analytics',
+    ],
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'recruiting-pack',
+    type: 'registry:bundle',
+    title: 'Recruiting Pack',
+    description:
+      'Run a recruiting pipeline: automated sourcing, resume ranking against a role, readiness-to-move scoring, and a shareable talent-pool leaderboard.',
+    categories: ['bundle', 'recruiting'],
+    registryDependencies: [
+      'automated-sourcing',
+      'ats-ranker',
+      'rtm-ranker',
+      'talent-pool-rendering',
+    ],
+    meta: { source: 'kortix' },
+  },
+];
+
+// Blueprints: a skill + a PROPOSED (disabled) trigger. Installing one appends a
+// disabled trigger to the project's kortix.yaml (the install path forces
+// enabled:false); the human turns it on from the Triggers surface. Never runs
+// on its own.
+const CURATED_BLUEPRINTS: RegistryItem[] = [
+  {
+    name: 'daily-research-brief',
+    type: 'registry:blueprint',
+    title: 'Daily Research Brief',
+    description:
+      'Every weekday morning, research a topic and post a short brief. Installs disabled — enable it in Triggers.',
+    categories: ['blueprint', 'research'],
+    registryDependencies: ['deep-research'],
+    proposedTrigger: {
+      slug: 'daily-research-brief',
+      name: 'Daily Research Brief',
+      type: 'cron',
+      agent: 'default',
+      cron: '0 0 8 * * 1-5',
+      timezone: 'UTC',
+      promptTemplate:
+        'Research the latest on {{slots.topic}} and post a concise brief of what changed and why it matters.',
+    },
+    slots: { topic: { label: 'Topic', default: 'our market and competitors' } },
+    meta: { source: 'kortix' },
+  },
+  {
+    name: 'weekly-competitive-scan',
+    type: 'registry:blueprint',
+    title: 'Weekly Competitive Scan',
+    description:
+      'Every Monday, scan a competitor and summarize their moves. Installs disabled — enable it in Triggers.',
+    categories: ['blueprint', 'sales'],
+    registryDependencies: ['competitive-analysis'],
+    proposedTrigger: {
+      slug: 'weekly-competitive-scan',
+      name: 'Weekly Competitive Scan',
+      type: 'cron',
+      agent: 'default',
+      cron: '0 0 9 * * 1',
+      timezone: 'UTC',
+      promptTemplate:
+        'Scan {{slots.competitor}} for the past week — product, pricing, and messaging changes — and summarize.',
+    },
+    slots: { competitor: { label: 'Competitor', default: 'our top competitor' } },
+    meta: { source: 'kortix' },
   },
 ];
 
@@ -325,8 +461,8 @@ let BASE: Catalog | null = null;
 function getBaseCatalog(): Catalog {
   if (BASE) return BASE;
   const registries: Array<{ name: string; items: RegistryItem[] }> = [
-    { name: "kortix", items: CURATED_BUNDLES },
-    { name: "kortix-starter", items: buildStarterRegistry().items ?? [] },
+    { name: 'kortix', items: [...CURATED_BUNDLES, ...CURATED_BLUEPRINTS] },
+    { name: 'kortix-starter', items: buildStarterRegistry().items ?? [] },
   ];
   const items: CatalogItem[] = [];
   const byId = new Map<string, CatalogEntry>();
@@ -357,7 +493,7 @@ export interface SourceStatus {
   label: string;
   owner?: string;
   sourceUrl?: string;
-  status: "pending" | "ready" | "error";
+  status: 'pending' | 'ready' | 'error';
 }
 interface MarketplaceCache {
   external: Catalog | null; // last fully-resolved external catalog (the 24h cache)
@@ -393,16 +529,14 @@ const CACHE: MarketplaceCache = ((
 // config/db pulled into its graph. Defaults to none until registered.
 let loadDbSources: () => Promise<MarketplaceSource[]> = async () => [];
 
-export function registerMarketplaceSourceProvider(
-  fn: () => Promise<MarketplaceSource[]>,
-): void {
+export function registerMarketplaceSourceProvider(fn: () => Promise<MarketplaceSource[]>): void {
   loadDbSources = fn;
 }
 
 /** Static registries from config (comma-separated addresses). */
 function envSources(): string[] {
-  return (process.env.KORTIX_MARKETPLACE_REGISTRIES ?? "")
-    .split(",")
+  return (process.env.KORTIX_MARKETPLACE_REGISTRIES ?? '')
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -414,8 +548,8 @@ function envSources(): string[] {
  * overridden by `KORTIX_DEFAULT_MARKETPLACES` (comma-separated).
  */
 export const DEFAULT_MARKETPLACES: string[] = [
-  "anthropics/skills", // official Anthropic Agent Skills (the anchor)
-  "anthropics/knowledge-work-plugins", // official Anthropic knowledge-work skills
+  'anthropics/skills', // official Anthropic Agent Skills (the anchor)
+  'anthropics/knowledge-work-plugins', // official Anthropic knowledge-work skills
 ];
 
 /** The defaults actually loaded — `KORTIX_DEFAULT_MARKETPLACES` overrides (set it
@@ -424,7 +558,7 @@ function activeDefaultMarketplaces(): string[] {
   const env = process.env.KORTIX_DEFAULT_MARKETPLACES;
   if (env === undefined) return DEFAULT_MARKETPLACES;
   return env
-    .split(",")
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -433,17 +567,17 @@ function activeDefaultMarketplaces(): string[] {
 function refsFromSource(src: MarketplaceSource): RegistryRef[] {
   const base = parseRegistryAddress(src.address);
   const paths = src.sparsePaths?.length ? src.sparsePaths : [undefined];
-  if (base.kind === "github") {
+  if (base.kind === 'github') {
     return paths.map((p) => ({
       ...base,
       ref: src.gitRef || base.ref,
       subdir: p ?? base.subdir,
     }));
   }
-  if (base.kind === "local") {
+  if (base.kind === 'local') {
     return paths.map((p) => ({
       ...base,
-      path: p ? `${base.path.replace(/\/+$/, "")}/${p}` : base.path,
+      path: p ? `${base.path.replace(/\/+$/, '')}/${p}` : base.path,
     }));
   }
   return [base]; // url / namespace — git ref + sparse paths don't apply
@@ -476,9 +610,7 @@ async function externalRefs(): Promise<ExternalRef[]> {
     }
   }
   // User-added sources (removable via their source id).
-  for (const src of await loadDbSources().catch(
-    () => [] as MarketplaceSource[],
-  )) {
+  for (const src of await loadDbSources().catch(() => [] as MarketplaceSource[])) {
     try {
       for (const ref of refsFromSource(src)) push(ref, src.id);
     } catch {
@@ -492,24 +624,20 @@ async function externalRefs(): Promise<ExternalRef[]> {
 // unauthenticated 60 req/hr scan ceiling to 5,000/hr so many marketplaces can be
 // browsed + installed without rate-limiting. Kept out of @kortix/registry (which
 // stays pure) — injected here as a fetch wrapper via the loader's fetchImpl.
-const GITHUB_TOKEN =
-  process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
-const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || '';
+const GITHUB_HOSTS = new Set(['api.github.com', 'raw.githubusercontent.com']);
 const githubFetch: typeof fetch = !GITHUB_TOKEN
   ? fetch
-  : (((
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
+  : (((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const url =
-        typeof input === "string"
+        typeof input === 'string'
           ? input
           : input instanceof URL
             ? input.href
             : (input as Request).url;
       // Exact hostname match — NOT substring — so the token is never sent to a
       // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
-      let host = "";
+      let host = '';
       try {
         host = new URL(url).hostname;
       } catch {
@@ -517,8 +645,7 @@ const githubFetch: typeof fetch = !GITHUB_TOKEN
       }
       if (GITHUB_HOSTS.has(host)) {
         const headers = new Headers(init?.headers);
-        if (!headers.has("authorization"))
-          headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
+        if (!headers.has('authorization')) headers.set('authorization', `Bearer ${GITHUB_TOKEN}`);
         return fetch(input, { ...init, headers });
       }
       return fetch(input, init);
@@ -533,36 +660,25 @@ export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
 // A source address is user-supplied + global, so in the hosted API it must not
 // read the server's disk (`local`) or fetch internal URLs (`url` → cloud
 // metadata, localhost, RFC-1918). `local` is dev-only behind an opt-in flag.
-const ALLOW_LOCAL_SOURCES = process.env.KORTIX_MARKETPLACE_ALLOW_LOCAL === "1";
+const ALLOW_LOCAL_SOURCES = process.env.KORTIX_MARKETPLACE_ALLOW_LOCAL === '1';
 
 function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase().replace(/\.$/, "");
-  if (!h || h === "localhost" || h.endsWith(".localhost")) return true;
-  if (
-    h === "127.0.0.1" ||
-    h === "0.0.0.0" ||
-    h === "::1" ||
-    h.startsWith("127.")
-  )
-    return true;
-  if (h.startsWith("169.254.")) return true; // link-local incl. 169.254.169.254 cloud metadata
-  if (
-    /^10\./.test(h) ||
-    /^192\.168\./.test(h) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(h)
-  )
-    return true;
-  if (h.endsWith(".internal") || h.endsWith(".local")) return true;
+  const h = host.toLowerCase().replace(/\.$/, '');
+  if (!h || h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '127.0.0.1' || h === '0.0.0.0' || h === '::1' || h.startsWith('127.')) return true;
+  if (h.startsWith('169.254.')) return true; // link-local incl. 169.254.169.254 cloud metadata
+  if (/^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (h.endsWith('.internal') || h.endsWith('.local')) return true;
   return false;
 }
 
 function isAllowedSourceRef(ref: RegistryRef): boolean {
-  if (ref.kind === "github" || ref.kind === "namespace") return true;
-  if (ref.kind === "local") return ALLOW_LOCAL_SOURCES;
-  if (ref.kind === "url") {
+  if (ref.kind === 'github' || ref.kind === 'namespace') return true;
+  if (ref.kind === 'local') return ALLOW_LOCAL_SOURCES;
+  if (ref.kind === 'url') {
     try {
       const u = new URL(ref.url);
-      return u.protocol === "https:" && !isPrivateHost(u.hostname);
+      return u.protocol === 'https:' && !isPrivateHost(u.hostname);
     } catch {
       return false;
     }
@@ -579,11 +695,9 @@ export function assertAllowedSourceAddress(address: string): void {
     throw new Error(`Unrecognized source address: ${(err as Error).message}`);
   }
   if (isAllowedSourceRef(ref)) return;
-  if (ref.kind === "local")
-    throw new Error("Local-folder sources are not allowed on this server.");
-  if (ref.kind === "url")
-    throw new Error("Only https registry URLs on public hosts are allowed.");
-  throw new Error("This source type is not allowed.");
+  if (ref.kind === 'local') throw new Error('Local-folder sources are not allowed on this server.');
+  if (ref.kind === 'url') throw new Error('Only https registry URLs on public hosts are allowed.');
+  throw new Error('This source type is not allowed.');
 }
 
 /** Start (or join) a build of the external catalog — resolves when every source
@@ -621,11 +735,8 @@ async function buildExternalCatalog(): Promise<Catalog> {
       id,
       label: marketplaceLabelOf(id),
       owner: ownerOf(id),
-      sourceUrl:
-        ref.kind === "github"
-          ? `https://github.com/${ref.owner}/${ref.repo}`
-          : undefined,
-      status: "pending" as const,
+      sourceUrl: ref.kind === 'github' ? `https://github.com/${ref.owner}/${ref.repo}` : undefined,
+      status: 'pending' as const,
     };
   });
   CACHE.gen++;
@@ -638,18 +749,11 @@ async function buildExternalCatalog(): Promise<Catalog> {
   await Promise.allSettled(
     refs.map(async ({ ref, sourceId }, i) => {
       try {
-        addRegistryToCatalog(
-          acc,
-          await loadRegistry(ref, githubLoaderOptions),
-          ref,
-          sourceId,
-        );
-        if (CACHE.sourceStatus[i]) CACHE.sourceStatus[i].status = "ready";
+        addRegistryToCatalog(acc, await loadRegistry(ref, githubLoaderOptions), ref, sourceId);
+        if (CACHE.sourceStatus[i]) CACHE.sourceStatus[i].status = 'ready';
       } catch (err) {
-        console.warn(
-          `[marketplace] skipping external registry: ${(err as Error)?.message}`,
-        );
-        if (CACHE.sourceStatus[i]) CACHE.sourceStatus[i].status = "error";
+        console.warn(`[marketplace] skipping external registry: ${(err as Error)?.message}`);
+        if (CACHE.sourceStatus[i]) CACHE.sourceStatus[i].status = 'error';
       } finally {
         CACHE.pending = Math.max(0, CACHE.pending - 1);
         CACHE.gen++; // a source landed → next read re-merges and streams it in
@@ -670,9 +774,7 @@ function addRegistryToCatalog(
 ): void {
   const registryName = registry.registry.name || describeRegistry(ref);
   const sourceUrl =
-    ref.kind === "github"
-      ? `https://github.com/${ref.owner}/${ref.repo}`
-      : undefined;
+    ref.kind === 'github' ? `https://github.com/${ref.owner}/${ref.repo}` : undefined;
   for (const item of registry.registry.items ?? []) {
     const id = `${registryName}:${item.name}`;
     if (acc.byId.has(id)) continue;
@@ -697,8 +799,7 @@ function progressiveMerge(): Catalog {
   const byId = new Map(base.byId);
   const byName = new Map<string, CatalogEntry>();
   const items = [...base.items];
-  for (const e of base.byId.values())
-    if (!byName.has(e.item.name)) byName.set(e.item.name, e);
+  for (const e of base.byId.values()) if (!byName.has(e.item.name)) byName.set(e.item.name, e);
   for (const it of ext.items) {
     if (byId.has(it.id)) continue;
     const e = ext.byId.get(it.id)!;
@@ -738,9 +839,7 @@ export function catalogStatus(): {
   return {
     loading: cold,
     pending: CACHE.pending,
-    sources: cold
-      ? CACHE.sourceStatus.filter((s) => s.status === "pending")
-      : [],
+    sources: cold ? CACHE.sourceStatus.filter((s) => s.status === 'pending') : [],
   };
 }
 
@@ -750,7 +849,7 @@ export function catalogStatus(): {
  * its `owner/repo`. This is the id the "browse by marketplace" filter uses.
  */
 export function marketplaceIdOf(registry: string): string {
-  return registry === "kortix-starter" ? "kortix" : registry;
+  return registry === 'kortix-starter' ? 'kortix' : registry;
 }
 
 export interface MarketplaceFacet {
@@ -788,18 +887,14 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
       by.set(id, m);
     }
     m.count += 1;
-    const short = it.type.replace("registry:", "");
+    const short = it.type.replace('registry:', '');
     m.types[short] = (m.types[short] ?? 0) + 1;
     if (!m.sourceUrl && it.sourceUrl) m.sourceUrl = it.sourceUrl;
     if (!m.sourceId && it.sourceId) m.sourceId = it.sourceId;
   }
   // Kortix first, then external alphabetically.
   return [...by.values()].sort((a, b) =>
-    a.id === "kortix"
-      ? -1
-      : b.id === "kortix"
-        ? 1
-        : a.label.localeCompare(b.label),
+    a.id === 'kortix' ? -1 : b.id === 'kortix' ? 1 : a.label.localeCompare(b.label),
   );
 }
 
@@ -820,593 +915,593 @@ export interface FeaturedMarketplace {
 export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
   // Official / first-party (off by default, one-click to enable)
   {
-    address: "anthropics/knowledge-work-plugins",
-    label: "Anthropic Knowledge Work",
-    owner: "anthropics",
-    description: "Official Anthropic — ~212 knowledge-work skills",
-    license: "Apache-2.0",
+    address: 'anthropics/knowledge-work-plugins',
+    label: 'Anthropic Knowledge Work',
+    owner: 'anthropics',
+    description: 'Official Anthropic — ~212 knowledge-work skills',
+    license: 'Apache-2.0',
   },
   {
-    address: "openai/role-specific-plugins",
-    label: "OpenAI Role Plugins",
-    owner: "openai",
-    description: "Official Codex role-specific plugins",
-    license: "MIT",
+    address: 'openai/role-specific-plugins',
+    label: 'OpenAI Role Plugins',
+    owner: 'openai',
+    description: 'Official Codex role-specific plugins',
+    license: 'MIT',
   },
   {
-    address: "wshobson/agents",
-    label: "wshobson Agents",
-    owner: "wshobson",
-    description: "156 skills · 192 agents · 102 commands",
-    license: "MIT",
+    address: 'wshobson/agents',
+    label: 'wshobson Agents',
+    owner: 'wshobson',
+    description: '156 skills · 192 agents · 102 commands',
+    license: 'MIT',
   },
   // Big, permissive, reputable (verified counts, 2026-06-16)
   {
-    address: "davila7/claude-code-templates",
-    label: "aitmpl Templates",
-    owner: "davila7",
-    description: "871 skills · 449 agents · 388 commands",
-    license: "MIT",
+    address: 'davila7/claude-code-templates',
+    label: 'aitmpl Templates',
+    owner: 'davila7',
+    description: '871 skills · 449 agents · 388 commands',
+    license: 'MIT',
   },
   {
-    address: "alirezarezvani/claude-skills",
-    label: "Claude Skills",
-    owner: "alirezarezvani",
-    description: "767 skills + agents + commands",
-    license: "MIT",
+    address: 'alirezarezvani/claude-skills',
+    label: 'Claude Skills',
+    owner: 'alirezarezvani',
+    description: '767 skills + agents + commands',
+    license: 'MIT',
   },
   {
-    address: "github/awesome-copilot",
-    label: "Awesome Copilot",
-    owner: "github",
-    description: "GitHub/Microsoft official — 526 skills, 115 agents",
-    license: "MIT",
+    address: 'github/awesome-copilot',
+    label: 'Awesome Copilot',
+    owner: 'github',
+    description: 'GitHub/Microsoft official — 526 skills, 115 agents',
+    license: 'MIT',
   },
   {
-    address: "microsoft/azure-skills",
-    label: "Azure Skills",
-    owner: "microsoft",
-    description: "Microsoft official Azure skills (68)",
-    license: "MIT",
+    address: 'microsoft/azure-skills',
+    label: 'Azure Skills',
+    owner: 'microsoft',
+    description: 'Microsoft official Azure skills (68)',
+    license: 'MIT',
   },
   {
-    address: "mattpocock/skills",
-    label: "Matt Pocock Skills",
-    owner: "mattpocock",
-    description: "TypeScript & web skills (skills.sh top author)",
-    license: "MIT",
+    address: 'mattpocock/skills',
+    label: 'Matt Pocock Skills',
+    owner: 'mattpocock',
+    description: 'TypeScript & web skills (skills.sh top author)',
+    license: 'MIT',
   },
   {
-    address: "davepoon/buildwithclaude",
-    label: "Build with Claude",
-    owner: "davepoon",
-    description: "334 skills · 363 agents · 414 commands",
-    license: "MIT",
+    address: 'davepoon/buildwithclaude',
+    label: 'Build with Claude',
+    owner: 'davepoon',
+    description: '334 skills · 363 agents · 414 commands',
+    license: 'MIT',
   },
   {
-    address: "secondsky/claude-skills",
-    label: "Claude Skills (secondsky)",
-    owner: "secondsky",
-    description: "212 skills · 53 agents · 65 commands",
-    license: "MIT",
+    address: 'secondsky/claude-skills',
+    label: 'Claude Skills (secondsky)',
+    owner: 'secondsky',
+    description: '212 skills · 53 agents · 65 commands',
+    license: 'MIT',
   },
   {
-    address: "K-Dense-AI/scientific-agent-skills",
-    label: "Scientific Agent Skills",
-    owner: "K-Dense-AI",
-    description: "147 science skills",
-    license: "MIT",
+    address: 'K-Dense-AI/scientific-agent-skills',
+    label: 'Scientific Agent Skills',
+    owner: 'K-Dense-AI',
+    description: '147 science skills',
+    license: 'MIT',
   },
   {
-    address: "anthropics/claude-plugins-official",
-    label: "Anthropic Official Plugins",
-    owner: "anthropics",
-    description: "28 curated first-party plugins",
-    license: "Apache-2.0",
+    address: 'anthropics/claude-plugins-official',
+    label: 'Anthropic Official Plugins',
+    owner: 'anthropics',
+    description: '28 curated first-party plugins',
+    license: 'Apache-2.0',
   },
   {
-    address: "obra/superpowers",
-    label: "Superpowers",
-    owner: "obra",
-    description: "Brainstorming, debugging, TDD (Jesse Vincent)",
-    license: "MIT",
+    address: 'obra/superpowers',
+    label: 'Superpowers',
+    owner: 'obra',
+    description: 'Brainstorming, debugging, TDD (Jesse Vincent)',
+    license: 'MIT',
   },
   {
-    address: "garrytan/gstack",
-    label: "gstack",
-    owner: "garrytan",
+    address: 'garrytan/gstack',
+    label: 'gstack',
+    owner: 'garrytan',
     description: "Garry Tan's Claude Code setup — 62 skills",
-    license: "MIT",
+    license: 'MIT',
   },
   {
-    address: "SuperClaude-Org/SuperClaude_Framework",
-    label: "SuperClaude Framework",
-    owner: "SuperClaude-Org",
-    description: "35 personas, commands & skills + MCP",
-    license: "MIT",
+    address: 'SuperClaude-Org/SuperClaude_Framework',
+    label: 'SuperClaude Framework',
+    owner: 'SuperClaude-Org',
+    description: '35 personas, commands & skills + MCP',
+    license: 'MIT',
   },
   // Verticals
   {
-    address: "kostja94/marketing-skills",
-    label: "Marketing Skills",
-    owner: "kostja94",
-    description: "172 marketing skills — SEO, social, ads",
-    license: "MIT",
+    address: 'kostja94/marketing-skills',
+    label: 'Marketing Skills',
+    owner: 'kostja94',
+    description: '172 marketing skills — SEO, social, ads',
+    license: 'MIT',
   },
   {
-    address: "AgricIDaniel/claude-seo",
-    label: "Claude SEO",
-    owner: "AgricIDaniel",
-    description: "Technical SEO, schema, GEO/AEO",
-    license: "MIT",
+    address: 'AgricIDaniel/claude-seo',
+    label: 'Claude SEO',
+    owner: 'AgricIDaniel',
+    description: 'Technical SEO, schema, GEO/AEO',
+    license: 'MIT',
   },
   {
-    address: "transilienceai/communitytools",
-    label: "Security Community Tools",
-    owner: "transilienceai",
-    description: "Security, pentest & bug-bounty skills",
-    license: "MIT",
+    address: 'transilienceai/communitytools',
+    label: 'Security Community Tools',
+    owner: 'transilienceai',
+    description: 'Security, pentest & bug-bounty skills',
+    license: 'MIT',
   },
   {
-    address: "cloudflare/skills",
-    label: "Cloudflare Skills",
-    owner: "cloudflare",
-    description: "Workers & Agents SDK (official)",
-    license: "Apache-2.0",
+    address: 'cloudflare/skills',
+    label: 'Cloudflare Skills',
+    owner: 'cloudflare',
+    description: 'Workers & Agents SDK (official)',
+    license: 'Apache-2.0',
   },
   // Large / vendor — license caveats (all-rights-reserved; we fetch at install, never re-host)
   {
-    address: "ComposioHQ/awesome-claude-skills",
-    label: "Composio Awesome Skills",
-    owner: "ComposioHQ",
-    description: "864 community skills (Composio)",
-    license: "",
+    address: 'ComposioHQ/awesome-claude-skills',
+    label: 'Composio Awesome Skills',
+    owner: 'ComposioHQ',
+    description: '864 community skills (Composio)',
+    license: '',
   },
   {
-    address: "openai/plugins",
-    label: "OpenAI Codex Plugins",
-    owner: "openai",
-    description: "551 official Codex skills — per-plugin terms",
-    license: "",
+    address: 'openai/plugins',
+    label: 'OpenAI Codex Plugins',
+    owner: 'openai',
+    description: '551 official Codex skills — per-plugin terms',
+    license: '',
   },
   {
-    address: "vercel-labs/agent-skills",
-    label: "Vercel Agent Skills",
-    owner: "vercel-labs",
-    description: "React, web design & more",
-    license: "",
+    address: 'vercel-labs/agent-skills',
+    label: 'Vercel Agent Skills',
+    owner: 'vercel-labs',
+    description: 'React, web design & more',
+    license: '',
   },
   // Official vendor sources (indexed by skills.sh — recognizable brands)
   {
-    address: "google/skills",
-    label: "Google Skills",
-    owner: "google",
-    description: "Agent skills for Google products",
-    license: "Apache-2.0",
+    address: 'google/skills',
+    label: 'Google Skills',
+    owner: 'google',
+    description: 'Agent skills for Google products',
+    license: 'Apache-2.0',
   },
   {
-    address: "huggingface/skills",
-    label: "Hugging Face Skills",
-    owner: "huggingface",
-    description: "The Hugging Face ecosystem for agents",
-    license: "Apache-2.0",
+    address: 'huggingface/skills',
+    label: 'Hugging Face Skills',
+    owner: 'huggingface',
+    description: 'The Hugging Face ecosystem for agents',
+    license: 'Apache-2.0',
   },
   {
-    address: "stripe/ai",
-    label: "Stripe AI",
-    owner: "stripe",
-    description: "Build AI products with Stripe",
-    license: "MIT",
+    address: 'stripe/ai',
+    label: 'Stripe AI',
+    owner: 'stripe',
+    description: 'Build AI products with Stripe',
+    license: 'MIT',
   },
   {
-    address: "supabase/agent-skills",
-    label: "Supabase Agent Skills",
-    owner: "supabase",
-    description: "Agent skills for Supabase",
-    license: "MIT",
+    address: 'supabase/agent-skills',
+    label: 'Supabase Agent Skills',
+    owner: 'supabase',
+    description: 'Agent skills for Supabase',
+    license: 'MIT',
   },
   {
-    address: "firebase/agent-skills",
-    label: "Firebase Agent Skills",
-    owner: "firebase",
-    description: "Agent skills for Firebase",
-    license: "Apache-2.0",
+    address: 'firebase/agent-skills',
+    label: 'Firebase Agent Skills',
+    owner: 'firebase',
+    description: 'Agent skills for Firebase',
+    license: 'Apache-2.0',
   },
   {
-    address: "dotnet/skills",
-    label: ".NET Skills",
-    owner: "dotnet",
-    description: "Skills for .NET & C# coding agents (105)",
-    license: "MIT",
+    address: 'dotnet/skills',
+    label: '.NET Skills',
+    owner: 'dotnet',
+    description: 'Skills for .NET & C# coding agents (105)',
+    license: 'MIT',
   },
   {
-    address: "flutter/skills",
-    label: "Flutter Skills",
-    owner: "flutter",
-    description: "Agent skills for Flutter",
-    license: "BSD-3-Clause",
+    address: 'flutter/skills',
+    label: 'Flutter Skills',
+    owner: 'flutter',
+    description: 'Agent skills for Flutter',
+    license: 'BSD-3-Clause',
   },
   {
-    address: "googleworkspace/cli",
-    label: "Google Workspace CLI",
-    owner: "googleworkspace",
-    description: "Workspace CLI + 95 agent skills",
-    license: "Apache-2.0",
+    address: 'googleworkspace/cli',
+    label: 'Google Workspace CLI',
+    owner: 'googleworkspace',
+    description: 'Workspace CLI + 95 agent skills',
+    license: 'Apache-2.0',
   },
   {
-    address: "forcedotcom/sf-skills",
-    label: "Salesforce Skills",
-    owner: "forcedotcom",
-    description: "Agentforce / Salesforce skills (69)",
-    license: "",
+    address: 'forcedotcom/sf-skills',
+    label: 'Salesforce Skills',
+    owner: 'forcedotcom',
+    description: 'Agentforce / Salesforce skills (69)',
+    license: '',
   },
   {
-    address: "oracle/skills",
-    label: "Oracle Skills",
-    owner: "oracle",
-    description: "Curated skills for Oracle tech",
-    license: "UPL-1.0",
+    address: 'oracle/skills',
+    label: 'Oracle Skills',
+    owner: 'oracle',
+    description: 'Curated skills for Oracle tech',
+    license: 'UPL-1.0',
   },
   {
-    address: "dbt-labs/dbt-agent-skills",
-    label: "dbt Agent Skills",
-    owner: "dbt-labs",
-    description: "Agent skills for dbt workflows",
-    license: "Apache-2.0",
+    address: 'dbt-labs/dbt-agent-skills',
+    label: 'dbt Agent Skills',
+    owner: 'dbt-labs',
+    description: 'Agent skills for dbt workflows',
+    license: 'Apache-2.0',
   },
   {
-    address: "duckdb/duckdb-skills",
-    label: "DuckDB Skills",
-    owner: "duckdb",
-    description: "Agent skills for DuckDB",
-    license: "MIT",
+    address: 'duckdb/duckdb-skills',
+    label: 'DuckDB Skills',
+    owner: 'duckdb',
+    description: 'Agent skills for DuckDB',
+    license: 'MIT',
   },
   {
-    address: "langchain-ai/langchain-skills",
-    label: "LangChain Skills",
-    owner: "langchain-ai",
-    description: "Agent skills for LangChain",
-    license: "",
+    address: 'langchain-ai/langchain-skills',
+    label: 'LangChain Skills',
+    owner: 'langchain-ai',
+    description: 'Agent skills for LangChain',
+    license: '',
   },
   {
-    address: "trailofbits/skills",
-    label: "Trail of Bits Skills",
-    owner: "trailofbits",
-    description: "Security research & audit skills (74)",
-    license: "CC-BY-SA-4.0",
+    address: 'trailofbits/skills',
+    label: 'Trail of Bits Skills',
+    owner: 'trailofbits',
+    description: 'Security research & audit skills (74)',
+    license: 'CC-BY-SA-4.0',
   },
   {
-    address: "tavily-ai/skills",
-    label: "Tavily Skills",
-    owner: "tavily-ai",
-    description: "Agent skills for Tavily search",
-    license: "MIT",
+    address: 'tavily-ai/skills',
+    label: 'Tavily Skills',
+    owner: 'tavily-ai',
+    description: 'Agent skills for Tavily search',
+    license: 'MIT',
   },
   {
-    address: "brightdata/skills",
-    label: "Bright Data Skills",
-    owner: "brightdata",
-    description: "Web-data & scraping skills",
-    license: "MIT",
+    address: 'brightdata/skills',
+    label: 'Bright Data Skills',
+    owner: 'brightdata',
+    description: 'Web-data & scraping skills',
+    license: 'MIT',
   },
   {
-    address: "posit-dev/skills",
-    label: "Posit Skills",
-    owner: "posit-dev",
-    description: "R & Python skills from Posit",
-    license: "MIT",
+    address: 'posit-dev/skills',
+    label: 'Posit Skills',
+    owner: 'posit-dev',
+    description: 'R & Python skills from Posit',
+    license: 'MIT',
   },
   {
-    address: "callstackincubator/agent-skills",
-    label: "React Native Skills",
-    owner: "callstackincubator",
-    description: "Agent-optimized React Native skills",
-    license: "MIT",
+    address: 'callstackincubator/agent-skills',
+    label: 'React Native Skills',
+    owner: 'callstackincubator',
+    description: 'Agent-optimized React Native skills',
+    license: 'MIT',
   },
   {
-    address: "vuejs-ai/skills",
-    label: "Vue Skills",
-    owner: "vuejs-ai",
-    description: "Agent skills for Vue 3",
-    license: "MIT",
+    address: 'vuejs-ai/skills',
+    label: 'Vue Skills',
+    owner: 'vuejs-ai',
+    description: 'Agent skills for Vue 3',
+    license: 'MIT',
   },
   {
-    address: "analogjs/angular-skills",
-    label: "Angular Skills",
-    owner: "analogjs",
-    description: "Agent skills for Angular (AnalogJS)",
-    license: "MIT",
+    address: 'analogjs/angular-skills',
+    label: 'Angular Skills',
+    owner: 'analogjs',
+    description: 'Agent skills for Angular (AnalogJS)',
+    license: 'MIT',
   },
   // Notable authors & big collections
   {
-    address: "antfu/skills",
+    address: 'antfu/skills',
     label: "Anthony Fu's Skills",
-    owner: "antfu",
-    description: "Curated agent skills (Anthony Fu)",
-    license: "MIT",
+    owner: 'antfu',
+    description: 'Curated agent skills (Anthony Fu)',
+    license: 'MIT',
   },
   {
-    address: "mitsuhiko/agent-stuff",
-    label: "Agent Stuff",
-    owner: "mitsuhiko",
+    address: 'mitsuhiko/agent-stuff',
+    label: 'Agent Stuff',
+    owner: 'mitsuhiko',
     description: "Armin Ronacher's commands & skills",
-    license: "Apache-2.0",
+    license: 'Apache-2.0',
   },
   {
-    address: "addyosmani/web-quality-skills",
-    label: "Web Quality Skills",
-    owner: "addyosmani",
-    description: "Web performance & quality (Addy Osmani)",
-    license: "MIT",
+    address: 'addyosmani/web-quality-skills',
+    label: 'Web Quality Skills',
+    owner: 'addyosmani',
+    description: 'Web performance & quality (Addy Osmani)',
+    license: 'MIT',
   },
   {
-    address: "danielmiessler/Personal_AI_Infrastructure",
-    label: "Personal AI Infrastructure",
-    owner: "danielmiessler",
-    description: "458 skills — agentic AI infra (PAI)",
-    license: "MIT",
+    address: 'danielmiessler/Personal_AI_Infrastructure',
+    label: 'Personal AI Infrastructure',
+    owner: 'danielmiessler',
+    description: '458 skills — agentic AI infra (PAI)',
+    license: 'MIT',
   },
   {
-    address: "HKUDS/CLI-Anything",
-    label: "CLI-Anything",
-    owner: "HKUDS",
-    description: "Make any software agent-native (150)",
-    license: "Apache-2.0",
+    address: 'HKUDS/CLI-Anything',
+    label: 'CLI-Anything',
+    owner: 'HKUDS',
+    description: 'Make any software agent-native (150)',
+    license: 'Apache-2.0',
   },
   // More vendor/brand sources from skills.sh
   {
-    address: "google/agents-cli",
-    label: "Agents CLI",
-    owner: "google",
-    description: "CLI + skills for any coding agent (Google)",
-    license: "Apache-2.0",
+    address: 'google/agents-cli',
+    label: 'Agents CLI',
+    owner: 'google',
+    description: 'CLI + skills for any coding agent (Google)',
+    license: 'Apache-2.0',
   },
   {
-    address: "google-gemini/gemini-skills",
-    label: "Gemini Skills",
-    owner: "google-gemini",
-    description: "Skills for the Gemini API & models",
-    license: "Apache-2.0",
+    address: 'google-gemini/gemini-skills',
+    label: 'Gemini Skills',
+    owner: 'google-gemini',
+    description: 'Skills for the Gemini API & models',
+    license: 'Apache-2.0',
   },
   {
-    address: "google-labs-code/stitch-skills",
-    label: "Stitch Skills",
-    owner: "google-labs-code",
-    description: "Agent skills for Google Stitch",
-    license: "Apache-2.0",
+    address: 'google-labs-code/stitch-skills',
+    label: 'Stitch Skills',
+    owner: 'google-labs-code',
+    description: 'Agent skills for Google Stitch',
+    license: 'Apache-2.0',
   },
   {
-    address: "greensock/gsap-skills",
-    label: "GSAP Skills",
-    owner: "greensock",
-    description: "Official AI skills for GSAP",
-    license: "MIT",
+    address: 'greensock/gsap-skills',
+    label: 'GSAP Skills',
+    owner: 'greensock',
+    description: 'Official AI skills for GSAP',
+    license: 'MIT',
   },
   {
-    address: "larksuite/cli",
-    label: "Lark / Feishu CLI",
-    owner: "larksuite",
-    description: "Official Lark/Feishu CLI + skills",
-    license: "MIT",
+    address: 'larksuite/cli',
+    label: 'Lark / Feishu CLI',
+    owner: 'larksuite',
+    description: 'Official Lark/Feishu CLI + skills',
+    license: 'MIT',
   },
   {
-    address: "heygen-com/hyperframes",
-    label: "HyperFrames",
-    owner: "heygen-com",
-    description: "Write HTML, render video (HeyGen)",
-    license: "Apache-2.0",
+    address: 'heygen-com/hyperframes',
+    label: 'HyperFrames',
+    owner: 'heygen-com',
+    description: 'Write HTML, render video (HeyGen)',
+    license: 'Apache-2.0',
   },
   {
-    address: "vercel-labs/json-render",
-    label: "JSON Render",
-    owner: "vercel-labs",
-    description: "Generative UI framework (Vercel)",
-    license: "Apache-2.0",
+    address: 'vercel-labs/json-render',
+    label: 'JSON Render',
+    owner: 'vercel-labs',
+    description: 'Generative UI framework (Vercel)',
+    license: 'Apache-2.0',
   },
   {
-    address: "millionco/react-doctor",
-    label: "React Doctor",
-    owner: "millionco",
+    address: 'millionco/react-doctor',
+    label: 'React Doctor',
+    owner: 'millionco',
     description: "Catches your agent's bad React",
-    license: "MIT",
+    license: 'MIT',
   },
   {
-    address: "firecrawl/cli",
-    label: "Firecrawl CLI",
-    owner: "firecrawl",
-    description: "CLI + skill for Firecrawl scraping",
-    license: "",
+    address: 'firecrawl/cli',
+    label: 'Firecrawl CLI',
+    owner: 'firecrawl',
+    description: 'CLI + skill for Firecrawl scraping',
+    license: '',
   },
   {
-    address: "apify/agent-skills",
-    label: "Apify Agent Skills",
-    owner: "apify",
-    description: "Web scraping & automation (Apify)",
-    license: "",
+    address: 'apify/agent-skills',
+    label: 'Apify Agent Skills',
+    owner: 'apify',
+    description: 'Web scraping & automation (Apify)',
+    license: '',
   },
   {
-    address: "better-auth/skills",
-    label: "Better Auth Skills",
-    owner: "better-auth",
-    description: "Agent skills for Better Auth",
-    license: "",
+    address: 'better-auth/skills',
+    label: 'Better Auth Skills',
+    owner: 'better-auth',
+    description: 'Agent skills for Better Auth',
+    license: '',
   },
   // Famous authors
   {
-    address: "twostraws/SwiftUI-Agent-Skill",
-    label: "SwiftUI Skill (Paul Hudson)",
-    owner: "twostraws",
-    description: "SwiftUI agent skill — Hacking with Swift",
-    license: "MIT",
+    address: 'twostraws/SwiftUI-Agent-Skill',
+    label: 'SwiftUI Skill (Paul Hudson)',
+    owner: 'twostraws',
+    description: 'SwiftUI agent skill — Hacking with Swift',
+    license: 'MIT',
   },
   {
-    address: "AvdLee/SwiftUI-Agent-Skill",
-    label: "SwiftUI Best Practices",
-    owner: "AvdLee",
-    description: "Expert SwiftUI skill (Antoine van der Lee)",
-    license: "MIT",
+    address: 'AvdLee/SwiftUI-Agent-Skill',
+    label: 'SwiftUI Best Practices',
+    owner: 'AvdLee',
+    description: 'Expert SwiftUI skill (Antoine van der Lee)',
+    license: 'MIT',
   },
   {
-    address: "Dimillian/Skills",
+    address: 'Dimillian/Skills',
     label: "Dimillian's Skills",
-    owner: "Dimillian",
-    description: "Codex skills (Thomas Ricouard)",
-    license: "MIT",
+    owner: 'Dimillian',
+    description: 'Codex skills (Thomas Ricouard)',
+    license: 'MIT',
   },
   {
-    address: "Nutlope/hallmark",
-    label: "Hallmark",
-    owner: "Nutlope",
-    description: "Anti-AI-slop design skill (Hassan)",
-    license: "MIT",
+    address: 'Nutlope/hallmark',
+    label: 'Hallmark',
+    owner: 'Nutlope',
+    description: 'Anti-AI-slop design skill (Hassan)',
+    license: 'MIT',
   },
   {
-    address: "ibelick/ui-skills",
-    label: "UI Skills",
-    owner: "ibelick",
-    description: "Skills for design engineers (ibelick)",
-    license: "MIT",
+    address: 'ibelick/ui-skills',
+    label: 'UI Skills',
+    owner: 'ibelick',
+    description: 'Skills for design engineers (ibelick)',
+    license: 'MIT',
   },
   {
-    address: "chrisbanes/skills",
+    address: 'chrisbanes/skills',
     label: "Chris Banes' Skills",
-    owner: "chrisbanes",
-    description: "Kotlin, Compose & Android skills",
-    license: "Apache-2.0",
+    owner: 'chrisbanes',
+    description: 'Kotlin, Compose & Android skills',
+    license: 'Apache-2.0',
   },
   {
-    address: "hamelsmu/evals-skills",
-    label: "Evals Skills",
-    owner: "hamelsmu",
-    description: "Skills for AI evals (Hamel Husain)",
-    license: "MIT",
+    address: 'hamelsmu/evals-skills',
+    label: 'Evals Skills',
+    owner: 'hamelsmu',
+    description: 'Skills for AI evals (Hamel Husain)',
+    license: 'MIT',
   },
   {
-    address: "mrgoonie/claudekit-skills",
-    label: "ClaudeKit Skills",
-    owner: "mrgoonie",
-    description: "All ClaudeKit.cc skills (45)",
-    license: "",
+    address: 'mrgoonie/claudekit-skills',
+    label: 'ClaudeKit Skills',
+    owner: 'mrgoonie',
+    description: 'All ClaudeKit.cc skills (45)',
+    license: '',
   },
   {
-    address: "JimLiu/baoyu-skills",
-    label: "Baoyu Skills",
-    owner: "JimLiu",
+    address: 'JimLiu/baoyu-skills',
+    label: 'Baoyu Skills',
+    owner: 'JimLiu',
     description: "Baoyu's agent skills collection",
-    license: "",
+    license: '',
   },
   {
-    address: "nuxt-content/docus",
-    label: "Docus",
-    owner: "nuxt-content",
-    description: "Docs skills with Nuxt Content",
-    license: "MIT",
+    address: 'nuxt-content/docus',
+    label: 'Docus',
+    owner: 'nuxt-content',
+    description: 'Docs skills with Nuxt Content',
+    license: 'MIT',
   },
   // Big / hyped collections (high install counts on skills.sh)
   {
-    address: "nexu-io/open-design",
-    label: "Open Design",
-    owner: "nexu-io",
-    description: "513 skills — local-first design system",
-    license: "Apache-2.0",
+    address: 'nexu-io/open-design',
+    label: 'Open Design',
+    owner: 'nexu-io',
+    description: '513 skills — local-first design system',
+    license: 'Apache-2.0',
   },
   {
-    address: "ruvnet/ruflo",
-    label: "ruFlo",
-    owner: "ruvnet",
-    description: "Agent meta-harness + swarms (328)",
-    license: "MIT",
+    address: 'ruvnet/ruflo',
+    label: 'ruFlo',
+    owner: 'ruvnet',
+    description: 'Agent meta-harness + swarms (328)',
+    license: 'MIT',
   },
   {
-    address: "parcadei/Continuous-Claude-v3",
-    label: "Continuous Claude",
-    owner: "parcadei",
-    description: "160 skills — context management",
-    license: "MIT",
+    address: 'parcadei/Continuous-Claude-v3',
+    label: 'Continuous Claude',
+    owner: 'parcadei',
+    description: '160 skills — context management',
+    license: 'MIT',
   },
   {
-    address: "Orchestra-Research/AI-Research-SKILLs",
-    label: "AI Research Skills",
-    owner: "Orchestra-Research",
-    description: "AI research & engineering library (98)",
-    license: "MIT",
+    address: 'Orchestra-Research/AI-Research-SKILLs',
+    label: 'AI Research Skills',
+    owner: 'Orchestra-Research',
+    description: 'AI research & engineering library (98)',
+    license: 'MIT',
   },
   {
-    address: "tradermonty/claude-trading-skills",
-    label: "Trading Skills",
-    owner: "tradermonty",
-    description: "76 skills for equity investors",
-    license: "MIT",
+    address: 'tradermonty/claude-trading-skills',
+    label: 'Trading Skills',
+    owner: 'tradermonty',
+    description: '76 skills for equity investors',
+    license: 'MIT',
   },
   {
-    address: "browser-act/skills",
-    label: "Browser-Act Skills",
-    owner: "browser-act",
-    description: "Browser automation for agents (71)",
-    license: "MIT",
+    address: 'browser-act/skills',
+    label: 'Browser-Act Skills',
+    owner: 'browser-act',
+    description: 'Browser automation for agents (71)',
+    license: 'MIT',
   },
   {
-    address: "Jeffallan/claude-skills",
-    label: "Full-Stack Skills",
-    owner: "Jeffallan",
-    description: "66 full-stack developer skills",
-    license: "MIT",
+    address: 'Jeffallan/claude-skills',
+    label: 'Full-Stack Skills',
+    owner: 'Jeffallan',
+    description: '66 full-stack developer skills',
+    license: 'MIT',
   },
   {
-    address: "coreyhaines31/marketingskills",
-    label: "Marketing Skills (Corey Haines)",
-    owner: "coreyhaines31",
-    description: "44 marketing skills",
-    license: "MIT",
+    address: 'coreyhaines31/marketingskills',
+    label: 'Marketing Skills (Corey Haines)',
+    owner: 'coreyhaines31',
+    description: '44 marketing skills',
+    license: 'MIT',
   },
   {
-    address: "EveryInc/compound-engineering-plugin",
-    label: "Compound Engineering",
-    owner: "EveryInc",
-    description: "Compound engineering skills (Every)",
-    license: "MIT",
+    address: 'EveryInc/compound-engineering-plugin',
+    label: 'Compound Engineering',
+    owner: 'EveryInc',
+    description: 'Compound engineering skills (Every)',
+    license: 'MIT',
   },
   {
-    address: "Yeachan-Heo/oh-my-claudecode",
-    label: "Oh My ClaudeCode",
-    owner: "Yeachan-Heo",
-    description: "Multi-agent orchestration (40)",
-    license: "MIT",
+    address: 'Yeachan-Heo/oh-my-claudecode',
+    label: 'Oh My ClaudeCode',
+    owner: 'Yeachan-Heo',
+    description: 'Multi-agent orchestration (40)',
+    license: 'MIT',
   },
   {
-    address: "kepano/obsidian-skills",
-    label: "Obsidian Skills",
-    owner: "kepano",
-    description: "Agent skills for Obsidian (kepano)",
-    license: "MIT",
+    address: 'kepano/obsidian-skills',
+    label: 'Obsidian Skills',
+    owner: 'kepano',
+    description: 'Agent skills for Obsidian (kepano)',
+    license: 'MIT',
   },
   {
-    address: "pbakaus/impeccable",
-    label: "Impeccable",
-    owner: "pbakaus",
-    description: "Design language for agent-built UIs",
-    license: "Apache-2.0",
+    address: 'pbakaus/impeccable',
+    label: 'Impeccable',
+    owner: 'pbakaus',
+    description: 'Design language for agent-built UIs',
+    license: 'Apache-2.0',
   },
   {
-    address: "Leonxlnx/taste-skill",
-    label: "Taste",
-    owner: "Leonxlnx",
-    description: "Gives your AI good design taste",
-    license: "MIT",
+    address: 'Leonxlnx/taste-skill',
+    label: 'Taste',
+    owner: 'Leonxlnx',
+    description: 'Gives your AI good design taste',
+    license: 'MIT',
   },
   {
-    address: "nextlevelbuilder/ui-ux-pro-max-skill",
-    label: "UI/UX Pro Max",
-    owner: "nextlevelbuilder",
-    description: "Design-intelligence skill",
-    license: "MIT",
+    address: 'nextlevelbuilder/ui-ux-pro-max-skill',
+    label: 'UI/UX Pro Max',
+    owner: 'nextlevelbuilder',
+    description: 'Design-intelligence skill',
+    license: 'MIT',
   },
   {
-    address: "OthmanAdi/planning-with-files",
-    label: "Planning With Files",
-    owner: "OthmanAdi",
-    description: "Persistent file-based planning",
-    license: "MIT",
+    address: 'OthmanAdi/planning-with-files',
+    label: 'Planning With Files',
+    owner: 'OthmanAdi',
+    description: 'Persistent file-based planning',
+    license: 'MIT',
   },
 ];
 
@@ -1435,36 +1530,27 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 // file path (see projects/routes/r10 assertCommitCapabilities), so widening this
 // set never bypasses authz.
 const MARKETPLACE_VISIBLE_TYPES = new Set<string>([
-  "registry:skill",
-  "registry:agent",
-  "registry:command",
-  "registry:bundle",
+  'registry:skill',
+  'registry:agent',
+  'registry:command',
+  'registry:bundle',
+  'registry:blueprint',
 ]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
-function filterCatalogItems(
-  items: CatalogItem[],
-  opts: ItemQuery,
-): CatalogItem[] {
-  const q = (opts.query ?? "").trim().toLowerCase();
+function filterCatalogItems(items: CatalogItem[], opts: ItemQuery): CatalogItem[] {
+  const q = (opts.query ?? '').trim().toLowerCase();
   const type = opts.type?.trim();
   const source = opts.source?.trim();
   return items.filter((it) => {
     if (!isBrowseableCatalogItem(it)) return false;
-    if (
-      type &&
-      type !== "all" &&
-      it.type !== type &&
-      it.type !== `registry:${type}`
-    )
-      return false;
-    if (source && source !== "all" && marketplaceIdOf(it.registry) !== source)
-      return false;
+    if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
+    if (source && source !== 'all' && marketplaceIdOf(it.registry) !== source) return false;
     if (!q) return true;
-    return `${it.name} ${it.title} ${it.description ?? ""} ${it.categories.join(" ")}`
+    return `${it.name} ${it.title} ${it.description ?? ''} ${it.categories.join(' ')}`
       .toLowerCase()
       .includes(q);
   });
@@ -1496,15 +1582,10 @@ export function pageCatalogItems(
 ): { items: CatalogItem[]; total: number } {
   const filtered = filterCatalogItems(items, opts);
   const total = filtered.length;
-  const hasLimit =
-    typeof opts.limit === "number" &&
-    Number.isFinite(opts.limit) &&
-    opts.limit > 0;
+  const hasLimit = typeof opts.limit === 'number' && Number.isFinite(opts.limit) && opts.limit > 0;
   if (!hasLimit) return { items: filtered, total };
   const offset =
-    typeof opts.offset === "number" &&
-    Number.isFinite(opts.offset) &&
-    opts.offset > 0
+    typeof opts.offset === 'number' && Number.isFinite(opts.offset) && opts.offset > 0
       ? opts.offset
       : 0;
   return { items: filtered.slice(offset, offset + (opts.limit as number)), total };
@@ -1512,17 +1593,13 @@ export function pageCatalogItems(
 
 /** Complete catalog (waits for every source). Use where the full set must be
  *  present — programmatic consumers, tests. */
-export async function listCatalogItems(
-  opts: ItemQuery = {},
-): Promise<CatalogItem[]> {
+export async function listCatalogItems(opts: ItemQuery = {}): Promise<CatalogItem[]> {
   return filterCatalogItems((await mergedCatalogComplete()).items, opts);
 }
 
 /** Progressive catalog — base (Kortix) instantly, external sources as they land.
  *  Use for the browse list so the UI never blocks on the slowest source. */
-export async function listCatalogItemsLive(
-  opts: ItemQuery = {},
-): Promise<CatalogItem[]> {
+export async function listCatalogItemsLive(opts: ItemQuery = {}): Promise<CatalogItem[]> {
   return filterCatalogItems((await mergedCatalog()).items, opts);
 }
 
@@ -1536,9 +1613,7 @@ export async function listCatalogItemsPage(
   return pageCatalogItems((await mergedCatalog()).items, opts);
 }
 
-export async function getCatalogEntry(
-  id: string,
-): Promise<CatalogEntry | null> {
+export async function getCatalogEntry(id: string): Promise<CatalogEntry | null> {
   const base = getBaseCatalog();
   const baseEntry = base.byId.get(id);
   if (baseEntry) return baseEntry;
@@ -1546,10 +1621,8 @@ export async function getCatalogEntry(
   return (await mergedCatalogComplete()).byId.get(id) ?? null;
 }
 
-export async function findCatalogEntryByName(
-  name: string,
-): Promise<CatalogEntry | null> {
-  const slug = name.split("/").pop() ?? name;
+export async function findCatalogEntryByName(name: string): Promise<CatalogEntry | null> {
+  const slug = name.split('/').pop() ?? name;
   for (const entry of getBaseCatalog().byId.values()) {
     if (entry.item.name === slug) return entry;
   }
@@ -1564,18 +1637,12 @@ export async function findCatalogEntryByName(
  */
 async function readExternalReadme(entry: CatalogEntry): Promise<string | null> {
   const ext = entry.external!;
-  const skill = (entry.item.files ?? []).find((f) =>
-    /SKILL\.md$/i.test(f.path ?? f.target ?? ""),
-  );
-  if (ext.kind === "github" && skill?.path) {
-    const full = ext.subdir
-      ? `${ext.subdir.replace(/\/+$/, "")}/${skill.path}`
-      : skill.path;
-    for (const ref of [ext.ref, "main", "master"].filter(Boolean) as string[]) {
+  const skill = (entry.item.files ?? []).find((f) => /SKILL\.md$/i.test(f.path ?? f.target ?? ''));
+  if (ext.kind === 'github' && skill?.path) {
+    const full = ext.subdir ? `${ext.subdir.replace(/\/+$/, '')}/${skill.path}` : skill.path;
+    for (const ref of [ext.ref, 'main', 'master'].filter(Boolean) as string[]) {
       try {
-        const res = await githubFetch(
-          rawGithubUrl(ext.owner, ext.repo, ref, full),
-        );
+        const res = await githubFetch(rawGithubUrl(ext.owner, ext.repo, ref, full));
         if (res.ok) return await res.text();
       } catch {
         // try the next ref
@@ -1591,18 +1658,14 @@ async function readExternalReadme(entry: CatalogEntry): Promise<string | null> {
       },
       githubLoaderOptions,
     );
-    const sk = (loaded.item.files ?? []).find((f) =>
-      /SKILL\.md$/i.test(f.target ?? f.path),
-    );
+    const sk = (loaded.item.files ?? []).find((f) => /SKILL\.md$/i.test(f.target ?? f.path));
     return sk ? await loaded.readFile(sk.path).catch(() => null) : null;
   } catch {
     return null;
   }
 }
 
-export async function getCatalogItemDetail(
-  id: string,
-): Promise<CatalogItemDetail | null> {
+export async function getCatalogItemDetail(id: string): Promise<CatalogItemDetail | null> {
   const { byId, items } = await mergedCatalog();
   const entry = byId.get(id);
   if (!entry) return null;
@@ -1616,29 +1679,26 @@ export async function getCatalogItemDetail(
     type: f.type,
   }));
   let readme: string | null = readmeOf(entry.item);
-  if (!readme && entry.external)
-    readme = await readExternalReadme(entry).catch(() => null);
+  if (!readme && entry.external) readme = await readExternalReadme(entry).catch(() => null);
 
-  const dependencyItems: DependencyItem[] = (base.dependencies ?? []).map(
-    (name) => {
-      const found = items.find((i) => i.name === name);
-      return found
-        ? {
-            id: found.id,
-            name: found.name,
-            type: found.type,
-            title: found.title,
-            description: found.description,
-          }
-        : {
-            id: name,
-            name,
-            type: "registry:skill",
-            title: name,
-            description: null,
-          };
-    },
-  );
+  const dependencyItems: DependencyItem[] = (base.dependencies ?? []).map((name) => {
+    const found = items.find((i) => i.name === name);
+    return found
+      ? {
+          id: found.id,
+          name: found.name,
+          type: found.type,
+          title: found.title,
+          description: found.description,
+        }
+      : {
+          id: name,
+          name,
+          type: 'registry:skill',
+          title: name,
+          description: null,
+        };
+  });
 
   return { ...base, files, readme, dependencyItems };
 }
@@ -1654,12 +1714,9 @@ export async function getCatalogItemFile(
   const { byId } = await mergedCatalog();
   const entry = byId.get(id);
   if (!entry) return null;
-  const file = (entry.item.files ?? []).find(
-    (f) => (f.target ?? f.path) === target,
-  );
+  const file = (entry.item.files ?? []).find((f) => (f.target ?? f.path) === target);
   if (!file) return null;
-  if (typeof file.content === "string")
-    return { target, content: file.content };
+  if (typeof file.content === 'string') return { target, content: file.content };
   const sourcePath = file.path ?? file.target;
   if (!sourcePath) return null;
   const content = await readExternalFile(entry, sourcePath).catch(() => null);
@@ -1668,20 +1725,13 @@ export async function getCatalogItemFile(
 
 /** Raw-fetch any file of an external entry by its source path (generalizes
  *  {@link readExternalReadme}). */
-async function readExternalFile(
-  entry: CatalogEntry,
-  sourcePath: string,
-): Promise<string | null> {
+async function readExternalFile(entry: CatalogEntry, sourcePath: string): Promise<string | null> {
   const ext = entry.external;
-  if (ext?.kind === "github") {
-    const full = ext.subdir
-      ? `${ext.subdir.replace(/\/+$/, "")}/${sourcePath}`
-      : sourcePath;
-    for (const ref of [ext.ref, "main", "master"].filter(Boolean) as string[]) {
+  if (ext?.kind === 'github') {
+    const full = ext.subdir ? `${ext.subdir.replace(/\/+$/, '')}/${sourcePath}` : sourcePath;
+    for (const ref of [ext.ref, 'main', 'master'].filter(Boolean) as string[]) {
       try {
-        const res = await githubFetch(
-          rawGithubUrl(ext.owner, ext.repo, ref, full),
-        );
+        const res = await githubFetch(rawGithubUrl(ext.owner, ext.repo, ref, full));
         if (res.ok) return await res.text();
       } catch {
         // try the next ref

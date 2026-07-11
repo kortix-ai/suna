@@ -1,15 +1,16 @@
+import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import {
   type AuthedPrincipal,
   type UpstreamDescriptor,
   resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
+import { parseFallbackChain, resolveFallbackChain } from './fallback-chain';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 const TIER_CACHE_TTL_MS = 30_000;
@@ -31,10 +32,17 @@ async function resolveCachedAccountTier(accountId: string): Promise<string> {
 // self-host with no Bedrock/OpenRouter key naturally has no fallback.
 function byokFallbackCandidates(): UpstreamDescriptor[] {
   if (!config.LLM_GATEWAY_ENABLED) return [];
-  const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
-  if (!fallbackId) return [];
-  const managed = getManagedModel(fallbackId);
-  return managed ? managedCandidates(managed) : [];
+  // LLM_GATEWAY_BYOK_FALLBACK_MODEL accepts a comma-separated CHAIN of managed
+  // models, tried in order when a BYOK key hits a limit. A single value behaves
+  // exactly as before; runFailover already walks N candidates.
+  const chain = resolveFallbackChain(
+    parseFallbackChain(config.LLM_GATEWAY_BYOK_FALLBACK_MODEL),
+    (id) => Boolean(getManagedModel(id)),
+  );
+  return chain.flatMap((id) => {
+    const managed = getManagedModel(id);
+    return managed ? managedCandidates(managed) : [];
+  });
 }
 
 export async function resolveCandidates(

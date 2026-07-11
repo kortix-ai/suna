@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
 
 import { applyScaffold } from '../scaffold';
 
@@ -26,7 +34,11 @@ const GKW_SKILL_PATHS = [
 function baseStarterPaths(): string[] {
   const probe = mkdtempSync(join(tmpdir(), 'kortix-scaffold-base-'));
   try {
-    return applyScaffold({ repoRoot: probe, projectName: 'Base', template: 'minimal' }).written.sort();
+    return applyScaffold({
+      repoRoot: probe,
+      projectName: 'Base',
+      template: 'minimal',
+    }).written.sort();
   } finally {
     rmSync(probe, { recursive: true, force: true });
   }
@@ -68,7 +80,9 @@ describe('applyScaffold', () => {
     expect(manifest).not.toMatch(/^sandbox:/m);
     expect(manifest).toContain('config_dir: .kortix/opencode');
 
-    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
+    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain(
+      'Hello World',
+    );
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('.kortix/memory/overview.md');
   });
@@ -110,7 +124,9 @@ describe('applyScaffold', () => {
     expect(result.written).toContain('kortix.yaml');
     expect(result.written).toContain('.kortix/memory/MEMORY.md');
 
-    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
+    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe(
+      'CUSTOM PERSONA',
+    );
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('CUSTOM README');
   });
 
@@ -123,5 +139,17 @@ describe('applyScaffold', () => {
     expect(result.written).toContain('README.md');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).not.toBe('CUSTOM README');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toContain('Overwrite');
+  });
+
+  test('skillPacks seeds only the selected role-pack skills on top of minimal', () => {
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Packs',
+      skillPacks: ['legal-pack'],
+    });
+    expect(result.written).toContain('.kortix/opencode/skills/legal-writer/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/skills/contract-review/SKILL.md');
+    expect(result.written).not.toContain('.kortix/opencode/skills/campaign-planning/SKILL.md');
+    expect(result.written).toContain('kortix.yaml');
   });
 });

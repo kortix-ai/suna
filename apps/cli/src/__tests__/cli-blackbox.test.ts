@@ -1,7 +1,15 @@
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
@@ -18,7 +26,12 @@ const SANDBOX_ENV_OVERRIDES = [
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
-let requests: Array<{ method: string; path: string; authorization: string | null; body?: unknown }> = [];
+let requests: Array<{
+  method: string;
+  path: string;
+  authorization: string | null;
+  body?: unknown;
+}> = [];
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -85,21 +98,23 @@ function startMarketplaceServer() {
       });
       if (url.pathname === '/v1/marketplace/items') {
         return Response.json({
-          items: [{
-            id: 'kortix-starter:pdf',
-            registry: 'kortix-starter',
-            name: 'pdf',
-            type: 'registry:skill',
-            title: 'PDF',
-            description: 'Read and write PDFs.',
-            categories: ['general-knowledge-worker'],
-            capabilities: { secrets: [], connectors: [], tools: [], network: [] },
-            dependencies: [],
-            fileCount: 1,
-            external: false,
-            marketplaceId: 'kortix',
-            marketplaceLabel: 'Kortix',
-          }],
+          items: [
+            {
+              id: 'kortix-starter:pdf',
+              registry: 'kortix-starter',
+              name: 'pdf',
+              type: 'registry:skill',
+              title: 'PDF',
+              description: 'Read and write PDFs.',
+              categories: ['general-knowledge-worker'],
+              capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+              dependencies: [],
+              fileCount: 1,
+              external: false,
+              marketplaceId: 'kortix',
+              marketplaceLabel: 'Kortix',
+            },
+          ],
         });
       }
       return Response.json({ error: 'not found' }, { status: 404 });
@@ -146,7 +161,10 @@ function catalogItem(name: string) {
 }
 
 function startCliE2eServer() {
-  const installed = new Map<string, { name: string; type: string; source: string; installed_at: string | null; file_count: number }>();
+  const installed = new Map<
+    string,
+    { name: string; type: string; source: string; installed_at: string | null; file_count: number }
+  >();
   let updateAvailable = true;
   let removed = false;
   let archived = false;
@@ -155,11 +173,12 @@ function startCliE2eServer() {
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-      const entry: { method: string; path: string; authorization: string | null; body?: unknown } = {
-        method: req.method,
-        path: `${url.pathname}${url.search}`,
-        authorization: req.headers.get('authorization'),
-      };
+      const entry: { method: string; path: string; authorization: string | null; body?: unknown } =
+        {
+          method: req.method,
+          path: `${url.pathname}${url.search}`,
+          authorization: req.headers.get('authorization'),
+        };
       if (!['GET', 'HEAD'].includes(req.method)) {
         const text = await req.text();
         if (text) {
@@ -184,7 +203,11 @@ function startCliE2eServer() {
       }
       if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'DELETE') {
         archived = true;
-        return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
+        return Response.json({
+          ok: true,
+          archived: true,
+          repo_deleted: url.searchParams.get('purge') === 'true',
+        });
       }
       if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
         return Response.json({
@@ -241,14 +264,17 @@ function startCliE2eServer() {
         });
         removed = false;
         updateAvailable = true;
-        return Response.json({
-          ok: true,
-          commit_sha: `commit_install_${name}`,
-          branch: 'main',
-          file_count: installed.get(name)!.file_count + 1,
-          installed: [{ name, type: installed.get(name)!.type }],
-          capabilities: catalogItem(name).capabilities,
-        }, { status: 201 });
+        return Response.json(
+          {
+            ok: true,
+            commit_sha: `commit_install_${name}`,
+            branch: 'main',
+            file_count: installed.get(name)!.file_count + 1,
+            installed: [{ name, type: installed.get(name)!.type }],
+            capabilities: catalogItem(name).capabilities,
+          },
+          { status: 201 },
+        );
       }
       if (url.pathname === '/v1/projects/proj_e2e/marketplace' && req.method === 'GET') {
         return Response.json({ installed: [...installed.values()] });
@@ -262,12 +288,15 @@ function startCliE2eServer() {
         }));
         return Response.json({
           updates,
-          update_available: updates.filter((item) => item.status === 'update-available').map((item) => item.name),
+          update_available: updates
+            .filter((item) => item.status === 'update-available')
+            .map((item) => item.name),
         });
       }
       if (url.pathname === '/v1/projects/proj_e2e/marketplace/update' && req.method === 'POST') {
         const body = entry.body as { name?: string } | undefined;
-        if (!body?.name || !installed.has(body.name)) return Response.json({ error: 'not installed' }, { status: 404 });
+        if (!body?.name || !installed.has(body.name))
+          return Response.json({ error: 'not installed' }, { status: 404 });
         updateAvailable = false;
         return Response.json({
           ok: true,
@@ -280,7 +309,8 @@ function startCliE2eServer() {
       const remove = url.pathname.match(/^\/v1\/projects\/proj_e2e\/marketplace\/(.+)$/);
       if (remove && req.method === 'DELETE') {
         const name = decodeURIComponent(remove[1]!);
-        if (!installed.has(name)) return Response.json({ error: `"${name}" is not installed` }, { status: 404 });
+        if (!installed.has(name))
+          return Response.json({ error: `"${name}" is not installed` }, { status: 404 });
         const fileCount = installed.get(name)!.file_count;
         installed.delete(name);
         removed = true;
@@ -331,11 +361,13 @@ describe('kortix CLI black-box behavior', () => {
       marketplaceLabel: 'Kortix',
     });
     expect(result.stderr).toContain('host test');
-    expect(requests).toEqual([{
-      method: 'GET',
-      path: '/v1/marketplace/items?query=pdf&source=kortix',
-      authorization: 'Bearer tok_blackbox',
-    }]);
+    expect(requests).toEqual([
+      {
+        method: 'GET',
+        path: '/v1/marketplace/items?query=pdf&source=kortix',
+        authorization: 'Bearer tok_blackbox',
+      },
+    ]);
   }, 15_000);
 
   test('marketplace install dry-run resolves through the API before reporting output', async () => {
@@ -352,11 +384,13 @@ describe('kortix CLI black-box behavior', () => {
     expect(result.stdout).toContain('PDF');
     expect(result.stdout).toContain('Dry run');
     expect(result.stdout).toContain('proj_1');
-    expect(requests).toEqual([{
-      method: 'GET',
-      path: '/v1/marketplace/items?query=pdf',
-      authorization: 'Bearer tok_blackbox',
-    }]);
+    expect(requests).toEqual([
+      {
+        method: 'GET',
+        path: '/v1/marketplace/items?query=pdf',
+        authorization: 'Bearer tok_blackbox',
+      },
+    ]);
   }, 15_000);
 
   test('top-level help exposes marketplace but hides add and registry commands', async () => {
@@ -535,6 +569,101 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(help.stdout).toContain('init');
   });
 
+  test('doctor, providers, and proxy are wired (not unknown commands)', async () => {
+    const doctor = await runCli(['doctor', '--help']);
+    expect(doctor.code).toBe(0);
+    expect(doctor.stdout).toContain('Usage: kortix doctor');
+    expect(doctor.stderr).not.toContain('unknown command');
+
+    const providers = await runCli(['providers', '--help']);
+    expect(providers.code).toBe(0);
+    expect(providers.stdout).toContain('Usage: kortix providers');
+    expect(providers.stderr).not.toContain('unknown command');
+
+    const proxy = await runCli(['proxy', '--help']);
+    expect(proxy.code).toBe(0);
+    expect(proxy.stdout).toContain('Usage: kortix proxy');
+    expect(proxy.stderr).not.toContain('unknown command');
+  }, 20_000);
+
+  test('top-level help lists the newly wired commands', async () => {
+    const help = await runCli(['--help']);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain('doctor');
+    expect(help.stdout).toContain('dump');
+    expect(help.stdout).toContain('providers');
+    expect(help.stdout).toContain('proxy');
+  }, 15_000);
+
+  test('dump --offline --json emits a redacted, machine-readable report', async () => {
+    const configFile = writeConfig('https://api.example.test');
+    const result = await runCli(['dump', '--offline', '--json'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
+    expect(result.code).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.cli_version).toBeDefined();
+    expect(report.platform).toContain('/');
+    expect(report.config_file).toContain('config.json');
+    expect(report.auth.logged_in).toBe(true);
+    expect(report.auth.user_email).toBe('user@example.test');
+    // --offline must skip the network probe entirely.
+    expect(report.identity_probe).toBeNull();
+    // The token value must never appear anywhere in the output.
+    expect(result.stdout).not.toContain('tok_blackbox');
+  }, 15_000);
+
+  test('dump reports not-logged-in without a token and never leaks it', async () => {
+    const path = join(tmp, 'empty-config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: 'https://api.example.test',
+            token: '',
+            user_id: '',
+            user_email: '',
+            account_id: '',
+            logged_in_at: '',
+          },
+        },
+      }),
+      'utf8',
+    );
+    const result = await runCli(['dump', '--offline'], tmp, { KORTIX_CONFIG_FILE: path });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('not logged in');
+  }, 15_000);
+
+  test('skills --help is dispatched (not unknown command)', async () => {
+    const result = await runCli(['skills', '--help']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Usage: kortix skills');
+    expect(result.stderr).not.toContain('unknown command');
+  }, 15_000);
+
+  test('skills new scaffolds a spec-valid SKILL.md in a kortix project', async () => {
+    mkdirSync(join(tmp, '.kortix'), { recursive: true });
+    const result = await runCli(
+      ['skills', 'new', 'release-notes', '--description', 'Draft release notes from the git log'],
+      tmp,
+    );
+    expect(result.code).toBe(0);
+    const md = readFileSync(join(tmp, '.kortix/opencode/skills/release-notes/SKILL.md'), 'utf8');
+    expect(md.startsWith('---\n')).toBe(true);
+    expect(md).toContain('name: release-notes');
+    expect(md).toContain('Draft release notes from the git log');
+  }, 15_000);
+
+  test('skills new errors (no scaffold) outside a kortix project', async () => {
+    const result = await runCli(['skills', 'new', 'x', '--description', 'y'], tmp);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('not a Kortix project');
+    expect(existsSync(join(tmp, '.kortix'))).toBe(false);
+  }, 15_000);
+
   test('schema --version 2 prints the v2 JSON Schema, not the CLI version banner', async () => {
     // Regression guard: `main()` used to scan the ENTIRE argv for a bare
     // `--version`/`-v` and print the CLI's own version banner before any
@@ -558,11 +687,9 @@ console.log(JSON.stringify({ cmd, args, body }));
     const apiBase = startMarketplaceServer();
     const configFile = writeConfig(apiBase);
 
-    const result = await runCli(
-      ['add', 'pdf', '--project', 'proj_1', '--dry-run'],
-      tmp,
-      { KORTIX_CONFIG_FILE: configFile },
-    );
+    const result = await runCli(['add', 'pdf', '--project', 'proj_1', '--dry-run'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
 
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('unknown command `add`');
@@ -574,9 +701,15 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'minimal-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md')),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md')),
+    ).toBe(false);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md')),
+    ).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
@@ -584,6 +717,23 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(false);
   });
+
+  test('init --packs seeds only the selected role-pack skills', async () => {
+    const result = await runCli(['init', 'pack-project', '--packs', 'legal-pack', '--yes', '--no-git']);
+    expect(result.code).toBe(0);
+    const root = join(tmp, 'pack-project');
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'legal-writer', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'contract-review', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'campaign-planning', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
+  }, 20_000);
+
+  test('init --packs rejects an unknown role pack', async () => {
+    const result = await runCli(['init', 'bad-pack', '--packs', 'not-a-pack', '--yes', '--no-git']);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('unknown role pack');
+    expect(existsSync(join(tmp, 'bad-pack'))).toBe(false);
+  }, 15_000);
 
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {
     const result = await runCli([
@@ -597,7 +747,9 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md')),
+    ).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
@@ -615,10 +767,25 @@ console.log(JSON.stringify({ cmd, args, body }));
     const root = join(tmp, 'marketplace-project');
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'opencode-pty', 'src', 'plugin', 'constants.ts'))).toBe(true);
+    expect(
+      existsSync(
+        join(
+          root,
+          '.kortix',
+          'opencode',
+          'plugins',
+          'opencode-pty',
+          'src',
+          'plugin',
+          'constants.ts',
+        ),
+      ),
+    ).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'lib', 'get-env.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md')),
+    ).toBe(true);
 
     const lock = JSON.parse(readFileSync(join(root, 'registry-lock.json'), 'utf8'));
     expect(lock.version).toBe(2);
@@ -634,26 +801,50 @@ console.log(JSON.stringify({ cmd, args, body }));
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md')),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md')),
+    ).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
 
-    const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(listBeforeLink.code).toBe(0);
-    expect(JSON.parse(listBeforeLink.stdout)).toEqual([expect.objectContaining({ project_id: 'proj_e2e', name: 'E2E Project' })]);
+    expect(JSON.parse(listBeforeLink.stdout)).toEqual([
+      expect.objectContaining({ project_id: 'proj_e2e', name: 'E2E Project' }),
+    ]);
 
-    const link = await runCli(['projects', 'link', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
+    const link = await runCli(['projects', 'link', 'proj_e2e'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(link.code).toBe(0);
     expect(link.stdout).toContain('Linked');
     const linked = JSON.parse(readFileSync(join(root, '.kortix', 'link.json'), 'utf8'));
-    expect(linked).toMatchObject({ project_id: 'proj_e2e', account_id: 'account_1', host: 'test', host_url: apiBase });
+    expect(linked).toMatchObject({
+      project_id: 'proj_e2e',
+      account_id: 'account_1',
+      host: 'test',
+      host_url: apiBase,
+    });
 
-    const info = await runCli(['projects', 'info', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const info = await runCli(['projects', 'info', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(info.code).toBe(0);
-    expect(JSON.parse(info.stdout)).toMatchObject({ project_id: 'proj_e2e', default_branch: 'main' });
+    expect(JSON.parse(info.stdout)).toMatchObject({
+      project_id: 'proj_e2e',
+      default_branch: 'main',
+    });
 
-    const search = await runCli(['marketplace', 'search', 'agent-browser', '--source', 'kortix', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const search = await runCli(
+      ['marketplace', 'search', 'agent-browser', '--source', 'kortix', '--json'],
+      root,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
     expect(search.code).toBe(0);
     expect(JSON.parse(search.stdout).items).toEqual([
       expect.objectContaining({
@@ -664,16 +855,28 @@ console.log(JSON.stringify({ cmd, args, body }));
       }),
     ]);
 
-    const show = await runCli(['marketplace', 'show', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const show = await runCli(['marketplace', 'show', 'agent-browser', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(show.code).toBe(0);
-    expect(JSON.parse(show.stdout)).toMatchObject({ id: 'kortix-starter:agent-browser', name: 'agent-browser', type: 'registry:skill' });
+    expect(JSON.parse(show.stdout)).toMatchObject({
+      id: 'kortix-starter:agent-browser',
+      name: 'agent-browser',
+      type: 'registry:skill',
+    });
 
-    const dryInstall = await runCli(['marketplace', 'install', 'agent-browser', '--dry-run'], root, { KORTIX_CONFIG_FILE: configFile });
+    const dryInstall = await runCli(
+      ['marketplace', 'install', 'agent-browser', '--dry-run'],
+      root,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
     expect(dryInstall.code).toBe(0);
     expect(dryInstall.stdout).toContain('Dry run');
     expect(dryInstall.stdout).toContain('proj_e2e');
 
-    const install = await runCli(['marketplace', 'install', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const install = await runCli(['marketplace', 'install', 'agent-browser', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(install.code).toBe(0);
     expect(JSON.parse(install.stdout)).toMatchObject({
       ok: true,
@@ -682,29 +885,54 @@ console.log(JSON.stringify({ cmd, args, body }));
       installed: [{ name: 'agent-browser', type: 'registry:skill' }],
     });
 
-    const status = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const status = await runCli(['marketplace', 'status', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(status.code).toBe(0);
     expect(JSON.parse(status.stdout).installed).toEqual([
-      expect.objectContaining({ name: 'agent-browser', type: 'registry:skill', source: 'kortix-starter:agent-browser', file_count: 1 }),
+      expect.objectContaining({
+        name: 'agent-browser',
+        type: 'registry:skill',
+        source: 'kortix-starter:agent-browser',
+        file_count: 1,
+      }),
     ]);
 
-    const updates = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const updates = await runCli(['marketplace', 'updates', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(updates.code).toBe(0);
     expect(JSON.parse(updates.stdout)).toMatchObject({ update_available: ['agent-browser'] });
 
-    const update = await runCli(['marketplace', 'update', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const update = await runCli(['marketplace', 'update', 'agent-browser', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(update.code).toBe(0);
-    expect(JSON.parse(update.stdout)).toMatchObject({ ok: true, updated: 'agent-browser', commit_sha: 'commit_update_agent-browser' });
+    expect(JSON.parse(update.stdout)).toMatchObject({
+      ok: true,
+      updated: 'agent-browser',
+      commit_sha: 'commit_update_agent-browser',
+    });
 
-    const updatesAfter = await runCli(['marketplace', 'updates', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const updatesAfter = await runCli(['marketplace', 'updates', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(updatesAfter.code).toBe(0);
     expect(JSON.parse(updatesAfter.stdout)).toMatchObject({ update_available: [] });
 
-    const remove = await runCli(['marketplace', 'remove', 'agent-browser', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const remove = await runCli(['marketplace', 'remove', 'agent-browser', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(remove.code).toBe(0);
-    expect(JSON.parse(remove.stdout)).toMatchObject({ ok: true, removed: 'agent-browser', commit_sha: 'commit_remove_agent-browser' });
+    expect(JSON.parse(remove.stdout)).toMatchObject({
+      ok: true,
+      removed: 'agent-browser',
+      commit_sha: 'commit_remove_agent-browser',
+    });
 
-    const statusAfterRemove = await runCli(['marketplace', 'status', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const statusAfterRemove = await runCli(['marketplace', 'status', '--json'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(statusAfterRemove.code).toBe(0);
     expect(JSON.parse(statusAfterRemove.stdout).installed).toEqual([]);
 
@@ -712,11 +940,15 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(unlink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
-    const relink = await runCli(['projects', 'link', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
+    const relink = await runCli(['projects', 'link', 'proj_e2e'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(relink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(true);
 
-    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
+    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(removeProject.code).toBe(0);
     expect(removeProject.stdout).toContain('Archived');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
@@ -748,14 +980,18 @@ console.log(JSON.stringify({ cmd, args, body }));
     const apiBase = startCliE2eServer();
     const configFile = writeConfig(apiBase);
 
-    const noAuth = await runCli(['marketplace', 'search', 'pty', '--json'], tmp, { KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json') });
+    const noAuth = await runCli(['marketplace', 'search', 'pty', '--json'], tmp, {
+      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
+    });
     expect(noAuth.code).toBe(1);
     expect(noAuth.stderr).toContain('Not logged in');
 
     // No project bound + logged in + exactly one project in the account →
     // the always-bound invariant auto-binds it and the command proceeds
     // instead of dead-ending with "No project linked".
-    const noLink = await runCli(['marketplace', 'status', '--json'], tmp, { KORTIX_CONFIG_FILE: configFile });
+    const noLink = await runCli(['marketplace', 'status', '--json'], tmp, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(noLink.code).toBe(0);
     expect(noLink.stderr).toContain('Default project:');
     const boundConfig = JSON.parse(readFileSync(configFile, 'utf8'));
@@ -767,23 +1003,37 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(init.code).toBe(0);
     const root = join(tmp, 'edge-e2e');
 
-    const missingProject = await runCli(['projects', 'link', 'missing'], root, { KORTIX_CONFIG_FILE: configFile });
+    const missingProject = await runCli(['projects', 'link', 'missing'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(missingProject.code).toBe(1);
     expect(missingProject.stderr).toContain('Not found');
 
-    const unknownShow = await runCli(['marketplace', 'show', 'does-not-exist'], root, { KORTIX_CONFIG_FILE: configFile });
+    const unknownShow = await runCli(['marketplace', 'show', 'does-not-exist'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(unknownShow.code).toBe(1);
     expect(unknownShow.stderr).toContain('No marketplace item matches');
 
-    const unknownInstall = await runCli(['marketplace', 'install', 'does-not-exist', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
+    const unknownInstall = await runCli(
+      ['marketplace', 'install', 'does-not-exist', '--project', 'proj_e2e'],
+      root,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
     expect(unknownInstall.code).toBe(1);
     expect(unknownInstall.stderr).toContain('No marketplace item matches');
 
-    const removeMissing = await runCli(['marketplace', 'remove', 'pty', '--project', 'proj_e2e', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
+    const removeMissing = await runCli(
+      ['marketplace', 'remove', 'pty', '--project', 'proj_e2e', '--json'],
+      root,
+      { KORTIX_CONFIG_FILE: configFile },
+    );
     expect(removeMissing.code).toBe(1);
     expect(removeMissing.stderr).toContain('not installed');
 
-    const add = await runCli(['add', 'pty', '--project', 'proj_e2e'], root, { KORTIX_CONFIG_FILE: configFile });
+    const add = await runCli(['add', 'pty', '--project', 'proj_e2e'], root, {
+      KORTIX_CONFIG_FILE: configFile,
+    });
     expect(add.code).toBe(2);
     expect(add.stderr).toContain('unknown command `add`');
 
