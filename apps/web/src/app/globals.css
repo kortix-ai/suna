@@ -7,6 +7,11 @@
 
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
+/* pptx-react-viewer ships a prebuilt Tailwind stylesheet we deliberately do NOT
+   import (it carries its own preflight and would collide with ours). Instead we
+   let our own Tailwind v4 generate the library's utilities from its dist, so the
+   viewer inherits Kortix tokens. See components/file-renderers/pptx-renderer.tsx. */
+@source "../node_modules/pptx-react-viewer/dist/**/*.{js,mjs}";
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
 /* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
