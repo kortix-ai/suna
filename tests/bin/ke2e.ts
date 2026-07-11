@@ -15,6 +15,7 @@ import { renderStepSummary, writeResults } from "../src/core/report";
 import { describeEnv, loadEnv } from "../src/core/env";
 import { log } from "../src/core/log";
 import { runCoverage } from "../src/coverage/check-coverage";
+import { runCliParity } from "../src/coverage/check-cli-parity";
 import { writeCatalog } from "../src/core/catalog";
 import { writeAllureResults, writeAllureFromResults } from "../src/core/allure";
 import { writeUiData } from "../src/core/ui-data";
@@ -65,6 +66,14 @@ async function main() {
 
   if (cmd === "coverage") {
     const ok = await runCoverage({
+      updateBaseline: !!flags["update-baseline"],
+      json: !!flags.json,
+    });
+    process.exit(ok ? 0 : 1);
+  }
+
+  if (cmd === "cli-parity") {
+    const ok = await runCliParity({
       updateBaseline: !!flags["update-baseline"],
       json: !!flags.json,
     });
