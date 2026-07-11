@@ -32,6 +32,7 @@ function template() {
             type: 'cron',
             agent: 'ar-chaser',
             cron: '{{cadence}}',
+            session_mode: 'reuse',
             prompt: 'Chase overdue invoices, post the list to {{alert_channel}}.',
           },
         ],
@@ -102,6 +103,11 @@ describe('buildTemplateInstall', () => {
   test('ships the trigger disabled', () => {
     const m = manifestOf(buildTemplateInstall(input()));
     expect((m.triggers as Record<string, unknown>[])[0].enabled).toBe(false);
+  });
+
+  test('carries session_mode through to the trigger when the template sets it', () => {
+    const m = manifestOf(buildTemplateInstall(input()));
+    expect((m.triggers as Record<string, unknown>[])[0].session_mode).toBe('reuse');
   });
 
   test('adds new connectors and marks them new', () => {
