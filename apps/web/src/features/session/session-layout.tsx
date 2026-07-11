@@ -322,7 +322,11 @@ export const SessionLayout = memo(function SessionLayout({
     <div className="relative h-full w-full">
       {terminalActivated && (
         <div className={cn('absolute inset-0', !showTerminal && 'hidden')}>
-          <SessionTerminalPanel sessionId={sessionId} hidden={!showTerminal} />
+          <SessionTerminalPanel
+            sessionId={sessionId}
+            projectSessionId={projectSessionId ?? undefined}
+            hidden={!showTerminal}
+          />
         </div>
       )}
       {browserActivated && (
