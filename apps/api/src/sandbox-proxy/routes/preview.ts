@@ -335,6 +335,26 @@ function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
 }
 
+// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only). Daytona
+// (a container) reaches it directly; Platinum (a microVM) has its edge dial the
+// guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
+// is what breaks `kortix sessions connect` / `opencode attach` on Platinum.
+//
+// The sandbox agent on :8000 (binds 0.0.0.0, reachable) already reverse-proxies
+// every path to opencode's localhost:4096 in-box. So for Platinum we route
+// opencode(4096) traffic through :8000 — the same bridge the /pty/ WebSocket
+// already uses. The 8000-keyed guards below (session-visibility gate, /kortix/env
+// block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
+// subject to the SAME protection as a direct :8000 request — the reroute changes
+// reachability, never the auth/control surface.
+const OPENCODE_INTERNAL_PORT = 4096;
+const SANDBOX_AGENT_PORT = 8000;
+function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
+  return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
+    ? SANDBOX_AGENT_PORT
+    : addressedPort;
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -372,13 +392,23 @@ export async function forwardToSandbox(
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
   }
+  // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
+  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
+  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
+  // request (sandbox ownership is already enforced unconditionally above). NOTE:
+  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
+  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
+  // client actually used (/4096), and env-sync-before-prompt must behave identically
+  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  const upstreamPort = effectiveUpstreamPort(record.provider, port);
+
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    port === 8000 &&
+    upstreamPort === 8000 &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -392,7 +422,7 @@ export async function forwardToSandbox(
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
   // never through this user-facing proxy — block it so an account member can't
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
-  if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+  if (upstreamPort === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
@@ -432,7 +462,7 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
