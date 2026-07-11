@@ -327,7 +327,10 @@ export async function loadProjectConfig(
     manifest,
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
-    open_code_default_agent: parseJsonCString(openCodeRaw, 'default_agent'),
+    // v2 makes the manifest's declared default authoritative. Legacy projects
+    // keep reading OpenCode's native default_agent for backwards compatibility.
+    open_code_default_agent:
+      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
     agent_discovery,
     agents,
     skills,

@@ -593,6 +593,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.clearModelDefault(projectId, params),
       },
 
+      /** Set the agent used when a new project session does not name one explicitly. */
+      setDefaultAgent: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
+
       /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
       sandbox: {
         list: () => P.listProjectSandboxes(projectId),

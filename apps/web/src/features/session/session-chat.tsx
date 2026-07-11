@@ -126,6 +126,7 @@ import {
   sendAndRecover,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
+  useProjectConfig,
   writeForkDraft,
 } from '@kortix/sdk/react';
 import {
@@ -3806,11 +3807,19 @@ export function SessionChat({
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
   const { data: config } = useOpenCodeConfig();
+  const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortOpenCodeSession();
   const forkSession = useForkSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const local = useOpenCodeLocal({
+    agents,
+    providers,
+    config,
+    sessionId,
+    boundAgentName,
+    defaultAgentName: projectConfig?.open_code_default_agent,
+  });
   // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   // default off): the picker still defaults to the session's agent (seeded via
   // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
