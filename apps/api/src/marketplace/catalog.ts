@@ -1526,6 +1526,20 @@ export async function listCatalogItemsLive(
   return filterCatalogItems((await mergedCatalog()).items, opts);
 }
 
+/** Installable use-case templates. Kept OUT of the marketplace browse list
+ *  (`MARKETPLACE_VISIBLE_TYPES`) on purpose — a template installs through the
+ *  guided wizard (`POST /v1/templates/:id/install`, which renders inputs and
+ *  merges the manifest), not the raw marketplace commit path. So the /v1/templates
+ *  API lists them here, bypassing the browse filter. */
+/** Pure: the installable templates within a catalog item list. */
+export function selectTemplateItems(items: CatalogItem[]): CatalogItem[] {
+  return items.filter((it) => it.type === "registry:template" && !it.hidden);
+}
+
+export async function listTemplateCatalogItems(): Promise<CatalogItem[]> {
+  return selectTemplateItems((await mergedCatalog()).items);
+}
+
 /** Progressive catalog, paginated. Opt-in: pass `limit` to slice; omit it (or
  *  pass an invalid value) to get the full filtered list, matching
  *  `listCatalogItemsLive`'s existing full-list contract. `total` is always the

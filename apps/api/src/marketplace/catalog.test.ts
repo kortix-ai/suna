@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { clampMarketplaceItemsLimit, pageCatalogItems, type CatalogItem } from './catalog';
+import {
+  clampMarketplaceItemsLimit,
+  pageCatalogItems,
+  selectTemplateItems,
+  type CatalogItem,
+} from './catalog';
 
 function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {
@@ -25,6 +30,22 @@ function synthetic(count: number, overrides: (i: number) => Partial<CatalogItem>
     item({ id: `kortix:item-${i}`, name: `item-${i}`, ...overrides(i) }),
   );
 }
+
+describe('selectTemplateItems', () => {
+  test('keeps registry:template items only, and drops hidden ones', () => {
+    const items = [
+      item({ id: 'kortix:ar-chaser', name: 'ar-chaser', type: 'registry:template' }),
+      item({ id: 'kortix:a-skill', name: 'a-skill', type: 'registry:skill' }),
+      item({ id: 'kortix:a-bundle', name: 'a-bundle', type: 'registry:bundle' }),
+      item({ id: 'kortix:hidden', name: 'hidden', type: 'registry:template', hidden: true }),
+    ];
+    expect(selectTemplateItems(items).map((i) => i.name)).toEqual(['ar-chaser']);
+  });
+
+  test('returns an empty list when there are no templates', () => {
+    expect(selectTemplateItems([item({ type: 'registry:skill' })])).toEqual([]);
+  });
+});
 
 describe('pageCatalogItems', () => {
   test('slices correctly for a given limit and offset', () => {
