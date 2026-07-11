@@ -5,7 +5,10 @@
  * the test env (config validates them) so the helper reaches the fetch.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { registerSupabaseSamlProvider } from '../accounts/iam/sso-provisioning';
+import {
+  buildSamlAttributeMapping,
+  registerSupabaseSamlProvider,
+} from '../accounts/iam/sso-provisioning';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 afterEach(() => {
@@ -60,6 +63,42 @@ describe('registerSupabaseSamlProvider', () => {
     expect(captured!.body.type).toBe('saml');
     expect(captured!.body.metadata_xml).toContain('EntityDescriptor');
     expect(captured!.body.domains).toEqual(['acme.com']);
+    // Regression guard for the silent group-sync bug: registration MUST carry an
+    // attribute_mapping, defaulting to `groups`, or Supabase drops the claim.
+    expect(captured!.body.attribute_mapping).toEqual({
+      keys: { groups: { name: 'groups', array: true } },
+    });
+  });
+
+  test('threads a custom group claim name into the attribute_mapping', async () => {
+    let captured: { body: any } | null = null;
+    globalThis.fetch = (async (_url: any, init: any) => {
+      captured = { body: JSON.parse(String(init?.body)) };
+      return new Response(JSON.stringify({ id: 'prov-9' }), { status: 201 });
+    }) as typeof fetch;
+
+    await registerSupabaseSamlProvider({
+      metadataUrl: 'https://idp/meta',
+      domains: ['essentia.com'],
+      groupClaimName: 'memberOf',
+    });
+    expect(captured!.body.attribute_mapping).toEqual({
+      keys: { memberOf: { name: 'memberOf', array: true } },
+    });
+  });
+});
+
+describe('buildSamlAttributeMapping', () => {
+  test('maps the claim name to itself as an array attribute', () => {
+    expect(buildSamlAttributeMapping('memberOf')).toEqual({
+      keys: { memberOf: { name: 'memberOf', array: true } },
+    });
+  });
+
+  test('falls back to `groups` for a blank/whitespace claim name', () => {
+    expect(buildSamlAttributeMapping('   ')).toEqual({
+      keys: { groups: { name: 'groups', array: true } },
+    });
   });
 
   test('maps a 422 (domain already claimed) to a 409', async () => {

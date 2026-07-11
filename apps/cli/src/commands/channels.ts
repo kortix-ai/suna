@@ -7,9 +7,9 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix channels <subcommand> [options]
+const HELP = help`Usage: kortix channels <subcommand> [options]
 
 Connect this project to Slack.
 

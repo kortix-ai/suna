@@ -19,12 +19,12 @@ import {
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type { Auth } from '../api/auth.ts';
 import type { AccountMembership, MeResponse, ProjectSummary } from '../api/types.ts';
 
-const HELP = `Usage: kortix projects <subcommand>
+const HELP = help`Usage: kortix projects <subcommand>
 
 Subcommands:
   ls [--all]           List projects in the active account (--all spans every

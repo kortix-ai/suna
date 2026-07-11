@@ -5,7 +5,7 @@ import {
   resolveProjectContext,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import {
   chooseRunningSession,
   ensureOpencodeSession,
@@ -14,7 +14,7 @@ import {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-const CONNECT_HELP = `Usage: kortix sessions connect [<session-id>] [options] [-- <opencode attach args…>]
+const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options] [-- <opencode attach args…>]
 
 Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your

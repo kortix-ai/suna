@@ -12,11 +12,11 @@ import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './ses
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 
-const HELP = `Usage: kortix sessions <subcommand> [options]
+const HELP = help`Usage: kortix sessions <subcommand> [options]
 
 Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.

@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { chatThreads, executorExecutions, projects, projectSessions } from '@kortix/db';
+import { executorExecutions, projects, projectSessions } from '@kortix/db';
+import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
@@ -523,18 +524,13 @@ async function applyPostCreateActions(input: {
   try {
     for (const action of input.actions) {
       if (action.type === 'bind_chat_thread') {
-        await db
-          .insert(chatThreads)
-          .values({
-            projectId: input.projectId,
-            platform: action.platform,
-            workspaceId: action.workspaceId,
-            threadId: action.threadId,
-            sessionId: input.sessionId,
-          })
-          .onConflictDoNothing({
-            target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId],
-          });
+        await bindChatThread({
+          projectId: input.projectId,
+          platform: action.platform,
+          workspaceId: action.workspaceId,
+          threadId: action.threadId,
+          sessionId: input.sessionId,
+        });
       } else if (action.type === 'deliver_prompt') {
         const outcome = await continueSession({
           source: action.source,

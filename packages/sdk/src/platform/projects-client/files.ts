@@ -16,6 +16,9 @@ export async function listProjectFiles(
   return unwrap(
     await backendApi.get<ProjectFileEntry[]>(
       `/projects/${projectId}/files${query}`,
+      // project.file.read is editor-tier — a member deep-linking to the files
+      // page legitimately 403s. The files view renders its own error state.
+      { showErrors: false },
     ),
   );
 }

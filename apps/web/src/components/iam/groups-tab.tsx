@@ -8,10 +8,10 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
+import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -131,7 +131,9 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
             title="Enterprise feature"
             action={
               <Button asChild variant="outline" size="sm">
-                <Link href="/enterprise">Contact sales</Link>
+                <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
+                  Contact sales
+                </a>
               </Button>
             }
           >

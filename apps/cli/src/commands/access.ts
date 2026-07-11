@@ -5,7 +5,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 type ProjectRole = 'manager' | 'editor' | 'member';
 const ROLES: readonly ProjectRole[] = ['manager', 'editor', 'member'];
@@ -30,7 +30,7 @@ interface PendingInvite {
   invite_expired: boolean;
 }
 
-const HELP = `Usage: kortix access <subcommand> [options]
+const HELP = help`Usage: kortix access <subcommand> [options]
 
 Manage who can use the linked project — mirrors the dashboard's project
 sharing/access panel. Roles: ${ROLES.join(', ')}.

@@ -8,7 +8,9 @@ import { ProjectShell } from '@/features/workspace/project-layout/project-shell'
 /**
  * /projects/[id]/files — the standalone Files page (Google-Drive-style browser
  * over the project repo). A regular routed page inside the project shell, NOT
- * a Customize section: any member can browse files, no editor access needed.
+ * a Customize section. Requires `project.file.read` (editor-tier): the sidebar
+ * entry hides for floor members and the API 403s their reads (silently — the
+ * view shows its own empty/error state, never a global toast).
  */
 export default function ProjectFilesPage() {
   const { id: projectId } = useParams<{ id: string }>();

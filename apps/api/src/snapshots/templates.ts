@@ -386,13 +386,18 @@ export interface UpdateTemplateInput {
   diskGb?: number | null;
 }
 
-/** Patch a template by id. */
+/** Patch a template by id. When `expectProjectId` is given, the row must belong
+ *  to that project or the update is refused (returns null) — a data-layer guard
+ *  against cross-tenant mutation so callers can't poison another project's
+ *  template by id even if a handler-level ownership check is missing. */
 export async function updateTemplate(
   templateId: string,
   patch: UpdateTemplateInput,
+  expectProjectId?: string,
 ): Promise<DbSandboxTemplate | null> {
   const row = await getTemplateById(templateId);
   if (!row) return null;
+  if (expectProjectId !== undefined && row.projectId !== expectProjectId) return null;
   if (row.isShared) {
     throw new Error('Shared platform templates are read-only.');
   }

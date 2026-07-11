@@ -47,8 +47,10 @@ revoke; grants that ride a fresh login are immediate.
 - **Account owner or admin** on the Kortix side (these are account-scoped IAM
   actions).
 - **Global Administrator / Application Administrator** on the Entra side.
-- Access to your Kortix control plane's **Supabase project** (SAML metadata is
-  registered with Supabase Auth, which validates assertions — see Part A).
+- *(Self-hosted operators only, advanced path)* Access to your Kortix control
+  plane's **Supabase project** — SAML metadata is registered with Supabase Auth,
+  which validates assertions (see Part A). Not needed for the self-serve path;
+  everything a customer needs comes from the SAML SSO card.
 
 Kortix API base below is written as `https://<api>` and all admin calls use a
 Kortix account bearer (owner/admin JWT or PAT).
@@ -57,14 +59,31 @@ Kortix account bearer (owner/admin JWT or PAT).
 
 ## Part A — SAML single sign-on
 
+> **Prefer the guided setup.** The dashboard walks these exact steps
+> interactively — Account → **Settings** → **SAML SSO** → **Configure** opens a
+> per-IdP wizard (Entra, Okta, Google, custom SAML) with the copy-paste values
+> inline and the metadata import as the final step. Directory Sync has the
+> same: **SCIM Provisioning** → **Guided setup**. This document remains the
+> reference for the details behind each step.
+
 Kortix delegates SAML assertion validation to Supabase Auth, so the IdP metadata
 is registered **with Supabase**, and Kortix stores the resulting provider id.
 
 1. **In Entra**: create an **Enterprise Application** → *Single sign-on* → **SAML**.
-   - **Identifier (Entity ID)** and **Reply URL (ACS)**: use the values from your
-     Supabase project's SAML SSO configuration (Supabase → Authentication →
-     SSO). Supabase is the SAML Service Provider.
+   - **Identifier (Entity ID)** and **Reply URL (ACS)**: copy both values from the
+     **Service provider details** section of the SAML SSO card (Account →
+     **Settings** → **Identity & directory** → **SAML SSO** — visible before you
+     configure anything, with a copy button on each). *(Operator-only advanced
+     path: these also live in the Supabase project's SAML SSO configuration —
+     Supabase → Authentication → SSO — for self-hosted deployments; customers
+     should always use the SSO card.)*
    - Download the **App Federation Metadata XML** (or copy the metadata URL).
+
+   > **Is this URL safe to share with your IdP admin?** Yes. The Entity ID /
+   > metadata URL is a public-by-design SAML endpoint of the auth layer — every
+   > IdP must be able to fetch it to complete federation, and it exposes no
+   > account data. If you configure a custom auth domain later, this URL can be
+   > branded to it.
 
 2. **Register the provider — pick one path:**
 
@@ -98,6 +117,19 @@ is registered **with Supabase**, and Kortix stores the resulting provider id.
 > any successful SSO sign-in from `primary_domain` self-provision a baseline
 > `member` (they still get **no** project access until a group grant applies).
 
+> **Email claim — the #1 Entra gotcha.** Entra maps the SAML email to `user.mail`,
+> which is **empty** for accounts without a mailbox (e.g. any `*.onmicrosoft.com`
+> user, or unlicensed accounts). An empty email means the user signs in but can't
+> be identified. In the Enterprise App → **Single sign-on → Attributes & Claims**,
+> edit the `…/emailaddress` claim and set its **Source attribute** to
+> **`user.userprincipalname`** — the UPN is always populated and email-formatted.
+
+> **You do NOT touch Supabase's attribute mapping.** Kortix registers the IdP with
+> the group-claim `attribute_mapping` automatically (from `group_claim_name`), so
+> the group values reach the token. If you registered a provider via the operator
+> `supabase sso add` path, re-save the SSO config once in the dashboard and Kortix
+> will (re)apply the mapping for you.
+
 ---
 
 ## Part B — emit group claims from Entra
@@ -107,8 +139,16 @@ Entra does not send groups by default. In the Enterprise App → *Single sign-on
 
 - Choose which groups to emit (Security groups / Groups assigned to the app —
   prefer the latter to keep the claim small).
-- **Source attribute**: by default Entra emits group **Object IDs (GUIDs)**. You
-  can switch to `sAMAccountName` / group display names if you'd rather map by name.
+- **Source attribute**: by default Entra emits group **Object IDs (GUIDs)**, not
+  names — so a mapping's *claim value* is the group's **Object ID** unless you
+  change this. To map by readable **name** instead, you must (a) set the claim to
+  **"Groups assigned to the application"**, (b) pick source attribute **"Cloud-only
+  group display names"** (it is greyed out for "Security groups"), and (c) **assign
+  each group to the enterprise app**. ⚠️ **Assigning a *group* to an app requires
+  Entra ID P1/P2** — on the **Free** plan you can only assign users, so Free-tier
+  tenants are **GUID-only**. Either way works: Kortix matches GUIDs and names
+  identically (case/space-insensitive) — GUID mapping is actually more robust since
+  IDs never change.
 - Ensure the claim **name** is what you set as `group_claim_name` (default
   `memberOf`).
 
