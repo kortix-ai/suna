@@ -30,6 +30,7 @@ mock.module('../repositories/account-tokens', () => ({
 }));
 
 mock.module('../shared/jwt-verify', () => ({
+  decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async () => ({ ok: false }),
 }));
 

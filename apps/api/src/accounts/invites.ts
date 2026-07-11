@@ -300,6 +300,9 @@ accountInvitesRouter.openapi(
   }
 
   const alreadyAccepted = !!invite.acceptedAt;
+  if (alreadyAccepted && invite.acceptedByUserId && invite.acceptedByUserId !== userId) {
+    return c.json({ error: 'Invite has already been accepted by another account.' }, 409);
+  }
 
   // Only block a *fresh* accept on expiry. An already-accepted invite stays
   // redeemable for the addressed user so re-entry can heal a grant that was
@@ -327,7 +330,7 @@ accountInvitesRouter.openapi(
   if (!alreadyAccepted) {
     await db
       .update(accountInvitations)
-      .set({ acceptedAt: new Date() })
+      .set({ acceptedAt: new Date(), acceptedByUserId: userId })
       .where(
         and(
           eq(accountInvitations.inviteId, invite.inviteId),

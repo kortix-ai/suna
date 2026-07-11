@@ -50,6 +50,8 @@ const {
   resetEmailSessionLifecycleForTest,
   setEmailSessionLifecycleForTest,
 } = await import("../channels/email/session");
+const { emailWebhookApp } = await import("../channels/email/app");
+await import("../channels/email/routes");
 
 const event: AgentMailMessageReceivedEvent = {
   type: "event",
@@ -128,6 +130,38 @@ describe("AgentMail webhook verification", () => {
         svixSignature: `v1,${sig}`,
       }),
     ).toBe(false);
+  });
+
+  test("webhook route fails closed when signing is missing or invalid", async () => {
+    const originalSecret = config.AGENTMAIL_WEBHOOK_SECRET;
+    const rawBody = JSON.stringify(event);
+    try {
+      (config as { AGENTMAIL_WEBHOOK_SECRET: string | undefined }).AGENTMAIL_WEBHOOK_SECRET =
+        undefined;
+      const missingSecret = await emailWebhookApp.request("/agentmail", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: rawBody,
+      });
+      expect(missingSecret.status).toBe(503);
+
+      (config as { AGENTMAIL_WEBHOOK_SECRET: string | undefined }).AGENTMAIL_WEBHOOK_SECRET =
+        `whsec_${Buffer.from("test-signing-key").toString("base64")}`;
+      const invalidSignature = await emailWebhookApp.request("/agentmail", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "svix-id": "msg_123",
+          "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+          "svix-signature": "v1,not-valid",
+        },
+        body: rawBody,
+      });
+      expect(invalidSignature.status).toBe(401);
+    } finally {
+      (config as { AGENTMAIL_WEBHOOK_SECRET: string | undefined }).AGENTMAIL_WEBHOOK_SECRET =
+        originalSecret;
+    }
   });
 });
 

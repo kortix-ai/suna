@@ -60,14 +60,15 @@ telegramWebhookApp.openapi(
 
 // Gate for the Telegram equivalent of Slack's SLACK_REQUIRE_USER_IDENTITY: the
 // webhook otherwise runs every agent turn AS THE ACCOUNT OWNER for whoever can
-// message the bot, with no sender check. Defaults OFF (current behavior — every
-// project chatting via Telegram today keeps working unchanged); an operator
-// turns it on only after wiring an allowlist (see isKnownTelegramSender below).
+// message the bot, with no sender check. Defaults ON: a webhook secret proves
+// the request came from Telegram, but not that this sender may run this project
+// as the automation actor. Operators may temporarily set
+// TELEGRAM_REQUIRE_USER_IDENTITY=false only while migrating legacy projects to
+// metadata.telegram.allowedUserIds.
 // Read live (not module-scope) so it's cheap to flip per-request in tests.
-function telegramRequireUserIdentity(): boolean {
-  return ['true', '1', 'yes', 'on'].includes(
-    (process.env.TELEGRAM_REQUIRE_USER_IDENTITY ?? '').trim().toLowerCase(),
-  );
+export function telegramRequireUserIdentityForTest(): boolean {
+  const raw = (process.env.TELEGRAM_REQUIRE_USER_IDENTITY ?? 'true').trim().toLowerCase();
+  return !['false', '0', 'no', 'off'].includes(raw);
 }
 
 // "Bound identity" here is a per-project allowlist of Telegram user ids, stored
@@ -76,7 +77,7 @@ function telegramRequireUserIdentity(): boolean {
 // this yet — see risk note in the PR. Until one exists, enabling the flag
 // rejects every sender for a project with no allowlist configured, which is
 // the safe direction to fail in.
-function isKnownTelegramSender(
+export function isKnownTelegramSenderForTest(
   project: { metadata: unknown },
   message: TelegramMessage,
 ): boolean {
@@ -103,7 +104,7 @@ async function spawnAgentTurn(
     .limit(1);
   if (!project) return;
 
-  if (telegramRequireUserIdentity() && !isKnownTelegramSender(project, message)) {
+  if (telegramRequireUserIdentityForTest() && !isKnownTelegramSenderForTest(project, message)) {
     console.warn(
       '[telegram-webhook] rejecting unbound sender for project',
       projectId,

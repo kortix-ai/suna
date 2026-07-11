@@ -6,7 +6,7 @@ import { db } from './db';
 export type PublicShareResourceType = 'preview' | 'file';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
-export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000]);
+export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000, STATIC_FILE_SHARE_PORT]);
 
 export const DEFAULT_PREVIEW_CANDIDATES = [
   { id: 'web', label: 'App preview', port: 3000, path: '/', source: 'default' },
