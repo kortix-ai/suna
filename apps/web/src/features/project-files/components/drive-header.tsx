@@ -23,6 +23,27 @@ interface DriveHeaderProps {
 }
 
 /**
+ * Hook the desktop shell's title-bar rules in globals.css key off. Only the
+ * standalone Files page reaches the top of the window, so only it opts in;
+ * the rules widen the indents so the row clears the OS window controls
+ * (macOS traffic lights + the shell's sidebar toggle on the left, the
+ * Win/Linux control cluster on the right).
+ */
+export const FILES_HEADER_DESKTOP_CLASS = 'kx-files-header';
+
+export function driveHeaderClass(offsetForSidebarToggle: boolean, sidebarCollapsed: boolean) {
+  return cn(
+    'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pb-4',
+    // Mobile: the shell's open-sidebar trigger always sits top-left, so drop
+    // the title below it. Desktop: only the collapsed-sidebar toggle overlaps,
+    // so inset the title left only then (keeps it aligned when expanded).
+    offsetForSidebarToggle ? 'pt-14 md:pt-3' : 'pt-5',
+    offsetForSidebarToggle && sidebarCollapsed && 'md:pl-14',
+    offsetForSidebarToggle && FILES_HEADER_DESKTOP_CLASS,
+  );
+}
+
+/**
  * Drive-style page header for the project Files section: plain-language
  * title + purpose line on the left, version-history / proposed-changes
  * toggles and the list⇄grid switch on the right.
@@ -41,14 +62,10 @@ export function DriveHeader({
 
   return (
     <header
-      className={cn(
-        'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 pb-4',
-        // Mobile: the shell's open-sidebar trigger always sits top-left, so drop
-        // the title below it. Desktop: only the collapsed-sidebar toggle overlaps,
-        // so inset the title left only then (keeps it aligned when expanded).
-        offsetForSidebarToggle ? 'pt-14 md:pt-3' : 'pt-5',
-        offsetForSidebarToggle && sidebarCollapsed && 'md:pl-14',
-      )}
+      className={driveHeaderClass(offsetForSidebarToggle, sidebarCollapsed)}
+      // The macOS rule keys off this: the left indent is only needed while the
+      // sidebar is collapsed, since an expanded sidebar covers the lights.
+      data-sidebar-collapsed={sidebarCollapsed || undefined}
     >
       <div className="min-w-0 space-y-1">
         <h2 className="text-foreground text-xl font-medium">Files</h2>

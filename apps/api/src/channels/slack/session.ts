@@ -8,7 +8,9 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './commands';
 import { currentChannelSelection } from './selection';
+import { startErrorMessage } from './start-error';
 import {
   normalizeConversationPolicy,
   rememberSlackThreadOwner,
@@ -180,7 +182,28 @@ export async function createOrJoinThreadSession(input: {
   if (result.error) {
     console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
     if (handle) {
-      await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body?.error) });
+      // A deleted/renamed/disabled agent — the channel's own agent override, or
+      // the project default the `default` sentinel resolves to — is rejected up
+      // front as 400 AGENT_NOT_DECLARED. The generic "give it a moment and try
+      // again" copy is actively wrong here: retrying hits the same dead agent
+      // forever. Name the problem and drop an inline agent picker so the user
+      // re-points the channel to a live agent in one click, then re-sends.
+      if (result.error.body?.code === 'AGENT_NOT_DECLARED' && event.channel) {
+        const agents = await loadScopedChannelAgents({ teamId, projectId, slackUserId: event.user ?? undefined });
+        await finalizeTurn(handle, {
+          title: "Couldn't start — pick an agent",
+          // Fallback/notification text only (the picker blocks render in-thread);
+          // `error` keeps this off the ✅ path without inventing a second section.
+          error: "I couldn't start a session — the agent set for this channel no longer exists. Pick a current agent, then send your message again.",
+          blocks: buildAgentUnavailablePickerBlocks({
+            channelId: event.channel,
+            badAgent: selection?.agentName ?? null,
+            agents,
+          }),
+        });
+      } else {
+        await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body) });
+      }
     }
     return;
   }
@@ -205,24 +228,6 @@ export async function createOrJoinThreadSession(input: {
       userId,
     });
   }
-}
-
-// Honest, actionable copy for the two non-success outcomes of starting a Slack
-// session — surfaced in-thread instead of a generic "try again" so a real
-// blocker (out of credits, at the session cap) tells the user what to do.
-function startErrorMessage(status: number | undefined, detail: unknown): string {
-  if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
-  }
-  if (status === 429) {
-    return "This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.";
-  }
-  if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel and try again.";
-  }
-  const text = typeof detail === 'string' ? detail.trim() : '';
-  const tail = text && text.length <= 140 ? ` (${text})` : '';
-  return `I couldn't start a session just now${tail}. Give it a moment and send your message again — I'll reply right here.`;
 }
 
 function queuedMessage(reason?: string): string {

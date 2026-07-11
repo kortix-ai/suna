@@ -118,6 +118,25 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('model');
   });
 
+  test('agent-not-found → "Agent unavailable" routing to /kortix agents', () => {
+    const r = classifyTurnError({ name: 'UnknownError', message: 'agent "shipper" not found' });
+    expect(r.title).toBe('Agent unavailable');
+    expect(r.text).toContain('/kortix agents');
+    expect(r.aborted).toBe(false);
+  });
+
+  test('agent-not-declared (legacy runtime failure) → "Agent unavailable"', () => {
+    const r = classifyTurnError({ message: 'Agent "old-bot" is not a declared agent in this project' });
+    expect(r.title).toBe('Agent unavailable');
+  });
+
+  // The agent bucket requires the word "agent" so it can never shadow the
+  // broader model-not-found "does not exist" match.
+  test('a model "does not exist" error without the word "agent" stays "Model unavailable"', () => {
+    const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
+    expect(r.title).toBe('Model unavailable');
+  });
+
   test('401 → provider config copy (consolidated with ProviderAuthError)', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 401, message: 'Unauthorized' });
     expect(r.title).toBe('Provider rejected the request');

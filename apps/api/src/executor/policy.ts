@@ -59,16 +59,48 @@ function compileMatcher(pattern: string): RegExp {
   return globToRegex(pattern);
 }
 
+/**
+ * Heuristic catastrophic-backtracking detector: true if a quantified group
+ * (`(...)+`, `(...)*`, `(...){n,}`) itself contains a quantified sub-pattern
+ * (`a+`, `a*`, `a{n,}`). That nesting is the classic ReDoS shape — e.g.
+ * `(a+)+` — where the engine can match the same input exponentially many
+ * ways. Not a full regex-safety proof, just enough to reject the obvious,
+ * common unsafe shapes at write time.
+ */
+function hasNestedQuantifier(body: string): boolean {
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '(') continue;
+    let depth = 1;
+    let j = i + 1;
+    while (j < body.length && depth > 0) {
+      if (body[j] === '\\') { j += 2; continue; }
+      if (body[j] === '(') depth++;
+      else if (body[j] === ')') depth--;
+      j++;
+    }
+    if (depth !== 0) continue; // unbalanced — let RegExp() surface the syntax error
+    const inner = body.slice(i + 1, j - 1);
+    const after = body[j];
+    const groupIsQuantified = after === '*' || after === '+' || after === '{';
+    if (!groupIsQuantified) continue;
+    const innerStripped = inner.replace(/\\./g, '');
+    if (/[*+]|\{\d*,\d*\}/.test(innerStripped)) return true;
+  }
+  return false;
+}
+
 /** True if `pattern` is a syntactically valid matcher (glob always is; regex may not be). */
 export function isValidMatcher(pattern: string): boolean {
   if (!isRegexMatcher(pattern)) return pattern.length > 0;
   const lastSlash = pattern.lastIndexOf('/');
+  const body = pattern.slice(1, lastSlash);
   try {
-    new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1) || 'i');
-    return true;
+    new RegExp(body, pattern.slice(lastSlash + 1) || 'i');
   } catch {
     return false;
   }
+  if (hasNestedQuantifier(body)) return false; // catastrophic-backtracking shape, reject at write time
+  return true;
 }
 
 function matchesPolicy(pattern: string, path: string): boolean {

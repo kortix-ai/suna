@@ -525,6 +525,30 @@ async function main(): Promise<void> {
         await thread({ ...requiredFlags(flags, 'channel', 'ts'), limit: optionalInt(flags.limit) }),
       );
       break;
+    case 'bind-thread': {
+      // Bind THIS session to a Slack thread so later replies route back to it —
+      // e.g. after a webhook run posts an approval request, a human's "APPROVE"
+      // reply resumes this session. Defaults to the Slack-turn env when present.
+      const channel = flags.channel ?? getEnv('SLACK_CHANNEL_ID');
+      const threadTs = flags.thread ?? getEnv('SLACK_THREAD_TS');
+      const sessionId = kortixSessionId();
+      const projectId = kortixProjectId();
+      if (!channel || !threadTs) {
+        throw new CliError(
+          'bind-thread needs --channel and --thread (defaults to $SLACK_CHANNEL_ID/$SLACK_THREAD_TS on Slack turns)',
+        );
+      }
+      if (!sessionId) throw new CliError('KORTIX_SESSION_ID not set — cannot bind this session.');
+      if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot bind.');
+      out(
+        await kortixPost(`/projects/${projectId}/channels/slack/bind-thread`, {
+          session_id: sessionId,
+          channel,
+          thread_ts: threadTs,
+        }),
+      );
+      break;
+    }
     case 'channels':
       out(await listChannels({ limit: optionalInt(flags.limit) }));
       break;
@@ -583,6 +607,7 @@ Commands:
   typing       (--channel)               # no-op on Slack Web API
   history      (--channel, [--limit])
   thread       (--channel, --ts, [--limit])
+  bind-thread  (--channel, --thread)     # route later replies in this thread back to this session
   channels     ([--limit])
   channel-info (--channel)
   join         (--channel)
