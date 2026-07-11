@@ -21,6 +21,9 @@ const contentSchema = frontmatterSchema.extend({
   tags: z.array(z.string()).default([]),
   cover: z.string().optional(),
   draft: z.boolean().default(false),
+  // Catalog id of an installable template this use case maps to. When set, the
+  // page shows a "Use this template" button that launches the guided install.
+  template: z.string().optional(),
 });
 
 // Use-case / case-study collection: long-form MDX in `content/use-cases/`,

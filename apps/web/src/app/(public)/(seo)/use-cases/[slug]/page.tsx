@@ -21,6 +21,7 @@ import {
   Step,
   Steps,
 } from '@/components/use-cases/mdx';
+import { UseTemplateButton } from '@/components/use-cases/template-install-dialog';
 import { UseCaseCard, UseCaseCover } from '@/components/use-cases/use-case-card';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { UseCasesCta } from '@/components/use-cases/use-cases-cta';
@@ -121,6 +122,9 @@ export default async function UseCasePage(props: PageProps) {
     .slice(0, 3);
   const toc = (data.toc ?? []) as TocItem[];
   const post = getAllUseCases().find((p) => p.slug === slug);
+  // Single kill-switch shared with the API (KORTIX_TEMPLATES_ENABLED) — the
+  // "Use this template" button stays hidden until the feature is turned on.
+  const templatesEnabled = process.env.KORTIX_TEMPLATES_ENABLED === 'true';
 
   const postUrl = `${siteMetadata.url}/use-cases/${slug}`;
   const jsonLd = {
@@ -211,6 +215,11 @@ export default async function UseCasePage(props: PageProps) {
               readingTime={readingTime}
               className="mt-8"
             />
+            {templatesEnabled && data.template && (
+              <div className="mt-8">
+                <UseTemplateButton templateId={data.template} />
+              </div>
+            )}
             </header>
           </div>
         </div>
@@ -250,14 +259,31 @@ export default async function UseCasePage(props: PageProps) {
             <UseCaseToc items={toc} />
 
             <div className="border-border rounded-2xl border p-5">
-              <p className="text-foreground text-sm font-medium">Build your own</p>
-              <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-                Put a workforce of AI agents to work on your own systems — connected, guarded, and
-                reviewed.
-              </p>
-              <Button asChild size="sm" className="mt-4 w-full">
-                <Link href="/">Get started</Link>
-              </Button>
+              {templatesEnabled && data.template ? (
+                <>
+                  <p className="text-foreground text-sm font-medium">Run this yourself</p>
+                  <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                    Install this exact setup — agent, connectors, schedule, and guardrails — in a
+                    guided flow.
+                  </p>
+                  <UseTemplateButton
+                    templateId={data.template}
+                    className="mt-4 w-full"
+                    size="sm"
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="text-foreground text-sm font-medium">Build your own</p>
+                  <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                    Put a workforce of AI agents to work on your own systems — connected, guarded,
+                    and reviewed.
+                  </p>
+                  <Button asChild size="sm" className="mt-4 w-full">
+                    <Link href="/">Get started</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </aside>
