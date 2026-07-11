@@ -33,6 +33,8 @@ export interface TemplateTrigger {
   cron?: string;
   timezone?: string;
   secret_env?: string;
+  /** 'reuse' = one persistent session re-prompted each fire (keeps a ledger). */
+  session_mode?: 'fresh' | 'reuse';
   prompt: string;
 }
 
@@ -247,6 +249,7 @@ export function buildTemplateInstall(
     if (trigger.cron) entry.cron = renderInputs(trigger.cron, renderMap);
     if (trigger.timezone) entry.timezone = trigger.timezone;
     if (trigger.secret_env) entry.secret_env = trigger.secret_env;
+    if (trigger.session_mode) entry.session_mode = trigger.session_mode;
     triggerList.push(entry);
   }
   if (triggerList.length > 0) manifest.triggers = triggerList;

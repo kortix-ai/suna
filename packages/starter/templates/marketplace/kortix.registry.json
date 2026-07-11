@@ -114,7 +114,7 @@
       "name": "dep-upgrader-agent",
       "type": "registry:agent",
       "title": "Dependency upgrade agent",
-      "description": "Checks the repo's dependencies for updates, upgrades the safe ones, runs the tests, and opens a PR per change.",
+      "description": "Reusable-session agent that keeps a repo's dependencies current: applies upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a PR — never merging.",
       "categories": ["engineering"],
       "files": [
         {
@@ -126,35 +126,59 @@
       "meta": { "source": "kortix" }
     },
     {
+      "name": "dependency-upgrade-skill",
+      "type": "registry:skill",
+      "title": "Dependency upgrade",
+      "description": "The weekly dependency-upgrade runbook: upgrade tiers, the verification gate, breaking-change handling, the ledger, and guardrails.",
+      "categories": ["engineering"],
+      "files": [
+        {
+          "path": "runtime/skills/dependency-upgrade",
+          "type": "registry:file",
+          "target": "@skills/dependency-upgrade"
+        }
+      ],
+      "meta": { "source": "kortix" }
+    },
+    {
       "name": "dependency-upgrades",
       "type": "registry:template",
       "title": "Dependency upgrades on autopilot",
-      "description": "Keeps the repo's dependencies current: upgrades the safe ones on a schedule, runs the tests, and opens a reviewable pull request per change — never merging on its own.",
+      "description": "A weekly agent that keeps a repo's dependencies current: it applies patch, minor, and safe major upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a reviewable PR only when everything passes — never merging on its own.",
       "categories": ["engineering", "use-case"],
-      "registryDependencies": ["dep-upgrader-agent"],
+      "registryDependencies": ["dep-upgrader-agent", "dependency-upgrade-skill"],
+      "envVars": {
+        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
+      },
       "inputs": [
         {
+          "key": "target_repo",
+          "label": "Repository to keep updated",
+          "type": "text",
+          "default": "owner/repo",
+          "help": "The GitHub repo the agent upgrades and opens PRs against.",
+          "required": true
+        },
+        {
           "key": "cadence",
-          "label": "How often to check for updates",
+          "label": "When to run the weekly sweep",
           "type": "cron",
-          "default": "0 0 9 * * 1",
-          "help": "Defaults to every Monday at 9:00 AM.",
+          "default": "0 0 5 * * 2",
+          "help": "Defaults to every Tuesday at 05:00 UTC.",
           "required": true
         }
       ],
       "meta": {
         "source": "kortix",
         "icon": "dependency-upgrades",
-        "capabilities": {
-          "connectors": ["github"]
-        },
         "template": {
           "agents": {
             "dep-upgrader": {
-              "connectors": ["github"]
+              "secrets": ["GH_TOKEN"],
+              "skills": ["dependency-upgrade"],
+              "kortix_cli": ["project.cr.open"]
             }
           },
-          "connectors": [{ "slug": "github", "provider": "pipedream", "app": "github" }],
           "triggers": [
             {
               "slug": "weekly-upgrades",
@@ -162,9 +186,11 @@
               "type": "cron",
               "agent": "dep-upgrader",
               "cron": "{{cadence}}",
-              "prompt": "Survey this repo's dependency manifests for available updates, upgrade the safe patch/minor versions on a fresh branch, run the test suite and typecheck, and open one reviewable pull request per batch with the release notes and check results. Keep major-version bumps to their own PR. Never merge."
+              "session_mode": "reuse",
+              "prompt": "Load the `dependency-upgrade` skill and run one complete upgrade sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/dependency-upgrade-log.md`, open upgrade PRs, and in-flight branches. Discover outdated deps; apply patch/minor together and majors one at a time on an isolated branch; prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration, audit); and open a PR only when everything passes. A failing upgrade is never pushed — log it and split or defer with a tracked issue. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
             }
-          ]
+          ],
+          "env_optional": ["GH_TOKEN"]
         }
       }
     },
