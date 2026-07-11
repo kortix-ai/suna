@@ -80,6 +80,12 @@ async function handleMarketplaceInstall(c: any) {
       existingLockRaw,
       legacyLockRaw,
       now: new Date().toISOString(),
+      existingManifestRaw: manifestRaw,
+      manifestPath: project.manifestPath,
+      slotValues:
+        body?.slots && typeof body.slots === 'object'
+          ? (body.slots as Record<string, string>)
+          : undefined,
     });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
@@ -99,7 +105,9 @@ async function handleMarketplaceInstall(c: any) {
 
   const commit = await commitMultipleFilesToBranch(project, {
     files: built.files,
-    message: `feat(marketplace): add ${detail.title}`,
+    message: built.proposedTrigger
+      ? `feat(marketplace): add ${detail.title} (proposes disabled trigger "${built.proposedTrigger.slug}")`
+      : `feat(marketplace): add ${detail.title}`,
     branch: project.defaultBranch,
   });
 

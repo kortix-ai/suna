@@ -261,6 +261,71 @@ describe('marketplace catalog', () => {
     );
   });
 
+  test('blueprints are browseable in the marketplace', async () => {
+    const blueprints = await listCatalogItems({ type: 'blueprint' });
+    expect(blueprints.some((i) => i.name === 'daily-research-brief')).toBe(true);
+    expect(blueprints.every((i) => i.type === 'registry:blueprint')).toBe(true);
+  });
+
+  test('buildInstall(blueprint) with no manifest installs the skill only, no trigger', async () => {
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+    });
+    expect(built.installed.map((i) => i.name)).toContain('deep-research');
+    expect(built.proposedTrigger).toBeUndefined();
+    expect(built.files.some((f) => f.path === 'kortix.yaml')).toBe(false);
+  });
+
+  test('buildInstall(blueprint) appends a DISABLED trigger, substitutes slots, never clobbers', async () => {
+    const manifest = 'kortix_version: 2\nproject:\n  name: Test Co\ntriggers: []\n';
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+      existingManifestRaw: manifest,
+      manifestPath: 'kortix.yaml',
+      slotValues: { topic: 'AI agents' },
+    });
+    // the skill is still installed
+    expect(built.installed.map((i) => i.name)).toContain('deep-research');
+    expect(built.proposedTrigger?.slug).toBe('daily-research-brief');
+    const yaml = built.files.find((f) => f.path === 'kortix.yaml');
+    expect(yaml).toBeDefined();
+    // appended as a DISABLED trigger
+    expect(yaml!.content).toContain('daily-research-brief');
+    expect(yaml!.content).toContain('enabled: false');
+    // slot substituted; no leftover placeholder
+    expect(yaml!.content).toContain('AI agents');
+    expect(yaml!.content).not.toContain('{{slots');
+    // original keys preserved — never clobbers
+    expect(yaml!.content).toContain('Test Co');
+    expect(yaml!.content).toContain('kortix_version');
+  });
+
+  test('buildInstall(blueprint) uniquifies its slug against an existing trigger', async () => {
+    const manifest =
+      'kortix_version: 2\ntriggers:\n  - slug: daily-research-brief\n    name: Existing\n    type: cron\n    agent: default\n    enabled: true\n    cron: "0 0 6 * * *"\n    timezone: UTC\n    prompt: keep me\n';
+    const built = await buildInstall({
+      id: 'kortix:daily-research-brief',
+      configDir: '.kortix/opencode',
+      existingLockRaw: null,
+      legacyLockRaw: null,
+      now: '2026-06-16T00:00:00.000Z',
+      existingManifestRaw: manifest,
+      manifestPath: 'kortix.yaml',
+    });
+    expect(built.proposedTrigger?.slug).toBe('daily-research-brief-2');
+    const yaml = built.files.find((f) => f.path === 'kortix.yaml')!;
+    expect(yaml.content).toContain('keep me'); // existing trigger untouched
+    expect(yaml.content).toContain('daily-research-brief-2');
+  });
+
   test('update detection — installed item compares up-to-date against its source', async () => {
     const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
     const built = await buildInstall({
