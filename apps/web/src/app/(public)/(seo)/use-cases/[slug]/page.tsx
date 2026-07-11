@@ -106,6 +106,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
 }
 
 export default async function UseCasePage(props: PageProps) {
+  if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'true') notFound();
   const { slug } = await props.params;
   const page = useCasesSource.getPage([slug]);
   if (!page) notFound();

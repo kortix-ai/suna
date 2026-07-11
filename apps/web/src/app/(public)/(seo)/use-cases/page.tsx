@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
 };
 
 export default function UseCasesIndexPage() {
+  if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED !== 'true') notFound();
   const useCases = getAllUseCases();
 
   const jsonLd = {
