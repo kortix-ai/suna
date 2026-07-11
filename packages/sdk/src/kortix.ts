@@ -1,4 +1,5 @@
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { AcpClient, createAcpClient, type AcpStreamHandle } from './acp';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -632,6 +633,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     let _ready: SessionRuntimeEntry | null = null;
     let _model: SessionModel | undefined;
     let _agent: string | undefined;
+    let _acpClient: AcpClient | null = null;
+    let _acpSessionId: string | null = null;
 
     /**
      * Adopt an already-resolved runtime for THIS (projectId, sessionId) from
@@ -675,12 +678,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       const startPromise = (async (): Promise<SessionRuntimeEntry> => {
         const started = await P.startProjectSession(projectId, sessionId, 30_000);
-        if (
-          !started ||
-          started.stage !== 'ready' ||
-          !started.sandbox ||
-          !started.opencode_session_id
-        ) {
+        const runtimeProtocol = started?.runtime_protocol ?? (started?.opencode_session_id ? 'opencode' : null);
+        const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id ?? null;
+        const runtimeId = started?.runtime_id ?? runtimeSessionId;
+        if (!started || started.stage !== 'ready' || !started.sandbox || !runtimeProtocol || !runtimeId) {
           throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
             code: 'RUNTIME_UNAVAILABLE',
           });
@@ -696,7 +697,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         // hosts (which read the global current-runtime) keep working — but this
         // handle's own operations never read it back, only `_ready` below.
         setCurrentRuntime(runtimeUrl, externalId);
-        return { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
+        return {
+          runtimeProtocol,
+          runtimeId,
+          runtimeSessionId,
+          opencodeSessionId: started.opencode_session_id,
+          runtimeUrl,
+          sandboxId: externalId,
+        };
       })();
 
       inFlightSessionStarts.set(key, startPromise);
@@ -720,7 +728,38 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
     function forgetReady(): void {
       _ready = null;
+      _acpClient = null;
+      _acpSessionId = null;
       clearSessionRuntime(projectId, sessionId);
+    }
+
+    async function ensureAcpSession(): Promise<{
+      client: AcpClient;
+      acpSessionId: string;
+      ready: SessionRuntimeEntry;
+    }> {
+      const ready = await ensureReady();
+      if ((ready.runtimeProtocol ?? 'opencode') !== 'acp') {
+        throw new ApiError('Session uses the legacy OpenCode runtime, not ACP', {
+          code: 'RUNTIME_PROTOCOL_MISMATCH',
+        });
+      }
+      const client = _acpClient ?? createAcpClient({
+        baseUrl: ready.runtimeUrl,
+        serverId: ready.runtimeId ?? ready.opencodeSessionId ?? sessionId,
+      });
+      _acpClient = client;
+      if (!_acpSessionId) {
+        await client.initialize({
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' },
+        });
+        const created = await client.newSession({ cwd: '/workspace', mcpServers: [] });
+        _acpSessionId = created.sessionId;
+        ready.runtimeSessionId = created.sessionId;
+      }
+      return { client, acpSessionId: _acpSessionId, ready };
     }
 
     return {
@@ -815,7 +854,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * choices for this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const ready = await ensureReady();
+        if (ready.runtimeProtocol === 'acp') {
+          const { client, acpSessionId } = await ensureAcpSession();
+          return client.prompt(acpSessionId, [{ type: 'text', text }]);
+        }
+        const { opencodeSessionId, runtimeUrl } = ready;
+        if (!opencodeSessionId) throw new ApiError('Legacy OpenCode session id is missing');
         const model = opts?.model ?? _model;
         const agent = opts?.agent ?? _agent;
         return getClientForUrl(runtimeUrl).session.prompt({
@@ -827,7 +872,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const ready = await ensureReady();
+        if (ready.runtimeProtocol === 'acp') {
+          const { client, acpSessionId } = await ensureAcpSession();
+          return client.cancel(acpSessionId);
+        }
+        const { opencodeSessionId, runtimeUrl } = ready;
+        if (!opencodeSessionId) throw new ApiError('Legacy OpenCode session id is missing');
         return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
       },
       /**
@@ -861,6 +912,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           onGapRehydrate: opts.onGapRehydrate,
           signal: opts.signal,
         });
+      },
+
+      /** ACP-native runtime transport for v3 sessions. */
+      acp: {
+        connect: async (opts: {
+          onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
+          onError?: Parameters<AcpClient['connect']>[0]['onError'];
+          signal?: AbortSignal;
+          lastEventId?: number;
+        }): Promise<AcpStreamHandle> => {
+          const { client } = await ensureAcpSession();
+          return client.connect(opts);
+        },
+        client: async () => (await ensureAcpSession()).client,
+        sessionId: async () => (await ensureAcpSession()).acpSessionId,
+        respond: async (...args: Parameters<AcpClient['respond']>) =>
+          (await ensureAcpSession()).client.respond(...args),
       },
 
       // ── runtime (opencode v2, THIS session's own sandbox) ────────────────

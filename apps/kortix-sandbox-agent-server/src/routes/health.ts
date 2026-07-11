@@ -51,6 +51,13 @@ export type SandboxBootState = {
   initialOpenCodeSessionId?: string | null
   /** Boot-time OpenCode session creation failure. */
   initialOpenCodeSessionError?: string | null
+  /** Canonical runtime selected by the compiled kortix.yaml contract. */
+  runtimeKind?: 'opencode-legacy' | 'acp'
+  /** Selected v3 ACP harness and process identity. */
+  acpHarness?: 'claude' | 'codex' | 'opencode' | 'pi' | null
+  acpServerId?: string | null
+  acpRuntimeReady?: boolean
+  acpRuntimeError?: string | null
 }
 
 /**
@@ -99,25 +106,32 @@ export function createHealthRouter(
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-    const runtimeReady =
-      repoReady &&
-      !bootState.repoMaterializationError &&
-      !initialSessionError &&
-      opencodeState === 'ok' &&
-      initialSessionReady
+    const isAcp = bootState.runtimeKind === 'acp'
+    const runtimeError = isAcp ? (bootState.acpRuntimeError ?? null) : initialSessionError
+    const runtimeReady = isAcp
+      ? repoReady && !bootState.repoMaterializationError && !runtimeError && !!bootState.acpRuntimeReady
+      : repoReady &&
+        !bootState.repoMaterializationError &&
+        !runtimeError &&
+        opencodeState === 'ok' &&
+        initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || initialSessionError
+      : bootState.repoMaterializationError || runtimeError
         ? 'error'
-        : opencodeState
+        : isAcp ? 'starting' : opencodeState
 
     return c.json({
       daemon: 'ok',
       status,
       runtimeReady,
-      opencode: opencodeState,
+      runtime: isAcp ? 'acp' : 'opencode-legacy',
+      acp_harness: bootState.acpHarness ?? null,
+      acp_server_id: bootState.acpServerId ?? null,
+      acp_ready: !!bootState.acpRuntimeReady,
+      opencode: isAcp ? null : opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
-      opencode_pid: opencode.getPid(),
+      opencode_pid: isAcp ? null : opencode.getPid(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,
@@ -126,7 +140,7 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      boot_error: bootState.repoMaterializationError ?? runtimeError,
       opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
       opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can

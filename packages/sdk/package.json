@@ -31,6 +31,7 @@
     ".": "./src/index.ts",
     "./server": "./src/server.ts",
     "./react": "./src/react/index.ts",
+    "./acp": "./src/acp/index.ts",
     "./opencode-client": "./src/opencode/client.ts",
     "./config": "./src/platform/config.ts",
     "./auth": "./src/platform/auth.ts",
@@ -60,6 +61,7 @@
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./acp": { "types": "./dist/acp/index.d.ts", "import": "./dist/acp/index.js" },
       "./opencode-client": {
         "types": "./dist/opencode/client.d.ts",
         "import": "./dist/opencode/client.js"

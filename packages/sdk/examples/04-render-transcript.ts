@@ -66,6 +66,9 @@ async function main() {
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
   const session = kortix.session(projectId, sessionId);
   const { opencodeSessionId } = await session.ensureReady();
+  if (!opencodeSessionId) {
+    throw new Error('This legacy OpenCode transcript example does not apply to an ACP session.');
+  }
 
   const result = await session.runtime.session.messages({ sessionID: opencodeSessionId });
   const messages = (result.data ?? []) as MessageWithParts[];

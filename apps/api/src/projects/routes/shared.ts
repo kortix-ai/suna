@@ -19,7 +19,7 @@ import {
   buildSessionSandboxEnvVars,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
-import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import { ensureOpencodeSessionPin, inspectSandboxRuntime } from '../opencode-mapping';
 import {
   preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
@@ -802,7 +802,29 @@ export async function openSession(args: {
     };
   }
 
-  // Box is provider-running. Resolve OpenCode readiness + the canonical pin
+  // Box is provider-running. First inspect the daemon-owned runtime mode. A v3
+  // ACP session is ready when its selected official adapter process is up; it
+  // must never fall through to the OpenCode root resolver.
+  const runtimeHealth = await inspectSandboxRuntime(row.externalId, loaded.userId);
+  if (runtimeHealth?.runtime === 'acp') {
+    const ready = runtimeHealth.runtimeReady && !!runtimeHealth.acpServerId;
+    return {
+      stage: ready ? 'ready' : 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: !ready,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      runtime_protocol: 'acp',
+      runtime_id: runtimeHealth.acpServerId,
+      runtime_session_id: null,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
+      reason: ready
+        ? 'acp_ready'
+        : runtimeHealth.bootError ? 'acp_boot_error' : 'acp_starting',
+    };
+  }
+
+  // Legacy box: resolve OpenCode readiness + the canonical pin
   // server-side — safe now that the box is confirmed up, so the daemon answers
   // FAST (a 503 'not_ready' while OpenCode is still booting, not an 8s timeout
   // against a dead box). This keeps ALL the lifecycle logic server-side: the
@@ -837,6 +859,9 @@ export async function openSession(args: {
     retriable: booting,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: ensured.pin,
+    runtime_protocol: 'opencode',
+    runtime_id: ensured.pin,
+    runtime_session_id: ensured.pin,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: ensured.reason,
   };

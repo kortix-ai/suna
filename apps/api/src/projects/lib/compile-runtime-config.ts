@@ -7,6 +7,9 @@
  */
 
 import {
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
   resolveGrantSet,
   type AgentBlockV3,
   type GrantSetV2,
@@ -17,9 +20,11 @@ import {
 } from '@kortix/manifest-schema';
 
 import {
+  agentMarkdownPath,
   compileAgentConfig,
   type OpencodeConfig,
 } from './compile-agent-config';
+import { type GitBackedProject, readManifestFromRepo, readRepoFile } from '../git';
 
 export type RuntimeProfileLaunchPlan = {
   name: string;
@@ -136,4 +141,50 @@ export function compileRuntimeConfig(
   }
 
   return { kind: 'acp', version: 3, defaultAgent, runtimes, agents };
+}
+
+/**
+ * Read and compile the runtime contract for a session directly from the
+ * project's git source of truth. V2 alone reads OpenCode agent markdown;
+ * v3 deliberately compiles only logical routing/governance and leaves every
+ * harness-native config directory untouched.
+ */
+export async function resolveCompiledRuntimeConfigForSession(
+  project: GitBackedProject,
+): Promise<CompiledRuntimeConfig | null> {
+  try {
+    const candidates = manifestCandidatePaths(project.manifestPath).map((candidate) => candidate.path);
+    const found = await readManifestFromRepo(project, candidates, project.defaultBranch);
+    if (!found) return null;
+
+    const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
+    const version = schemaVersion(raw);
+    if (version !== 2 && version !== 3) return null;
+
+    const nativeAgentFiles: Record<string, string> = {};
+    if (version === 2) {
+      const agents = raw.agents;
+      if (agents && typeof agents === 'object' && !Array.isArray(agents)) {
+        await Promise.all(
+          Object.keys(agents).map(async (name) => {
+            const path = agentMarkdownPath(raw, name);
+            try {
+              nativeAgentFiles[path] = await readRepoFile(project, path, project.defaultBranch);
+            } catch (error) {
+              console.warn(
+                `[compile-runtime-config] project ${project.projectId}: failed to read v2 OpenCode agent file "${path}": ${(error as Error).message}`,
+              );
+            }
+          }),
+        );
+      }
+    }
+
+    return compileRuntimeConfig(raw, nativeAgentFiles);
+  } catch (error) {
+    console.warn(
+      `[compile-runtime-config] project ${project.projectId}: compile failed; session will use the legacy runtime path: ${(error as Error).message}`,
+    );
+    return null;
+  }
 }

@@ -45,6 +45,25 @@ export type * from './files/types';
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
 
+/** Canonical Agent Client Protocol transport and transcript projections. */
+export {
+  AcpClient,
+  AcpRpcError,
+  createAcpClient,
+  acpTranscriptHtml,
+  acpTranscriptJsonl,
+  acpTranscriptMarkdown,
+  type AcpClientOptions,
+  type AcpContentBlock,
+  type AcpEnvelope,
+  type AcpJsonRpcId,
+  type AcpNotification,
+  type AcpRequest,
+  type AcpResponse,
+  type AcpStreamEvent,
+  type AcpStreamHandle,
+} from './acp';
+
 /**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
  * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript

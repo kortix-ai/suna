@@ -10,7 +10,7 @@ import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../agents';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import { resolveCompiledRuntimeConfigForSession, type CompiledRuntimeConfig } from './compile-runtime-config';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { projectSessions } from '@kortix/db';
@@ -209,16 +209,11 @@ export async function buildSessionSandboxEnvVars(input: {
   // below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
 
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
-  // same `defaultBranch` presence as the `agents:` grant resolution below
-  // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = null;
+  // One compiler entrypoint: v2 returns the sealed OpenCode compatibility
+  // config; v3 returns the ACP launch plan. V1/no manifest remains null.
+  let compiledRuntimeConfig: CompiledRuntimeConfig | null = null;
   if (input.defaultBranch) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
+    compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
@@ -324,7 +319,7 @@ export async function buildSessionSandboxEnvVars(input: {
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
-      compiledAgentConfig,
+      compiledRuntimeConfig,
     }),
   };
 }

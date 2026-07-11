@@ -40,6 +40,13 @@ let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
   'unchanged';
+let inspectedRuntime: {
+  runtime: 'acp' | 'opencode-legacy';
+  runtimeReady: boolean;
+  acpServerId: string | null;
+  acpHarness: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+  bootError: string | null;
+} | null = null;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -86,6 +93,7 @@ function resetState() {
   providerStartGate = null;
   releaseProviderStart = null;
   opencodeEnsureReason = 'unchanged';
+  inspectedRuntime = null;
   activeSessionCount = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
@@ -299,6 +307,7 @@ mock.module('../projects/opencode-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => null,
+  inspectSandboxRuntime: async () => inspectedRuntime,
   listSandboxOpencodeSessions: async () => ({
     ok: false,
     reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
@@ -1422,6 +1431,60 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(1);
     expect(sandboxProvisionCalls).toBe(0);
     expect(branchCreateCalls).toBe(0);
+  });
+
+  test('dashboard start treats a healthy ACP process as canonical and never resolves an OpenCode root', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: null,
+      agentName: 'reviewer',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-acp',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    inspectedRuntime = {
+      runtime: 'acp',
+      runtimeReady: true,
+      acpServerId: SESSION_ID,
+      acpHarness: 'codex',
+      bootError: null,
+    };
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'ready',
+      agent_name: 'reviewer',
+      retriable: false,
+      opencode_session_id: null,
+      runtime_protocol: 'acp',
+      runtime_id: SESSION_ID,
+      runtime_session_id: null,
+      runtime_url: '/p/box-acp/8000',
+      reason: 'acp_ready',
+    });
   });
 
   test('dashboard start does not expose a stale sandbox while the provider is waking', async () => {

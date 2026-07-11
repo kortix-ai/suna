@@ -33,6 +33,8 @@ import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
 import { ExecutionLeaseReporter, executionLeaseContextFromEnv } from './execution-lease'
+import { createAcpHarnessRegistry, parseAcpHarnessId } from './acp/harness-registry'
+import { AcpRuntime } from './acp/runtime'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -51,12 +53,19 @@ async function main() {
   const cfg = loadConfig()
   const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  const selectedAcpHarness = parseAcpHarnessId(process.env.KORTIX_RUNTIME_HARNESS)
+  const acpMode = !!selectedAcpHarness && !!(process.env.KORTIX_COMPILED_RUNTIME_PLAN ?? '').trim()
   const bootState: SandboxBootState = {
     repoMaterializationError: null,
     timeline: [],
     initialOpenCodeSessionRequired: prompt.length > 0 || bootstrapSession,
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
+    runtimeKind: acpMode ? 'acp' : 'opencode-legacy',
+    acpHarness: selectedAcpHarness,
+    acpServerId: acpMode ? (process.env.KORTIX_SESSION_ID ?? '').trim() || null : null,
+    acpRuntimeReady: false,
+    acpRuntimeError: null,
   }
   // In-container boot timeline (ms since process start). Surfaced via
   // /kortix/health so the dashboard can attribute post-create boot latency.
@@ -135,7 +144,9 @@ async function main() {
   await repoMaterializePromise
   bootMark('repo-materialized')
 
-  const opencodeConfigDir = await resolveOpencodeConfigDir(cfg)
+  const opencodeConfigDir = acpMode
+    ? cfg.defaultOpencodeConfigDir
+    : await resolveOpencodeConfigDir(cfg)
   logger.info('[boot] resolved opencode config dir', {
     opencodeConfigDir,
     usingProjectConfig: opencodeConfigDir !== cfg.defaultOpencodeConfigDir,
@@ -144,7 +155,7 @@ async function main() {
   // Satisfy the config dir's npm deps offline before opencode boots, so its
   // first-session `bun install` doesn't re-resolve `^` ranges over the network
   // (a 1.5–6s — sometimes minutes — stall that otherwise gates runtimeReady).
-  await ensureOpencodeConfigDeps(opencodeConfigDir)
+  if (!acpMode) await ensureOpencodeConfigDeps(opencodeConfigDir)
   bootMark('config-deps')
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
@@ -160,7 +171,7 @@ async function main() {
         err: err instanceof Error ? err.message : String(err),
       })
     })
-    await opencode.start().catch((err) => {
+    if (!acpMode) await opencode.start().catch((err) => {
       // opencode.start() throws only on a hard spawn failure; the supervisor
       // self-retries on transient issues. Log + continue: the proxy will 503
       // until the supervisor reports ready.
@@ -169,14 +180,43 @@ async function main() {
       })
     })
   }
-  bootMark('opencode-spawned')
+  if (!acpMode) bootMark('opencode-spawned')
 
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  const acpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(),
+    cwd: cfg.projectTarget,
+    projectEnv,
+  })
+  if (acpMode && !bootState.repoMaterializationError) {
+    const serverId = bootState.acpServerId
+    if (!serverId || !selectedAcpHarness) {
+      bootState.acpRuntimeError = 'compiled ACP runtime is missing a session id or harness'
+    } else {
+      try {
+        await acpRuntime.getOrCreate(serverId, selectedAcpHarness)
+        bootState.acpRuntimeReady = true
+        bootMark('acp-process-spawned')
+        logger.info('[boot] ACP runtime process spawned', {
+          serverId,
+          harness: selectedAcpHarness,
+          runtime: process.env.KORTIX_RUNTIME_NAME,
+          configDir: process.env.KORTIX_RUNTIME_CONFIG_DIR,
+          nativeAgent: process.env.KORTIX_NATIVE_AGENT,
+        })
+      } catch (err) {
+        bootState.acpRuntimeError = err instanceof Error ? err.message : String(err)
+        logger.error('[boot] ACP runtime process failed', err)
+      }
+    }
+  }
+
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port, acpRuntime)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('proxy-up')
 
-  logger.info('[boot] proxy up; waiting for opencode readiness in background', {
+  logger.info('[boot] proxy up; runtime boot continues in background', {
     servicePort: cfg.servicePort,
+    runtime: bootState.runtimeKind,
   })
 
   if (bootState.repoMaterializationError) return
@@ -207,6 +247,10 @@ async function main() {
       child.unref()
     })
     .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
+
+  // ACP sessions are driven by their client over the canonical /acp bridge;
+  // there is no parallel OpenCode event loop or root-session bootstrap.
+  if (acpMode) return
 
   // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
   // Platinum's stateful-capture machinery to be snapshotted fully warm — repo

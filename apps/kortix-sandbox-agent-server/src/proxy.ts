@@ -443,8 +443,9 @@ export function startProxy(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
+  providedAcpRuntime?: AcpRuntime,
 ): ProxyServer {
-  const acpRuntime = new AcpRuntime({
+  const acpRuntime = providedAcpRuntime ?? new AcpRuntime({
     registry: createAcpHarnessRegistry(),
     cwd: cfg.projectTarget,
     projectEnv,
