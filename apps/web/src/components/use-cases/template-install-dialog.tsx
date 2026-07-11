@@ -8,8 +8,9 @@ import {
   upsertProjectSecret,
   type KortixProject,
 } from '@kortix/sdk/projects-client';
-import { Bot, Check, Clock, KeyRound, Loader2, Plug, Puzzle, Sparkles } from 'lucide-react';
+import { Bot, Check, Clock, KeyRound, Loader2, LogIn, Plug, Puzzle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ import {
   StepperTitle,
   StepperTrigger,
 } from '@/components/ui/stepper';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 import {
   getTemplate,
@@ -143,6 +145,10 @@ function TemplateInstallDialog({
   const [live, setLive] = useState(false);
   const [activating, setActivating] = useState(false);
 
+  const { user, isLoading: authLoading } = useAuth();
+  const pathname = usePathname();
+  const signInHref = `/auth?returnUrl=${encodeURIComponent(pathname ?? '/')}`;
+
   const connect = useToolConnect(projectId, () => {});
 
   useEffect(() => {
@@ -165,6 +171,11 @@ function TemplateInstallDialog({
         setInputs(seed);
       })
       .catch((e: Error) => setError(e.message));
+    if (!user) {
+      setProjects([]);
+      setProjectId('');
+      return;
+    }
     listProjectsForAccount()
       .then((list) => {
         const active = (list ?? []).filter((p) => p.status === 'active');
@@ -172,7 +183,7 @@ function TemplateInstallDialog({
         setProjectId((prev) => prev || active[0]?.project_id || '');
       })
       .catch(() => setProjects([]));
-  }, [open, templateId]);
+  }, [open, templateId, user]);
 
   const previewConnectors = detail?.requirements.filter((r) => r.kind === 'connector') ?? [];
   const previewSecrets = detail?.requirements.filter((r) => r.kind === 'secret') ?? [];
@@ -295,9 +306,16 @@ function TemplateInstallDialog({
                 <p className="text-muted-foreground font-mono text-[11px] tracking-wider uppercase">
                   Set up automation
                 </p>
-                <h2 className="text-foreground mt-1 text-lg leading-snug font-medium text-balance">
-                  {detail?.title ?? 'Loading…'}
-                </h2>
+                {detail ? (
+                  <h2 className="text-foreground mt-1 text-lg leading-snug font-medium text-balance">
+                    {detail.title}
+                  </h2>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    <div className="bg-foreground/10 h-4 w-4/5 animate-pulse rounded" />
+                    <div className="bg-foreground/10 h-4 w-2/5 animate-pulse rounded" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -306,6 +324,13 @@ function TemplateInstallDialog({
                 What it sets up
               </p>
               <ul className="space-y-1.5">
+                {!detail &&
+                  [0, 1, 2].map((i) => (
+                    <li key={i} className="flex items-center gap-2.5">
+                      <span className="bg-foreground/10 size-6 shrink-0 animate-pulse rounded" />
+                      <span className="bg-foreground/10 h-3.5 w-28 animate-pulse rounded" />
+                    </li>
+                  ))}
                 {agents.map((a) => (
                   <CoverItem key={a.name} icon={<Bot className="size-3.5" />} label={`Agent · ${a.name}`} />
                 ))}
@@ -332,7 +357,7 @@ function TemplateInstallDialog({
 
           {/* ── Right: working area ──────────────────────────────────────── */}
           <div className="flex min-h-[540px] flex-col">
-            <div className="border-border/60 border-b px-6 py-4">
+            <div className="border-border/60 border-b py-4 pr-14 pl-6">
               <Stepper value={step} count={STEPS.length} className="w-full">
                 {STEPS.map((s, i) => (
                   <StepperItem key={s} step={i} completed={live && i === 3} className="not-last:flex-1">
@@ -342,7 +367,7 @@ function TemplateInstallDialog({
                       </StepperIndicator>
                       <StepperTitle className="hidden text-xs sm:block">{s}</StepperTitle>
                     </StepperTrigger>
-                    <StepperSeparator />
+                    {i < STEPS.length - 1 && <StepperSeparator />}
                   </StepperItem>
                 ))}
               </Stepper>
@@ -359,13 +384,39 @@ function TemplateInstallDialog({
               {detail && step === 0 && (
                 <div className="space-y-5">
                   <p className="text-muted-foreground text-sm leading-relaxed">{detail.description}</p>
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">Install into</Label>
-                    {projects.length === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        Sign in and create a project to install this template.
+
+                  {authLoading ? (
+                    <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                      <Loader2 className="size-4 animate-spin" /> Checking your account…
+                    </div>
+                  ) : !user ? (
+                    <div className="border-border/60 bg-muted/30 flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-8 text-center">
+                      <span className="bg-foreground text-background flex size-11 items-center justify-center rounded-xl">
+                        <LogIn className="size-5" />
+                      </span>
+                      <div>
+                        <p className="text-foreground text-sm font-medium">
+                          Sign in to install this automation
+                        </p>
+                        <p className="text-muted-foreground mx-auto mt-1 max-w-xs text-xs leading-relaxed">
+                          You&apos;re previewing everything it sets up. Sign in to pick a project and
+                          install — we&apos;ll bring you right back here.
+                        </p>
+                      </div>
+                    </div>
+                  ) : projects.length === 0 ? (
+                    <div className="border-border/60 bg-muted/30 rounded-xl border px-4 py-4">
+                      <p className="text-foreground text-sm font-medium">No projects yet</p>
+                      <p className="text-muted-foreground mt-0.5 text-xs">
+                        Create a project first, then come back to install this template into it.
                       </p>
-                    ) : (
+                      <Button asChild size="sm" variant="outline" className="mt-3">
+                        <Link href="/projects">Go to projects</Link>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">Install into</Label>
                       <Select value={projectId} onValueChange={setProjectId}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Choose a project" />
@@ -378,11 +429,11 @@ function TemplateInstallDialog({
                           ))}
                         </SelectContent>
                       </Select>
-                    )}
-                    <p className="text-muted-foreground text-xs">
-                      Nothing runs yet — you&apos;ll connect accounts and turn it on at the end.
-                    </p>
-                  </div>
+                      <p className="text-muted-foreground text-xs">
+                        Nothing runs yet — you&apos;ll connect accounts and turn it on at the end.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -603,11 +654,22 @@ function TemplateInstallDialog({
                   >
                     Back
                   </Button>
-                  {step === 0 && (
-                    <Button size="sm" disabled={!detail || !projectId} onClick={() => setStep(1)}>
-                      Continue
-                    </Button>
-                  )}
+                  {step === 0 &&
+                    (authLoading ? (
+                      <Button size="sm" disabled>
+                        Continue
+                      </Button>
+                    ) : !user ? (
+                      <Button asChild size="sm" disabled={!detail}>
+                        <Link href={signInHref}>
+                          <LogIn className="size-4" /> Sign in to continue
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button size="sm" disabled={!detail || !projectId} onClick={() => setStep(1)}>
+                        Continue
+                      </Button>
+                    ))}
                   {step === 1 && (
                     <Button size="sm" disabled={!projectId || missingInput || installing} onClick={runInstall}>
                       {installing ? (
