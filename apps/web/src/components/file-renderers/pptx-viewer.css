@@ -104,12 +104,39 @@
   color: var(--muted-foreground) !important;
 }
 
+/* ── Mobile layout ─────────────────────────────────────────────────────────
+ * On phones the library swaps to a different chrome the desktop rules above
+ * don't touch: a compact top toolbar (aria-label="Toolbar", distinct from the
+ * desktop "Presentation toolbar") and a bottom "Editor actions" tab bar. Give
+ * them the same read-only treatment — keep viewing (Present, Slides, Notes),
+ * drop everything that edits or collaborates.
+ *
+ * Top toolbar: keep Present; drop the hamburger Menu (opens the editing
+ * drawer), Undo, Redo, Save, Share. */
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Menu'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Undo'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Redo'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Save'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Share'] {
+  display: none !important;
+}
+
+/* Bottom "Editor actions" bar renders, in order: Slides, Insert, Format,
+   Comments, Notes. Keep Slides (navigate) and Notes (view); drop the three
+   editing/collab tabs in the middle. */
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(2),
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(3),
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(4) {
+  display: none !important;
+}
+
 /* ── Drive-grid thumbnail ──────────────────────────────────────────────────
  * The file grid renders this same viewer scaled down as a preview. There we
- * want just the first slide — drop the control strip and the slides panel on
- * top of the minimal rules so the thumbnail reads as a clean slide, not a
- * shrunken editor. (data-pptx-thumb is set by FileThumbnail.) */
+ * want just the first slide — drop all chrome (desktop control strip + slides
+ * panel, and the mobile toolbar + bottom bar) so the thumbnail reads as a clean
+ * slide, not a shrunken editor. (data-pptx-thumb is set by FileThumbnail.) */
 [data-pptx-thumb] [data-pptx-viewer] [role='toolbar'],
-[data-pptx-thumb] [data-pptx-viewer] [role='navigation'] {
+[data-pptx-thumb] [data-pptx-viewer] [role='navigation'],
+[data-pptx-thumb] [data-pptx-viewer] nav[aria-label='Editor actions'] {
   display: none !important;
 }
