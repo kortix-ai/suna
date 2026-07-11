@@ -30,6 +30,7 @@ import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
+import { runSkills } from './commands/skills.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -127,6 +128,11 @@ const TIERS: readonly CommandTier[] = [
             args: '[--version 1|2]',
             blurb: 'Print the canonical kortix.yaml/kortix.toml JSON Schema',
           },
+          {
+            name: 'skills',
+            args: '<subcommand>',
+            blurb: 'Author project skills (`skills new` scaffolds a SKILL.md)',
+          },
         ],
       },
       {
@@ -138,8 +144,16 @@ const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)',
           },
-          { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
-          { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
+          {
+            name: 'secrets',
+            args: '<subcommand>',
+            blurb: 'Manage project secrets (project-scoped)',
+          },
+          {
+            name: 'env',
+            args: '<subcommand>',
+            blurb: 'Pull/push project secrets as a dotenv file',
+          },
           {
             name: 'providers',
             args: '<subcommand>',
@@ -166,14 +180,24 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
           },
           ...(appsExperimentalEnabled()
-            ? [{ name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' }]
+            ? [
+                {
+                  name: 'apps',
+                  args: '<subcommand>',
+                  blurb: 'Manage deployable apps (experimental)',
+                },
+              ]
             : []),
         ],
       },
       {
         title: 'Sessions & work',
         commands: [
-          { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
+          {
+            name: 'sessions',
+            args: '<subcommand>',
+            blurb: 'List, create, restart project sessions',
+          },
           {
             name: 'chat',
             args: '[session-id]',
@@ -184,7 +208,11 @@ const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Share a port inside a session sandbox via a public URL',
           },
-          { name: 'files', args: '<subcommand>', blurb: 'Browse repo files, commits, branches, diffs' },
+          {
+            name: 'files',
+            args: '<subcommand>',
+            blurb: 'Browse repo files, commits, branches, diffs',
+          },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
         ],
@@ -205,7 +233,8 @@ const TIERS: readonly CommandTier[] = [
           {
             name: 'grants',
             args: '<subcommand>',
-            blurb: "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
+            blurb:
+              "Assign agents to members or groups (they inherit the agent's skills/connectors/secrets)",
           },
         ],
       },
@@ -326,6 +355,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'schema') {
     return runSchema(argv.slice(1));
   }
+  if (argv[0] === 'skills') {
+    return runSkills(argv.slice(1));
+  }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
   }
@@ -445,6 +477,7 @@ const KNOWN_COMMANDS = [
   'deploy',
   'validate',
   'schema',
+  'skills',
   'self-host',
   'login',
   'logout',
@@ -506,7 +539,11 @@ function closestCommand(input: string): string | undefined {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.
-    if (distance <= 2 && distance < needle.length && (best === undefined || distance < best.distance)) {
+    if (
+      distance <= 2 &&
+      distance < needle.length &&
+      (best === undefined || distance < best.distance)
+    ) {
       best = { name, distance };
     }
   }
