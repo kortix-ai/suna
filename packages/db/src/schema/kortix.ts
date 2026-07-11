@@ -221,6 +221,7 @@ export const accountInvitations = kortixSchema.table(
       >
     >(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedByUserId: uuid('accepted_by_user_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true })
       .default(sql`now() + interval '14 days'`)
@@ -1991,6 +1992,9 @@ export const sandboxComputeSessions = kortixSchema.table(
   (table) => [
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_open')
+      .on(table.sandboxId)
+      .where(sql`${table.endedAt} IS NULL`),
+    uniqueIndex('uniq_sandbox_compute_sessions_one_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),
     index('idx_sandbox_compute_sessions_last_billed')

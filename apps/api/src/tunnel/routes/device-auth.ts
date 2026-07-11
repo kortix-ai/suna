@@ -46,6 +46,13 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
 
+function clientRateLimitKey(c: any): string {
+  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  const realIp = c.req.header('x-real-ip')?.trim();
+  const cfIp = c.req.header('cf-connecting-ip')?.trim();
+  return forwarded || realIp || cfIp || 'unknown';
+}
+
 /**
  * Public router — mounted BEFORE auth middleware.
  * Handles create + poll (unauthenticated, used by CLI).
@@ -85,7 +92,7 @@ export function createDeviceAuthPublicRouter() {
       },
     }),
     async (c: any) => {
-      const ip = 'public-device-auth-create';
+      const ip = clientRateLimitKey(c);
       const globalRl = tunnelRateLimiter.check('deviceAuthCreateGlobal', 'global');
       if (!globalRl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: globalRl.retryAfterMs }, 429);

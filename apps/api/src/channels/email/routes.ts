@@ -37,19 +37,17 @@ emailWebhookApp.openapi(
     const secret = projectId
       ? await loadAgentMailWebhookSecretForInbox(projectId, event.message.inbox_id)
       : config.AGENTMAIL_WEBHOOK_SECRET;
-    if (!secret && process.env.NODE_ENV === 'production') {
+    if (!secret) {
       return c.json({ error: 'AgentMail webhook signing is not configured' }, 503);
     }
-    if (secret) {
-      const ok = verifyAgentMailSignature({
-        rawBody,
-        secret,
-        svixId: c.req.header('svix-id') ?? '',
-        svixTimestamp: c.req.header('svix-timestamp') ?? '',
-        svixSignature: c.req.header('svix-signature') ?? '',
-      });
-      if (!ok) return c.json({ error: 'Invalid signature' }, 401);
-    }
+    const ok = verifyAgentMailSignature({
+      rawBody,
+      secret,
+      svixId: c.req.header('svix-id') ?? '',
+      svixTimestamp: c.req.header('svix-timestamp') ?? '',
+      svixSignature: c.req.header('svix-signature') ?? '',
+    });
+    if (!ok) return c.json({ error: 'Invalid signature' }, 401);
 
     void dispatchAgentMailEvent(event).catch((err) => {
       console.error('[email-webhook] handler failed', err);

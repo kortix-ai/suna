@@ -80,7 +80,7 @@ export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
-  authType?: 'supabase' | 'pat' | 'apiKey';
+  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account';
   apiKeyType?: 'user' | 'sandbox';
   keyId?: string;
   sandboxId?: string;

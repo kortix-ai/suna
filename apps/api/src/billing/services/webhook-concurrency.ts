@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { stripeWebhookEventsProcessed } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -9,6 +9,10 @@ export async function recordWebhookEvent(eventId: string, eventType: string): Pr
     .onConflictDoNothing({ target: stripeWebhookEventsProcessed.eventId })
     .returning({ eventId: stripeWebhookEventsProcessed.eventId });
   return inserted.length > 0;
+}
+
+export async function forgetWebhookEvent(eventId: string): Promise<void> {
+  await db.delete(stripeWebhookEventsProcessed).where(eq(stripeWebhookEventsProcessed.eventId, eventId));
 }
 
 function accountLockKey(accountId: string): bigint {

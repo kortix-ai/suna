@@ -267,7 +267,8 @@ export class TunnelAgent {
     const { id, method, params = {} } = request;
 
     const permissionId = params.permissionId as string | undefined;
-    if (!this.permissionGuard.checkPermission(permissionId)) {
+    const permission = this.permissionGuard.getPermission(permissionId);
+    if (!permission) {
       this.sendSignedError(id, -32000, `Permission denied: ${permissionId ? 'invalid or expired permission' : 'no permissionId provided'}`);
       return;
     }
@@ -279,7 +280,10 @@ export class TunnelAgent {
     }
 
     try {
-      const result = await handler(params);
+      const result = await handler({
+        ...params,
+        __permission: permission,
+      });
       this.sendSignedResult(id, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

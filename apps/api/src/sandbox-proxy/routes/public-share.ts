@@ -208,13 +208,16 @@ async function forwardFileShare(c: any, args: {
   const file = assertFileShare(args.share);
   if (!file.ok) return c.json({ error: 'Not authorized for this file' }, 403);
 
-  const isFileEntry = args.remainingPath === '/';
+  const isFileEntry = args.remainingPath === '/' || args.remainingPath === '/open';
+  if (!isFileEntry) {
+    return c.json({ error: 'Not authorized for this file path' }, 403);
+  }
   return forwardPublicShare(c, {
     token: args.token,
     share: args.share,
     port: STATIC_FILE_SHARE_PORT,
-    remainingPath: isFileEntry ? '/open' : args.remainingPath,
-    queryString: isFileEntry ? fileOpenQuery(file.filePath) : args.queryString,
+    remainingPath: '/open',
+    queryString: fileOpenQuery(file.filePath),
     redirectPrefix: `/v1/p/public-share/${args.token}/file`,
   });
 }
