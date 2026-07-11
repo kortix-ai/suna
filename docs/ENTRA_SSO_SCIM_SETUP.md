@@ -47,8 +47,10 @@ revoke; grants that ride a fresh login are immediate.
 - **Account owner or admin** on the Kortix side (these are account-scoped IAM
   actions).
 - **Global Administrator / Application Administrator** on the Entra side.
-- Access to your Kortix control plane's **Supabase project** (SAML metadata is
-  registered with Supabase Auth, which validates assertions — see Part A).
+- *(Self-hosted operators only, advanced path)* Access to your Kortix control
+  plane's **Supabase project** — SAML metadata is registered with Supabase Auth,
+  which validates assertions (see Part A). Not needed for the self-serve path;
+  everything a customer needs comes from the SAML SSO card.
 
 Kortix API base below is written as `https://<api>` and all admin calls use a
 Kortix account bearer (owner/admin JWT or PAT).
@@ -57,14 +59,31 @@ Kortix account bearer (owner/admin JWT or PAT).
 
 ## Part A — SAML single sign-on
 
+> **Prefer the guided setup.** The dashboard walks these exact steps
+> interactively — Account → **Settings** → **SAML SSO** → **Configure** opens a
+> per-IdP wizard (Entra, Okta, Google, custom SAML) with the copy-paste values
+> inline and the metadata import as the final step. Directory Sync has the
+> same: **SCIM Provisioning** → **Guided setup**. This document remains the
+> reference for the details behind each step.
+
 Kortix delegates SAML assertion validation to Supabase Auth, so the IdP metadata
 is registered **with Supabase**, and Kortix stores the resulting provider id.
 
 1. **In Entra**: create an **Enterprise Application** → *Single sign-on* → **SAML**.
-   - **Identifier (Entity ID)** and **Reply URL (ACS)**: use the values from your
-     Supabase project's SAML SSO configuration (Supabase → Authentication →
-     SSO). Supabase is the SAML Service Provider.
+   - **Identifier (Entity ID)** and **Reply URL (ACS)**: copy both values from the
+     **Service provider details** section of the SAML SSO card (Account →
+     **Settings** → **Identity & directory** → **SAML SSO** — visible before you
+     configure anything, with a copy button on each). *(Operator-only advanced
+     path: these also live in the Supabase project's SAML SSO configuration —
+     Supabase → Authentication → SSO — for self-hosted deployments; customers
+     should always use the SSO card.)*
    - Download the **App Federation Metadata XML** (or copy the metadata URL).
+
+   > **Is this URL safe to share with your IdP admin?** Yes. The Entity ID /
+   > metadata URL is a public-by-design SAML endpoint of the auth layer — every
+   > IdP must be able to fetch it to complete federation, and it exposes no
+   > account data. If you configure a custom auth domain later, this URL can be
+   > branded to it.
 
 2. **Register the provider — pick one path:**
 

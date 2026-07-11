@@ -161,6 +161,14 @@ export interface ExecutorRouterDeps {
     c: Context,
     projectId: string,
   ): Promise<{ accountId: string; userId: string } | null>;
+  /** Read-tier auth for the connectors LIST: `project.connector.read` is in the
+   *  member baseline (the Connectors/Channels rail sections gate on it), so the
+   *  list must not require connector.write like the mutations do. Falls back to
+   *  resolveAdmin when a deps implementation doesn't provide it. */
+  resolveReader?(
+    c: Context,
+    projectId: string,
+  ): Promise<{ accountId: string; userId: string } | null>;
   listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]>;
   syncConnectors(projectId: string, accountId: string): Promise<SyncResult>;
   /** Create/update a connector in kortix.yaml + materialize. */
@@ -502,9 +510,14 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     async (c: any) => {
       const projectId = c.req.param('projectId');
-      const admin = await deps.resolveAdmin(c, projectId);
-      if (!admin) return c.json({ error: 'forbidden' }, 403);
-      return c.json({ connectors: await deps.listConnectors(projectId, admin.userId) });
+      // Read-tier: plain members hold project.connector.read and the dashboard
+      // sections that render this list are visible to them. The response carries
+      // no credential values (only whether one is set).
+      const reader = deps.resolveReader
+        ? await deps.resolveReader(c, projectId)
+        : await deps.resolveAdmin(c, projectId);
+      if (!reader) return c.json({ error: 'forbidden' }, 403);
+      return c.json({ connectors: await deps.listConnectors(projectId, reader.userId) });
     },
   );
 

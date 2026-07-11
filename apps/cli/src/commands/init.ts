@@ -27,7 +27,7 @@ import {
   type CodingAgent,
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
@@ -44,7 +44,7 @@ function agentSublabel(agent: CodingAgent): string {
   }
 }
 
-const HELP = `Usage: kortix init [project-name] [options]
+const HELP = help`Usage: kortix init [project-name] [options]
 
 Start a new Kortix project.
 

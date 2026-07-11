@@ -146,6 +146,12 @@ const deps: ExecutorRouterDeps = {
     const u = c.req.header('x-test-admin');
     return u ? { accountId: ACCOUNT, userId: u } : null;
   },
+  // Read-tier (project.connector.read): a plain member can LIST connectors but
+  // not administer them. Admin implies reader, mirroring the real role chain.
+  resolveReader: async (c) => {
+    const u = c.req.header('x-test-reader') ?? c.req.header('x-test-admin');
+    return u ? { accountId: ACCOUNT, userId: u } : null;
+  },
   listConnectors: async (_projectId, viewerUserId): Promise<AdminConnectorView[]> =>
     [...world.connectors.values()].map((conn) => ({
       slug: conn.slug,
@@ -244,6 +250,21 @@ describe('admin routes', () => {
 
   test('sync returns count', async () => {
     expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
+  });
+
+  test('a read-tier member can LIST connectors (project.connector.read is member-baseline)', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-reader': ALICE } });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', secretSet: true });
+  });
+
+  test('a read-tier member still cannot administer connectors (sync stays write-gated)', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors/sync`, {
+      method: 'POST',
+      headers: { 'x-test-reader': ALICE },
+    });
+    expect(res.status).toBe(403);
   });
 
   test('the old connector sharing route is gone (404)', async () => {

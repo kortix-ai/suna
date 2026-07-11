@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix update
+const HELP = help`Usage: kortix update
 
 Fetch the latest \`kortix\` binary from kortix.com and replace this one.
 

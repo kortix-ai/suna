@@ -18,7 +18,7 @@ import {
 } from '../command-helpers.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { selectFromList } from '../tui-select.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -236,7 +236,7 @@ function proxyIdFromSession(session: ProjectSession): string | null {
   return session.sandbox_id || null;
 }
 
-const CHAT_HELP = `Usage: kortix sessions chat [<session-id>] [options]
+const CHAT_HELP = help`Usage: kortix sessions chat [<session-id>] [options]
 
 Talk to a running session's agent from your terminal — the same agent you'd
 chat with in the dashboard. With no session id, picks your most recent running
@@ -454,7 +454,7 @@ async function waitForRunning(
   return false;
 }
 
-const LOG_HELP = `Usage: kortix sessions log [<session-id>] [options]
+const LOG_HELP = help`Usage: kortix sessions log [<session-id>] [options]
 
 Print a session agent's recent messages — a read-only peek at what an agent is
 doing *right now*, without sending it anything. With no session id, uses your
@@ -624,7 +624,7 @@ async function sendAndPrint(
 
 // ── sessions status — mission control ────────────────────────────────────────
 
-const STATUS_HELP = `Usage: kortix sessions status [options]
+const STATUS_HELP = help`Usage: kortix sessions status [options]
 
 Mission control: a one-line overview of every session and what each agent is
 doing *right now* — for when many run in parallel. For each running session it

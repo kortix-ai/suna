@@ -3,8 +3,6 @@ title: How Kortix works
 description: The architecture — repo-as-project, the control plane, ephemeral sandboxes on branches, and change requests.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A **project** is one git repository with a [manifest](/docs/reference/manifest) —
 `kortix.yaml` by default, or legacy `kortix.toml` — at its root. A **session** runs
 the agent in an isolated sandbox VM with the repo cloned onto a branch named after

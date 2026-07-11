@@ -6,9 +6,15 @@
  * sends it as `Authorization: Bearer …` for the SDK's REST/SSE calls) AND sets
  * it as an HttpOnly cookie (so the preview iframe's same-origin requests,
  * which can't attach headers, still carry a valid session).
+ *
+ * Rate-limited per client IP (there's no `userId` yet at this point — the
+ * caller isn't authenticated) via the same token-bucket `consumeRateLimit`
+ * used post-auth by the other routes, so an unauthenticated caller can't
+ * brute-force `DEMO_PASSWORD` (or hammer `signSession`) unbounded.
  */
 
 import { SESSION_COOKIE_NAME, checkDemoCredentials, signSession } from '@/server/auth';
+import { consumeRateLimit } from '@/server/rate-limit';
 import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -16,9 +22,31 @@ export const dynamic = 'force-dynamic';
 
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days — matches signSession's TTL
 
+/** Best-effort client IP from proxy headers — this app always sits behind one in deployment. */
+function clientIp(req: NextRequest): string {
+  const forwardedFor = req.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    const first = forwardedFor.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = req.headers.get('x-real-ip');
+  if (realIp) return realIp.trim();
+  return 'unknown';
+}
+
 export async function POST(req: NextRequest) {
   if (!process.env.KORTIX_API_KEY) {
     return Response.json({ error: 'Wrapper mode is not enabled on this server.' }, { status: 500 });
+  }
+
+  // Keyed separately from the post-auth per-userId buckets (`login:` prefix)
+  // so a client IP can never collide with an authenticated userId string.
+  const limited = consumeRateLimit(`login:${clientIp(req)}`);
+  if (!limited.ok) {
+    return Response.json(
+      { error: 'Too many login attempts. Try again shortly.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((limited.retryAfterMs ?? 1000) / 1000)) } },
+    );
   }
 
   let body: { email?: unknown; password?: unknown };

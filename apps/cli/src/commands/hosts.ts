@@ -10,11 +10,11 @@ import {
 } from '../api/config.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { selectFromList } from '../tui-select.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { runLogin } from './login.ts';
 
-const HELP = `Usage: kortix hosts <subcommand> [options]
+const HELP = help`Usage: kortix hosts <subcommand> [options]
 
 Manage Kortix API hosts — one set of stored credentials per Kortix
 instance. The "active" host is what every other command operates on

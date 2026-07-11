@@ -37,6 +37,7 @@ import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-sto
 import { computerCatalog } from './computers';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { parseSpecDocument } from './spec-doc';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import type { NormalizedAction, HttpRouteSpec } from './types';
 import { parseResponseBody } from './execute';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
@@ -377,6 +378,7 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
 async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any> {
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
+    assertAllowedSourceAddress(spec);
     const res = await fetch(spec, {
       // Signal we accept either form; servers that content-negotiate may hand
       // back JSON, but we parse whatever comes regardless.
@@ -394,6 +396,7 @@ async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any
 
 async function loadHttpRoutes(project: GitBackedProject, spec: string | null): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
+  if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
   const raw = /^https?:\/\//i.test(spec)
     ? await (await fetch(spec)).text()
     : await readRepoFile(project, spec, project.defaultBranch);
@@ -403,6 +406,7 @@ async function loadHttpRoutes(project: GitBackedProject, spec: string | null): P
 }
 
 async function introspectGraphql(endpoint: string): Promise<any> {
+  assertAllowedSourceAddress(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -440,6 +444,7 @@ async function reconcileProjectPolicies(
 }
 
 async function listMcpTools(url: string): Promise<any[]> {
+  assertAllowedSourceAddress(url);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
