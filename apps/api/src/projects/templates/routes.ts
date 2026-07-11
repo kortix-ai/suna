@@ -16,7 +16,7 @@ import { eq } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 
-import { findCatalogEntryByName, listCatalogItemsLive } from '../../marketplace/catalog';
+import { findCatalogEntryByName, listTemplateCatalogItems } from '../../marketplace/catalog';
 import { buildInstall } from '../../marketplace/install-service';
 import { config } from '../../config';
 import { supabaseAuth } from '../../middleware/auth';
@@ -108,7 +108,7 @@ templatesApp.openapi(
     responses: { 200: json(z.any(), 'Installable templates') },
   }),
   async (c: any) => {
-    const items = await listCatalogItemsLive({ type: 'registry:template' });
+    const items = await listTemplateCatalogItems();
     return c.json({ templates: items });
   },
 );
