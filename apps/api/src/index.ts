@@ -49,6 +49,7 @@ import { startAccessControlCache, stopAccessControlCache } from './shared/access
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
+import { templatesApp } from './projects/templates/routes';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -637,6 +638,7 @@ registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
