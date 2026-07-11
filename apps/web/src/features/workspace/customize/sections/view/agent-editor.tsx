@@ -38,6 +38,14 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   useAgentConfig,
   useUpdateAgentConfig,
@@ -45,6 +53,7 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type AgentConfigBlock,
+  type AgentConfigResponse,
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
@@ -53,9 +62,9 @@ import {
 } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bot, Cpu, Layers } from 'lucide-react';
+import { Bot, Cpu, Layers, Route } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { SectionHeader, LayerHeader } from './agent-editor-primitives';
+import { FieldRow, SectionHeader, LayerHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
 import { OpencodeLayerFields } from './opencode-layer-fields';
 
@@ -80,6 +89,8 @@ function AgentEditorModal({
   projectId,
   agentName,
   initial,
+  schemaVersion,
+  runtimes,
   skillsOptions,
   open,
   onOpenChange,
@@ -87,6 +98,8 @@ function AgentEditorModal({
   projectId: string;
   agentName: string;
   initial: AgentConfigBlock;
+  schemaVersion: number;
+  runtimes: NonNullable<AgentConfigResponse['runtimes']>;
   skillsOptions: { id: string; label: string }[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -160,9 +173,11 @@ function AgentEditorModal({
         <ModalHeader>
           <ModalTitle>Configure {agentName}</ModalTitle>
           <ModalDescription>
-            The full agent definition. Governance saves to{' '}
-            <span className="font-mono">kortix.yaml</span>; behavior saves to this agent's{' '}
-            <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.
+            {schemaVersion === 3 ? (
+              <>Logical runtime routing and governance saved to <span className="font-mono">kortix.yaml</span>.</>
+            ) : (
+              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.</>
+            )}
           </ModalDescription>
         </ModalHeader>
         <ModalBody className="max-h-[70vh] space-y-8 overflow-y-auto">
@@ -183,16 +198,59 @@ function AgentEditorModal({
             />
           </div>
 
-          {/* ─── OPENCODE LAYER — nested, runtime-specific behavior ─── */}
-          <div className="space-y-6">
-            <LayerHeader
-              icon={Cpu}
-              label="OpenCode"
-              tone="outline"
-              description="Behavior this agent's runtime executes — mode, sampling, permission tree. Namespaced so a future runtime (Codex/Claude) gets its own block here."
-            />
-            <OpencodeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
-          </div>
+          {schemaVersion === 3 ? (
+            <div className="space-y-6">
+              <LayerHeader
+                icon={Route}
+                label="ACP runtime"
+                tone="outline"
+                description="Choose the native harness profile this logical agent runs. Kortix does not translate or own its behavior configuration."
+              />
+              <section className="space-y-4">
+                <SectionHeader icon={Cpu} title="Routing" />
+                <FieldRow label="Runtime profile">
+                  <Select value={draft.runtime} onValueChange={(value) => set('runtime', value)}>
+                    <SelectTrigger variant="popover" className="w-full">
+                      <SelectValue placeholder="Choose a runtime" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(runtimes).map(([name, profile]) => (
+                        <SelectItem key={name} value={name}>
+                          {name} · {profile.harness}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldRow>
+                <FieldRow label="Native agent / profile" hint="optional">
+                  <Input
+                    variant="popover"
+                    value={draft.agent ?? ''}
+                    placeholder="Use the harness default"
+                    onChange={(event) => set('agent', event.target.value || undefined)}
+                  />
+                </FieldRow>
+                {draft.runtime && runtimes[draft.runtime] ? (
+                  <InfoBanner tone="info" title={`${runtimes[draft.runtime].harness} owns behavior`}>
+                    Edit prompts, models, providers, hooks, modes, and permissions in{' '}
+                    <span className="font-mono">
+                      {runtimes[draft.runtime].config_dir || `.${runtimes[draft.runtime].harness}`}
+                    </span>.
+                  </InfoBanner>
+                ) : null}
+              </section>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <LayerHeader
+                icon={Cpu}
+                label="OpenCode (legacy v2)"
+                tone="outline"
+                description="Behavior this legacy runtime executes from its native OpenCode agent file."
+              />
+              <OpencodeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
+            </div>
+          )}
         </ModalBody>
         <ModalFooter className="sm:justify-between">
           <div className="flex items-center gap-2.5">
@@ -294,11 +352,16 @@ export function AgentConfigEditor({
       <div className="flex items-center justify-between gap-2">
         <SectionHeader icon={Bot} title="Configuration" />
         <Badge variant="muted" size="xs" className="font-mono">
-          yaml + .md
+          {data.schema_version === 3 ? 'ACP · yaml' : 'legacy · yaml + .md'}
         </Badge>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
+        {block.runtime ? (
+          <Badge variant="kortix" size="xs" className="font-mono">
+            {block.runtime}
+          </Badge>
+        ) : null}
         {block.opencode?.mode ? (
           <Badge variant="outline" size="xs" className="capitalize">
             {block.opencode.mode}
@@ -351,6 +414,8 @@ export function AgentConfigEditor({
           projectId={projectId}
           agentName={agent.name}
           initial={block}
+          schemaVersion={data.schema_version}
+          runtimes={data.runtimes ?? {}}
           skillsOptions={skillsOptions}
           open={open}
           onOpenChange={setOpen}

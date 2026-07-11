@@ -21,6 +21,7 @@
  * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
+  type AgentBlockV3,
   type AgentBlockV2,
   SLUG_RE,
   validateManifest,
@@ -75,6 +76,77 @@ export type ApplyAgentBlockResult =
   | { ok: true; raw: Record<string, unknown> }
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
+export type ReadAgentBlockV3Result =
+  | {
+      ok: true;
+      schemaVersion: 3;
+      block: AgentBlockV3 | null;
+      defaultAgent: string | null;
+      runtimes: Record<string, { harness: string; config_dir?: string }>;
+    }
+  | { ok: false; error: string };
+
+export function readAgentBlockV3(
+  manifest: ParsedManifest,
+  agentName: string,
+): ReadAgentBlockV3Result {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'This project does not use a kortix_version 3 manifest.' };
+  }
+  const rawAgents = manifest.raw.agents;
+  const rawRuntimes = manifest.raw.runtimes;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  if (!rawRuntimes || typeof rawRuntimes !== 'object' || Array.isArray(rawRuntimes)) {
+    return { ok: false, error: '`runtimes` is malformed in this manifest (expected a map).' };
+  }
+  const entry = (rawAgents as Record<string, unknown>)[agentName];
+  if (entry !== undefined && (!entry || typeof entry !== 'object' || Array.isArray(entry))) {
+    return { ok: false, error: `agents.${agentName} is malformed (expected a table/object).` };
+  }
+  const defaultAgent = typeof manifest.raw.default_agent === 'string'
+    ? manifest.raw.default_agent.trim() || null
+    : null;
+  return {
+    ok: true,
+    schemaVersion: 3,
+    block: (entry as AgentBlockV3 | undefined) ?? null,
+    defaultAgent,
+    runtimes: rawRuntimes as Record<string, { harness: string; config_dir?: string }>,
+  };
+}
+
+export function applyAgentBlockV3(
+  manifest: ParsedManifest,
+  agentName: string,
+  block: AgentBlockV3,
+): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'This project does not use a kortix_version 3 manifest.' };
+  }
+  if (!isValidAgentName(agentName)) {
+    return { ok: false, error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).` };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const nextRaw = {
+    ...manifest.raw,
+    agents: { ...(rawAgents as Record<string, unknown>), [agentName]: block },
+  };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? {
+        ok: false,
+        error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+        issues: errorIssues,
+      }
+    : { ok: true, raw: nextRaw };
+}
+
 /**
  * Change the project-wide default agent without touching any agent block.
  * The manifest validator is the authority: the target must be a declared,
@@ -84,11 +156,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix.yaml to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {

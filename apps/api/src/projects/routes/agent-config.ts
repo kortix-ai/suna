@@ -31,6 +31,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import {
   type AgentBlockV2,
+  type AgentBlockV3,
   type ManifestIssue,
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
@@ -41,7 +42,13 @@ import { db } from '../../shared/db';
 import { readRepoFile } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { applyAgentBlockV2, applyDefaultAgentV2, readAgentBlockV2 } from '../lib/agent-config-v2';
+import {
+  applyAgentBlockV2,
+  applyAgentBlockV3,
+  applyDefaultAgentV2,
+  readAgentBlockV2,
+  readAgentBlockV3,
+} from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
 import {
@@ -69,6 +76,8 @@ const GrantSetSchema = z.union([
 // kortix.yaml.
 const AgentBlockSchema = z
   .object({
+    runtime: z.string().min(1).max(200).optional(),
+    agent: z.string().min(1).max(200).optional(),
     enabled: z.boolean().optional(),
     connectors: GrantSetSchema.optional(),
     secrets: GrantSetSchema.optional(),
@@ -159,6 +168,19 @@ projectsApp.openapi(
         { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
         400,
       );
+    }
+
+    if (manifest.schemaVersion === 3) {
+      const read = readAgentBlockV3(manifest, agentName);
+      if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+      return c.json({
+        agent: agentName,
+        schema_version: 3,
+        editable: true,
+        default_agent: read.defaultAgent,
+        block: read.block,
+        runtimes: read.runtimes,
+      });
     }
 
     const read = readAgentBlockV2(manifest, agentName);
@@ -304,10 +326,10 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
     }
 
-    // Split the wire body into its two homes. Drop undefined keys
+    // Split the wire body into its native v2/v3 homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
-    const { opencode: opencodeDraft, ...governanceRaw } = parsed.data;
+    const { opencode: opencodeDraft, runtime, agent: nativeAgent, ...governanceRaw } = parsed.data;
     const governanceBlock: AgentBlockV2 = {};
     for (const [key, value] of Object.entries(governanceRaw)) {
       if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
@@ -321,6 +343,50 @@ projectsApp.openapi(
         { error: (e as Error).message || 'failed to read manifest', code: 'manifest_read' },
         400,
       );
+    }
+
+    if (manifest.schemaVersion === 3) {
+      if (opencodeDraft !== undefined) {
+        return c.json({
+          error: 'OpenCode behavior is not edited through kortix.yaml v3. Edit the selected runtime native config directly.',
+          code: 'native_config_owned',
+        }, 400);
+      }
+      const existing = readAgentBlockV3(manifest, agentName);
+      if (!existing.ok) return c.json({ error: existing.error, code: 'manifest_malformed' }, 400);
+      const selectedRuntime = runtime ?? existing.block?.runtime;
+      if (!selectedRuntime) {
+        return c.json({ error: 'runtime is required for a v3 logical agent', code: 'invalid_config' }, 400);
+      }
+      const block: AgentBlockV3 = {
+        runtime: selectedRuntime,
+        ...(nativeAgent ? { agent: nativeAgent } : {}),
+        ...governanceBlock,
+      };
+      const applied = applyAgentBlockV3(manifest, agentName, block);
+      if (!applied.ok) {
+        return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+      }
+      manifest.raw = applied.raw;
+      const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+      try {
+        const gitProject = await withProjectGitAuth(loaded.row);
+        await commitMultipleFilesToBranch(gitProject, {
+          files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+          message: `chore: update agent ${agentName} runtime and governance`,
+          branch: loaded.row.defaultBranch,
+        });
+      } catch (err) {
+        return c.json({ error: `Failed to commit agent config: ${(err as Error).message || String(err)}` }, 502);
+      }
+      return c.json({ ok: true, agent: agentName, schema_version: 3, block });
+    }
+
+    if (runtime !== undefined || nativeAgent !== undefined) {
+      return c.json({
+        error: 'runtime routing fields require kortix_version 3',
+        code: 'invalid_config',
+      }, 400);
     }
 
     const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);

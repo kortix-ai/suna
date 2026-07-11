@@ -51,6 +51,9 @@ export interface OpencodeAgentConfig {
  *  only convenience; kortix.yaml itself never nests `opencode` — see the
  *  module doc above). */
 export interface AgentConfigBlock {
+  /** v3 logical routing fields. Runtime behavior remains in native config. */
+  runtime?: string;
+  agent?: string;
   enabled?: boolean;
   connectors?: AgentGrantSetV2;
   secrets?: AgentGrantSetV2;
@@ -70,6 +73,8 @@ export interface AgentConfigResponse {
   default_agent: string | null;
   /** The declared block, or null for a v1 manifest / an agent not declared yet. */
   block: AgentConfigBlock | null;
+  /** v3 named runtime profiles available to this project. */
+  runtimes?: Record<string, { harness: 'claude' | 'codex' | 'opencode' | 'pi'; config_dir?: string }>;
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {
