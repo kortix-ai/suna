@@ -62,6 +62,8 @@ let onRemoved: (() => void) | null = null;
 let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string }> = [];
+let identityConflict = false;
+let providerCreateCalls = 0;
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -95,9 +97,13 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({
   db: {
     insert: (table: unknown) => ({
-      values: (v: Record<string, unknown>) => ({
-        returning: async () => [{ ...v }],
-      }),
+      values: (v: Record<string, unknown>) => {
+        const result = {
+          returning: async () => (identityConflict && table === sessionSandboxes ? [] : [{ ...v }]),
+          onConflictDoNothing: () => result,
+        };
+        return result;
+      },
     }),
     select: (_proj: unknown) => ({
       from: (table: unknown) => ({
@@ -131,11 +137,14 @@ mock.module('../../shared/db', () => ({
 mock.module('../providers', () => ({
   getProvider: (_name: string) => ({
     provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
-    create: async (_opts: unknown) => ({
-      externalId: EXTERNAL_ID,
-      baseUrl: 'https://sandbox.test',
-      metadata: {},
-    }),
+    create: async (_opts: unknown) => {
+      providerCreateCalls += 1;
+      return {
+        externalId: EXTERNAL_ID,
+        baseUrl: 'https://sandbox.test',
+        metadata: {},
+      };
+    },
     remove: async (externalId: string) => {
       removedIds.push(externalId);
       onRemoved?.();
@@ -226,6 +235,8 @@ beforeEach(() => {
   onComputeOpened = null;
   recordedEvents = [];
   onProviderEvent = null;
+  identityConflict = false;
+  providerCreateCalls = 0;
 });
 
 function baseOpts() {
@@ -243,6 +254,19 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('authoritative row conflict fails closed before a second provider sandbox can be created', async () => {
+    identityConflict = true;
+
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toMatchObject({
+      name: 'RuntimeIdentityConflictError',
+    });
+
+    expect(providerCreateCalls).toBe(0);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toEqual([]);
+    expect(recordedEvents).toEqual([]);
+  });
+
   test('nothing raced it: flips to running, guarded WHERE clauses are the expected shape, opens compute metering', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;

@@ -36,10 +36,11 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
-import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { pauseComputeSession } from '../billing/services/compute-metering';
 import { probeSandboxBusy } from './sandbox-busy-probe';
 import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
+import { preserveEstablishedRuntime } from './runtime-identity';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
@@ -107,8 +108,8 @@ export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed'
  * could kill a healthy box or fight a wake.
  */
 export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction {
-  // The external box is gone — finalize billing and mark our row so the next
-  // open reprovisions instead of trying to resume a box that no longer exists.
+  // The provider currently reports the external box gone. Preserve its identity
+  // and stop billing; a later explicit open may retry that same sandbox.
   if (providerStatus === 'removed') return 'reconcile-removed';
   // Provider already stopped/archived it (its own auto-stop, an admin, or a
   // webhook we missed) but our row still says active — reconcile + close billing.
@@ -159,16 +160,14 @@ function mergeMetadata(patch: Record<string, unknown>) {
 /**
  * The metadata patch written when the reaper stops a box. `quiesce` marks an
  * idle-stop so passive traffic can't resurrect it (only an explicit open / new
- * turn clears it); `reprovision` flags that the next open must REPROVISION
- * rather than resume (Platinum's broken stop→resume). Pure so it is unit-tested.
+ * turn clears it). Stopping never authorizes replacing a data-bearing runtime.
  */
-export function buildIdleStopMetadata(opts: { quiesce: boolean; reprovision: boolean; nowIso: string }): Record<string, unknown> {
+export function buildIdleStopMetadata(opts: { quiesce: boolean; nowIso: string }): Record<string, unknown> {
   const meta: Record<string, unknown> = {};
   if (opts.quiesce) {
     meta.idleQuiesced = true;
     meta.idleQuiescedAt = opts.nowIso;
   }
-  if (opts.reprovision) meta.needsReprovision = true;
   return meta;
 }
 
@@ -182,13 +181,13 @@ interface ReapCandidate {
   createdAt: Date;
 }
 
-async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean, reprovision: boolean): Promise<void> {
+async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean): Promise<void> {
   // Close billing FIRST (computes the wall-clock delta against the still-active
   // metering row), then flip status, so the final window is billed correctly.
   await pauseComputeSession(row.sandboxId).catch((err) =>
     console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
   );
-  const meta = buildIdleStopMetadata({ quiesce, reprovision, nowIso: now.toISOString() });
+  const meta = buildIdleStopMetadata({ quiesce, nowIso: now.toISOString() });
   await db
     .update(sessionSandboxes)
     .set({
@@ -267,7 +266,7 @@ async function reapRunningBox(
     }
     // Already stopped/gone on the provider side is success — reconcile.
   }
-  await reconcileRowToStopped(row, now, /* quiesce */ true, /* reprovision */ row.provider === 'platinum');
+  await reconcileRowToStopped(row, now, /* quiesce */ true);
   return 'stopped';
 }
 
@@ -341,27 +340,15 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             // (or a webhook/reaper stop) must NOT be resurrected by passive /v1/p
             // traffic (markSandboxUsed heals unflagged stopped rows). It comes
             // back only on an explicit open / real turn, which clears the flag.
-            await reconcileRowToStopped(row, now, /* quiesce */ true, false);
+            await reconcileRowToStopped(row, now, /* quiesce */ true);
             result.reconciled += 1;
             result.billingClosed += 1;
             break;
           case 'reconcile-removed':
-            await endComputeSession(row.sandboxId).catch((err) =>
-              console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-            );
-            // Status MUST be 'stopped' (not 'archived'): openSession only honors
-            // `needsReprovision` in its `row.status === 'stopped'` branch. An
-            // 'archived' row would fall through to a terminal 'stopped' result and
-            // NEVER reprovision — stranding the session. 'stopped' + the marker
-            // makes the next open reprovision a fresh box.
-            await db
-              .update(sessionSandboxes)
-              .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
-              .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-            await db
-              .update(projectSessions)
-              .set({ status: 'stopped', updatedAt: now })
-              .where(eq(projectSessions.sessionId, row.sessionId));
+            // A provider 404 can be a transient archive/restore observation.
+            // Preserve the established identity; never turn this signal into a
+            // fresh, empty sandbox for the same session.
+            await preserveEstablishedRuntime(row, 'provider_reported_removed', now);
             invalidateProviderCache(row.externalId);
             result.reconciled += 1;
             result.billingClosed += 1;
@@ -491,7 +478,7 @@ const STUCK_SESSION_BATCH = 200;
  *   - NO in-flight turn (unfinalized chat_turn_stream), and
  *   - NO LLM usage within the TTL window.
  * For each it settles + closes any lingering billing window (DB-only) and flips
- * the session to `stopped` — resumable: the next open reprovisions a fresh box.
+ * the session to `stopped` — resumable in place without changing identity.
  * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
  */
 export async function reconcileStuckActiveSessions(
@@ -576,7 +563,7 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
   // explicit open / real turn.
   await db
     .update(sessionSandboxes)
-    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso: now.toISOString() })) })
+    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, nowIso: now.toISOString() })) })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
@@ -585,26 +572,24 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
 
 /**
  * The provider reports the box destroyed/deleted/lost — finalize billing and
- * flag the row so the next open reprovisions a fresh box. Keyed by external id;
- * idempotent. Shared by webhook ingress + reaper.
+ * preserve the original mapping. Keyed by external id; idempotent. Shared by
+ * webhook ingress + reaper.
  */
 export async function reconcileSandboxRemovedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      externalId: sessionSandboxes.externalId,
+      metadata: sessionSandboxes.metadata,
+      status: sessionSandboxes.status,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
-  await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-  );
-  // 'stopped' (not 'archived') + needsReprovision so openSession's stopped-branch
-  // reprovisions a fresh box on the next open (an archived row would strand it).
-  await db
-    .update(sessionSandboxes)
-    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
-    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  if (!row.externalId) return false;
+  await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
   invalidateProviderCache(externalId);
   return true;
 }

@@ -6,6 +6,7 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import type { SandboxProviderName } from '../../config';
 import type { ProjectRow } from './serializers';
+import { RuntimeIdentityConflictError } from '../runtime-identity-error';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -88,6 +89,10 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       session_start_timeline: sessionStartTimeline,
     }).catch(() => {});
   } catch (err) {
+    if (err instanceof RuntimeIdentityConflictError) {
+      console.warn(`[runtime-identity] refused duplicate allocation for ${input.sessionId}`);
+      return;
+    }
     const message = (err as Error)?.message || 'Sandbox provisioning failed';
     console.error(`[projects] Failed to allocate runtime for session ${input.sessionId}:`, err);
     try {
