@@ -45,6 +45,11 @@ import {
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
 } from './index.v2';
+import {
+  validateAgentsV3,
+  validateManifestCrossRefsV3,
+  validateRuntimesV3,
+} from './index.v3';
 
 export {
   type ManifestFormat,
@@ -82,6 +87,7 @@ export {
   SLUG_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
+  V3_HARNESS_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
 
@@ -106,6 +112,17 @@ export {
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
+export {
+  type HarnessV3,
+  type RuntimeBlockV3,
+  type AgentBlockV3,
+  type ManifestV3,
+  type RuntimesV3Scan,
+  type AgentsV3Scan,
+  validateRuntimesV3,
+  validateAgentsV3,
+  validateManifestCrossRefsV3,
+} from './index.v3';
 
 /**
  * Maximum manifest schema version this validator understands.
@@ -119,7 +136,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 2;
+const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -201,7 +218,9 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
+  if (version === 3) {
+    validateManifestBodyV3(parsed, format, issues);
+  } else if (version === 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -212,6 +231,39 @@ export function validateManifest(
     parsed,
     issues,
   };
+}
+
+function validateManifestBodyV3(
+  parsed: Record<string, unknown>,
+  format: ManifestFormat,
+  issues: ManifestIssue[],
+): void {
+  validateProject(parsed.project, 'project', issues);
+  validateEnv(parsed.env, 'env', issues);
+  validateSandbox(parsed.sandbox, 'sandbox', issues, format);
+  rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
+  validateTriggers(parsed.triggers, 'triggers', issues, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateApps(parsed.apps, 'apps', issues, format);
+  rejectChannelsV2(parsed.channels, 'channels', issues);
+  if (parsed.runtime !== undefined) {
+    issues.push({
+      path: 'runtime',
+      message: 'kortix_version 3 uses the `runtimes` map; remove the legacy singular `runtime` field.',
+      severity: 'error',
+    });
+  }
+  if (parsed.opencode !== undefined) {
+    issues.push({
+      path: 'opencode',
+      message: 'kortix_version 3 configures OpenCode through a runtime profile with `harness: opencode` and `config_dir`.',
+      severity: 'error',
+    });
+  }
+  const runtimes = validateRuntimesV3(parsed.runtimes, 'runtimes', issues);
+  const agents = validateAgentsV3(parsed.agents, 'agents', issues);
+  validateManifestCrossRefsV3(parsed.default_agent, agents, runtimes, issues);
+  validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agents.names, issues);
 }
 
 /**
@@ -314,7 +366,7 @@ export function validateGrantList(
   label: string,
   issues: ManifestIssue[],
   checkAction: boolean,
-  version: 1 | 2 = 1,
+  version: 1 | 2 | 3 = 1,
 ): void {
   if (value === undefined || value === null) return;
   if (typeof value === 'string') {
@@ -352,10 +404,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+            version >= 2
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: version >= 2 ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -455,11 +507,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (version >= 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run \`kortix migrate\`.`,
       severity: 'error',
     });
     return version;
