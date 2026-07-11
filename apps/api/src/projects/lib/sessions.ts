@@ -26,6 +26,12 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 import { allocateSessionRuntime } from './session-runtime-allocator';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
+import {
+  buildSessionRuntimeContextEnv,
+  mergeSessionSandboxEnv,
+  parseSessionRuntimeContext,
+  persistSessionRuntimeContext,
+} from './session-runtime-context';
 
 export type SessionCreateError = {
   status: number;
@@ -287,9 +293,11 @@ export async function buildSessionSandboxEnvVars(input: {
   // session is the durable source of truth; the first boot got these via
   // extraEnvVars, every later rebuild gets them here.
   const channelEnv = await buildSessionChannelEnv(input.sessionId);
+  const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   return {
     ...runtimeSecrets.env,
     ...channelEnv,
+    ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     // Provider API keys reach the sandbox (the agent's own code may use them),
@@ -403,6 +411,18 @@ export async function createProjectSession(input: {
   const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
   const accountId = project.accountId;
+  const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
+  if (!parsedRuntimeContext.ok) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: parsedRuntimeContext.error,
+          code: 'INVALID_SESSION_RUNTIME_CONTEXT',
+        },
+      },
+    };
+  }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
@@ -547,7 +567,7 @@ export async function createProjectSession(input: {
     ...(input.metadata ?? {}),
   };
 
-  let sessionRow: ProjectSessionRow;
+  let sessionRow: ProjectSessionRow | null = null;
   try {
     const [row] = await db
       .insert(projectSessions)
@@ -569,7 +589,11 @@ export async function createProjectSession(input: {
         updatedAt: new Date(),
       })
       .returning();
+    if (!row) throw new Error('Session insert returned no row');
     sessionRow = row;
+    if (parsedRuntimeContext.context !== undefined) {
+      await persistSessionRuntimeContext(sessionId, parsedRuntimeContext.context);
+    }
   } catch (error) {
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
@@ -577,8 +601,22 @@ export async function createProjectSession(input: {
     // resolveSessionProvider validates against config, never against the DB.
     // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
+    // The context FK requires the parent session first. Roll the parent back if
+    // context persistence fails before provisioning is kicked off.
+    if (sessionRow !== null) {
+      await db.delete(projectSessions).where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
+    }
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
+  }
+
+  if (sessionRow === null) {
+    return {
+      error: {
+        status: 500,
+        body: { error: 'Session insert returned no row', retry: true },
+      },
+    };
   }
 
   // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
@@ -677,10 +715,7 @@ export async function createProjectSession(input: {
         }).catch(() => {});
       });
 
-      const extraEnvVars = {
-        ...(await envPromise),
-        ...(input.extraEnvVars ?? {}),
-      };
+      const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
 
       const provisionPromise = provisionSessionSandbox({
         sandboxId: sessionId,

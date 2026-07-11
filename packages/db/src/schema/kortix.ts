@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   unique,
   primaryKey,
+  check,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -572,6 +573,35 @@ export const projectSessions = kortixSchema.table(
     // It is intentionally NOT declared here: re-adding it would make `db:generate`
     // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
     // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
+  ],
+);
+
+/**
+ * Durable, non-secret wrapper context for one project session. It is kept out
+ * of user-editable session metadata and materialized only as the single
+ * server-owned KORTIX_SESSION_CONTEXT JSON envelope.
+ */
+export const projectSessionRuntimeContexts = kortixSchema.table(
+  'project_session_runtime_contexts',
+  {
+    sessionId: text('session_id')
+      .primaryKey()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    context: jsonb('context').$type<Record<string, string | number | boolean | null>>().notNull(),
+    byteSize: integer('byte_size').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_session_runtime_contexts_updated').on(table.updatedAt),
+    check(
+      'project_session_runtime_contexts_byte_size_check',
+      sql`${table.byteSize} >= 2 AND ${table.byteSize} <= 16384`,
+    ),
+    check(
+      'project_session_runtime_contexts_object_check',
+      sql`jsonb_typeof(${table.context}) = 'object'`,
+    ),
   ],
 );
 
@@ -1658,7 +1688,21 @@ export const projectSessionsRelations = relations(projectSessions, ({ one }) => 
     fields: [projectSessions.projectId],
     references: [projects.projectId],
   }),
+  runtimeContext: one(projectSessionRuntimeContexts, {
+    fields: [projectSessions.sessionId],
+    references: [projectSessionRuntimeContexts.sessionId],
+  }),
 }));
+
+export const projectSessionRuntimeContextsRelations = relations(
+  projectSessionRuntimeContexts,
+  ({ one }) => ({
+    session: one(projectSessions, {
+      fields: [projectSessionRuntimeContexts.sessionId],
+      references: [projectSessions.sessionId],
+    }),
+  }),
+);
 
 export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
   sandbox: one(sandboxes, {

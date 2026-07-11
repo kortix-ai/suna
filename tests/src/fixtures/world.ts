@@ -122,7 +122,9 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       };
     },
     async session(project, opts) {
-      const res = await adminClient.post("/v1/projects/:projectId/sessions", { prompt: opts?.prompt ?? "noop" }, {
+      // `prompt` was never consumed by the session API; use the documented
+      // field now that the HTTP boundary rejects unknown create properties.
+      const res = await adminClient.post("/v1/projects/:projectId/sessions", { initial_prompt: opts?.prompt ?? "noop" }, {
         params: { projectId: project.id },
       });
       const body = res.json<any>();

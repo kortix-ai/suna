@@ -11,6 +11,7 @@ import {
   projectGitCredentials,
   projectMembers,
   projectSecrets,
+  projectSessionRuntimeContexts,
   projectSessions,
   projects,
   sessionSandboxes,
@@ -44,6 +45,7 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>;
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
@@ -117,6 +119,7 @@ function resetState() {
   };
   sessionSandboxRows = [];
   secretRows = [];
+  runtimeContextRows = [];
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
@@ -433,6 +436,8 @@ mock.module('../shared/db', () => ({
                 .filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN')
                 .slice(0, 1);
             }
+            if (table === projectSessionRuntimeContexts)
+              return runtimeContextRows.slice(0, 1);
             if (table === projectGitConnections)
               return gitConnectionRows.slice(0, 1);
             if (table === projectGitCredentials)
@@ -523,6 +528,17 @@ mock.module('../shared/db', () => ({
             } as typeof projectGitCredentials.$inferSelect;
             if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
             else gitCredentialRows.push(row);
+            return [row];
+          }
+          if (table === projectSessionRuntimeContexts) {
+            const row: typeof projectSessionRuntimeContexts.$inferSelect = {
+              sessionId: values.sessionId,
+              context: values.context,
+              byteSize: values.byteSize,
+              createdAt: new Date('2026-01-02T00:00:00Z'),
+              updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+            };
+            runtimeContextRows = [row];
             return [row];
           }
           if (table !== projectSessions) return [];
@@ -663,7 +679,12 @@ mock.module('../shared/db', () => ({
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectSecrets) secretRows = [];
+        if (table === projectSessionRuntimeContexts) runtimeContextRows = [];
         if (table === sessionSandboxes) sessionSandboxRows = [];
+        if (table === projectSessions) {
+          sessionRow = null;
+          runtimeContextRows = [];
+        }
       },
     }),
     update: (table: unknown) => ({
@@ -2012,6 +2033,115 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe(
       'Review the repo',
     );
+  });
+
+  test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {
+    const app = createApp();
+    const runtimeContext = {
+      workspace_id: 'veyris_org_123',
+      'wrapper.locale': 'de',
+      licensed: true,
+      risk_score: 0.25,
+      optional: null,
+    };
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runtime_context: runtimeContext }),
+    });
+
+    expect(res.status).toBe(201);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(runtimeContextRows).toHaveLength(1);
+    expect(runtimeContextRows[0]?.context).toEqual(runtimeContext);
+    expect(runtimeContextRows[0]?.byteSize).toBe(
+      new TextEncoder().encode(JSON.stringify(runtimeContext)).byteLength,
+    );
+    expect(sessionRow?.metadata).not.toHaveProperty('runtime_context');
+    const env = lastProvisionInput?.extraEnvVars ?? {};
+    expect(JSON.parse(env.KORTIX_SESSION_CONTEXT!)).toEqual(runtimeContext);
+    expect(env).not.toHaveProperty('workspace_id');
+    expect(env).not.toHaveProperty('VEYRIS_WORKSPACE_ID');
+  });
+
+  test('rejects invalid runtime_context before persisting or provisioning a session', async () => {
+    const app = createApp();
+    for (const runtimeContext of [
+      { KORTIX_TOKEN: 'shadow' },
+      { workspace_id: { nested: true } },
+      { payload: 'é'.repeat(9_000) },
+    ]) {
+      sessionRow = null;
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runtime_context: runtimeContext }),
+      });
+      expect(res.status).toBe(400);
+      expect(sessionRow).toBeNull();
+      expect(runtimeContextRows).toHaveLength(0);
+      expect(sandboxProvisionCalls).toBe(0);
+    }
+  });
+
+  test('rejects unknown session-create fields at the HTTP boundary', async () => {
+    const app = createApp();
+    sessionRow = null;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initial_prompt: 'noop', arbitrary_env: 'nope' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(sessionRow).toBeNull();
+    expect(runtimeContextRows).toHaveLength(0);
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('cold /start restores durable runtime_context into a replacement runtime', async () => {
+    const app = createApp();
+    const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
+    runtimeContextRows = [{
+      sessionId: SESSION_ID,
+      context,
+      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    }];
+    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
+    sessionSandboxRows = [];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+  });
+
+  test('replacement restart restores durable runtime_context', async () => {
+    const app = createApp();
+    const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
+    runtimeContextRows = [{
+      sessionId: SESSION_ID,
+      context,
+      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    }];
+    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
+    sessionSandboxRows = [];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {

@@ -1,18 +1,21 @@
-import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
-import { eq, sql } from 'drizzle-orm';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  accountGroups,
   accountMembers,
   accounts,
+  creditAccounts,
   iamPolicies,
   iamRoleActions,
   iamRoles,
+  projectGroupGrants,
   projectMembers,
   projects,
 } from '@kortix/db';
-import { db } from '../shared/db';
+import { eq, sql } from 'drizzle-orm';
+import { PROJECT_ACTIONS } from '../iam';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { PROJECT_ACTIONS } from '../iam';
+import { db } from '../shared/db';
 
 // These endpoints are the project-scoped members-governance surface (group
 // grants, resource grants, approvals, access requests). Each already asserts
@@ -35,6 +38,7 @@ const MEMBER = crypto.randomUUID();
 // exact case the old 'manage' floor broke.
 const CUSTOM = crypto.randomUUID();
 const CUSTOM_ROLE = crypto.randomUUID();
+const GROUP = crypto.randomUUID();
 
 const minted: string[] = [];
 
@@ -44,11 +48,21 @@ beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
 
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'members-manage-gate-test' });
+  await db.insert(creditAccounts).values({
+    accountId: ACCOUNT,
+    demoEnterprise: true,
+  });
   await db.insert(projects).values({
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'members-manage-gate-test-project',
     repoUrl: 'https://example.com/members-manage-gate-test.git',
+  });
+  await db.insert(accountGroups).values({
+    groupId: GROUP,
+    accountId: ACCOUNT,
+    name: 'session-contract-regression-group',
+    createdBy: MANAGER,
   });
   await db.insert(accountMembers).values([
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -90,7 +104,10 @@ afterAll(async () => {
   await db.delete(iamPolicies).where(eq(iamPolicies.accountId, ACCOUNT));
   await db.delete(iamRoleActions).where(eq(iamRoleActions.roleId, CUSTOM_ROLE));
   await db.delete(iamRoles).where(eq(iamRoles.accountId, ACCOUNT));
+  await db.delete(projectGroupGrants).where(eq(projectGroupGrants.accountId, ACCOUNT));
+  await db.delete(accountGroups).where(eq(accountGroups.accountId, ACCOUNT));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
+  await db.delete(creditAccounts).where(eq(creditAccounts.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
@@ -150,6 +167,23 @@ const ENDPOINTS: EP[] = [
 ];
 
 describe('HTTP enforcement — project members.manage gates (floor lowered read; leaf is the gate)', () => {
+  test('a normal group-grant body remains valid and creates the grant', async () => {
+    const secret = await mint(MANAGER);
+    const res = await req(
+      'POST',
+      `/v1/projects/${PROJECT}/group-grants`,
+      secret,
+      { group_id: GROUP, role: 'editor' },
+    );
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({
+      project_id: PROJECT,
+      group_id: GROUP,
+      role: 'editor',
+    });
+  });
+
   for (const ep of ENDPOINTS) {
     describe(ep.name, () => {
       test('EDITOR (project.write but NOT members.manage) → 403 on the members.manage leaf', async () => {
