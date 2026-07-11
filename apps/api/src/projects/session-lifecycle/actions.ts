@@ -13,8 +13,13 @@ import {
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isMissingRuntimeError,
-  retireSessionSandboxRow,
 } from '../routes/shared';
+import {
+  preserveEstablishedRuntime,
+  retireUnmaterializedRuntime,
+  RUNTIME_IDENTITY_UNAVAILABLE,
+  RUNTIME_IDENTITY_ERROR,
+} from '../runtime-identity';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -200,16 +205,16 @@ export async function restartSession(input: {
     const provider = getProvider(existingSandbox.provider as SandboxProviderName);
     const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
     if (providerStatus === 'removed') {
-      await retireSessionSandboxRow(existingSandbox, 'restart_removed_runtime').catch((err) =>
-        console.warn(
-          `[projects] failed to retire removed runtime ${externalId} for session ${sessionId}:`,
-          err,
-        ),
-      );
-      await provisionReplacementRuntime();
+      await preserveEstablishedRuntime(existingSandbox, 'restart_removed_runtime');
       return {
-        status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'runtime_removed' },
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: RUNTIME_IDENTITY_UNAVAILABLE,
+        },
       };
     }
 
@@ -242,13 +247,7 @@ export async function restartSession(input: {
       } catch (err) {
         console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
         if (isMissingRuntimeError(err)) {
-          await retireSessionSandboxRow(existingSandbox, 'restart_missing_runtime').catch(() => {});
-          await provisionReplacementRuntime().catch((allocErr) =>
-            console.warn(
-              `[projects] failed to reallocate missing runtime for session ${sessionId}:`,
-              allocErr,
-            ),
-          );
+          await preserveEstablishedRuntime(existingSandbox, 'restart_missing_runtime').catch(() => {});
           return;
         }
         await db
@@ -277,7 +276,7 @@ export async function restartSession(input: {
     // provision failed before an externalId was assigned) — there's nothing to
     // stop/start, and leaving it in place would collide with the fresh insert
     // provisionReplacementRuntime() is about to do on the same sandboxId PK.
-    await retireSessionSandboxRow(existingSandbox, 'restart_never_provisioned').catch((err) =>
+    await retireUnmaterializedRuntime(existingSandbox, 'restart_never_provisioned').catch((err) =>
       console.warn(
         `[projects] failed to retire never-provisioned sandbox row for session ${sessionId}:`,
         err,

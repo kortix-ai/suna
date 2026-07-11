@@ -208,18 +208,13 @@ describe('triggerAutoStopTtlMs', () => {
 describe('buildIdleStopMetadata', () => {
   const nowIso = '2026-06-21T12:00:00.000Z';
   test('idle stop quiesces so passive traffic cannot resurrect', () => {
-    const m = buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso });
+    const m = buildIdleStopMetadata({ quiesce: true, nowIso });
     expect(m.idleQuiesced).toBe(true);
     expect(m.idleQuiescedAt).toBe(nowIso);
     expect(m.needsReprovision).toBeUndefined();
   });
-  test('Platinum idle stop also flags reprovision', () => {
-    const m = buildIdleStopMetadata({ quiesce: true, reprovision: true, nowIso });
-    expect(m.idleQuiesced).toBe(true);
-    expect(m.needsReprovision).toBe(true);
-  });
   test('no flags → empty patch (nothing merged)', () => {
-    expect(buildIdleStopMetadata({ quiesce: false, reprovision: false, nowIso })).toEqual({});
+    expect(buildIdleStopMetadata({ quiesce: false, nowIso })).toEqual({});
   });
 });
 
@@ -345,7 +340,7 @@ describe('reapAndReconcileSandboxes', () => {
     expect(r.skipped).toBe(1);
   });
 
-  test('Platinum idle stop flags reprovision (resume is broken)', async () => {
+  test('Platinum idle stop preserves the same runtime for in-place resume', async () => {
     candidates = [candidate({ provider: 'platinum', externalId: 'ext-p', sandboxId: 'sb-p' })];
     statusByExternal['ext-p'] = 'running';
 
@@ -353,8 +348,6 @@ describe('reapAndReconcileSandboxes', () => {
 
     expect(r.stopped).toBe(1);
     expect(stops).toEqual(['ext-p']);
-    // The stop wrote a metadata merge (the reprovision flag content is covered by
-    // the buildIdleStopMetadata unit test below — the SQL object isn't introspectable).
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sbUpdate?.updates.metadata).toBeDefined();
   });
@@ -422,7 +415,7 @@ describe('reapAndReconcileSandboxes', () => {
     ).toBe(false);
   });
 
-  test('provider-removed → reconcile to STOPPED (not archived) + needsReprovision, so it can reopen', async () => {
+  test('provider-removed preserves the established external identity', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'removed';
 
@@ -431,9 +424,11 @@ describe('reapAndReconcileSandboxes', () => {
     expect(r.reconciled).toBe(1);
     expect(endedCompute).toEqual(['sb-1']);
     const sbUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
-    // MUST be 'stopped' — openSession only reprovisions a stopped+needsReprovision row.
     expect(sbUpdate?.updates.status).toBe('stopped');
-    expect(sbUpdate?.updates.metadata).toBeDefined();
+    expect(sbUpdate?.updates.metadata).toMatchObject({
+      runtimeIdentityState: 'unavailable',
+      preservedExternalId: 'ext-1',
+    });
     expect(stops).toEqual([]); // never poke a removed box
   });
 

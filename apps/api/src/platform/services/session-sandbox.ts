@@ -50,6 +50,7 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
@@ -267,6 +268,7 @@ export async function provisionSessionSandbox(opts: {
           healthStatus: 'unknown',
         },
       })
+      .onConflictDoNothing({ target: sessionSandboxes.sessionId })
       .returning(),
     createApiKey({
       sandboxId,
@@ -295,6 +297,7 @@ export async function provisionSessionSandbox(opts: {
       : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
+  if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');

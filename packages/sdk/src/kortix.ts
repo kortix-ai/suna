@@ -737,8 +737,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
         P.startProjectSession(projectId, sessionId, ...a),
       restart: () => {
-        // Restart may re-provision a DIFFERENT sandbox — a stale cached/
-        // registered runtime would route subsequent calls at a dead box.
+        // Restart preserves the established sandbox identity, but readiness
+        // and the proxy connection must still be resolved again after reboot.
         forgetReady();
         return P.restartProjectSession(projectId, sessionId);
       },
