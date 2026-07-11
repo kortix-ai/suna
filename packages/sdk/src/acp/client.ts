@@ -10,8 +10,11 @@ import type {
 import { AcpRpcError } from './types';
 
 export type AcpClientOptions = {
-  baseUrl: string;
-  serverId: string;
+  /** Exact session-scoped ACP endpoint. Preferred for provider-neutral clients. */
+  endpoint?: string;
+  /** Direct daemon bridge inputs (low-level/testing compatibility). */
+  baseUrl?: string;
+  serverId?: string;
   fetch?: typeof fetch;
 };
 
@@ -26,7 +29,12 @@ export class AcpClient {
 
   constructor(readonly options: AcpClientOptions) {
     this.fetcher = options.fetch ?? (authenticatedFetch as typeof fetch);
-    this.endpoint = `${options.baseUrl.replace(/\/$/, '')}/acp/${encodeURIComponent(options.serverId)}`;
+    if (options.endpoint) this.endpoint = options.endpoint.replace(/\/$/, '');
+    else if (options.baseUrl && options.serverId) {
+      this.endpoint = `${options.baseUrl.replace(/\/$/, '')}/acp/${encodeURIComponent(options.serverId)}`;
+    } else {
+      throw new Error('AcpClient requires endpoint, or baseUrl + serverId');
+    }
   }
 
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
@@ -73,6 +81,22 @@ export class AcpClient {
 
   cancel(sessionId: string) {
     return this.notify('session/cancel', { sessionId });
+  }
+
+  async transcript(after?: number): Promise<{
+    runtime_id: string;
+    envelopes: Array<{
+      ordinal: number;
+      direction: 'client_to_agent' | 'agent_to_client';
+      streamEventId: number | null;
+      envelope: AcpEnvelope;
+      createdAt: string;
+    }>;
+  }> {
+    const url = `${this.endpoint}/transcript${after ? `?after=${after}` : ''}`;
+    const response = await this.fetcher(url);
+    if (!response.ok) throw new Error(`ACP transcript failed with HTTP ${response.status}`);
+    return response.json();
   }
 
   connect(options: {

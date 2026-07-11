@@ -575,6 +575,36 @@ export const projectSessions = kortixSchema.table(
   ],
 );
 
+/** Lossless append-only ACP JSON-RPC log. UI transcripts are projections of
+ * these envelopes; the stored protocol is never rewritten into OpenCode. */
+export const acpSessionEnvelopes = kortixSchema.table(
+  'acp_session_envelopes',
+  {
+    ordinal: bigint('ordinal', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+    eventId: uuid('event_id').defaultRandom().notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    runtimeId: text('runtime_id').notNull(),
+    direction: varchar('direction', { length: 32 }).notNull(),
+    streamEventId: bigint('stream_event_id', { mode: 'number' }),
+    envelope: jsonb('envelope').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_acp_session_envelopes_event_id').on(table.eventId),
+    uniqueIndex('idx_acp_session_envelopes_stream_event').on(
+      table.sessionId,
+      table.direction,
+      table.streamEventId,
+    ),
+    index('idx_acp_session_envelopes_session_ordinal').on(table.sessionId, table.ordinal),
+  ],
+);
+
 // Account-scoped default model preferences. Drives server-side resolution of the
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
 // per-agent default (scope='agent', scope_key=agent_name) → the account default

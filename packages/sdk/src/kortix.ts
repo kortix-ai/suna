@@ -745,8 +745,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         });
       }
       const client = _acpClient ?? createAcpClient({
-        baseUrl: ready.runtimeUrl,
-        serverId: ready.runtimeId ?? ready.opencodeSessionId ?? sessionId,
+        endpoint: `${config.backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
       });
       _acpClient = client;
       if (!_acpSessionId) {

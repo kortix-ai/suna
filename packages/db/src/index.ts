@@ -53,6 +53,7 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  acpSessionEnvelopes,
   accountModelPreferences,
   projectSessionGrants,
   projectSessionPublicShares,
