@@ -23,29 +23,19 @@
 
 import { type Plugin } from "@opencode-ai/plugin"
 import type { Todo } from "@opencode-ai/sdk"
-import { type ContinuationState, createInitialState, DEFAULT_CONFIG, INTERNAL_MARKER } from "./config"
+import { type ContinuationState, createInitialState, DEFAULT_CONFIG } from "./config"
+import {
+	continuationMessageId,
+	countPassiveContinuationsAfter,
+	hasContinuationMessageId,
+	isInternalMessage,
+	messageFullText,
+} from "./dedupe"
 import { evaluate } from "./continuation-engine"
 
 const DISABLED = process.env.KORTIX_CONTINUATION_DISABLED === "1" || process.env.KORTIX_CONTINUATION_DISABLED === "true"
 
 // ─── Message helpers ───────────────────────────────────────────────────────────
-
-/** Concatenate all text-part content of a message (used for internal-marker detection). */
-function messageFullText(msg: any): string {
-	let text = ""
-	for (const part of msg?.parts ?? []) {
-		if (part?.type === "text" && typeof part.text === "string") text += `${part.text}\n`
-	}
-	return text
-}
-
-/** True if a message was injected by the system (must never count as real user input). */
-function isInternalMessage(text: string): boolean {
-	if (text.includes(INTERNAL_MARKER)) return true
-	if (text.includes("[SYSTEM REMINDER")) return true
-	if (text.includes("<kortix_system")) return true
-	return false
-}
 
 /** Last assistant message text + whether that turn made tool calls. */
 function extractLastAssistantMessage(messages: any[]): { text: string; hadToolCalls: boolean } {
@@ -207,6 +197,10 @@ const KortixContinuationPlugin: Plugin = async ({ client }) => {
 					state.inflight = false
 					state.workCycleStartedAt = lastUser.createdAt || Date.now()
 				}
+				const persistedContinuations = countPassiveContinuationsAfter(messages, state.lastUserMessageId)
+				if (persistedContinuations > state.totalSessionContinuations) {
+					state.totalSessionContinuations = persistedContinuations
+				}
 
 				if (hasPendingQuestion(messages)) {
 					log("info", `[${sid(sessionId)}] skip: pending question`)
@@ -221,13 +215,21 @@ const KortixContinuationPlugin: Plugin = async ({ client }) => {
 				log("info", `[${sid(sessionId)}] ${decision.action} — ${decision.reason}`)
 
 				if (decision.action === "continue" && decision.prompt) {
+					const messageID = continuationMessageId(sessionId, state.lastUserMessageId, state.totalSessionContinuations)
+					if (hasContinuationMessageId(messages, messageID)) {
+						log("info", `[${sid(sessionId)}] skip: continuation ${messageID} already exists`)
+						return
+					}
 					state.inflight = true
 					state.totalSessionContinuations++
 					state.lastContinuationAt = Date.now()
 					await client.session
 						.promptAsync({
 							path: { id: sessionId },
-							body: { parts: [{ type: "text" as const, text: wrapSystemPrompt(decision.prompt, "passive-continuation") }] },
+							body: {
+								messageID,
+								parts: [{ type: "text" as const, text: wrapSystemPrompt(decision.prompt, "passive-continuation") }],
+							},
 						})
 						.catch((err: unknown) => {
 							log("warn", `[${sid(sessionId)}] promptAsync failed: ${err}`)
