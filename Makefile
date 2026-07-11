@@ -3,7 +3,7 @@ NPM := npm --prefix $(TESTS)
 
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
-        lint typecheck unit integration api api-coverage contract smoke e2e visual a11y \
+        lint typecheck unit integration api api-coverage cli-parity contract smoke e2e visual a11y \
         performance security security-dast pentest migration infra chaos mutation \
         coverage gates report portal-up portal-down clean
 
@@ -16,7 +16,7 @@ install: ## Install all test dependencies (node deps + Playwright browsers)
 	cd $(TESTS) && npx playwright install --with-deps chromium || true
 
 ## ---- one-shot lanes ---------------------------------------------------------
-fast: lint typecheck unit contract api-coverage ## Fast local loop: no live services
+fast: lint typecheck unit contract api-coverage cli-parity ## Fast local loop: no live services
 	@echo "fast suite complete"
 
 all: lint typecheck unit integration api contract smoke e2e visual a11y migration infra security pentest ## Broad suite for a configured local/staging target
@@ -25,7 +25,7 @@ all: lint typecheck unit integration api contract smoke e2e visual a11y migratio
 ## ---- CI cadences ------------------------------------------------------------
 ci-pr: ## On every PR
 	@$(MAKE) clean
-	@$(MAKE) lint typecheck unit integration contract api-coverage gates
+	@$(MAKE) lint typecheck unit integration contract api-coverage cli-parity gates
 ci-main: ## On merge to main (full regression + UI)
 	@$(MAKE) clean
 	@$(MAKE) e2e visual a11y migration
@@ -49,6 +49,8 @@ api: ## API tests (ke2e REST suite)
 	$(NPM) run test:api
 api-coverage: ## API route coverage gate (no live target)
 	$(NPM) run coverage
+cli-parity: ## CLI command parity gate (no live target)
+	$(NPM) run cli-parity
 contract: ## Consumer-driven contract tests (Pact)
 	$(NPM) run test:contract
 smoke: ## Smoke / liveness checks
