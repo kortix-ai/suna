@@ -40,6 +40,7 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { probeSandboxBusy } from './sandbox-busy-probe';
 import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
+import { hasActiveExecutionLease } from './execution-lease';
 import { preserveEstablishedRuntime } from './runtime-identity';
 
 export const REAP_BATCH_SIZE = 100;
@@ -314,6 +315,10 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
         const providerStatus: SandboxStatus = await getProvider(row.provider).getStatus(row.externalId);
 
         if (providerStatus === 'running') {
+          if (hasActiveExecutionLease(row.metadata, now)) {
+            result.busyVetoed += 1;
+            continue;
+          }
           let fallbackLastMeaningful: Date | null = null;
           if (lastUsageBySession !== null) {
             const base = lastMeaningfulAt(row);

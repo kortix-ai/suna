@@ -15,6 +15,7 @@ import {
 } from './use-runtime-reconnect';
 import {
   incrementSandboxFail,
+  requestRuntimeReconnect,
   resetSandboxFail,
   useSandboxConnectionStore,
 } from '../state/sandbox-connection-store';
@@ -36,6 +37,14 @@ describe('computeFailureStatus — first connection', () => {
 
   test('stays unreachable past the threshold', () => {
     expect(computeFailureStatus(FAIL_THRESHOLD_FIRST + 3, false, false)).toBe('unreachable');
+  });
+});
+
+describe('manual runtime reconnect', () => {
+  test('clears stale unreachable state and emits an immediate-retry signal', () => {
+    useSandboxConnectionStore.setState({ status: 'unreachable', healthy: false, failCount: 7, runtimeError: 'stale', disconnectedAt: 123, manualRetryNonce: 4 });
+    requestRuntimeReconnect();
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null, failCount: 0, runtimeError: null, manualRetryNonce: 5 });
   });
 });
 

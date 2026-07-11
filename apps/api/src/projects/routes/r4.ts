@@ -74,6 +74,7 @@ import {
   sessionSandboxes,
 } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
+import { discoverExecutionKeepAliveEndpoint, releaseExecutionLease, renewExecutionLease } from "../execution-lease";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
 import {
   bindChatThread,
@@ -1022,6 +1023,7 @@ projectsApp.openapi(
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get("authType") as string | undefined;
+    let authenticatedSandboxId: string | null = null;
     if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
       const accountId = (c as any).get("accountId") as string | undefined;
       const sandboxId = (c as any).get("sandboxId") as string | undefined;
@@ -1029,7 +1031,7 @@ projectsApp.openapi(
         return c.json({ error: "turn-stream requires a sandbox token" }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
         .where(
           and(
@@ -1046,6 +1048,7 @@ projectsApp.openapi(
           403,
         );
       }
+      authenticatedSandboxId = sandbox.sandboxId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1068,6 +1071,7 @@ projectsApp.openapi(
       error_status?: number;
       error_retryable?: boolean;
       error_provider?: string;
+      lease_ttl_seconds?: number;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -1077,6 +1081,13 @@ projectsApp.openapi(
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
+    }
+
+    if (authenticatedSandboxId) {
+      const [ownedSession] = await db.select({ sessionId: sessionSandboxes.sessionId }).from(sessionSandboxes).where(and(
+        eq(sessionSandboxes.sandboxId, authenticatedSandboxId), eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.projectId, projectId),
+      )).limit(1);
+      if (!ownedSession) return c.json({ error: "sandbox token is not scoped to this session" }, 403);
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -1094,6 +1105,28 @@ projectsApp.openapi(
       .limit(1);
     if (!turnStreamSession) {
       return c.json({ error: "Not found" }, 404);
+    }
+
+    if (body.kind === "execution_heartbeat" || body.kind === "execution_lease_release" || body.kind === "execution_lease_discover") {
+      if (!authenticatedSandboxId) return c.json({ error: "execution lease requires a sandbox token" }, 403);
+      const target = { sandboxId: authenticatedSandboxId, sessionId, projectId };
+      if (body.kind === "execution_lease_release") return c.json({ ok: await releaseExecutionLease(target) });
+      if (body.kind === "execution_lease_discover") {
+        const provider = await discoverExecutionKeepAliveEndpoint(target);
+        return c.json({
+          ok: provider !== null,
+          provider_url: provider?.url ?? null,
+          provider_headers: provider?.headers ?? null,
+        });
+      }
+      const result = await renewExecutionLease(target, body.lease_ttl_seconds);
+      return c.json({
+        ok: result.ok,
+        lease_until: result.leaseUntil,
+        provider_url: result.providerUrl,
+        provider_headers: result.providerHeaders,
+        provider_touched: result.providerUrl !== null,
+      });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
