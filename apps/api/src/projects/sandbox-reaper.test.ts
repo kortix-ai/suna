@@ -283,6 +283,13 @@ describe('reapAndReconcileSandboxes', () => {
     expect(sbUpdate?.updates.status).toBeUndefined();
   });
 
+  test('active execution lease vetoes stop before the busy probe', async () => {
+    candidates = [candidate({ metadata: { executionLeaseUntil: new Date(NOW.getTime() + 60_000).toISOString(), idleObservedAt: new Date(NOW.getTime() - TTL).toISOString() } })];
+    statusByExternal['ext-1'] = 'running'; busyByExternal['ext-1'] = 'idle';
+    const r = await reapAndReconcileSandboxes(NOW);
+    expect(r.busyVetoed).toBe(1); expect(r.stopped).toBe(0); expect(stops).toEqual([]); expect(updateCalls).toEqual([]);
+  });
+
   test('first idle observation arms the countdown instead of stopping', async () => {
     candidates = [candidate()];
     statusByExternal['ext-1'] = 'running';

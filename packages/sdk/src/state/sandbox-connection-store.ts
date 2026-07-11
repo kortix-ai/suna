@@ -36,6 +36,7 @@ interface SandboxConnectionStore {
 	runtimeError: string | null;
 	recoveryPhase: SandboxRecoveryPhase;
 	restartRequestedAt: number | null;
+	manualRetryNonce: number;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -117,7 +118,15 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	runtimeError: null,
 	recoveryPhase: "idle",
 	restartRequestedAt: null,
+	manualRetryNonce: 0,
 }));
+
+export function requestRuntimeReconnect() {
+	useSandboxConnectionStore.setState((state) => ({
+		status: "connecting", healthy: null, failCount: 0, runtimeError: null,
+		disconnectedAt: state.disconnectedAt ?? Date.now(), manualRetryNonce: state.manualRetryNonce + 1,
+	}));
+}
 
 // ── Static actions (stable references, no re-render loops) ──
 
@@ -228,6 +237,7 @@ export function resetForServerSwitch() {
 			runtimeError: null,
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
+			manualRetryNonce: 0,
 		});
 		saveWasConnected(true);
 		return;
@@ -249,6 +259,7 @@ export function resetForServerSwitch() {
 			runtimeError: null,
 			recoveryPhase: "idle",
 			restartRequestedAt: null,
+			manualRetryNonce: 0,
 		});
 		saveWasConnected(true);
 		return;
@@ -267,6 +278,7 @@ export function resetForServerSwitch() {
 		runtimeError: null,
 		recoveryPhase: "idle",
 		restartRequestedAt: null,
+		manualRetryNonce: 0,
 	});
 	saveWasConnected(false);
 }

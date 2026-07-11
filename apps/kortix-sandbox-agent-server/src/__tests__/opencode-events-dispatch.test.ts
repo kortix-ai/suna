@@ -80,4 +80,9 @@ describe('dispatch — session.error flattening', () => {
     )
     expect(id).toBe('ses_root')
   })
+  test('session.status dispatches busy state for execution leasing', () => {
+    const seen: Array<[string, string]> = []
+    dispatch({ type: 'session.status', properties: { sessionID: 'root', status: { type: 'busy' } } }, { onSessionStatus: (id, status) => seen.push([id, status]) })
+    expect(seen).toEqual([['root', 'busy']])
+  })
 })
