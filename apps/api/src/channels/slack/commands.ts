@@ -816,37 +816,12 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
   // immediately and post the real picker out-of-band: to the response_url for a
   // real slash command, or straight into the DM for the message-fallback path.
   void (async () => {
-    let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
-    try {
-      agents = await listProjectAgents(selection.projectId);
-    } catch (err) {
-      console.warn('[slack-webhook] listProjectAgents failed', err);
-    }
-    // Per-resource scoping: a linked member sees only agents they're scoped to;
-    // an unlinked caller sees only project-wide (unscoped) agents — never leak a
-    // scoped agent's name cross-department. No-op when nothing is scoped.
-    try {
-      const names = agents.map((a) => a.name);
-      const identity = ctx.slackUserId ? await lookupSlackIdentity(ctx.teamId, ctx.slackUserId) : null;
-      let allowedNames: string[];
-      if (identity) {
-        const [proj] = await db
-          .select({ accountId: projects.accountId })
-          .from(projects)
-          .where(eq(projects.projectId, selection.projectId))
-          .limit(1);
-        allowedNames = proj
-          ? await filterAccessibleProjectResources(identity.userId, proj.accountId, selection.projectId, 'agent', names)
-          : await unscopedResourceIds(selection.projectId, 'agent', names);
-      } else {
-        allowedNames = await unscopedResourceIds(selection.projectId, 'agent', names);
-      }
-      const allow = new Set(allowedNames);
-      agents = agents.filter((a) => allow.has(a.name));
-    } catch (err) {
-      console.warn('[slack-webhook] agent scoping filter failed', err);
-    }
-    const blocks = buildAgentPickerBlocks(ctx, selection.agentName, agents);
+    const agents = await loadScopedChannelAgents({
+      teamId: ctx.teamId,
+      projectId: selection.projectId,
+      slackUserId: ctx.slackUserId,
+    });
+    const blocks = buildAgentPickerBlocks(ctx.channelId, selection.agentName, agents);
     if (ctx.deferredDeliver) {
       await ctx.deferredDeliver({ response_type: 'ephemeral', blocks });
     } else {
@@ -856,10 +831,57 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
   return { response_type: 'ephemeral', text: 'Loading agents…' };
 }
 
-function buildAgentPickerBlocks(
-  ctx: SlashCtx,
+/**
+ * The project's launchable agents (git-backed catalog), filtered to what THIS
+ * caller may see: a linked member sees only agents they're scoped to; an
+ * unlinked caller sees only project-wide (unscoped) agents — never leak a scoped
+ * agent's name cross-department. No-op when nothing is scoped. Touches git, so
+ * callers must be off the synchronous 3s slash window. Shared by the `/kortix
+ * agents` picker and the session-start "agent no longer exists" recovery picker
+ * (session.ts) so both list the same scoped catalog.
+ */
+export async function loadScopedChannelAgents(input: {
+  teamId: string;
+  projectId: string;
+  slackUserId?: string;
+}): Promise<Array<{ name: string; description: string | null }>> {
+  let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
+  try {
+    agents = await listProjectAgents(input.projectId);
+  } catch (err) {
+    console.warn('[slack-webhook] listProjectAgents failed', err);
+  }
+  try {
+    const names = agents.map((a) => a.name);
+    const identity = input.slackUserId ? await lookupSlackIdentity(input.teamId, input.slackUserId) : null;
+    let allowedNames: string[];
+    if (identity) {
+      const [proj] = await db
+        .select({ accountId: projects.accountId })
+        .from(projects)
+        .where(eq(projects.projectId, input.projectId))
+        .limit(1);
+      allowedNames = proj
+        ? await filterAccessibleProjectResources(identity.userId, proj.accountId, input.projectId, 'agent', names)
+        : await unscopedResourceIds(input.projectId, 'agent', names);
+    } else {
+      allowedNames = await unscopedResourceIds(input.projectId, 'agent', names);
+    }
+    const allow = new Set(allowedNames);
+    agents = agents.filter((a) => allow.has(a.name));
+  } catch (err) {
+    console.warn('[slack-webhook] agent scoping filter failed', err);
+  }
+  return agents;
+}
+
+export function buildAgentPickerBlocks(
+  channelId: string,
   currentAgent: string | null,
   agents: Array<{ name: string; description: string | null }>,
+  // Override the default "Agents" header + "Pick which agent…" caption — e.g. the
+  // session-start recovery picker leads with the failure it's recovering from.
+  lead?: Array<Record<string, unknown>>,
 ): Array<Record<string, unknown>> {
   // `default` is the always-available implicit agent. Listed first.
   const rows: Array<{ name: string; description: string | null }> = [
@@ -867,13 +889,15 @@ function buildAgentPickerBlocks(
     ...agents.filter((a) => a.name !== 'default'),
   ];
   const current = currentAgent ?? 'default';
-  const blocks: Array<Record<string, unknown>> = [
-    { type: 'header', text: { type: 'plain_text', text: 'Agents', emoji: true } },
-    { type: 'context', elements: [{ type: 'mrkdwn', text: `Pick which agent answers in this channel. Current: *${escapeMrkdwn(current)}*` }] },
-  ];
+  const blocks: Array<Record<string, unknown>> = lead
+    ? [...lead]
+    : [
+        { type: 'header', text: { type: 'plain_text', text: 'Agents', emoji: true } },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `Pick which agent answers in this channel. Current: *${escapeMrkdwn(current)}*` }] },
+      ];
   for (const a of rows) {
     const isCurrent = a.name === current;
-    const value = JSON.stringify({ c: ctx.channelId, a: a.name === 'default' ? '' : a.name });
+    const value = JSON.stringify({ c: channelId, a: a.name === 'default' ? '' : a.name });
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `${isCurrent ? '✓ ' : ''}*${escapeMrkdwn(a.name)}*${a.description ? `\n_${escapeMrkdwn(a.description.slice(0, 140))}_` : ''}` },
@@ -887,6 +911,33 @@ function buildAgentPickerBlocks(
     });
   }
   return blocks;
+}
+
+/**
+ * In-thread recovery blocks for when a Slack turn can't start because the agent
+ * configured for the channel (a channel override, or the project default the
+ * `default` sentinel resolves to) no longer exists — deleted, renamed, or
+ * disabled. Names the dead agent, then offers an inline picker of the project's
+ * CURRENT agents; the `set_agent_*` buttons run the SAME handler as `/kortix
+ * agents` (interactivity.ts → handleSetSelection), so one click re-points the
+ * channel binding and the user just re-sends. `badAgent` null = the `default`
+ * sentinel couldn't resolve (no channel override was set).
+ */
+export function buildAgentUnavailablePickerBlocks(input: {
+  channelId: string;
+  badAgent: string | null;
+  agents: Array<{ name: string; description: string | null }>;
+}): Array<Record<string, unknown>> {
+  const bad = input.badAgent && input.badAgent.trim() ? input.badAgent.trim() : null;
+  const lead = bad
+    ? `:warning:  *I couldn't start a session — the agent set for this channel (\`${escapeMrkdwn(bad)}\`) no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then send your message again.`
+    : `:warning:  *I couldn't start a session — this channel's default agent no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then send your message again.`;
+  // Mark nothing as "current": the previously-selected agent is the dead one, so
+  // implying an existing selection would be misleading. Pass the bad name as
+  // `currentAgent` — it isn't in the list, so no row gets a ✓.
+  return buildAgentPickerBlocks(input.channelId, bad, input.agents, [
+    { type: 'section', text: { type: 'mrkdwn', text: lead } },
+  ]);
 }
 
 async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
