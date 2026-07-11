@@ -20,6 +20,9 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
 } from './kortix-user-context'
+import { createAcpHarnessRegistry } from './acp/harness-registry'
+import { AcpRuntime } from './acp/runtime'
+import { createAcpRouter } from './routes/acp'
 
 // Headers that must not be forwarded — they're connection-scoped or set by us.
 const STRIP_REQUEST_HEADERS = new Set([
@@ -211,6 +214,11 @@ export function buildOpencodeApp(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
+  acpRuntime: AcpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(),
+    cwd: cfg.projectTarget,
+    projectEnv,
+  }),
 ): Hono {
   const app = new Hono()
 
@@ -297,6 +305,11 @@ export function buildOpencodeApp(
   // poll fast (202 while generating, 200 + the file when ready) so it never
   // trips the apps/api preview-proxy's per-attempt timeout. See the router doc.
   app.route('/presentation', createPresentationRouter(cfg))
+
+  // Raw ACP-over-HTTP bridge. Each client-chosen server id owns one official
+  // stdio ACP adapter process. This route intentionally preserves JSON-RPC
+  // envelopes instead of translating them into OpenCode's message schema.
+  app.route('/acp', createAcpRouter(acpRuntime))
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of
@@ -431,10 +444,15 @@ export function startProxy(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {
+  const acpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(),
+    cwd: cfg.projectTarget,
+    projectEnv,
+  })
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
   let currentCfg = cfg
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, acpRuntime)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -532,10 +550,11 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort)
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, acpRuntime)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {
+      await acpRuntime.shutdown()
       server.stop(true)
     },
   }

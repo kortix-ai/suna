@@ -4,13 +4,14 @@ Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
 **Scope:**
 
-1. Process supervisor for `opencode serve` (spawn, restart on crash, drain on
-   SIGTERM/SIGINT).
-2. Reverse proxy that fronts opencode's HTTP + SSE surface on
+1. ACP harness runtime for official Claude/Codex adapters, native
+   `opencode acp`, and `pi-acp` (spawn, raw JSON-RPC, SSE replay, drain).
+2. Compatibility supervisor for `opencode serve` during the ACP migration.
+3. Reverse proxy that fronts opencode's HTTP + SSE surface on
    `KORTIX_SERVICE_PORT` (default `8000`).
-3. Small Kortix-namespaced control surface: `GET /kortix/health` and
+4. Small Kortix-namespaced control surface: `GET /kortix/health` and
    `POST /kortix/refresh`.
-4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+5. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
    HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
    assets resolve cleanly through the sandbox proxy. Ported from main's
    always-on `core/services/static-web.js` s6 service; now runs in-process
@@ -48,6 +49,10 @@ in-process daemon.
 | ---------------- | ------------------------------------------------------------------------ |
 | `GET /kortix/health` | Daemon liveness + opencode state + repo info (always 200 from daemon) |
 | `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.     |
+| `GET /acp` | List live ACP process instances. |
+| `POST /acp/:serverId?agent=<harness>` | Start/reuse a harness and send one raw ACP JSON-RPC envelope. |
+| `GET /acp/:serverId` | Stream agent-originated ACP envelopes as replayable SSE. |
+| `DELETE /acp/:serverId` | Stop an ACP process; idempotent. |
 | `/*`             | Reverse-proxied to opencode. 503 while `opencode !== 'ok'`.              |
 
 ### `GET /kortix/health` response shape
@@ -107,7 +112,15 @@ KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
 KORTIX_GITHUB_TOKEN=
 KORTIX_TOKEN=
+KORTIX_ACP_CLAUDE_PATH=claude-agent-acp
+KORTIX_ACP_CODEX_PATH=codex-acp
+KORTIX_ACP_OPENCODE_PATH=opencode
+KORTIX_ACP_OPENCODE_ARGS='["acp"]'
+KORTIX_ACP_PI_PATH=pi-acp
 ```
+
+Each `KORTIX_ACP_<HARNESS>_ARGS` override is a JSON string array. ACP routes use
+the same `X-Kortix-User-Context` HMAC gate as the legacy OpenCode proxy.
 
 ## Build
 
