@@ -17,13 +17,11 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  GitFork,
   Globe,
   Image as ImageIcon,
   Layers,
   Loader2,
   MessageSquare,
-  Pencil,
   Reply,
   Scissors,
   Search,
@@ -63,16 +61,7 @@ import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
@@ -95,14 +84,13 @@ import {
   parseModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
-import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import {
   ascendingId,
   rejectQuestion,
   replyToPermission,
   replyToQuestion,
   useAbortOpenCodeSession,
-  useForkSession,
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
@@ -153,7 +141,6 @@ import {
   usePermissionSelfHeal,
   useProjectConfig,
   useQuestionSelfHeal,
-  writeForkDraft,
 } from '@kortix/sdk/react';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
@@ -209,30 +196,10 @@ export interface ReplyToContext {
 }
 
 // ============================================================================
-// Sub-Session / Fork Breadcrumb
+// Sub-Session Breadcrumb
 // ============================================================================
 
 // SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
-
-function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
-  const next: PromptPart[] = [];
-  const value =
-    text ??
-    parts.find((part): part is TextPart => isTextPart(part) && !part.synthetic && !part.ignored)
-      ?.text ??
-    '';
-  if (value) next.push({ type: 'text', text: value });
-  for (const part of parts) {
-    if (!isFilePart(part) || !part.url) continue;
-    next.push({
-      type: 'file',
-      mime: part.mime || 'application/octet-stream',
-      url: part.url,
-      filename: part.filename,
-    });
-  }
-  return next;
-}
 
 // ============================================================================
 // Optimistic answers cache
@@ -1248,180 +1215,6 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // Edit Part Dialog — inline editing for text parts
 // ============================================================================
 
-function EditPartDialog({
-  open,
-  onOpenChange,
-  initialText,
-  onSave,
-  loading,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  initialText: string;
-  onSave: (text: string) => void;
-  loading?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [text, setText] = useState(initialText);
-
-  // Reset text when dialog opens with new content
-  useEffect(() => {
-    if (open) setText(initialText);
-  }, [open, initialText]);
-
-  const handleSave = () => {
-    const trimmed = text.trim();
-    if (trimmed && trimmed !== initialText) {
-      onSave(trimmed);
-    } else {
-      onOpenChange(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 py-2">
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="h-full max-h-[50vh] min-h-[120px] resize-y text-sm"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSave();
-              }
-            }}
-          />
-        </div>
-        <DialogFooter className="flex-shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={loading || !text.trim() || text.trim() === initialText}
-          >
-            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfirmForkDialog({
-  open,
-  onOpenChange,
-  onConfirm,
-  loading,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-  loading?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={loading}>
-            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ============================================================================
-// Part Actions — edit & fork action for user message parts
-// ============================================================================
-
-function PartActions({
-  part,
-  isBusy,
-  onEditFork,
-  loading,
-  className,
-}: {
-  part: Part;
-  isBusy: boolean;
-  onEditFork: (newText: string) => void;
-  loading?: boolean;
-  className?: string;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [editOpen, setEditOpen] = useState(false);
-
-  // Only text parts are editable
-  const isEditable = isTextPart(part) && !!(part as TextPart).text?.trim();
-  const partText = isEditable ? (part as TextPart).text : '';
-
-  if (!isEditable) return null;
-
-  return (
-    <>
-      <div className={cn('flex items-center gap-0.5', className)}>
-        {/* Edit & fork button */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground/50"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Edit & fork dialog */}
-      <EditPartDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        initialText={partText}
-        onSave={(newText) => {
-          onEditFork(newText);
-          setEditOpen(false);
-        }}
-        loading={loading}
-      />
-    </>
-  );
-}
 
 // ============================================================================
 // User Message Row
@@ -2491,10 +2284,6 @@ interface SessionTurnProps {
   isBusy: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
-  /** Fork the session at a user message (copies messages before this point) */
-  onFork: (userMessageId: string) => Promise<void>;
-  /** Fork the session at a user message and prefill with edited text */
-  onEditFork: (userMessageId: string, newText: string) => Promise<void>;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
@@ -2518,8 +2307,6 @@ function SessionTurn({
   isFirstTurn,
   isBusy,
   isCompaction,
-  onFork,
-  onEditFork,
   providers,
   commandMessages,
   commands,
@@ -2530,7 +2317,6 @@ function SessionTurn({
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
-  const [editForkLoading, setEditForkLoading] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
 
   // Derived state from shared helpers
@@ -3068,7 +2854,7 @@ function SessionTurn({
   //   6. Response section (ONLY when NOT working) — the extracted last text part
   //   7. Error (when steps collapsed)
   //   8. Question prompt
-  //   9. Action bar (copy, fork, revert)
+  //   9. Action bar (copy)
   //
   // The response (last text part) is NEVER rendered twice:
   //   - While working: it renders INSIDE steps as a regular text part (hideResponsePart=false)
@@ -3153,43 +2939,6 @@ function SessionTurn({
                 </TooltipTrigger>
                 <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
               </Tooltip>
-              {(() => {
-                const userTextPart = turn.userMessage.parts.find(
-                  (p) =>
-                    isTextPart(p) &&
-                    !(p as TextPart).synthetic &&
-                    !(p as any).ignored &&
-                    !!stripSystemPtyText((p as TextPart).text || ''),
-                );
-                if (!userTextPart) return null;
-                return (
-                  <PartActions
-                    part={userTextPart}
-                    isBusy={isBusy}
-                    onEditFork={(newText) => onEditFork(turn.userMessage.info.id, newText)}
-                    loading={editForkLoading}
-                  />
-                );
-              })()}
-              {/* Fork button — on user messages */}
-              {!isBusy && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => onFork(turn.userMessage.info.id)}
-                    >
-                      <GitFork className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {tHardcodedUi.raw(
-                      'componentsSessionSessionChat.line3395JsxTextForkToNewSession',
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
           )}
         </div>
@@ -3601,7 +3350,7 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only — fork & revert live on user messages) ── */}
+      {/* ── Action bar (copy + duration/cost only) ── */}
       {!working && response && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
           {/* Duration & cost */}
@@ -3809,7 +3558,6 @@ export function SessionChat({
   const { data: config } = useOpenCodeConfig();
   const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortOpenCodeSession();
-  const forkSession = useForkSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
   const local = useOpenCodeLocal({
@@ -3868,7 +3616,6 @@ export function SessionChat({
   const [pollingActive, setPollingActive] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
-  const [confirmForkMessageId, setConfirmForkMessageId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<{
     name: string;
     description?: string;
@@ -4637,53 +4384,18 @@ export function SessionChat({
   // ============================================================================
 
   // ============================================================================
-  // Fork handlers
+  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
+  // flow instead of the removed edit-fork-prompt feature. The old behaviour
+  // created a native fork of the session at a message and reopened the new
+  // session with the edited prompt restored in the composer — that UX was the
+  // wrong model. What we actually want is a proper rewind/rollback on the SAME
+  // session (edit a prior user message, roll the session back to that point,
+  // and re-run from there), which opencode supports natively. Removed here so
+  // it can be rebuilt correctly. The old surface spanned: useForkSession()
+  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
+  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
+  // the composer draft-restore in session-chat-input.tsx.
   // ============================================================================
-
-  const handleFork = useCallback(
-    async (userMessageId: string) => {
-      setConfirmForkMessageId(null);
-      const msg = messages?.find((item) => item.info.id === userMessageId);
-      const forkedSession = await forkSession.mutateAsync({
-        sessionId,
-        messageId: userMessageId,
-        directory: session?.directory,
-        workspace: session?.workspaceID,
-      });
-      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts));
-
-      const title = forkedSession.title || 'Forked session';
-      openTabAndNavigate({
-        id: forkedSession.id,
-        title,
-        type: 'session',
-        href: `/sessions/${forkedSession.id}`,
-      });
-    },
-    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
-  );
-
-  const handleEditFork = useCallback(
-    async (userMessageId: string, newText: string) => {
-      const msg = messages?.find((item) => item.info.id === userMessageId);
-      const forkedSession = await forkSession.mutateAsync({
-        sessionId,
-        messageId: userMessageId,
-        directory: session?.directory,
-        workspace: session?.workspaceID,
-      });
-      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts, newText));
-
-      const title = forkedSession.title || 'Forked session';
-      openTabAndNavigate({
-        id: forkedSession.id,
-        title,
-        type: 'session',
-        href: `/sessions/${forkedSession.id}`,
-      });
-    },
-    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
-  );
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -5178,7 +4890,6 @@ export function SessionChat({
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
-      variant: 'thread' as const,
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
         if (projectRoute) {
@@ -5481,10 +5192,6 @@ export function SessionChat({
                           isFirstTurn={turnIndex === 0}
                           isBusy={isBusy}
                           isCompaction={hasCompaction}
-                          onFork={async (userMessageId) => {
-                            setConfirmForkMessageId(userMessageId);
-                          }}
-                          onEditFork={handleEditFork}
                           providers={providers}
                           commandMessages={commandMessagesRef.current}
                           commands={commands}
@@ -5663,17 +5370,6 @@ export function SessionChat({
           }
         />
       )}
-      <ConfirmForkDialog
-        open={!!confirmForkMessageId}
-        onOpenChange={(open) => {
-          if (!open) setConfirmForkMessageId(null);
-        }}
-        onConfirm={() => {
-          if (!confirmForkMessageId) return;
-          void handleFork(confirmForkMessageId);
-        }}
-        loading={forkSession.isPending}
-      />
     </div>
   );
 }

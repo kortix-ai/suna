@@ -324,59 +324,6 @@ export function useSummarizeOpenCodeSession() {
 }
 
 // ============================================================================
-// Fork Hook
-// ============================================================================
-
-/**
- * Fork a session at a specific message point.
- * Creates a new session that branches off from the given message.
- * Returns the newly created Session.
- */
-export function useForkSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      messageId,
-      directory,
-      workspace,
-    }: {
-      sessionId: string;
-      messageId?: string;
-      directory?: string;
-      workspace?: string;
-    }) => {
-      const client = getClient();
-      const result = await client.session.fork({
-        sessionID: sessionId,
-        ...(messageId && { messageID: messageId }),
-        ...(directory && { directory }),
-        ...(workspace && { workspace }),
-      });
-      return unwrap(result) as Session;
-    },
-    onSuccess: (newSession) => {
-      // Insert forked session into cache — SSE session.created will also fire.
-      // Dedup to avoid duplicate keys in the session list.
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
-        if (!old) return [newSession];
-        const idx = old.findIndex((s) => s.id === newSession.id);
-        if (idx >= 0) {
-          const next = [...old];
-          next[idx] = newSession;
-          return next.sort((a, b) => b.time.updated - a.time.updated);
-        }
-        return [newSession, ...old].sort((a, b) => b.time.updated - a.time.updated);
-      });
-      queryClient.setQueryData(opencodeKeys.session(newSession.id), newSession);
-    },
-  });
-}
-
-
-
-// ============================================================================
 // Init Hook — analyze project and create AGENTS.md (via /init command)
 // ============================================================================
 

@@ -13,7 +13,6 @@ import type {
   Agent,
   Command,
   MessageWithParts,
-  PromptPart,
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -25,7 +24,6 @@ import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
 
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
@@ -1155,9 +1153,8 @@ export interface SessionChatInputProps {
   /** Full provider list response (for connect/manage provider dialogs) */
   providers?: ProviderListResponse;
 
-  /** Thread/fork context — renders an inline indicator inside the input card */
+  /** Sub-session context — renders an inline indicator inside the input card */
   threadContext?: {
-    variant: 'thread' | 'fork';
     parentTitle: string;
     onBackToParent: () => void;
   };
@@ -1194,29 +1191,6 @@ export interface SessionChatInputProps {
   onQuestionAction?: () => void;
   /** Number of ESC presses so far (0 = none, 1 = first, 2 = second). Triple-ESC to stop. */
   escCount?: number;
-}
-
-function parseForkDraft(parts: PromptPart[] | null | undefined) {
-  if (!parts?.length) return { text: '', files: [] as AttachedFile[] };
-  const files: AttachedFile[] = [];
-  let text = '';
-
-  for (const part of parts) {
-    if (part.type === 'text') {
-      text = part.text;
-      continue;
-    }
-    if (part.type !== 'file') continue;
-    files.push({
-      kind: 'remote',
-      url: part.url,
-      filename: part.filename || 'Attachment',
-      mime: part.mime,
-      isImage: part.mime.startsWith('image/'),
-    });
-  }
-
-  return { text, files };
 }
 
 export function SessionChatInput({
@@ -1361,26 +1335,6 @@ export function SessionChatInput({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to lockForQuestion changes
   }, [lockForQuestion]);
-
-  useEffect(() => {
-    if (!sessionId || typeof window === 'undefined') return;
-    const parsed = readForkDraft(sessionId);
-    if (parsed) {
-      const next = parseForkDraft(parsed);
-      setText(next.text);
-      setAttachedFiles((prev) => {
-        for (const file of prev) {
-          if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-        }
-        return next.files;
-      });
-      setSlashFilter(null);
-      setMentionQuery(null);
-      setMentions([]);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-    clearForkDraft(sessionId);
-  }, [sessionId]);
 
   // ChatGPT-like behavior: if the user starts typing while the textarea is not
   // focused, redirect the keystroke into this textarea and focus it.
@@ -2099,7 +2053,7 @@ export function SessionChatInput({
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    {threadContext.variant === 'fork' ? 'Fork of' : 'Sub-session of'}{' '}
+                    {'Sub-session of'}{' '}
                     <span className="text-foreground/80 font-medium">
                       {threadContext.parentTitle}
                     </span>

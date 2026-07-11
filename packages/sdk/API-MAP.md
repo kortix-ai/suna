@@ -63,7 +63,7 @@ try/catching every call.
 | op | v2 client / daemon |
 |---|---|
 | create / list / get / delete / update | `client.session.{create,list,get,delete,update}` |
-| fork / init / summarize / abort | `client.session.{fork,summarize,abort}`, `/kortix/abort` |
+| init / summarize / abort | `client.session.summarize`, `/kortix/abort` |
 | messages | `client.session.messages` → `GET /session/:id/message` |
 | **send prompt (sync / async)** | `client.session.prompt` → `POST /session/:id/prompt[_async]` |
 | parts edit / delete | `client.part.{update,delete}` |
