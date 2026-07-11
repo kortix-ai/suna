@@ -3,8 +3,8 @@
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
-import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   AlertTriangle,
@@ -115,21 +115,6 @@ import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { getClient } from '@/lib/opencode-sdk';
 import {
-  abandonOptimisticSend,
-  applyOptimisticAbort,
-  beginOptimisticSend,
-  classifySendError,
-  clearStartStash,
-  type KortixSendError,
-  readStartStash,
-  replayStartStash,
-  sendAndRecover,
-  usePermissionSelfHeal,
-  useQuestionSelfHeal,
-  useProjectConfig,
-  writeForkDraft,
-} from '@kortix/sdk/react';
-import {
   type AgentRefLike,
   type FileRefLike,
   buildAgentRefsBlock,
@@ -155,6 +140,21 @@ import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import {
+  type KortixSendError,
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  readStartStash,
+  replayStartStash,
+  sendAndRecover,
+  usePermissionSelfHeal,
+  useProjectConfig,
+  useQuestionSelfHeal,
+  writeForkDraft,
+} from '@kortix/sdk/react';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -3386,7 +3386,7 @@ function SessionTurn({
                 // the dedicated response section to avoid duplicate output.
                 if (!hasSteps) return null;
                 return (
-                  <div key={part.id} className="text-sm">
+                  <div key={part.id} className="min-w-0 text-sm">
                     <ThrottledMarkdown content={part.text} isStreaming={working} />
                   </div>
                 );
@@ -3481,7 +3481,7 @@ function SessionTurn({
       {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
       {working && !hasSteps && !shouldUseInlineContent && response && (
-        <div className="text-sm">
+        <div className="min-w-0 text-sm">
           <ThrottledMarkdown content={response} isStreaming />
         </div>
       )}
@@ -3503,7 +3503,7 @@ function SessionTurn({
                 const isStreaming = idx === lastTextIdx;
                 const text = isStreaming ? item.part.text! : item.part.text!.trim();
                 return (
-                  <div key={item.id} className="text-sm">
+                  <div key={item.id} className="min-w-0 text-sm">
                     {isStreaming ? (
                       <ThrottledMarkdown content={text} isStreaming />
                     ) : (
