@@ -164,7 +164,7 @@ export function PptxRenderer({
   return (
     <div
       data-pptx-minimal=""
-      className={cn('flex h-full w-full flex-col overflow-hidden bg-background', className)}
+      className={cn('relative flex h-full w-full flex-col overflow-hidden bg-background', className)}
     >
       <I18nextProvider i18n={getPptxI18n()}>
         <PowerPointViewer

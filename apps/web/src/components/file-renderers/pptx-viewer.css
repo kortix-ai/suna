@@ -130,6 +130,25 @@
   display: none !important;
 }
 
+/* The mobile "Slides"/"Notes" sheets are `position: fixed` full-viewport modals.
+   That's right on a real phone, but here the viewer often lives in a narrow
+   desktop panel — a fixed modal would cover the whole app. The sheet is rendered
+   inside our wrapper (made a positioning context via `relative` above), so
+   anchoring it there with `absolute` turns it into a bottom sheet bounded by the
+   viewer panel. Present mode is a fixed, non-modal layer and is unaffected. */
+[data-pptx-minimal] [role='dialog'][aria-modal='true'] {
+  position: absolute !important;
+}
+
+/* That sheet reuses the desktop slides <aside>; stretched to the full sheet
+   width its fixed-size thumbnails leave dead space. Cap + center the list so it
+   reads as an intentional column of slides. */
+[data-pptx-minimal] [role='dialog'][aria-modal='true'] aside {
+  max-width: 320px;
+  margin-inline: auto;
+  border-inline: 0 !important;
+}
+
 /* ── Drive-grid thumbnail ──────────────────────────────────────────────────
  * The file grid renders this same viewer scaled down as a preview. There we
  * want just the first slide — drop all chrome (desktop control strip + slides
