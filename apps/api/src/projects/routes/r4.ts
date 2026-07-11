@@ -75,6 +75,10 @@ import {
 } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
+import {
+  bindChatThread,
+  resolveWorkspaceIdForChannel,
+} from "../../channels/slack/binding";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
 import {
   APPS_DISABLED_BODY,
@@ -911,6 +915,19 @@ function normalizeAgentMailUsername(
   return trimmed || null;
 }
 
+// Small static check for the classic catastrophic-backtracking shapes —
+// a quantified sub-group repeated by an outer quantifier (e.g. (x+)+, (x*)*)
+// or an ambiguous repeated alternation (e.g. (a|a)*) — before the pattern is
+// persisted and later run against every inbound email sender.
+const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
+const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
+
+function hasCatastrophicBacktracking(pattern: string): boolean {
+  return (
+    NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern)
+  );
+}
+
 function parseSenderPolicyBody(
   input: Partial<AgentMailSenderPolicy> | undefined,
 ): AgentMailSenderPolicy {
@@ -920,6 +937,11 @@ function parseSenderPolicyBody(
       new RegExp(policy.allowedRegex);
     } catch {
       throw new Error("Email sender regex is invalid");
+    }
+    if (hasCatastrophicBacktracking(policy.allowedRegex)) {
+      throw new Error(
+        "Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)",
+      );
     }
   }
   return policy;
@@ -1055,6 +1077,23 @@ projectsApp.openapi(
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
+    }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay turn events into another
+    // tenant's live session (IDOR).
+    const [turnStreamSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnStreamSession) {
+      return c.json({ error: "Not found" }, 404);
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1236,6 +1275,116 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/bind-thread
+// Bind a Slack thread the agent created (e.g. from a webhook/cron run) to its
+// session, so a later human reply in that thread routes back into this session
+// (approval loops, follow-up Q&A). This writes the same `chat_threads` row the
+// inbound `bind_chat_thread` post-create action does; without it, replies to a
+// non-Slack-originated thread are classified `ignore` and dropped.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/slack/bind-thread",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/slack/bind-thread",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(),
+        "Bound",
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
+    // back to this project) or a project/session-scoped user PAT.
+    const authType = (c as any).get("authType") as string | undefined;
+    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
+      const accountId = (c as any).get("accountId") as string | undefined;
+      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+      if (!accountId || !sandboxId) {
+        return c.json({ error: "bind-thread requires a sandbox token" }, 403);
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+    }
+
+    let body: {
+      session_id?: string;
+      channel?: string;
+      thread_ts?: string;
+      workspace_id?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const sessionId = body.session_id?.trim();
+    const channel = body.channel?.trim();
+    const threadTs = body.thread_ts?.trim();
+    if (!sessionId || !channel || !threadTs) {
+      return c.json(
+        { error: "session_id, channel, and thread_ts are required" },
+        400,
+      );
+    }
+    // the session must belong to this project
+    const [sess] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!sess) {
+      return c.json({ error: "session not found in project" }, 404);
+    }
+    const workspaceId =
+      body.workspace_id?.trim() ||
+      (await resolveWorkspaceIdForChannel(projectId, channel));
+    if (!workspaceId) {
+      return c.json(
+        {
+          error:
+            "could not resolve Slack workspace for channel (is the channel bound to this project?)",
+        },
+        400,
+      );
+    }
+    await bindChatThread({ projectId, workspaceId, threadId: threadTs, sessionId });
+    return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
   },
 );
 
@@ -1753,6 +1902,24 @@ projectsApp.openapi(
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
     }
+
+    // session_id is caller-supplied — scope it back to :projectId so a caller
+    // authed for their own project can't relay a question into another
+    // tenant's live session (IDOR).
+    const [turnQuestionSession] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!turnQuestionSession) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
     if (!Array.isArray(body.questions) || body.questions.length === 0) {
       return c.json({ error: "at least one question is required" }, 400);
     }

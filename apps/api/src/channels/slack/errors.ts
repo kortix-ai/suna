@@ -132,6 +132,29 @@ function isProviderConfig(name: string, status: number | undefined): boolean {
   return name === 'ProviderAuthError' || status === 401 || status === 403;
 }
 
+// The configured agent doesn't exist — deleted/renamed/disabled since the
+// channel (or project default) was pointed at it. On a governed project this is
+// caught at session-create (400 AGENT_NOT_DECLARED → inline picker); on a legacy
+// project the session boots and opencode fails here when the agent markdown is
+// missing. Requires 'agent' in the text so it can't shadow the model-not-found
+// bucket below (which matches the broad "does not exist").
+function isAgentUnavailable(lower: string): boolean {
+  // Must mention an agent, so it can't shadow the broad model-not-found match.
+  if (!lower.includes('agent')) return false;
+  // …then any "this thing is gone" phrasing. `not found` / `does not exist`
+  // catch the natural `agent "X" not found` shapes (the name sits mid-phrase, so
+  // we can't require the words to be adjacent).
+  return (
+    lower.includes('not found') ||
+    lower.includes('does not exist') ||
+    lower.includes('no such') ||
+    lower.includes('not declared') ||
+    lower.includes('declared agent') ||
+    lower.includes('not a valid agent') ||
+    lower.includes('unknown agent')
+  );
+}
+
 // The selected model doesn't exist / isn't enabled for this key — a config fix,
 // not an outage. Usually a 404, sometimes phrased in the message.
 function isModelNotFound(status: number | undefined, lower: string): boolean {
@@ -251,7 +274,19 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 6. Model doesn't exist / isn't enabled — a config fix.
+  // 6. The configured agent is gone — deleted/renamed since the channel was
+  //    pointed at it. Route the user straight to the picker to fix it.
+  if (isAgentUnavailable(lower)) {
+    return {
+      title: 'Agent unavailable',
+      text:
+        `:warning: *The agent configured for this channel isn't available* — it may have been deleted, renamed, or disabled.` +
+        ` Run \`/kortix agents\` to pick one of this project's current agents, then mention me again.`,
+      aborted: false,
+    };
+  }
+
+  // 7. Model doesn't exist / isn't enabled — a config fix.
   if (isModelNotFound(status, lower)) {
     return {
       title: 'Model unavailable',
@@ -262,7 +297,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 7. Provider auth / config — bad or expired key, billing not set up.
+  // 8. Provider auth / config — bad or expired key, billing not set up.
   if (isProviderConfig(name, status)) {
     const who = providerID ? `the ${providerID} provider` : 'the model provider';
     return {
@@ -274,7 +309,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 8. Transient provider/network trouble — temporary, retry guidance, no raw body.
+  // 9. Transient provider/network trouble — temporary, retry guidance, no raw body.
   //    Checked BEFORE content-filter so a retryable 5xx whose body mentions a
   //    "safety system" isn't mislabeled a permanent policy refusal.
   if (isTransient(status, isRetryable, lower)) {
@@ -287,7 +322,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 9. Content-policy refusal — neutral copy, never echo the raw safety text.
+  // 10. Content-policy refusal — neutral copy, never echo the raw safety text.
   if (isContentFilter(status, isRetryable, lower)) {
     return {
       title: 'Request blocked',
@@ -298,7 +333,7 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 10. Anything else — never hide it. Show the real error when we have one;
+  // 11. Anything else — never hide it. Show the real error when we have one;
   //     otherwise an honest "unexpected error" (the session footer carries the
   //     link to dig in). Name-tag a detail-less error for debuggability.
   if (message) {

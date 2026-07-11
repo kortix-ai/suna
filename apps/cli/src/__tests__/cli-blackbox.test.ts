@@ -421,18 +421,24 @@ console.log(JSON.stringify({ cmd, args, body }));
     ]);
   }, 15_000);
 
-  test('top-level help is grouped into labeled sections', async () => {
+  test('top-level help is grouped into tiers and labeled sections', async () => {
     const result = await runCli(['--help']);
 
     expect(result.code).toBe(0);
+    // Tier bands separate what lives outside the project, inside the linked
+    // project, and the CLI tool itself (rendered as a labeled divider).
+    for (const tier of ['Account', 'The linked project', 'CLI']) {
+      expect(result.stdout).toContain(`\n  ${tier} ─`);
+    }
+    // Section headings within the tiers.
     for (const heading of [
-      'Project',
-      'Auth & hosts',
-      'Work',
-      'Resources',
-      'Agents',
+      'Authentication',
+      'Hosts & accounts',
+      'Projects',
+      'Author & ship',
+      'Agents & integrations',
+      'Sessions & work',
       'Access & permissions',
-      'CLI',
     ]) {
       expect(result.stdout).toContain(`\n  ${heading}\n`);
     }
@@ -443,7 +449,8 @@ console.log(JSON.stringify({ cmd, args, body }));
 
     const sectionStart = result.stdout.indexOf('\n  Access & permissions\n');
     expect(sectionStart).toBeGreaterThan(-1);
-    const nextSectionStart = result.stdout.indexOf('\n  CLI\n');
+    // The CLI tier band closes out the linked-project tier.
+    const nextSectionStart = result.stdout.indexOf('\n  CLI ─');
     expect(nextSectionStart).toBeGreaterThan(sectionStart);
     const section = result.stdout.slice(sectionStart, nextSectionStart);
 

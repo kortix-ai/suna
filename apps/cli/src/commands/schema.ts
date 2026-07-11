@@ -16,9 +16,9 @@
  * between "the schema the CLI prints" and "the schema the URL serves."
  */
 import { KORTIX_SCHEMA_BASE_URL, manifestJsonSchema } from '@kortix/manifest-schema';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix schema [options]
+const HELP = help`Usage: kortix schema [options]
 
 Print the canonical JSON Schema for kortix.toml / kortix.yaml — the same
 document served at ${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json (and the

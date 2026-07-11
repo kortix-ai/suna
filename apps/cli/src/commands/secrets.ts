@@ -7,13 +7,13 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ProjectSecret,
   ProjectSecretsResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix secrets <subcommand> [options]
+const HELP = help`Usage: kortix secrets <subcommand> [options]
 
 Manage encrypted env-var secrets on the linked Kortix project. Values
 are AES-256-GCM-encrypted at rest and injected into session sandboxes

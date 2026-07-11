@@ -7,9 +7,11 @@ import { useTranslations } from 'next-intl';
 // holding group memberships. Once configured, every SAML-issued JWT
 // triggers JIT membership + group sync in the auth middleware.
 
+import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +47,69 @@ import {
   listSsoGroupMappings,
   upsertSsoProvider,
 } from '@/lib/iam-client';
+
+import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
+
+async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(successMsg);
+  } catch {
+    toast.warning('Copy failed — select and copy manually');
+  }
+}
+
+/**
+ * "Service provider details" block — the Entity ID + Reply URL (ACS) admins
+ * paste into their IdP's SAML configuration. Shown both before a provider is
+ * configured (admins need these values first) and inside the configure/edit
+ * dialog. Deliberately does not mention the delegated identity provider by
+ * name — see sso-card.test.ts.
+ */
+function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }) {
+  return (
+    <div className={className}>
+      <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
+      <p className="text-muted-foreground mt-0.5 text-[11px]">
+        Paste these into your identity provider's SAML configuration.
+      </p>
+      <div className="mt-3 space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Identifier (Entity ID)</Label>
+          <div className="flex items-center gap-2">
+            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+              {urls.entityId}
+            </code>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Copy Identifier (Entity ID)"
+              onClick={() => copyToClipboard(urls.entityId, 'Entity ID copied')}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Reply URL (ACS)</Label>
+          <div className="flex items-center gap-2">
+            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+              {urls.acsUrl}
+            </code>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Copy Reply URL (ACS)"
+              onClick={() => copyToClipboard(urls.acsUrl, 'Reply URL copied')}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface SsoCardProps {
   accountId: string;
@@ -95,10 +160,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
 
   const provider = providerQuery.data;
   const mappings = mappingsQuery.data ?? [];
+  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
   return (
     <section className="border-border/70 bg-card rounded-xl border">
-      <header className={provider ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
+      <header className={provider || spUrls ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
@@ -122,18 +188,27 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
             </p>
           </div>
-          {canManage && (
-            <Button
-              variant={provider ? 'outline' : 'default'}
-              onClick={() => setEditOpen(true)}
-              size="sm"
-              className="shrink-0"
-            >
-              {provider ? 'Edit' : 'Configure'}
-            </Button>
-          )}
+          {canManage &&
+            (provider ? (
+              <Button
+                variant="outline"
+                onClick={() => setEditOpen(true)}
+                size="sm"
+                className="shrink-0"
+              >
+                Edit
+              </Button>
+            ) : (
+              // New providers go through the guided setup wizard (per-IdP
+              // steps + inline import) instead of the bare dialog.
+              <Button asChild size="sm" className="shrink-0">
+                <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
+              </Button>
+            ))}
         </div>
       </header>
+
+      {!provider && spUrls && <SpDetails urls={spUrls} className="px-6 py-4" />}
 
       {provider && (
         <div className="px-6 py-4">
@@ -180,7 +255,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                   )}
                 </dd>
               </div>
-              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
+              <div className="flex items-center justify-between gap-4 py-2">
                 <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
                 <dd className="text-right">
                   {provider.auto_provision_groups ? (
@@ -191,14 +266,6 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                   ) : (
                     <span className="text-muted-foreground">No</span>
                   )}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-4 py-2">
-                <dt className="text-muted-foreground shrink-0">
-                  {tHardcodedUi.raw('componentsIamSsoCard.line143JsxTextSupabaseProviderId')}
-                </dt>
-                <dd className="text-muted-foreground min-w-0 truncate text-right font-mono text-[11px]">
-                  {provider.supabase_sso_provider_id}
                 </dd>
               </div>
             </dl>
@@ -366,15 +433,13 @@ function EditProviderDialog({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(existing?.name ?? '');
-  const [supabaseId, setSupabaseId] = useState(existing?.supabase_sso_provider_id ?? '');
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
   const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
-  // Import path (new providers only): paste the IdP metadata XML or its URL and
-  // we register it with Supabase server-side. Editing an existing provider keeps
-  // the advanced UUID form (the Supabase provider already exists).
-  const [mode, setMode] = useState<'metadata' | 'uuid'>(existing ? 'uuid' : 'metadata');
+  // New providers register by importing the IdP metadata (XML or URL) — the
+  // backend handles the identity-provider registration; no internals surface in
+  // the UI. Edits reuse the stored provider id under the hood.
   const [metaKind, setMetaKind] = useState<'xml' | 'url'>('xml');
   const [metaXml, setMetaXml] = useState('');
   const [metaUrl, setMetaUrl] = useState('');
@@ -383,19 +448,17 @@ function EditProviderDialog({
   useMemo(() => {
     if (open) {
       setName(existing?.name ?? '');
-      setSupabaseId(existing?.supabase_sso_provider_id ?? '');
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
       setAutoProvision(existing?.auto_provision_groups ?? false);
-      setMode(existing ? 'uuid' : 'metadata');
       setMetaKind('xml');
       setMetaXml('');
       setMetaUrl('');
     }
   }, [open, existing]);
 
-  const importing = mode === 'metadata' && !existing;
+  const importing = !existing;
   const mutation = useMutation({
     mutationFn: () =>
       importing
@@ -410,7 +473,9 @@ function EditProviderDialog({
               : { metadata_url: metaUrl.trim() }),
           })
         : upsertSsoProvider(accountId, {
-            supabase_sso_provider_id: supabaseId.trim(),
+            // Threaded from the loaded provider — an internal id, never shown
+            // or editable in the UI.
+            supabase_sso_provider_id: existing!.supabase_sso_provider_id,
             name: name.trim(),
             primary_domain: domain.trim().toLowerCase(),
             group_claim_name: claim.trim() || 'groups',
@@ -430,7 +495,9 @@ function EditProviderDialog({
   const ready =
     name.trim().length > 0 &&
     /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim()) &&
-    (importing ? metadataReady : /^[0-9a-f-]{36}$/i.test(supabaseId.trim()));
+    (importing ? metadataReady : true);
+
+  const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
@@ -439,41 +506,19 @@ function EditProviderDialog({
           <DialogTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</DialogTitle>
           <DialogDescription>
             {existing
-              ? tHardcodedUi.raw(
-                  'componentsIamSsoCard.line343JsxTextCreateTheProviderInSupabaseStudioAuthenticationSSO',
-                )
-              : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you — no Supabase step.'}
+              ? 'Update the display name, sign-in domain, and group-claim settings for your identity provider.'
+              : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* New providers choose how to register: import metadata (self-serve)
-              or the advanced pre-registered Supabase UUID path. */}
-          {!existing && (
-            <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
-              {(
-                [
-                  ['metadata', 'Import IdP metadata'],
-                  ['uuid', 'Advanced: Supabase UUID'],
-                ] as const
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMode(m)}
-                  disabled={mutation.isPending}
-                  className={
-                    mode === m
-                      ? 'bg-secondary text-foreground px-3 py-1.5 text-xs font-medium'
-                      : 'text-muted-foreground hover:bg-muted/50 px-3 py-1.5 text-xs'
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+        {spUrls && (
+          <SpDetails
+            urls={spUrls}
+            className="border-border/60 bg-muted/20 rounded-lg border px-3 py-3"
+          />
+        )}
 
+        <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>{tHardcodedUi.raw('componentsIamSsoCard.line350JsxTextDisplayName')}</Label>
             <Input
@@ -484,7 +529,7 @@ function EditProviderDialog({
             />
           </div>
 
-          {importing ? (
+          {importing && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>IdP SAML metadata</Label>
@@ -532,19 +577,6 @@ function EditProviderDialog({
               <p className="text-muted-foreground text-[11px]">
                 From Entra: Enterprise App → Single sign-on → SAML → “App Federation Metadata XML”.
               </p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label>
-                {tHardcodedUi.raw('componentsIamSsoCard.line360JsxTextSupabaseProviderUUID')}
-              </Label>
-              <Input
-                value={supabaseId}
-                onChange={(e) => setSupabaseId(e.target.value)}
-                placeholder="00000000-0000-0000-0000-000000000000"
-                className="font-mono text-xs"
-                disabled={mutation.isPending}
-              />
             </div>
           )}
 
@@ -642,7 +674,7 @@ function EditProviderDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {existing ? 'Save changes' : importing ? 'Import & configure' : 'Configure SSO'}
+            {existing ? 'Save changes' : 'Import & configure'}
           </Button>
         </DialogFooter>
       </DialogContent>

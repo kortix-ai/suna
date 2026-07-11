@@ -6,10 +6,10 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import type { ProjectSecret, ProjectSecretsResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix env <subcommand> [options]
+const HELP = help`Usage: kortix env <subcommand> [options]
 
 Bulk transfer secrets between a local .env file and the cloud.
 

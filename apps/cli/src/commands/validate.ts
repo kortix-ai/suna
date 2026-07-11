@@ -21,9 +21,9 @@ import {
   validateManifest,
 } from '@kortix/manifest-schema';
 import { resolveLocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix validate [options]
+const HELP = help`Usage: kortix validate [options]
 
 Statically validate the project's kortix.yaml against the canonical schema.
 

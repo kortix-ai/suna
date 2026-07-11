@@ -151,14 +151,16 @@ export function getComputeDescription(serverType: string): string {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
-// Enterprise feature gates. Groups + custom roles/policies (`rbac`) are
-// available on EVERY tier — they're the platform's core collaboration and
-// access model, not an upsell (un-gated 2026-07-08; they were briefly
-// enterprise-gated by #4135). The enterprise identity surface (SAML SSO +
-// SCIM) and audit access remain exclusive to the sales-assigned `enterprise`
-// tier. See TierEntitlements in ../../types and the requireEntitlement()
-// guard in the IAM routes, which keys off this matrix.
-const SELF_SERVE: TierEntitlements = { sso: false, scim: false, rbac: true, auditAccess: false };
+// Enterprise feature gates. The whole IAM surface — groups + custom
+// roles/policies (`rbac`), the identity providers (SAML SSO + SCIM), and
+// audit log access — is exclusive to the sales-assigned `enterprise` tier
+// (re-gated 2026-07-09; rbac was briefly open to every tier via #4326).
+// Non-entitled accounts see an upsell in the UI and a 402 from the
+// requireEntitlement() guard on create/update routes. Reads, revokes, and
+// deletes stay ungated so a downgraded account can still see and unwind what
+// it already has — existing grants keep resolving in the IAM engine.
+// See TierEntitlements in ../../types.
+const SELF_SERVE: TierEntitlements = { sso: false, scim: false, rbac: false, auditAccess: false };
 const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true, rbac: true, auditAccess: true };
 
 const TIERS: Record<string, TierConfig> = {

@@ -11,13 +11,13 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ProjectTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix triggers <subcommand> [options]
+const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
 schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.yaml
