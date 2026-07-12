@@ -8,6 +8,7 @@ import {
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
   PI_ACP_VERSION,
+  PI_CODING_AGENT_VERSION,
   RUNTIME_VERSIONS,
 } from './runtime-versions';
 
@@ -21,6 +22,7 @@ describe('runtime versions', () => {
     expect(CLAUDE_AGENT_ACP_VERSION).toBe(RUNTIME_VERSIONS.claudeAgentAcp);
     expect(CODEX_ACP_VERSION).toBe(RUNTIME_VERSIONS.codexAcp);
     expect(PI_ACP_VERSION).toBe(RUNTIME_VERSIONS.piAcp);
+    expect(PI_CODING_AGENT_VERSION).toBe(RUNTIME_VERSIONS.piCodingAgent);
   });
 
   test('uses exact semver pins, not ranges or dist tags', () => {

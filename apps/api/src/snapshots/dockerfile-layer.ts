@@ -26,6 +26,7 @@ import {
   CLAUDE_AGENT_ACP_VERSION,
   CODEX_ACP_VERSION,
   PI_ACP_VERSION,
+  PI_CODING_AGENT_VERSION,
   PLAYWRIGHT_VERSION,
 } from '@kortix/shared';
 
@@ -279,13 +280,15 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // ACP adapters are image-baked and exactly pinned. Never install arbitrary
     // packages on the first user request: cold-start behavior and the code that
     // executes inside the sandbox must be reproducible and auditable.
-    `RUN npm install -g --no-audit --no-fund "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" \\`,
+    `RUN npm install -g --no-audit --no-fund "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \\`,
     '    && command -v claude-agent-acp \\',
     '    && command -v codex-acp \\',
     '    && command -v pi-acp \\',
+    '    && command -v pi \\',
     '    && claude-agent-acp --version \\',
     '    && codex-acp --version \\',
-    '    && pi-acp --help >/dev/null',
+    '    && pi-acp --help >/dev/null \\',
+    '    && pi --version',
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
