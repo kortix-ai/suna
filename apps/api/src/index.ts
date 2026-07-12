@@ -32,7 +32,7 @@ import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { requestDeadline } from './middleware/request-deadline';
+import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -738,8 +738,14 @@ app.onError((err, c) => {
   }
 
   if (err instanceof HTTPException) {
-    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected)
-    if (err.status >= 500) {
+    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected). The
+    // request-deadline 503 is an EXPECTED, typed, retryable degradation (the
+    // deadline net bounding a slow request) — already logged + metriced
+    // per-route and returned with Retry-After. Capturing it to Sentry produced
+    // the recurring Better Stack pattern `29af03…` "Request exceeded the 25s
+    // server processing deadline" (the system working as designed), so classify
+    // it out. See middleware/request-deadline.ts.
+    if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
