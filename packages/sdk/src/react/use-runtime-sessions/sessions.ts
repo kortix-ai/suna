@@ -190,7 +190,7 @@ export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
-    queryKey: ['opencode', 'session-diff', sessionId],
+    queryKey: ['runtime', 'session-diff', sessionId],
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.diff({ sessionID: sessionId });
@@ -205,7 +205,7 @@ export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
-    queryKey: ['opencode', 'session-todo', sessionId],
+    queryKey: ['runtime', 'session-todo', sessionId],
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.todo({ sessionID: sessionId });

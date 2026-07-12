@@ -4,18 +4,18 @@
  * actual file-fetching hooks stay in the host app and import these keys.
  */
 export const fileContentKeys = {
-  all: ['opencode-files', 'content'] as const,
+  all: ['runtime-files', 'content'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['opencode-files', 'content', serverUrl, filePath] as const,
+    ['runtime-files', 'content', serverUrl, filePath] as const,
 };
 
 export const fileListKeys = {
-  all: ['opencode-files', 'list'] as const,
+  all: ['runtime-files', 'list'] as const,
   dir: (serverUrl: string, dirPath: string) =>
-    ['opencode-files', 'list', serverUrl, dirPath] as const,
+    ['runtime-files', 'list', serverUrl, dirPath] as const,
 };
 
 export const gitStatusKeys = {
-  all: ['opencode-files', 'git-status'] as const,
-  status: (serverUrl: string) => ['opencode-files', 'git-status', serverUrl] as const,
+  all: ['runtime-files', 'git-status'] as const,
+  status: (serverUrl: string) => ['runtime-files', 'git-status', serverUrl] as const,
 };

@@ -583,7 +583,7 @@ describe('misc targeted cache writes', () => {
       type: 'session.diff',
       properties: { sessionID: 'ses_1', diff },
     });
-    expect(queryClient.getQueryData<typeof diff>(['opencode', 'session-diff', 'ses_1'])).toEqual(diff);
+    expect(queryClient.getQueryData<typeof diff>(['runtime', 'session-diff', 'ses_1'])).toEqual(diff);
   });
 
   test('todo.updated writes the todos array under the session-todo key', () => {
@@ -594,7 +594,7 @@ describe('misc targeted cache writes', () => {
       type: 'todo.updated',
       properties: { sessionID: 'ses_1', todos },
     });
-    expect(queryClient.getQueryData<typeof todos>(['opencode', 'session-todo', 'ses_1'])).toEqual(todos);
+    expect(queryClient.getQueryData<typeof todos>(['runtime', 'session-todo', 'ses_1'])).toEqual(todos);
   });
 
   test('vcs.branch.updated writes the branch under the vcs key', () => {
@@ -604,7 +604,7 @@ describe('misc targeted cache writes', () => {
       type: 'vcs.branch.updated',
       properties: { branch: 'feat/foo' },
     });
-    expect(queryClient.getQueryData<{ branch: string }>(['opencode', 'vcs'])).toEqual({ branch: 'feat/foo' });
+    expect(queryClient.getQueryData<{ branch: string }>(['runtime', 'vcs'])).toEqual({ branch: 'feat/foo' });
   });
 });
 

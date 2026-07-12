@@ -87,21 +87,21 @@ export interface ToolListItem {
 // ============================================================================
 
 export const runtimeKeys = {
-  all: ['opencode'] as const,
-  sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
-  session: (id: string) => ['opencode', 'session', id] as const,
-  messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
-  agents: () => ['opencode', 'agents', activeServerKey()] as const,
-  toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
-  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
-  skills: () => ['opencode', 'skills', activeServerKey()] as const,
-  projects: () => ['opencode', 'projects', activeServerKey()] as const,
-  currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
-  commands: () => ['opencode', 'commands', activeServerKey()] as const,
-  providers: () => ['opencode', 'providers', activeServerKey()] as const,
-  pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
-  mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
-  worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
+  all: ['runtime'] as const,
+  sessions: (serverId?: string) => ['runtime', 'sessions', serverId ?? activeServerKey()] as const,
+  session: (id: string) => ['runtime', 'session', id] as const,
+  messages: (sessionId: string) => ['runtime', 'session', sessionId, 'messages'] as const,
+  agents: () => ['runtime', 'agents', activeServerKey()] as const,
+  toolIds: () => ['runtime', 'tool-ids', activeServerKey()] as const,
+  tools: (providerID: string, modelID: string) => ['runtime', 'tools', providerID, modelID, activeServerKey()] as const,
+  skills: () => ['runtime', 'skills', activeServerKey()] as const,
+  projects: () => ['runtime', 'projects', activeServerKey()] as const,
+  currentProject: () => ['runtime', 'project', 'current', activeServerKey()] as const,
+  commands: () => ['runtime', 'commands', activeServerKey()] as const,
+  providers: () => ['runtime', 'providers', activeServerKey()] as const,
+  pathInfo: () => ['runtime', 'path-info', activeServerKey()] as const,
+  mcpStatus: () => ['runtime', 'mcp-status', activeServerKey()] as const,
+  worktrees: () => ['runtime', 'worktrees', activeServerKey()] as const,
 };
 
 export function useRuntimeReady() {

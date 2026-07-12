@@ -8,7 +8,7 @@ import { useRuntimeReady } from './use-runtime-sessions/keys';
 export type { Config };
 
 export const configKeys = {
-  all: ['opencode', 'config'] as const,
+  all: ['runtime', 'config'] as const,
 };
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {

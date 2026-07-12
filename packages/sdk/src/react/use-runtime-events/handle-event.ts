@@ -374,7 +374,7 @@ export function createEventHandler(deps: {
       case 'session.diff': {
         const props = event.properties;
         if (props.sessionID) {
-          queryClient.setQueryData(['opencode', 'session-diff', props.sessionID], props.diff);
+          queryClient.setQueryData(['runtime', 'session-diff', props.sessionID], props.diff);
         }
         break;
       }
@@ -383,7 +383,7 @@ export function createEventHandler(deps: {
       case 'todo.updated': {
         const props = event.properties;
         if (props.sessionID) {
-          queryClient.setQueryData(['opencode', 'session-todo', props.sessionID], props.todos);
+          queryClient.setQueryData(['runtime', 'session-todo', props.sessionID], props.todos);
         }
         break;
       }
@@ -391,7 +391,7 @@ export function createEventHandler(deps: {
       // ---- VCS branch ----
       case 'vcs.branch.updated': {
         const props = event.properties;
-        queryClient.setQueryData(['opencode', 'vcs'], {
+        queryClient.setQueryData(['runtime', 'vcs'], {
           branch: props.branch,
         });
         break;
@@ -422,7 +422,7 @@ export function createEventHandler(deps: {
 
       // ---- LSP updated ----
       case 'lsp.updated': {
-        queryClient.invalidateQueries({ queryKey: ['opencode', 'lsp'], type: 'active' });
+        queryClient.invalidateQueries({ queryKey: ['runtime', 'lsp'], type: 'active' });
         // A new LSP client connected — fetch diagnostics after a short
         // delay to give the language server time to produce initial results.
         fetchLspDiagnosticsDebounced.current();
