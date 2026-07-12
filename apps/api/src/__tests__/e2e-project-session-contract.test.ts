@@ -33,6 +33,7 @@ let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStatus = 'stopped';
+let providerStatusAfterStart: string | null = null;
 let providerStartError: Error | null = null;
 let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
@@ -80,6 +81,7 @@ function resetState() {
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStatus = 'stopped';
+  providerStatusAfterStart = null;
   providerStartError = null;
   providerStartGate = null;
   releaseProviderStart = null;
@@ -286,6 +288,7 @@ mock.module('../platform/providers', () => ({
     start: async () => {
       providerStartCalls += 1;
       if (providerStartError) throw providerStartError;
+      if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
       if (providerStartGate) await providerStartGate;
     },
     stop: async () => undefined,
@@ -1797,6 +1800,46 @@ describe('project session API contract', () => {
       lastRuntimeRecovery: {
         externalId: 'box-missing-on-start',
         reason: 'restart_missing_runtime',
+      },
+    });
+  });
+
+  test('restart self-heals when provider accepts start but then reports removed', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-accepted-start-then-removed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    providerStatusAfterStart = 'removed';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionRow?.status).toBe('provisioning');
+    expect(sessionRow?.metadata).toMatchObject({
+      lastRuntimeRecovery: {
+        externalId: 'box-accepted-start-then-removed',
+        reason: 'restart_post_start_removed',
       },
     });
   });
