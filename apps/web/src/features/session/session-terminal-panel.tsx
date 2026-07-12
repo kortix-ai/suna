@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
 import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
 import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
@@ -12,12 +11,7 @@ import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import React, { useCallback, useEffect, useRef } from 'react';
 
-// Lazy-load terminal components to avoid SSR issues with xterm.js
-const SSHTerminal = dynamic(
-  () => import('@/features/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
-  { ssr: false },
-);
-
+// Lazy-load to avoid SSR issues with xterm.js
 const PtyTerminal = dynamic(
   () => import('@/features/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
   { ssr: false },
@@ -26,11 +20,8 @@ const PtyTerminal = dynamic(
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
 
 /**
- * Live terminal for the session side panel.
- *
- * Reuses the exact terminal components the tabbed terminal uses:
- *   - sandbox mode → a single shared {@link SSHTerminal} into the sandbox
- *   - opencode mode → a {@link PtyTerminal} bound to a PTY on the active server
+ * Live terminal for the session side panel — a {@link PtyTerminal} bound to
+ * a PTY on the active server.
  *
  * Unlike the tabbed terminal (which maps 1 tab ↔ 1 PTY), the panel keeps a
  * single ambient shell per chat session: it reuses only its remembered PTY and
@@ -47,7 +38,6 @@ export function SessionTerminalPanel({
   hidden?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   // The opencode runtime (in-sandbox daemon + opencode server) must be booted
@@ -101,7 +91,6 @@ export function SessionTerminalPanel({
   }, [isLoading, optimisticPty?.id, pty, ptys, sessionId, setTerminalPty, terminalPtyId]);
 
   useEffect(() => {
-    if (currentSandboxId) return; // sandbox mode uses SSHTerminal, no PTY needed
     if (!runtimeReady) return; // wait for the sandbox runtime — a create now would 404
     if (isLoading) return;
     if (pty) {
@@ -110,13 +99,10 @@ export function SessionTerminalPanel({
     }
     if (terminalPtyId) return; // Wait for the missing-id cleanup effect above.
     ensurePty();
-  }, [currentSandboxId, runtimeReady, isLoading, pty, terminalPtyId, ensurePty]);
+  }, [runtimeReady, isLoading, pty, terminalPtyId, ensurePty]);
 
-  // Sandbox mode — shared SSH terminal into the sandbox.
   let content: React.ReactNode;
-  if (currentSandboxId) {
-    content = <SSHTerminal sandboxId={currentSandboxId} className="h-full" />;
-  } else if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
+  if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {
     // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
     content = (
       <div className="flex h-full w-full flex-col items-center justify-center">

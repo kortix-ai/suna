@@ -117,6 +117,15 @@ export async function runSessions(argv: string[]): Promise<number> {
     return runSessionsAnswer(argv.slice(1));
   }
   const rest = argv.slice(1);
+  // None of the subcommands below (ls/new/info/preview/restart/rename/rm/
+  // open) own dedicated help text or parse -h/--help themselves, so without
+  // this a bare `--help` falls through as an ordinary positional arg — e.g.
+  // `sessions info --help` would try to look up a session literally named
+  // "--help" instead of showing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const json = takeFlagBool(rest, ['--json']);
   const wait = takeFlagBool(rest, ['--wait']);
   let projectFlag: string | undefined;
