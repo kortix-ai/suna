@@ -2,15 +2,15 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
-import { Bot, Brain, ShieldCheck, Square, Terminal, User } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Bot, Brain, ShieldCheck, Terminal, User } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
 import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
 import { SessionSiteHeader } from './header/session-site-header';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { SessionChatInput, type AttachedFile } from './session-chat-input';
 
 export function AcpSessionChat({
   acp,
@@ -23,7 +23,6 @@ export function AcpSessionChat({
   sessionId: string;
   sessionTitle: string;
 }) {
-  const [draft, setDraft] = useState('');
   const {
     ready,
     busy,
@@ -43,11 +42,19 @@ export function AcpSessionChat({
   const setIsSidePanelOpen = useKortixComputerStore((state) => state.setIsSidePanelOpen);
   useEffect(() => { if (ready) onReady?.(); }, [onReady, ready]);
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || !acpSessionId || busy) return;
-    setDraft('');
-    await sendPrompt([{ type: 'text', text }]);
+  const send = async (text: string, files: AttachedFile[] = []) => {
+    if (!acpSessionId || busy) return;
+    const blocks: Parameters<typeof sendPrompt>[0] = [{ type: 'text', text }];
+    for (const file of files) {
+      if (file.kind === 'remote') {
+        blocks.push({ type: 'resource_link', uri: file.url, name: file.filename, mimeType: file.mime });
+        continue;
+      }
+      const data = bytesToBase64(new Uint8Array(await file.file.arrayBuffer()));
+      if (file.isImage) blocks.push({ type: 'image', data, mimeType: file.file.type || 'application/octet-stream' });
+      else blocks.push({ type: 'resource', resource: { uri: `file:///${file.file.name}`, mimeType: file.file.type || 'application/octet-stream', blob: data } });
+    }
+    await sendPrompt(blocks);
   };
 
   return (
@@ -152,11 +159,26 @@ export function AcpSessionChat({
         </div>
       </div>
       <div className="border-border border-t px-4 py-3">
-        <div className="mx-auto flex w-full max-w-3xl items-end gap-2">
-          <Textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message the agent" className="min-h-12" onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} />
-          {busy ? <Button size="icon" variant="outline" onClick={() => void cancel()} aria-label="Stop"><Square className="size-4" /></Button> : <Button onClick={() => void send()} disabled={!draft.trim() || !acpSessionId}>Send</Button>}
+        <div className="mx-auto w-full max-w-3xl">
+          <SessionChatInput
+            sessionId={sessionId}
+            onSend={send}
+            isBusy={busy}
+            onStop={() => void cancel()}
+            disabled={!acpSessionId}
+            placeholder="Message the agent"
+          />
         </div>
       </div>
     </div>
   );
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+  }
+  return btoa(binary);
 }
