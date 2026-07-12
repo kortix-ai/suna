@@ -61,7 +61,12 @@ export function ComposerChatInput({
   clearOnSend?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
-  prefill?: { text: string; id: number } | null;
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   /** Extra classes for the input card (e.g. the project-home radius override). */
