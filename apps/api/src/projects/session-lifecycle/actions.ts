@@ -18,6 +18,7 @@ import {
   retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
 } from '../runtime-identity';
+import { inspectSandboxRuntime } from '../opencode-mapping';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -218,6 +219,29 @@ export async function restartSession(input: {
           status: 'provisioning',
           reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
         },
+      };
+    }
+
+    // A daemon boot error is commonly caused by immutable sandbox process env
+    // (for example a missing/old compiled ACP plan). Stop/start preserves that
+    // env and can never heal it, so a user-requested restart must replace the
+    // provider runtime and rebuild the environment from current kortix.yaml.
+    const runtimeHealth = await inspectSandboxRuntime(externalId, loaded.userId);
+    if (runtimeHealth?.bootError) {
+      await provider.remove(externalId);
+      let removed = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+      for (let attempt = 1; removed !== 'removed' && attempt < 15; attempt += 1) {
+        await Bun.sleep(1_000);
+        removed = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+      }
+      if (removed !== 'removed') {
+        return { status: 503, body: { error: 'Failed to replace the broken session runtime' } };
+      }
+      const retired = await retireConfirmedMissingRuntime(existingSandbox, 'restart_boot_error');
+      if (retired) await provisionReplacementRuntime();
+      return {
+        status: 202,
+        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'boot_error_reprovisioning' },
       };
     }
 
