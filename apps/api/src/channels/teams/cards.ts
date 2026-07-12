@@ -18,13 +18,27 @@ const STATUS_COLOR: Record<string, string> = {
   error: 'attention',
 };
 
-function card(body: CardElement[]): Record<string, unknown> {
-  return {
+function card(body: CardElement[], actions?: CardElement[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
     version: ADAPTIVE_CARD_VERSION,
     body,
   };
+  if (actions && actions.length) out.actions = actions;
+  return out;
+}
+
+function openUrlAction(title: string, url: string): CardElement {
+  return { type: 'Action.OpenUrl', title, url };
+}
+
+function executeAction(title: string, verb: string, data: Record<string, unknown> = {}): CardElement {
+  return { type: 'Action.Execute', title, verb, data: { verb, ...data } };
+}
+
+function text(value: string, extra: CardElement = {}): CardElement {
+  return { type: 'TextBlock', text: value, wrap: true, ...extra };
 }
 
 function stepElements(step: StreamTaskChunk): CardElement[] {
@@ -96,4 +110,34 @@ export function buildAnswerCard(body: string, sessionUrl?: string): Record<strin
     });
   }
   return card(elements);
+}
+
+export function buildConnectAccountCard(loginUrl: string): Record<string, unknown> {
+  return card(
+    [text('Connect a Kortix account to let me run from Teams.', { weight: 'bolder', size: 'medium' })],
+    [openUrlAction('Connect or create account', loginUrl)],
+  );
+}
+
+export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
+  return card(
+    [text("You're connected, but your account doesn't have access to this project yet.", { weight: 'bolder' })],
+    [executeAction('Request access', 'teams_request_access', { projectId })],
+  );
+}
+
+export function buildNoticeCard(body: string): Record<string, unknown> {
+  return card([text(body, { wrap: true })]);
+}
+
+export function buildChoiceCard(opts: {
+  title: string;
+  verb: string;
+  choices: Array<{ title: string; data: Record<string, unknown> }>;
+  body?: string;
+}): Record<string, unknown> {
+  const elements: CardElement[] = [text(opts.title, { weight: 'bolder', size: 'medium' })];
+  if (opts.body) elements.push(text(opts.body, { isSubtle: true, size: 'small', spacing: 'none' }));
+  const actions = opts.choices.slice(0, 6).map((c) => executeAction(c.title, opts.verb, c.data));
+  return card(elements, actions);
 }

@@ -1,12 +1,14 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
 import { buildTeamsTurnEnv, finalizeTurn, persistServiceUrl, saveTurn, startTurn } from './turn';
 import { extractTeamsAttachments, type TeamsActivity } from './types';
 
@@ -24,6 +26,28 @@ export function setTeamsSessionLifecycleForTest(overrides: Partial<typeof defaul
 
 export function resetTeamsSessionLifecycleForTest() {
   teamsSessionLifecycle = defaultTeamsSessionLifecycle;
+}
+
+async function resolveTeamsTurnActor(
+  accountId: string,
+  projectId: string,
+  tenantId: string,
+  activity: TeamsActivity,
+): Promise<string | null> {
+  if (!config.TEAMS_REQUIRE_USER_IDENTITY) {
+    const userId = await teamsSessionLifecycle.resolveProjectAutomationActor(accountId);
+    if (!userId) console.warn('[teams-webhook] no actor for project', projectId);
+    return userId;
+  }
+
+  const senderId = teamsUserId(activity);
+  const actor = await resolveTeamsActor(tenantId, senderId ?? '', accountId, projectId);
+  if ('userId' in actor) return actor.userId;
+
+  await postTeamsIdentityPrompt({ projectId, tenantId, activity, reason: actor.reason }).catch((err) =>
+    console.warn('[teams-webhook] failed to post identity prompt', err),
+  );
+  return null;
 }
 
 export async function deliverTeamsFollowUpToSession(input: {
@@ -68,18 +92,15 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   await persistServiceUrl(projectId, activity.serviceUrl);
 
-  const userId = await teamsSessionLifecycle.resolveProjectAutomationActor(project.accountId);
-  if (!userId) {
-    console.warn('[teams-webhook] no actor for project', projectId);
-    return;
-  }
+  const userId = await resolveTeamsTurnActor(project.accountId, projectId, tenantId, activity);
+  if (!userId) return;
 
   const claimKey = tenantId && conversationId ? `teams:threadcreate:${tenantId}:${conversationId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForConversationSession(tenantId, conversationId);
     if (sessionId) {
       await openFollowUpTurn(projectId, tenantId, sessionId, activity);
-      await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity) });
+      await deliverTeamsFollowUpToSession({ sessionId, text: renderFollowUpPrompt(activity), userId });
     } else {
       console.warn('[teams-webhook] lost thread-create claim but winner never published a session', {
         tenantId,
@@ -103,7 +124,11 @@ export async function createOrJoinTeamsConversationSession(input: {
       .limit(1);
     if (existing) {
       await openFollowUpTurn(projectId, tenantId, existing.sessionId, activity);
-      await deliverTeamsFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(activity) });
+      await deliverTeamsFollowUpToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(activity),
+        userId,
+      });
       return;
     }
   }

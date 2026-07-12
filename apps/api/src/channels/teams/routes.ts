@@ -3,6 +3,7 @@ import { teamsConfigured } from '../teams-auth';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
+import { handleAdaptiveCardAction } from './interactivity';
 import type { TeamsActivity } from './types';
 
 teamsWebhookApp.post('/messages', async (c) => {
@@ -20,6 +21,14 @@ teamsWebhookApp.post('/messages', async (c) => {
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
 
   if (activity.type === 'invoke') {
+    if (activity.name === 'adaptiveCard/action') {
+      try {
+        return c.json(await handleAdaptiveCardAction(activity), 200);
+      } catch (err) {
+        console.error('[teams-webhook] adaptive card action failed', err);
+        return c.json({ statusCode: 500, type: 'application/vnd.microsoft.error', value: {} }, 200);
+      }
+    }
     if (activity.name === 'fileConsent/invoke') {
       try {
         await handleFileConsentInvoke(activity);

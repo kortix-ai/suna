@@ -50,6 +50,7 @@ export {
   relayTurnEnd,
 } from "./slack-webhook";
 export { teamsWebhookApp } from "./teams-webhook";
+export { teamsIdentityApp } from "./teams/identity-routes";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,
