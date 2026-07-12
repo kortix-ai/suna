@@ -70,6 +70,8 @@ export function serializeSession(
   // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
   const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const acpSessionId = typeof row.metadata?.acp_session_id === 'string' ? row.metadata.acp_session_id : null;
+  const runtimeProtocol = row.metadata?.runtime_protocol === 'acp' ? 'acp' : row.opencodeSessionId ? 'opencode' : null;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -80,9 +82,10 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    runtime_protocol: row.metadata?.runtime_protocol === 'acp' ? 'acp' : row.opencodeSessionId ? 'opencode' : null,
+    runtime_session_id: runtimeProtocol === 'acp' ? acpSessionId : row.opencodeSessionId,
+    runtime_protocol: runtimeProtocol,
     runtime_id: typeof row.metadata?.runtime_id === 'string' ? row.metadata.runtime_id : null,
-    acp_session_id: typeof row.metadata?.acp_session_id === 'string' ? row.metadata.acp_session_id : null,
+    acp_session_id: acpSessionId,
     name: customName ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,

@@ -203,7 +203,12 @@ export async function syncOpenCodeTitlesForSessions(input: {
   deadlineMs?: number;
 }): Promise<ProjectSessionRow[]> {
   if (input.rows.length === 0) return input.rows;
-  const sessionIds = input.rows.map((row) => row.sessionId);
+  const legacyRows = input.rows.filter(
+    (row) => (row.metadata as Record<string, unknown> | null)?.runtime_protocol !== 'acp',
+  );
+  if (legacyRows.length === 0) return input.rows;
+
+  const sessionIds = legacyRows.map((row) => row.sessionId);
   const sandboxRows = await db
     .select({
       sessionId: sessionSandboxes.sessionId,
@@ -228,7 +233,7 @@ export async function syncOpenCodeTitlesForSessions(input: {
   );
   if (externalBySessionId.size === 0) return input.rows;
 
-  const sync = mapBounded(input.rows, TITLE_SYNC_CONCURRENCY, async (row) => {
+  const sync = mapBounded(legacyRows, TITLE_SYNC_CONCURRENCY, async (row) => {
     const externalId = externalBySessionId.get(row.sessionId);
     if (!externalId) return row;
     try {
@@ -252,7 +257,7 @@ export async function syncOpenCodeTitlesForSessions(input: {
       : DEFAULT_TITLE_SYNC_DEADLINE_MS;
   return Promise.race([
     sync,
-    timeout(deadlineMs, input.rows).then((rows) => {
+    timeout(deadlineMs, legacyRows).then((rows) => {
       appLogger.warn('[title-sync] deadline exceeded; returning cached session metadata', {
         projectId: input.projectId,
         rowCount: input.rows.length,
@@ -260,5 +265,8 @@ export async function syncOpenCodeTitlesForSessions(input: {
       });
       return rows;
     }),
-  ]);
+  ]).then((syncedLegacyRows) => {
+    const bySessionId = new Map(syncedLegacyRows.map((row) => [row.sessionId, row]));
+    return input.rows.map((row) => bySessionId.get(row.sessionId) ?? row);
+  });
 }

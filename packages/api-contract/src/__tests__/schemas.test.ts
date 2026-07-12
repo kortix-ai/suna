@@ -77,6 +77,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_id: null,
     sandbox_url: null,
     opencode_session_id: 'ses_abc',
+    runtime_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
     agent_name: 'default',

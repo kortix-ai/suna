@@ -162,6 +162,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     const parsed = ProjectSessionSchema.strict().parse(out);
     expect(parsed.runtime_protocol).toBe('acp');
     expect(parsed.runtime_id).toBe('runtime-1');
+    expect(parsed.runtime_session_id).toBe('conversation-1');
     expect(parsed.acp_session_id).toBe('conversation-1');
     expect(parsed.opencode_session_id).toBeNull();
   });
