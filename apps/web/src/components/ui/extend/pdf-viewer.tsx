@@ -162,7 +162,7 @@ export type PDFViewerProps = {
   ) => void
 }
 
-const DEFAULT_ZOOM = 0.5
+const DEFAULT_ZOOM = 1
 const ZOOM_OPTIONS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 const PAGE_GAP = 24
 const THUMBNAIL_PAGE_WIDTH = 92
