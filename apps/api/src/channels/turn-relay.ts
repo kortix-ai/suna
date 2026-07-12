@@ -2,7 +2,10 @@ import { eq } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
 import { db } from '../shared/db';
 import type { TurnErrorInfo } from './slack/errors';
+import * as slackQuestions from './slack/questions';
 import * as slack from './slack/turn';
+import type { QuestionInfo } from './slack/types';
+import * as teamsQuestions from './teams/questions';
 import * as teams from './teams/turn';
 
 interface StepOpts {
@@ -41,4 +44,13 @@ export async function relayTurnEnd(
   return (await platformFor(sessionId)) === 'teams'
     ? teams.relayTurnEnd(sessionId, status, errorInfo)
     : slack.relayTurnEnd(sessionId, status, errorInfo);
+}
+
+export async function relayTurnQuestion(
+  sessionId: string,
+  questions: QuestionInfo[],
+): Promise<{ ok: boolean; answers?: string[][]; error?: string }> {
+  return (await platformFor(sessionId)) === 'teams'
+    ? teamsQuestions.postTeamsQuestion(sessionId, questions)
+    : slackQuestions.postQuestion(sessionId, questions);
 }

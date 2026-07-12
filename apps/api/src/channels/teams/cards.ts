@@ -156,6 +156,26 @@ export function buildPanelCard(opts: {
   return card(elements, actions);
 }
 
+export function buildQuestionCard(
+  questions: Array<{ question: string; options?: Array<{ label: string }> }>,
+): Record<string, unknown> {
+  const elements: CardElement[] = [];
+  for (const q of questions) {
+    elements.push(text(q.question, { weight: 'bolder', wrap: true }));
+  }
+  const options = questions.flatMap((q) => q.options ?? []);
+  const seen = new Set<string>();
+  const actions: CardElement[] = [];
+  for (const o of options) {
+    if (!o.label || seen.has(o.label)) continue;
+    seen.add(o.label);
+    actions.push(executeAction(o.label, 'teams_answer', { answer: o.label }));
+    if (actions.length >= 6) break;
+  }
+  elements.push(text('Tap an option or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'small' }));
+  return card(elements, actions.length ? actions : undefined);
+}
+
 export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
   const elements: CardElement[] = [
     text('Kortix is connected here', { weight: 'bolder', size: 'medium' }),

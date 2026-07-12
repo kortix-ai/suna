@@ -1,13 +1,14 @@
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
-import { setConversationProject, teamsChannelCtx } from './binding';
+import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
   notifyAdminsOfTeamsAccessRequest,
   teamsUserId,
 } from './identity';
+import { createOrJoinTeamsConversationSession } from './session';
 import type { TeamsActivity } from './types';
 
 export interface TeamsInvokeResponse {
@@ -44,6 +45,8 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
       return handleSetAgent(activity, action.data);
     case 'teams_pick_project':
       return handlePickProject(activity, action.data);
+    case 'teams_answer':
+      return handleAnswer(activity, action.data);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -101,6 +104,33 @@ async function handlePickProject(
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
   await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
   return cardResponse(buildNoticeCard('This conversation now runs the selected project.'));
+}
+
+async function handleAnswer(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const answer = typeof data.answer === 'string' ? data.answer : '';
+  if (!convo || !answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
+
+  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+
+  const synthetic: TeamsActivity = {
+    ...activity,
+    type: 'message',
+    text: answer,
+    id: `${activity.id ?? 'answer'}:answer`,
+  };
+  void createOrJoinTeamsConversationSession({
+    projectId,
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    activity: synthetic,
+  }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
+
+  return cardResponse(buildNoticeCard(`Answer received: ${answer}`));
 }
 
 async function handleRequestAccess(
