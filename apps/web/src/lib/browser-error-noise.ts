@@ -134,6 +134,39 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
   'invalid group specifier name',
 ] as const;
 
+// Paper Shaders (`@paper-design/shaders-react`) null-WebGL-context crash class.
+// On GPUs/browsers without working WebGL2 (context loss, blacklisted driver,
+// stripped WebView, headless renderer), Paper Shaders' shader-mount
+// `useEffect`/rAF callback reaches a WebGL2 context that has become `null` and
+// calls a WebGL API method on it → `TypeError: Cannot read properties of null
+// (reading '<method>')`. The throw happens INSIDE an async callback, so it
+// ESCAPES the `<ShaderSafe>` React error boundary (which only catches
+// render-phase throws via `getDerivedStateFromError`) → global error → Sentry
+// → Better Stack. The two observed null-context method names are:
+//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…`, call site
+//                                `new b2` in chunk `c76173f0.…`, prod, 2 occ.)
+//   - `getAttribLocation`       (the known sibling already documented in
+//                                `shader-safe.tsx`'s probe rationale).
+// These are WebGL2 context method names — they are NEVER called from
+// first-party app code (only from Paper Shaders' library internals), so the
+// message wording alone is specific enough to safely classify as noise without
+// a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
+// matching is exact-substring on the canonical `Cannot read properties of null
+// (reading '<method>')` (V8) and `Cannot read property '<method>' of null`
+// (old JSC) forms, with `TypeError: ` / `Error: ` /
+// `Unhandled promise rejection: ` wrappers stripped so all capture paths
+// (window.onerror, onunhandledrejection, Sentry exception) classify
+// consistently. `shouldIgnore*` here is the leak-path backstop for the throws
+// that still escape `<ShaderSafe>` after a context-loss event; the
+// `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+// degrades to the fallback BEFORE the throw.
+const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
+  "Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Cannot read properties of null (reading 'getAttribLocation')",
+  "Cannot read property 'getSupportedExtensions' of null",
+  "Cannot read property 'getAttribLocation' of null",
+] as const;
+
 // Old-browser / stripped-down-WebView minified-chunk parse failures. When a
 // browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
 // WebView, in-app browsers, mail-client preview WebViews) tries to evaluate a
@@ -423,6 +456,26 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
   );
 }
 
+/**
+ * Whether a message is the Paper Shaders (`@paper-design/shaders-react`)
+ * null-WebGL-context crash class: a `TypeError` from calling a WebGL2 context
+ * method (`getSupportedExtensions` / `getAttribLocation`) on a context that
+ * became `null` (context loss, blacklisted GPU, stripped WebView). These fire
+ * from Paper Shaders' async shader-mount callback, ESCAPE the `<ShaderSafe>`
+ * React error boundary, and reach Sentry/Better Stack as global errors. The
+ * method names are WebGL2 API — never called from first-party app code — so the
+ * message wording alone is specific enough; no chunk-frame anchor is needed.
+ * Never page Better Stack for this class. See
+ * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
+ * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
+ */
+export function isPaperShaderNullContextNoise(message: unknown): boolean {
+  const stripped = stripErrorWrappers(normalizeString(message));
+  return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) =>
+    stripped.includes(pattern),
+  );
+}
+
 // Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
 // rejection: ` (and stacked) wrappers a browser/Sentry prefixes a throw with,
 // so the underlying message can be matched by an anchored pattern regardless
@@ -533,6 +586,15 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Paper Shaders null-WebGL-context crash class — a WebGL2 context method
+  // (`getSupportedExtensions` / `getAttribLocation`) called on a `null`
+  // context from Paper Shaders' async shader-mount callback, which escapes
+  // the `<ShaderSafe>` error boundary. Decorative-canvas noise on
+  // incompatible GPUs; never an app defect.
+  if (isPaperShaderNullContextNoise(message)) {
+    return true;
+  }
+
   // Old-browser / stripped-down-WebView minified-chunk parse failures
   // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
   // statement outside a module`) from `window.onerror`. The browser cannot
@@ -623,6 +685,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // visitors hit it. The de-minified frame points at our own chunk, so this
   // is matched by message, not by source.
   if (isOldWebkitRegexNoiseMessage(message)) {
+    return true;
+  }
+
+  // Paper Shaders null-WebGL-context crash class — a WebGL2 context method
+  // (`getSupportedExtensions` / `getAttribLocation`) called on a `null`
+  // context from Paper Shaders' async shader-mount callback, which escapes
+  // the `<ShaderSafe>` error boundary and reaches Sentry as a global error.
+  // Decorative-canvas noise on incompatible GPUs; never an app defect.
+  if (isPaperShaderNullContextNoise(message)) {
     return true;
   }
 
