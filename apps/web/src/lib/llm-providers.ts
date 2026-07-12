@@ -42,6 +42,8 @@ export interface LlmProviderEntry {
   hint: string;
   /** Catalog of models for this provider. */
   models: LlmProviderModel[];
+  /** The authenticated harness supplies the account's actual model list. */
+  modelsDynamic?: boolean;
   /** True for the curated popular set — pinned to the top of the catalog. */
   featured: boolean;
   /**
@@ -77,6 +79,7 @@ const RAW = catalog as RawCatalog;
 const FEATURED_IDS = new Set([
   'claude-subscription',
   'anthropic',
+  'codex',
   'openai',
   'google',
   'openrouter',
@@ -162,27 +165,31 @@ function order(entries: LlmProviderEntry[]): LlmProviderEntry[] {
 }
 
 const catalogProviders = RAW.providers.map(toEntry);
-const anthropicCatalog = catalogProviders.find((provider) => provider.id === 'anthropic');
-const CLAUDE_SUBSCRIPTION_MODEL_IDS = new Set([
-  'claude-opus-4-6',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-]);
-
 export const CLAUDE_SUBSCRIPTION_PROVIDER: LlmProviderEntry = {
   id: 'claude-subscription',
   label: 'Claude subscription',
   envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
   helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
   hint: 'Claude Pro, Max, Team, or Enterprise',
-  models: (anthropicCatalog?.models ?? []).filter((model) =>
-    CLAUDE_SUBSCRIPTION_MODEL_IDS.has(model.id),
-  ),
+  models: [],
+  modelsDynamic: true,
+  featured: true,
+};
+
+export const CHATGPT_SUBSCRIPTION_PROVIDER: LlmProviderEntry = {
+  id: 'codex',
+  label: 'ChatGPT subscription',
+  envVars: ['CODEX_AUTH_JSON', 'OPENCODE_AUTH_JSON'],
+  helpUrl: 'https://developers.openai.com/codex/auth',
+  hint: 'ChatGPT Plus, Pro, Business, Edu, or Enterprise',
+  models: [],
+  modelsDynamic: true,
   featured: true,
 };
 
 export const LLM_PROVIDERS: LlmProviderEntry[] = order([
   CLAUDE_SUBSCRIPTION_PROVIDER,
+  CHATGPT_SUBSCRIPTION_PROVIDER,
   ...catalogProviders,
 ]);
 

@@ -82,6 +82,24 @@ export function ApiKeyConnectForm({
     );
   }
 
+  if (provider.id === 'codex') {
+    return (
+      <div className="space-y-3 px-5 pt-3 pb-5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
+          onClick={onBack}
+        >
+          <ChevronLeft className="size-3.5 shrink-0" />
+          Back to providers
+        </Button>
+        <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
+      </div>
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -125,9 +143,6 @@ export function ApiKeyConnectForm({
         </div>
       </div>
 
-      {provider.id === 'openai' && (
-        <ChatGptSubscriptionConnect projectId={projectId} onConnected={onConnected} />
-      )}
       <form
         onSubmit={handleSubmit}
         className={cn('border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4')}

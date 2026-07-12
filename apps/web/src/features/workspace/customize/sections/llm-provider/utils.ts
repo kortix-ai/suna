@@ -1,4 +1,5 @@
 import {
+  CHATGPT_SUBSCRIPTION_PROVIDER,
   CLAUDE_SUBSCRIPTION_PROVIDER,
   type LlmProviderEntry,
   type LlmProviderModel,
@@ -17,6 +18,13 @@ export function providerCredentialSummary(provider: LlmProviderEntry): string {
   if (provider.id === 'codex') return 'ChatGPT subscription';
   if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
+}
+
+export function providerModelsSummary(provider: LlmProviderEntry): string {
+  if (provider.modelsDynamic && provider.models.length === 0) {
+    return 'Harness-managed models';
+  }
+  return `${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`;
 }
 
 type RuntimeProvidersSnapshot =
@@ -47,13 +55,9 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
       : [];
 
   return {
-    id: 'codex',
-    label: 'ChatGPT',
+    ...CHATGPT_SUBSCRIPTION_PROVIDER,
     envVars: [CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME],
-    helpUrl: null,
-    hint: 'ChatGPT Plus or Pro subscription',
     models,
-    featured: true,
   };
 }
 

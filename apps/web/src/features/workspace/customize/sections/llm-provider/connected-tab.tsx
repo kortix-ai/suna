@@ -16,7 +16,7 @@ import { Plug, Unplug } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 import { CODEX_AUTH_JSON_SECRET_NAME, LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME } from './constants';
-import { providerCredentialSummary } from './utils';
+import { providerCredentialSummary, providerModelsSummary } from './utils';
 
 export function ConnectedTab({
   projectId,
@@ -121,7 +121,13 @@ export function ConnectedTab({
               className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
             >
               <ProviderLogo
-                providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+                providerID={
+                  provider.id === 'claude-subscription'
+                    ? 'anthropic'
+                    : provider.id === 'codex'
+                      ? 'openai'
+                      : provider.id
+                }
                 name={provider.label}
                 size="default"
               />
@@ -138,8 +144,8 @@ export function ConnectedTab({
                 </div>
                 <p className="text-muted-foreground mt-0.5 truncate text-xs">
                   {provider.managed
-                    ? `${provider.hint} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`
-                    : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
+                    ? `${provider.hint} · ${providerModelsSummary(provider)}`
+                    : `${providerCredentialSummary(provider)} · ${providerModelsSummary(provider)}`}
                 </p>
               </div>
               {canWrite && !provider.managed && (

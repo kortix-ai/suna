@@ -13,7 +13,12 @@ import { useMemo } from 'react';
 import { ApiKeyConnectForm } from './api-key-connect-form';
 import { CustomProviderForm } from './custom-provider-form';
 import type { CatalogSubview } from './types';
-import { helpHostnameFromUrl, providerCredentialSummary, releasedAgo } from './utils';
+import {
+  helpHostnameFromUrl,
+  providerCredentialSummary,
+  providerModelsSummary,
+  releasedAgo,
+} from './utils';
 
 const ROW =
   'group bg-popover hover:bg-muted/40 flex w-full items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors';
@@ -136,7 +141,13 @@ export function CatalogTab({
                   onClick={() => setSubview({ kind: 'detail', providerId: provider.id })}
                 >
                   <ProviderLogo
-                    providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+                    providerID={
+                      provider.id === 'claude-subscription'
+                        ? 'anthropic'
+                        : provider.id === 'codex'
+                          ? 'openai'
+                          : provider.id
+                    }
                     name={provider.label}
                     size="default"
                   />
@@ -196,7 +207,13 @@ function ProviderDetail({
 
       <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
         <ProviderLogo
-          providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+          providerID={
+            provider.id === 'claude-subscription'
+              ? 'anthropic'
+              : provider.id === 'codex'
+                ? 'openai'
+                : provider.id
+          }
           name={provider.label}
           size="default"
         />
@@ -212,8 +229,7 @@ function ProviderDetail({
             )}
           </div>
           <p className="text-muted-foreground mt-0.5 truncate text-xs">
-            {providerCredentialSummary(provider)} · {models.length} model
-            {models.length === 1 ? '' : 's'}
+            {providerCredentialSummary(provider)} · {providerModelsSummary(provider)}
           </p>
         </div>
         {canWrite && (
@@ -239,14 +255,22 @@ function ProviderDetail({
         <div className="flex items-center justify-between gap-3">
           <Label>
             Models
-            <span className="text-muted-foreground font-normal"> ({models.length})</span>
+            {!provider.modelsDynamic && (
+              <span className="text-muted-foreground font-normal"> ({models.length})</span>
+            )}
           </Label>
           <span className="text-muted-foreground/40 text-xs">
             {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line618JsxTextNewestFirst')}
           </span>
         </div>
 
-        {models.length === 0 ? (
+        {provider.modelsDynamic && models.length === 0 ? (
+          <p className="text-muted-foreground bg-popover rounded-md border px-4 py-5 text-xs text-pretty">
+            Model access depends on the authenticated account and harness version. This provider
+            intentionally has no static model catalog; Claude Code or Codex validates the model when
+            the session runs.
+          </p>
+        ) : models.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
             {tHardcodedUi.raw(
               'componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared',

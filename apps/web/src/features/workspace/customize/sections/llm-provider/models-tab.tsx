@@ -92,10 +92,17 @@ export function ModelsTab({
   }
 
   if (grouped.length === 0) {
+    const dynamicProviders = connectedProviders.filter(
+      (provider) => provider.modelsDynamic && provider.models.length === 0,
+    );
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
         <p className="text-muted-foreground/60 text-xs">
-          {search ? `No models match "${search}"` : 'No models'}
+          {search
+            ? `No models match "${search}"`
+            : dynamicProviders.length > 0
+              ? 'Subscription models are managed by the authenticated Claude Code or Codex harness.'
+              : 'No models'}
         </p>
       </div>
     );
@@ -133,7 +140,9 @@ export function ModelsTab({
               <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
               </span>
-              <span className="text-muted-foreground/40 ml-auto text-xs">{providerRows.length}</span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">
+                {providerRows.length}
+              </span>
             </div>
             <div className="bg-popover overflow-hidden rounded-md border">
               {providerRows.map(({ model, storeKey }, i) => {

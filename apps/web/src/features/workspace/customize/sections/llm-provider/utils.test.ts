@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'bun:test';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
+import { describe, expect, test } from 'bun:test';
 
 import {
   buildClaudeSubscriptionProvider,
   buildCustomRestProvider,
   providerCredentialSummary,
+  providerModelsSummary,
 } from './utils';
 
 describe('LLM provider auth presentation', () => {
@@ -19,11 +20,8 @@ describe('LLM provider auth presentation', () => {
       label: 'Claude subscription',
       envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
     });
-    expect(provider!.models.map((model) => model.id)).toEqual([
-      'claude-sonnet-4-6',
-      'claude-opus-4-6',
-      'claude-haiku-4-5',
-    ]);
+    expect(provider!.models).toEqual([]);
+    expect(providerModelsSummary(provider!)).toBe('Harness-managed models');
     expect(providerCredentialSummary(provider!)).toBe('Claude subscription');
   });
 
@@ -32,6 +30,12 @@ describe('LLM provider auth presentation', () => {
       'CLAUDE_CODE_OAUTH_TOKEN',
     ]);
     expect(LLM_PROVIDER_BY_ID.get('anthropic')?.envVars).toContain('ANTHROPIC_API_KEY');
+  });
+
+  test('keeps ChatGPT subscription and OpenAI API key as separate catalog providers', () => {
+    expect(LLM_PROVIDER_BY_ID.get('codex')?.envVars).toContain('CODEX_AUTH_JSON');
+    expect(LLM_PROVIDER_BY_ID.get('codex')?.modelsDynamic).toBe(true);
+    expect(LLM_PROVIDER_BY_ID.get('openai')?.envVars).toContain('OPENAI_API_KEY');
   });
 
   test('requires protocol and base URL before presenting custom REST auth', () => {
