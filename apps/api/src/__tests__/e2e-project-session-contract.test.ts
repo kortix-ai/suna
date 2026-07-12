@@ -1,11 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
-  mockIamEngineAllowAll,
-  mockIamMembershipSyncNoop,
-} from './helpers/iam-mocks';
-import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import {
   accountMembers,
   projectGitConnections,
   projectGitCredentials,
@@ -16,6 +10,9 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -39,8 +36,7 @@ let providerStatus = 'stopped';
 let providerStartError: Error | null = null;
 let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
-let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
-  'unchanged';
+let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -225,8 +221,7 @@ mock.module('../projects/github', () => ({
         .pop()
         ?.replace(/\.git$/, '') ?? 'contract-project',
   }),
-  buildGitHubAppInstallUrl: () =>
-    'https://github.com/apps/kortix-test/installations/new',
+  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
@@ -362,10 +357,7 @@ mock.module('../repositories/account-tokens', () => ({
 mock.module('../deployments/providers/freestyle', () => ({
   getFreestyleApiKey: async () => 'test-freestyle-key',
   getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (
-    path: string,
-    options: { method: string; body?: unknown },
-  ) => {
+  callFreestyle: async (path: string, options: { method: string; body?: unknown }) => {
     freestyleCalls.push({ path, method: options.method, body: options.body });
     return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
       status: 200,
@@ -416,43 +408,28 @@ mock.module('../shared/db', () => ({
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
-          then: (
-            resolve: (value: unknown[]) => unknown,
-            reject?: (reason: unknown) => unknown,
-          ) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(
-              resolve,
-              reject,
-            );
+          then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
           orderBy: async () => {
             if (table === projectSecrets) return secretRows;
-            if (table === projectSessions)
-              return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
           limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount'))
               return [{ activeCount: activeSessionCount }];
             if (table === projectSecrets) {
-              return secretRows
-                .filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN')
-                .slice(0, 1);
+              return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
             }
-            if (table === projectSessionRuntimeContexts)
-              return runtimeContextRows.slice(0, 1);
-            if (table === projectGitConnections)
-              return gitConnectionRows.slice(0, 1);
-            if (table === projectGitCredentials)
-              return gitCredentialRows.slice(0, 1);
-            if (table === sessionSandboxes)
-              return sessionSandboxRows.slice(0, 1);
+            if (table === projectSessionRuntimeContexts) return runtimeContextRows.slice(0, 1);
+            if (table === projectGitConnections) return gitConnectionRows.slice(0, 1);
+            if (table === projectGitCredentials) return gitCredentialRows.slice(0, 1);
+            if (table === sessionSandboxes) return sessionSandboxRows.slice(0, 1);
             if (table === projects) return [projectRow];
-            if (table === accountMembers)
-              return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
-            if (table === projectSessions)
-              return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
         }),
@@ -495,10 +472,7 @@ mock.module('../shared/db', () => ({
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
               metadata: values.metadata ?? {},
-              createdAt:
-                existingIndex >= 0
-                  ? gitConnectionRows[existingIndex]!.createdAt
-                  : now,
+              createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitConnections.$inferSelect;
             if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -507,9 +481,7 @@ mock.module('../shared/db', () => ({
           }
           if (table === projectGitCredentials) {
             const existingIndex = gitCredentialRows.findIndex(
-              (row) =>
-                row.projectId === values.projectId &&
-                row.provider === values.provider,
+              (row) => row.projectId === values.projectId && row.provider === values.provider,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
@@ -523,10 +495,7 @@ mock.module('../shared/db', () => ({
               authMethod: values.authMethod ?? 'token',
               valueEnc: values.valueEnc,
               createdBy: values.createdBy ?? null,
-              createdAt:
-                existingIndex >= 0
-                  ? gitCredentialRows[existingIndex]!.createdAt
-                  : now,
+              createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitCredentials.$inferSelect;
             if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
@@ -603,10 +572,7 @@ mock.module('../shared/db', () => ({
                 lastErrorCode: values.lastErrorCode ?? null,
                 lastErrorMessage: values.lastErrorMessage ?? null,
                 metadata: values.metadata ?? {},
-                createdAt:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.createdAt
-                    : now,
+                  createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitConnections.$inferSelect;
               if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -615,9 +581,7 @@ mock.module('../shared/db', () => ({
             }
             if (table === projectGitCredentials) {
               const existingIndex = gitCredentialRows.findIndex(
-                (row) =>
-                  row.projectId === values.projectId &&
-                  row.provider === values.provider,
+                  (row) => row.projectId === values.projectId && row.provider === values.provider,
               );
               const now = new Date('2026-01-02T00:00:00Z');
               const row = {
@@ -631,10 +595,7 @@ mock.module('../shared/db', () => ({
                 authMethod: values.authMethod ?? 'token',
                 valueEnc: values.valueEnc,
                 createdBy: values.createdBy ?? null,
-                createdAt:
-                  existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.createdAt
-                    : now,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitCredentials.$inferSelect;
               if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
@@ -643,8 +604,7 @@ mock.module('../shared/db', () => ({
             }
             if (table !== projectSecrets) return [];
             const existingIndex = secretRows.findIndex(
-              (row) =>
-                row.projectId === values.projectId && row.name === values.name,
+                (row) => row.projectId === values.projectId && row.name === values.name,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row: typeof projectSecrets.$inferSelect = {
@@ -660,15 +620,17 @@ mock.module('../shared/db', () => ({
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
               createdBy: values.createdBy ?? null,
-              createdAt:
-                existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
             };
             if (existingIndex >= 0) secretRows[existingIndex] = row;
             else secretRows.push(row);
             return [row];
           },
-            then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+            then: (
+              resolve: (value: unknown[]) => unknown,
+              reject?: (reason: unknown) => unknown,
+            ) => {
               conflictResult.returning().then(resolve, reject);
             },
             catch: (reject: (reason: unknown) => unknown) => {
@@ -702,8 +664,7 @@ mock.module('../shared/db', () => ({
               sessionRow = {
                 ...sessionRow,
                 ...updates,
-                updatedAt:
-                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
               };
               return [sessionRow];
             }
@@ -713,8 +674,7 @@ mock.module('../shared/db', () => ({
               sessionSandboxRows[0] = {
                 ...row,
                 ...updates,
-                updatedAt:
-                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
               };
               return [sessionSandboxRows[0]];
             }
@@ -731,8 +691,7 @@ mock.module('../shared/db', () => ({
                   sessionRow = {
                     ...sessionRow,
                     ...updates,
-                    updatedAt:
-                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                   };
                   return [sessionRow];
                 }
@@ -742,8 +701,7 @@ mock.module('../shared/db', () => ({
                   sessionSandboxRows[0] = {
                     ...row,
                     ...updates,
-                    updatedAt:
-                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                   };
                   return [sessionSandboxRows[0]];
                 }
@@ -761,8 +719,7 @@ mock.module('../shared/db', () => ({
                 sessionRow = {
                   ...sessionRow,
                   ...updates,
-                  updatedAt:
-                    updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                 };
                 return [sessionRow];
               }
@@ -772,8 +729,7 @@ mock.module('../shared/db', () => ({
                 sessionSandboxRows[0] = {
                   ...row,
                   ...updates,
-                  updatedAt:
-                    updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                 };
                 return [sessionSandboxRows[0]];
               }
@@ -796,10 +752,7 @@ function createApp() {
   app.route('/v1/projects', projectsApp);
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
-      return c.json(
-        { error: true, message: err.message, status: err.status },
-        err.status,
-      );
+      return c.json({ error: true, message: err.message, status: err.status }, err.status);
     }
     return c.json({ error: true, message: (err as Error).message }, 500);
   });
@@ -808,10 +761,7 @@ function createApp() {
 
 /** Poll until predicate holds (or timeout) — robustly flushes the
  *  fire-and-forget sandbox-provision IIFE instead of a single racy tick. */
-async function flushUntil(
-  predicate: () => boolean,
-  timeoutMs = 2000,
-): Promise<void> {
+async function flushUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
   while (!predicate() && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 5));
@@ -863,12 +813,8 @@ describe('project session API contract', () => {
     const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
-    const openAiSecret = listed.items.find(
-      (item: any) => item.name === 'OPENAI_API_KEY',
-    );
-    const gitAuthSecret = listed.items.find(
-      (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
-    );
+    const openAiSecret = listed.items.find((item: any) => item.name === 'OPENAI_API_KEY');
+    const gitAuthSecret = listed.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN');
     expect(openAiSecret).toBeTruthy();
     expect(openAiSecret.value).toBeUndefined();
     expect(openAiSecret.value_enc).toBeUndefined();
@@ -876,12 +822,9 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
 
-    const deleteRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/secrets/openai_api_key`,
-      {
+    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
         method: 'DELETE',
-      },
-    );
+    });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
@@ -898,19 +841,14 @@ describe('project session API contract', () => {
     expect(before.status).toBe(200);
     const beforeBody = await before.json();
     expect(
-      beforeBody.items.find(
-        (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
-      ),
+      beforeBody.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN'),
     ).toBeUndefined();
 
-    const writeRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git-credential`,
-      {
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: 'gitlab-project-token' }),
-      },
-    );
+    });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
     expect(written).toMatchObject({
@@ -970,12 +908,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
       repo_url: 'https://gitlab.com/acme/private-project.git',
@@ -1037,12 +972,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
       repo_url: 'https://git.freestyle.sh/legacy-private-project',
@@ -1111,12 +1043,9 @@ describe('project session API contract', () => {
     ];
     const app = createApp();
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
 
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1181,14 +1110,11 @@ describe('project session API contract', () => {
     ];
 
     for (const { body, message } of forbiddenBodies) {
-      const res = await app.request(
-        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-        {
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        },
-      );
+      });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
     }
@@ -1197,9 +1123,7 @@ describe('project session API contract', () => {
   test('returns deterministic read errors for invalid or missing sessions and pending sandboxes', async () => {
     const app = createApp();
 
-    const listSessions = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions`,
-    );
+    const listSessions = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
     expect(listSessions.status).toBe(200);
     const sessions = await listSessions.json();
     expect(sessions).toHaveLength(1);
@@ -1211,9 +1135,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const readSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-    );
+    const readSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(readSession.status).toBe(200);
     expect(await readSession.json()).toMatchObject({
       session_id: SESSION_ID,
@@ -1223,9 +1145,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const invalidSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`,
-    );
+    const invalidSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`);
     expect(invalidSession.status).toBe(400);
     expect(await invalidSession.json()).toMatchObject({
       error: 'Invalid session id',
@@ -1253,9 +1173,7 @@ describe('project session API contract', () => {
     });
 
     sessionRow = null;
-    const missingSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-    );
+    const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(missingSession.status).toBe(404);
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
@@ -1290,10 +1208,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1338,10 +1255,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1388,10 +1304,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1433,10 +1348,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1475,10 +1389,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1511,9 +1424,7 @@ describe('project session API contract', () => {
         status: 'active',
         config: {},
         metadata: {
-          runtimeWakeStartedAt: new Date(
-            Date.now() - 2 * 60 * 1000,
-          ).toISOString(),
+          runtimeWakeStartedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
           runtimeWakeProviderStatus: 'stopped',
         },
         lastUsedAt: null,
@@ -1523,10 +1434,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
@@ -1571,10 +1481,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
@@ -1620,10 +1529,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'removed';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1637,8 +1545,7 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-fresh-eventual-404');
     expect(
-      (sessionSandboxRows[0]?.metadata as Record<string, unknown>)
-        .runtimeWakeStartedAt,
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
     ).toEqual(expect.any(String));
   });
 
@@ -1675,10 +1582,9 @@ describe('project session API contract', () => {
       releaseProviderStart = resolve;
     });
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1728,10 +1634,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'removed';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1778,9 +1683,7 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(
-            Date.now() - 6 * 60 * 1000,
-          ).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
@@ -1791,10 +1694,9 @@ describe('project session API contract', () => {
     providerStatus = 'running';
     opencodeEnsureReason = 'unreachable';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'failed',
@@ -1914,10 +1816,9 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1936,17 +1837,14 @@ describe('project session API contract', () => {
 
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'Human name',
           metadata: { custom: 'ok' },
         }),
-      },
-    );
+    });
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -2026,7 +1924,10 @@ describe('project session API contract', () => {
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     const expectedRepoUrl =
       process.env.KORTIX_GIT_PROXY === 'true'
-        ? new URL(`/v1/git/${PROJECT_ID}.git`, process.env.KORTIX_URL ?? 'https://test.kortix.local').toString()
+        ? new URL(
+            `/v1/git/${PROJECT_ID}.git`,
+            process.env.KORTIX_URL ?? 'https://test.kortix.local',
+          ).toString()
         : projectRow.repoUrl;
     expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
@@ -2083,12 +1984,8 @@ describe('project session API contract', () => {
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(
-      lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION,
-    ).toBe('1');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe(
-      'Review the repo',
-    );
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {
@@ -2159,20 +2056,21 @@ describe('project session API contract', () => {
   test('cold /start restores durable runtime_context into a replacement runtime', async () => {
     const app = createApp();
     const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
-    runtimeContextRows = [{
+    runtimeContextRows = [
+      {
       sessionId: SESSION_ID,
       context,
       byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
       createdAt: new Date('2026-01-02T00:00:00Z'),
       updatedAt: new Date('2026-01-02T00:00:00Z'),
-    }];
+      },
+    ];
     sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
     sessionSandboxRows = [];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
@@ -2181,20 +2079,21 @@ describe('project session API contract', () => {
   test('replacement restart restores durable runtime_context', async () => {
     const app = createApp();
     const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
-    runtimeContextRows = [{
+    runtimeContextRows = [
+      {
       sessionId: SESSION_ID,
       context,
       byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
       createdAt: new Date('2026-01-02T00:00:00Z'),
       updatedAt: new Date('2026-01-02T00:00:00Z'),
-    }];
+      },
+    ];
     sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
     sessionSandboxRows = [];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(202);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
@@ -2225,12 +2124,9 @@ describe('project session API contract', () => {
 
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'DELETE',
-      },
-    );
+    });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -2238,12 +2134,9 @@ describe('project session API contract', () => {
     expect(sessionRow?.branchName).toBe(SESSION_ID);
 
     sessionRow = null;
-    const missing = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'DELETE',
-      },
-    );
+    });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
   });
