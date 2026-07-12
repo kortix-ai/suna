@@ -25,7 +25,7 @@ import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store'
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
 import { setModelDefault } from '@kortix/sdk/projects-client';
-import { setEnv } from '@kortix/sdk/opencode-client';
+import { setEnv } from '@kortix/sdk/runtime-client';
 import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';

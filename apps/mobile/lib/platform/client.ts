@@ -36,7 +36,7 @@ import {
   listServices as sdkListServices,
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
-} from '@kortix/sdk/opencode-client';
+} from '@kortix/sdk/runtime-client';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 

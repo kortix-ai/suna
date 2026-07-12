@@ -33,12 +33,12 @@ import { useCustomizeStore } from '@/stores/customize-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { systemReload } from '@kortix/sdk/opencode-client';
 import {
   getProjectDetail,
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  restartProjectSession,
   type ExperimentalFeatureKey,
   type KortixAccount,
   type KortixProject,
@@ -1090,17 +1090,23 @@ export function CommandPalette() {
 
   const handleRestartConfig = useCallback(() => {
     close();
-    systemReload('dispose-only')
+    const projectId = typeof params.id === 'string' ? params.id : null;
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null;
+    if (!projectId || !sessionId) return errorToast('Open a session first');
+    restartProjectSession(projectId, sessionId)
       .then(() => successToast('Config reloaded'))
       .catch(() => errorToast('Restart failed'));
-  }, [close]);
+  }, [close, params.id, params.sessionId]);
 
   const handleRestartFull = useCallback(() => {
     close();
-    systemReload('full')
+    const projectId = typeof params.id === 'string' ? params.id : null;
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : null;
+    if (!projectId || !sessionId) return errorToast('Open a session first');
+    restartProjectSession(projectId, sessionId)
       .then(() => successToast('Full restart initiated'))
       .catch(() => errorToast('Restart failed'));
-  }, [close]);
+  }, [close, params.id, params.sessionId]);
 
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
