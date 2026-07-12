@@ -1,21 +1,27 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
 import { Bot, Brain, ShieldCheck, Square, Terminal, User } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
+import { SessionSiteHeader } from './header/session-site-header';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 export function AcpSessionChat({
   acp,
   onReady,
+  sessionId,
+  sessionTitle,
 }: {
   acp: NonNullable<ReturnType<typeof useSession>['acp']>;
   onReady?: () => void;
+  sessionId: string;
+  sessionTitle: string;
 }) {
   const [draft, setDraft] = useState('');
   const {
@@ -29,8 +35,12 @@ export function AcpSessionChat({
     respondPermission,
     respondQuestion,
     rejectQuestion,
+    configOptions,
+    setConfigOption,
   } = acp;
   const items = useMemo(() => projectAcpChatItems(envelopes), [envelopes]);
+  const isSidePanelOpen = useKortixComputerStore((state) => state.isSidePanelOpen);
+  const setIsSidePanelOpen = useKortixComputerStore((state) => state.setIsSidePanelOpen);
   useEffect(() => { if (ready) onReady?.(); }, [onReady, ready]);
 
   const send = async () => {
@@ -42,12 +52,28 @@ export function AcpSessionChat({
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-col" data-testid="acp-session-chat">
-      <header className="border-border flex items-center gap-2 border-b px-4 py-3">
-        <Bot className="size-4" />
-        <span className="text-sm font-medium">Agent session</span>
-        <Badge variant="kortix" size="xs">ACP</Badge>
-        {acpSessionId ? <span className="text-muted-foreground ml-auto truncate font-mono text-xs">{acpSessionId}</span> : null}
-      </header>
+      <SessionSiteHeader
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        isSidePanelOpen={isSidePanelOpen}
+        onToggleSidePanel={() => setIsSidePanelOpen(!isSidePanelOpen)}
+        supportsCompact={false}
+      />
+      {configOptions.length ? (
+        <div className="border-border flex flex-wrap items-center justify-end gap-2 border-b px-3 py-2">
+          {configOptions.filter((option) => option.type === 'select' && option.options?.length).map((option) => (
+            <Select key={option.id} value={String(option.currentValue ?? '')} onValueChange={(value) => void setConfigOption(option.id, value)}>
+              <SelectTrigger size="sm" className="w-auto min-w-40"><SelectValue placeholder={option.name ?? option.id} /></SelectTrigger>
+              <SelectContent>
+                {option.options!.map((choice, index) => {
+                  const value = String(choice.value ?? choice.id ?? index);
+                  return <SelectItem key={value} value={value}>{String(choice.name ?? choice.label ?? value)}</SelectItem>;
+                })}
+              </SelectContent>
+            </Select>
+          ))}
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto w-full max-w-3xl space-y-4">
           {items.length === 0 ? (

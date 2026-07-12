@@ -219,6 +219,8 @@ export default function ProjectSessionPage() {
               {mountChat && (
                 <AcpSessionChat
                   acp={session.acp!}
+                  sessionId={sessionId}
+                  sessionTitle={`Session ${sessionId.slice(0, 8)}`}
                   onReady={() => setChatReady(true)}
                 />
               )}

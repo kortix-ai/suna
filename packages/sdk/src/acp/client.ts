@@ -78,6 +78,10 @@ export class AcpClient {
     });
   }
 
+  setSessionConfigOption(sessionId: string, configId: string, value: unknown) {
+    return this.request<AcpSessionResult>('session/set_config_option', { sessionId, configId, value });
+  }
+
   prompt(sessionId: string, prompt: AcpContentBlock[]) {
     return this.request<{ stopReason: string }>('session/prompt', { sessionId, prompt });
   }

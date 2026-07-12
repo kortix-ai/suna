@@ -97,12 +97,24 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
   const respondQuestion = useCallback((id: AcpJsonRpcId, content: Record<string, unknown>) => client.respond(id, { action: 'accept', content }), [client]);
   const rejectQuestion = useCallback((id: AcpJsonRpcId) => client.respond(id, { action: 'decline' }), [client]);
   const cancel = useCallback(() => nativeId ? client.cancel(nativeId) : Promise.resolve(), [client, nativeId]);
+  const setConfigOption = useCallback(async (configId: string, value: unknown) => {
+    if (!nativeId) return false;
+    setError(null);
+    try {
+      const result = await client.setSessionConfigOption(nativeId, configId, value);
+      setConfigOptions(result.configOptions ?? configOptions.map((option) => option.id === configId ? { ...option, currentValue: value } : option));
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      return false;
+    }
+  }, [client, configOptions, nativeId]);
   return {
     ready, busy, error, envelopes, runtimeSessionId: nativeId,
     capabilities: initializeResult?.agentCapabilities ?? {},
     agentInfo: initializeResult?.agentInfo ?? null,
     authMethods: initializeResult?.authMethods ?? [],
     configOptions,
-    send, cancel, respondPermission, respondQuestion, rejectQuestion,
+    send, cancel, setConfigOption, respondPermission, respondQuestion, rejectQuestion,
   };
 }
