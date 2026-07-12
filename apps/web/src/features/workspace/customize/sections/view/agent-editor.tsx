@@ -57,7 +57,7 @@ import {
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
-  type OpencodeAgentConfig as RuntimeAgentBehaviorConfig,
+  type RuntimeAgentBehaviorConfig,
   type ProjectConfigSummary,
 } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';

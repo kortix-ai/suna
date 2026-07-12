@@ -72,7 +72,7 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
  */
 export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary): Agent[] {
   const agents = config.agents.map(projectConfigAgentToRuntimeAgent);
-  const defaultName = config.open_code_default_agent;
+  const defaultName = config.runtime_default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;

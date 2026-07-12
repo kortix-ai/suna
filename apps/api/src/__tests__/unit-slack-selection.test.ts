@@ -27,7 +27,7 @@ mock.module('../shared/db', () => ({
 // selection.ts pulls these in at import; stub so the import is cheap + side-effect-free.
 // `projectConfig` is mutable so governance tests can flip a project between
 // legacy (no fixed catalog) and declarative (`[[agents]]` adopted).
-let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_discovery?: string } = { agents: [] };
+let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_source?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
 mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
@@ -119,7 +119,7 @@ describe('setChannelAgent / setChannelModel', () => {
 
 describe('setChannelAgent — governance validation (declared [[agents]] projects)', () => {
   test('governed project rejects a name that is not a declared agent', async () => {
-    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_source: 'declarative' };
     // 1st shift: projectId lookup. 2nd shift: loadProjectAgentGovernance's own
     // project row lookup. No 3rd shift — the write must never happen.
     dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }]];
@@ -130,7 +130,7 @@ describe('setChannelAgent — governance validation (declared [[agents]] project
     expect(dbResults.length).toBe(0);
   });
   test('governed project accepts a declared agent name', async () => {
-    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_source: 'declarative' };
     dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }], [{ id: 'b1' }]];
     expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'reviewer')).toEqual({ ok: true });
   });

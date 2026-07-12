@@ -72,7 +72,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
               {formatMode(agent.mode)}
             </Badge>
           ) : null}
-          {config.open_code_default_agent === agent.name ? (
+          {config.runtime_default_agent === agent.name ? (
             <StarSolid className="text-kortix-orange size-4 shrink-0 fill-current" />
           ) : null}
         </>
@@ -87,14 +87,14 @@ export function AgentsView({ projectId }: { projectId: string }) {
           ) : null}
           {agent.source ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
-              {agent.source === 'opencode'
+              {agent.source === 'runtime'
                 ? 'Runtime'
                 : detectManifestVersion(config.manifest_raw) >= 2
                   ? 'kortix.yaml'
                   : 'kortix.toml'}
             </Badge>
           ) : null}
-          {config.open_code_default_agent === agent.name ? (
+          {config.runtime_default_agent === agent.name ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground gap-1 font-medium">
               <StarSolid className="text-kortix-orange size-3.5 shrink-0" />
               Default
@@ -139,7 +139,7 @@ function DefaultAgentSelector({
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = config.agents.filter((agent) => agent.enabled !== false);
-  const current = config.open_code_default_agent;
+  const current = config.runtime_default_agent;
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {

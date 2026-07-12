@@ -47,7 +47,7 @@ const STAGE_PROGRESS: Record<string, number> = {
   cloud_init_done:       60,
   services_starting:     80,
   services_ready:        95,
-  verifying_opencode:    98,
+  verifying_runtime:     98,
   connecting:            99,
 };
 
@@ -59,7 +59,7 @@ const STAGE_DURATION_MS: Record<string, number> = {
   cloud_init_done:    30_000,
   services_starting:   20_000,
   services_ready:     180_000, // Services can take several minutes to start on cold boot
-  verifying_opencode: 180_000,
+  verifying_runtime:  180_000,
   connecting:         15_000,
 };
 
@@ -67,6 +67,11 @@ const STAGE_DURATION_MS: Record<string, number> = {
 
 function initial(): SandboxPollerState {
   return { status: 'idle', progress: 0, stages: null, currentStage: null, machineInfo: null, error: null, stageEnteredAt: null };
+}
+
+function normalizeProvisioningStage(stage: string | null): string | null {
+  if (stage === 'verifying_opencode') return 'verifying_runtime';
+  return stage;
 }
 
 /** Interpolate progress within a stage based on elapsed time */
@@ -277,8 +282,8 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         } else if (d.status === 'active') {
           update({
             status: 'polling',
-            currentStage: 'verifying_opencode',
-            progress: STAGE_PROGRESS.verifying_opencode,
+            currentStage: 'verifying_runtime',
+            progress: STAGE_PROGRESS.verifying_runtime,
             stageEnteredAt: Date.now(),
           });
           healthAbortRef.current?.abort();
@@ -360,11 +365,11 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         try {
           const data = JSON.parse(e.data);
           if (data.status === 'active') {
-            if (stateRef.current.currentStage === 'verifying_opencode') return;
+            if (stateRef.current.currentStage === 'verifying_runtime') return;
             update({
               status: 'polling',
-              currentStage: 'verifying_opencode',
-              progress: STAGE_PROGRESS.verifying_opencode,
+              currentStage: 'verifying_runtime',
+              progress: STAGE_PROGRESS.verifying_runtime,
               stageEnteredAt: Date.now(),
             });
             healthAbortRef.current?.abort();
@@ -386,12 +391,13 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
             pollingRef.current = false;
             cleanup();
           } else if (data.provisioning_stage) {
-            if (stateRef.current.currentStage === 'verifying_opencode') return;
-            const progress = STAGE_PROGRESS[data.provisioning_stage] ?? stateRef.current.progress;
-            const isNewStage = data.provisioning_stage !== stateRef.current.currentStage;
+            if (stateRef.current.currentStage === 'verifying_runtime') return;
+            const stage = normalizeProvisioningStage(data.provisioning_stage);
+            const progress = stage ? STAGE_PROGRESS[stage] ?? stateRef.current.progress : stateRef.current.progress;
+            const isNewStage = stage !== stateRef.current.currentStage;
             update({
               progress: Math.max(stateRef.current.progress, progress),
-              currentStage: data.provisioning_stage,
+              currentStage: stage,
               stageEnteredAt: isNewStage ? Date.now() : stateRef.current.stageEnteredAt,
             });
           }
@@ -406,8 +412,8 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           if (data.status === 'ready' || data.stage === 'services_ready') {
             update({
               status: 'polling',
-              currentStage: 'verifying_opencode',
-              progress: STAGE_PROGRESS.verifying_opencode,
+              currentStage: 'verifying_runtime',
+              progress: STAGE_PROGRESS.verifying_runtime,
               stageEnteredAt: Date.now(),
             });
             healthAbortRef.current?.abort();
@@ -435,13 +441,14 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           }
 
           if (data.stage) {
-            // Once in verifying_opencode, don't accept stage changes until health passes
-            if (stateRef.current.currentStage === 'verifying_opencode') return;
-            const progress = STAGE_PROGRESS[data.stage] ?? stateRef.current.progress;
-            const isNewStage = data.stage !== stateRef.current.currentStage;
+            // Once in runtime verification, don't accept stage changes until health passes
+            if (stateRef.current.currentStage === 'verifying_runtime') return;
+            const stage = normalizeProvisioningStage(data.stage);
+            const progress = stage ? STAGE_PROGRESS[stage] ?? stateRef.current.progress : stateRef.current.progress;
+            const isNewStage = stage !== stateRef.current.currentStage;
             update({
               progress: Math.max(stateRef.current.progress, progress),
-              currentStage: data.stage,
+              currentStage: stage,
               stageEnteredAt: isNewStage ? Date.now() : stateRef.current.stageEnteredAt,
             });
           }

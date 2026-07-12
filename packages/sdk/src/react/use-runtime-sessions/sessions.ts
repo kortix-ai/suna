@@ -82,9 +82,9 @@ export function useCreateRuntimeSession() {
   return useMutation({
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
       const opts = options || {};
-      // Opencode-inside-sandbox can be still booting when this fires (auto-
-      // create on session page mount). The sandbox proxy returns 503 with
-      // "opencode not ready" until the binary binds its port. Retry that
+      // The runtime can still be booting when this fires (auto-create on
+      // session page mount). Legacy OpenCode harnesses surface 503
+      // "opencode not ready" until the process binds its port. Retry that
       // specific transient inline — anything else propagates immediately.
       for (let attempt = 0; ; attempt++) {
         try {

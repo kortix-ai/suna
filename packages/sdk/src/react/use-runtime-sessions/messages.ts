@@ -9,7 +9,7 @@ import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
 import { unwrap } from './shared';
 
 // ============================================================================
-// Send retry policy — ported from apps/web's `opencode-send-retry.ts` so every
+// Send retry policy — ported from the old web runtime-send retry helper so every
 // host that sends a prompt through `promptRuntimeMessage` inherits it, not
 // just apps/web.
 //
@@ -20,21 +20,22 @@ import { unwrap } from './shared';
 //      rather than rejects on HTTP errors). `response.status` is the status.
 //
 // A freshly-created session points at a sandbox that may still be booting. The
-// proxy comes up before opencode's binary binds its port, so it answers with a
-// `503 "opencode not ready"` for a few seconds. That is a boot signal, not a
-// real failure — retrying across the full boot window lets the first prompt
-// land instead of flashing an "opencode not ready" error banner the user can't
-// act on.
+// proxy can come up before the runtime binds its port, so legacy OpenCode
+// harnesses may answer with `503 "opencode not ready"` for a few seconds. That
+// is a boot signal, not a real failure — retrying across the full boot window
+// lets the first prompt land instead of flashing a runtime-not-ready banner the
+// user can't act on.
 // ============================================================================
 
 /** Generic transient blips (server restart, tunnel hiccup): short, snappy. */
 const TRANSIENT_BACKOFF_MS = [400, 1000, 2000];
 
 /**
- * Boot/wake window — covers a sandbox binding its opencode port, whether that's
- * a cold first-session boot OR a wake from auto-stop (sandbox resume + opencode
- * rebind, which is slower). Stretched to ~30s so the prompt lands instead of the
- * client giving up and reverting a message that actually ran once the box woke.
+ * Boot/wake window — covers a sandbox binding its runtime port, whether that's
+ * a cold first-session boot OR a wake from auto-stop (sandbox resume + runtime
+ * rebind, which is slower). Stretched to ~30s so the prompt lands instead of
+ * the client giving up and reverting a message that actually ran once the box
+ * woke.
  */
 const BOOT_BACKOFF_MS = [400, 800, 1500, 2500, 4000, 4000, 4000, 4000, 4000, 4000];
 
@@ -58,10 +59,11 @@ export function extractSendErrorMessage(error: unknown): string {
 }
 
 /**
- * The sandbox proxy returns `503 "opencode not ready"` while opencode's binary
- * is still booting inside a freshly-created sandbox — or while a sandbox is
- * waking from auto-stop and rebinding its port. Match the common "not ready /
- * waking / booting / provisioning" shapes, not just the exact string.
+ * The sandbox proxy can return legacy `503 "opencode not ready"` while the
+ * runtime process is still booting inside a freshly-created sandbox — or while
+ * a sandbox is waking from auto-stop and rebinding its port. Match the common
+ * "not ready / waking / booting / provisioning" shapes, not just the exact
+ * string.
  */
 export function isRuntimeNotReadyError(error: unknown): boolean {
   return /opencode not ready|not ready|not yet ready|waking|booting|still booting|provision/i.test(
@@ -90,9 +92,9 @@ export function getSendRetryDelayMs(
   status: number | undefined,
   error: unknown,
 ): number | null {
-  // A 503 from our sandbox proxy ALWAYS means "sandbox/opencode not ready" — a
-  // cold boot or a wake from auto-stop — so give it the full boot/wake window,
-  // not the short transient one, even when the error body didn't carry a tidy
+  // A 503 from our sandbox proxy means "sandbox runtime not ready" — a cold
+  // boot or a wake from auto-stop — so give it the full boot/wake window, not
+  // the short transient one, even when the error body didn't carry a tidy
   // message. Giving up early here is exactly what reverted a prompt that then
   // landed once the box finished waking.
   const isBoot = status === 503 || isRuntimeNotReadyError(error);
@@ -258,7 +260,7 @@ export interface SendRuntimeMessageError extends Error {
  *
  * Retries transient failures (a thrown transport error, or a 5xx/408/429
  * response) with backoff — see the retry policy above. The sandbox proxy's
- * `503 "opencode not ready"` boot signal gets the full ~30s boot/wake window so
+ * legacy `503 "opencode not ready"` boot signal gets the full ~30s boot/wake window so
  * the very first prompt against a cold or waking sandbox lands on its own
  * instead of surfacing an error the user can't act on. A real 4xx (bad
  * request / auth / unknown model) is never retried.

@@ -1,8 +1,8 @@
 /**
  * Project resource registry + per-resource list filtering.
  *
- * Agents and skills are file-based (kortix.yaml `agents:` / .opencode/agent/*.md
- * and .opencode/skills/<slug>/SKILL.md), so their stable identity is:
+ * Agents and skills are file-based (kortix.yaml `agents:` / harness-native
+ * agent markdown files and skills/<slug>/SKILL.md), so their stable identity is:
  *   - agent  → its `name` (also what service_accounts.agent_name keys on);
  *   - skill  → its directory `slug` (derived from the SKILL.md path), which is
  *     stable even when the display name changes.
@@ -18,7 +18,7 @@ import { withProjectGitAuth } from './git';
 
 /**
  * Load a project's config WITH its repo file list. File-based agents/skills
- * (`.opencode/agent/*.md`, `skills/<slug>/`) are discovered by scanning the
+ * (harness-native agent markdown files, `skills/<slug>/`) are discovered by scanning the
  * files passed to loadProjectConfig — calling it with `[]` finds NONE. Every
  * resource path (the grant picker, the visibility denier) must go through this.
  */
@@ -154,11 +154,14 @@ export function buildResourceDenier(
   okAgent: Set<string>,
   okSkill: Set<string>,
 ): ResourceDenier | null {
-  // Denied agents → block their exact file (opencode agents are single .md
-  // files; a kortix.yaml agent has no separate file, only the shared manifest).
+  // Denied agents → block their exact file (runtime-native agents are single
+  // .md files in the current OpenCode harness; a kortix.yaml agent has no
+  // separate file, only the shared manifest).
   const deniedExact = new Set<string>();
   for (const a of config.agents ?? []) {
-    if (!okAgent.has(a.name) && a.source === 'opencode' && a.path) deniedExact.add(trimPath(a.path));
+    if (!okAgent.has(a.name) && (a.source === 'runtime' || a.source === 'opencode') && a.path) {
+      deniedExact.add(trimPath(a.path));
+    }
   }
   // Denied skills → block the whole skill directory (SKILL.md + references/…).
   const deniedPrefixes: string[] = [];

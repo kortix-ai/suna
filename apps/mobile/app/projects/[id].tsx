@@ -1234,7 +1234,7 @@ export default function ProjectSessionScreen() {
   // state and the project-sessions poll opens it once its sandbox is ready.
   const [connectingProjectSessionId, setConnectingProjectSessionId] = useState<string | null>(null);
   // Inline runtime-failure state for the connecting screen (web parity: the
-  // "OpenCode runtime is not ready" error). When set, the connecting branch
+  // runtime-not-ready error). When set, the connecting branch
   // shows the error + a Restart button instead of spinning forever.
   const [connectError, setConnectError] = useState<SessionConnectError | null>(null);
   const [restartingSession, setRestartingSession] = useState(false);
@@ -1515,8 +1515,8 @@ export default function ProjectSessionScreen() {
 
             // Fatal runtime boot failure (e.g. repo materialization / git clone
             // failed): stop waiting and surface it with a Restart button — web
-            // parity with the "OpenCode runtime is not ready" screen. boot_error
-            // is null during a normal boot, so this never false-positives.
+            // parity with the runtime-not-ready screen. boot_error is null
+            // during a normal boot, so this never false-positives.
             if (health.bootError) {
               failConnect(sessionId, {
                 title: 'Agent runtime is not ready',

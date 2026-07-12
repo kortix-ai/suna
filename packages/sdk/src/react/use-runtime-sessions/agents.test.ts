@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import { projectConfigAgentsToRuntimeAgents } from './agents';
 
-const config = (defaultAgent: string | null) =>
+const config = (defaultAgent: string | null, legacyDefaultAgent = defaultAgent) =>
   ({
-    open_code_default_agent: defaultAgent,
+    runtime_default_agent: defaultAgent,
+    open_code_default_agent: legacyDefaultAgent,
     agents: [
       { name: 'kortix', path: 'kortix.md', description: null, mode: 'primary' },
       {
@@ -20,6 +21,12 @@ describe('projectConfigAgentsToRuntimeAgents', () => {
   test('places the declared project default first for fallback consumers', () => {
     expect(
       projectConfigAgentsToRuntimeAgents(config('memory-reflector')).map((agent) => agent.name),
+    ).toEqual(['memory-reflector', 'kortix']);
+  });
+
+  test('falls back to the legacy default field for older API responses', () => {
+    expect(
+      projectConfigAgentsToRuntimeAgents(config(null, 'memory-reflector')).map((agent) => agent.name),
     ).toEqual(['memory-reflector', 'kortix']);
   });
 

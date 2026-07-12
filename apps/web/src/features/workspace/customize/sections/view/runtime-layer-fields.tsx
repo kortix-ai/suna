@@ -17,7 +17,7 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { cn } from '@/lib/utils';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import type { OpencodeAgentConfig as RuntimeAgentBehaviorConfig, PermissionConfig } from '@kortix/sdk/projects-client';
+import type { RuntimeAgentBehaviorConfig, PermissionConfig } from '@kortix/sdk/projects-client';
 import { Gauge, Sliders } from 'lucide-react';
 import { AGENT_MODE_HELP, AGENT_MODES, THEME_COLORS } from './agent-editor-catalog';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';

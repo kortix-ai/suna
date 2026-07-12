@@ -47,8 +47,8 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
               if (isBillingError(error)) {
                 return;
               }
-              // Transient "opencode not ready" 503 surfaces while a sandbox is
-              // still booting its opencode binary. The auto-create + SDK call
+              // Transient legacy "opencode not ready" 503 surfaces while a
+              // sandbox runtime is still booting. The auto-create + SDK call
               // sites already retry internally; surfacing this as a user toast
               // is just noise during the boot window. Suppress it.
               const msg = typeof error?.message === 'string' ? error.message : '';

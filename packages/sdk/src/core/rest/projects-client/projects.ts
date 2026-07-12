@@ -64,15 +64,21 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  runtime_config_raw: string | null;
+  runtime_default_agent: string | null;
+  agent_source: 'native' | 'declarative';
+  /** @deprecated Use runtime_config_raw. */
   open_code_raw: string | null;
+  /** @deprecated Use runtime_default_agent. */
   open_code_default_agent: string | null;
+  /** @deprecated Use agent_source. */
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
-    source?: 'opencode' | 'kortix.toml';
+    source?: 'runtime' | 'opencode' | 'kortix.toml' | 'kortix.yaml';
     enabled?: boolean;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for

@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Safety net for the session subtree: during sandbox provisioning the opencode
- * runtime URL isn't pinned yet, and any stray `getClient()` call throws
+ * Safety net for the session subtree: during sandbox provisioning the runtime
+ * URL isn't pinned yet, and any stray `getClient()` call throws
  * "Server URL not ready — sandbox is still loading". Without this, such a throw
  * escalates to the Next route boundary (app/error.tsx) and the user sees a hard
  * "Something went wrong" instead of a loading state.
@@ -21,7 +21,7 @@
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
 import { useEffect } from 'react';
 
-/** Transient errors thrown while the sandbox/opencode runtime is still booting. */
+/** Transient errors thrown while the sandbox runtime is still booting. */
 function isRuntimeNotReadyError(error: Error): boolean {
   const m = error?.message ?? '';
   return /server url not ready|sandbox is still loading|opencode not ready/i.test(m);

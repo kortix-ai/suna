@@ -184,8 +184,8 @@ export interface ProjectAgentGovernance {
   /**
    * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
-   * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
-   * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
+   * merely discovered from a harness-native agent directory. Mirrors
+   * `ProjectConfigSummary.agent_source === 'declarative'`. Callers that
    * validate a channel-binding's `agentName` against the catalog should only
    * reject unknown names when this is true — a legacy (undeclared) project
    * has no fixed catalog to validate against.
@@ -195,7 +195,7 @@ export interface ProjectAgentGovernance {
 
 /**
  * The project's launchable agents from the server-side config summary:
- * declarative `kortix.yaml` `agents:` for adopted projects, OpenCode markdown
+ * declarative `kortix.yaml` `agents:` for adopted projects, native harness
  * discovery for legacy projects. Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
@@ -220,7 +220,7 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
       description: a.description ?? null,
       mode: a.mode ?? null,
     })),
-    declared: config.agent_discovery === 'declarative',
+    declared: config.agent_source === 'declarative',
   };
 }
 

@@ -5,11 +5,11 @@ import { unwrap } from './shared';
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
 // connectors/secrets/skills/kortix_cli/workspace/enabled, written to
-// kortix.yaml) and `block.opencode` (Runtime BEHAVIOR — mode/model/
+// kortix.yaml) and `block.opencode` (legacy runtime BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
-// the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
-// body). The backend route is what merges the two files into this one
-// response/request shape — see apps/api/src/projects/routes/agent-config.ts.
+// the OpenCode harness agent markdown frontmatter + body). The backend route
+// is what merges the two files into this one response/request shape — see
+// apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
 // secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
 // server-side (project.customize.write). v2-only: `editable:false` on the GET
@@ -27,9 +27,10 @@ export type PermissionRule = PermissionAction | Record<string, PermissionAction>
 /** The Runtime `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The Runtime BEHAVIOR half — everything that lives in the agent's own
- *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
-export interface OpencodeAgentConfig {
+/** The runtime BEHAVIOR half — everything that lives in the harness-native
+ *  agent config (+ `prompt`, the file's BODY text, not a path, for the legacy
+ *  OpenCode harness editor). */
+export interface RuntimeAgentBehaviorConfig {
   description?: string;
   mode?: 'primary' | 'subagent' | 'all';
   model?: string;
@@ -46,10 +47,14 @@ export interface OpencodeAgentConfig {
   permission?: PermissionConfig;
 }
 
+/** @deprecated Use RuntimeAgentBehaviorConfig. Retained for v2/OpenCode
+ * compatibility consumers while the wire key remains `opencode`. */
+export type OpencodeAgentConfig = RuntimeAgentBehaviorConfig;
+
 /** The full agent block on the wire — mirrors `AgentBlockV2` in
- *  @kortix/manifest-schema PLUS the merged `opencode` behavior half (a wire-
- *  only convenience; kortix.yaml itself never nests `opencode` — see the
- *  module doc above). */
+ *  @kortix/manifest-schema PLUS the merged legacy behavior half under the
+ *  `opencode` wire key (a compatibility convenience; kortix.yaml itself never
+ *  nests `opencode` — see the module doc above). */
 export interface AgentConfigBlock {
   /** v3 logical routing fields. Runtime behavior remains in native config. */
   runtime?: string;
@@ -60,7 +65,7 @@ export interface AgentConfigBlock {
   skills?: AgentGrantSetV2;
   kortix_cli?: AgentGrantSetV2;
   workspace?: 'runtime' | 'read' | 'branch';
-  opencode?: OpencodeAgentConfig;
+  opencode?: RuntimeAgentBehaviorConfig;
 }
 
 export interface AgentConfigResponse {
