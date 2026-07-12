@@ -221,6 +221,22 @@ const envSchema = z.object({
   ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
   ELEVENLABS_API_KEY:          optStr,
 
+  // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
+  // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
+  // serve every tenant; the per-conversation tenant id arrives on each inbound
+  // activity. Outbound auth is a short-lived AAD token minted per scope at call
+  // time (channels/teams-auth.ts) — there is no static bot token to store.
+  MICROSOFT_APP_ID:            optStr,
+  MICROSOFT_APP_PASSWORD:      optStr,
+  // The bot's home tenant. Multi-tenant bots authenticate against the shared
+  // `botframework.com` tenant; single-tenant deployments set their own.
+  MICROSOFT_APP_TENANT:        optStrDefault('botframework.com'),
+  // OpenID metadata used to validate the signed JWT on every inbound activity
+  // (the Teams analog of Slack signature verification).
+  MICROSOFT_BOT_OPENID_METADATA: optUrl('https://login.botframework.com/v1/.well-known/openidconfiguration'),
+  TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
+  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -640,6 +656,14 @@ export const config = {
   RECALL_API_KEY: env.RECALL_API_KEY,
   ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
   ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
+
+  // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
+  MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
+  MICROSOFT_APP_PASSWORD: env.MICROSOFT_APP_PASSWORD,
+  MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
+  MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
+  TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
+  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

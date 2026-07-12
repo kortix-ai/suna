@@ -652,10 +652,13 @@ app.route('/v1/templates', templatesApp); // /v1/templates — installable use-c
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay

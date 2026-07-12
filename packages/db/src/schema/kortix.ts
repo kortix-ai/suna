@@ -957,7 +957,7 @@ export const chatTurnStreams = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     teamId: varchar('team_id', { length: 128 }).notNull(),
-    channel: varchar('channel', { length: 128 }).notNull(),
+    channel: text('channel').notNull(),
     triggerTs: varchar('trigger_ts', { length: 64 }).notNull(),
     messageTs: varchar('message_ts', { length: 64 }),
     streaming: boolean('streaming').notNull().default(false),
@@ -965,10 +965,32 @@ export const chatTurnStreams = kortixSchema.table(
     finalized: boolean('finalized').notNull().default(false),
     steps: jsonb('steps').notNull().default([]),
     originatingEvent: jsonb('originating_event').notNull(),
+    // Platform-specific conversation reference for non-Slack channels (Teams:
+    // { platform, serviceUrl, conversationId, activityId, streamId, streamSequence }).
+    // Slack leaves this null and uses the columns above. Nullable + additive.
+    channelRef: jsonb('channel_ref'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+export const teamsPendingUploads = kortixSchema.table(
+  'teams_pending_uploads',
+  {
+    uploadId: text('upload_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    serviceUrl: text('service_url').notNull(),
+    conversationId: text('conversation_id').notNull(),
+    botId: varchar('bot_id', { length: 128 }),
+    filename: text('filename').notNull(),
+    contentType: varchar('content_type', { length: 128 }),
+    contentBase64: text('content_base64').notNull(),
+    size: integer('size').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('idx_teams_pending_uploads_expiry').on(table.expiresAt)],
 );
 
 // Cross-replica dedup of inbound Slack event deliveries. Slack can deliver the

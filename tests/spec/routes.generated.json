@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 464,
+  "count": 476,
   "routes": [
     {
       "method": "GET",
@@ -1857,6 +1857,54 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/telegram/:projectId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/manifest"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/teams/:projectId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/teams/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/teams/oauth/callback"
     }
   ]
 }

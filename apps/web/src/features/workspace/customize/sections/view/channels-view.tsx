@@ -40,6 +40,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
+import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import {
   useChannelBindings,
@@ -202,6 +203,12 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               </InfoBanner>
             ) : oauthInstallUrl ? (
               <BringYourOwnPanel projectId={projectId} />
+            ) : null}
+
+            {projectId ? (
+              <div className="border-border/60 border-t pt-6">
+                <TeamsChannelPanel projectId={projectId} />
+              </div>
             ) : null}
 
             {install ? (
