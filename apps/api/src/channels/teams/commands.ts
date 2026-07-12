@@ -1,5 +1,5 @@
 import { config } from '../../config';
-import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
+import { labelForModelRef, listPickerModels } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { channelModelContext } from '../slack/model-gate';
@@ -11,23 +11,23 @@ import {
 } from '../slack/selection';
 import { sendCard } from '../teams-api';
 import {
-  buildChoiceCard,
-  buildConnectAccountCard,
-  buildHelpCard,
-  buildNoticeCard,
-  buildPanelCard,
-} from './cards';
-import {
   ensureTeamsConversationBinding,
   listTenantProjects,
   resolveConversationProject,
   setConversationProject,
   teamsChannelCtx,
 } from './binding';
+import {
+  buildChoiceCard,
+  buildConnectAccountCard,
+  buildHelpCard,
+  buildNoticeCard,
+  buildPanelCard,
+} from './cards';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
 import { buildTeamsLoginUrl } from './login';
-import { type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
+import type { TeamsCommand } from './util';
 
 export { parseTeamsCommand } from './util';
 
@@ -56,7 +56,7 @@ export async function handleTeamsCommand(input: {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return false;
   const { verb, arg } = input.command;
-  const conversationId = input.activity.conversation!.id!;
+  const conversationId = ref.conversationId;
   const ctx = teamsChannelCtx(input.tenantId, conversationId);
   const userId = teamsUserId(input.activity);
 
@@ -66,19 +66,29 @@ export async function handleTeamsCommand(input: {
     case 'login':
     case 'connect': {
       if (userId) {
-        await post(buildConnectAccountCard(buildTeamsLoginUrl({ tenantId: input.tenantId, teamsUserId: userId })));
+        await post(
+          buildConnectAccountCard(
+            buildTeamsLoginUrl({ tenantId: input.tenantId, teamsUserId: userId }),
+          ),
+        );
       }
       return true;
     }
     case 'logout':
     case 'disconnect': {
       const revoked = userId ? await revokeTeamsIdentity(input.tenantId, userId) : false;
-      await post(buildNoticeCard(revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected."));
+      await post(
+        buildNoticeCard(
+          revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected.",
+        ),
+      );
       return true;
     }
     case 'whoami':
     case 'who':
-      await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId));
+      await post(
+        await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId),
+      );
       return true;
     case 'help':
       await post(helpCard());
@@ -116,7 +126,11 @@ export async function handleTeamsCommand(input: {
   }
 }
 
-async function ensureBinding(tenantId: string, conversationId: string, projectId: string): Promise<void> {
+async function ensureBinding(
+  tenantId: string,
+  conversationId: string,
+  projectId: string,
+): Promise<void> {
   await ensureTeamsConversationBinding({ tenantId, conversationId, projectId });
 }
 
@@ -143,7 +157,12 @@ async function buildStatusCard(
   const rows = [
     { label: 'Project', value: projectId },
     { label: 'Agent', value: selection?.agentName || 'default' },
-    { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+    {
+      label: 'Model',
+      value: selection?.opencodeModel
+        ? labelForModelRef(selection.opencodeModel)
+        : 'project default',
+    },
   ];
   return buildPanelCard({
     title: 'This conversation',
@@ -161,9 +180,7 @@ async function buildWhoamiCard(
 ) {
   const identity = userId ? await lookupTeamsIdentity(tenantId, userId) : null;
   if (!identity) {
-    return buildConnectAccountCard(
-      buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }),
-    );
+    return buildConnectAccountCard(buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }));
   }
   return buildStatusCard(ctx, tenantId, conversationId, projectId);
 }
@@ -219,7 +236,9 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
     model: id,
   });
   if (!servable) {
-    return buildNoticeCard(`\`${id}\` isn't available here. Pick one with /models or connect that provider in Kortix.`);
+    return buildNoticeCard(
+      `\`${id}\` isn't available here. Pick one with /models or connect that provider in Kortix.`,
+    );
   }
   const stored = toOpencodeModelRef(id);
   await setChannelModel(ctx, stored);
@@ -240,7 +259,11 @@ async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectI
       data: { agent: a.name },
     })),
   ];
-  return buildChoiceCard({ title: 'Agent for this conversation', verb: 'teams_set_agent', choices });
+  return buildChoiceCard({
+    title: 'Agent for this conversation',
+    verb: 'teams_set_agent',
+    choices,
+  });
 }
 
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
@@ -260,7 +283,8 @@ async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
 
 async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   const projects = await listTenantProjects(tenantId);
-  if (projects.length === 0) return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.');
+  if (projects.length === 0)
+    return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.');
   const choices = projects.slice(0, 6).map((p) => ({
     title: `${p.projectId === currentProjectId ? '✓ ' : ''}${p.name}`,
     data: { projectId: p.projectId },
@@ -279,7 +303,16 @@ async function switchProject(tenantId: string, conversationId: string, arg: stri
   const match = q
     ? projects.find((p) => p.name.toLowerCase() === q || p.projectId === arg.trim())
     : null;
-  if (!match) return buildProjectsCard(tenantId, (await resolveConversationProject(tenantId, conversationId)) ?? '');
-  await setConversationProject({ tenantId, conversationId, projectId: match.projectId });
+  if (!match)
+    return buildProjectsCard(
+      tenantId,
+      (await resolveConversationProject(tenantId, conversationId)) ?? '',
+    );
+  const switched = await setConversationProject({
+    tenantId,
+    conversationId,
+    projectId: match.projectId,
+  });
+  if (!switched) return buildNoticeCard("That project isn't connected to this Teams tenant.");
   return buildNoticeCard(`This conversation now runs *${match.name}*.`);
 }

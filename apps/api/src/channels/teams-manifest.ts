@@ -45,7 +45,8 @@ export interface BuildTeamsManifestConfig {
   longDescription?: string;
 }
 
-const SHORT_DESCRIPTION = 'Your AI workforce, in Teams — @-mention an agent and it does the real work.';
+const SHORT_DESCRIPTION =
+  'Your AI workforce, in Teams — @-mention an agent and it does the real work.';
 
 const LONG_DESCRIPTION =
   'Kortix brings a workforce of AI agents into Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — working across your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same conversation. Managed by Kortix · https://kortix.com';
@@ -60,9 +61,9 @@ function hostOf(baseUrl: string): string {
 
 export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest {
   const appName = cfg.appName ?? 'Kortix';
-  const botName = cfg.botName ?? 'Kortix';
   return {
-    $schema: 'https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json',
+    $schema:
+      'https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json',
     manifestVersion: '1.16',
     version: '1.0.0',
     id: cfg.appId,

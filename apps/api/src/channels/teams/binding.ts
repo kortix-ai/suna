@@ -1,5 +1,5 @@
-import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 
@@ -42,7 +42,20 @@ export async function resolveConversationProject(
       ),
     )
     .limit(1);
-  if (binding?.projectId) return binding.projectId;
+  if (binding?.projectId) {
+    const [installed] = await db
+      .select({ projectId: chatInstalls.projectId })
+      .from(chatInstalls)
+      .where(
+        and(
+          eq(chatInstalls.platform, PLATFORM),
+          eq(chatInstalls.workspaceId, tenantId),
+          eq(chatInstalls.projectId, binding.projectId),
+        ),
+      )
+      .limit(1);
+    if (installed) return binding.projectId;
+  }
 
   const [install] = await db
     .select({ projectId: chatInstalls.projectId })
@@ -58,7 +71,20 @@ export async function ensureTeamsConversationBinding(input: {
   projectId: string;
   channelName?: string | null;
   channelType?: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
+  const [installed] = await db
+    .select({ projectId: chatInstalls.projectId })
+    .from(chatInstalls)
+    .where(
+      and(
+        eq(chatInstalls.platform, PLATFORM),
+        eq(chatInstalls.workspaceId, input.tenantId),
+        eq(chatInstalls.projectId, input.projectId),
+      ),
+    )
+    .limit(1);
+  if (!installed) return false;
+
   await db
     .insert(chatChannelBindings)
     .values({
@@ -70,9 +96,14 @@ export async function ensureTeamsConversationBinding(input: {
       channelType: input.channelType ?? null,
     })
     .onConflictDoUpdate({
-      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+      target: [
+        chatChannelBindings.platform,
+        chatChannelBindings.workspaceId,
+        chatChannelBindings.channelId,
+      ],
       set: { projectId: input.projectId },
     });
+  return true;
 }
 
 export async function setConversationProject(input: {
@@ -80,6 +111,5 @@ export async function setConversationProject(input: {
   conversationId: string;
   projectId: string;
 }): Promise<boolean> {
-  await ensureTeamsConversationBinding(input);
-  return true;
+  return ensureTeamsConversationBinding(input);
 }

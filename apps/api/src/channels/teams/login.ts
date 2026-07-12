@@ -12,7 +12,10 @@ export interface TeamsLoginStatePayload {
 }
 
 function loginSigningKey(): string {
-  return config.MICROSOFT_APP_PASSWORD ?? 'kortix-dev-teams-state-key';
+  if (!config.MICROSOFT_APP_PASSWORD) {
+    throw new Error('MICROSOFT_APP_PASSWORD must be configured for Teams login token signing');
+  }
+  return config.MICROSOFT_APP_PASSWORD;
 }
 
 export function signTeamsLoginState(input: {
@@ -40,9 +43,12 @@ export function verifyTeamsLoginState(token: string): TeamsLoginStatePayload | n
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TeamsLoginStatePayload;
+    const payload = JSON.parse(
+      Buffer.from(body, 'base64url').toString('utf8'),
+    ) as TeamsLoginStatePayload;
     if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
-    if (typeof payload.tenantId !== 'string' || typeof payload.teamsUserId !== 'string') return null;
+    if (typeof payload.tenantId !== 'string' || typeof payload.teamsUserId !== 'string')
+      return null;
     if (payload.pendingId !== undefined && typeof payload.pendingId !== 'string') return null;
     return payload;
   } catch {

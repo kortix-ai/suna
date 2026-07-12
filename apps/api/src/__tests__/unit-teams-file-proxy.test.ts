@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { TeamsActivity } from '../channels/teams/types';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
 mock.module('../channels/teams-api', () => ({
@@ -11,26 +12,42 @@ mock.module('../channels/teams-api', () => ({
   sendTyping: async () => {},
   sendText: async () => 'text-1',
   updateActivity: async () => true,
-  cardActivity: (c: unknown) => ({ type: 'message', attachments: [{ contentType: 'x', content: c }] }),
+  cardActivity: (c: unknown) => ({
+    type: 'message',
+    attachments: [{ contentType: 'x', content: c }],
+  }),
 }));
-mock.module('../channels/teams-auth', () => ({ graphToken: async () => 'graph-tok' }));
+mock.module('../channels/teams-auth', () => ({
+  graphToken: async () => 'graph-tok',
+  teamsChannelEnabled: () => true,
+  teamsConfigured: () => true,
+}));
 mock.module('../channels/install-store', () => ({
+  loadTeamsBotCredentials: async () => ({ appId: 'app-1', appPassword: 'secret' }),
   loadTeamsTenantForProject: async () => 'tenant-1',
   saveTeamsServiceUrl: async () => {},
 }));
 
 let dbResults: unknown[][] = [];
 let dbWrites: Array<{ op: string; payload?: unknown }> = [];
-function makeChain(op: string): any {
-  const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'returning']) chain[m] = () => chain;
+
+type DbChain = Promise<unknown[]> & {
+  from: () => DbChain;
+  where: () => DbChain;
+  limit: () => DbChain;
+  returning: () => DbChain;
+  values: (payload: unknown) => DbChain;
+};
+
+function makeChain(op: string): DbChain {
+  const chain = Promise.resolve(dbResults.shift() ?? []) as DbChain;
+  for (const method of ['from', 'where', 'limit', 'returning'] as const) {
+    chain[method] = () => chain;
+  }
   chain.values = (payload: unknown) => {
     dbWrites.push({ op: `${op}.values`, payload });
     return chain;
   };
-  chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
-  chain.catch = () => chain;
-  chain.finally = () => chain;
   return chain;
 }
 mock.module('../shared/db', () => ({
@@ -45,7 +62,9 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { downloadTeamsFile, initiateTeamsUpload, handleFileConsentInvoke } = await import('../channels/teams/file-proxy');
+const { downloadTeamsFile, initiateTeamsUpload, handleFileConsentInvoke } = await import(
+  '../channels/teams/file-proxy'
+);
 
 let fetchCalls: Array<{ url: string; method: string }> = [];
 let nextFetchOk = true;
@@ -58,7 +77,12 @@ beforeEach(() => {
   nextFetchOk = true;
   globalThis.fetch = (async (url: string, init: { method?: string }) => {
     fetchCalls.push({ url: String(url), method: init?.method ?? 'GET' });
-    return { ok: nextFetchOk, status: nextFetchOk ? 200 : 502, arrayBuffer: async () => new ArrayBuffer(8), headers: { get: () => 'application/pdf' } };
+    return {
+      ok: nextFetchOk,
+      status: nextFetchOk ? 200 : 502,
+      arrayBuffer: async () => new ArrayBuffer(8),
+      headers: { get: () => 'application/pdf' },
+    };
   }) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -91,7 +115,10 @@ describe('initiateTeamsUpload', () => {
   });
 
   test('stashes the file and posts a consent card', async () => {
-    const r = await initiateTeamsUpload('proj-1', { ...base, contentBase64: Buffer.from('hello').toString('base64') });
+    const r = await initiateTeamsUpload('proj-1', {
+      ...base,
+      contentBase64: Buffer.from('hello').toString('base64'),
+    });
     expect(r.ok).toBe(true);
     expect(dbWrites.some((w) => w.op === 'insert.values')).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['sendActivity']);
@@ -100,20 +127,43 @@ describe('initiateTeamsUpload', () => {
 
 describe('handleFileConsentInvoke', () => {
   test('decline deletes the pending upload, no PUT', async () => {
-    await handleFileConsentInvoke({ type: 'invoke', value: { action: 'decline', context: { uploadId: 'u1' } } } as any);
+    await handleFileConsentInvoke({
+      type: 'invoke',
+      value: { action: 'decline', context: { uploadId: 'u1' } },
+    } as TeamsActivity);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
     expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
   });
 
   test('accept loads the row, PUTs the bytes, posts a file-info card, deletes the row', async () => {
-    dbResults = [[{ uploadId: 'u1', filename: 'r.pdf', contentBase64: Buffer.from('hi').toString('base64'), serviceUrl: 'https://smba/', conversationId: 'conv-1' }]];
+    dbResults = [
+      [
+        {
+          uploadId: 'u1',
+          filename: 'r.pdf',
+          contentBase64: Buffer.from('hi').toString('base64'),
+          serviceUrl: 'https://smba/',
+          conversationId: 'conv-1',
+        },
+      ],
+    ];
     await handleFileConsentInvoke({
       type: 'invoke',
       serviceUrl: 'https://smba/',
       conversation: { id: 'conv-1' },
-      value: { action: 'accept', context: { uploadId: 'u1' }, uploadInfo: { uploadUrl: 'https://upload/slot', contentUrl: 'https://sp/r.pdf', name: 'r.pdf' } },
-    } as any);
-    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === 'https://upload/slot')).toBe(true);
+      value: {
+        action: 'accept',
+        context: { uploadId: 'u1' },
+        uploadInfo: {
+          uploadUrl: 'https://upload/slot',
+          contentUrl: 'https://sp/r.pdf',
+          name: 'r.pdf',
+        },
+      },
+    } as TeamsActivity);
+    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === 'https://upload/slot')).toBe(
+      true,
+    );
     expect(apiCalls.map((c) => c.fn)).toEqual(['sendActivity']);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
   });
