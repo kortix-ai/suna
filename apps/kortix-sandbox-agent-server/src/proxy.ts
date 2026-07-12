@@ -32,7 +32,6 @@ const STRIP_REQUEST_HEADERS = new Set([
 
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
-const PTY_WS_PATH_RE = /^\/pty\/[^/]+\/connect\/?$/
 const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty\/([^/]+)\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
@@ -50,20 +49,10 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 // retry+auto-wake loop can act on immediately.
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 
-type OpencodeWsData =
-  | {
-      type: 'opencode-pty'
-      url: string
-      headers?: Record<string, string>
-      upstream?: WebSocket
-      ready?: boolean
-      queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>
-    }
-  | {
-      type: 'kortix-pty'
-      ptyId: string
-      handle?: PtyAttachHandle
-    }
+type OpencodeWsData = {
+  ptyId: string
+  handle?: PtyAttachHandle
+}
 
 function jsonError(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -72,150 +61,10 @@ function jsonError(status: number, body: Record<string, unknown>): Response {
   })
 }
 
-function sanitizeCloseCode(code: number | undefined): number {
-  if (typeof code !== 'number') return 1000
-  if (code === 1000) return 1000
-  if (code >= 3000 && code <= 4999) return code
-  return 1000
-}
-
-function redactWsUrl(input: string): string {
-  try {
-    const url = new URL(input)
-    if (url.searchParams.has('ticket')) url.searchParams.set('ticket', '[redacted]')
-    return url.toString()
-  } catch {
-    return input.replace(/([?&]ticket=)[^&]+/i, '$1[redacted]')
-  }
-}
-
-async function prepareOpencodePtyWsUpgrade(
-  req: Request,
-  cfg: Config,
-  opencode: Opencode,
-  bootState: SandboxBootState,
-): Promise<
-  | { ok: true; data: OpencodeWsData }
-  | { ok: false; response: Response }
-> {
-  const url = new URL(req.url)
-  if (!PTY_WS_PATH_RE.test(url.pathname)) {
-    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
-  }
-
-  if (!cfg.sandboxToken) {
-    logger.warn('[proxy] rejecting websocket: KORTIX_TOKEN not configured')
-    return {
-      ok: false,
-      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
-    }
-  }
-
-  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
-  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
-  if (!auth.ok) {
-    logger.warn('[proxy] reject websocket', { reason: auth.reason, path: url.pathname })
-    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
-  }
-
-  if (bootState.repoMaterializationError) {
-    return {
-      ok: false,
-      response: jsonError(503, {
-        error: 'sandbox runtime not ready',
-        reason: 'repo_materialization_failed',
-        message: bootState.repoMaterializationError,
-      }),
-    }
-  }
-
-  if (cfg.autoClone && !(await isRepoMaterialized(cfg.projectTarget))) {
-    return {
-      ok: false,
-      response: jsonError(503, { error: 'sandbox runtime not ready', reason: 'repo_not_materialized' }),
-    }
-  }
-
-  if (bootState.initialOpenCodeSessionError) {
-    return {
-      ok: false,
-      response: jsonError(503, {
-        error: 'sandbox runtime not ready',
-        reason: 'initial_opencode_session_failed',
-        message: bootState.initialOpenCodeSessionError,
-      }),
-    }
-  }
-
-  if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
-    return {
-      ok: false,
-      response: jsonError(503, {
-        error: 'sandbox runtime not ready',
-        reason: 'initial_opencode_session_pending',
-      }),
-    }
-  }
-
-  if (opencode.getState() !== 'ok') {
-    return {
-      ok: false,
-      response: jsonError(503, { error: 'opencode not ready', opencode: opencode.getState() }),
-    }
-  }
-
-  url.searchParams.delete(KORTIX_USER_CONTEXT_QUERY_PARAM)
-
-  const upstreamUrl = new URL(`${opencode.getInternalUrl()}${url.pathname}${url.search}`.replace(/^http:/i, 'ws:'))
-  const httpUrl = new URL(upstreamUrl.toString().replace(/^ws:/i, 'http:'))
-  const headers = { 'x-opencode-directory': cfg.projectTarget || cfg.workspace }
-
-  try {
-    const tokenUrl = new URL(httpUrl.toString())
-    tokenUrl.pathname = tokenUrl.pathname.replace(/\/connect\/?$/, '/connect-token')
-    tokenUrl.search = ''
-    const tokenRes = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        ...headers,
-        'x-opencode-ticket': '1',
-      },
-      signal: AbortSignal.timeout(UPSTREAM_RESPONSE_TIMEOUT_MS),
-    })
-    if (tokenRes.ok) {
-      const body = await tokenRes.json().catch(() => null) as { ticket?: unknown } | null
-      if (typeof body?.ticket === 'string' && body.ticket.length > 0) {
-        upstreamUrl.searchParams.set('ticket', body.ticket)
-        if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '-1')
-      }
-    } else if (tokenRes.status !== 404) {
-      const detail = (await tokenRes.text().catch(() => '')).slice(0, 200)
-      logger.warn('[proxy] opencode pty ticket mint failed; falling back to direct websocket', {
-        status: tokenRes.status,
-        path: tokenUrl.pathname,
-        detail,
-      })
-    }
-  } catch (err) {
-    logger.warn('[proxy] opencode pty ticket mint threw; falling back to direct websocket', {
-      err: err instanceof Error ? err.message : String(err),
-    })
-  }
-
-  return {
-    ok: true,
-    data: {
-      type: 'opencode-pty',
-      url: upstreamUrl.toString(),
-      headers,
-    },
-  }
-}
-
 // The Kortix-native PTY WS upgrade — independent of opencode/repo readiness
-// entirely (it just spawns a shell), so unlike the opencode-proxied path
-// above this has no bootState gating: a raw terminal should work even while
-// the repo is still cloning or opencode hasn't come up yet.
+// entirely (it just spawns a shell), unlike the (now removed) opencode-
+// proxied path this replaced: a raw terminal works even while the repo is
+// still cloning or opencode hasn't come up yet.
 function prepareKortixPtyWsUpgrade(
   req: Request,
   cfg: Config,
@@ -242,7 +91,7 @@ function prepareKortixPtyWsUpgrade(
     return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
   }
 
-  return { ok: true, data: { type: 'kortix-pty', ptyId } }
+  return { ok: true, data: { ptyId } }
 }
 
 export function buildOpencodeApp(
@@ -496,13 +345,6 @@ export function startProxy(
     async fetch(req, srv) {
       const url = new URL(req.url)
       const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
-      if (isWsUpgrade && PTY_WS_PATH_RE.test(url.pathname)) {
-        const prep = await prepareOpencodePtyWsUpgrade(req, currentCfg, opencode, bootState)
-        if (!prep.ok) return prep.response
-        const upgraded = srv.upgrade(req, { data: prep.data })
-        if (upgraded) return undefined
-        return jsonError(500, { error: 'websocket upgrade failed' })
-      }
       if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
         const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
         if (!prep.ok) return prep.response
@@ -515,100 +357,28 @@ export function startProxy(
     websocket: {
       open(ws: ServerWebSocket<OpencodeWsData>) {
         const state = ws.data
-
-        if (state.type === 'kortix-pty') {
-          const handle = ptyRegistry.attach(state.ptyId, {
-            onData: (chunk) => {
-              try { ws.send(chunk) } catch {}
-            },
-            onExit: (exitCode) => {
-              try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
-            },
-          })
-          if (!handle) {
-            try { ws.close(1011, 'pty not found') } catch {}
-            return
-          }
-          state.handle = handle
-          if (handle.replay) {
-            try { ws.send(handle.replay) } catch {}
-          }
+        const handle = ptyRegistry.attach(state.ptyId, {
+          onData: (chunk) => {
+            try { ws.send(chunk) } catch {}
+          },
+          onExit: (exitCode) => {
+            try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
+          },
+        })
+        if (!handle) {
+          try { ws.close(1011, 'pty not found') } catch {}
           return
         }
-
-        if (state.type !== 'opencode-pty') {
-          try { ws.close(1011, 'unsupported websocket upgrade') } catch {}
-          return
-        }
-
-        state.queue = []
-        state.ready = false
-
-        let upstream: WebSocket
-        try {
-          upstream = new WebSocket(state.url, { headers: state.headers ?? {} } as any)
-        } catch (err) {
-          logger.warn('[proxy] opencode websocket connect threw', {
-            err: err instanceof Error ? err.message : String(err),
-            url: redactWsUrl(state.url),
-          })
-          try { ws.close(1011, 'upstream connect failed') } catch {}
-          return
-        }
-
-        upstream.binaryType = 'arraybuffer'
-        state.upstream = upstream
-
-        upstream.onopen = () => {
-          state.ready = true
-          const queued = state.queue ?? []
-          state.queue = []
-          for (const msg of queued) {
-            try { upstream.send(msg as any) } catch {}
-          }
-        }
-
-        upstream.onmessage = (event: MessageEvent) => {
-          try { ws.send(event.data as any) } catch {}
-        }
-
-        upstream.onclose = (event: CloseEvent) => {
-          if (!state.ready || event.code !== 1000 || event.reason) {
-            logger.warn('[proxy] opencode websocket closed', {
-              code: event.code,
-              reason: event.reason,
-              ready: state.ready,
-              url: redactWsUrl(state.url),
-            })
-          }
-          try { ws.close(sanitizeCloseCode(event.code), (event.reason || '').slice(0, 120)) } catch {}
-        }
-
-        upstream.onerror = () => {
-          logger.warn('[proxy] opencode websocket error', { url: redactWsUrl(state.url) })
-          try { ws.close(1011, 'upstream error') } catch {}
+        state.handle = handle
+        if (handle.replay) {
+          try { ws.send(handle.replay) } catch {}
         }
       },
       message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
-        const state = ws.data
-        if (state.type === 'kortix-pty') {
-          state.handle?.write(typeof message === 'string' ? message : message.toString())
-          return
-        }
-        const upstream = state.upstream
-        if (state.ready && upstream && upstream.readyState === WebSocket.OPEN) {
-          try { upstream.send(message as any) } catch {}
-        } else {
-          (state.queue ??= []).push(message)
-        }
+        ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
       },
       close(ws: ServerWebSocket<OpencodeWsData>) {
-        const state = ws.data
-        if (state.type === 'kortix-pty') {
-          state.handle?.detach()
-          return
-        }
-        try { state.upstream?.close() } catch {}
+        ws.data.handle?.detach()
       },
     },
   })
