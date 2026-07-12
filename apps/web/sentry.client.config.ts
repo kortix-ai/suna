@@ -68,6 +68,10 @@ if (SENTRY_DSN) {
       'MetaMask extension not found',
       'Looks like your website URL has changed',
       'CookieYes account',
+      // Browser-native <img> / next/image load failures (broken/expired URLs,
+      // ad-blockers, offline, CSP). Never thrown by our code; image components
+      // already degrade gracefully via onError handlers. See browser-error-noise.ts.
+      'Failed to load image',
       // Injected scripts / extensions / scanner bots monkey-patching the native
       // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
       "Cannot assign to read only property 'then' of object '#<Promise>'",

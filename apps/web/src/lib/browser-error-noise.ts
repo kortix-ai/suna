@@ -12,6 +12,17 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   // tech-detection crawlers hitting the marketing site.
   "Cannot assign to read only property 'then' of object '#<Promise>'",
   'Cannot assign to read only property',
+  // Browser-native <img> / next/image load failures. The browser emits this
+  // (or "Error: Failed to load image") through window.onerror/Sentry when an
+  // image resource fails to load for reasons outside the app: broken/expired
+  // CDN or S3 signed URLs, ad-blockers blocking image hosts, CSP, offline, or
+  // prefetch failures. It is never thrown by our own code (verified: the string
+  // does not appear anywhere in the repo), and the image components already
+  // degrade gracefully (image-renderer.tsx / show-content-renderer.tsx attach
+  // onError handlers that hide the broken <img>). Suppress the noise class so
+  // it stops paging Better Stack. Better Stack patterns 1426e718... (38) and
+  // b04a2106... (6), Kortix Frontend (prod), application_id 2346967.
+  'Failed to load image',
 ] as const;
 
 const KNOWN_TEST_NOISE_MESSAGES = [
