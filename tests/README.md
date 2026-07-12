@@ -13,6 +13,9 @@ pnpm --filter @kortix/tests test:e2e
 # Browser tests only (stack already running)
 pnpm --filter @kortix/tests test:e2e:browser
 
+# Real Daytona + ACP verification for every starter harness
+cd tests && pnpm test:e2e:acp:all
+
 # Everything
 pnpm --filter @kortix/tests test
 ```
@@ -71,6 +74,16 @@ tests/
 | Suite | What it verifies |
 |-------|------------------|
 | `vps/test-vps-e2e.sh` | Caddy HTTPS, basic auth, firewall (run on VPS) |
+
+### ACP all-harness E2E
+
+With the worktree stack running, `cd tests && pnpm test:e2e:acp:all` creates a
+fresh local Supabase user and a fresh starter project for each official harness
+(OpenCode, Claude Code, Codex, and Pi). It verifies the starter runtime/agent
+declarations, auth and undeclared-agent rejection, immutable session binding,
+session listing and idempotent start, ACP initialize/new/load/config/prompt,
+real shell-tool streaming, persisted transcript replay, and project cleanup.
+Per-harness logs are written to `test-results/acp-all-harnesses/`.
 
 ## pnpm Scripts
 

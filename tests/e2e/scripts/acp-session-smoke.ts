@@ -7,9 +7,10 @@ import {
 
 const API = process.env.E2E_API_URL || "http://localhost:19008/v1";
 const SUPABASE = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const SERVICE_KEY = (process.env.E2E_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!;
+const ANON_KEY = (process.env.E2E_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)!;
 const HARNESS = process.env.E2E_ACP_HARNESS || "opencode";
+const AGENT = process.env.E2E_ACP_AGENT || (HARNESS === "opencode" ? "kortix" : HARNESS);
 const PROVIDER = process.env.E2E_ACP_PROVIDER || "daytona";
 const KEEP_PROJECT = process.env.E2E_ACP_KEEP_PROJECT === "1";
 if (!["opencode", "claude", "codex", "pi"].includes(HARNESS))
@@ -80,33 +81,35 @@ async function main() {
   console.log(`[acp-smoke] project=${projectId}`);
 
   try {
-    if (HARNESS !== "opencode") {
-      const current = await api(
-        "GET",
-        `/projects/${projectId}/agents/kortix/config`,
-      );
-      if (!current.response.ok || current.json?.schema_version !== 3)
-        throw new Error(`read agent config failed: ${current.text}`);
-      const updated = await api(
-        "PUT",
-        `/projects/${projectId}/agents/kortix/config`,
-        {
-          ...current.json.block,
-          runtime: HARNESS,
-          // `agent` is an OpenCode-native entrypoint selector. The other
-          // official adapters select behavior through their runtime profile's
-          // native config and ACP-discovered config options.
-          agent: undefined,
-        },
-      );
-      if (!updated.response.ok)
-        throw new Error(`select ${HARNESS} runtime failed: ${updated.text}`);
-      console.log(`[acp-smoke] selected harness=${HARNESS}`);
+    const unauthenticatedProfiles = await fetch(`${API}/projects/${projectId}/runtime-profiles`);
+    if (unauthenticatedProfiles.status !== 401)
+      throw new Error(`runtime profiles auth gate returned ${unauthenticatedProfiles.status}, expected 401`);
+
+    const profiles = await api("GET", `/projects/${projectId}/runtime-profiles`);
+    if (!profiles.response.ok || profiles.json?.schema_version !== 3)
+      throw new Error(`runtime profiles unavailable: ${profiles.text}`);
+    for (const harness of ["opencode", "claude", "codex", "pi"]) {
+      if (profiles.json?.runtimes?.[harness]?.harness !== harness)
+        throw new Error(`starter missing ${harness} runtime profile: ${profiles.text}`);
     }
+    const agentConfig = await api("GET", `/projects/${projectId}/agents/${AGENT}/config`);
+    if (!agentConfig.response.ok || agentConfig.json?.block?.runtime !== HARNESS)
+      throw new Error(`starter agent ${AGENT} does not route to ${HARNESS}: ${agentConfig.text}`);
+    console.log(`[acp-smoke] starter agent=${AGENT} harness=${HARNESS}`);
+
+    const rejectedSession = await api("POST", `/projects/${projectId}/sessions`, {
+      session_id: crypto.randomUUID(),
+      name: "Invalid agent must be rejected",
+      provider: PROVIDER,
+      agent_name: "not-a-declared-agent",
+    });
+    if (rejectedSession.response.status < 400 || rejectedSession.response.status >= 500)
+      throw new Error(`undeclared agent returned ${rejectedSession.response.status}, expected a 4xx: ${rejectedSession.text}`);
+
     const createdSession = await api(
       "POST",
       `/projects/${projectId}/sessions`,
-      { name: "ACP smoke", provider: PROVIDER },
+      { name: `ACP ${HARNESS} smoke`, provider: PROVIDER, agent_name: AGENT },
     );
     const sessionId =
       createdSession.json?.session_id ?? createdSession.json?.id;
@@ -114,7 +117,15 @@ async function main() {
       throw new Error(
         `session create failed: ${createdSession.response.status} ${createdSession.text}`,
       );
+    if (createdSession.json?.agent_name !== AGENT)
+      throw new Error(`session did not bind ${AGENT}: ${createdSession.text}`);
     console.log(`[acp-smoke] session=${sessionId} provider=${PROVIDER}`);
+
+    const listedSessions = await api("GET", `/projects/${projectId}/sessions`);
+    const listed = Array.isArray(listedSessions.json) ? listedSessions.json : listedSessions.json?.sessions;
+    const listedSession = listed?.find((session: any) => session.session_id === sessionId || session.id === sessionId);
+    if (!listedSessions.response.ok || listedSession?.agent_name !== AGENT)
+      throw new Error(`session list lost immutable agent binding: ${listedSessions.text}`);
 
     let start: any = null;
     // A cold runtime-layer build may take ~9 minutes and provider provisioning
@@ -146,6 +157,10 @@ async function main() {
       throw new Error(
         `ACP runtime did not become ready: ${JSON.stringify(start)}`,
       );
+
+    const repeatedStart = await api("POST", `/projects/${projectId}/sessions/${sessionId}/start`);
+    if (!repeatedStart.response.ok || repeatedStart.json?.stage !== "ready" || repeatedStart.json?.runtime_id !== start.runtime_id)
+      throw new Error(`idempotent session start changed runtime identity: ${repeatedStart.text}`);
 
     const endpoint = `${API}/projects/${projectId}/sessions/${sessionId}/acp`;
     const client = createAcpClient({ endpoint });
@@ -209,7 +224,8 @@ async function main() {
       { type: "text", text: "Use your shell tool to run pwd, then reply with exactly: ACP_PONG" },
     ]);
     if (!completed.stopReason) throw new Error("prompt returned no stopReason");
-    await sleep(500);
+    const streamDeadline = Date.now() + 10_000;
+    while (completedTools.size === 0 && Date.now() < streamDeadline) await sleep(100);
     stream.close();
     if (!assistant.includes("ACP_PONG"))
       throw new Error(`assistant output missing ACP_PONG: ${assistant}`);
@@ -231,7 +247,7 @@ async function main() {
       mcpServers: [],
     });
     console.log(
-      `[acp-smoke] PASS harness=${HARNESS} runtime=${start.runtime_id} conversation=${conversationId} tools=${toolCalls.size} config=${configurable?.id ?? 'none'} stop=${completed.stopReason}`,
+      `[acp-smoke] PASS agent=${AGENT} harness=${HARNESS} runtime=${start.runtime_id} conversation=${conversationId} tools=${toolCalls.size} config=${configurable?.id ?? 'none'} stop=${completed.stopReason}`,
     );
     if (KEEP_PROJECT) {
       console.log(`[acp-smoke] KEEP email=${email} password=${password} project=${projectId} session=${sessionId}`);
