@@ -31,6 +31,7 @@ import {
   ArrowUpLeft,
   Check,
   ChevronDown,
+  Clock,
   Folder,
   ListTodo,
   Loader2,
@@ -1096,6 +1097,16 @@ export interface SessionChatInputProps {
     mentions?: TrackedMention[],
   ) => void | Promise<void>;
   isBusy?: boolean;
+  /**
+   * Messages queued while `isBusy` was true — held client-side (mirrors
+   * Claude Code/Codex) and flushed one at a time by the parent at the next
+   * safe boundary instead of interleaving into the live turn. When present
+   * alongside `onQueueMessage`, submitting while busy enqueues instead of
+   * sending immediately.
+   */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
    * Render the stop button in its disabled state even without an `onStop` — used
@@ -1196,6 +1207,9 @@ export interface SessionChatInputProps {
 export function SessionChatInput({
   onSend,
   isBusy = false,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -1734,9 +1748,19 @@ export function SessionChatInput({
       }
     }
 
+    // While the agent is busy, hold the message client-side instead of
+    // sending it straight through — mirrors Claude Code/Codex's "queued
+    // while busy" behavior. The parent flushes it at the next safe boundary
+    // (a tool call finishing, or the turn going idle) rather than
+    // interleaving it into the live turn.
+    if (isBusy && onQueueMessage) {
+      onQueueMessage(trimmed, filesToSend, mentionsToSend);
+      return;
+    }
+
     // Send directly. The OpenCode server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe — the
-    // server queues it. (No client-side message queue.)
+    // calls per-session, so sending while the agent is busy is safe even
+    // without queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
     } catch {
@@ -1752,6 +1776,8 @@ export function SessionChatInput({
     modelUnavailable,
     clearOnSend,
     onSend,
+    isBusy,
+    onQueueMessage,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -2022,8 +2048,36 @@ export function SessionChatInput({
           )}
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
-          {(threadContext || sessionId || inputSlot || replyTo) && (
+          {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
             <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
+              <AnimatePresence initial={false}>
+                {queuedMessages?.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    layout
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 2 }}
+                    transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
+                  >
+                    <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
+                    <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                      {m.text.length > 120 ? `${m.text.slice(0, 120)}…` : m.text}
+                    </span>
+                    {onRemoveQueuedMessage && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveQueuedMessage(m.id)}
+                        className="text-muted-foreground hover:text-foreground -m-1.5 flex-shrink-0 rounded-full p-1.5 transition-[color,transform] active:scale-[0.96]"
+                        aria-label="Remove queued message"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {replyTo && (
                 <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
