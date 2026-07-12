@@ -1,6 +1,6 @@
 /**
  * Session runtime registry — a process-wide map from a Kortix `sessionId` to
- * its last-resolved runtime (opencode session id + runtime URL + sandbox id).
+ * its last-resolved runtime (runtime session id + runtime URL + sandbox id).
  *
  * Why this exists: `kortix.session(pid, sid)` hands out a FRESH handle on
  * every call, with its own `_ready` cache that starts `null`. That is correct

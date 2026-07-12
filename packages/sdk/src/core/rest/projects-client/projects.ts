@@ -76,7 +76,7 @@ export interface ProjectConfigSummary {
     enabled?: boolean;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  Runtime-discovered agents (not governed by `agents:`). */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';

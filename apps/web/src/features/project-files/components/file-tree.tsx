@@ -46,7 +46,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downloadFile } from '../api/opencode-files';
+import { downloadFile } from '../api/runtime-files';
 import { buildGitStatusMap, useFileList, useGitStatus, useServerHealth } from '../hooks';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import {

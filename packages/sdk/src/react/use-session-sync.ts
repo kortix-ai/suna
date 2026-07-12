@@ -22,7 +22,7 @@ import {
 } from "../browser/stores/sync-store";
 import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
 import { loadSessionFromIDB, saveSessionToIDB } from "../browser/cache/idb-sync-cache";
-import { canQueryOpenCodeSession } from "./use-opencode-sessions";
+import { canQueryRuntimeSession } from "./use-runtime-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];
 const EMPTY_DIFFS: FileDiff[] = [];
@@ -108,7 +108,7 @@ function buildMessages(
 
 /**
  * Single hook that provides all session data from the sync store.
- * Replaces: useOpenCodeMessages + useOpenCodeSessionStatusStore + useOpenCodePendingStore
+ * Replaces: useRuntimeMessages + useRuntimeSessionStatusStore + useRuntimePendingStore
  *
  * On first access, fetches messages from the server and populates the store.
  * After that, SSE events keep the store updated in real time.
@@ -122,7 +122,7 @@ export function useSessionSync(sessionId: string) {
 	// Without retry, a transient failure (server not ready on page refresh)
 	// permanently prevents messages from loading because fetchedRef blocks re-fetch.
 	useEffect(() => {
-		if (!canQueryOpenCodeSession(sessionId)) return;
+		if (!canQueryRuntimeSession(sessionId)) return;
 
 		// Guard against duplicate concurrent fetches for the same session.
 		if (fetchedRef.current === sessionId) return;

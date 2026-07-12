@@ -1,7 +1,7 @@
 /**
  * Framework-free SSE event-stream machine, extracted verbatim (same constants,
  * same branch order, same semantics) from the connect/reconnect loop that used
- * to live inline inside `react/use-opencode-events/index.ts`'s `useEffect`.
+ * to live inline inside `react/use-runtime-events/index.ts`'s `useEffect`.
  *
  * Zero imports of `react`, `react-query`, or any `react/*` module — this file
  * can run in any JS host (a worker, a CLI, a non-React UI). Everything that
@@ -17,17 +17,17 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as OpenCodeSdkEvent } from '../runtime/wire-types';
+import type { Event as RuntimeSdkEvent } from '../runtime/wire-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
- * `react/use-opencode-events/types.ts` so existing importers keep working —
+ * `react/use-runtime-events/types.ts` so existing importers keep working —
  * this module is now the canonical definition.
  */
-export type OpenCodeEvent =
-  | OpenCodeSdkEvent
+export type RuntimeEvent =
+  | RuntimeSdkEvent
   | {
       id: string;
       type: 'lsp.client.diagnostics';
@@ -70,7 +70,7 @@ export interface OpenEventStreamOptions {
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
-  onEvent: (event: OpenCodeEvent) => void;
+  onEvent: (event: RuntimeEvent) => void;
   /** Called when a reconnect follows a stream gap > 5s, with the gap size in
    *  ms. Lets the host re-hydrate anything it fears went stale (e.g. replay
    *  messages for busy sessions) — the machine itself holds no host state to
@@ -178,7 +178,7 @@ const MAX_CONSECUTIVE_HARD_FAILURES = 8;
  * efficiently rejects stale snapshots with a no-op return, so processing every
  * snapshot has minimal cost.
  */
-function getCoalesceKey(event: OpenCodeEvent): string | undefined {
+function getCoalesceKey(event: RuntimeEvent): string | undefined {
   if (event.type === 'session.status') {
     return `session.status:${(event.properties as any).sessionID}`;
   }
@@ -232,7 +232,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   let lastStreamActivityTime = t.now();
 
   // Event coalescing queue (like the SolidJS reference)
-  let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
+  let queue: ({ type: string; event: RuntimeEvent } | undefined)[] = [];
   let flushTimer: EventStreamTimerHandle | undefined;
   let lastFlush = 0;
 
@@ -382,7 +382,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-          ) as OpenCodeEvent;
+          ) as RuntimeEvent;
           if (!e?.type) continue;
 
           const ck = getCoalesceKey(e);
@@ -541,7 +541,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   };
 }
 
-// The curated chat-event union built on top of this stream's `OpenCodeEvent` —
+// The curated chat-event union built on top of this stream's `RuntimeEvent` —
 // re-exported here (additive only) so a host that imports the SSE primitive
 // from this subpath (`@kortix/sdk/event-stream`) can reach the chat-narrowing
 // helpers from the same import without a second subpath. Canonical definition

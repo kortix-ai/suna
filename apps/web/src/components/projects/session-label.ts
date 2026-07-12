@@ -1,22 +1,22 @@
-import type { ProjectOpenCodeSession, ProjectSession } from '@kortix/sdk/projects-client';
+import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk/projects-client';
 
 /**
  * Canonical helpers for resolving a project session's display label and its
- * opencode session tree. Single source of truth — the sidebar, the session
+ * runtime session tree. Single source of truth — the sidebar, the session
  * list, and the tab bar must all render the SAME name for a session.
  */
 
-/** The root opencode session a project session is pinned to (if synced). */
-export function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
-  const opencodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
-  return opencodeSessions.find((item) => !item.parent_id) ?? null;
+/** The root runtime session a project session is pinned to (if synced). */
+export function rootRuntimeSession(session: ProjectSession): ProjectRuntimeSession | null {
+  const runtimeSessions = session.opencode_sessions ?? [];
+  const rootId = session.runtime_session_id;
+  if (rootId) return runtimeSessions.find((item) => item.id === rootId) ?? null;
+  return runtimeSessions.find((item) => !item.parent_id) ?? null;
 }
 
-/** Direct, non-archived children of the root opencode session, newest first. */
-export function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
-  const root = rootOpenCodeSession(session);
+/** Direct, non-archived children of the root runtime session, newest first. */
+export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
+  const root = rootRuntimeSession(session);
   if (!root) return [];
   return (session.opencode_sessions ?? [])
     .filter((item) => item.parent_id === root.id && !item.archived_at)
@@ -96,7 +96,7 @@ export function matchesSessionFilter(session: ProjectSession, filter: SessionFil
 /**
  * Human display label for a session. Precedence: the user-set rename
  * (custom_name) is AUTHORITATIVE and always wins. Then: server-resolved
- * session.name (OpenCode auto-title mirrored during session reads) → legacy
+ * session.name (Runtime auto-title mirrored during session reads) → legacy
  * metadata.session_name → branch slice → short id.
  */
 export function sessionDisplayLabel(session: ProjectSession): string {

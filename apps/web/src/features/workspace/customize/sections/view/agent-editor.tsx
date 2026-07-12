@@ -4,7 +4,7 @@
  * The full v2 "agent builder" — the complete editor for one `agents.<name>`
  * block in a kortix_version 2 manifest (agent-first spec §2.2). Exposes the
  * ENTIRE agent-config field space: identity, behavior/model, Kortix governance
- * (skills/connectors/secrets/kortix_cli), and the full OpenCode permission tree.
+ * (skills/connectors/secrets/kortix_cli), and the full Runtime permission tree.
  *
  * Mounted from agents-view.tsx's detail aside via <AgentConfigEditor/>:
  *   - v2 project (editable) → a compact summary card + "Edit configuration",
@@ -20,7 +20,7 @@
  * agent-editor-primitives.tsx, the all/pick/none governance control in
  * grant-mode-field.tsx, the permission-tree editor in permission-editor.tsx,
  * and the two layers' field blocks in kortix-layer-fields.tsx /
- * opencode-layer-fields.tsx. This file owns only the modal shell (state,
+ * runtime-layer-fields.tsx. This file owns only the modal shell (state,
  * queries, save) and the public entry point.
  */
 
@@ -66,7 +66,7 @@ import { Bot, Cpu, Layers, Route } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { FieldRow, SectionHeader, LayerHeader } from './agent-editor-primitives';
 import { KortixLayerFields } from './kortix-layer-fields';
-import { OpencodeLayerFields } from './opencode-layer-fields';
+import { RuntimeLayerFields } from './runtime-layer-fields';
 
 export {
   AGENT_MODE_HELP,
@@ -135,7 +135,7 @@ function AgentEditorModal({
   );
 
   // No governance field is a plain string anymore (that was `description`/
-  // `model`, both moved to the OpenCode layer) — clearing is undefined-only.
+  // `model`, both moved to the Runtime layer) — clearing is undefined-only.
   const set = <K extends keyof AgentConfigBlock>(key: K, value: AgentConfigBlock[K]) =>
     setDraft((d) => {
       const next = { ...d };
@@ -144,7 +144,7 @@ function AgentEditorModal({
       return next;
     });
 
-  // OpenCode-layer fields live nested under `draft.opencode` — same
+  // Runtime-layer fields live nested under `draft.opencode` — same
   // clear-on-empty semantics as `set`, folded into the sub-object.
   const setOc = <K extends keyof OpencodeAgentConfig>(key: K, value: OpencodeAgentConfig[K]) =>
     setDraft((d) => {
@@ -244,11 +244,11 @@ function AgentEditorModal({
             <div className="space-y-6">
               <LayerHeader
                 icon={Cpu}
-                label="OpenCode (legacy v2)"
+                label="Runtime (legacy v2)"
                 tone="outline"
-                description="Behavior this legacy runtime executes from its native OpenCode agent file."
+                description="Behavior this legacy runtime executes from its native Runtime agent file."
               />
-              <OpencodeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
+              <RuntimeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
             </div>
           )}
         </ModalBody>

@@ -23,7 +23,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { SidebarContext } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeAgents, useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { parseCustomizeSection } from '@/lib/customize-sections';
 import { getItemsForSurface, type MenuItemDef, type SettingsTabId } from '@/lib/menu-registry';
@@ -79,12 +79,12 @@ import {
 import { DiffDialog } from '@/features/session/diff-dialog';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
+import { useCreatePty } from '@/hooks/runtime/use-runtime-pty';
 import {
-  useCreateOpenCodeSession,
-  useOpenCodeMessages,
-} from '@/hooks/opencode/use-opencode-sessions';
+  useCreateRuntimeSession,
+  useRuntimeMessages,
+} from '@/hooks/runtime/use-runtime-sessions';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
@@ -287,7 +287,7 @@ function MessagesPage({
   onSelect: (messageId: string) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useOpenCodeMessages(sessionId);
+  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
 
   const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
 
@@ -387,7 +387,7 @@ export function CommandPalette() {
   const sidebarCtx = useContext(SidebarContext);
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
-  const createSession = useCreateOpenCodeSession();
+  const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
   const activeWallpaperId = useUserPreferencesStore(
@@ -395,8 +395,8 @@ export function CommandPalette() {
   );
   const billingEnabled = isBillingEnabled();
 
-  const { data: agents } = useOpenCodeAgents();
-  const { data: providers } = useOpenCodeProviders();
+  const { data: agents } = useRuntimeAgents();
+  const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { data: accountsList } = useQuery({

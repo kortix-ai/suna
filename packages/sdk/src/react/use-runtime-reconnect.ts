@@ -8,7 +8,7 @@ import {
   markInitialCheckDone,
   resetForServerSwitch,
   resetSandboxFail,
-  setOpenCodeHealth,
+  setRuntimeHealth,
   setSandboxStatus,
   setSandboxVersion,
   useSandboxConnectionStore,
@@ -34,7 +34,7 @@ export const FAIL_THRESHOLD_RECONNECT = 2;
 /** Interval between health checks (ms) */
 export const POLL_CONNECTED = 30_000; // 30s when healthy
 // Tight cadence while a sandbox is booting/unhealthy. This is the gate between
-// "sandbox active" and "OpenCode healthy" AND the enable-gate for the opencode
+// "sandbox active" and "Runtime healthy" AND the enable-gate for the opencode
 // session list — so every extra interval is visible dead time after the backend
 // is already ready. 150ms keeps the healthy flip (and the session-list start)
 // tracking actual daemon readiness tightly; the health probe is a cheap GET.
@@ -89,9 +89,9 @@ export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
   }
 
   if (result.status === 503) {
-    // OpenCode still booting behind an already-live sandbox proxy — this is
+    // Runtime still booting behind an already-live sandbox proxy — this is
     // progress, not failure: reset the fail counter and report "connected"
-    // (sandbox is up) with `healthy: false` (OpenCode isn't yet).
+    // (sandbox is up) with `healthy: false` (Runtime isn't yet).
     return { kind: 'booting', health: result.health };
   }
 
@@ -216,7 +216,7 @@ export function useRuntimeReconnect() {
           case 'booting': {
             resetSandboxFail();
             setSandboxStatus('connected');
-            setOpenCodeHealth(
+            setRuntimeHealth(
               false,
               outcome.health?.version,
               outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,
@@ -234,7 +234,7 @@ export function useRuntimeReconnect() {
           case 'healthy': {
             resetSandboxFail();
             setSandboxStatus('connected');
-            setOpenCodeHealth(
+            setRuntimeHealth(
               isRuntimeReady(outcome.health),
               outcome.health?.version,
               outcome.health?.boot_error ?? outcome.health?.message ?? outcome.health?.reason ?? null,

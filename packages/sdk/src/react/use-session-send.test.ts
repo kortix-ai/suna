@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Mirrors messages.test.ts / use-session.test.ts: stub the lowest network
-// boundary (the OpenCode SDK client singleton) so the real send/recovery
+// boundary (the Runtime SDK client singleton) so the real send/recovery
 // logic under test runs unmodified.
 let messagesImpl: (args: { sessionID: string }) => Promise<{ data?: unknown }> = async () => ({
   data: undefined,
@@ -370,7 +370,7 @@ describe('replayStartStash', () => {
   test('a network send failure restores the stash and reports the classified error via onFailure', async () => {
     const timers = createFakeTimers();
     writeStartStash('sess-1', { prompt: 'network will fail', model: null, agent: null });
-    // A real 4xx (never retried by `promptOpenCodeMessage`) so this test
+    // A real 4xx (never retried by `promptRuntimeMessage`) so this test
     // doesn't ride out that function's own transient-failure backoff, which
     // uses the real clock independently of the `timers` this test controls.
     promptImpl = async () => ({

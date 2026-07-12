@@ -22,8 +22,8 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
+import { useRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
+import { useSessionSync } from '@/hooks/runtime/use-session-sync';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -52,7 +52,7 @@ export function ExportTranscriptModal({
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
-  const { data: session } = useOpenCodeSession(sessionId);
+  const { data: session } = useRuntimeSession(sessionId);
   const { messages, isLoading: isLoadingMessages } = useSessionSync(sessionId);
 
   const transcript = useMemo(() => {

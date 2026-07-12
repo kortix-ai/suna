@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * React port of the SolidJS `context/models.tsx` from the OpenCode reference app.
+ * React port of the SolidJS `context/models.tsx` from the Runtime reference app.
  *
  * Provides:
  * - Model visibility (show/hide per model, persisted in localStorage)

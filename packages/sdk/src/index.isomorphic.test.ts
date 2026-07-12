@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
  *      which `config-node.ts` needs for per-request config isolation. Not a
  *      blanket allowance for arbitrary Node built-ins creeping in.
  *   3. Browser-only stores (idb-sync-cache, server-store, sync-store,
- *      sandbox-connection-store, opencode-pending-store): these are zustand
+ *      sandbox-connection-store, runtime-pending-store): these are zustand
  *      stores (zustand is fine here, it's framework-glue-light and works
  *      outside React) meant to run in a browser — real `window`/
  *      `sessionStorage`/`localStorage`/`indexedDB` globals are expected and
@@ -181,7 +181,7 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },
   { name: './internal/server-store', file: 'internal/server-store.ts', tier: 'browser-only' },
   { name: './internal/sandbox-connection-store', file: 'internal/sandbox-connection-store.ts', tier: 'browser-only' },
-  { name: './internal/opencode-pending-store', file: 'internal/opencode-pending-store.ts', tier: 'browser-only' },
+  { name: './internal/runtime-pending-store', file: 'internal/runtime-pending-store.ts', tier: 'browser-only' },
   { name: './internal/idb-sync-cache', file: 'internal/idb-sync-cache.ts', tier: 'browser-only' },
 
   // The 20 legacy subpaths, now @deprecated shims under src/deprecated/.
@@ -193,14 +193,14 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './feature-flags', file: 'deprecated/feature-flags.ts', tier: 'isomorphic-core' },
   { name: './fresh-sessions', file: 'deprecated/fresh-sessions.ts', tier: 'isomorphic-core' },
   { name: './instance-routes', file: 'deprecated/instance-routes.ts', tier: 'isomorphic-core' },
-  { name: './opencode-errors', file: 'deprecated/opencode-errors.ts', tier: 'isomorphic-core' },
+  { name: './runtime-errors', file: 'deprecated/runtime-errors.ts', tier: 'isomorphic-core' },
   { name: './idb-sync-cache', file: 'deprecated/idb-sync-cache.ts', tier: 'browser-only' },
   { name: './platform-client', file: 'deprecated/platform-client.ts', tier: 'isomorphic-core' },
   { name: './server-store', file: 'deprecated/server-store.ts', tier: 'browser-only' },
   { name: './sync-store', file: 'deprecated/sync-store.ts', tier: 'browser-only' },
   { name: './event-stream', file: 'deprecated/event-stream.ts', tier: 'isomorphic-core' },
   { name: './sandbox-connection-store', file: 'deprecated/sandbox-connection-store.ts', tier: 'browser-only' },
-  { name: './opencode-pending-store', file: 'deprecated/opencode-pending-store.ts', tier: 'browser-only' },
+  { name: './runtime-pending-store', file: 'deprecated/runtime-pending-store.ts', tier: 'browser-only' },
   { name: './files', file: 'deprecated/files.ts', tier: 'isomorphic-core' },
   { name: './session', file: 'deprecated/session.ts', tier: 'isomorphic-core' },
   { name: './session/url', file: 'deprecated/session-url.ts', tier: 'isomorphic-core' },

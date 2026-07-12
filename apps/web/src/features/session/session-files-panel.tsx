@@ -38,7 +38,7 @@ const STATUS_BADGE: Record<string, { letter: string; cls: string; label: string 
  */
 export function SessionFilesPanel({
   /**
-   * The OpenCode chat session id (from SessionLayout) — the session whose agent
+   * The Runtime chat session id (from SessionLayout) — the session whose agent
    * we message. Distinct from the ROUTE session id below (which == the git
    * branch). When absent (e.g. the standalone /debug/tools harness, where no
    * chat is mounted) the action falls back to copying the prompt.
@@ -49,7 +49,7 @@ export function SessionFilesPanel({
 } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // The git branch == the ROUTE session id; SessionLayout's `sessionId` prop is
-  // the OpenCode chat session id (used to message the agent).
+  // the Runtime chat session id (used to message the agent).
   const { id: projectId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;

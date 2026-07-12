@@ -36,7 +36,7 @@
     "./internal/sync-store": "./src/internal/sync-store.ts",
     "./internal/server-store": "./src/internal/server-store.ts",
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
-    "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
+    "./internal/runtime-pending-store": "./src/internal/runtime-pending-store.ts",
     "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
@@ -45,7 +45,7 @@
     "./feature-flags": "./src/deprecated/feature-flags.ts",
     "./fresh-sessions": "./src/deprecated/fresh-sessions.ts",
     "./instance-routes": "./src/deprecated/instance-routes.ts",
-    "./opencode-errors": "./src/deprecated/opencode-errors.ts",
+    "./runtime-errors": "./src/deprecated/runtime-errors.ts",
     "./platform-client": "./src/deprecated/platform-client.ts",
     "./event-stream": "./src/deprecated/event-stream.ts",
     "./files": "./src/deprecated/files.ts",
@@ -55,7 +55,7 @@
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
     "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
-    "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
+    "./runtime-pending-store": "./src/deprecated/runtime-pending-store.ts",
     "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
   },
   "publishConfig": {
@@ -87,9 +87,9 @@
         "types": "./dist/internal/sandbox-connection-store.d.ts",
         "import": "./dist/internal/sandbox-connection-store.js"
       },
-      "./internal/opencode-pending-store": {
-        "types": "./dist/internal/opencode-pending-store.d.ts",
-        "import": "./dist/internal/opencode-pending-store.js"
+      "./internal/runtime-pending-store": {
+        "types": "./dist/internal/runtime-pending-store.d.ts",
+        "import": "./dist/internal/runtime-pending-store.js"
       },
       "./internal/idb-sync-cache": {
         "types": "./dist/internal/idb-sync-cache.d.ts",
@@ -117,9 +117,9 @@
         "types": "./dist/deprecated/instance-routes.d.ts",
         "import": "./dist/deprecated/instance-routes.js"
       },
-      "./opencode-errors": {
-        "types": "./dist/deprecated/opencode-errors.d.ts",
-        "import": "./dist/deprecated/opencode-errors.js"
+      "./runtime-errors": {
+        "types": "./dist/deprecated/runtime-errors.d.ts",
+        "import": "./dist/deprecated/runtime-errors.js"
       },
       "./platform-client": {
         "types": "./dist/deprecated/platform-client.d.ts",
@@ -148,9 +148,9 @@
         "types": "./dist/deprecated/sandbox-connection-store.d.ts",
         "import": "./dist/deprecated/sandbox-connection-store.js"
       },
-      "./opencode-pending-store": {
-        "types": "./dist/deprecated/opencode-pending-store.d.ts",
-        "import": "./dist/deprecated/opencode-pending-store.js"
+      "./runtime-pending-store": {
+        "types": "./dist/deprecated/runtime-pending-store.d.ts",
+        "import": "./dist/deprecated/runtime-pending-store.js"
       },
       "./idb-sync-cache": {
         "types": "./dist/deprecated/idb-sync-cache.d.ts",

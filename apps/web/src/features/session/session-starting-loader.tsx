@@ -27,7 +27,7 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
  * for resumes, and dead-center in the side panel while a fresh session boots.
- * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
+ * All the heavy lifting (provision / wake / Runtime readiness + pin) is
  * server-side behind POST /sessions/:id/start; this just reports the real stage.
  *
  * Visual: super-minimal, perfectly centered. A single kortix-green pulse, the
@@ -37,7 +37,7 @@ const LOADER_DELAY_MS = 100;
 /**
  * How long we sit in the backend `starting` stage before softly advancing from
  * "Preparing your workspace" to "Starting the agent". Both happen within that
- * one backend stage (clone → OpenCode boot), so the advance reflects real order.
+ * one backend stage (clone → Runtime boot), so the advance reflects real order.
  */
 const STARTING_SUBSTEP_MS = 5_000;
 /** After this long, swap the footer copy to set expectations for a cold start. */

@@ -3,11 +3,11 @@
  *
  * Skills are SKILL.md files with YAML frontmatter (name + description)
  * and a Markdown body containing instructions. They live in well-known
- * directories and are discovered automatically by the OpenCode server.
+ * directories and are discovered automatically by the Runtime server.
  */
 
 // ---------------------------------------------------------------------------
-// Core skill type (matches the OpenCode SDK response)
+// Core skill type (matches the Runtime SDK response)
 // ---------------------------------------------------------------------------
 
 export interface Skill {

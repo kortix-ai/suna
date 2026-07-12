@@ -2,7 +2,7 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { stripTrailingSlashes } from '@kortix/sdk';
 import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
 import { triggersRequest } from '@kortix/sdk/runtime-client';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { getActiveRuntimeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ interface ApiRunResponse {
 async function resolveSandboxBaseUrl(_instanceId?: string | null): Promise<string> {
   // The active session's runtime is the sandbox — the old per-instance registry
   // lookup is gone, so resolve straight from the current runtime.
-  const activeBaseUrl = getActiveOpenCodeUrl();
+  const activeBaseUrl = getActiveRuntimeUrl();
   if (activeBaseUrl) return stripTrailingSlashes(activeBaseUrl);
 
   const { sandbox } = await ensureSandbox();
@@ -386,7 +386,7 @@ async function getSandboxBaseUrl(instanceId?: string | null): Promise<string> {
 const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]> => {
   void sandboxId;
   // Models belong to the selected harness's native config in v3. Kortix does
-  // not introspect an OpenCode provider catalog for ACP runtimes.
+  // not introspect an Runtime provider catalog for ACP runtimes.
   return [];
 };
 

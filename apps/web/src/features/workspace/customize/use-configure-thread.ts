@@ -77,7 +77,7 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       // so flipping it back would only flash the idle button.
       newSession({
         onNavigate: (sessionId) => {
-          // `sessionId` is the route/Kortix session id here, not the OpenCode
+          // `sessionId` is the route/Kortix session id here, not the Runtime
           // pin the session page resolves later. Stash under the route id via
           // the SDK's canonical `writeStartStash` — the session page's
           // `migrateStash` hands this off onto the resolved pin once it

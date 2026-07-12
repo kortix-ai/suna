@@ -14,7 +14,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { optimisticUploadedFileRef } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import type { Command } from '@/hooks/runtime/use-runtime-sessions';
 import { readStartStash, writeStartStash } from '@kortix/sdk/react';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
@@ -33,7 +33,7 @@ import { GridFileCard } from './grid-file-card';
  *
  * On the FIRST send we stash the message on the SDK's canonical start-stash
  * (keyed by the route session id; the session page migrates it onto the
- * OpenCode pin) so the real {@link SessionChat} auto-sends it the instant the
+ * Runtime pin) so the real {@link SessionChat} auto-sends it the instant the
  * runtime is healthy — and the thread shows an inline "starting your computer"
  * status under the assistant logo until the real chat crossfades in. The boot
  * checklist also lives in the side panel, but only
@@ -98,7 +98,7 @@ export function InstantSessionShell({
 
       // Hand the message to the real chat: it auto-sends from this stash once
       // the runtime is healthy. `sessionId` here is the route/Kortix-session
-      // id, not the eventual OpenCode pin (`useCanonicalOpenCodeSession`
+      // id, not the eventual Runtime pin (`useCanonicalRuntimeSession`
       // resolves those independently — see `ensureOpencodeSessionPin` in
       // apps/api/src/projects/routes/shared.ts); the session page's
       // `migrateStash` hands this canonical stash off onto the resolved pin

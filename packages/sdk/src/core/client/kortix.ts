@@ -634,7 +634,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
   function session(projectId: string, sessionId: string) {
     // Opinionated-action state, scoped to THIS handle. The runtime is
-    // keyed by the OpenCode session id (resolved server-side at /start), NOT the
+    // keyed by the Runtime session id (resolved server-side at /start), NOT the
     // Kortix `sessionId` — they differ. We resolve+cache it once (including the
     // resolved runtime URL + sandbox id), and remember a chosen model so `send`
     // carries it. Every runtime-scoped operation below reads ONLY this cached
@@ -661,7 +661,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     }
 
     /**
-     * Make this session's runtime reachable and return its OpenCode session id
+     * Make this session's runtime reachable and return its Runtime session id
      * (plus this handle's own resolved runtime URL + sandbox id). Idempotent:
      * adopts the registry entry if another handle already resolved this
      * session; otherwise `start` provisions/resumes the sandbox (long-poll
@@ -820,7 +820,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
-       * sandbox (long-poll until ready) and caches the resolved OpenCode session
+       * sandbox (long-poll until ready) and caches the resolved Runtime session
        * id + runtime URL + sandbox id for every other call on this handle. Call
        * this (or `send`/`abort`, which call it internally) before `.runtime`,
        * `.health()`, `.previewUrl()`, or `.proxyUrl()` — those throw
@@ -853,7 +853,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
-      // the runtime is up, resolve the OpenCode session id, and act through a
+      // the runtime is up, resolve the Runtime session id, and act through a
       // ACP is the sole client-to-agent contract. Harness-native model and
       // agent selection live in the selected runtime's own config directory.
       send: async (text: string) => {
@@ -870,7 +870,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * updates, session status, permissions/questions, lsp diagnostics, …).
        * A thin facade over the framework-free `openEventStream` primitive
        * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
-       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * `@kortix/sdk/react`'s `useRuntimeEventStream`): resolves THIS
        * handle's own runtime first (`ensureReady()`), then connects a client
        * bound to that runtime URL — never the module-global "active" one, so
        * two session handles on two different sandboxes never cross wires.

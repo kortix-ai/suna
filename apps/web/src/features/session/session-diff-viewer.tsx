@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
-import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeSessionDiff, useRuntimeMessages } from '@/hooks/runtime/use-runtime-sessions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTwoFilesPatch } from 'diff';
 import type { FileDiff, ApplyPatchFile } from '@/ui/types';
@@ -315,8 +315,8 @@ interface SessionDiffViewerProps {
 
 export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  const { data: apiDiffs, isLoading, error } = useRuntimeSessionDiff(sessionId);
+  const { data: messages } = useRuntimeMessages(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
   // Fall back to extracting diffs from tool part metadata when the API returns empty
@@ -325,7 +325,9 @@ export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen 
     [messages],
   );
 
-  const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
+  const diffs: FileDiff[] = (apiDiffs && apiDiffs.length > 0)
+    ? (apiDiffs as FileDiff[])
+    : messageDiffs;
 
   if (isLoading) {
     return (

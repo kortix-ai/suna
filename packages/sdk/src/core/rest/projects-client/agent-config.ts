@@ -5,7 +5,7 @@ import { unwrap } from './shared';
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
 // connectors/secrets/skills/kortix_cli/workspace/enabled, written to
-// kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
+// kortix.yaml) and `block.opencode` (Runtime BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
 // the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
 // body). The backend route is what merges the two files into this one
@@ -18,16 +18,16 @@ import { unwrap } from './shared';
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
 
-/** A single OpenCode permission action. */
+/** A single Runtime permission action. */
 export type PermissionAction = 'ask' | 'allow' | 'deny';
 
 /** A permission rule: a bare action, or a glob-pattern → action map. */
 export type PermissionRule = PermissionAction | Record<string, PermissionAction>;
 
-/** The OpenCode `permission` tree — a bare action, or a per-capability object. */
+/** The Runtime `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The OpenCode BEHAVIOR half — everything that lives in the agent's own
+/** The Runtime BEHAVIOR half — everything that lives in the agent's own
  *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
 export interface OpencodeAgentConfig {
   description?: string;

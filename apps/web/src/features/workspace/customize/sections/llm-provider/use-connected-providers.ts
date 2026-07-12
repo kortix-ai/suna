@@ -1,6 +1,6 @@
 'use client';
 
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
@@ -37,10 +37,10 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
   }, [secretsQuery.data]);
 
   // The managed Kortix gateway exists only for projects that explicitly opt
-  // into the LLM Gateway. Native OpenCode projects should show only providers
+  // into the LLM Gateway. Native Runtime projects should show only providers
   // backed by project secrets, even if an old running sandbox still exposes a
   // stale `kortix` provider.
-  const { data: ocProviders } = useOpenCodeProviders();
+  const { data: ocProviders } = useRuntimeProviders();
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
     if (!llmGatewayEnabled) return null;

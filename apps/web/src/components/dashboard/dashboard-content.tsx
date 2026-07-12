@@ -10,9 +10,9 @@ import {
   type ComposerOptions,
 } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { formatModelString } from '@/hooks/opencode/use-opencode-local';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
-import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { formatModelString } from '@/hooks/runtime/use-runtime-local';
+import type { Command } from '@/hooks/runtime/use-runtime-sessions';
+import { useCreateRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { playSound } from '@/lib/sounds';
@@ -39,7 +39,7 @@ export function DashboardContent() {
 
   const isMobile = useIsMobile();
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
-  const createSession = useCreateOpenCodeSession();
+  const createSession = useCreateRuntimeSession();
 
   // Legacy "no sandbox/instance" hero retired — cloud sessions always have a
   // runtime, and the instances system is gone.
@@ -79,7 +79,7 @@ export function DashboardContent() {
         // Stash everything the session page needs BEFORE navigating — its
         // pending-prompt effect runs on the first render after pushState,
         // so sessionStorage must be populated first. `session.id` here IS the
-        // canonical OpenCode session id (this hook creates the real runtime
+        // canonical Runtime session id (this hook creates the real runtime
         // session directly, unlike the project-scoped flow), so the SDK's
         // start-stash (`readStartStash`/`writeStartStash`) reads it back under
         // the exact same id — no route/pin translation involved.

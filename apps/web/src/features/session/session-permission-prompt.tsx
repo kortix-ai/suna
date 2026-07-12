@@ -20,15 +20,15 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useRuntimeConfig, useUpdateRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import { ShieldCheck } from 'lucide-react';
 import { useParams } from 'next/navigation';
@@ -65,11 +65,11 @@ export function SessionPermissionPrompt({
   const projectId = params?.sessionId ? params.id : undefined;
   const canWriteConfig = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
-  const autoApprove = useOpenCodePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
-  const setAutoApproveAll = useOpenCodePendingStore((s) => s.setAutoApproveAll);
+  const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
+  const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
 
-  const { data: config } = useOpenCodeConfig();
-  const updateConfig = useUpdateOpenCodeConfig();
+  const { data: config } = useRuntimeConfig();
+  const updateConfig = useUpdateRuntimeConfig();
 
   // Which button is loading: `${requestId}:once|always|reject`, 'session-all',
   // or `config:${type}` / 'config:*'.

@@ -21,8 +21,8 @@ import {
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
 import { formatMode } from '@/features/workspace/customize/shared/utils';
-import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
+import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -88,7 +88,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           {agent.source ? (
             <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
               {agent.source === 'opencode'
-                ? 'OpenCode'
+                ? 'Runtime'
                 : detectManifestVersion(config.manifest_raw) >= 2
                   ? 'kortix.yaml'
                   : 'kortix.toml'}
@@ -261,7 +261,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
     staleTime: 20_000,
   });
   const canManage = Boolean(accessQuery.data?.can_manage);
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const defaults = useModelDefaults(projectId);
   const explicit = defaults.agentDefaults[agentName] ?? null;
@@ -349,7 +349,7 @@ function AgentModel({ projectId, agentName }: { projectId: string; agentName: st
  * connectors it may call, which Kortix-CLI powers it has. Editors EDIT
  * secrets + connectors here (persisted straight to the manifest); everyone
  * else sees the read-only mirror. `kortix_cli` stays read-only (a sharper
- * escalation, manifest-only). Absent for OpenCode-discovered agents, which
+ * escalation, manifest-only). Absent for Runtime-discovered agents, which
  * aren't governed by the manifest.
  */
 function AgentScope({
@@ -362,7 +362,7 @@ function AgentScope({
   scope?: Agent['scope'];
 }) {
   // Pure prop-guard (no hooks) so the editable inner component can call hooks
-  // unconditionally — an OpenCode agent with no scope simply renders nothing.
+  // unconditionally — an Runtime agent with no scope simply renders nothing.
   if (!scope) return null;
   return <AgentScopeCard projectId={projectId} agentName={agentName} scope={scope} />;
 }

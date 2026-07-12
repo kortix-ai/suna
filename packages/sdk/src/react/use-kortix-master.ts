@@ -18,11 +18,11 @@
  * hooks.
  *
  * The "active server" resolution (which sandbox these calls hit) does NOT
- * need injecting: `useServerStore`/`getActiveOpenCodeUrl` (`../state/server-store`)
+ * need injecting: `useServerStore`/`getActiveRuntimeUrl` (`../state/server-store`)
  * is already a host-agnostic part of this SDK — apps/web's
  * `@/stores/server-store` is already just a re-export of it. Hooks here use
  * it directly, exactly like the existing `./use-runtime-reconnect` and
- * `./use-opencode-events` SDK hooks do.
+ * `./use-runtime-events` SDK hooks do.
  *
  * Query keys below are copied VERBATIM from the pre-migration web hooks
  * (array literal contents, ordering, and types unchanged) — this is a hard
@@ -338,7 +338,7 @@ export function useKortixProjectForSession(
 
 /**
  * Fetch sessions linked to a specific project.
- * Returns OpenCode session objects enriched with title, time, etc.
+ * Returns Runtime session objects enriched with title, time, etc.
  */
 export function useKortixProjectSessions(
   identity: KortixMasterIdentity,
@@ -347,7 +347,7 @@ export function useKortixProjectSessions(
 ) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   // `listKortixProjectSessions` itself returns `unknown[]` (its enriched
-  // OpenCode-session shape isn't schema-typed at the source) — mirror that
+  // Runtime-session shape isn't schema-typed at the source) — mirror that
   // here rather than lying about the element shape with `any`.
   return useQuery<unknown[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', identity.userId ?? 'anonymous', serverUrl],

@@ -9,7 +9,7 @@
  *
  *   1. Add an optimistic user message to the sync store + flip the session
  *      busy (`beginOptimisticSend`).
- *   2. Send via `promptOpenCodeMessage` (which already owns network retry —
+ *   2. Send via `promptRuntimeMessage` (which already owns network retry —
  *      this module never re-wraps that).
  *   3. On failure, classify the error, drop busy, and either keep the
  *      optimistic message and rehydrate real messages from the server (some
@@ -41,11 +41,11 @@ import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
-  promptOpenCodeMessage,
-  useAbortOpenCodeSession,
+  promptRuntimeMessage,
+  useAbortRuntimeSession,
   type PromptPart,
   type SendMessageOptions,
-} from './use-opencode-sessions';
+} from './use-runtime-sessions';
 import { readStartStash, writeStartStash, type StartStash } from './session-start-stash';
 
 // ============================================================================
@@ -91,7 +91,7 @@ export function beginOptimisticSend(
 
 /**
  * A send that never reached the network at all (e.g. building the outgoing
- * parts — file uploads — threw before `promptOpenCodeMessage` was even
+ * parts — file uploads — threw before `promptRuntimeMessage` was even
  * called). There is nothing to rehydrate from the server since it never saw
  * this message, so just clear busy and drop the optimistic message outright
  * — unlike `recoverFromSendFailure`, which keeps it pending a rehydrate.
@@ -107,14 +107,14 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 // ============================================================================
 
 /** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
-export interface OpenCodeMessagesClient {
+export interface RuntimeMessagesClient {
   session: {
     messages: (args: { sessionID: string }) => Promise<{ data?: unknown }>;
   };
 }
 
 /** Shape `useSyncStore.getState().hydrate()` actually needs. `data` on
- *  `OpenCodeMessagesClient['session']['messages']` is deliberately `unknown`
+ *  `RuntimeMessagesClient['session']['messages']` is deliberately `unknown`
  *  (hosts inject their own stub client in tests) — narrow at the one real
  *  call site below instead of widening that public interface. */
 type HydrateInput = Array<{ info: Message; parts: Part[] }>;
@@ -123,7 +123,7 @@ export interface SendRecoveryOptions {
   /** Resolve the client used to rehydrate messages on failure. Defaults to
    * the SDK's `getClient` — inject a stub in tests, or a different client in
    * a host that doesn't use the singleton runtime client. */
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   /** Classify the raw error into a `KortixSendError`. Defaults to
    * `classifySendError` — a host with richer message formatting (e.g.
    * apps/web's `ProviderModelNotFoundError` special-casing) injects its own
@@ -147,12 +147,12 @@ export function recoverFromSendFailure(
   options: SendRecoveryOptions = {},
 ): KortixSendError {
   const classify = options.classify ?? classifySendError;
-  const resolveClient = options.getClient ?? (getClient as unknown as () => OpenCodeMessagesClient);
+  const resolveClient = options.getClient ?? (getClient as unknown as () => RuntimeMessagesClient);
   const classified = classify(error);
 
   useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
 
-  let client: OpenCodeMessagesClient;
+  let client: RuntimeMessagesClient;
   try {
     client = resolveClient();
   } catch {
@@ -190,7 +190,7 @@ export interface SendAndRecoverArgs {
   messageId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
 
@@ -199,7 +199,7 @@ export type SendAndRecoverResult =
   | { ok: false; error: KortixSendError; cause: unknown };
 
 /**
- * Send already-built parts via `promptOpenCodeMessage` (which owns network
+ * Send already-built parts via `promptRuntimeMessage` (which owns network
  * retry — this never re-wraps it) and run `recoverFromSendFailure` on
  * failure. Assumes the optimistic message was already added by the caller
  * (via `beginOptimisticSend`) — callers add it at different points relative
@@ -208,7 +208,7 @@ export type SendAndRecoverResult =
  */
 export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndRecoverResult> {
   try {
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: args.sessionId,
       parts: args.parts,
       options: args.options,
@@ -228,7 +228,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
 // sync-store manipulation (no web-specific concepts), so it's extracted; the
 // abort mutation itself stays a shared per-host instance (apps/web fans it
 // out to multiple call sites beyond stop, so `useSessionSend` deliberately
-// does NOT own a second competing `useAbortOpenCodeSession()` instance for
+// does NOT own a second competing `useAbortRuntimeSession()` instance for
 // hosts that already have one — see `useSessionSend.stop` below for a host
 // that doesn't).
 // ============================================================================
@@ -338,7 +338,7 @@ export interface StartStashReplayOptions<TReady> {
    * surfacing the classified error).
    */
   onFailure?: (stash: StartStash, error: unknown, classified: KortixSendError) => void;
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
   timers?: StashReplayTimers;
 }
@@ -401,7 +401,7 @@ export function replayStartStash<TReady>(
         return;
       }
       try {
-        await promptOpenCodeMessage({ sessionId, parts, options: prepared.sendOptions });
+        await promptRuntimeMessage({ sessionId, parts, options: prepared.sendOptions });
       } catch (err) {
         if (!cancelled) fail(stash, prepared.messageId, err);
       }
@@ -459,7 +459,7 @@ export function replayStartStash<TReady>(
 // ============================================================================
 
 export interface UseSessionSendOptions {
-  getClient?: () => OpenCodeMessagesClient;
+  getClient?: () => RuntimeMessagesClient;
   classify?: (error: unknown) => KortixSendError;
 }
 
@@ -498,7 +498,7 @@ export function useSessionSend(
   const { getClient: getClientOpt, classify } = options;
   const [sendError, setSendError] = useState<KortixSendError | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const abortMutation = useAbortOpenCodeSession();
+  const abortMutation = useAbortRuntimeSession();
 
   const send = useCallback(
     async (

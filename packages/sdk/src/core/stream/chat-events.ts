@@ -1,7 +1,7 @@
 /**
- * Curated OpenCode event union for building a product chat UI — framework-free.
+ * Curated Runtime event union for building a product chat UI — framework-free.
  *
- * `OpenCodeEvent` (`./event-stream.ts`) is the FULL raw wire union: ~50+
+ * `RuntimeEvent` (`./event-stream.ts`) is the FULL raw wire union: ~50+
  * variants covering LSP, PTY, worktrees, plugins, projects, MCP, installation,
  * and more. A chat surface only ever cares about a small slice of that —
  * message/part updates, session status, questions, permissions, todos, and
@@ -29,7 +29,7 @@
  */
 
 import type { Message, Part, QuestionAnswer, SessionStatus, Todo } from '../runtime/client';
-import type { OpenCodeEvent } from './event-stream';
+import type { RuntimeEvent } from './event-stream';
 
 export interface KortixChatEventMessageUpdated {
   type: 'message.updated';
@@ -166,7 +166,7 @@ export function heartbeatGapEvent(gapMs: number): KortixChatEventHeartbeatGap {
 }
 
 /**
- * Narrow a raw `OpenCodeEvent` down to the curated `KortixChatEvent` union a
+ * Narrow a raw `RuntimeEvent` down to the curated `KortixChatEvent` union a
  * chat UI needs, reshaping `properties` into a purpose-built payload.
  *
  * Returns `null` for every event outside the curated set (LSP, PTY,
@@ -174,7 +174,7 @@ export function heartbeatGapEvent(gapMs: number): KortixChatEventHeartbeatGap {
  * …) — callers should treat `null` as "not a chat event, ignore" rather than
  * an error; this is a deliberate filter, not an exhaustive switch.
  */
-export function narrowChatEvent(event: OpenCodeEvent): KortixChatEvent | null {
+export function narrowChatEvent(event: RuntimeEvent): KortixChatEvent | null {
   switch (event.type) {
     case 'message.updated':
       return {

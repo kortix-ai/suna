@@ -35,9 +35,9 @@ import {
 } from '@/features/providers/provider-branding';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
+import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';

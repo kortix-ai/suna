@@ -1,9 +1,9 @@
 'use client';
 
 // @kortix/sdk/react — the complete Kortix React hook surface. Legacy
-// useOpenCode* exports remain only as deprecated compatibility aliases while
+// useRuntime* exports remain only as deprecated compatibility aliases while
 // the implementation moves to ACP/runtime-neutral hooks.
-export * from './opencode';
+export * from './runtime';
 
 // ACP session lifecycle and shared runtime error classification.
 export {
@@ -36,7 +36,7 @@ export {
   type EventStreamClient,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from '../core/stream/event-stream';
 
@@ -49,7 +49,7 @@ export * from './use-kortix-master';
 
 // The send / stash-replay / error-recovery core extracted from apps/web's
 // `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
+// (yet) re-exported by `./runtime`'s explicit barrel list, so re-exported
 // directly here (same reasoning as the other direct re-exports above).
 export {
   useSessionSend,
@@ -59,7 +59,7 @@ export {
   sendAndRecover,
   applyOptimisticAbort,
   replayStartStash,
-  type OpenCodeMessagesClient,
+  type RuntimeMessagesClient,
   type SendRecoveryOptions,
   type SendAndRecoverArgs,
   type SendAndRecoverResult,

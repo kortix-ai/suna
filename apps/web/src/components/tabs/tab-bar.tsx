@@ -31,13 +31,13 @@ import {
 import { cn } from '@/lib/utils';
 import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import {
-  canQueryOpenCodeSession,
-  opencodeKeys,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
+  canQueryRuntimeSession,
+  runtimeKeys,
+  useRuntimeSessions,
+} from '@/hooks/runtime/use-runtime-sessions';
 import { childMapByParent } from '@/ui';
 import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { getFileIcon } from '@/features/files/components/file-icon';
@@ -618,11 +618,11 @@ export function TabBar() {
 
   // Status stores
   const statuses = useSyncStore((s) => s.sessionStatus);
-  const permissions = useOpenCodePendingStore((s) => s.permissions);
-  const questions = useOpenCodePendingStore((s) => s.questions);
+  const permissions = useRuntimePendingStore((s) => s.permissions);
+  const questions = useRuntimePendingStore((s) => s.questions);
 
   // Sessions data
-  const { data: sessions, isLoading: sessionsLoading } = useOpenCodeSessions();
+  const { data: sessions, isLoading: sessionsLoading } = useRuntimeSessions();
   const updateTabTitle = useTabStore((s) => s.updateTabTitle);
 
   // Sync session titles to tab titles
@@ -661,9 +661,9 @@ export function TabBar() {
     for (const id of tabOrder) {
       const tab = tabs[id];
       if (tab?.type !== 'session' || id === activeTabId) continue;
-      if (!canQueryOpenCodeSession(id)) continue;
+      if (!canQueryRuntimeSession(id)) continue;
       queryClient.prefetchQuery({
-        queryKey: opencodeKeys.session(id),
+        queryKey: runtimeKeys.session(id),
         queryFn: async () => {
           const client = getClient();
           const result = await client.session.get({ sessionID: id });

@@ -13,7 +13,7 @@
  * must never be replaced by a full-page loading logo. Every other error is
  * rethrown so it bubbles to the outer boundary exactly as before.
  *
- * The gate fix in `use-opencode-sessions/keys.ts` + the guard in `session-chat`
+ * The gate fix in `use-runtime-sessions/keys.ts` + the guard in `session-chat`
  * should prevent these throws in the first place; this is belt-and-suspenders so
  * a missed caller degrades to "loading", never to a crash.
  */

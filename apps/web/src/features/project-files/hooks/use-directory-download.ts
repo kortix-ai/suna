@@ -2,7 +2,7 @@
 
 import { errorToast, loadingToast } from '@/components/ui/toast';
 import { useCallback, useRef, useState } from 'react';
-import { downloadDirectory } from '../api/opencode-files';
+import { downloadDirectory } from '../api/runtime-files';
 import { useProjectContext } from '../context';
 
 /**

@@ -155,7 +155,7 @@ test('getSessionAudit appends ?limit= only when a limit is given', async () => {
 test('getSessionTranscript builds the query string from limit/chars options', async () => {
   nextResponse = {
     status: 200,
-    body: { available: true, reason: null, opencode_session_id: 'ocs-1', message_count: 0, messages: [] },
+    body: { available: true, reason: null, runtime_session_id: 'ocs-1', message_count: 0, messages: [] },
   };
   await getSessionTranscript('P1', 'S1', { limit: 5, chars: 200 });
   expect(last().url).toContain('/projects/P1/sessions/S1/transcript?limit=5&chars=200');

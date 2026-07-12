@@ -1,5 +1,5 @@
 /**
- * The current session runtime — the ONE OpenCode daemon the app is talking to
+ * The current session runtime — the ONE Runtime daemon the app is talking to
  * right now (the sandbox of the session being viewed), as a proxy URL
  * `${backendUrl}/p/<external_id>/8000`.
  *

@@ -32,7 +32,7 @@ export function getSandboxServerUrl(sandboxId: string): string {
 }
 
 /**
- * Derive the OpenCode proxy URL for a sandbox by its provider sandbox id
+ * Derive the Runtime proxy URL for a sandbox by its provider sandbox id
  * (a project session's `external_id`). Pure function of the id — no dependency
  * on the active server — so we can connect to several session sandboxes in
  * parallel (e.g. background SSE streams for every open session tab).

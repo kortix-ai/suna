@@ -9,7 +9,7 @@ import {
   loadSessionFromIDB,
   pruneIDBCache,
 } from "../browser/cache/idb-sync-cache";
-import { canQueryOpenCodeSession, type Session } from "./use-opencode-sessions";
+import { canQueryRuntimeSession, type Session } from "./use-runtime-sessions";
 
 const prefetchedSessions = new Set<string>();
 const inFlightPrefetches = new Map<string, Promise<void>>();
@@ -19,7 +19,7 @@ const inFlightPrefetches = new Map<string, Promise<void>>();
  * Skips if the session is already in the sync store.
  */
 export async function prefetchSession(sessionId: string): Promise<void> {
-  if (!canQueryOpenCodeSession(sessionId)) return;
+  if (!canQueryRuntimeSession(sessionId)) return;
   if (useSandboxConnectionStore.getState().healthy !== true) return;
   if (prefetchedSessions.has(sessionId)) return;
   const existingPrefetch = inFlightPrefetches.get(sessionId);

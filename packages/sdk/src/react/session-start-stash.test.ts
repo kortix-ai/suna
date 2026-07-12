@@ -175,7 +175,7 @@ describe('migrateLegacyStash', () => {
 
 describe('migrateStash', () => {
   // Producers that already write the canonical shape (writeStartStash) key it
-  // by a route/project id before the real OpenCode session id exists; a later
+  // by a route/project id before the real Runtime session id exists; a later
   // render resolves the real id and needs to hand the stash off. Unlike
   // `migrateLegacyStash` (which only understands a raw bare-prompt + options
   // pair at arbitrary keys), `migrateStash` reads the source via

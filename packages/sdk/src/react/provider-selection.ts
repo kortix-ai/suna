@@ -17,8 +17,8 @@ export const LLM_PROVIDER_CREDENTIALS: Array<{ id: string; envVars: string[] }> 
     envVars: provider.env ?? [],
   }));
 
-// In gateway mode OpenCode must see Kortix as the single LLM provider. Native
-// providers, including OpenCode Zen, belong only to native mode.
+// In gateway mode Runtime must see Kortix as the single LLM provider. Native
+// providers, including Runtime Zen, belong only to native mode.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
 

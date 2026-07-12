@@ -14,11 +14,11 @@ import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
  */
 
 /**
- * Resolve the active OpenCode proxy URL (routed through the backend).
+ * Resolve the active Runtime proxy URL (routed through the backend).
  * Prefers the per-session runtime; falls back to the local-dev default sandbox.
  * Use in non-React contexts (API modules, etc.).
  */
-export function getActiveOpenCodeUrl(): string {
+export function getActiveRuntimeUrl(): string {
   const current = getCurrentRuntimeUrl();
   if (current) return current;
   // Cloud/billing deployments have no local default — wait for the session to

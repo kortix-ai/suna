@@ -6,7 +6,7 @@ import type {
 } from "../../runtime/wire-types";
 
 // Inlined from web's `@/ui/types` (FileDiff is a derived type, not exported by
-// the OpenCode SDK). Type-only — zero runtime impact, byte-identical behavior.
+// the Runtime SDK). Type-only — zero runtime impact, byte-identical behavior.
 export type FileDiff = Omit<SnapshotFileDiff, "patch"> & {
 	patch?: string;
 	before?: string;

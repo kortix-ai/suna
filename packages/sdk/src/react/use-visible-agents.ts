@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import type { Agent } from '../runtime/wire-types';
-import { useOpenCodeAgents } from './use-opencode-sessions';
+import { useRuntimeAgents } from './use-runtime-sessions';
 import { featureFlags } from '../core/http/feature-flags';
 
 /**
@@ -38,7 +38,7 @@ export function useVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useOpenCodeAgents(options);
+  const { data: agents = [] } = useRuntimeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && a.mode !== 'subagent' && !hideProjectOnly(a)),
     [agents]
@@ -53,7 +53,7 @@ export function useAllVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useOpenCodeAgents(options);
+  const { data: agents = [] } = useRuntimeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && !hideProjectOnly(a)),
     [agents]

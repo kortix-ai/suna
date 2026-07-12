@@ -2,7 +2,7 @@
  * LLM-provider catalog for the per-project Provider Modal.
  *
  * Data source: a slim snapshot of https://models.dev/api.json (the same data
- * OpenCode uses internally). The snapshot lives at
+ * Runtime uses internally). The snapshot lives at
  * `packages/llm-catalog/src/catalog.generated.json`; its per-model
  * capability flags are refreshed from models.dev by
  * `apps/web/scripts/enrich-llm-catalog-capabilities.ts`.

@@ -64,7 +64,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
-import { uploadFile } from '@/features/files/api/opencode-files';
+import { uploadFile } from '@/features/files/api/runtime-files';
 import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
@@ -76,29 +76,29 @@ import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
 } from '@/features/session/uploaded-file-refs';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { useRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
 import {
   type ModelKey,
   formatModelString,
   formatPromptModel,
   parseModelKey,
-  useOpenCodeLocal,
-} from '@/hooks/opencode/use-opencode-local';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+  useRuntimeLocal,
+} from '@/hooks/runtime/use-runtime-local';
+import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import {
   ascendingId,
   rejectQuestion,
   replyToPermission,
   replyToQuestion,
-  useAbortOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-  useOpenCodeRuntimeReady,
-  useOpenCodeSession,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSessionSync } from '@/hooks/opencode/use-session-sync';
+  useAbortRuntimeSession,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeProviders,
+  useRuntimeReady,
+  useRuntimeSession,
+  useRuntimeSessions,
+} from '@/hooks/runtime/use-runtime-sessions';
+import { useSessionSync } from '@/hooks/runtime/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
@@ -122,9 +122,9 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useRuntimeCompactionStore } from '@/stores/runtime-compaction-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
@@ -3539,17 +3539,17 @@ export function SessionChat({
   // runtimeReady gates the session query (it's disabled until the sandbox
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const { data: session, isFetched: sessionFetched } = useOpenCodeSession(sessionId);
-  // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
+  const runtimeReady = useRuntimeReady();
+  const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
+  // useSessionSync is the SINGLE source of truth for messages (matches Runtime SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
   const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
-  // sessions fall back to OpenCode's directory-scoped runtime discovery.
-  const { data: agents } = useOpenCodeAgents({ directory: session?.directory, projectId });
+  // sessions fall back to Runtime's directory-scoped runtime discovery.
+  const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
   // Pending connector-approvals for this session pause the run — lock the
   // composer (like a question) until they're resolved. Shares the query key with
   // SessionApprovalPrompt, so it's one request.
@@ -3560,15 +3560,15 @@ export function SessionChat({
     { refetchInterval: 5_000 },
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
-  const { data: commands } = useOpenCodeCommands();
-  const { data: providers } = useOpenCodeProviders();
-  const { data: allSessions } = useOpenCodeSessions();
-  const { data: config } = useOpenCodeConfig();
+  const { data: commands } = useRuntimeCommands();
+  const { data: providers } = useRuntimeProviders();
+  const { data: allSessions } = useRuntimeSessions();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const abortSession = useAbortOpenCodeSession();
+  const abortSession = useAbortRuntimeSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({
+  const local = useRuntimeLocal({
     agents,
     providers,
     config,
@@ -3578,7 +3578,7 @@ export function SessionChat({
   });
   // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   // default off): the picker still defaults to the session's agent (seeded via
-  // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
+  // useRuntimeLocal's boundAgentName) but stays switchable — sends use the current
   // pick, not a forced lock. Flip to true to restore the hard lock once per-agent
   // executor-token scoping lands (see docs/specs/2026-06-28-agent-defaults-todo.md).
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
@@ -3799,7 +3799,7 @@ export function SessionChat({
   // selection yet. This handles opening a session for the first time. If the user
   // already changed the model in this session (persisted per-session in localStorage),
   // we don't overwrite it — the per-session selection takes priority via the
-  // resolution chain in useOpenCodeLocal.
+  // resolution chain in useRuntimeLocal.
   const lastUserMessage = useMemo(
     () => (messages ? [...messages].reverse().find((m) => m.info.role === 'user') : undefined),
     [messages],
@@ -3823,9 +3823,9 @@ export function SessionChat({
   }, [lastUserMessage?.info.id]);
 
   // ---- Session status ----
-  // Use sync store as primary (matches OpenCode), fall back to status store
+  // Use sync store as primary (matches Runtime), fall back to status store
   const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
+  const isOptimisticCompacting = useRuntimeCompactionStore((s) =>
     Boolean(s.compactingBySession[sessionId]),
   );
   const sessionStatus = syncStatus;
@@ -3982,7 +3982,7 @@ export function SessionChat({
 
   // Client-side message queue — mirrors Claude Code / Codex: a message typed
   // while the agent is mid-turn is held here instead of being sent straight
-  // through (the OpenCode server would happily accept it immediately, but
+  // through (the Runtime server would happily accept it immediately, but
   // interleaving it into a live turn reads badly). It's flushed one at a time
   // at the next safe boundary: either a tool call finishing, or the turn
   // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
@@ -4116,7 +4116,7 @@ export function SessionChat({
   }, [messages?.length]);
 
   // ---- Auto-scroll (replaces inline scroll logic) ----
-  const hasActiveQuestion = useOpenCodePendingStore((s) =>
+  const hasActiveQuestion = useRuntimePendingStore((s) =>
     Object.values(s.questions).some((q) => q.sessionID === sessionId),
   );
   const messageCount = messages?.length ?? 0;
@@ -4184,8 +4184,8 @@ export function SessionChat({
   // preserves scroll position automatically. No action needed here.
 
   // ---- Pending permissions & questions ----
-  const allPermissions = useOpenCodePendingStore((s) => s.permissions);
-  const allQuestions = useOpenCodePendingStore((s) => s.questions);
+  const allPermissions = useRuntimePendingStore((s) => s.permissions);
+  const allQuestions = useRuntimePendingStore((s) => s.questions);
   const pendingPermissions = useMemo(
     () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [allPermissions, sessionId],
@@ -4282,7 +4282,7 @@ export function SessionChat({
   // Self-heal a missed `question.asked` SSE event (a `question` tool part
   // rendering as running with nothing in the pending store for this session) —
   // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useOpenCodeEventStream`'s reconnect-gap hydration.
+  // `useRuntimeEventStream`'s reconnect-gap hydration.
   useQuestionSelfHeal(sessionId, messages, {
     enabled: isActiveSessionTab,
     isSuppressed: isQuestionSuppressed,
@@ -4293,8 +4293,8 @@ export function SessionChat({
   usePermissionSelfHeal(sessionId, messages, { enabled: isActiveSessionTab });
 
   // ---- Permission/question reply handlers ----
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
@@ -4311,7 +4311,7 @@ export function SessionChat({
     async (requestId: string, answers: string[][]) => {
       // Snapshot the question BEFORE removing it so we can cache the
       // answer against the tool part's ID.
-      const questionReq = useOpenCodePendingStore.getState().questions[requestId];
+      const questionReq = useRuntimePendingStore.getState().questions[requestId];
 
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
@@ -4443,7 +4443,7 @@ export function SessionChat({
        * Optional per-call overrides — used by the message queue drain so a
        * queued message uses the agent/model/variant captured at enqueue time
        * rather than whatever is currently active in the local store
-       * (matches OpenCode FollowupDraft semantics).
+       * (matches Runtime FollowupDraft semantics).
        */
       overrides?: {
         agent?: string | null;
@@ -4481,7 +4481,7 @@ export function SessionChat({
       // Generate part IDs upfront so the optimistic message and the server
       // request use the SAME IDs. When the server echoes parts via
       // message.part.updated, the sync store's upsertPart will UPDATE
-      // (not duplicate) the optimistic parts. This matches OpenCode's
+      // (not duplicate) the optimistic parts. This matches Runtime's
       // SolidJS approach where part IDs are sent with the prompt request.
       const textPartId = ascendingId('prt');
       const attachedFiles = files ?? [];
@@ -4529,7 +4529,7 @@ export function SessionChat({
       }
 
       // Optimistic: show message immediately in sync store + set busy
-      // Matches OpenCode: sync.set("session_status", session.id, { type: "busy" })
+      // Matches Runtime: sync.set("session_status", session.id, { type: "busy" })
       beginOptimisticSend(sessionId, messageID, optimisticText, [textPartId]);
 
       // Scroll so the new user message appears at the top of the viewport.
@@ -4627,7 +4627,7 @@ export function SessionChat({
         if (block) textPrompt.text = `${textPrompt.text}\n\n${block}`;
       }
 
-      // Send via the SDK's promptOpenCodeMessage — the server accepts the
+      // Send via the SDK's promptRuntimeMessage — the server accepts the
       // prompt (204) and streams the response over SSE; we await the ACK so
       // callers (queue drain, input box) can handle send failures, but the
       // actual response body still arrives via the sync store.
@@ -4648,9 +4648,9 @@ export function SessionChat({
       });
       const sendOpts = Object.keys(options).length > 0 ? options : undefined;
 
-      // Sending to the sandbox's OpenCode server can transiently fail — the
+      // Sending to the sandbox's Runtime server can transiently fail — the
       // container may be waking from auto-stop, restarting, or the tunnel
-      // blips. `promptOpenCodeMessage` (packages/sdk) owns retrying transient
+      // blips. `promptRuntimeMessage` (packages/sdk) owns retrying transient
       // failures with backoff so a flaky send self-heals; only a real 4xx (bad
       // request / auth / missing model key), or exhausting the retry window,
       // surfaces here. The optimistic user message + busy status stay up the
@@ -4699,7 +4699,7 @@ export function SessionChat({
   // "Changes" side panel's "Ask agent to open a change request" button) can
   // drive the agent through the SAME robust path the input uses — optimistic
   // message, SSE wiring, error propagation — instead of copying a prompt to the
-  // clipboard. Keyed by the OpenCode chat session id (`sessionId`).
+  // clipboard. Keyed by the Runtime chat session id (`sessionId`).
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
@@ -4969,7 +4969,7 @@ export function SessionChat({
   const router = useRouter();
 
   // Thread context for subsessions only (real parentID).
-  const { data: parentSessionData } = useOpenCodeSession(session?.parentID || '');
+  const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);

@@ -57,8 +57,8 @@ import {
   type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
 import {
   getProject,
   getProjectDetail,
@@ -317,7 +317,7 @@ function ChannelBindingTableRow({
     return names;
   }, [config, binding.agentName]);
 
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
 

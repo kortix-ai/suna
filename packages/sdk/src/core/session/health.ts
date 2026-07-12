@@ -3,7 +3,7 @@
  *
  * The host asks a session whether its runtime is ready; it never reasons about
  * "the sandbox" directly. This is the liveness probe used to gate "runtime
- * active" vs "OpenCode ready". The runtime-ready parsing rule lives here so
+ * active" vs "Runtime ready". The runtime-ready parsing rule lives here so
  * every consumer interprets a payload identically. It never throws on a non-ok
  * HTTP status — it surfaces `status`/`ok` so the caller applies its own failure
  * thresholds.
@@ -15,7 +15,7 @@
  */
 
 import { authenticatedFetch } from '../http/auth';
-import { getActiveOpenCodeUrl } from './server-store/active';
+import { getActiveRuntimeUrl } from './server-store/active';
 
 export type SessionHealthResponse = {
   status?: string;
@@ -37,7 +37,7 @@ export interface SessionHealthResult {
   body: string;
 }
 
-/** Whether a health payload indicates the OpenCode runtime is ready. */
+/** Whether a health payload indicates the runtime is ready. */
 export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
   if (!health) return false;
   if (health.runtimeReady !== undefined) return health.runtimeReady === true;
@@ -66,7 +66,7 @@ export async function getSessionHealth(
   runtimeUrl?: string | null,
   init?: RequestInit,
 ): Promise<SessionHealthResult> {
-  const url = (runtimeUrl === undefined ? getActiveOpenCodeUrl() : runtimeUrl) || null;
+  const url = (runtimeUrl === undefined ? getActiveRuntimeUrl() : runtimeUrl) || null;
   if (!url) return { status: 0, ok: false, health: null, body: '' };
   const res = await authenticatedFetch(
     `${url}/kortix/health`,

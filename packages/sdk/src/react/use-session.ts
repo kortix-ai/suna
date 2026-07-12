@@ -13,7 +13,7 @@ import {
 } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
-import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
+import { setRuntimeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
 import { useAcpSession } from './use-acp-session';
 import { useRuntimePhase } from './use-runtime-phase';
 
@@ -96,7 +96,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   useEffect(() => {
     if (!switched) return;
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
   }, [switched]);
 
   const acp = useAcpSession({

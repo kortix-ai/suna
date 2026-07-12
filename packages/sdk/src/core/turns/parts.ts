@@ -226,7 +226,7 @@ export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): s
  * Extract the error message from a child (sub-agent) session's raw messages.
  *
  * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
- * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * returned by `useRuntimeMessages`, so a parent thread can surface a sub-agent
  * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
  * lives on the child session and never reaches the parent's turn renderer.
  * Scans newest-first so the most recent failure wins.

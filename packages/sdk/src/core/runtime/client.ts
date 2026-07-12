@@ -1,7 +1,7 @@
 import { authenticatedFetch } from '../http/auth';
 import { isConfigured } from '../http/config';
 import { ApiError } from '../http/api/errors';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
 import type { RuntimeClient, RuntimeResult } from './wire-types';
 export type * from './wire-types';
 export { listEnv, setEnv, deleteEnv, env } from './env';
@@ -32,7 +32,7 @@ export class RuntimeNotReadyError extends Error {
 }
 
 export function getClient(): RuntimeClient {
-  const url = getActiveOpenCodeUrl();
+  const url = getActiveRuntimeUrl();
   if (!url) throw new RuntimeNotReadyError();
   return getClientForUrl(url);
 }
@@ -152,6 +152,7 @@ function createRuntimeClient(baseUrl: string, fetcher: Fetcher): RuntimeClient {
         get: () => call('GET', '/global/config'),
         update: ({ config }: { config: unknown }) => call('PATCH', '/global/config', config),
       },
+      dispose: () => call('POST', '/global/dispose'),
       health: () => call('GET', '/global/health'),
       event: async ({ signal }: { signal: AbortSignal }) => {
         const req = new Request(`${baseUrl.replace(/\/$/, '')}/global/event`, {
@@ -180,7 +181,21 @@ function createRuntimeClient(baseUrl: string, fetcher: Fetcher): RuntimeClient {
       unshare: ({ sessionID }: { sessionID: string }) => call('DELETE', `/session/${encodeURIComponent(sessionID)}/share`),
       status: () => call('GET', '/session/status'),
     },
-    provider: { list: () => call('GET', '/provider') },
+    provider: {
+      list: () => call('GET', '/provider'),
+      auth: () => call('GET', '/provider/auth'),
+      oauth: {
+        authorize: (body: unknown) => call('POST', '/provider/oauth/authorize', body),
+        callback: (body: unknown) => call('POST', '/provider/oauth/callback', body),
+      },
+    },
+    auth: {
+      set: (body: unknown) => call('POST', '/auth/set', body),
+      remove: (body: unknown) => call('POST', '/auth/remove', body),
+    },
+    instance: {
+      dispose: () => call('POST', '/instance/dispose'),
+    },
     app: {
       agents: (args?: Record<string, unknown>) => call('GET', `/app/agents${qs(args)}`),
       skills: () => call('GET', '/app/skills'),
@@ -247,7 +262,7 @@ export interface SystemReloadResult {
 }
 
 export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
-  const url = getActiveOpenCodeUrl();
+  const url = getActiveRuntimeUrl();
   if (!url) {
     throw new ApiError('[kortix-runtime] Server URL not ready - session runtime is still loading', {
       code: 'RUNTIME_UNAVAILABLE',

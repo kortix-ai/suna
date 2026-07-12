@@ -114,7 +114,7 @@ export function buildAuthHeaders(
 
 /**
  * The synthetic 401 returned when no token is available — safe for all
- * callers including the OpenCode SDK, which expects fetch() semantics
+ * callers including the Runtime SDK, which expects fetch() semantics
  * (returns a Response, never throws), and it means the request never goes
  * out on the wire unauthenticated.
  */

@@ -96,18 +96,18 @@ function getSandboxUrl(sandboxId: string): string {
   return `${getPlatformUrl()}/p/${sandboxId}/8000`;
 }
 
-// ─── Shared OpenCode `/global/health` probe ─────────────────────────────────
+// ─── Shared Runtime `/global/health` probe ─────────────────────────────────
 //
-// This is OpenCode's OWN liveness endpoint — NOT the sandbox daemon's
+// This is Runtime's OWN liveness endpoint — NOT the sandbox daemon's
 // `/kortix/health` that `@kortix/sdk/session`'s `getSessionHealth` probes (see
 // that module's header comment). The two report different things:
 // `/kortix/health` is the daemon wrapper's always-200 liveness probe with a
 // computed `runtimeReady` (folds in repo/branch materialization state);
-// `/global/health` requires the OpenCode process itself to answer and is the
-// only place an OpenCode `version` comes from (see
+// `/global/health` requires the Runtime process itself to answer and is the
+// only place an Runtime `version` comes from (see
 // packages/sdk/src/state/sandbox-connection-store.ts, which tracks both
 // versions separately). Callers here (this poller's cold-boot wait, and
-// `update-dialog`'s post-update reconnect probe) want OpenCode's own signal,
+// `update-dialog`'s post-update reconnect probe) want Runtime's own signal,
 // so they deliberately do NOT route through `getSessionHealth` — but they
 // used to each hand-roll the `{healthy: data?.healthy === true}` parsing
 // independently. This helper standardizes just that contract; callers still
@@ -138,7 +138,7 @@ export async function fetchSandboxGlobalHealth(
   }
 }
 
-async function waitForOpenCodeHealthy(
+async function waitForRuntimeHealthy(
   sandboxId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -285,12 +285,12 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           const ac = new AbortController();
           healthAbortRef.current = ac;
           if (!sandboxId) return;
-          waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
+          waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
             if (stoppedRef.current) return;
             if (healthy) {
               set({ ...initial(), status: 'ready', progress: 100 });
             } else {
-              set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
+              set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
             }
             pollingRef.current = false;
             cleanup();
@@ -371,12 +371,12 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
             const ac = new AbortController();
             healthAbortRef.current = ac;
             if (!sandboxId) return;
-            waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
+            waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
               if (stoppedRef.current) return;
               if (healthy) {
                 set({ ...initial(), status: 'ready', progress: 100 });
               } else {
-                set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
+                set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
               }
               pollingRef.current = false;
               cleanup();
@@ -414,12 +414,12 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
             const ac = new AbortController();
             healthAbortRef.current = ac;
             if (!sandboxId) return;
-            waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
+            waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
               if (stoppedRef.current) return;
               if (healthy) {
                 set({ ...initial(), status: 'ready', progress: 100 });
               } else {
-                set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
+                set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
               }
               pollingRef.current = false;
               cleanup();

@@ -7,7 +7,7 @@ import { Loader2, AlertCircle, ChevronRight, History, GitFork, ArrowRightLeft } 
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useLegacyMessages, useMigrateLegacyThread } from '@/hooks/legacy/use-legacy-threads';
-import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useCreateRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { getActiveSandboxId } from '@/stores/server-store';
 import { writeStartStash } from '@kortix/sdk/react';
@@ -303,7 +303,7 @@ export default function LegacyThreadPage({
   const tHardcodedUi = useTranslations('hardcodedUi');
 	const { threadId } = use(params);
 	const { data, isLoading, error } = useLegacyMessages(threadId);
-	const createSession = useCreateOpenCodeSession();
+	const createSession = useCreateRuntimeSession();
 	const migrate = useMigrateLegacyThread();
 	const [forking, setForking] = useState(false);
 	const [migrating, setMigrating] = useState(false);
@@ -320,7 +320,7 @@ export default function LegacyThreadPage({
 			const session = await createSession.mutateAsync();
 			const prompt = buildContextPrompt(turns, turnIndex);
 
-			// `session.id` is the canonical OpenCode session id (created directly by
+			// `session.id` is the canonical Runtime session id (created directly by
 			// this hook) so the SDK's start-stash reads it back under the same id —
 			// no route/pin translation involved.
 			writeStartStash(session.id, { prompt, model: null, agent: null });

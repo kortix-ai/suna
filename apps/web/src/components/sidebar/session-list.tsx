@@ -35,21 +35,21 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { useSessionsNeedingInputForProjects } from '@/features/session/session-audit-shared';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
-import type { Session } from '@/hooks/opencode/use-opencode-sessions';
+import type { Session } from '@/hooks/runtime/use-runtime-sessions';
 import {
-  useDeleteOpenCodeSession,
-  useOpenCodeSessions,
-  useUpdateOpenCodeSession,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useBackgroundSessionPrefetch } from '@/hooks/opencode/use-session-prefetch';
+  useDeleteRuntimeSession,
+  useRuntimeSessions,
+  useUpdateRuntimeSession,
+} from '@/hooks/runtime/use-runtime-sessions';
+import { useBackgroundSessionPrefetch } from '@/hooks/runtime/use-session-prefetch';
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
 import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import {
   markRecoveryRequested,
   useSandboxConnectionStore,
@@ -452,10 +452,10 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const SESSION_PAGE_SIZE = 50;
   const [displayLimit, setDisplayLimit] = useState(SESSION_PAGE_SIZE);
 
-  const { data: sessions, isLoading, error, refetch } = useOpenCodeSessions();
+  const { data: sessions, isLoading, error, refetch } = useRuntimeSessions();
   const { prefetchOnHover } = useBackgroundSessionPrefetch(sessions);
-  const { mutate: deleteSession, isPending: isDeleting } = useDeleteOpenCodeSession();
-  const { mutate: updateSession } = useUpdateOpenCodeSession();
+  const { mutate: deleteSession, isPending: isDeleting } = useDeleteRuntimeSession();
+  const { mutate: updateSession } = useUpdateRuntimeSession();
 
   // Auto-refetch sessions when connection recovers from error state
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
@@ -506,9 +506,9 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const [compactSessionId, setCompactSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const statuses = useSyncStore((s) => s.sessionStatus);
-  const permissions = useOpenCodePendingStore((s) => s.permissions);
-  const questions = useOpenCodePendingStore((s) => s.questions);
-  // Connector actions awaiting approve/deny, keyed by session id (both OpenCode
+  const permissions = useRuntimePendingStore((s) => s.permissions);
+  const questions = useRuntimePendingStore((s) => s.questions);
+  // Connector actions awaiting approve/deny, keyed by session id (both Runtime
   // + Kortix ids) so a row matches whichever id it holds.
   // "Needs input" (connector approvals) per session — queried route-independently
   // by each visible session's OWN project (the sidebar also renders on routes

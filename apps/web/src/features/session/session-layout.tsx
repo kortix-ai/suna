@@ -11,7 +11,7 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeMessages } from '@/hooks/runtime/use-runtime-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -64,7 +64,7 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
   const booting = !!bootStage;
 
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  const { data: messages } = useRuntimeMessages(sessionId);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
@@ -155,7 +155,7 @@ export const SessionLayout = memo(function SessionLayout({
   const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
   const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
 
-  // Publish this layout's panel key (the OpenCode chatSessionId) as the active
+  // Publish this layout's panel key (the Runtime chatSessionId) as the active
   // session whenever it's the visible one, so chat click handlers (file paths,
   // localhost links) route into THIS panel rather than guessing from the URL —
   // the URL carries the Kortix session id, which differs from this key. Only

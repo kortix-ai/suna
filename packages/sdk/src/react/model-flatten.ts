@@ -1,4 +1,4 @@
-import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-opencode-sessions';
+import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './use-runtime-sessions';
 
 /**
  * Some provider payloads aren't the full opencode `Model` shape — notably the

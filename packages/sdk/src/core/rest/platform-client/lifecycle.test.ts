@@ -82,7 +82,7 @@ const existingSession: ProjectSession = {
   sandbox_provider: 'daytona',
   sandbox_id: 'sbx-1',
   sandbox_url: 'http://backend.local/v1/p/ext-1/8000',
-  opencode_session_id: 'oc-1',
+  runtime_session_id: 'oc-1',
   name: 'Session One',
   custom_name: null,
   agent_name: 'daytona',
@@ -112,7 +112,7 @@ const newSession: ProjectSession = {
   sandbox_provider: null,
   sandbox_id: 'sess-2',
   sandbox_url: null,
-  opencode_session_id: null,
+  runtime_session_id: null,
   name: null,
   custom_name: null,
   agent_name: 'daytona',
@@ -145,7 +145,7 @@ const startResult: SessionStartResult = {
   agent_name: 'daytona',
   retriable: false,
   sandbox: runtimeSandbox,
-  opencode_session_id: 'oc-2',
+  runtime_session_id: 'oc-2',
   runtime_url: null,
 };
 

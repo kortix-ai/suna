@@ -875,7 +875,7 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
     if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
       startCalls += 1;
       // First attempt: a failure shape (no sandbox / not ready).
-      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, opencode_session_id: null, agent_name: 'agent' });
+      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, runtime_session_id: null, agent_name: 'agent' });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
     }
     return jsonResponse({ ok: true });

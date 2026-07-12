@@ -109,7 +109,7 @@ export function clearStartStash(sessionId: string): void {
 /**
  * Migrate a stash — canonical or legacy shape — from one session-id namespace
  * to another. Producers sometimes stash under an id that isn't the eventual
- * OpenCode session id (e.g. a project's route id, before the canonical
+ * Runtime session id (e.g. a project's route id, before the canonical
  * session exists); once a later render resolves the real id, this hands the
  * stash off. Reads the source via {@link readStartStash} (so it understands
  * both the canonical JSON shape and the bare-prompt legacy shape at

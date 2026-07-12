@@ -120,7 +120,7 @@ export {
   type EventStreamClient,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from './core/stream/event-stream';
 
@@ -184,7 +184,7 @@ export {
 } from './core/turns';
 
 /**
- * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * The curated chat-event union — narrows the full `RuntimeEvent` wire union
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
@@ -247,7 +247,7 @@ export type {
   ConnectorConfig,
   // Sessions
   ProjectSession,
-  ProjectOpenCodeSession,
+  ProjectRuntimeSession,
   SessionPublicShare,
   SessionAudit,
   SessionTranscript,
@@ -369,7 +369,7 @@ export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
 export * from './core/http/instance-routes';
-export * from './core/http/opencode-errors';
+export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/runtime/client';

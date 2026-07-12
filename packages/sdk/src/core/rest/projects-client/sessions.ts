@@ -28,18 +28,18 @@ export interface ProjectSession {
   sandbox_provider: string | null;
   sandbox_id: string;
   sandbox_url: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   runtime_protocol?: 'acp' | 'opencode' | null;
   runtime_id?: string | null;
   acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from OpenCode server-side during project session reads.
+   * auto title mirrored from Runtime server-side during project session reads.
    */
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the server-mirrored OpenCode title. null = no
+   * present it always wins over the server-mirrored Runtime title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -47,7 +47,7 @@ export interface ProjectSession {
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
-  opencode_sessions: ProjectOpenCodeSession[];
+  opencode_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
@@ -86,7 +86,7 @@ export interface CreateProjectSessionInput {
   connector_bindings?: SessionConnectorBindings;
 }
 
-export interface ProjectOpenCodeSession {
+export interface ProjectRuntimeSession {
   id: string;
   title: string | null;
   parent_id: string | null;
@@ -307,7 +307,7 @@ export interface SessionTranscriptMessage {
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
 }
