@@ -86,11 +86,11 @@ const s = kortix.session(pid, sid);
 await s.send('Build me a widget');   // provisions/resumes if needed, then prompts
 await s.previews();
 
-// Lower level: the structural daemon/runtime client for THIS session's runtime.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the harness session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
+// Lower level: ACP transport for THIS session's runtime.
+// The ACP session id is runtime-owned, not the Kortix `sid`.
+const { runtimeSessionId } = await s.ensureReady();
+const acp = await s.acp.client();
+await acp.prompt(runtimeSessionId!, [{ type: 'text', text: 'Inspect this repo' }]);
 ```
 
 ## The facade surface
@@ -106,8 +106,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.playground`), `.channels`, `.apps`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the structural daemon/runtime client) |
-| `kortix.runtime()` | the structural daemon/runtime client for the active session runtime (escape hatch) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort` (ACP prompt wrappers) · `stream()` / `.acp.*` (ACP live transport) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) |
+| `kortix.runtime()` | structural daemon/runtime helpers for the active session runtime (escape hatch, not the conversation protocol) |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -173,8 +173,8 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
-under the hood — it just also writes into the React Query cache.
+`@kortix/sdk/react`'s session hooks use the same primitive under the hood — they
+also write into the React Query/cache stores that the web UI consumes.
 
 ## Kortix as a Backend (server-side)
 
@@ -232,7 +232,7 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (`@kortix/sdk/turns`, framework-free)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize the runtime part types (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -327,15 +327,15 @@ wedge a server-side handler forever — it surfaces as an `ApiError` with
 Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 — see `package.json`'s `exports` field for the complete list (it also includes
 `./config`, `./api-client`, `./feature-flags`, `./fresh-sessions`,
-`./instance-routes`, `./opencode-errors`, `./platform-client`, `./event-stream`,
-`./sandbox-connection-store`, `./opencode-pending-store`, `./session/url`,
+`./instance-routes`, `./runtime-errors`, `./platform-client`, `./event-stream`,
+`./sandbox-connection-store`, `./runtime-pending-store`, `./session/url`,
 `./idb-sync-cache`):
 
 | import | provides |
 |---|---|
 | `@kortix/sdk` | `createKortix`, `configureKortix`, `files`, the error classes, `classifyPart`/`classifyTurn`, `narrowChatEvent`, `openEventStream`, domain result types |
 | `@kortix/sdk/server` | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend") |
-| `@kortix/sdk/react` | every `useOpenCode*` hook + providers (reactive data), `useSession`, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`) |
+| `@kortix/sdk/react` | `useSession`, ACP/runtime hooks, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`) |
 | `@kortix/sdk/turns` | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers) |
 | `@kortix/sdk/files` | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, … |
 | `@kortix/sdk/session` | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
@@ -371,9 +371,9 @@ in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 The framework-free core modules — `turns`, `session/url`, `session` (health),
 `projects-client`, `files`, `transcript` — have no React or DOM dependency and are
 usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
-React Native adoption of the full client/hooks is planned but not done — mobile
-currently ships its own parallel data layer (`apps/mobile/lib/opencode/`) rather
-than `@kortix/sdk/react`.
+React Native adoption of live streaming is limited by RN's fetch implementation.
+REST/facade calls work anywhere `fetch` does; mobile-specific UI may still use a
+thin native data layer until streaming support is available.
 
 ## Rules of the road
 

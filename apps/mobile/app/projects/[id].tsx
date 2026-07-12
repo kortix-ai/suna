@@ -828,9 +828,9 @@ function SessionGroup({
 /**
  * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
  * `${sandboxUrl}/kortix/health` the web's useSandboxConnection polls. Beyond
- * reporting readiness, hitting the proxy keeps the sandbox routed/warm; the
- * backend's ensure-opencode probe alone doesn't, so without this a freshly-woken
- * sandbox can stay unreachable. Returns 'ready' once OpenCode reports up.
+ * reporting readiness, hitting the proxy keeps the sandbox routed/warm, so a
+ * freshly-woken sandbox does not stay unreachable. Returns 'ready' once the
+ * ACP runtime daemon reports up.
  */
 type SandboxHealth = {
   status: 'ready' | 'starting' | 'unreachable';
@@ -853,54 +853,18 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
       signal: controller.signal,
     });
     clearTimeout(timer);
-    if (res.status === 503) return { status: 'starting' }; // sandbox up, OpenCode still booting
+    if (res.status === 503) return { status: 'starting' }; // sandbox up, runtime still booting
     if (!res.ok) return { status: 'unreachable' };
     const data: any = await res.json().catch(() => null);
     const bootError =
       typeof data?.boot_error === 'string' && data.boot_error ? data.boot_error : null;
     if (data?.runtimeReady === true) return { status: 'ready' };
-    if (data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
+    if (data?.acp === 'ok' || data?.acp === true || data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
     if (data?.status && !['starting', 'down', 'error'].includes(data.status))
       return { status: 'ready' };
     return { status: 'starting', bootError };
   } catch {
     return { status: 'unreachable' };
-  }
-}
-
-/**
- * Deliver the composer's first prompt into a session's OpenCode root, once it
- * exists. Web parity: the project home stashes the prompt and sends it after the
- * session connects rather than passing `initial_prompt` to createProjectSession
- * (the boot-time KORTIX_INITIAL_PROMPT path can leave OpenCode perpetually
- * not-ready). Fire-and-forget — SessionPage's sync surfaces the message/reply.
- */
-async function sendOpencodePrompt(
-  sandboxUrl: string,
-  opencodeSessionId: string,
-  text: string
-): Promise<boolean> {
-  try {
-    const token = await getAuthToken();
-    const res = await fetch(
-      `${sandboxUrl.replace(/\/$/, '')}/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ parts: [{ type: 'text', text }] }),
-      }
-    );
-    if (!res.ok) {
-      log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
-      return false;
-    }
-    return true;
-  } catch (err: any) {
-    log.error('[connect] initial prompt error:', err?.message || err);
-    return false;
   }
 }
 
@@ -1391,8 +1355,8 @@ export default function ProjectSessionScreen() {
       haptics.tap();
       setDrawerOpen(false);
       // Repo-first new session (web parity): create a blank project session and
-      // open it via the connecting state — the effect resolves the OpenCode pin
-      // (ensure-opencode) once the sandbox is up. No global-sandbox POST /session.
+      // open it via the connecting state. `/start` resolves the ACP runtime;
+      // the client never posts to a harness-native session endpoint.
       const session = await createProjectSession.mutateAsync({});
       setActiveProjectSessionId(session.session_id);
       navigateToSession(null);
@@ -1408,25 +1372,19 @@ export default function ProjectSessionScreen() {
 
   const handleCreateSessionWithPrompt = useCallback(
     async (title: string, prompt: string) => {
-      if (!sandboxUrl) return;
       try {
-        const session = await createSession.mutateAsync({ title });
-        navigateToSession(session.id);
-        // Send the preset prompt into the new session
-        const token = await getAuthToken();
-        await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
-        });
+        const session = await createProjectSession.mutateAsync({ name: title });
+        pendingPromptsRef.current[session.session_id] = prompt;
+        setActiveProjectSessionId(session.session_id);
+        navigateToSession(null);
+        setConnectError(null);
+        erroredSessionRef.current = null;
+        setConnectingProjectSessionId(session.session_id);
       } catch (err: any) {
         log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
       }
     },
-    [sandboxUrl, createSession, navigateToSession]
+    [createProjectSession, navigateToSession]
   );
 
   const handleSessionPress = useCallback(
@@ -1531,18 +1489,31 @@ export default function ProjectSessionScreen() {
             );
 
             if (start?.stage === 'ready' && start.runtime_protocol === 'acp' && start.runtime_id) {
+              const runtimeSessionId = start.runtime_session_id ?? null;
               connectToProjectSession({
                 session_id: sessionId,
                 sandbox_id: sandbox.sandbox_id,
                 sandbox_url: sandboxUrl,
-                runtime_session_id: start.runtime_session_id ?? null,
+                runtime_session_id: runtimeSessionId,
                 runtime_protocol: 'acp',
                 runtime_id: start.runtime_id,
-                acp_session_id: start.runtime_session_id,
+                acp_session_id: runtimeSessionId,
                 sandbox_provider: sandbox.provider ?? 'daytona',
                 created_at: sandbox.created_at,
                 updated_at: sandbox.updated_at,
               } as ProjectSession);
+              const pendingPrompt = pendingPromptsRef.current[sessionId];
+              if (pendingPrompt && runtimeSessionId) {
+                delete pendingPromptsRef.current[sessionId];
+                void promptProjectAcpSession({
+                  projectId,
+                  sessionId,
+                  runtimeSessionId,
+                  prompt: [{ type: 'text', text: pendingPrompt }],
+                }).catch((err) => {
+                  log.error('[connect] initial ACP prompt failed:', err?.message || err);
+                });
+              }
               return;
             }
             if (start?.stage === 'ready') {

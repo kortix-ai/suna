@@ -350,8 +350,8 @@ they're real, shipped exports:
   health/reconnect bookkeeping (`useSandboxConnectionStore`, `setSandboxStatus`,
   `incrementSandboxFail`, recovery-phase tracking). The one place "sandbox"
   appears as a concept in the public surface — see the callout above.
-- **`@kortix/sdk/opencode-pending-store`** — a zustand store of in-flight
-  permission/question requests from the runtime (`useOpenCodePendingStore`),
+- **`@kortix/sdk/runtime-pending-store`** — a zustand store of in-flight
+  permission/question requests from the runtime (`useRuntimePendingStore`),
   deduped against ones the user already answered.
 - **`@kortix/sdk/config`** — `configureKortix`, `platformConfig`, `isConfigured`;
   the same module the root `@kortix/sdk` entry re-exports, reachable directly.
@@ -364,8 +364,8 @@ they're real, shipped exports:
 - **`@kortix/sdk/instance-routes`** — the `kortix-active-instance` cookie and
   path helpers (`buildInstancePath`, `extractInstanceRoute`, …) for
   instance-scoped app routes.
-- **`@kortix/sdk/opencode-errors`** — normalizes OpenCode `ConfigInvalidError`
-  payloads into a readable message (`formatOpenCodeRuntimeError`).
+- **`@kortix/sdk/runtime-errors`** — normalizes runtime `ConfigInvalidError`
+  payloads into readable config-error helpers.
 - **`@kortix/sdk/idb-sync-cache`** — the IndexedDB persistence layer behind
   `sync-store`'s stale-while-revalidate cold-load cache.
 

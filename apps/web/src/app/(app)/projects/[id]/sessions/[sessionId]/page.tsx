@@ -71,7 +71,7 @@ export default function ProjectSessionPage() {
   // check so a no-plan account never spins on a sandbox that won't provision.
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // chatEngine:false — this page only reads boot/lifecycle fields (switched,
-  // stage, sandbox, opencodeSessionId); `SessionChat` below mounts its own
+  // stage, sandbox, runtimeSessionId); `AcpSessionChat` below mounts its own
   // useSessionSync + useQuestionSelfHeal. Leaving the default `true` here would
   // double-mount both against the same session for no reason.
   const session = useSession(projectId, sessionId, {

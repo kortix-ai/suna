@@ -1776,9 +1776,9 @@ export function SessionChatInput({
       return;
     }
 
-    // Send directly. The Runtime server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe even
-    // without queuing — this path is only reached when no queue is wired up.
+    // Send directly. The Runtime server serializes concurrent prompt calls
+    // per session, so sending while the agent is busy is safe even without
+    // queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
     } catch {

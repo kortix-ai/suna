@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
+description: The session handle — lifecycle, the session-owned runtime, health, previews, and ACP agent transport.
 ---
 
 A **session** is one agent run, in its own disposable sandbox, on its own git
@@ -61,7 +61,7 @@ pass a port or a URL, never a sandbox id.
 
 | method                      | returns                        | what                                                                 |
 | --------------------------- | ------------------------------ | -------------------------------------------------------------------- |
-| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready                         |
+| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether the ACP daemon is ready                    |
 | `s.previewUrl(port, path?)` | `string`                       | proxy/preview URL for a port the agent exposed                       |
 | `s.proxyUrl(url?)`          | `string \| undefined`          | rewrite a localhost URL the agent printed into a reachable proxy URL |
 
@@ -86,20 +86,17 @@ do require a resolved runtime; call `s.ensureReady()` first (or `s.send()` /
 
 ## Talking to the agent
 
-These are the opinionated wrappers over the runtime — the right entry points for
-a script, server, worker, or any non-React host. Each auto-provisions the
-runtime via `ensureReady()` internally, resolves the OpenCode session id for
-you, and always acts against **this handle's own** resolved runtime — never
-whatever sandbox happens to be globally "active" — so two handles on two
-different sessions never cross wires.
+These are the opinionated ACP wrappers over the runtime — the right entry points
+for a script, server, worker, or any non-React host. Each auto-provisions the
+runtime via `ensureReady()` internally, resolves the ACP session id for you, and
+always acts against **this handle's own** resolved runtime — never whatever
+sandbox happens to be globally "active" — so two handles on two different
+sessions never cross wires.
 
 ```ts
 await s.ensureReady(); // provision/resume the runtime; idempotent
-s.setModel({ providerID, modelID }); // sticky model for subsequent send()s
-s.setAgent('build'); // sticky agent for subsequent send()s
 
 await s.send('Refactor the auth module'); // prompt the agent
-await s.send('One-off task', { model, agent }); // per-call override
 await s.abort(); // abort the current run
 ```
 
@@ -125,31 +122,28 @@ handle.close();
 ```
 
 In a React app, prefer [`useSession(projectId, sessionId)`](/docs/sdk/react#usesessionprojectid-sessionid-options)
-instead — the hook that owns the whole runtime (start, SSE, readiness) and
-returns the thread, `send`, and the boot `phase`.
+instead — the hook that owns the whole runtime (start, ACP stream, readiness)
+and returns the ACP chat state plus the boot `phase`.
 
-### The typed runtime — `s.runtime`
+### ACP transport — `s.acp`
 
-`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
-only through the SDK — the escape hatch for anything not covered by
-`send`/`abort`/`stream`. It requires a resolved runtime (call `s.ensureReady()`
-first, or use it after `send`/`abort`/`stream` have run).
+`s.acp` is the low-level Agent Client Protocol transport, scoped to this
+Kortix session and reached only through the SDK. It is the escape hatch for
+protocol-level operations not covered by `send`/`abort`/`stream`.
 
 ```ts
-await s.ensureReady();
+const ready = await s.ensureReady();
+const client = await s.acp.client();
+const acpSessionId = await s.acp.sessionId();
 
-// Prefer s.send() for conversation prompts; raw daemon calls are escape hatches.
-await s.runtime.session.prompt({
-  sessionID: (await s.ensureReady()).runtimeSessionId,
-  parts: [{ type: 'text', text: 'Refactor the auth module' }],
-});
+// Prefer s.send() for normal prompts; raw ACP calls are escape hatches.
+await client.prompt(acpSessionId, [{ type: 'text', text: 'Refactor the auth module' }]);
 ```
 
 <Callout type="warn">
-  The runtime `sessionID` is **not** the Kortix `sessionId` passed to
-  `kortix.session(projectId, sessionId)` — it's resolved server-side through ACP and cached on the
-  handle. Prefer `s.send()` / `s.abort()`, which resolve it for you; only reach for raw runtime
-  calls when you need something those wrappers don't cover.
+  The ACP `sessionId` is **not** the Kortix `sessionId` passed to
+  `kortix.session(projectId, sessionId)` — it is resolved server-side and cached on the handle.
+  Prefer `s.send()` / `s.abort()`, which resolve it for you.
 </Callout>
 
 <Callout type="warn">
