@@ -1,7 +1,7 @@
 'use client';
 
 import { AgentPicker } from '@/components/chat/agent-picker';
-import { Composer } from '@/components/chat/composer';
+import { Composer, type ComposerAttachment } from '@/components/chat/composer';
 import { MessageView } from '@/components/chat/message-view';
 import { ModelPicker } from '@/components/chat/model-picker';
 import { PermissionPrompt } from '@/components/chat/permission-prompt';
@@ -11,19 +11,22 @@ import { Button } from '@/components/ui/button';
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AuditPanel } from '@/components/workbench/audit-panel';
 import { ChangesPanel } from '@/components/workbench/changes-panel';
 import { FilesPanel } from '@/components/workbench/files-panel';
 import { PreviewPanel } from '@/components/workbench/preview-panel';
+import { TerminalPanel } from '@/components/workbench/terminal-panel';
 import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-/** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview panels. */
+/** The workbench tabs: Chat + the SDK-powered Files / Changes / Preview /
+ *  Terminal / Audit panels. */
 export function WorkbenchTabs({
   session,
   projectId,
@@ -33,15 +36,32 @@ export function WorkbenchTabs({
   projectId: string;
   sessionId: string;
 }) {
+  // Per-session pending-approval count for the Audit tab badge.
+  const needsInput = useQuery({
+    queryKey: ['approvals-needs-input', projectId],
+    queryFn: () => kortix.project(projectId).approvals.sessionsNeedingInput({ showErrors: false }),
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const pendingCount = needsInput.data?.sessions?.[sessionId] ?? 0;
+
   return (
     <Tabs defaultValue="chat" className="flex min-h-0 flex-1 flex-col gap-0">
       <div className="px-5 pt-3.5">
         <TabsList>
-          {(['chat', 'files', 'changes', 'preview'] as const).map((v) => (
+          {(['chat', 'files', 'changes', 'preview', 'terminal'] as const).map((v) => (
             <TabsTrigger key={v} value={v} className="px-3.5 capitalize">
               {v}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="audit" className="gap-1.5 px-3.5">
+            Audit
+            {pendingCount > 0 && (
+              <span className="grid size-4 place-items-center rounded-full bg-amber-500/20 text-[0.65rem] font-medium tabular-nums text-amber-500">
+                {pendingCount}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
       </div>
       <TabsContent
@@ -59,6 +79,17 @@ export function WorkbenchTabs({
       <TabsContent value="preview" className="min-h-0 flex-1 overflow-hidden p-4">
         <PreviewPanel projectId={projectId} sessionId={sessionId} />
       </TabsContent>
+      {/* forceMount keeps the shell's WebSocket alive across tab switches. */}
+      <TabsContent
+        value="terminal"
+        forceMount
+        className="min-h-0 flex-1 overflow-hidden p-4 data-[state=inactive]:hidden"
+      >
+        <TerminalPanel projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="audit" className="min-h-0 flex-1 overflow-hidden p-4">
+        <AuditPanel projectId={projectId} sessionId={sessionId} />
+      </TabsContent>
     </Tabs>
   );
 }
@@ -75,6 +106,42 @@ function Thread({ session: c }: { session: UseSessionResult }) {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [c.messages, c.isBusy, c.hasPending]);
+
+  // Attachments: upload into the session workspace (`session.files.upload`),
+  // then weave the workspace paths into the outgoing prompt — the agent reads
+  // them from disk like any other file.
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const attachFiles = (files: File[]) => {
+    for (const file of files) {
+      setAttachments((prev) => [
+        ...prev.filter((a) => a.name !== file.name),
+        { name: file.name, path: null },
+      ]);
+      kortix
+        .session(c.projectId, c.sessionId)
+        // The daemon only accepts absolute paths under its allowed roots
+        // (/workspace, /tmp, …) — a bare relative dir 403s.
+        .files.upload(file, '/workspace/uploads')
+        .then((results) => {
+          const path = results[0]?.path ?? `/workspace/uploads/${file.name}`;
+          setAttachments((prev) => prev.map((a) => (a.name === file.name ? { ...a, path } : a)));
+        })
+        .catch(() => {
+          setAttachments((prev) =>
+            prev.map((a) => (a.name === file.name ? { ...a, error: true } : a)),
+          );
+          toast.error(`Could not upload ${file.name}`);
+        });
+    }
+  };
+  const sendWithAttachments = (text: string) => {
+    const paths = attachments.filter((a) => a.path).map((a) => `- ${a.path}`);
+    const finalText = paths.length
+      ? `${text}\n\nAttached files (already in the workspace):\n${paths.join('\n')}`
+      : text;
+    c.send(finalText);
+    setAttachments([]);
+  };
 
   // ── Runtime recovery ──────────────────────────────────────────────────────
   // Sandboxes idle-stop (and die) in the real world. Rather than silently
@@ -237,7 +304,7 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             </div>
           ) : null}
           <Composer
-            onSend={c.send}
+            onSend={sendWithAttachments}
             onStop={c.cancel}
             busy={c.isBusy}
             disabled={!runtimeReady}
@@ -246,6 +313,11 @@ function Thread({ session: c }: { session: UseSessionResult }) {
             }
             commands={c.commands}
             onCommand={c.runCommand}
+            attachments={attachments}
+            onAttachFiles={attachFiles}
+            onRemoveAttachment={(name) =>
+              setAttachments((prev) => prev.filter((a) => a.name !== name))
+            }
             toolbar={
               <div className="flex items-center gap-0.5">
                 <ModelPicker models={c.models} value={c.picks.model} onChange={c.picks.setModel} />

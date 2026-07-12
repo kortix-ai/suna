@@ -1252,6 +1252,12 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.75.2
         version: 5.101.2(react@19.1.0)
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

@@ -14,9 +14,9 @@ import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn, relativeTime } from '@/lib/utils';
 import { generateSessionId } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, FolderX, Plus, Settings } from 'lucide-react';
+import { ArrowLeft, ChartNoAxesColumn, FolderX, Inbox, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 const STATUS_DOT: Record<string, string> = {
@@ -40,6 +40,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   const params = useParams();
   const projectId = String(params.id);
   const activeSessionId = params.sessionId ? String(params.sessionId) : null;
+  const pathname = usePathname();
   const router = useRouter();
   const qc = useQueryClient();
 
@@ -50,6 +51,16 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     retry: (count, err) => !isAccessError(err) && count < 2,
   });
   const denied = project.isError && isAccessError(project.error);
+
+  // Total pending-approval count across the project → the Review badge.
+  const needsInput = useQuery({
+    queryKey: ['approvals-needs-input', projectId],
+    queryFn: () => kortix.project(projectId).approvals.sessionsNeedingInput({ showErrors: false }),
+    refetchInterval: denied ? false : 30_000,
+    enabled: !denied,
+    retry: false,
+  });
+  const reviewBadge = needsInput.data?.total ?? 0;
   const sessions = useQuery({
     queryKey: qk.sessions(projectId),
     queryFn: () => kortix.project(projectId).sessions.list(),
@@ -109,6 +120,25 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
+        <nav className="space-y-0.5 px-2 pb-2">
+          <RailLink
+            href={`/projects/${projectId}/review`}
+            active={pathname === `/projects/${projectId}/review`}
+            icon={<Inbox className="size-4" />}
+            label="Review"
+            badge={reviewBadge}
+          />
+          <RailLink
+            href={`/projects/${projectId}/usage`}
+            active={pathname === `/projects/${projectId}/usage`}
+            icon={<ChartNoAxesColumn className="size-4" />}
+            label="Usage"
+          />
+        </nav>
+
+        <div className="px-5 pb-1 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground/70">
+          Sessions
+        </div>
         <ScrollArea className="flex-1 px-2">
           <div className="space-y-0.5 pb-3">
             {sessions.isLoading &&
@@ -155,6 +185,40 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex min-w-0 flex-1 flex-col">{children}</main>
     </div>
+  );
+}
+
+function RailLink({
+  href,
+  active,
+  icon,
+  label,
+  badge,
+}: {
+  href: string;
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  badge?: number;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+        active
+          ? 'bg-sidebar-accent text-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+      )}
+    >
+      <span className="shrink-0 text-muted-foreground">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="grid size-4 shrink-0 place-items-center rounded-full bg-amber-500/20 text-[0.65rem] font-medium tabular-nums text-amber-500">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </Link>
   );
 }
 

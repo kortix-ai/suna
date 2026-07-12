@@ -46,26 +46,31 @@ SDK-only rule, the same way raw `fetch` is correct *inside* `@kortix/sdk` itself
 | Route | SDK surface |
 | --- | --- |
 | `/` | projects dashboard + create (`projects.list`, `projects.provision`) |
-| `/account` | accounts + members + invites (`accounts.*`, `projects.listForAccount`) |
+| `/account` | accounts + members + invites + billing + API keys + audit log (`accounts.*`, `billing.*`, `accounts.tokens.*`, `accounts.audit.log`, `projects.listForAccount`) |
 | `/projects/[id]` | new-session onboarding (`sessions.create`, `sandboxTemplates`, `onboardingComplete`) |
-| `/projects/[id]/sessions/[sessionId]` | chat · Files · Changes · Preview tabs + session actions |
-| `/projects/[id]/settings` | General · Capabilities · Secrets · Members · Connectors · Triggers · Policies |
+| `/projects/[id]/sessions/[sessionId]` | chat · Files · Changes · Preview · Terminal · Audit tabs + session actions (incl. Stop runtime + Export transcript) |
+| `/projects/[id]/review` | Review Center — review inbox + pending tool approvals (`review.*`, `approvals.*`) |
+| `/projects/[id]/usage` | LLM gateway observability — overview/models/sessions/logs/budgets/keys (`gateway.*`) |
+| `/projects/[id]/settings` | General · Capabilities · Secrets · Members · Connectors · Channels · Triggers · Policies · Apps |
 | `/usage` | wrapper-mode only — per-session LLM + compute cost, marked up (`/api/usage`) |
 
 ### Facade coverage
 
-This reference exercises **the core `@kortix/sdk` facade a chat-first product
-needs** — every method listed below has a real UI surface (a deliberate goal
-so nothing in this list is left undemonstrated). Newer platform-admin surfaces
-— Review Center, Approvals, Gateway observability, Slack/email/Meet channels,
-project apps/deployments — aren't part of this lightweight reference; they live
-in `apps/web`:
+This reference exercises **the `@kortix/sdk` facade end to end** — chat-first
+core plus the product surfaces around it (review/approvals, gateway
+observability, channels, apps, billing reads, account tokens + audit). Every
+method listed below has a real UI surface (a deliberate goal so nothing in
+this list is left undemonstrated). Still out of scope: enterprise IAM
+(SSO/SCIM/groups), Stripe checkout flows, the marketplace, and the platform
+admin console — operator surfaces that live in `apps/web`:
 
-- **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites`
+- **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites` · `tokens.{list,create,revoke}` · `audit.log`
+- **billing** (`/account`, read-only): `accountState/transactions/transactionsSummary/creditBreakdown`
 - **projects**: `list/listForAccount/provision/get/detail/update/archive/llmCatalog/sandboxHealth/sandboxTemplates`
-- **project(id)**: `onboardingComplete` · `secrets.{list,upsert,remove,setPersonal,removePersonal,setGitCredential}` · `access.{list,invite,update,revoke,requests,approveRequest,rejectRequest,pendingInvites,resendInvite,revokeInvite,groupGrants}` · `connectors.{list,config,create,remove,sync}` · `policies.{list,set}` · `triggers.{list,create,update,remove,fire,setActivation}` · `files.{list,read,search,history,archive}` · `git.{commits,commit,commitDiff,branches,versionDiff}` · `changeRequests.{list,get,diff,mergePreview,open,merge,close,reopen}`
-- **session(pid,sid)**: `get/update/delete/start/restart/setSharing/previews/commit · publicShares.{list,create,revoke} · health/previewUrl/proxyUrl/setModel/send/abort/stream` (`stream` is the framework-free SSE facade for non-React hosts — a server-side wrapper, worker, or CLI; React hosts get the same events through `useSession`)
-- **react** (`@kortix/sdk/react`): `useSession(projectId, sessionId)` — the one hook powering the workbench (start/switch/SSE/canonical id/messages/send/abort/questions/permissions/models/agents/picks), see "The chat runtime" below — plus `useProjectModels`/`useVisibleAgents`/`useProjectConfig`/`writeStartStash` (new-session onboarding, `/projects/[id]`) and `answerQuestion`/`answerPermission` (interactive-prompt replies, called directly by `question-prompt.tsx`/`permission-prompt.tsx`)
+- **project(id)**: `onboardingComplete` · `updateExperimentalFeature` · `secrets.{list,upsert,remove,setPersonal,removePersonal,setGitCredential}` · `access.{list,invite,update,revoke,requests,approveRequest,rejectRequest,pendingInvites,resendInvite,revokeInvite,groupGrants}` · `connectors.{list,config,create,remove,sync}` · `channels.{slack,email,meet}.*` · `policies.{list,set}` · `triggers.{list,create,update,remove,fire,setActivation}` · `files.{list,read,search,history,archive}` · `git.{commits,commit,commitDiff,branches,versionDiff}` · `changeRequests.{list,get,diff,mergePreview,open,merge,close,reopen}` · `review.{list,act,bulkAct}` · `approvals.{list,resolve,sessionsNeedingInput}` · `gateway.{overview,series,breakdown,sessions,errors,logs,budgets,setBudget,deleteBudget,keys,createKey,revokeKey}` · `apps.{list,create,remove,deploy,stop,logs}`
+- **session(pid,sid)**: `get/update/delete/start/restart/stop/setSharing/previews/commit · publicShares.{list,create,revoke} · audit · health/previewUrl/proxyUrl/setModel/send/abort/stream · files.upload` (`stream` is the framework-free SSE facade for non-React hosts — a server-side wrapper, worker, or CLI; React hosts get the same events through `useSession`)
+- **root helpers**: `formatTranscript`/`getTranscriptFilename` (the Export-transcript action in the session header — pure `MessageWithParts[]` → Markdown, no extra API call)
+- **react** (`@kortix/sdk/react`): `useSession(projectId, sessionId)` — the one hook powering the workbench (start/switch/SSE/canonical id/messages/send/abort/questions/permissions/models/agents/picks), see "The chat runtime" below — plus `useProjectModels`/`useVisibleAgents`/`useProjectConfig`/`writeStartStash` (new-session onboarding, `/projects/[id]`), `answerQuestion`/`answerPermission` (interactive-prompt replies, called directly by `question-prompt.tsx`/`permission-prompt.tsx`), and the PTY quartet `useOpenCodePtyList`/`useCreatePty`/`useRemovePty`/`useUpdatePty` + `getPtyWebSocketUrl` (the Terminal tab, `workbench/terminal-panel.tsx`)
 
 Every Kortix call goes through the one client created in `src/lib/kortix.ts`:
 

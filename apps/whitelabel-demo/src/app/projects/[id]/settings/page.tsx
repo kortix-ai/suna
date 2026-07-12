@@ -1,7 +1,9 @@
 'use client';
 
 import { ProjectShell } from '@/components/project-shell';
+import { AppsTab } from '@/components/settings/apps-tab';
 import { CapabilitiesTab } from '@/components/settings/capabilities-tab';
+import { ChannelsTab } from '@/components/settings/channels-tab';
 import { ConnectorsTab } from '@/components/settings/connectors-tab';
 import { MembersTab } from '@/components/settings/members-tab';
 import { PoliciesTab } from '@/components/settings/policies-tab';
@@ -33,8 +35,10 @@ const TABS = [
   'secrets',
   'members',
   'connectors',
+  'channels',
   'triggers',
   'policies',
+  'apps',
 ] as const;
 
 export default function SettingsPage() {
@@ -45,9 +49,9 @@ export default function SettingsPage() {
         <div className="mx-auto max-w-2xl px-6 py-8">
           <h1 className="text-xl font-semibold tracking-tight">Project settings</h1>
           <Tabs defaultValue="general" className="mt-6">
-            <TabsList className="flex-wrap">
+            <TabsList className="w-full justify-start overflow-x-auto scrollbar-thin">
               {TABS.map((t) => (
-                <TabsTrigger key={t} value={t} className="capitalize">
+                <TabsTrigger key={t} value={t} className="shrink-0 capitalize">
                   {t}
                 </TabsTrigger>
               ))}
@@ -67,11 +71,17 @@ export default function SettingsPage() {
             <TabsContent value="connectors" className="mt-5">
               <ConnectorsTab projectId={projectId} />
             </TabsContent>
+            <TabsContent value="channels" className="mt-5">
+              <ChannelsTab projectId={projectId} />
+            </TabsContent>
             <TabsContent value="triggers" className="mt-5">
               <TriggersTab projectId={projectId} />
             </TabsContent>
             <TabsContent value="policies" className="mt-5">
               <PoliciesTab projectId={projectId} />
+            </TabsContent>
+            <TabsContent value="apps" className="mt-5">
+              <AppsTab projectId={projectId} />
             </TabsContent>
           </Tabs>
         </div>
@@ -142,9 +152,7 @@ function GeneralTab() {
 
   const p = project.data;
   const repoUrl: string | undefined = p?.repo_url || undefined;
-  const repoLabel = repoUrl
-    ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '')
-    : undefined;
+  const repoLabel = repoUrl ? repoUrl.replace(/^https?:\/\//, '').replace(/\.git$/, '') : undefined;
   const baseRef: string | undefined = p?.default_branch || undefined;
 
   return (
