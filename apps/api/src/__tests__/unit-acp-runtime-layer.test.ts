@@ -26,6 +26,8 @@ describe('ACP sandbox runtime layer', () => {
       `@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}`,
     );
     expect(dockerfile).toContain(`pi-acp@${PI_ACP_VERSION}`);
+    expect(dockerfile).toContain('n 22.23.1');
+    expect(dockerfile).toContain('node --version | grep -Fx "v22.23.1"');
     expect(dockerfile).toContain('command -v claude-agent-acp');
     expect(dockerfile).toContain('command -v codex-acp');
     expect(dockerfile).toContain('command -v pi-acp');

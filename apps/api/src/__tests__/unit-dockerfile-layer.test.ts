@@ -36,7 +36,7 @@ describe('buildLayeredDockerfile', () => {
     expect(merged).toContain('"openpyxl>=3.1"');
     expect(merged).toContain('"pandas>=2.2"');
     expect(merged).toContain('"playwright>=1.58"');
-    expect(merged).toContain('importlib.import_module(mod)');
+    expect(merged).toContain('importlib.import_module(m)');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.

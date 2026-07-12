@@ -408,8 +408,16 @@ export async function createProjectSession(input: {
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
+  const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
+  // V3's manifest is the source of truth. Newly provisioned projects may not
+  // have mirrored default_agent into project metadata yet, so resolve it from
+  // kortix.yaml before falling back to the legacy "default" sentinel.
+  let loadedAgentsForDefault: Awaited<ReturnType<typeof loadProjectAgents>> | null = null;
+  if (!requestedAgent && !projectDefaultAgent) {
+    loadedAgentsForDefault = await loadProjectAgents(project);
+  }
   const agentName =
-    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+    requestedAgent ?? projectDefaultAgent ?? loadedAgentsForDefault?.defaultAgent ?? 'default';
   // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
   // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
   // platform-wide flag, or a project stamped `metadata.require_declared_agents`
@@ -421,7 +429,7 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = await loadProjectAgents(project);
+    const loadedAgents = loadedAgentsForDefault ?? await loadProjectAgents(project);
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,

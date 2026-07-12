@@ -111,7 +111,7 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
 // sandbox image (bun install succeeded; the runtime bundle did not).
-const RUNTIME_LAYER_VERSION = 'acp-harness-adapters-v25';
+const RUNTIME_LAYER_VERSION = 'acp-harness-node22-v26';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);

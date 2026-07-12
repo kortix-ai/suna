@@ -265,6 +265,13 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // equivalent (still fails the layer if any module is missing) and portable.
     '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
+    // Ubuntu 24.04 ships Node 18, while the official Claude ACP adapter
+    // requires Node >=22 and Pi requires >=20. Upgrade Node before installing
+    // any harness package; otherwise npm's engine check aborts the image build.
+    'RUN npm install -g --no-audit --no-fund "n@10.2.0" \\',
+    '    && n 22.23.1 \\',
+    '    && node --version | grep -Fx "v22.23.1"',
+    '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version',
