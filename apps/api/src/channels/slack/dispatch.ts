@@ -54,6 +54,65 @@ import type {
 
 export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
+// Every path that creates/rebinds a chat_channel_bindings row calls this so the
+// web Channels settings page can show the real Slack channel name instead of
+// falling back to the raw channel id (e.g. `C0AENS5MHK9`). Previously only the
+// multi-project "which project?" picker path persisted `channel_name` — the
+// common single-project auto-bind case left it NULL forever. Cheap by design:
+// a DB read first, and the Slack API call only fires when a name isn't already
+// stored, so steady-state dispatch (called on every event) costs one SELECT.
+// Best-effort — a Slack API hiccup here must never break message handling.
+// Returns the resolved (already-stored or freshly-fetched) name, or null, so
+// a caller that needs it for immediate display (the settings-page GET) doesn't
+// have to re-query after this writes it.
+export async function backfillChannelName(
+  teamId: string,
+  channelId: string,
+  projectId: string,
+): Promise<string | null> {
+  if (!teamId || !channelId || !projectId) return null;
+  try {
+    const [row] = await db
+      .select({ channelName: chatChannelBindings.channelName })
+      .from(chatChannelBindings)
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'slack'),
+          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.channelId, channelId),
+        ),
+      )
+      .limit(1);
+    if (!row) return null;
+    if (row.channelName) return row.channelName;
+    const token = await loadSlackTokenForProject(projectId);
+    if (!token) return null;
+    // Returns null for DMs (no `name` field on the conversation) — fine, the
+    // UI's `channelName ?? channelId` fallback already handles that case.
+    const channelName = await getChannelName(token, channelId);
+    if (!channelName) return null;
+    await db
+      .update(chatChannelBindings)
+      .set({ channelName })
+      .where(
+        and(
+          eq(chatChannelBindings.platform, 'slack'),
+          eq(chatChannelBindings.workspaceId, teamId),
+          eq(chatChannelBindings.channelId, channelId),
+        ),
+      );
+    return channelName;
+  } catch (err) {
+    console.warn('[slack-webhook] channel-name backfill failed (non-fatal)', err);
+    return null;
+  }
+}
+
+// NOTE: deliberately does NOT call backfillChannelName — this runs on EVERY
+// Slack event, and the name is already captured on first-bind (the auto-bind
+// branch in resolveOauthProject below, or the picker flow in interactivity.ts)
+// plus lazily on the settings-page GET for any pre-existing NULL row. Adding a
+// lookup here would cost an extra query per message forever for zero benefit.
 export async function ensureProjectChannelBinding(
   projectId: string,
   teamId: string,
@@ -110,6 +169,7 @@ export async function resolveOauthProject(
         .onConflictDoNothing({
           target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
         });
+      await backfillChannelName(teamId, channelId, onlyProjectId);
     }
     return { kind: 'project', projectId: onlyProjectId };
   }
