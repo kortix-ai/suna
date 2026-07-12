@@ -48,8 +48,6 @@ export interface ProjectSession {
   error: string | null;
   metadata: Record<string, unknown>;
   runtime_sessions: ProjectRuntimeSession[];
-  /** @deprecated Compatibility alias for v1/v2 OpenCode-shaped session metadata. Use runtime_sessions. */
-  opencode_sessions?: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;

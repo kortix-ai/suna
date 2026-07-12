@@ -90,7 +90,6 @@ const existingSession: ProjectSession = {
   error: null,
   metadata: {},
   runtime_sessions: [],
-  opencode_sessions: [],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-02T00:00:00Z',
 };
@@ -121,7 +120,6 @@ const newSession: ProjectSession = {
   error: null,
   metadata: {},
   runtime_sessions: [],
-  opencode_sessions: [],
   created_at: '2026-01-03T00:00:00Z',
   updated_at: '2026-01-03T00:00:00Z',
 };
