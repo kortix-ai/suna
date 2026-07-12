@@ -12,7 +12,7 @@ import { Alert, Animated, FlatList, Pressable, RefreshControl, ScrollView, TextI
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, X } from 'lucide-react-native';
+import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, Sparkles, X } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -28,6 +28,8 @@ import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
 import { useAuthContext } from '@/contexts';
 import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
+import { useAccountState, accountStateSelectors } from '@/lib/billing/hooks';
 import { haptics } from '@/lib/haptics';
 import { projectToRow } from '@/lib/ui/format';
 import { chalkColors } from '@kortix/shared';
@@ -60,6 +62,7 @@ export default function ProjectsTab() {
   const tabBarClearance = useTabBarClearance();
 
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const openUpgradeSheet = useUpgradeSheetStore((s) => s.openUpgradeSheet);
   const [query, setQuery] = React.useState('');
   const [accountSheetOpen, setAccountSheetOpen] = React.useState(false);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
@@ -86,6 +89,24 @@ export default function ProjectsTab() {
   const activeAccountId = activeAccount?.account_id ?? null;
 
   const projectsQuery = useProjects(activeAccountId);
+
+  // Free-tier users get an Upgrade CTA that opens the global upgrade sheet.
+  // Gate on a loaded account state so paid users never see it flash.
+  const accountStateQuery = useAccountState({
+    accountId: activeAccountId ?? undefined,
+    enabled: !!activeAccountId,
+  });
+  const tierKey = accountStateSelectors.tierKey(accountStateQuery.data);
+  const showUpgrade = !!accountStateQuery.data && (tierKey === 'free' || tierKey === 'none');
+
+  const openUpgrade = React.useCallback(() => {
+    haptics.selection();
+    openUpgradeSheet({
+      reason: 'subscription_required',
+      accountId: activeAccountId ?? undefined,
+      message: '',
+    });
+  }, [openUpgradeSheet, activeAccountId]);
 
   const filtered: KortixProject[] = React.useMemo(() => {
     const items = projectsQuery.data ?? [];
@@ -230,6 +251,12 @@ export default function ProjectsTab() {
           </View>
 
           <View className="flex-row items-center gap-2">
+            {showUpgrade && (
+              <Button variant="secondary" size="sm" onPress={openUpgrade}>
+                <Icon as={Sparkles} size={15} className="text-kortix-blue" strokeWidth={2.4} />
+                <Text className="font-medium text-sm">Upgrade</Text>
+              </Button>
+            )}
             {canCreate && (
               <Button
                 variant="default"

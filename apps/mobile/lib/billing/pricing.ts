@@ -6,7 +6,7 @@
  */
 
 import { useProductionStripeIds, ENV_MODE } from '@/lib/utils/env-config';
-import { Sparkles, Zap, Rocket, Crown } from 'lucide-react-native';
+import { Sparkles, Zap, Rocket, Crown, Users, Building2 } from 'lucide-react-native';
 
 export interface PricingTier {
   id: string;  // Backend tier key (e.g., 'free', 'tier_2_20')
@@ -142,6 +142,89 @@ export const PRICING_TIERS: PricingTier[] = [
     revenueCatId: 'kortix_ultra',
   },
 ];
+
+// =============================================================================
+// WEB-SYNCED PLANS (Billing v2 — per-seat)
+//
+// Source of truth: apps/web/src/features/billing/pricing-plans.ts
+// Mobile has NO in-app purchase — plans are display-only and the "Get Started"
+// button sends users to the web pricing page to subscribe. Keep this array in
+// sync with the web file above; only `icon` is mobile-specific.
+//
+// (The legacy `PRICING_TIERS` above is retained for the disabled RevenueCat
+// path and tier-key → name mapping; it is not shown in the plans UI.)
+// =============================================================================
+
+export type PricingPlanId = 'free' | 'team' | 'enterprise';
+
+export type UpgradeModalPlanId = Exclude<PricingPlanId, 'enterprise'>;
+
+export interface PricingPlan {
+  id: PricingPlanId;
+  name: string;
+  price: string;
+  unit?: string;
+  note: string;
+  highlight?: boolean;
+  badge?: string;
+  features: string[];
+  icon?: any; // mobile-only: React component for the card icon
+}
+
+export const PRICING_PLANS: PricingPlan[] = [
+  {
+    id: 'free',
+    name: 'Free',
+    price: '$0',
+    note: 'Start with real sandbox credits.',
+    icon: Sparkles,
+    features: [
+      '200 credits / month for sandbox compute',
+      '3 projects',
+      'Bring your own API key for any premium model',
+      'Connect your ChatGPT subscription',
+    ],
+  },
+  {
+    id: 'team',
+    name: 'Team',
+    price: '$40',
+    unit: '/ seat / mo',
+    note: 'For teams running real work on agents.',
+    highlight: true,
+    badge: 'Most popular',
+    icon: Users,
+    features: [
+      'Everything in Free',
+      '2,500 credits / month per seat, pooled',
+      'Access to the latest AI models',
+      'BYOK and ChatGPT subscription still supported',
+      'Up to 200 projects, up to 100 seats',
+      'Top up credits anytime',
+      'Support via email',
+    ],
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    price: 'Custom',
+    note: 'Scale, security, and your deployment.',
+    icon: Building2,
+    features: [
+      'Everything in Team',
+      'SAML SSO + SCIM directory sync',
+      'Advanced RBAC + audit logs',
+      'Cloud, VPC, or on-prem',
+      'BYOK, ChatGPT subscription, and managed model controls',
+      'SLA, DPA & dedicated support',
+    ],
+  },
+];
+
+/** Plans shown in the in-app upgrade surface — action-focused, no Enterprise card. */
+export const UPGRADE_MODAL_PLANS = PRICING_PLANS.filter(
+  (plan): plan is PricingPlan & { id: UpgradeModalPlanId } => plan.id !== 'enterprise',
+);
 
 export type BillingPeriod = 'monthly' | 'yearly' | 'yearly_commitment';
 
