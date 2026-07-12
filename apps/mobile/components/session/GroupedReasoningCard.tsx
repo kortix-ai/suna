@@ -16,7 +16,7 @@
 
 import { Icon } from '@/components/ui/icon';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import type { ReasoningPart } from '@/lib/opencode/types';
+import type { ReasoningPart } from '@/lib/runtime/types';
 import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useMemo } from 'react';

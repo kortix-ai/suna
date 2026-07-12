@@ -11,7 +11,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getAuthToken } from '@/api/config';
 import { COST_MARKUP } from '@kortix/sdk/turns';
-import type { MessageWithParts } from '@/lib/opencode/types';
+import type { MessageWithParts } from '@/lib/runtime/types';
 
 export type SessionStats = {
   messageCount: number;

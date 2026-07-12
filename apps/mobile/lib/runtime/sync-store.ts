@@ -1,10 +1,10 @@
 /**
- * OpenCode Sync Store — Zustand store for session messages/parts.
+ * Runtime sync store — Zustand store for session messages/parts.
  *
  * This is the SINGLE SOURCE OF TRUTH for all message data (not React Query).
  * SSE events update this store incrementally; the UI reads from it.
  *
- * Mirrors the Computer frontend's opencode-sync-store.ts pattern.
+ * Mirrors the Computer frontend's runtime sync-store pattern.
  */
 
 import { create } from 'zustand';

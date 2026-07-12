@@ -1,7 +1,7 @@
 /**
  * Local config hook — manages selected agent, model, and variant state.
  *
- * Mirrors the frontend's use-opencode-local.ts pattern:
+ * Mirrors the frontend's runtime-local config pattern:
  * - Persists per-agent model selections
  * - Resolves model fallback chain
  * - Manages variant (thinking mode) cycling
@@ -10,7 +10,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Agent, FlatModel, OpenCodeConfig } from './use-opencode-data';
+import type { Agent, FlatModel, RuntimeConfig } from './use-runtime-data';
 
 // ─── Persistent store ────────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ export const useLocalConfigStore = create<LocalConfigState>()(
         }),
     }),
     {
-      name: 'opencode-local-config',
+      name: 'runtime-local-config',
       storage: createJSONStorage(() => AsyncStorage),
     },
   ),
@@ -98,7 +98,7 @@ export interface ResolvedConfig {
 export function useResolvedConfig(
   agents: Agent[],
   models: FlatModel[],
-  config: OpenCodeConfig | undefined,
+  config: RuntimeConfig | undefined,
   defaults: Record<string, string>,
 ): ResolvedConfig {
   const store = useLocalConfigStore();

@@ -1,14 +1,14 @@
 /**
- * useCompactSession — triggers session compaction via the OpenCode summarize API.
+ * useCompactSession — triggers session compaction via the runtime summarize API.
  *
- * Mirrors the frontend's useSummarizeOpenCodeSession():
+ * Mirrors the frontend's runtime-session summarizer:
  *  1. Resolve providerID/modelID from config → session messages → provider list
  *  2. POST /session/{id}/summarize
  *  3. SSE `session.compacted` event handles message rehydration
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { opencodeFetch } from './use-opencode-data';
+import { runtimeFetch } from './use-runtime-data';
 import { platformKeys } from '@/lib/platform/hooks';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
@@ -31,7 +31,7 @@ async function resolveModel(sandboxUrl: string, sessionId: string): Promise<{ pr
   try {
     // Read /global/config so the model default survives sandbox dispose.
     // Matches web aa7ed87.
-    const config = await opencodeFetch<any>(sandboxUrl, '/global/config');
+    const config = await runtimeFetch<any>(sandboxUrl, '/global/config');
     if (config?.model) {
       const parts = (config.model as string).split('/');
       if (parts.length >= 2) {
@@ -46,7 +46,7 @@ async function resolveModel(sandboxUrl: string, sessionId: string): Promise<{ pr
 
   // 2. Try latest assistant message
   try {
-    const msgs = await opencodeFetch<any[]>(sandboxUrl, `/session/${sessionId}/message`);
+    const msgs = await runtimeFetch<any[]>(sandboxUrl, `/session/${sessionId}/message`);
     if (msgs && Array.isArray(msgs)) {
       for (let i = msgs.length - 1; i >= 0; i--) {
         const m = msgs[i]?.info;
@@ -62,7 +62,7 @@ async function resolveModel(sandboxUrl: string, sessionId: string): Promise<{ pr
 
   // 3. Try first available provider/model
   try {
-    const providers = await opencodeFetch<any>(sandboxUrl, '/provider');
+    const providers = await runtimeFetch<any>(sandboxUrl, '/provider');
     if (providers?.all && Array.isArray(providers.all)) {
       const connectedSet = new Set(providers.connected || []);
       for (const provider of providers.all) {
@@ -94,8 +94,8 @@ export function useCompactSession() {
 
       log.log(`[Compact] Calling summarize for session ${sessionId} with ${providerID}/${modelID}`);
 
-      // Use opencodeFetch which handles auth properly
-      await opencodeFetch<boolean>(sandboxUrl, `/session/${sessionId}/summarize`, {
+      // Use runtimeFetch which handles auth properly
+      await runtimeFetch<boolean>(sandboxUrl, `/session/${sessionId}/summarize`, {
         method: 'POST',
         body: JSON.stringify({ providerID, modelID }),
       });

@@ -1,7 +1,6 @@
 /**
- * Data hooks for fetching agents, providers, and models from the OpenCode server.
- *
- * Mirrors the frontend's use-opencode-sessions.ts agent/provider fetching.
+ * Runtime data hooks for fetching agents, providers, and models from the
+ * session runtime endpoint.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -65,7 +64,7 @@ export interface FlatModel {
   cost?: { input: number; output: number };
 }
 
-export interface OpenCodeConfig {
+export interface RuntimeConfig {
   model?: string; // "provider/modelId"
   agent?: string;
   [key: string]: unknown;
@@ -73,7 +72,7 @@ export interface OpenCodeConfig {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export async function opencodeFetch<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
+export async function runtimeFetch<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
   const token = await getAuthToken();
   const res = await fetch(`${sandboxUrl}${path}`, {
     ...init,
@@ -85,7 +84,7 @@ export async function opencodeFetch<T>(sandboxUrl: string, path: string, init?: 
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`OpenCode ${path}: ${res.status} ${body}`);
+    throw new Error(`Runtime ${path}: ${res.status} ${body}`);
   }
   return res.json();
 }
@@ -222,25 +221,25 @@ export interface McpStatus {
   error?: string;
 }
 
-export const opencodeKeys = {
-  agents: (url: string) => ['opencode', 'agents', url] as const,
-  providers: (url: string) => ['opencode', 'providers', url] as const,
-  config: (url: string) => ['opencode', 'config', url] as const,
-  commands: (url: string) => ['opencode', 'commands', url] as const,
-  skills: (url: string) => ['opencode', 'skills', url] as const,
-  projects: (url: string) => ['opencode', 'projects', url] as const,
-  toolIds: (url: string) => ['opencode', 'toolIds', url] as const,
-  mcpStatus: (url: string) => ['opencode', 'mcpStatus', url] as const,
+export const runtimeKeys = {
+  agents: (url: string) => ['runtime', 'agents', url] as const,
+  providers: (url: string) => ['runtime', 'providers', url] as const,
+  config: (url: string) => ['runtime', 'config', url] as const,
+  commands: (url: string) => ['runtime', 'commands', url] as const,
+  skills: (url: string) => ['runtime', 'skills', url] as const,
+  projects: (url: string) => ['runtime', 'projects', url] as const,
+  toolIds: (url: string) => ['runtime', 'toolIds', url] as const,
+  mcpStatus: (url: string) => ['runtime', 'mcpStatus', url] as const,
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
-export function useOpenCodeAgents(sandboxUrl: string | undefined) {
+export function useRuntimeAgents(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.agents(sandboxUrl || ''),
+    queryKey: runtimeKeys.agents(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      const agents = await opencodeFetch<Agent[]>(sandboxUrl, '/agent');
+      const agents = await runtimeFetch<Agent[]>(sandboxUrl, '/agent');
       return agents.filter((a) => !a.hidden);
     },
     enabled: !!sandboxUrl,
@@ -248,26 +247,26 @@ export function useOpenCodeAgents(sandboxUrl: string | undefined) {
   });
 }
 
-export function useOpenCodeProviders(sandboxUrl: string | undefined) {
+export function useRuntimeProviders(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.providers(sandboxUrl || ''),
+    queryKey: runtimeKeys.providers(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<ProviderListResponse>(sandboxUrl, '/provider');
+      return runtimeFetch<ProviderListResponse>(sandboxUrl, '/provider');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
   });
 }
 
-export function useOpenCodeConfig(sandboxUrl: string | undefined) {
+export function useRuntimeConfig(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.config(sandboxUrl || ''),
+    queryKey: runtimeKeys.config(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
       // Use /global/config so provider/config changes persist across
       // sandbox dispose. Matches web aa7ed87.
-      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/global/config');
+      return runtimeFetch<RuntimeConfig>(sandboxUrl, '/global/config');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
@@ -281,12 +280,12 @@ export function useOpenCodeConfig(sandboxUrl: string | undefined) {
  * `allModels` is the unfiltered list (for model resolution fallback).
  * `data` is the filtered list (for display in the selector).
  */
-export function useOpenCodeCommands(sandboxUrl: string | undefined) {
+export function useRuntimeCommands(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.commands(sandboxUrl || ''),
+    queryKey: runtimeKeys.commands(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<Command[]>(sandboxUrl, '/command');
+      return runtimeFetch<Command[]>(sandboxUrl, '/command');
     },
     enabled: !!sandboxUrl,
     staleTime: Infinity,
@@ -294,12 +293,12 @@ export function useOpenCodeCommands(sandboxUrl: string | undefined) {
   });
 }
 
-export function useOpenCodeSkills(sandboxUrl: string | undefined) {
+export function useRuntimeSkills(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.skills(sandboxUrl || ''),
+    queryKey: runtimeKeys.skills(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      const skills = await opencodeFetch<Skill[]>(sandboxUrl, '/skill');
+      const skills = await runtimeFetch<Skill[]>(sandboxUrl, '/skill');
       return skills.filter((s) => !s.hidden);
     },
     enabled: !!sandboxUrl,
@@ -308,44 +307,44 @@ export function useOpenCodeSkills(sandboxUrl: string | undefined) {
   });
 }
 
-export function useOpenCodeProjects(sandboxUrl: string | undefined) {
+export function useRuntimeProjects(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.projects(sandboxUrl || ''),
+    queryKey: runtimeKeys.projects(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<Project[]>(sandboxUrl, '/project');
+      return runtimeFetch<Project[]>(sandboxUrl, '/project');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
   });
 }
 
-export function useOpenCodeToolIds(sandboxUrl: string | undefined) {
+export function useRuntimeToolIds(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.toolIds(sandboxUrl || ''),
+    queryKey: runtimeKeys.toolIds(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<string[]>(sandboxUrl, '/experimental/tool/ids');
+      return runtimeFetch<string[]>(sandboxUrl, '/experimental/tool/ids');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
   });
 }
 
-export function useOpenCodeMcpStatus(sandboxUrl: string | undefined) {
+export function useRuntimeMcpStatus(sandboxUrl: string | undefined) {
   return useQuery({
-    queryKey: opencodeKeys.mcpStatus(sandboxUrl || ''),
+    queryKey: runtimeKeys.mcpStatus(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp');
+      return runtimeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
   });
 }
 
-export function useOpenCodeModels(sandboxUrl: string | undefined) {
-  const { data: providers, ...rest } = useOpenCodeProviders(sandboxUrl);
+export function useRuntimeModels(sandboxUrl: string | undefined) {
+  const { data: providers, ...rest } = useRuntimeProviders(sandboxUrl);
   const allModels = providers ? flattenModels(providers) : [];
   const models = filterToLatestModels(allModels);
   const defaults = providers?.default || {};
@@ -354,20 +353,20 @@ export function useOpenCodeModels(sandboxUrl: string | undefined) {
 
 // ─── Config Mutation ────────────────────────────────────────────────────────
 
-export function useUpdateOpenCodeConfig(sandboxUrl: string | undefined) {
+export function useUpdateRuntimeConfig(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (config: Partial<OpenCodeConfig>) => {
+    mutationFn: async (config: Partial<RuntimeConfig>) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
       // Write to /global/config so it survives sandbox dispose.
       // Matches web aa7ed87.
-      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/global/config', {
+      return runtimeFetch<RuntimeConfig>(sandboxUrl, '/global/config', {
         method: 'PATCH',
         body: JSON.stringify({ config }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: opencodeKeys.config(sandboxUrl || '') });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.config(sandboxUrl || '') });
     },
   });
 }
@@ -396,13 +395,13 @@ export function useAddMcpServer(sandboxUrl: string | undefined) {
         config.url = params.url;
         if (params.headers && Object.keys(params.headers).length > 0) config.headers = params.headers;
       }
-      return opencodeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp', {
+      return runtimeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp', {
         method: 'POST',
         body: JSON.stringify({ name: params.name, config }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(sandboxUrl || '') });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
     },
   });
 }
@@ -412,10 +411,10 @@ export function useConnectMcpServer(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (name: string) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/connect`, { method: 'POST' });
+      return runtimeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/connect`, { method: 'POST' });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(sandboxUrl || '') });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
     },
   });
 }
@@ -425,10 +424,10 @@ export function useDisconnectMcpServer(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (name: string) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/disconnect`, { method: 'POST' });
+      return runtimeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/disconnect`, { method: 'POST' });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(sandboxUrl || '') });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
     },
   });
 }
@@ -437,7 +436,7 @@ export function useMcpAuthStart(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (name: string) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<{ authorizationUrl: string }>(sandboxUrl, `/mcp/${encodeURIComponent(name)}/auth`, { method: 'POST' });
+      return runtimeFetch<{ authorizationUrl: string }>(sandboxUrl, `/mcp/${encodeURIComponent(name)}/auth`, { method: 'POST' });
     },
   });
 }
@@ -447,13 +446,13 @@ export function useMcpAuthCallback(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (params: { name: string; code: string }) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<McpStatus>(sandboxUrl, `/mcp/${encodeURIComponent(params.name)}/auth/callback`, {
+      return runtimeFetch<McpStatus>(sandboxUrl, `/mcp/${encodeURIComponent(params.name)}/auth/callback`, {
         method: 'POST',
         body: JSON.stringify({ code: params.code }),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(sandboxUrl || '') });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
     },
   });
 }

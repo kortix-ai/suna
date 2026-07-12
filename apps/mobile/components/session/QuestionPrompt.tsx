@@ -22,7 +22,7 @@ import type {
   QuestionRequest,
   QuestionInfo,
   QuestionAnswer,
-} from '@/lib/opencode/types';
+} from '@/lib/runtime/types';
 
 // ---------------------------------------------------------------------------
 // Props

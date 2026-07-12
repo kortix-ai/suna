@@ -42,9 +42,9 @@ import {
   useArchiveSession,
   useUnarchiveSession,
 } from '@/lib/platform/hooks';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSyncStore } from '@/lib/runtime/sync-store';
 import { getAuthToken } from '@/api/config';
-import type { Session } from '@/lib/opencode/types';
+import type { Session } from '@/lib/runtime/types';
 import { SessionPage } from '@/components/session/SessionPage';
 import {
   SessionConnecting,
@@ -60,12 +60,12 @@ import type { BottomBarRef } from '@/components/session/BottomBar';
 import { TabsOverview } from '@/components/session/TabsOverview';
 import { CommandPalette } from '@/components/session/CommandPalette';
 import {
-  useOpenCodeAgents,
-  useOpenCodeModels,
-  useOpenCodeConfig,
-} from '@/lib/opencode/hooks/use-opencode-data';
-import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+  useRuntimeAgents,
+  useRuntimeModels,
+  useRuntimeConfig,
+} from '@/lib/runtime/hooks/use-runtime-data';
+import { useResolvedConfig } from '@/lib/runtime/hooks/use-local-config';
+import { useCompactSession } from '@/lib/runtime/hooks/use-compact-session';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
@@ -1327,13 +1327,13 @@ export default function ProjectSessionScreen() {
   }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
-  const { data: agents = [] } = useOpenCodeAgents(sessionSandboxUrl);
+  const { data: agents = [] } = useRuntimeAgents(sessionSandboxUrl);
   const {
     data: dashVisibleModels = [],
     allModels: dashAllModels = [],
     defaults: dashDefaults,
-  } = useOpenCodeModels(sessionSandboxUrl);
-  const { data: dashConfig } = useOpenCodeConfig(sessionSandboxUrl);
+  } = useRuntimeModels(sessionSandboxUrl);
+  const { data: dashConfig } = useRuntimeConfig(sessionSandboxUrl);
   const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
 
   // Stable error message (prevents re-render loops from error object identity)

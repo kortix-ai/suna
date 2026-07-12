@@ -1,5 +1,5 @@
 /**
- * OpenCode SSE Event Stream Hook for React Native
+ * Runtime SSE event stream hook for React Native
  *
  * Uses react-native-sse for EventSource support since React Native
  * doesn't have native EventSource or fetch streaming.
@@ -35,7 +35,7 @@ interface SSEEvent {
 // ---------------------------------------------------------------------------
 
 /**
- * Connect to the OpenCode SSE event stream.
+ * Connect to the runtime SSE event stream.
  * Should be mounted ONCE at the app level, after sandbox is ready.
  */
 // Heartbeat — if no events arrive for this long, force a reconnect. Matches
@@ -63,7 +63,7 @@ const FLUSH_DELAY_MS = 0;
 // queue bounded.
 const MAX_QUEUE_SIZE = 200;
 
-export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
+export function useRuntimeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   const syncStore = useSyncStore;
   const esRef = useRef<EventSource | null>(null);

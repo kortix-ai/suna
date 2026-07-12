@@ -1,5 +1,5 @@
 /**
- * OpenCode Session Types for Mobile — framework-agnostic.
+ * Runtime session types for mobile — framework-agnostic.
  *
  * These types mirror the Computer frontend's ui/types.ts but define runtime
  * wire shapes locally instead of importing a native harness SDK.
