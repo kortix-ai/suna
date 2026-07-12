@@ -57,6 +57,7 @@ function ConnectedPanel({
         title={`Connected to ${installation.teamName ?? installation.tenantId}`}
       >
         Tenant <code className="font-mono">{installation.tenantId}</code>
+        {installation.byo ? ' · bring-your-own Azure bot' : ' · managed Kortix bot'}
       </InfoBanner>
 
       <SectionCard title="How to use it">
@@ -96,21 +97,17 @@ function ConnectedPanel({
 }
 
 function DisconnectedPanel({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {
-  if (!mode?.available) {
-    return (
-      <InfoBanner tone="neutral">
-        Microsoft Teams isn’t configured on this server. Set <code className="font-mono">MICROSOFT_APP_ID</code>{' '}
-        and <code className="font-mono">MICROSOFT_APP_PASSWORD</code> to enable it.
-      </InfoBanner>
-    );
-  }
   return <InstallFlow projectId={projectId} mode={mode} />;
 }
 
-function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode }) {
+function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {
+  const managedAvailable = Boolean(mode?.available && !mode.byo);
   const [copied, setCopied] = useState(false);
   const [tenantId, setTenantId] = useState('');
   const [teamName, setTeamName] = useState('');
+  const [byo, setByo] = useState(!managedAvailable);
+  const [appId, setAppId] = useState('');
+  const [appPassword, setAppPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectTeams();
   const manifest = useTeamsManifest(projectId);
@@ -126,10 +123,17 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode }
   const submit = () => {
     setError(null);
     connect.mutate(
-      { projectId, tenant_id: tenantId.trim(), team_name: teamName.trim() || undefined },
+      {
+        projectId,
+        tenant_id: tenantId.trim(),
+        team_name: teamName.trim() || undefined,
+        ...(byo ? { app_id: appId.trim(), app_password: appPassword.trim() } : {}),
+      },
       { onError: (e) => setError((e as Error).message) },
     );
   };
+
+  const canSubmit = tenantId.trim() && (!byo || (appId.trim() && appPassword.trim()));
 
   return (
     <SectionCard
@@ -137,47 +141,91 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode }
       description="Install the Kortix app into your Teams tenant, then bind this project to that tenant."
     >
       <div className="space-y-5">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-              App manifest
-            </span>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={copyManifest} disabled={!manifestText} className="h-7 gap-1.5">
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <a href={mode.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer" className="inline-flex">
-                <Button variant="outline" size="sm" className="h-7 gap-1.5">
-                  Grant admin consent
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              </a>
+        {managedAvailable && !byo ? (
+          <>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                  App manifest
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={copyManifest} disabled={!manifestText} className="h-7 gap-1.5">
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                  <a href={mode?.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                    <Button variant="outline" size="sm" className="h-7 gap-1.5">
+                      Grant admin consent
+                      <ExternalLink className="h-3 w-3" />
+                    </Button>
+                  </a>
+                </div>
+              </div>
+              <pre className="border-border bg-muted/30 max-h-64 overflow-auto rounded-2xl border p-3 text-xs leading-relaxed">
+                {manifest.isLoading
+                  ? 'Loading manifest...'
+                  : manifest.error
+                    ? `Failed to load manifest: ${(manifest.error as Error).message}`
+                    : manifestText}
+              </pre>
+            </div>
+
+            <ol className="space-y-1.5 text-sm">
+              {[
+                'Grant admin consent so the Kortix bot can run in your tenant.',
+                'In Teams Admin Center (or Teams → Apps → Manage your apps → Upload), upload an app package built from the manifest above (plus color.png + outline.png icons).',
+                'Add the app to a chat or channel, then paste your Azure AD tenant ID below to bind it to this project.',
+              ].map((line, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="bg-muted text-muted-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+                    {i + 1}
+                  </span>
+                  <span className="text-muted-foreground">{line}</span>
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+
+        {managedAvailable ? (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={byo} onChange={(e) => setByo(e.target.checked)} />
+            <span className="text-muted-foreground">Bring your own Azure bot instead of the managed Kortix bot</span>
+          </label>
+        ) : (
+          <InfoBanner tone="neutral">
+            No managed Kortix Teams bot is configured on this server. Register a multi-tenant Azure Bot and connect its
+            credentials below; after connecting, point its messaging endpoint at this project&apos;s Teams webhook.
+          </InfoBanner>
+        )}
+
+        {byo ? (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="teams-app-id">Bot app (client) ID</Label>
+              <Input
+                id="teams-app-id"
+                placeholder="00000000-0000-0000-0000-000000000000"
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="teams-app-password">Bot client secret</Label>
+              <Input
+                id="teams-app-password"
+                type="password"
+                placeholder="Client secret value"
+                value={appPassword}
+                onChange={(e) => setAppPassword(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
             </div>
           </div>
-          <pre className="border-border bg-muted/30 max-h-64 overflow-auto rounded-2xl border p-3 text-xs leading-relaxed">
-            {manifest.isLoading
-              ? 'Loading manifest...'
-              : manifest.error
-                ? `Failed to load manifest: ${(manifest.error as Error).message}`
-                : manifestText}
-          </pre>
-        </div>
-
-        <ol className="space-y-1.5 text-sm">
-          {[
-            'Grant admin consent so the Kortix bot can run in your tenant.',
-            'In Teams Admin Center (or Teams → Apps → Manage your apps → Upload), upload an app package built from the manifest above (plus color.png + outline.png icons).',
-            'Add the app to a chat or channel, then paste your Azure AD tenant ID below to bind it to this project.',
-          ].map((line, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="bg-muted text-muted-foreground mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium">
-                {i + 1}
-              </span>
-              <span className="text-muted-foreground">{line}</span>
-            </li>
-          ))}
-        </ol>
+        ) : null}
 
         <div className="space-y-3">
           <div className="space-y-1.5">
@@ -213,7 +261,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode }
         ) : null}
 
         <div className="flex justify-end">
-          <Button size="sm" onClick={submit} disabled={connect.isPending || !tenantId.trim()}>
+          <Button size="sm" onClick={submit} disabled={connect.isPending || !canSubmit}>
             {connect.isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
             Connect Teams
           </Button>

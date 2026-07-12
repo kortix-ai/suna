@@ -9,6 +9,7 @@ export interface TeamsInstallation {
   teamName: string | null;
   botId: string | null;
   serviceUrl: string | null;
+  byo: boolean;
   installedAt: string;
 }
 
@@ -17,6 +18,7 @@ export interface TeamsMode {
   appId: string | null;
   messagingEndpoint: string | null;
   adminConsentUrl: string | null;
+  byo: boolean;
 }
 
 const key = (projectId: string | null) =>
@@ -49,7 +51,7 @@ export function useTeamsMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: async () => {
-      const fallback: TeamsMode = { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null };
+      const fallback: TeamsMode = { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, byo: false };
       if (!projectId) return fallback;
       const res = await backendApi.get<TeamsMode>(
         `/projects/${encodeURIComponent(projectId)}/channels/teams/mode`,
@@ -84,6 +86,8 @@ interface ConnectInput {
   projectId: string;
   tenant_id: string;
   team_name?: string;
+  app_id?: string;
+  app_password?: string;
 }
 
 export function useConnectTeams() {
@@ -102,6 +106,8 @@ export function useConnectTeams() {
     },
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: key(projectId) });
+      qc.invalidateQueries({ queryKey: modeKey(projectId) });
+      qc.invalidateQueries({ queryKey: manifestKey(projectId) });
     },
   });
 }
