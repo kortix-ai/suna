@@ -579,8 +579,11 @@ export async function forwardToSandbox(
       // a stream) so aborting only kills the in-flight attempt, never truncates
       // an upload mid-stream.
       //
-      // CRITICAL: the timeout bounds ONLY the connect/header phase — the timer
-      // is cleared the moment `fetch` resolves. The previous
+      // CRITICAL: for ordinary requests the timeout bounds ONLY the
+      // connect/header phase — the timer is cleared the moment `fetch` resolves.
+      // Multipart uploads are the exception: their handler cannot return
+      // headers until the body is written, so they receive the remaining outer
+      // proxy budget instead of the generic 15s cutoff. The previous
       // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
       // severed every streaming response body at ~15s: the `/global/event` SSE
       // stream (each open session tab then reconnected ~250ms later, forever —
@@ -593,7 +596,7 @@ export async function forwardToSandbox(
           attemptController.abort(
             new DOMException('proxy attempt connect timeout', 'TimeoutError'),
           ),
-        proxyAttemptTimeoutMs(budgetRemainingMs),
+        proxyAttemptTimeoutMs(budgetRemainingMs, { method, path: remainingPath }),
       );
       let upstream: Response;
       try {
