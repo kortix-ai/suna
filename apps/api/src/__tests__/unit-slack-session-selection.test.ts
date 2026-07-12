@@ -6,6 +6,13 @@ import type { ProjectSessionRow } from '../projects/lib/serializers';
 // Slack session was hardcoded to agent 'default' with no model.
 
 let dbResults: unknown[][] = [];
+// What createOrJoinThreadSession hands finalizeTurn — captured so we can assert
+// the deleted-agent path renders the inline picker and other failures render
+// honest text.
+let lastFinalize: { title?: string; error?: string; answer?: string; blocks?: unknown[] } | null = null;
+// The scoped agent catalog the recovery picker is built from (git-backed in
+// prod; injected here so the test never touches a repo mirror).
+let scopedAgents: Array<{ name: string; description: string | null }> = [];
 function fakeSessionRow(sessionId: string): ProjectSessionRow {
   const now = new Date('2026-01-01T00:00:00Z');
   return {
@@ -93,7 +100,9 @@ mock.module('../channels/slack/turn', () => ({
   startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
   saveTurn: async () => {},
   deleteTurn: async () => {},
-  finalizeTurn: async () => {},
+  finalizeTurn: async (_handle: unknown, opts: typeof lastFinalize) => {
+    lastFinalize = opts;
+  },
   buildSlackTurnEnv: () => ({}),
   relayTurnAnswer: async () => {},
   relayTurnEnd: async () => {},
@@ -137,6 +146,15 @@ mock.module('../channels/slack-api', () => ({
   updateMessage: async () => {},
 }));
 
+// Keep the REAL buildAgentUnavailablePickerBlocks (so we assert the actual
+// picker blocks), but fake loadScopedChannelAgents so the recovery path never
+// reads a git mirror. Imported before the mock so the real exports survive.
+const realCommands = await import('../channels/slack/commands');
+mock.module('../channels/slack/commands', () => ({
+  ...realCommands,
+  loadScopedChannelAgents: async () => scopedAgents,
+}));
+
 const { spawnAgentTurn } = await import('../channels/slack/dispatch');
 const { config } = await import('../config');
 const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
@@ -168,6 +186,8 @@ beforeEach(() => {
   config.SLACK_REQUIRE_USER_IDENTITY = false;
   lastBody = null;
   selection = null;
+  lastFinalize = null;
+  scopedAgents = [];
   setSlackSessionLifecycleForTest({
     continueSession: async () => 'delivered',
     createSession: async (input: { body: Record<string, unknown> }) => {
@@ -200,4 +220,75 @@ test('unbound channel (null selection) → agent "default", no model', async () 
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
   expect('opencode_model' in (lastBody ?? {})).toBe(false);
+});
+
+// Regression guard: previously Slack ALWAYS sent the literal 'default' as
+// agent_name, so sessions.ts's `body.agent_name ?? projectDefaultAgent`
+// fallback never fired — a project's configured default_agent was silently
+// ignored by every Slack session, diverging from what the settings page
+// showed as "Project default (agentX)". No channel override should now
+// resolve to the project's configured default, not the bare sentinel.
+test('no channel override, but project has a configured default_agent → that agent is used', async () => {
+  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  dbResults = [
+    [{ ...project, metadata: { default_agent: 'shipper' } }], // spawnAgentTurn project lookup
+    [], // chat_threads lookup → brand-new thread
+    [{ ...project, metadata: { default_agent: 'shipper' } }], // createOrJoinThreadSession project lookup
+    [{ eventId: 'claim' }], // claimThreadCreate → WON
+    [], // re-check chat_threads → none
+    [], // chat_threads insert
+  ];
+  await spawnAgentTurn('proj-1', envelope, event);
+  expect(lastBody?.agent_name).toBe('shipper');
+});
+
+// The reported bug: the channel's agent was deleted, so createSession rejects it
+// as 400 AGENT_NOT_DECLARED. The whole point of the fix is that this no longer
+// collapses into the dead-end "try again" copy — it renders an inline picker of
+// the project's live agents so the user re-points the channel in one click.
+test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not the generic error', async () => {
+  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
+  scopedAgents = [
+    { name: 'reviewer', description: null },
+    { name: 'shipper', description: 'Ships things.' },
+  ];
+  setSlackSessionLifecycleForTest({
+    continueSession: async () => 'delivered',
+    createSession: async () => ({
+      status: 'failed',
+      retryable: false,
+      error: { status: 400, body: { error: 'Agent "ghost" is not declared in this project', code: 'AGENT_NOT_DECLARED' } },
+    }),
+    resolveProjectAutomationActor: async () => 'user-1',
+  });
+  newThreadFifo();
+  await spawnAgentTurn('proj-1', envelope, event);
+
+  expect(lastFinalize).not.toBeNull();
+  expect(lastFinalize?.title).toBe("Couldn't start — pick an agent");
+  const json = JSON.stringify(lastFinalize?.blocks ?? []);
+  expect(json).toContain('ghost'); // names the dead agent
+  expect(json).toContain('set_agent_reviewer'); // offers the live agents…
+  expect(json).toContain('set_agent_shipper'); // …wired to the existing handler
+  // Crucially NOT the old dead-end copy.
+  expect(lastFinalize?.error ?? '').not.toContain('Give it a moment and send your message again');
+});
+
+// A non-agent failure still renders honest, specific copy (not the picker).
+test('out-of-credits (402) → credit copy, no picker blocks', async () => {
+  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  setSlackSessionLifecycleForTest({
+    continueSession: async () => 'delivered',
+    createSession: async () => ({
+      status: 'failed',
+      retryable: false,
+      error: { status: 402, body: { error: 'Insufficient credits' } },
+    }),
+    resolveProjectAutomationActor: async () => 'user-1',
+  });
+  newThreadFifo();
+  await spawnAgentTurn('proj-1', envelope, event);
+
+  expect(lastFinalize?.error?.toLowerCase()).toContain('out of credits');
+  expect(lastFinalize?.blocks).toBeUndefined();
 });

@@ -39,14 +39,18 @@ export function createTestApp(opts: TestAppOptions = {}) {
       status: 'ok',
       service: 'kortix-api',
       timestamp: new Date().toISOString(),
+      environment: 'dev',
+      version: 'dev',
     }),
   );
 
   app.get('/v1/health', (c) =>
     c.json({
       status: 'ok',
-      service: 'kortix',
+      service: 'kortix-api',
       timestamp: new Date().toISOString(),
+      environment: 'dev',
+      version: 'dev',
     }),
   );
 

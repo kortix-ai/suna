@@ -59,8 +59,19 @@ async function main() {
   dim('projA', projA);
   if (projB) dim('projB', projB);
 
+  const foreignRes = await db.execute<{ project_id: string; account_id: string }>(sql`
+    select project_id, account_id
+    from kortix.projects
+    where account_id <> ${owner.account_id}
+    order by created_at desc
+    limit 1
+  `);
+  const foreignRows = (foreignRes as unknown as { rows?: Array<{ project_id: string; account_id: string }> }).rows
+    ?? (foreignRes as unknown as Array<{ project_id: string; account_id: string }>);
+  const foreignProject = foreignRows[0] ?? null;
+
   // 3. CREATE a project-scoped key via the API — the new capability.
-  const created = await call<{ secret_key: string; project_id: string | null }>(
+  const created = await call<{ secret_key: string; token_id: string; project_id: string | null }>(
     admin.secretKey, '/accounts/tokens',
     { method: 'POST', body: JSON.stringify({ name: 'e2e-create-scope-key', project_id: projA }) },
   );
@@ -84,9 +95,55 @@ async function main() {
   if (enumr.status !== 403) die(`scoped key enumerating projects should 403, got ${enumr.status}`);
   ok('scoped key cannot enumerate projects → 403');
 
+  if (projB) {
+    const createdB = await call<{ token_id: string; secret_key: string; project_id: string | null }>(
+      admin.secretKey,
+      '/accounts/tokens',
+      { method: 'POST', body: JSON.stringify({ name: 'e2e-create-scope-key-b', project_id: projB }) },
+    );
+    if (createdB.status !== 201) die(`create projB token → ${createdB.status} ${JSON.stringify(createdB.body)}`);
+    const wrongProjectRevoke = await call<Record<string, unknown>>(
+      admin.secretKey,
+      `/projects/${projA}/cli-token/${createdB.body.token_id}`,
+      { method: 'DELETE' },
+    );
+    if (wrongProjectRevoke.status !== 404) {
+      die(
+        `revoking projB token through projA route should 404, got ${wrongProjectRevoke.status}: ${JSON.stringify(wrongProjectRevoke.body)}`,
+      );
+    }
+    ok('DELETE /projects/<projA>/cli-token/<projB-token> → 404');
+    const rightProjectRevoke = await call<Record<string, unknown>>(
+      admin.secretKey,
+      `/projects/${projB}/cli-token/${createdB.body.token_id}`,
+      { method: 'DELETE' },
+    );
+    if (rightProjectRevoke.status !== 200) {
+      die(
+        `revoking projB token through projB route should 200, got ${rightProjectRevoke.status}: ${JSON.stringify(rightProjectRevoke.body)}`,
+      );
+    }
+    ok('DELETE /projects/<projB>/cli-token/<projB-token> → 200');
+  }
+
+  if (foreignProject) {
+    dim('foreign', `${foreignProject.project_id} (${foreignProject.account_id})`);
+    const foreignCreate = await call<Record<string, unknown>>(
+      admin.secretKey,
+      '/accounts/tokens',
+      { method: 'POST', body: JSON.stringify({ name: 'e2e-foreign-scope-denied', project_id: foreignProject.project_id }) },
+    );
+    if (foreignCreate.status !== 403) {
+      die(`foreign project scope mint should 403, got ${foreignCreate.status}: ${JSON.stringify(foreignCreate.body)}`);
+    }
+    ok('POST /accounts/tokens rejects a project_id from a different account → 403');
+  } else {
+    dim('foreign', 'skipped (no second account project available)');
+  }
+
   // 5. Clean up.
   await db.execute(sql`
-    delete from kortix.account_tokens where name in ('e2e-create-scope-admin', 'e2e-create-scope-key')
+    delete from kortix.account_tokens where name in ('e2e-create-scope-admin', 'e2e-create-scope-key', 'e2e-create-scope-key-b', 'e2e-foreign-scope-denied')
   `);
 
   process.stdout.write('\n  \x1b[0;32mAll create-scope checks passed.\x1b[0m\n\n');

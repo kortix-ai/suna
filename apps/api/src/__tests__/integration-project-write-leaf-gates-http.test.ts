@@ -211,6 +211,12 @@ const CASES: WCase[] = [
     tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
   },
   {
+    name: 'default-agent PUT (customize.write)',
+    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
+    path: () => `/v1/projects/${PROJECT}/default-agent`, body: { agent: 'support' },
+    tier: 'editor', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+  },
+  {
     name: 'experimental toggle (customize.write)',
     leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},

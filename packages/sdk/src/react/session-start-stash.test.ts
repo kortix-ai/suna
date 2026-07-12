@@ -25,18 +25,13 @@ afterEach(() => {
 });
 
 import {
-  clearForkDraft,
   clearStartStash,
-  forkDraftKey,
   migrateLegacyStash,
   migrateStash,
-  readForkDraft,
   readStartStash,
   startStashKey,
-  writeForkDraft,
   writeStartStash,
 } from './session-start-stash';
-import type { PromptPart } from './use-opencode-sessions/keys';
 
 describe('writeStartStash / readStartStash', () => {
   test('round-trips the modern stash shape', () => {
@@ -254,41 +249,5 @@ describe('migrateStash', () => {
     expect(readStartStash('oc_4')?.prompt).toBe('already here');
     // Source is still cleared even when the migration was skipped.
     expect(readStartStash('route_4')).toBeNull();
-  });
-});
-
-describe('writeForkDraft / readForkDraft / clearForkDraft', () => {
-  const draft: PromptPart[] = [
-    { type: 'text', text: 'redo this with tests' },
-    { type: 'file', mime: 'image/png', url: 'https://example.com/a.png', filename: 'a.png' },
-  ];
-
-  test('round-trips the stashed prompt parts', () => {
-    writeForkDraft('ses_fork_1', draft);
-    expect(readForkDraft('ses_fork_1')).toEqual(draft);
-  });
-
-  test('returns null when nothing is stashed', () => {
-    expect(readForkDraft('ses_fork_missing')).toBeNull();
-  });
-
-  test('is a no-op when the prompt is empty', () => {
-    writeForkDraft('ses_fork_2', []);
-    expect(readForkDraft('ses_fork_2')).toBeNull();
-  });
-
-  test('clearForkDraft removes the stash', () => {
-    writeForkDraft('ses_fork_3', draft);
-    clearForkDraft('ses_fork_3');
-    expect(sessionStorage.getItem(forkDraftKey('ses_fork_3'))).toBeNull();
-    expect(readForkDraft('ses_fork_3')).toBeNull();
-  });
-
-  // Back-compat: session-chat.tsx / session-chat-input.tsx previously each
-  // redefined this exact key independently — the SDK helper must keep writing
-  // to the same storage key so anything already stashed (or read by
-  // not-yet-migrated code) keeps working.
-  test('uses the legacy `opencode_fork_prompt:<id>` storage key', () => {
-    expect(forkDraftKey('ses_fork_4')).toBe('opencode_fork_prompt:ses_fork_4');
   });
 });

@@ -6,6 +6,7 @@ import {
   ensureOpencodeSessionPin,
   sandboxOpencodeEndpoint,
 } from '../opencode-mapping';
+import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import type { ProjectSessionRow } from './serializers';
 
 const WORKSPACE_DIRECTORY = '/workspace';
@@ -114,7 +115,7 @@ export async function buildSessionTranscriptDigest(input: {
     url.searchParams.set('limit', String(limit));
     const res = await fetch(url, {
       method: 'GET',
-      headers: endpoint.headers,
+      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) {

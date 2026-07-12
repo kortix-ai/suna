@@ -1,4 +1,4 @@
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
 
 // ============================================================================

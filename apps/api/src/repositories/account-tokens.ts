@@ -217,17 +217,18 @@ export async function listAccountTokens(
 export async function revokeAccountToken(
   tokenId: string,
   accountId: string,
+  projectId?: string | null,
 ): Promise<boolean> {
+  const filter = and(
+    eq(accountTokens.tokenId, tokenId),
+    eq(accountTokens.accountId, accountId),
+    eq(accountTokens.status, 'active'),
+    projectId ? eq(accountTokens.projectId, projectId) : undefined,
+  );
   const result = await db
     .update(accountTokens)
     .set({ status: 'revoked', revokedAt: new Date() })
-    .where(
-      and(
-        eq(accountTokens.tokenId, tokenId),
-        eq(accountTokens.accountId, accountId),
-        eq(accountTokens.status, 'active'),
-      ),
-    )
+    .where(filter)
     .returning({ tokenId: accountTokens.tokenId });
 
   return result.length > 0;

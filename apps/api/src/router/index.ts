@@ -23,7 +23,6 @@ router.openapi(
           status: z.string(),
           service: z.string(),
           timestamp: z.string(),
-          billing_enabled: z.boolean(),
         }),
         'Router health status',
       ),
@@ -34,7 +33,6 @@ router.openapi(
       status: 'ok',
       service: 'kortix-router',
       timestamp: new Date().toISOString(),
-      billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     });
   },
 );

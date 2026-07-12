@@ -32,6 +32,7 @@ import {
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
+import { ExecutionLeaseReporter, executionLeaseContextFromEnv } from './execution-lease'
 
 // Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
@@ -325,17 +326,26 @@ async function startSessionRuntime(
   bootState: SandboxBootState,
   bootMark: (label: string) => void,
 ): Promise<void> {
+  const leaseContext = executionLeaseContextFromEnv()
+  const executionLease = leaseContext ? new ExecutionLeaseReporter(leaseContext) : null
+  executionLease?.discover()
+  const onSessionStatus = (opencodeSessionId: string, status: string) => {
+    if (status === 'busy' || status === 'retry') executionLease?.markBusy(opencodeSessionId)
+    else if (status === 'idle') executionLease?.markInactive(opencodeSessionId)
+  }
   const onQuestionAsked = (req: QuestionRequest) => {
     void relayQuestionToApi(req, cfg).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
   const onSessionIdle = (opencodeSessionId: string) => {
+    executionLease?.markInactive(opencodeSessionId)
     void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
+    executionLease?.markInactive(opencodeSessionId)
     void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -348,11 +358,15 @@ async function startSessionRuntime(
   // and this reconcile collapse to a single finalize; a reconnect after the turn
   // relayed is a no-op.
   const onConnected = () => {
+    executionLease?.discover()
+    void reconcileExecutionLease(opencode, cfg, executionLease).catch((err) =>
+      logger.warn('[execution-lease] status reconcile failed', { err: (err as Error).message }),
+    )
     void reconcileFinishedFirstTurn(opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] connect reconcile failed', { err: (err as Error).message }),
     )
   }
-  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onConnected }
+  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError, onSessionStatus, onConnected }
   let loopStarted = false
   if (bootState.initialOpenCodeSessionRequired) {
     // SUBSCRIBE BEFORE PROMPT: start the /event loop first and hand its
@@ -384,6 +398,18 @@ async function startSessionRuntime(
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
+}
+
+async function reconcileExecutionLease(opencode: Opencode, cfg: Config, reporter: ExecutionLeaseReporter | null): Promise<void> {
+  if (!reporter) return
+  const response = await fetch(`${opencode.getInternalUrl()}/session/status?directory=${encodeURIComponent(cfg.workspace)}`, { signal: AbortSignal.timeout(10_000) })
+  if (!response.ok) throw new Error(`/session/status returned ${response.status}`)
+  const statuses = (await response.json()) as Record<string, { type?: string } | string>
+  const busy = Object.entries(statuses).filter(([, status]) => {
+    const type = typeof status === 'string' ? status : status?.type
+    return type === 'busy' || type === 'retry'
+  }).map(([sessionId]) => sessionId)
+  reporter.replaceBusySessions(busy)
 }
 
 // Read KEY=VALUE lines from the per-session env file into process.env. Platinum

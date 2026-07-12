@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountMembers, projectMembers, projects } from '@kortix/db';
+import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
 
 process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 
@@ -28,6 +28,8 @@ let seedFilePaths: string[];
 let seedBaseFilePaths: string[];
 let seedFilesByPath: Map<string, string>;
 let canonicalMembership: boolean;
+let managedPat: string | null;
+let provisionedInitialToken: string | null;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -71,7 +73,7 @@ const stubBackend = {
       installationId: INSTALL_ID,
       credentialRef: null,
       defaultBranch: input.defaultBranch,
-      initialToken: PUSH_TOKEN,
+      initialToken: provisionedInitialToken,
     };
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
@@ -90,7 +92,7 @@ mock.module('../projects/git-backends', () => ({
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
   managedGithubInstallId: () => INSTALL_ID,
-  managedGithubToken: () => null,
+  managedGithubToken: () => managedPat,
 }));
 
 // Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
@@ -157,6 +159,7 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
 }));
 
 mock.module("../snapshots/builder", () => ({
@@ -213,6 +216,26 @@ function projectRowFrom(values: any) {
   };
 }
 
+function existingProjectRow() {
+  return projectRowFrom({
+    accountId: ACCOUNT_ID,
+    name: 'Existing Managed Project',
+    repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+    defaultBranch: 'main',
+    manifestPath: 'kortix.yaml',
+    status: 'active',
+    metadata: {
+      git: {
+        url: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+        provider: 'github',
+        managed: true,
+        auth: { method: 'github_app', installation_id: INSTALL_ID },
+        owner: REPO_OWNER,
+      },
+    },
+  });
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
@@ -231,6 +254,36 @@ mock.module('../shared/db', () => ({
                   return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
                 }
                 return [];
+              }
+              if (table === projectMembers) {
+                return [{ projectRole: 'manager' }];
+              }
+              if (table === projects) {
+                return [existingProjectRow()];
+              }
+              if (table === projectGitConnections) {
+                return [{
+                  accountId: ACCOUNT_ID,
+                  projectId: PROJECT_ID,
+                  provider: 'github',
+                  repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  managed: true,
+                  repoOwner: REPO_OWNER,
+                  repoName: 'existing-managed',
+                  externalRepoId: EXTERNAL_REPO_ID,
+                  defaultBranch: 'main',
+                  authMethod: 'github_app',
+                  installationId: INSTALL_ID,
+                  credentialRef: null,
+                  permissions: {},
+                  visibility: 'private',
+                  webhookId: null,
+                  status: 'connected',
+                  metadata: {},
+                  createdAt: new Date('2026-01-01T00:00:00Z'),
+                  updatedAt: new Date('2026-01-01T00:00:00Z'),
+                }];
               }
               return [];
             },
@@ -293,6 +346,8 @@ describe('POST /v1/projects/provision (managed git)', () => {
     canonicalMembership = true;
     backendCalls.length = 0;
     backendConfigured = true;
+    managedPat = null;
+    provisionedInitialToken = PUSH_TOKEN;
   });
 
   test('provisions a managed repo + scoped token and registers the project', async () => {
@@ -343,6 +398,36 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+  });
+
+  test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
+    provisionedInitialToken = null;
+    managedPat = 'server-global-ghp-token';
+
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'PAT Fallback Project' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.push_token).toBeNull();
+  });
+
+  test('git-token fails closed when managed GitHub auth resolves to server-global PAT fallback', async () => {
+    managedPat = 'server-global-ghp-token';
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain('repo-scoped installation token');
   });
 
   test('rejects an explicit account the caller has no membership in', async () => {

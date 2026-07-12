@@ -53,15 +53,24 @@ let updateCalls: Array<{
   sql: string;
   params: unknown[];
 }> = [];
-let scenario: { archiveBeforeFinish: boolean; projectSessionStatusAtCheck: string } = {
+let scenario: {
+  archiveBeforeFinish: boolean;
+  projectSessionStatusAtCheck: string;
+  projectSessionMetadataAtCheck: Record<string, unknown>;
+} = {
   archiveBeforeFinish: false,
   projectSessionStatusAtCheck: 'provisioning',
+  projectSessionMetadataAtCheck: {},
 };
 let removedIds: string[] = [];
+let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
 let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string }> = [];
+let identityConflict = false;
+let recoveryPlaceholder = false;
+let providerCreateCalls = 0;
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -95,16 +104,23 @@ mock.module('../../config', () => ({
 mock.module('../../shared/db', () => ({
   db: {
     insert: (table: unknown) => ({
-      values: (v: Record<string, unknown>) => ({
-        returning: async () => [{ ...v }],
-      }),
+      values: (v: Record<string, unknown>) => {
+        const result = {
+          returning: async () => (identityConflict && table === sessionSandboxes ? [] : [{ ...v }]),
+          onConflictDoNothing: () => result,
+        };
+        return result;
+      },
     }),
     select: (_proj: unknown) => ({
       from: (table: unknown) => ({
         where: (_cond: unknown) => ({
           limit: async (_n: number) => {
             if (table === projectSessions) {
-              return [{ status: scenario.projectSessionStatusAtCheck }];
+              return [{
+                status: scenario.projectSessionStatusAtCheck,
+                metadata: scenario.projectSessionMetadataAtCheck,
+              }];
             }
             return [];
           },
@@ -121,6 +137,29 @@ mock.module('../../shared/db', () => ({
           if (isSessionSandboxesFinish) {
             return updateResult(scenario.archiveBeforeFinish ? [] : [{ sandboxId: SANDBOX_ID }]);
           }
+          const isRecoveryClaim =
+            table === sessionSandboxes &&
+            updates.provider === 'daytona' &&
+            updates.status === 'provisioning' &&
+            'config' in updates;
+          if (isRecoveryClaim) {
+            return updateResult(
+              recoveryPlaceholder
+                ? [{
+                    sandboxId: SANDBOX_ID,
+                    sessionId: SANDBOX_ID,
+                    accountId: ACCOUNT_ID,
+                    projectId: PROJECT_ID,
+                    provider: 'daytona',
+                    externalId: null,
+                    status: 'provisioning',
+                    baseUrl: null,
+                    config: {},
+                    metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
+                  }]
+                : [],
+            );
+          }
           return updateResult([{ ok: true }]);
         },
       }),
@@ -131,17 +170,22 @@ mock.module('../../shared/db', () => ({
 mock.module('../providers', () => ({
   getProvider: (_name: string) => ({
     provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
-    create: async (_opts: unknown) => ({
-      externalId: EXTERNAL_ID,
-      baseUrl: 'https://sandbox.test',
-      metadata: {},
-    }),
+    create: async (_opts: unknown) => {
+      providerCreateCalls += 1;
+      return {
+        externalId: EXTERNAL_ID,
+        baseUrl: 'https://sandbox.test',
+        metadata: {},
+      };
+    },
     remove: async (externalId: string) => {
       removedIds.push(externalId);
       onRemoved?.();
     },
     start: async () => {},
-    stop: async () => {},
+    stop: async (externalId: string) => {
+      stoppedIds.push(externalId);
+    },
     getStatus: async () => 'running',
     resolveEndpoint: async () => ({ url: '', headers: {} }),
     resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
@@ -219,13 +263,21 @@ function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): 
 
 beforeEach(() => {
   updateCalls = [];
-  scenario = { archiveBeforeFinish: false, projectSessionStatusAtCheck: 'provisioning' };
+  scenario = {
+    archiveBeforeFinish: false,
+    projectSessionStatusAtCheck: 'provisioning',
+    projectSessionMetadataAtCheck: {},
+  };
   removedIds = [];
+  stoppedIds = [];
   onRemoved = null;
   computeSessionsOpened = [];
   onComputeOpened = null;
   recordedEvents = [];
   onProviderEvent = null;
+  identityConflict = false;
+  recoveryPlaceholder = false;
+  providerCreateCalls = 0;
 });
 
 function baseOpts() {
@@ -243,6 +295,32 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('authoritative row conflict fails closed before a second provider sandbox can be created', async () => {
+    identityConflict = true;
+
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toMatchObject({
+      name: 'RuntimeIdentityConflictError',
+    });
+
+    expect(providerCreateCalls).toBe(0);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toEqual([]);
+    expect(recordedEvents).toEqual([]);
+  });
+
+  test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateCalls).toBe(1);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toHaveLength(1);
+  });
+
   test('nothing raced it: flips to running, guarded WHERE clauses are the expected shape, opens compute metering', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -301,5 +379,21 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(flipCall).toBeUndefined();
 
     expect(recordedEvents.some((e) => e.outcome === 'stopped')).toBe(true);
+  });
+
+  test('manual stop racing provider create stops and preserves the sandbox instead of removing it', async () => {
+    scenario.projectSessionStatusAtCheck = 'stopped';
+    const eventRecorded = waitFor((resolve) => { onProviderEvent = resolve; });
+    await provisionSessionSandbox(baseOpts());
+    await eventRecorded;
+
+    expect(removedIds).toEqual([]);
+    expect(stoppedIds).toEqual([EXTERNAL_ID]);
+    expect(computeSessionsOpened).toEqual([]);
+    const preserved = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'stopped',
+    );
+    expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
+    expect(preserved?.updates.metadata).toMatchObject({ stoppedDuringProvisioning: true });
   });
 });

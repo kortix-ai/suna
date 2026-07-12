@@ -1,4 +1,30 @@
+import { createRoute, z } from '@hono/zod-openapi';
 import {
+  ConnectionProfileSchema,
+  ReconcileConnectionProfileInputSchema,
+  UpdateConnectionProfileCredentialInputSchema,
+} from '@kortix/api-contract';
+import {
+  executorConnectionProfiles,
+  executorConnectors,
+  projectSessions,
+  projectTriggerRuntime,
+  projects,
+  sessionSandboxes,
+} from '@kortix/db';
+import { AUTO_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
+import { and, eq, inArray } from 'drizzle-orm';
+import { getCachedAccountTier } from '../../billing/services/entitlements';
+import { accountIsFreeTierForModels } from '../../billing/services/tiers';
+import {
+  agentMailUpstreamStatus,
+  createAgentMailInbox,
+  createAgentMailWebhook,
+  isAgentMailInboxLimitError,
+  resolveAgentMailApiKey,
+} from '../../channels/agentmail-api';
+import {
+  type AgentMailSenderPolicy,
   deleteAgentMailInstall,
   deleteSlackInstall,
   loadAgentMailInstall,
@@ -7,82 +33,58 @@ import {
   saveAgentMailInstall,
   saveSlackInstall,
   updateAgentMailSenderPolicy,
-  type AgentMailSenderPolicy,
-} from "../../channels/install-store";
-import { reconcileChannelConnectors } from "../../executor/sync";
+} from '../../channels/install-store';
+import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
 import {
-  agentMailUpstreamStatus,
-  createAgentMailInbox,
-  createAgentMailWebhook,
-  resolveAgentMailApiKey,
-  isAgentMailInboxLimitError,
-} from "../../channels/agentmail-api";
-import { config } from "../../config";
-import { getCachedAccountTier } from "../../billing/services/entitlements";
-import { accountIsFreeTierForModels } from "../../billing/services/tiers";
-import {
-  downloadSlackFile,
-  uploadSlackFile,
-} from "../../channels/slack/file-proxy";
-import {
-  MEET_VOICES,
   DEFAULT_MEET_BOT_NAME,
+  MEET_VOICES,
   isMeetVoice,
   resolveProjectBotName,
   resolveProjectVoice,
   setProjectBotName,
   setProjectVoice,
-} from "../../channels/meet-voices";
-import { previewVoiceB64, speakInMeeting } from "../../channels/meet-tts";
-import { buildSlackInstallUrl } from "../../channels/slack-oauth";
-import { slackOauthMode } from "../../channels/slack-oauth-mode";
+} from '../../channels/meet-voices';
+import { buildSlackInstallUrl } from '../../channels/slack-oauth';
+import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import {
+  type QuestionInfo,
   postQuestion,
   relayTurnAnswer,
   relayTurnEnd,
   relayTurnStep,
-  type QuestionInfo,
-} from "../../channels/slack-webhook";
-import { PROJECT_ACTIONS } from "../../iam";
-import { auth, errors, json } from "../../openapi";
-import { projectLlmGatewayEnabled } from "../../llm-gateway/enablement";
-import { gatewayModelCatalog } from "../../llm-gateway/models/catalog-models";
+} from '../../channels/slack-webhook';
+import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
+import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
+import { config } from '../../config';
+import { upsertProfileCredential } from '../../executor/credentials';
+import { reconcileChannelConnectors } from '../../executor/sync';
+import { resolveExperimentalFeature } from '../../experimental/features';
+import { PROJECT_ACTIONS } from '../../iam';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
   resolveEffectiveModel,
-} from "../../llm-gateway/resolution/default-model";
+} from '../../llm-gateway/resolution/default-model';
+import { auth, errors, json } from '../../openapi';
 import {
   deleteAccountModelPreference,
   getAccountModelDefaults,
   upsertAccountModelPreference,
-} from "../../repositories/model-preferences";
-import { AUTO_DEFAULT_MODEL_ID } from "@kortix/llm-catalog";
-import { resolveExperimentalFeature } from "../../experimental/features";
-import { db } from "../../shared/db";
-import { extractApps } from "../apps";
+} from '../../repositories/model-preferences';
+import { db } from '../../shared/db';
+import { extractApps } from '../apps';
 import {
-  extractTriggers,
-  loadProjectTriggers,
-  type ParsedManifest,
-} from "../triggers";
-import { createRoute, z } from "@hono/zod-openapi";
-import {
-  projectSessions,
-  projectTriggerRuntime,
-  projects,
-  sessionSandboxes,
-} from "@kortix/db";
-import { and, eq, inArray } from "drizzle-orm";
-import { loadProjectForUser, assertProjectCapability } from "../lib/access";
-import {
-  bindChatThread,
-  resolveWorkspaceIdForChannel,
-} from "../../channels/slack/binding";
-import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
+  discoverExecutionKeepAliveEndpoint,
+  releaseExecutionLease,
+  renewExecutionLease,
+} from '../execution-lease';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
 import {
   APPS_DISABLED_BODY,
-  SlackAuthTest,
+  type SlackAuthTest,
   draftToAppSpec,
   loadAppsForResponse,
   parseAppDraft,
@@ -90,9 +92,13 @@ import {
   removeAppFromManifest,
   specToAppBody,
   upsertAppInManifest,
-} from "../lib/apps-helpers";
-import { withProjectGitAuth } from "../lib/git";
-import { readBody, requestAuditContext } from "../lib/serializers";
+} from '../lib/apps-helpers';
+import { withProjectGitAuth } from '../lib/git';
+import { readBody, requestAuditContext } from '../lib/serializers';
+import {
+  canonicalConnectorAlias,
+  loadEmailInstallProfileId,
+} from '../lib/session-connector-bindings';
 import {
   commitManifest,
   draftToSpec,
@@ -107,52 +113,325 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
   withTriggersPaused,
-} from "../lib/triggers";
+} from '../lib/triggers';
+import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
 // and treat it as a no-op.
 const TRIGGER_MANIFEST_KEYS = [
-  "name",
-  "type",
-  "agent",
-  "model",
-  "enabled",
-  "prompt_template",
-  "promptTemplate",
-  "cron",
-  "schedule",
-  "run_at",
-  "runAt",
-  "timezone",
-  "secret_env",
-  "secretEnv",
-  "session_mode",
-  "sessionMode",
+  'name',
+  'type',
+  'agent',
+  'model',
+  'enabled',
+  'prompt_template',
+  'promptTemplate',
+  'cron',
+  'schedule',
+  'run_at',
+  'runAt',
+  'timezone',
+  'secret_env',
+  'secretEnv',
+  'session_mode',
+  'sessionMode',
 ] as const;
+
+const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
+
+function serializeConnectionProfile(row: {
+  profileId: string;
+  connectorAlias: string;
+  ownerType: string;
+  ownerId: string | null;
+  label: string;
+  status: string;
+  isDefault: boolean;
+  metadata: Record<string, unknown>;
+}) {
+  return {
+    profile_id: row.profileId,
+    connector_alias: row.connectorAlias,
+    owner_type: row.ownerType,
+    owner_id: row.ownerId,
+    label: row.label,
+    status: row.status,
+    is_default: row.isDefault,
+    metadata: row.metadata ?? {},
+  };
+}
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/triggers",
-    tags: ["triggers"],
-    summary: "GET /:projectId/triggers",
+    method: 'get',
+    path: '/{projectId}/connector-profiles',
+    tags: ['connectors'],
+    summary: 'List connection profiles',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(z.object({ profiles: z.array(ConnectionProfileViewSchema) }), 'Profiles'),
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    );
+    const rows = await db
+      .select({
+        profileId: executorConnectionProfiles.profileId,
+        connectorAlias: executorConnectors.slug,
+        ownerType: executorConnectionProfiles.ownerType,
+        ownerId: executorConnectionProfiles.ownerId,
+        label: executorConnectionProfiles.label,
+        status: executorConnectionProfiles.status,
+        isDefault: executorConnectionProfiles.isDefault,
+        metadata: executorConnectionProfiles.metadata,
+      })
+      .from(executorConnectionProfiles)
+      .innerJoin(
+        executorConnectors,
+        eq(executorConnectors.connectorId, executorConnectionProfiles.connectorId),
+      )
+      .where(eq(executorConnectionProfiles.projectId, projectId));
+    return c.json({ profiles: rows.map(serializeConnectionProfile) });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/connector-profiles',
+    tags: ['connectors'],
+    summary: 'Idempotently create or reconcile a connection profile',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: ReconcileConnectionProfileInputSchema } } },
+    },
+    responses: {
+      200: json(ConnectionProfileViewSchema, 'Reconciled profile'),
+      201: json(ConnectionProfileViewSchema, 'Created profile'),
+      ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+    );
+    const body = await readBody(c);
+    const requestedAlias =
+      typeof body.connector_alias === 'string' ? body.connector_alias.trim() : '';
+    const connectorAlias = canonicalConnectorAlias(requestedAlias);
+    const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
+    const ownerId = typeof body.owner_id === 'string' ? body.owner_id.trim() : '';
+    const label = typeof body.label === 'string' ? body.label.trim() : '';
+    const metadata =
+      body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+        ? (body.metadata as Record<string, unknown>)
+        : {};
+    if (!connectorAlias || !['agent', 'member', 'subject', 'external'].includes(ownerType)) {
+      return c.json({ error: 'connector_alias and a non-project owner_type are required' }, 400);
+    }
+    if (!ownerId || !label) return c.json({ error: 'owner_id and label are required' }, 400);
+    const [connector] = await db
+      .select({
+        connectorId: executorConnectors.connectorId,
+        providerType: executorConnectors.providerType,
+      })
+      .from(executorConnectors)
+      .where(
+        and(
+          eq(executorConnectors.projectId, projectId),
+          eq(executorConnectors.accountId, loaded.row.accountId),
+          eq(executorConnectors.slug, connectorAlias),
+        ),
+      )
+      .limit(1);
+    if (!connector) return c.json({ error: 'Connector not found' }, 404);
+    if (connector.providerType === 'channel') {
+      return c.json(
+        { error: 'Channel profiles are reconciled from verified channel installations' },
+        409,
+      );
+    }
+    const [existing] = await db
+      .select()
+      .from(executorConnectionProfiles)
+      .where(
+        and(
+          eq(executorConnectionProfiles.connectorId, connector.connectorId),
+          eq(executorConnectionProfiles.ownerType, ownerType as any),
+          eq(executorConnectionProfiles.ownerId, ownerId),
+        ),
+      )
+      .limit(1);
+    let profile = existing;
+    let created = false;
+    if (profile) {
+      const [updated] = await db
+        .update(executorConnectionProfiles)
+        .set({ label, metadata, updatedAt: new Date() })
+        .where(eq(executorConnectionProfiles.profileId, profile.profileId))
+        .returning();
+      profile = updated;
+    } else {
+      const [inserted] = await db
+        .insert(executorConnectionProfiles)
+        .values({
+          accountId: loaded.row.accountId,
+          projectId,
+          connectorId: connector.connectorId,
+          ownerType: ownerType as 'agent' | 'member' | 'subject' | 'external',
+          ownerId,
+          label,
+          metadata,
+          createdBy: loaded.userId,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (inserted) {
+        profile = inserted;
+        created = true;
+      } else {
+        const [raced] = await db
+          .select()
+          .from(executorConnectionProfiles)
+          .where(
+            and(
+              eq(executorConnectionProfiles.connectorId, connector.connectorId),
+              eq(executorConnectionProfiles.ownerType, ownerType as any),
+              eq(executorConnectionProfiles.ownerId, ownerId),
+            ),
+          )
+          .limit(1);
+        profile = raced;
+      }
+    }
+    if (!profile) return c.json({ error: 'Profile could not be reconciled' }, 409);
+    const view = serializeConnectionProfile({ ...profile, connectorAlias });
+    return c.json(view, created ? 201 : 200);
+  },
+);
+
+for (const operation of ['credential', 'revoke', 'activate'] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method: 'put',
+      path: `/{projectId}/connector-profiles/{profileId}/${operation}`,
+      tags: ['connectors'],
+      summary: `${operation} connection profile`,
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), profileId: z.string().uuid() }),
+        body: {
+          content: {
+            'application/json': {
+              schema:
+                operation === 'credential'
+                  ? UpdateConnectionProfileCredentialInputSchema
+                  : z.object({}).strict(),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.object({ ok: z.literal(true) }), 'Updated'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const profileId = c.req.param('profileId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE,
+      );
+      const [profile] = await db
+        .select({ connectorId: executorConnectionProfiles.connectorId })
+        .from(executorConnectionProfiles)
+        .where(
+          and(
+            eq(executorConnectionProfiles.profileId, profileId),
+            eq(executorConnectionProfiles.projectId, projectId),
+            eq(executorConnectionProfiles.accountId, loaded.row.accountId),
+          ),
+        )
+        .limit(1);
+      if (!profile) return c.json({ error: 'Not found' }, 404);
+      if (operation === 'credential') {
+        const body = await readBody(c);
+        if (typeof body.value !== 'string' || !body.value) {
+          return c.json({ error: 'value is required' }, 400);
+        }
+        await upsertProfileCredential({
+          projectId,
+          connectorId: profile.connectorId,
+          profileId,
+          value: body.value,
+          kind: body.kind === 'connection' ? 'connection' : 'secret',
+          createdBy: loaded.userId,
+        });
+      } else {
+        await db
+          .update(executorConnectionProfiles)
+          .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
+          .where(eq(executorConnectionProfiles.profileId, profileId));
+      }
+      return c.json({ ok: true });
+    },
+  );
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/triggers',
+    tags: ['triggers'],
+    summary: 'GET /:projectId/triggers',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.array(TriggerSchema), "Triggers"),
+      200: json(z.array(TriggerSchema), 'Triggers'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Leaf-gate the read (a custom role can omit project.trigger.read) — and, via
     // the central agent-grant fold, an agent token must hold it in its kortixCli.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+    );
 
     return c.json(await loadTriggersForResponse(projectId, loaded.row));
   },
@@ -160,41 +439,44 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/triggers",
-    tags: ["triggers"],
-    summary: "POST /:projectId/triggers",
+    method: 'post',
+    path: '/{projectId}/triggers',
+    tags: ['triggers'],
+    summary: 'POST /:projectId/triggers',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      201: json(TriggerSchema, "The created trigger"),
+      201: json(TriggerSchema, 'The created trigger'),
       ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Specific IAM gate so the audit trail records the precise action.
     // assertProjectCapability (not bare assertAuthorized) so the acting token is
     // threaded and the agent-grant fold fires.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
+    );
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
-    if ("error" in draft) return c.json({ error: draft.error }, 400);
+    if ('error' in draft) return c.json({ error: draft.error }, 400);
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
 
     if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
@@ -207,12 +489,8 @@ projectsApp.openapi(
     }
 
     const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-    const result = await commitManifest(
-      loaded.row,
-      next,
-      `chore: add trigger ${draft.slug}`,
-    );
-    if ("error" in result) {
+    const result = await commitManifest(loaded.row, next, `chore: add trigger ${draft.slug}`);
+    if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
 
@@ -236,29 +514,35 @@ projectsApp.openapi(
 // Covered by unit-trigger-activation-route.test.ts.
 projectsApp.openapi(
   createRoute({
-    method: "patch",
-    path: "/{projectId}/triggers/activation",
-    tags: ["triggers"],
+    method: 'patch',
+    path: '/{projectId}/triggers/activation',
+    tags: ['triggers'],
     summary: "Pause or resume all of a project's triggers server-side",
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(AnyObject, "Updated triggers (includes triggers_paused)"),
+      200: json(AnyObject, 'Updated triggers (includes triggers_paused)'),
       ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+    );
     const paused = body.paused;
-    if (typeof paused !== "boolean") {
-      return c.json({ error: "paused must be a boolean" }, 400);
+    if (typeof paused !== 'boolean') {
+      return c.json({ error: 'paused must be a boolean' }, 400);
     }
     const [row] = await db
       .update(projects)
@@ -268,8 +552,7 @@ projectsApp.openapi(
       })
       .where(eq(projects.projectId, projectId))
       .returning();
-    if (!row || row.status === "archived")
-      return c.json({ error: "Not found" }, 404);
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     return c.json(await loadTriggersForResponse(projectId, row));
   },
 );
@@ -278,41 +561,42 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "patch",
-    path: "/{projectId}/triggers/{slug}",
-    tags: ["triggers"],
-    summary: "PATCH /:projectId/triggers/:slug",
+    method: 'patch',
+    path: '/{projectId}/triggers/{slug}',
+    tags: ['triggers'],
+    summary: 'PATCH /:projectId/triggers/:slug',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const slug = c.req.param("slug");
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+    );
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
-    const current = extractTriggers(manifest).specs.find(
-      (s) => s.slug === slug,
-    );
-    if (!current) return c.json({ error: "Not found" }, 404);
+    const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: 'Not found' }, 404);
 
     // Only commit the repo manifest when a manifest field actually changed; a
     // PATCH that touches none is a no-op that skips git entirely.
@@ -324,15 +608,11 @@ projectsApp.openapi(
         { ...specToBody(current), ...body, slug: slug },
         { existingSlug: slug },
       );
-      if ("error" in draft) return c.json({ error: draft.error }, 400);
+      if ('error' in draft) return c.json({ error: draft.error }, 400);
 
       const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
-      const result = await commitManifest(
-        loaded.row,
-        next,
-        `chore: update trigger ${slug}`,
-      );
-      if ("error" in result) {
+      const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
+      if ('error' in result) {
         return c.json({ error: result.error }, result.status as 400 | 502);
       }
     }
@@ -345,50 +625,49 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/{projectId}/triggers/{slug}",
-    tags: ["triggers"],
-    summary: "DELETE /:projectId/triggers/:slug",
+    method: 'delete',
+    path: '/{projectId}/triggers/{slug}',
+    tags: ['triggers'],
+    summary: 'DELETE /:projectId/triggers/:slug',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const slug = c.req.param("slug");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE,
+    );
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-      return c.json({ error: "Invalid slug" }, 400);
+      return c.json({ error: 'Invalid slug' }, 400);
     }
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
     if (!extractTriggers(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: "Not found" }, 404);
+      return c.json({ error: 'Not found' }, 404);
     }
 
     const next = removeTriggerFromManifest(manifest, slug);
-    const result = await commitManifest(
-      loaded.row,
-      next,
-      `chore: delete trigger ${slug}`,
-    );
-    if ("error" in result) {
+    const result = await commitManifest(loaded.row, next, `chore: delete trigger ${slug}`);
+    if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
 
@@ -397,10 +676,7 @@ projectsApp.openapi(
     await db
       .delete(projectTriggerRuntime)
       .where(
-        and(
-          eq(projectTriggerRuntime.projectId, projectId),
-          eq(projectTriggerRuntime.slug, slug),
-        ),
+        and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
       );
 
     return c.json({ ok: true });
@@ -411,23 +687,23 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/slack/installation",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/slack/installation",
+    method: 'get',
+    path: '/{projectId}/channels/slack/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const install = await loadSlackInstall(projectId);
     return c.json(install ?? null);
   },
@@ -440,23 +716,23 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/slack/mode",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/slack/mode",
+    method: 'get',
+    path: '/{projectId}/channels/slack/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/mode',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const mode = slackOauthMode();
     if (!mode.available) {
       return c.json({ oauth_available: false, install_url: null });
@@ -474,27 +750,33 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/slack/connect",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/slack/connect",
+    method: 'post',
+    path: '/{projectId}/channels/slack/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/connect',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 404, 502),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Connecting a Slack workspace is a connector-write capability — a custom
     // role can withhold it and a scoped agent must hold it (central fold).
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
 
     let body: { bot_token?: string; signing_secret?: string };
     try {
@@ -503,40 +785,34 @@ projectsApp.openapi(
         signing_secret?: string;
       };
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const botToken = body.bot_token?.trim();
     const signingSecret = body.signing_secret?.trim();
-    if (!botToken || !botToken.startsWith("xoxb-")) {
-      return c.json(
-        { error: "bot_token is required and must start with xoxb-" },
-        400,
-      );
+    if (!botToken || !botToken.startsWith('xoxb-')) {
+      return c.json({ error: 'bot_token is required and must start with xoxb-' }, 400);
     }
     if (!signingSecret) {
-      return c.json({ error: "signing_secret is required" }, 400);
+      return c.json({ error: 'signing_secret is required' }, 400);
     }
 
     let authTest: SlackAuthTest;
     try {
-      const res = await fetch("https://slack.com/api/auth.test", {
-        method: "POST",
+      const res = await fetch('https://slack.com/api/auth.test', {
+        method: 'POST',
         headers: {
           authorization: `Bearer ${botToken}`,
-          "content-type": "application/x-www-form-urlencoded",
+          'content-type': 'application/x-www-form-urlencoded',
         },
       });
       authTest = (await res.json()) as SlackAuthTest;
     } catch (err) {
-      return c.json(
-        { error: `Failed to reach Slack: ${(err as Error).message}` },
-        502,
-      );
+      return c.json({ error: `Failed to reach Slack: ${(err as Error).message}` }, 502);
     }
     if (!authTest.ok || !authTest.team_id || !authTest.user_id) {
       return c.json(
         {
-          error: `Slack rejected the token: ${authTest.error ?? "unknown error"}`,
+          error: `Slack rejected the token: ${authTest.error ?? 'unknown error'}`,
         },
         400,
       );
@@ -559,89 +835,97 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/{projectId}/channels/slack/installation",
-    tags: ["channels"],
-    summary: "DELETE /:projectId/channels/slack/installation",
+    method: 'delete',
+    path: '/{projectId}/channels/slack/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/slack/installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Disconnecting Slack tears down the connector — same connector-write gate.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     await deleteSlackInstall(projectId);
     // Tear down the auto-materialized Slack connector now that the install is gone.
     await reconcileChannelConnectors(projectId);
-    return c.json({ status: "disconnected" });
+    return c.json({ status: 'disconnected' });
   },
 );
 
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 
 function emailChannelEnabled(metadata: unknown): boolean {
-  return resolveExperimentalFeature(metadata, "agentmail_email");
+  return resolveExperimentalFeature(metadata, 'agentmail_email');
 }
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/email/installation",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/email/installation",
+    method: 'get',
+    path: '/{projectId}/channels/email/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/email/installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (!emailChannelEnabled(loaded.row.metadata)) return c.json(null);
     const connectorSlug =
-      c.req.query("connector_slug") ||
-      c.req.query("profile_slug") ||
-      "kortix_email";
+      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
     const install = await loadAgentMailInstall(projectId, connectorSlug);
-    return c.json(install ?? null);
+    if (!install) return c.json(null);
+    return c.json({
+      ...install,
+      profile_id: await loadEmailInstallProfileId(projectId, install.inboxId),
+    });
   },
 );
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/email/mode",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/email/mode",
+    method: 'get',
+    path: '/{projectId}/channels/email/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/email/mode',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const enabled = emailChannelEnabled(loaded.row.metadata);
     return c.json({
-      provider: "agentmail",
+      provider: 'agentmail',
       enabled,
       managed_available: enabled && Boolean(config.AGENTMAIL_API_KEY),
     });
@@ -650,33 +934,38 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/email/connect",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/email/connect",
+    method: 'post',
+    path: '/{projectId}/channels/email/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/email/connect',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 403, 404, 409, 502, 503, 504),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read' (membership); the connector.write leaf below is the real gate,
     // so a custom role that unchecks connector.write is denied even if it holds
     // project.write. Built-in editor/manager hold the leaf.
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
-          error:
-            "AgentMail Email is experimental and must be enabled for this project",
+          error: 'AgentMail Email is experimental and must be enabled for this project',
         },
         403,
       );
@@ -698,42 +987,33 @@ projectsApp.openapi(
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
 
     const apiKey = resolveAgentMailApiKey(body.api_key?.trim());
     if (!apiKey) {
-      return c.json({ error: "AgentMail API key is not configured" }, 503);
+      return c.json({ error: 'AgentMail API key is not configured' }, 503);
     }
 
     const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? "kortix_email").trim() ||
-      "kortix_email";
+      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
     const displayName = (
       body.display_name ??
       body.displayName ??
       loaded.row.name ??
-      "Kortix Agent"
+      'Kortix Agent'
     ).trim();
-    const username = normalizeAgentMailUsername(
-      body.username ?? loaded.row.name,
-    );
+    const username = normalizeAgentMailUsername(body.username ?? loaded.row.name);
     const existingInboxId =
-      typeof (body.inbox_id ?? body.inboxId) === "string"
+      typeof (body.inbox_id ?? body.inboxId) === 'string'
         ? (body.inbox_id ?? body.inboxId)!.trim()
-        : "";
-    const existingEmail =
-      typeof body.email === "string" ? body.email.trim() : "";
+        : '';
+    const existingEmail = typeof body.email === 'string' ? body.email.trim() : '';
     if ((existingInboxId && !existingEmail) || (!existingInboxId && existingEmail)) {
-      return c.json(
-        { error: "Existing AgentMail inbox requires both inbox_id and email" },
-        400,
-      );
+      return c.json({ error: 'Existing AgentMail inbox requires both inbox_id and email' }, 400);
     }
     const domain =
-      typeof body.domain === "string" && body.domain.trim()
-        ? body.domain.trim()
-        : undefined;
+      typeof body.domain === 'string' && body.domain.trim() ? body.domain.trim() : undefined;
     let senderPolicy: AgentMailSenderPolicy;
     try {
       senderPolicy = parseSenderPolicyBody(body.sender_policy);
@@ -758,14 +1038,14 @@ projectsApp.openapi(
           displayName,
           clientId,
           metadata: {
-            provider: "kortix",
+            provider: 'kortix',
             project_id: projectId,
             account_id: loaded.row.accountId,
           },
         });
       } catch (err) {
         return c.json(
-          agentMailConnectErrorBody("inbox_create", err),
+          agentMailConnectErrorBody('inbox_create', err),
           agentMailConnectErrorStatus(err),
         );
       }
@@ -784,7 +1064,7 @@ projectsApp.openapi(
       webhookSecret = webhook.secret;
     } catch (err) {
       return c.json(
-        agentMailConnectErrorBody("webhook_create", err),
+        agentMailConnectErrorBody('webhook_create', err),
         agentMailConnectErrorStatus(err),
       );
     }
@@ -801,37 +1081,45 @@ projectsApp.openapi(
       senderPolicy,
     });
     await reconcileChannelConnectors(projectId);
-    return c.json(summary);
+    return c.json({
+      ...summary,
+      profile_id: await loadEmailInstallProfileId(projectId, summary.inboxId),
+    });
   },
 );
 
 projectsApp.openapi(
   createRoute({
-    method: "patch",
-    path: "/{projectId}/channels/email/installation",
-    tags: ["channels"],
-    summary: "PATCH /:projectId/channels/email/installation",
+    method: 'patch',
+    path: '/{projectId}/channels/email/installation',
+    tags: ['channels'],
+    summary: 'PATCH /:projectId/channels/email/installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.connector.write is the real gate (see /email/connect).
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     if (!emailChannelEnabled(loaded.row.metadata)) {
       return c.json(
         {
-          error:
-            "AgentMail Email is experimental and must be enabled for this project",
+          error: 'AgentMail Email is experimental and must be enabled for this project',
         },
         403,
       );
@@ -844,74 +1132,70 @@ projectsApp.openapi(
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const connectorSlug =
-      (body.connector_slug ?? body.profile_slug ?? "kortix_email").trim() ||
-      "kortix_email";
+      (body.connector_slug ?? body.profile_slug ?? 'kortix_email').trim() || 'kortix_email';
     let senderPolicy: AgentMailSenderPolicy;
     try {
       senderPolicy = parseSenderPolicyBody(body.sender_policy);
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
-    const summary = await updateAgentMailSenderPolicy(
-      projectId,
-      connectorSlug,
-      senderPolicy,
-    );
-    if (!summary)
-      return c.json({ error: "Email channel profile not found" }, 404);
+    const summary = await updateAgentMailSenderPolicy(projectId, connectorSlug, senderPolicy);
+    if (!summary) return c.json({ error: 'Email channel profile not found' }, 404);
     return c.json(summary);
   },
 );
 
 projectsApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/{projectId}/channels/email/installation",
-    tags: ["channels"],
-    summary: "DELETE /:projectId/channels/email/installation",
+    method: 'delete',
+    path: '/{projectId}/channels/email/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/email/installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.connector.write is the real gate (see /email/connect).
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     const connectorSlug =
-      c.req.query("connector_slug") ||
-      c.req.query("profile_slug") ||
-      "kortix_email";
+      c.req.query('connector_slug') || c.req.query('profile_slug') || 'kortix_email';
     await deleteAgentMailInstall(projectId, connectorSlug);
     await reconcileChannelConnectors(projectId, {
-      platform: "email",
+      platform: 'email',
       slug: connectorSlug,
     });
-    return c.json({ status: "disconnected" });
+    return c.json({ status: 'disconnected' });
   },
 );
 
 function agentMailWebhookBaseUrl(requestUrl: string): string {
-  return (config.KORTIX_URL || new URL(requestUrl).origin).replace(/\/+$/, "");
+  return (config.KORTIX_URL || new URL(requestUrl).origin).replace(/\/+$/, '');
 }
 
-function normalizeAgentMailUsername(
-  input: string | null | undefined,
-): string | null {
-  const raw = (input ?? "")
+function normalizeAgentMailUsername(input: string | null | undefined): string | null {
+  const raw = (input ?? '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const trimmed = raw.slice(0, 48).replace(/-+$/g, "");
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  const trimmed = raw.slice(0, 48).replace(/-+$/g, '');
   return trimmed || null;
 }
 
@@ -923,9 +1207,7 @@ const NESTED_QUANTIFIER_RE = /\([^()]*[+*][^()]*\)\s*[+*]/;
 const DUPLICATE_ALTERNATION_RE = /\(([^()|]+)\|\1\)\s*[+*]/;
 
 function hasCatastrophicBacktracking(pattern: string): boolean {
-  return (
-    NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern)
-  );
+  return NESTED_QUANTIFIER_RE.test(pattern) || DUPLICATE_ALTERNATION_RE.test(pattern);
 }
 
 function parseSenderPolicyBody(
@@ -936,11 +1218,11 @@ function parseSenderPolicyBody(
     try {
       new RegExp(policy.allowedRegex);
     } catch {
-      throw new Error("Email sender regex is invalid");
+      throw new Error('Email sender regex is invalid');
     }
     if (hasCatastrophicBacktracking(policy.allowedRegex)) {
       throw new Error(
-        "Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)",
+        'Email sender regex is not allowed: nested or ambiguous repetition can cause catastrophic backtracking (ReDoS)',
       );
     }
   }
@@ -953,17 +1235,14 @@ function agentMailConnectErrorStatus(err: unknown): 409 | 502 | 504 {
   return 502;
 }
 
-function agentMailConnectErrorBody(
-  stage: "inbox_create" | "webhook_create",
-  err: unknown,
-) {
+function agentMailConnectErrorBody(stage: 'inbox_create' | 'webhook_create', err: unknown) {
   const upstreamStatus = agentMailUpstreamStatus(err);
   if (isAgentMailInboxLimitError(err)) {
     return {
       error:
-        "AgentMail inbox limit reached. Delete an unused AgentMail inbox or connect an existing AgentMail inbox with inbox_id and email.",
-      code: "agentmail_inbox_limit",
-      provider: "agentmail",
+        'AgentMail inbox limit reached. Delete an unused AgentMail inbox or connect an existing AgentMail inbox with inbox_id and email.',
+      code: 'agentmail_inbox_limit',
+      provider: 'agentmail',
       upstream_status: upstreamStatus,
       stage,
     };
@@ -971,22 +1250,22 @@ function agentMailConnectErrorBody(
   if (upstreamStatus === 504) {
     return {
       error:
-        stage === "inbox_create"
-          ? "AgentMail inbox create timed out"
-          : "AgentMail webhook create timed out",
-      code: "agentmail_timeout",
-      provider: "agentmail",
+        stage === 'inbox_create'
+          ? 'AgentMail inbox create timed out'
+          : 'AgentMail webhook create timed out',
+      code: 'agentmail_timeout',
+      provider: 'agentmail',
       upstream_status: upstreamStatus,
       stage,
     };
   }
   return {
     error:
-      stage === "inbox_create"
+      stage === 'inbox_create'
         ? `AgentMail inbox create failed: ${(err as Error).message}`
         : `AgentMail webhook create failed: ${(err as Error).message}`,
-    code: "agentmail_upstream_error",
-    provider: "agentmail",
+    code: 'agentmail_upstream_error',
+    provider: 'agentmail',
     upstream_status: upstreamStatus,
     stage,
   };
@@ -998,57 +1277,63 @@ function agentMailConnectErrorBody(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/turn-stream",
-    tags: ["projects"],
-    summary: "POST /:projectId/turn-stream",
+    method: 'post',
+    path: '/{projectId}/turn-stream',
+    tags: ['projects'],
+    summary: 'POST /:projectId/turn-stream',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
       200: {
-        description: "Event stream",
-        content: { "text/event-stream": { schema: z.any() } },
+        description: 'Event stream',
+        content: { 'text/event-stream': { schema: z.any() } },
       },
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
 
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
-    const authType = (c as any).get("authType") as string | undefined;
-    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
-      const accountId = (c as any).get("accountId") as string | undefined;
-      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+    const authType = (c as any).get('authType') as string | undefined;
+    let authenticatedSandboxId: string | null = null;
+    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+      const accountId = (c as any).get('accountId') as string | undefined;
+      const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
-        return c.json({ error: "turn-stream requires a sandbox token" }, 403);
+        return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
         .where(
           and(
             eq(sessionSandboxes.sandboxId, sandboxId),
             eq(sessionSandboxes.projectId, projectId),
             eq(sessionSandboxes.accountId, accountId),
-            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
           ),
         )
         .limit(1);
       if (!sandbox) {
-        return c.json(
-          { error: "sandbox token is not scoped to this project" },
-          403,
-        );
+        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
+      authenticatedSandboxId = sandbox.sandboxId;
     } else {
-      const loaded = await loadProjectForUser(c, projectId, "read");
-      if (!loaded) return c.json({ error: "Not found" }, 404);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
     }
 
     let body: {
@@ -1068,15 +1353,32 @@ projectsApp.openapi(
       error_status?: number;
       error_retryable?: boolean;
       error_provider?: string;
+      lease_ttl_seconds?: number;
     };
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
-      return c.json({ error: "session_id is required" }, 400);
+      return c.json({ error: 'session_id is required' }, 400);
+    }
+
+    if (authenticatedSandboxId) {
+      const [ownedSession] = await db
+        .select({ sessionId: sessionSandboxes.sessionId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, authenticatedSandboxId),
+            eq(sessionSandboxes.sessionId, sessionId),
+            eq(sessionSandboxes.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!ownedSession)
+        return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -1086,14 +1388,39 @@ projectsApp.openapi(
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(
-          eq(projectSessions.sessionId, sessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
+        and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
       )
       .limit(1);
     if (!turnStreamSession) {
-      return c.json({ error: "Not found" }, 404);
+      return c.json({ error: 'Not found' }, 404);
+    }
+
+    if (
+      body.kind === 'execution_heartbeat' ||
+      body.kind === 'execution_lease_release' ||
+      body.kind === 'execution_lease_discover'
+    ) {
+      if (!authenticatedSandboxId)
+        return c.json({ error: 'execution lease requires a sandbox token' }, 403);
+      const target = { sandboxId: authenticatedSandboxId, sessionId, projectId };
+      if (body.kind === 'execution_lease_release')
+        return c.json({ ok: await releaseExecutionLease(target) });
+      if (body.kind === 'execution_lease_discover') {
+        const provider = await discoverExecutionKeepAliveEndpoint(target);
+        return c.json({
+          ok: provider !== null,
+          provider_url: provider?.url ?? null,
+          provider_headers: provider?.headers ?? null,
+        });
+      }
+      const result = await renewExecutionLease(target, body.lease_ttl_seconds);
+      return c.json({
+        ok: result.ok,
+        lease_until: result.leaseUntil,
+        provider_url: result.providerUrl,
+        provider_headers: result.providerHeaders,
+        provider_touched: result.providerUrl !== null,
+      });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1101,33 +1428,17 @@ projectsApp.openapi(
     // finalize it gracefully instead of letting it rot into a timeout failure.
     // (`turn_end` is the alias newer sandboxes send, with status + the opencode
     // session id for the server-side root-session guard.)
-    if (body.kind === "end" || body.kind === "turn_end") {
-      const status = body.status === "error" ? "error" : "idle";
+    if (body.kind === 'end' || body.kind === 'turn_end') {
+      const status = body.status === 'error' ? 'error' : 'idle';
       const errorInfo =
-        body.error_name ||
-        body.error_message ||
-        typeof body.error_status === "number"
+        body.error_name || body.error_message || typeof body.error_status === 'number'
           ? {
-              name:
-                typeof body.error_name === "string"
-                  ? body.error_name
-                  : undefined,
-              message:
-                typeof body.error_message === "string"
-                  ? body.error_message
-                  : undefined,
-              statusCode:
-                typeof body.error_status === "number"
-                  ? body.error_status
-                  : undefined,
+              name: typeof body.error_name === 'string' ? body.error_name : undefined,
+              message: typeof body.error_message === 'string' ? body.error_message : undefined,
+              statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
               isRetryable:
-                typeof body.error_retryable === "boolean"
-                  ? body.error_retryable
-                  : undefined,
-              providerID:
-                typeof body.error_provider === "string"
-                  ? body.error_provider
-                  : undefined,
+                typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
+              providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
             }
           : undefined;
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
@@ -1141,44 +1452,35 @@ projectsApp.openapi(
     // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
     // is already scoped to this project (checked above); the daemon only ever
     // reports its own pin-file root, never a subagent.
-    if (body.kind === "opencode_session") {
+    if (body.kind === 'opencode_session') {
       const ocId = body.opencode_session_id?.trim();
-      if (!ocId)
-        return c.json({ error: "opencode_session_id is required" }, 400);
+      if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
       const updated = await db
         .update(projectSessions)
         .set({ opencodeSessionId: ocId, updatedAt: new Date() })
         .where(
-          and(
-            eq(projectSessions.sessionId, sessionId),
-            eq(projectSessions.projectId, projectId),
-          ),
+          and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )
         .returning({ sessionId: projectSessions.sessionId });
       return c.json({ ok: updated.length > 0 });
     }
 
-    const text = (body.text ?? "").trim();
+    const text = (body.text ?? '').trim();
     if (!text) {
-      return c.json({ error: "text is required" }, 400);
+      return c.json({ error: 'text is required' }, 400);
     }
 
     const detail = body.detail?.trim() || undefined;
     const outputForPrev = body.output?.trim() || undefined;
     const sourcesForPrev = Array.isArray(body.sources)
       ? body.sources
-          .filter(
-            (s): s is { url: string; text: string } => !!s?.url && !!s?.text,
-          )
+          .filter((s): s is { url: string; text: string } => !!s?.url && !!s?.text)
           .map((s) => ({ url: s.url, text: s.text }))
       : undefined;
-    const blocks =
-      Array.isArray(body.blocks) && body.blocks.length > 0
-        ? body.blocks
-        : undefined;
+    const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
 
     const ok =
-      body.kind === "answer"
+      body.kind === 'answer'
         ? await relayTurnAnswer(sessionId, text, blocks)
         : await relayTurnStep(sessionId, text, {
             detail,
@@ -1195,10 +1497,10 @@ projectsApp.openapi(
 // `slack download` once the token is out of the box (KORTIX-206 Phase C2).
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/slack/file",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/slack/file (download proxy)",
+    method: 'get',
+    path: '/{projectId}/channels/slack/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/file (download proxy)',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -1206,20 +1508,19 @@ projectsApp.openapi(
     },
     responses: {
       200: {
-        description: "File bytes",
-        content: { "application/octet-stream": { schema: z.any() } },
+        description: 'File bytes',
+        content: { 'application/octet-stream': { schema: z.any() } },
       },
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const result = await downloadSlackFile(projectId, c.req.query("url") ?? "");
-    if (!result.ok)
-      return c.json({ error: result.error }, result.status as 400 | 404);
-    c.header("Content-Type", result.contentType);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadSlackFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
     return c.body(result.body);
   },
 );
@@ -1229,27 +1530,24 @@ projectsApp.openapi(
 // Backs `slack send --file` once the token is out of the box.
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/slack/file/upload",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/slack/file/upload (upload proxy)",
+    method: 'post',
+    path: '/{projectId}/channels/slack/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/file/upload (upload proxy)',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), files: z.any() }).passthrough(),
-        "Uploaded",
-      ),
+      200: json(z.object({ ok: z.boolean(), files: z.any() }).passthrough(), 'Uploaded'),
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // This is a SEND primitive (posts to Slack with the project's bot token), not
     // a read — a bare project-read gate let ANY project-read caller post
     // arbitrary files to the workspace. The channel.send leaf in iam/actions.ts
@@ -1258,22 +1556,27 @@ projectsApp.openapi(
     // today — see the audit note removing CHANNEL_ACTIONS). Reuse the connector
     // capability that already gates connect/disconnect and the channel-bindings
     // route instead of inventing a parallel gate for the same resource.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     const body = await readBody(c);
     const result = await uploadSlackFile(projectId, {
-      channel: String(body.channel ?? ""),
-      filename: String(body.filename ?? ""),
-      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ""),
-      comment: typeof body.comment === "string" ? body.comment : undefined,
+      channel: String(body.channel ?? ''),
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      comment: typeof body.comment === 'string' ? body.comment : undefined,
       threadTs:
-        typeof body.thread_ts === "string"
+        typeof body.thread_ts === 'string'
           ? body.thread_ts
-          : typeof body.threadTs === "string"
+          : typeof body.threadTs === 'string'
             ? body.threadTs
             : undefined,
     });
-    if (!result.ok)
-      return c.json({ error: result.error }, result.status as 400 | 404);
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
   },
 );
@@ -1286,33 +1589,30 @@ projectsApp.openapi(
 // non-Slack-originated thread are classified `ignore` and dropped.
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/slack/bind-thread",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/slack/bind-thread",
+    method: 'post',
+    path: '/{projectId}/channels/slack/bind-thread',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/bind-thread',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(
-        z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(),
-        "Bound",
-      ),
+      200: json(z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(), 'Bound'),
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
     // back to this project) or a project/session-scoped user PAT.
-    const authType = (c as any).get("authType") as string | undefined;
-    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
-      const accountId = (c as any).get("accountId") as string | undefined;
-      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+    const authType = (c as any).get('authType') as string | undefined;
+    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+      const accountId = (c as any).get('accountId') as string | undefined;
+      const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
-        return c.json({ error: "bind-thread requires a sandbox token" }, 403);
+        return c.json({ error: 'bind-thread requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
@@ -1322,19 +1622,16 @@ projectsApp.openapi(
             eq(sessionSandboxes.sandboxId, sandboxId),
             eq(sessionSandboxes.projectId, projectId),
             eq(sessionSandboxes.accountId, accountId),
-            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
           ),
         )
         .limit(1);
       if (!sandbox) {
-        return c.json(
-          { error: "sandbox token is not scoped to this project" },
-          403,
-        );
+        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
     } else {
-      const loaded = await loadProjectForUser(c, projectId, "read");
-      if (!loaded) return c.json({ error: "Not found" }, 404);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
     let body: {
@@ -1346,39 +1643,32 @@ projectsApp.openapi(
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const sessionId = body.session_id?.trim();
     const channel = body.channel?.trim();
     const threadTs = body.thread_ts?.trim();
     if (!sessionId || !channel || !threadTs) {
-      return c.json(
-        { error: "session_id, channel, and thread_ts are required" },
-        400,
-      );
+      return c.json({ error: 'session_id, channel, and thread_ts are required' }, 400);
     }
     // the session must belong to this project
     const [sess] = await db
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(
-          eq(projectSessions.sessionId, sessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
+        and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
       )
       .limit(1);
     if (!sess) {
-      return c.json({ error: "session not found in project" }, 404);
+      return c.json({ error: 'session not found in project' }, 404);
     }
     const workspaceId =
-      body.workspace_id?.trim() ||
-      (await resolveWorkspaceIdForChannel(projectId, channel));
+      body.workspace_id?.trim() || (await resolveWorkspaceIdForChannel(projectId, channel));
     if (!workspaceId) {
       return c.json(
         {
           error:
-            "could not resolve Slack workspace for channel (is the channel bound to this project?)",
+            'could not resolve Slack workspace for channel (is the channel bound to this project?)',
         },
         400,
       );
@@ -1393,21 +1683,21 @@ projectsApp.openapi(
 // plus whether speaking is wired (ElevenLabs configured).
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/channels/meet/voices",
-    tags: ["channels"],
-    summary: "GET /:projectId/channels/meet/voices",
+    method: 'get',
+    path: '/{projectId}/channels/meet/voices',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/meet/voices',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
-      200: json(z.object({ ok: z.boolean() }).passthrough(), "Voices"),
+      200: json(z.object({ ok: z.boolean() }).passthrough(), 'Voices'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const [selected, botName] = await Promise.all([
       resolveProjectVoice(projectId),
       resolveProjectBotName(projectId),
@@ -1426,29 +1716,35 @@ projectsApp.openapi(
 // PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
 projectsApp.openapi(
   createRoute({
-    method: "put",
-    path: "/{projectId}/channels/meet/name",
-    tags: ["channels"],
-    summary: "PUT /:projectId/channels/meet/name",
+    method: 'put',
+    path: '/{projectId}/channels/meet/name',
+    tags: ['channels'],
+    summary: 'PUT /:projectId/channels/meet/name',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), "Saved"),
+      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), 'Saved'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (setting the bot
     // name is project customization). Built-in editor/manager hold the leaf.
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     const body = await readBody(c);
-    const name = String(body.name ?? body.bot_name ?? "");
+    const name = String(body.name ?? body.bot_name ?? '');
     const saved = await setProjectBotName(projectId, name);
     return c.json({ ok: true, bot_name: saved });
   },
@@ -1457,30 +1753,36 @@ projectsApp.openapi(
 // PUT /v1/projects/:projectId/channels/meet/voice — choose the meeting voice.
 projectsApp.openapi(
   createRoute({
-    method: "put",
-    path: "/{projectId}/channels/meet/voice",
-    tags: ["channels"],
-    summary: "PUT /:projectId/channels/meet/voice",
+    method: 'put',
+    path: '/{projectId}/channels/meet/voice',
+    tags: ['channels'],
+    summary: 'PUT /:projectId/channels/meet/voice',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), "Saved"),
+      200: json(z.object({ ok: z.boolean(), selected: z.string() }).passthrough(), 'Saved'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (choosing the voice
     // is project customization). Built-in editor/manager hold the leaf.
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     const body = await readBody(c);
-    const voiceId = String(body.voice ?? "");
-    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const voiceId = String(body.voice ?? '');
+    if (!isMeetVoice(voiceId)) return c.json({ error: 'unknown voice' }, 400);
     const voice = await setProjectVoice(projectId, voiceId);
     return c.json({ ok: true, selected: voice.id });
   },
@@ -1490,26 +1792,29 @@ projectsApp.openapi(
 // Returns a base64 MP3 of a stock line in that voice (for the picker's preview).
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/meet/voices/{voiceId}/preview",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/meet/voices/:voiceId/preview",
+    method: 'post',
+    path: '/{projectId}/channels/meet/voices/{voiceId}/preview',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/meet/voices/:voiceId/preview',
     ...auth,
     request: { params: z.object({ projectId: z.string(), voiceId: z.string() }) },
     responses: {
-      200: json(z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(), "Preview"),
+      200: json(
+        z.object({ ok: z.boolean(), kind: z.string(), b64: z.string() }).passthrough(),
+        'Preview',
+      ),
       ...errors(400, 404, 502, 503),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    const voiceId = c.req.param("voiceId");
-    if (!isMeetVoice(voiceId)) return c.json({ error: "unknown voice" }, 400);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const voiceId = c.req.param('voiceId');
+    if (!isMeetVoice(voiceId)) return c.json({ error: 'unknown voice' }, 400);
     const r = await previewVoiceB64(voiceId);
     if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
-    return c.json({ ok: true, kind: "mp3", b64: r.b64 });
+    return c.json({ ok: true, kind: 'mp3', b64: r.b64 });
   },
 );
 
@@ -1518,35 +1823,41 @@ projectsApp.openapi(
 // Both keys stay server-side; backs `meet speak`.
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/channels/meet/speak",
-    tags: ["channels"],
-    summary: "POST /:projectId/channels/meet/speak",
+    method: 'post',
+    path: '/{projectId}/channels/meet/speak',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/meet/speak',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), "Spoken"),
+      200: json(z.object({ ok: z.boolean(), voice: z.string() }).passthrough(), 'Spoken'),
       ...errors(400, 403, 404, 502, 503),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Same reasoning as the Slack upload proxy above: this is a SEND primitive
     // (makes the meeting bot speak), not a read, so a bare project-read gate is
     // wrong here too. channel.send is dead/unwired (see audit note removing
     // CHANNEL_ACTIONS) — reuse the connector-write leaf instead.
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+    );
     const body = await readBody(c);
-    const botId = String(body.bot_id ?? body.botId ?? "");
-    const text = String(body.text ?? "");
-    const voice = typeof body.voice === "string" ? body.voice : undefined;
-    if (!botId) return c.json({ error: "bot_id required" }, 400);
-    if (!text.trim()) return c.json({ error: "text required" }, 400);
+    const botId = String(body.bot_id ?? body.botId ?? '');
+    const text = String(body.text ?? '');
+    const voice = typeof body.voice === 'string' ? body.voice : undefined;
+    if (!botId) return c.json({ error: 'bot_id required' }, 400);
+    if (!text.trim()) return c.json({ error: 'text required' }, 400);
     const r = await speakInMeeting(projectId, botId, text, voice);
     if (!r.ok) return c.json({ error: r.error }, r.status as 400 | 404 | 502 | 503);
     return c.json({ ok: true, voice: r.voice });
@@ -1561,31 +1872,31 @@ projectsApp.openapi(
 // The catalog is non-secret; access is still scoped to this project.
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/llm-catalog",
-    tags: ["projects"],
-    summary: "GET /:projectId/llm-catalog",
+    method: 'get',
+    path: '/{projectId}/llm-catalog',
+    tags: ['projects'],
+    summary: 'GET /:projectId/llm-catalog',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
       200: {
-        description: "OK",
-        content: { "application/json": { schema: z.any() } },
+        description: 'OK',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const authType = c.get("authType") as string | undefined;
-    const apiKeyType = c.get("apiKeyType") as string | undefined;
-    const accountId = c.get("accountId") as string | undefined;
-    const sandboxId = c.get("sandboxId") as string | undefined;
+    const projectId = c.req.param('projectId');
+    const authType = c.get('authType') as string | undefined;
+    const apiKeyType = c.get('apiKeyType') as string | undefined;
+    const accountId = c.get('accountId') as string | undefined;
+    const sandboxId = c.get('sandboxId') as string | undefined;
     let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
-    if (authType === "apiKey" && apiKeyType === "sandbox" && accountId && sandboxId) {
+    if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
@@ -1594,33 +1905,30 @@ projectsApp.openapi(
             eq(sessionSandboxes.sandboxId, sandboxId),
             eq(sessionSandboxes.projectId, projectId),
             eq(sessionSandboxes.accountId, accountId),
-            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
           ),
         )
         .limit(1);
       if (!sandbox) {
-        return c.json(
-          { error: "sandbox token is not scoped to this project" },
-          403,
-        );
+        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
       const [project] = await db
         .select({ metadata: projects.metadata })
         .from(projects)
         .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId)))
         .limit(1);
-      if (!project) return c.json({ error: "Not found" }, 404);
+      if (!project) return c.json({ error: 'Not found' }, 404);
       projectMetadata = project.metadata;
       ownerAccountId = accountId;
     } else {
-      const loaded = await loadProjectForUser(c, projectId, "read");
-      if (!loaded) return c.json({ error: "Not found" }, 404);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
       projectMetadata = loaded.row.metadata;
       ownerAccountId = loaded.row.accountId as string | undefined;
     }
     if (!projectLlmGatewayEnabled(projectMetadata)) {
       return c.json(
-        { error: "LLM gateway is disabled for this project", code: "llm_gateway_disabled" },
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
         404,
       );
     }
@@ -1647,29 +1955,28 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/model-defaults",
-    tags: ["projects"],
-    summary: "GET /:projectId/model-defaults",
+    method: 'get',
+    path: '/{projectId}/model-defaults',
+    tags: ['projects'],
+    summary: 'GET /:projectId/model-defaults',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
       200: {
-        description: "OK",
-        content: { "application/json": { schema: z.any() } },
+        description: 'OK',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
     const ownerAccountId = loaded.row.accountId as string;
-    const userId = c.get("userId") as string;
+    const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId);
-    const freeTier =
-      config.KORTIX_BILLING_INTERNAL_ENABLED
+    const freeTier = config.KORTIX_BILLING_INTERNAL_ENABLED
         ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     // Honest project-level resolution (project → account → platform) + where it
@@ -1695,7 +2002,7 @@ projectsApp.openapi(
 );
 
 const ModelDefaultBody = z.object({
-  scope: z.enum(["account", "agent", "project"]),
+  scope: z.enum(['account', 'agent', 'project']),
   agentName: z.string().min(1).max(128).optional(),
   model: z.string().min(1).max(128),
 });
@@ -1703,43 +2010,49 @@ const ModelDefaultBody = z.object({
 // PUT /v1/projects/:projectId/model-defaults
 projectsApp.openapi(
   createRoute({
-    method: "put",
-    path: "/{projectId}/model-defaults",
-    tags: ["projects"],
-    summary: "PUT /:projectId/model-defaults",
+    method: 'put',
+    path: '/{projectId}/model-defaults',
+    tags: ['projects'],
+    summary: 'PUT /:projectId/model-defaults',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: ModelDefaultBody } } },
+      body: { content: { 'application/json': { schema: ModelDefaultBody } } },
     },
     responses: {
       200: {
-        description: "OK",
-        content: { "application/json": { schema: z.any() } },
+        description: 'OK',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (model defaults are
     // project customization). NOTE: /{projectId}/model-defaults is ALSO defined in
     // routes/model-defaults.ts (registered later in projects/index.ts) — both are
     // gated here to be safe against route-registration order; dedupe is follow-up.
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     const ownerAccountId = loaded.row.accountId as string;
-    const userId = c.get("userId") as string;
+    const userId = c.get('userId') as string;
 
     const parsed = ModelDefaultBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
-      return c.json({ error: "Invalid body", code: "invalid_body" }, 400);
+      return c.json({ error: 'Invalid body', code: 'invalid_body' }, 400);
     }
     const { scope, agentName, model } = parsed.data;
-    if (scope === "agent" && !agentName) {
+    if (scope === 'agent' && !agentName) {
       return c.json(
-        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        { error: 'agentName is required for scope=agent', code: 'agent_name_required' },
         400,
       );
     }
@@ -1758,7 +2071,7 @@ projectsApp.openapi(
       return c.json(
         {
           error: `Model "${model}" is not available for this account`,
-          code: "model_not_servable",
+          code: 'model_not_servable',
         },
         409,
       );
@@ -1768,7 +2081,7 @@ projectsApp.openapi(
       accountId: ownerAccountId,
       scope,
       // agent → agent name; project → the project id; account → '' (in the repo).
-      scopeKey: scope === "agent" ? agentName : scope === "project" ? projectId : undefined,
+      scopeKey: scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined,
       model,
       updatedBy: userId,
     });
@@ -1776,7 +2089,7 @@ projectsApp.openapi(
     return c.json({
       ok: true,
       scope,
-      agentName: scope === "agent" ? agentName : undefined,
+      agentName: scope === 'agent' ? agentName : undefined,
       model,
     });
   },
@@ -1785,49 +2098,58 @@ projectsApp.openapi(
 // DELETE /v1/projects/:projectId/model-defaults?scope=account|agent&agentName=
 projectsApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/{projectId}/model-defaults",
-    tags: ["projects"],
-    summary: "DELETE /:projectId/model-defaults",
+    method: 'delete',
+    path: '/{projectId}/model-defaults',
+    tags: ['projects'],
+    summary: 'DELETE /:projectId/model-defaults',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
       query: z.object({
-        scope: z.enum(["account", "agent", "project"]),
+        scope: z.enum(['account', 'agent', 'project']),
         agentName: z.string().min(1).max(128).optional(),
       }),
     },
     responses: {
       200: {
-        description: "OK",
-        content: { "application/json": { schema: z.any() } },
+        description: 'OK',
+        content: { 'application/json': { schema: z.any() } },
       },
       ...errors(400, 403, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     // Floor 'read'; project.customize.write is the real gate (see PUT above; also
     // mirrored in routes/model-defaults.ts).
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
     const ownerAccountId = loaded.row.accountId as string;
-    const scope = c.req.query("scope");
-    const agentName = c.req.query("agentName");
-    if (scope !== "account" && scope !== "agent" && scope !== "project") {
-      return c.json({ error: "scope must be 'account', 'agent', or 'project'", code: "invalid_scope" }, 400);
-    }
-    if (scope === "agent" && !agentName) {
+    const scope = c.req.query('scope');
+    const agentName = c.req.query('agentName');
+    if (scope !== 'account' && scope !== 'agent' && scope !== 'project') {
       return c.json(
-        { error: "agentName is required for scope=agent", code: "agent_name_required" },
+        { error: "scope must be 'account', 'agent', or 'project'", code: 'invalid_scope' },
         400,
       );
     }
-    const scopeKey = scope === "agent" ? agentName : scope === "project" ? projectId : undefined;
+    if (scope === 'agent' && !agentName) {
+      return c.json(
+        { error: 'agentName is required for scope=agent', code: 'agent_name_required' },
+        400,
+      );
+    }
+    const scopeKey = scope === 'agent' ? agentName : scope === 'project' ? projectId : undefined;
     await deleteAccountModelPreference({ accountId: ownerAccountId, scope, scopeKey });
     invalidateAccountModelDefaults(ownerAccountId);
-    return c.json({ ok: true, scope, agentName: scope === "agent" ? agentName : undefined });
+    return c.json({ ok: true, scope, agentName: scope === 'agent' ? agentName : undefined });
   },
 );
 
@@ -1841,29 +2163,29 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/turn-question",
-    tags: ["projects"],
-    summary: "POST /:projectId/turn-question",
+    method: 'post',
+    path: '/{projectId}/turn-question',
+    tags: ['projects'],
+    summary: 'POST /:projectId/turn-question',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
 
-    const authType = (c as any).get("authType") as string | undefined;
-    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
-      const accountId = (c as any).get("accountId") as string | undefined;
-      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+    const authType = (c as any).get('authType') as string | undefined;
+    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+      const accountId = (c as any).get('accountId') as string | undefined;
+      const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
-        return c.json({ error: "turn-question requires a sandbox token" }, 403);
+        return c.json({ error: 'turn-question requires a sandbox token' }, 403);
       }
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
@@ -1873,19 +2195,16 @@ projectsApp.openapi(
             eq(sessionSandboxes.sandboxId, sandboxId),
             eq(sessionSandboxes.projectId, projectId),
             eq(sessionSandboxes.accountId, accountId),
-            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+            inArray(sessionSandboxes.status, ['provisioning', 'active']),
           ),
         )
         .limit(1);
       if (!sandbox) {
-        return c.json(
-          { error: "sandbox token is not scoped to this project" },
-          403,
-        );
+        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
       }
     } else {
-      const loaded = await loadProjectForUser(c, projectId, "read");
-      if (!loaded) return c.json({ error: "Not found" }, 404);
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
     }
 
     let body: {
@@ -1896,11 +2215,11 @@ projectsApp.openapi(
     try {
       body = (await c.req.json()) as typeof body;
     } catch {
-      return c.json({ error: "Invalid JSON body" }, 400);
+      return c.json({ error: 'Invalid JSON body' }, 400);
     }
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
-      return c.json({ error: "session_id is required" }, 400);
+      return c.json({ error: 'session_id is required' }, 400);
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -1910,45 +2229,37 @@ projectsApp.openapi(
       .select({ sessionId: projectSessions.sessionId })
       .from(projectSessions)
       .where(
-        and(
-          eq(projectSessions.sessionId, sessionId),
-          eq(projectSessions.projectId, projectId),
-        ),
+        and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
       )
       .limit(1);
     if (!turnQuestionSession) {
-      return c.json({ error: "Not found" }, 404);
+      return c.json({ error: 'Not found' }, 404);
     }
 
     if (!Array.isArray(body.questions) || body.questions.length === 0) {
-      return c.json({ error: "at least one question is required" }, 400);
+      return c.json({ error: 'at least one question is required' }, 400);
     }
 
     // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
     const questions: QuestionInfo[] = [];
     for (const q of body.questions) {
-      if (!q || typeof q !== "object") continue;
+      if (!q || typeof q !== 'object') continue;
       const obj = q as Record<string, unknown>;
-      const question = String(obj.question ?? "").trim();
+      const question = String(obj.question ?? '').trim();
       if (!question) continue;
       const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
       const options = optionsRaw
-        .map((o) =>
-          o && typeof o === "object" ? (o as Record<string, unknown>) : null,
-        )
+        .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
         // opencode's QuestionInfo carries `value` (required) + optional `label`. The
         // harness `question` tool uses `label`. Accept EITHER so an option that only
         // has `value` still renders a button instead of silently vanishing.
         .filter(
           (o): o is Record<string, unknown> =>
-            !!o && (typeof o.label === "string" || typeof o.value === "string"),
+            !!o && (typeof o.label === 'string' || typeof o.value === 'string'),
         )
         .map((o) => ({
           label: String(o.label ?? o.value),
-          description:
-            typeof o.description === "string"
-              ? String(o.description)
-              : undefined,
+          description: typeof o.description === 'string' ? String(o.description) : undefined,
         }));
       questions.push({
         question,
@@ -1959,7 +2270,7 @@ projectsApp.openapi(
       });
     }
     if (questions.length === 0) {
-      return c.json({ error: "no valid questions provided" }, 400);
+      return c.json({ error: 'no valid questions provided' }, 400);
     }
 
     // Non-blocking: post the question(s) into the thread and return immediately
@@ -1980,44 +2291,48 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/triggers/{slug}/fire",
-    tags: ["triggers"],
-    summary: "POST /:projectId/triggers/:slug/fire",
+    method: 'post',
+    path: '/{projectId}/triggers/{slug}/fire',
+    tags: ['triggers'],
+    summary: 'POST /:projectId/triggers/:slug/fire',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      202: json(z.any(), "OK"),
+      202: json(z.any(), 'OK'),
       ...errors(404, 500),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const slug = c.req.param("slug");
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
     // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
     // was 'manage' (= project.write) — which the floor `member` role LACKS even
     // though it HOLDS trigger.fire, so a plain member could never fire a trigger
     // (its designed fire grant was dead behind the floor). Now member/editor/
     // manager all fire (all hold the leaf); a custom role without it is denied.
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
-
-    const { specs } = await loadProjectTriggers(
-      await withProjectGitAuth(loaded.row),
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
+
+    const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
     const spec = specs.find((s) => s.slug === slug);
-    if (!spec) return c.json({ error: "Not found" }, 404);
+    if (!spec) return c.json({ error: 'Not found' }, 404);
 
     const now = new Date();
     const payload = {
-      trigger: { slug: spec.slug, type: spec.type, kind: "git" },
+      trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
       fired_at: now.toISOString(),
-      source: "manual",
+      source: 'manual',
       actor: loaded.userId,
-      message: { text: "", source: "manual_test" },
+      message: { text: '', source: 'manual_test' },
     };
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
 
@@ -2026,15 +2341,15 @@ projectsApp.openapi(
       project: loaded.row,
       payload,
       renderedPrompt,
-      source: "manual",
+      source: 'manual',
       request: requestAuditContext(c),
     });
 
-    if (result.status === "queued") {
+    if (result.status === 'queued') {
       await markGitTriggerFired(projectId, slug, now);
       return c.json(
         {
-          status: "queued",
+          status: 'queued',
           command_id: result.commandId ?? null,
           session_id: result.sessionId ?? null,
           reason: result.reason ?? null,
@@ -2043,13 +2358,13 @@ projectsApp.openapi(
         202,
       );
     }
-    if (result.status === "failed") {
-      return c.json({ error: result.error ?? "Failed to fire trigger" }, 500);
+    if (result.status === 'failed') {
+      return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
     }
     await markGitTriggerFired(projectId, slug, now);
     return c.json(
       {
-        status: result.deduped ? "deduped" : "fired",
+        status: result.deduped ? 'deduped' : 'fired',
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         deduped: result.deduped ?? false,
@@ -2073,15 +2388,15 @@ projectsApp.openapi(
 // it. This middleware loads the project's gate and short-circuits before any
 // of the handlers below run.
 
-projectsApp.use("/:projectId/apps/*", async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param("projectId")))) {
+projectsApp.use('/:projectId/apps/*', async (c, next) => {
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
     return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
 
-projectsApp.use("/:projectId/apps", async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param("projectId")))) {
+projectsApp.use('/:projectId/apps', async (c, next) => {
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
     return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
@@ -2089,23 +2404,23 @@ projectsApp.use("/:projectId/apps", async (c, next) => {
 
 projectsApp.openapi(
   createRoute({
-    method: "get",
-    path: "/{projectId}/apps",
-    tags: ["apps"],
-    summary: "GET /:projectId/apps",
+    method: 'get',
+    path: '/{projectId}/apps',
+    tags: ['apps'],
+    summary: 'GET /:projectId/apps',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
     },
     responses: {
-      200: json(z.array(AppSchema), "Apps"),
+      200: json(z.array(AppSchema), 'Apps'),
       ...errors(404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const loaded = await loadProjectForUser(c, projectId, "read");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
     return c.json(await loadAppsForResponse(projectId, loaded.row));
   },
@@ -2115,38 +2430,41 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "post",
-    path: "/{projectId}/apps",
-    tags: ["apps"],
-    summary: "POST /:projectId/apps",
+    method: 'post',
+    path: '/{projectId}/apps',
+    tags: ['apps'],
+    summary: 'POST /:projectId/apps',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      201: json(AppSchema, "The created app"),
+      201: json(AppSchema, 'The created app'),
       ...errors(400, 404, 409),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
+    const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     const draft = parseAppDraft(body, { existingSlug: null });
-    if ("error" in draft) return c.json({ error: draft.error }, 400);
+    if ('error' in draft) return c.json({ error: draft.error }, 400);
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
 
     if (extractApps(manifest).specs.some((s) => s.slug === draft.slug)) {
@@ -2159,12 +2477,8 @@ projectsApp.openapi(
     }
 
     const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(
-      loaded.row,
-      next,
-      `chore: add app ${draft.slug}`,
-    );
-    if ("error" in result) {
+    const result = await commitManifest(loaded.row, next, `chore: add app ${draft.slug}`);
+    if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
 
@@ -2176,53 +2490,52 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "patch",
-    path: "/{projectId}/apps/{slug}",
-    tags: ["apps"],
-    summary: "PATCH /:projectId/apps/:slug",
+    method: 'patch',
+    path: '/{projectId}/apps/{slug}',
+    tags: ['apps'],
+    summary: 'PATCH /:projectId/apps/:slug',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { "application/json": { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: AnyObject } } },
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const slug = c.req.param("slug");
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
     const current = extractApps(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: "Not found" }, 404);
+    if (!current) return c.json({ error: 'Not found' }, 404);
 
     const draft = parseAppDraft(
       { ...specToAppBody(current), ...body, slug },
       { existingSlug: slug },
     );
-    if ("error" in draft) return c.json({ error: draft.error }, 400);
+    if ('error' in draft) return c.json({ error: draft.error }, 400);
 
     const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(
-      loaded.row,
-      next,
-      `chore: update app ${slug}`,
-    );
-    if ("error" in result) {
+    const result = await commitManifest(loaded.row, next, `chore: update app ${slug}`);
+    if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
 
@@ -2235,50 +2548,49 @@ projectsApp.openapi(
 
 projectsApp.openapi(
   createRoute({
-    method: "delete",
-    path: "/{projectId}/apps/{slug}",
-    tags: ["apps"],
-    summary: "DELETE /:projectId/apps/:slug",
+    method: 'delete',
+    path: '/{projectId}/apps/{slug}',
+    tags: ['apps'],
+    summary: 'DELETE /:projectId/apps/:slug',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), slug: z.string() }),
     },
     responses: {
-      200: json(z.any(), "OK"),
+      200: json(z.any(), 'OK'),
       ...errors(400, 404),
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param("projectId");
-    const slug = c.req.param("slug");
-    const loaded = await loadProjectForUser(c, projectId, "manage");
-    if (!loaded) return c.json({ error: "Not found" }, 404);
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
 
     if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-      return c.json({ error: "Invalid slug" }, 400);
+      return c.json({ error: 'Invalid slug' }, 400);
     }
 
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
     } catch (err) {
-      return c.json(
-        { error: (err as Error).message || "Failed to read manifest" },
-        400,
-      );
+      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
     }
     if (!extractApps(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: "Not found" }, 404);
+      return c.json({ error: 'Not found' }, 404);
     }
 
     const next = removeAppFromManifest(manifest, slug);
-    const result = await commitManifest(
-      loaded.row,
-      next,
-      `chore: delete app ${slug}`,
-    );
-    if ("error" in result) {
+    const result = await commitManifest(loaded.row, next, `chore: delete app ${slug}`);
+    if ('error' in result) {
       return c.json({ error: result.error }, result.status as 400 | 502);
     }
     return c.json({ ok: true });

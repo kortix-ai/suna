@@ -70,6 +70,7 @@ pnpm-debug.log*
 coverage/
 .nyc_output/
 test-results/
+strix_runs/
 
 # Temporary files
 *.tmp

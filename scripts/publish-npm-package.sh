@@ -32,7 +32,19 @@ fi
 name="$(node -p "require('./package.json').name")"
 
 echo "Building ${name}@${VERSION}"
-bun run build
+# Prefer build:bundles when the package declares one (today: @kortix/sdk,
+# which also emits the tsup browser bundles — dist/kortix.esm.min.js and
+# dist/kortix.global.js — that publishConfig.browser/unpkg/jsdelivr point at.
+# stage-npm-publish.mjs promotes those fields and then verifies they exist in
+# dist/, so they must be built before it runs, not just before `npm publish`
+# (whose prepublishOnly lifecycle script fires too late for that check).
+# Packages with no CDN bundle (@kortix/llm-catalog, @kortix/executor-sdk) have
+# no build:bundles script and fall back to the plain build unchanged.
+if node -e "process.exit(require('./package.json').scripts?.['build:bundles'] ? 0 : 1)"; then
+  bun run build:bundles
+else
+  bun run build
+fi
 
 # Stage the manifest npm actually publishes (dist entrypoints, pinned workspace
 # deps, version lock) from the package's own publishConfig, and verify dist/.

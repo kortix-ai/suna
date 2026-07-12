@@ -1,4 +1,4 @@
-import { platformConfig } from './config';
+import { platformConfig } from '../core/http/config';
 
 /**
  * UI side-effect sink. The SDK fires these during event handling; the host wires

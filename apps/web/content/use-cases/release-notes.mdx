@@ -1,0 +1,145 @@
+---
+title: "How we generate release notes from merged PRs"
+description: The release-notes agent we run on Kortix — connected to GitHub. On each release it reads the merged PRs since the last one, groups them, writes the notes, and opens a changelog PR.
+date: "2026-05-06"
+author: team
+tags:
+  - Engineering
+  - Case Study
+  - DevTools
+---
+
+Release notes are the first thing that gets skipped under a deadline. The
+information is all there in the merged PRs, but turning it into something a reader
+can follow — grouped by area, in plain language, with the noise dropped — is
+manual work that lands after the release is already out.
+
+We run a release-notes agent on Kortix that does it from the PR history. On each
+release, the agent reads every PR merged since the last release, groups them by
+area, writes human-readable notes, and opens a PR to the changelog for review.
+This write-up covers how the setup works: the trigger, the session model, and the
+guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every tag or release</Fact>
+  <Fact label="Connected systems">GitHub</Fact>
+  <Fact label="Mode">Trigger-driven · changelog PR opened for review</Fact>
+</KeyFacts>
+
+## The problem
+
+Writing release notes means reading back through everything that merged since the
+last release, deciding what a reader cares about, and phrasing it for someone who
+wasn't in the PRs. It's the kind of task that's easy to defer, so the changelog
+falls behind or gets a one-line summary that helps no one.
+
+The common fixes are incomplete. An auto-generated list of PR titles is accurate
+but unreadable — internal wording, no grouping, every dependency bump included.
+Writing them by hand is better but slow, and it competes with actually shipping.
+Either way the notes arrive after the release, if they arrive at all.
+
+## What we built
+
+On Kortix, each release triggers an agent. When a tag is pushed, the release
+spawns an isolated session (a cloud sandbox) with scoped access to the repository.
+The agent finds the previous release, reads every PR merged in between, groups
+them by area, writes notes in plain language, and opens a PR to the changelog. A
+human reviews and merges.
+
+<Figure
+  caption="The release-notes agent opening a changelog PR grouped by area"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the release as the trigger">
+
+A signed GitHub webhook points at the project. A pushed tag or published release
+fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
+with the new tag. One release maps to one session on one disposable machine, so
+nothing carries over between releases.
+
+</Step>
+<Step title="Give the agent the notes playbook">
+
+How we write release notes lives as **skills** and **memory** that travel with the
+agent: how to group changes by area, which labels mark internal-only work to drop,
+the voice the changelog is written in, and the format the file expects. When we
+adjust how a section reads, we write it down and the agent follows it on the next
+release.
+
+</Step>
+<Step title="Connect the systems the notes need">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Find the range** — locate the previous release tag and the commit range up to
+  the new one.
+- **Read the merged PRs** — titles, descriptions, labels, and authors for every PR
+  merged in that range, to understand what actually changed.
+- **Group and write** — cluster the PRs by area and write plain-language notes,
+  dropping internal churn and dependency noise.
+- **Open a changelog PR on GitHub** — the drafted notes land as a pull request
+  against the changelog file.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent's output is a **PR against the changelog**, nothing more — it does not
+publish, tag, or announce. A human reviews the wording and merges. Credentials are
+encrypted in the secrets manager and injected at runtime, never shown to the model
+or written to logs.
+
+</Step>
+<Step title="Let each release draft its own notes">
+
+With that in place, a pushed tag reads its own history: the agent finds the range,
+reads the merged PRs, groups them by area, writes the notes, and opens a changelog
+PR — grouped, readable, with internal churn dropped. The team reviews the wording
+instead of assembling the notes from scratch.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **trigger** on every release spawns a session with a scoped **connector** into
+  the repo. The notes playbook is encoded as **skills** and **memory**. The agent
+  drafts a changelog PR and a human owns the wording and the merge.
+</Callout>
+
+## Guardrails
+
+The agent reads the repository and writes a draft, so the access is scoped and
+contained:
+
+- **Isolation.** Every release runs in its own microVM sandbox. The session reads
+  the PR history and drafts the notes; only the changelog branch leaves the
+  sandbox.
+- **Scoped secrets.** The GitHub credentials are encrypted in the secrets manager
+  and injected into the sandbox at runtime, never exposed to the model or the logs.
+- **PR-gated.** The agent opens a pull request against the changelog and stops. It
+  never publishes or announces the release; a human reviews the wording and merges.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A changelog PR with notes grouped by area, ready for review"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every release" label="Notes drafted from the PR history automatically" />
+  <Stat value="Grouped" label="Changes clustered by area with internal churn dropped" />
+  <Stat value="Human review" label="The agent drafts; the team owns the wording" />
+</StatGrid>
+
+The changelog stops falling behind, and the notes that reach review are already
+grouped and readable instead of a raw list of PR titles. Reviewers edit wording
+rather than reconstructing what shipped from the git history.

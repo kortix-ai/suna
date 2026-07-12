@@ -1,13 +1,5 @@
-/**
- * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
- * GatewayDeps. Access lives on the connector; credentials are split per (connector,
- * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
- */
-import type { Context } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
+  executorConnectionProfiles,
   executorConnectorActions,
   executorConnectorPolicies,
   executorConnectors,
@@ -18,66 +10,81 @@ import {
   projects,
   sessionToolApprovals,
 } from '@kortix/db';
-import { db } from '../shared/db';
-import { validateAccountToken } from '../repositories/account-tokens';
-import { authorize } from '../iam';
-import { loadProjectForUser } from '../projects/lib/access';
-import { resolveShareSubject } from './share';
-import { credentialExists, deleteCredential, resolveCredentialValue } from './credentials';
+import { and, desc, eq, gt, inArray, isNotNull, sql } from 'drizzle-orm';
+/**
+ * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
+ * GatewayDeps. Access lives on the connector; credentials are split per (connector,
+ * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
+ * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
+ */
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import {
-  resolveEffectiveAction,
-  type DefaultMode,
-  type Policy,
-} from './policy';
-import { syncProjectConnectors } from './sync';
-import { executeComputerCall } from '../tunnel/core/rpc-core';
-import {
-  loadAgentMailApiKeyForProject,
   loadAgentMailApiKeyForInbox,
+  loadAgentMailApiKeyForProject,
   loadAgentMailInstall,
   loadMeetInstall,
   loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
 } from '../channels/install-store';
-import { resolveAgentMailApiKey } from '../channels/agentmail-api';
 import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
-import { hideSupersededSlack } from './channel-rules';
+import { authorize } from '../iam';
 import { agentMayUseConnector } from '../iam/agent-scope';
+import type { ChannelPlatform } from '../projects/connectors';
+import { loadProjectForUser } from '../projects/lib/access';
 import {
+  publicConnectorAlias,
+  resolveSessionConnectorProfile,
+} from '../projects/lib/session-connector-bindings';
+import { validateAccountToken } from '../repositories/account-tokens';
+import { db } from '../shared/db';
+import { executeComputerCall } from '../tunnel/core/rpc-core';
+import { hideSupersededSlack } from './channel-rules';
+import {
+  credentialExists,
+  deleteCredential,
+  profileCredentialExists,
+  resolveCredentialValue,
+  resolveProfileCredentialValue,
+} from './credentials';
+import type { ExecutorAuth, FetchImpl } from './execute';
+import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import {
+  type ConnectorDraft,
+  deleteConnectorFromManifest,
+  getConnectorConfigFromManifest,
+  getConnectorPoliciesFromManifest,
+  getProjectPoliciesFromManifest,
+  setConnectorCredentialModeInManifest,
+  setConnectorCredentialShared,
+  setConnectorNameInManifest,
+  setConnectorPoliciesInManifest,
+  setConnectorSensitiveInManifest,
+  setProjectPoliciesInManifest,
+  upsertConnectorInManifest,
+} from './manifest-crud';
+import {
+  browsePipedreamApps,
   finalizePipedreamConnection,
   pipedreamConfigured,
   pipedreamConnectUrl,
   runPipedreamAction,
   runPipedreamProxy,
-  browsePipedreamApps,
   verifyWebhookSig,
 } from './pipedream';
-import {
-  deleteConnectorFromManifest,
-  getProjectPoliciesFromManifest,
-  setConnectorCredentialShared,
-  setConnectorCredentialModeInManifest,
-  setConnectorSensitiveInManifest,
-  setConnectorNameInManifest,
-  getConnectorPoliciesFromManifest,
-  getConnectorConfigFromManifest,
-  setConnectorPoliciesInManifest,
-  setProjectPoliciesInManifest,
-  upsertConnectorInManifest,
-  type ConnectorDraft,
-} from './manifest-crud';
-import type { ActionBinding, Risk } from './types';
-import type { ChannelPlatform } from '../projects/connectors';
-import type { ExecutorAuth, FetchImpl } from './execute';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from './gateway';
+import { type DefaultMode, type Policy, resolveEffectiveAction } from './policy';
 import type {
   AdminConnectorView,
   CatalogConnector,
   ExecutorPrincipal,
   ExecutorRouterDeps,
 } from './router';
+import { resolveShareSubject } from './share';
+import { syncProjectConnectors } from './sync';
+import type { ActionBinding, Risk } from './types';
 
 const DEFAULT_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -253,7 +260,12 @@ type ConnectorRow = typeof executorConnectors.$inferSelect;
 function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
   const cfg = (row.config ?? {}) as Record<string, any>;
   const auth: ExecutorAuth = cfg.auth
-    ? { type: cfg.auth.type, in: cfg.auth.in ?? 'header', name: cfg.auth.name ?? null, prefix: cfg.auth.prefix ?? null }
+    ? {
+        type: cfg.auth.type,
+        in: cfg.auth.in ?? 'header',
+        name: cfg.auth.name ?? null,
+        prefix: cfg.auth.prefix ?? null,
+      }
     : DEFAULT_AUTH;
   const hasAuth = row.providerType === 'pipedream' || auth.type !== 'none';
   return { auth, hasAuth };
@@ -262,14 +274,21 @@ function authOf(row: ConnectorRow): { auth: ExecutorAuth; hasAuth: boolean } {
 function baseUrlOf(row: ConnectorRow): string | null {
   const cfg = (row.config ?? {}) as Record<string, any>;
   switch (row.providerType) {
-    case 'openapi': return cfg.server ?? null;
-    case 'http': return cfg.baseUrl ?? null;
-    case 'graphql': return cfg.endpoint ?? null;
-    case 'mcp': return cfg.url ?? null;
-    case 'channel': return cfg.baseUrl ?? null;
+    case 'openapi':
+      return cfg.server ?? null;
+    case 'http':
+      return cfg.baseUrl ?? null;
+    case 'graphql':
+      return cfg.endpoint ?? null;
+    case 'mcp':
+      return cfg.url ?? null;
+    case 'channel':
+      return cfg.baseUrl ?? null;
     // computer: no base URL — the gateway relays via the tunnel core, not HTTP.
-    case 'computer': return null;
-    default: return null;
+    case 'computer':
+      return null;
+    default:
+      return null;
   }
 }
 
@@ -282,17 +301,27 @@ function channelPlatform(config: ConnectorRow['config'] | null): string | null {
   return (config as Record<string, any> | null)?.platform ?? null;
 }
 
-async function channelToken(projectId: string, platform: string | null, slug?: string | null): Promise<string | null> {
+async function channelToken(
+  projectId: string,
+  platform: string | null,
+  slug?: string | null,
+): Promise<string | null> {
   if (platform === 'slack') return loadSlackTokenForProject(projectId);
-  if (platform === 'email') return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
+  if (platform === 'email')
+    return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
   if (platform === 'meet') return loadMeetTokenForProject(projectId);
   return null;
 }
 
 /** Cheap "is it connected?" — the install exists (no decrypt). */
-async function channelInstalled(projectId: string, platform: string | null, slug?: string | null): Promise<boolean> {
+async function channelInstalled(
+  projectId: string,
+  platform: string | null,
+  slug?: string | null,
+): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
-  if (platform === 'email') return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
+  if (platform === 'email')
+    return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;
   return false;
 }
@@ -302,16 +331,52 @@ async function channelInstalled(projectId: string, platform: string | null, slug
  * check their platform install; everyone else checks executor_credentials. One
  * place so the catalog + admin listings don't each re-branch on provider.
  */
-async function connectorConnected(row: ConnectorRow, userId: string | null): Promise<boolean> {
-  return row.providerType === 'channel'
-    ? channelInstalled(row.projectId, channelPlatform(row.config), row.slug)
+async function connectorConnected(
+  row: ConnectorRow,
+  userId: string | null,
+  profile?: {
+    profileId: string;
+    isDefault: boolean;
+    metadata: Record<string, unknown>;
+  } | null,
+): Promise<boolean> {
+  if (row.providerType === 'channel') {
+    const profileSlug =
+      typeof profile?.metadata.connector_slug === 'string'
+        ? profile.metadata.connector_slug
+        : row.slug;
+    if (!(await channelInstalled(row.projectId, channelPlatform(row.config), profileSlug))) {
+      return false;
+    }
+    if (channelPlatform(row.config) === 'email' && typeof profile?.metadata.inbox_id === 'string') {
+      const install = await loadAgentMailInstall(row.projectId, profileSlug).catch(() => null);
+      return install?.inboxId === profile.metadata.inbox_id;
+    }
+    return true;
+  }
+  return profile
+    ? (await profileCredentialExists({
+        connectorId: row.connectorId,
+        profileId: profile.profileId,
+      })) ||
+        (profile.isDefault && (await credentialExists(row.connectorId, userId)))
     : credentialExists(row.connectorId, userId);
 }
 
-function toGatewayConnector(row: ConnectorRow): GatewayConnector {
+function toGatewayConnector(
+  row: ConnectorRow,
+  profile?: {
+    profileId: string;
+    isDefault: boolean;
+    metadata: Record<string, unknown>;
+  } | null,
+): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
   return {
     connectorId: row.connectorId,
+    profileId: profile?.profileId ?? null,
+    profileIsDefault: profile?.isDefault ?? false,
+    profileMetadata: profile?.metadata ?? {},
     slug: row.slug,
     provider: row.providerType,
     platform: channelPlatform(row.config),
@@ -331,7 +396,7 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
-function makeDbGatewayDeps(): GatewayDeps {
+export function makeDbGatewayDeps(principal: ExecutorPrincipal): GatewayDeps {
   return {
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
@@ -340,13 +405,25 @@ function makeDbGatewayDeps(): GatewayDeps {
         .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
         .limit(1);
       if (!row) return null;
-      return toGatewayConnector(row);
+      const profile = await resolveSessionConnectorProfile({
+        accountId: principal.accountId,
+        projectId,
+        sessionId: principal.sessionId,
+        alias: slug,
+      });
+      if (!profile || profile.status !== 'active') return null;
+      return toGatewayConnector(row, profile);
     },
     loadAction: async (connectorId, relPath) => {
       const [a] = await db
         .select()
         .from(executorConnectorActions)
-        .where(and(eq(executorConnectorActions.connectorId, connectorId), eq(executorConnectorActions.path, relPath)))
+        .where(
+          and(
+            eq(executorConnectorActions.connectorId, connectorId),
+            eq(executorConnectorActions.path, relPath),
+          ),
+        )
         .limit(1);
       if (!a) return null;
       return {
@@ -363,30 +440,36 @@ function makeDbGatewayDeps(): GatewayDeps {
       // every other connector takes the original executor_credentials path.
       if (connector.provider === 'channel') {
         const [row] = await db
-          .select({ projectId: executorConnectors.projectId, slug: executorConnectors.slug, config: executorConnectors.config })
+          .select({
+            projectId: executorConnectors.projectId,
+            slug: executorConnectors.slug,
+            config: executorConnectors.config,
+          })
           .from(executorConnectors)
           .where(eq(executorConnectors.connectorId, connector.connectorId))
           .limit(1);
-        return row ? channelToken(row.projectId, channelPlatform(row.config), row.slug) : null;
+        const profileSlug =
+          typeof connector.profileMetadata?.connector_slug === 'string'
+            ? connector.profileMetadata.connector_slug
+            : row?.slug;
+        return row ? channelToken(row.projectId, channelPlatform(row.config), profileSlug) : null;
       }
-      return resolveCredentialValue(connector.connectorId, userId);
+      if (connector.profileId) {
+        const credential = await resolveProfileCredentialValue({
+          connectorId: connector.connectorId,
+          profileId: connector.profileId,
+        });
+        if (credential !== null) return credential;
+        if (!connector.profileIsDefault) return null;
+      }
+      return connector.profileIsDefault || !connector.profileId
+        ? resolveCredentialValue(connector.connectorId, userId)
+        : null;
     },
-    loadEmailSessionContext: async (projectId, sessionId) => {
-      const [row] = await db
-        .select({ metadata: projectSessions.metadata })
-        .from(projectSessions)
-        .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.sessionId, sessionId)))
-        .limit(1);
-      const email = (row?.metadata as Record<string, any> | undefined)?.email;
-      if (!email || typeof email !== 'object') return null;
-      const inboxId = typeof email.inbox_id === 'string' ? email.inbox_id : null;
-      if (!inboxId) return null;
-      return {
-        inboxId,
-        threadId: typeof email.thread_id === 'string' ? email.thread_id : null,
-        messageId: typeof email.message_id === 'string' ? email.message_id : null,
-      };
-    },
+    // Session metadata is user-writable, so it is not a trusted routing source
+    // for inbox, thread, or message identifiers. A future channel-owned binding
+    // may provide this context; until then callers must pass explicit action args.
+    loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);
       return install?.inboxId ? { inboxId: install.inboxId } : null;
@@ -416,6 +499,7 @@ function makeDbGatewayDeps(): GatewayDeps {
           accountId: rec.accountId,
           projectId: rec.projectId,
           connectorId: rec.connectorId,
+          profileId: rec.profileId,
           actionPath: rec.actionPath,
           actingUserId: rec.actingUserId,
           sessionId: rec.sessionId,
@@ -477,7 +561,11 @@ async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
 /** Load a pipedream connector's app slug + id (verifies provider). */
 export async function loadPipedreamConnector(projectId: string, slug: string) {
   const [row] = await db
-    .select({ connectorId: executorConnectors.connectorId, providerType: executorConnectors.providerType, config: executorConnectors.config })
+    .select({
+      connectorId: executorConnectors.connectorId,
+      providerType: executorConnectors.providerType,
+      config: executorConnectors.config,
+    })
     .from(executorConnectors)
     .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
     .limit(1);
@@ -487,17 +575,32 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   return { connectorId: row.connectorId, app };
 }
 
+export function resolveTokenBoundSessionId(
+  authenticatedSessionId: string | null,
+  requestedSessionId: string | null,
+): { ok: true; sessionId: string | null } | { ok: false } {
+  if (requestedSessionId && requestedSessionId !== authenticatedSessionId) {
+    return { ok: false };
+  }
+  return { ok: true, sessionId: authenticatedSessionId };
+}
+
 async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return null;
   const result = await validateAccountToken(token);
   if (!result.isValid || !result.userId || !result.accountId || !result.projectId) return null;
+  const sessionIdentity = resolveTokenBoundSessionId(
+    result.sessionId ?? null,
+    c.req.header('X-Kortix-Session-Id') ?? null,
+  );
+  if (!sessionIdentity.ok) return null;
   return {
     userId: result.userId,
     accountId: result.accountId,
     projectId: result.projectId,
-    sessionId: c.req.header('X-Kortix-Session-Id') ?? result.sessionId ?? null,
+    sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(result.userId),
     agentGrant: result.agentGrant ?? null,
   };
@@ -511,7 +614,10 @@ async function resolvePrincipal(c: Context): Promise<ExecutorPrincipal | null> {
  * a logged-in user token (verified to be a project member here). This is the
  * unlock for using the Executor locally: same gateway, same authz, any principal.
  */
-async function resolveProjectPrincipal(c: Context, projectId: string): Promise<ExecutorPrincipal | null> {
+async function resolveProjectPrincipal(
+  c: Context,
+  projectId: string,
+): Promise<ExecutorPrincipal | null> {
   if (!isUuid(projectId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
@@ -520,8 +626,18 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
 
   if (tokenProjectId) {
     // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
-    // tokenProjectId === the URL project at the auth layer. Re-check defensively.
+    // tokenProjectId === the URL project at the auth layer. Re-check defensively,
+    // then bind the token account to the actual project account. This prevents a
+    // PAT row from one account from being labeled with another account's project
+    // id and then used on the project-explicit Executor gateway.
     if (tokenProjectId !== projectId) return null;
+    const [project] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project || !accountId || project.accountId !== accountId) return null;
+    accountId = project.accountId;
   } else {
     // User token (PAT/JWT, no pinned project): verify project access. Throws 403
     // if the user isn't a member — treat that as an unauthorized principal.
@@ -535,12 +651,17 @@ async function resolveProjectPrincipal(c: Context, projectId: string): Promise<E
     }
   }
   if (!accountId) return null;
+  const sessionIdentity = resolveTokenBoundSessionId(
+    (c.get('sessionId') as string | undefined) ?? null,
+    c.req.header('X-Kortix-Session-Id') ?? null,
+  );
+  if (!sessionIdentity.ok) return null;
 
   return {
     userId,
     accountId,
     projectId,
-    sessionId: c.req.header('X-Kortix-Session-Id') ?? (c.get('sessionId') as string | undefined) ?? null,
+    sessionId: sessionIdentity.sessionId,
     subject: await resolveShareSubject(userId),
     agentGrant: (c.get('agentGrant') as ExecutorPrincipal['agentGrant']) ?? null,
   };
@@ -552,7 +673,9 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     await db
       .select()
       .from(executorConnectors)
-      .where(and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true))),
+      .where(
+        and(eq(executorConnectors.projectId, p.projectId), eq(executorConnectors.enabled, true)),
+      ),
   );
 
   // Project-scoped layer is the same for every connector in this list — load once.
@@ -567,14 +690,24 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
     // consistent with the call gate, so it never lists a tool it can't invoke.
     // This is the ONLY access gate — connectors are project-wide visible to
     // every human with project access (no per-connector member scoping).
-    if (!agentMayUseConnector(p.agentGrant ?? null, row.slug)) continue;
+    if (!agentMayUseConnector(p.agentGrant ?? null, publicConnectorAlias(row.slug))) continue;
+    const profile = await resolveSessionConnectorProfile({
+      accountId: p.accountId,
+      projectId: p.projectId,
+      sessionId: p.sessionId,
+      alias: row.slug,
+    });
+    if (!profile || profile.status !== 'active') continue;
     const { hasAuth } = authOf(row);
     if (hasAuth) {
       // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null))) continue;
+      if (!(await connectorConnected(row, null, profile))) continue;
     }
     const connectorPolicies = await loadConnectorPoliciesFor(row.connectorId);
-    const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
+    const actions = await db
+      .select()
+      .from(executorConnectorActions)
+      .where(eq(executorConnectorActions.connectorId, row.connectorId));
     out.push({
       slug: row.slug,
       name: row.name,
@@ -582,15 +715,24 @@ async function listCatalog(p: ExecutorPrincipal): Promise<CatalogConnector[]> {
       platform: channelPlatform(row.config),
       status: row.status,
       actions: actions
-        .filter((a) => resolveEffectiveAction({
+        .filter(
+          (a) =>
+            resolveEffectiveAction({
           fullPath: `${row.slug}.${a.path}`,
           relPath: a.path,
           projectPolicies,
           connectorPolicies,
           risk: a.risk,
           defaultMode,
-        }).action !== 'block')
-        .map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
+            }).action !== 'block',
+        )
+        .map((a) => ({
+          path: a.path,
+          name: a.name,
+          description: a.description ?? '',
+          risk: a.risk,
+          inputSchema: a.inputSchema ?? null,
+        })),
     });
   }
   return out;
@@ -604,7 +746,11 @@ async function resolveProjectUserWith(
   if (!isUuid(projectId)) return null;
   const userId = c.get('userId') as string | undefined;
   if (!userId) return null;
-  const [proj] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [proj] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
   if (!proj) return null;
   // Thread the acting token (iamTokenId) so the agent-grant fold fires: a
   // scoped agent-session token must actually hold the leaf, and a custom role
@@ -624,7 +770,10 @@ async function resolveProjectUserWith(
 // Connector administration (create/delete connectors, write shared credentials,
 // grants/policies) is project.connector.write — NOT the coarse, fold-exempt
 // project.write.
-async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+async function resolveAdmin(
+  c: Context,
+  projectId: string,
+): Promise<{ accountId: string; userId: string } | null> {
   return resolveProjectUserWith(c, projectId, 'project.connector.write');
 }
 
@@ -632,7 +781,10 @@ async function resolveAdmin(c: Context, projectId: string): Promise<{ accountId:
 // baseline (the Connectors/Channels rail sections gate visibility on it), so a
 // plain member can see which connectors exist and their status. The list never
 // carries credential values — only whether one is set.
-async function resolveReader(c: Context, projectId: string): Promise<{ accountId: string; userId: string } | null> {
+async function resolveReader(
+  c: Context,
+  projectId: string,
+): Promise<{ accountId: string; userId: string } | null> {
   return resolveProjectUserWith(c, projectId, 'project.connector.read');
 }
 
@@ -640,8 +792,14 @@ async function resolveReader(c: Context, projectId: string): Promise<{ accountId
  *  `viewerUserId` is vestigial (kept for interface stability): it only mattered
  *  for `per_user` connectors, removed 2026-07-05 — every connector now checks
  *  the one shared credential regardless of who's viewing. */
-async function listConnectors(projectId: string, viewerUserId: string): Promise<AdminConnectorView[]> {
-  let rows = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+async function listConnectors(
+  projectId: string,
+  viewerUserId: string,
+): Promise<AdminConnectorView[]> {
+  let rows = await db
+    .select()
+    .from(executorConnectors)
+    .where(eq(executorConnectors.projectId, projectId));
   if (rows.length === 0) {
     const [project] = await db
       .select({ accountId: projects.accountId })
@@ -650,7 +808,10 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       .limit(1);
     if (project) {
       await syncProjectConnectors(projectId, project.accountId);
-      rows = await db.select().from(executorConnectors).where(eq(executorConnectors.projectId, projectId));
+      rows = await db
+        .select()
+        .from(executorConnectors)
+        .where(eq(executorConnectors.projectId, projectId));
     }
   }
   const conns = hideSupersededSlack(rows);
@@ -661,7 +822,10 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
     if (hasAuth) {
       secretSet = await connectorConnected(row, null);
     }
-    const actions = await db.select().from(executorConnectorActions).where(eq(executorConnectorActions.connectorId, row.connectorId));
+    const actions = await db
+      .select()
+      .from(executorConnectorActions)
+      .where(eq(executorConnectorActions.connectorId, row.connectorId));
     out.push({
       slug: row.slug,
       name: row.name,
@@ -670,7 +834,13 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       status: row.status,
       credentialMode: 'shared',
       sensitive: (row.config as { sensitive?: unknown } | null)?.sensitive === true,
-      actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
+      actions: actions.map((a) => ({
+        path: a.path,
+        name: a.name,
+        description: a.description ?? '',
+        risk: a.risk,
+        inputSchema: a.inputSchema ?? null,
+      })),
       authSecret: hasAuth ? 'credential' : null,
       secretSet,
     });
@@ -743,18 +913,20 @@ async function getConnectorConfig(
 export const dbExecutorRouterDeps: ExecutorRouterDeps = {
   resolvePrincipal,
   resolveProjectPrincipal,
-  makeGatewayDeps: () => makeDbGatewayDeps(),
+  makeGatewayDeps: (principal) => makeDbGatewayDeps(principal),
   listCatalog,
   resolveAdmin,
   resolveReader,
   listConnectors,
   // The manual "Sync" button re-pulls catalogs unconditionally (force) — the
   // user is explicitly asking to refresh, e.g. an MCP server gained new tools.
-  syncConnectors: (projectId, accountId) => syncProjectConnectors(projectId, accountId, { force: true }),
+  syncConnectors: (projectId, accountId) =>
+    syncProjectConnectors(projectId, accountId, { force: true }),
   createConnector: (projectId, accountId, draft) =>
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
-  setConnectorCredential: (projectId, slug, value) => setConnectorCredentialShared(projectId, slug, value),
+  setConnectorCredential: (projectId, slug, value) =>
+    setConnectorCredentialShared(projectId, slug, value),
   deleteConnectorCredential: async (projectId, slug) => {
     const [row] = await db
       .select()
@@ -766,13 +938,21 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     await deleteCredential(row.connectorId, null);
     return { ok: true as const };
   },
-  setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
-  setSensitive: (projectId, accountId, slug, sensitive) => setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
-  setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
+  setCredentialMode: (projectId, accountId, slug, mode) =>
+    setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  setSensitive: (projectId, accountId, slug, sensitive) =>
+    setConnectorSensitiveInManifest(projectId, accountId, slug, sensitive),
+  setConnectorName: (projectId, accountId, slug, name) =>
+    setConnectorNameInManifest(projectId, accountId, slug, name),
   getConnectorPolicies,
   getConnectorConfig,
   setConnectorPolicies: (projectId, accountId, slug, policies) =>
-    setConnectorPoliciesInManifest(projectId, accountId, slug, policies as Parameters<typeof setConnectorPoliciesInManifest>[3]),
+    setConnectorPoliciesInManifest(
+      projectId,
+      accountId,
+      slug,
+      policies as Parameters<typeof setConnectorPoliciesInManifest>[3],
+    ),
   // `userId` is accepted for interface stability but unused: every connector
   // resolves the one shared Pipedream external-user binding since `per_user`
   // (each member's own) was removed 2026-07-05.
@@ -780,7 +960,13 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     ? async (projectId, slug, _userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
-        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, null, redirects);
+        const { connectUrl, token } = await pipedreamConnectUrl(
+          projectId,
+          slug,
+          conn.app,
+          null,
+          redirects,
+        );
         return { token, app: conn.app, connectUrl };
       }
     : undefined,
@@ -788,7 +974,13 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     ? async (projectId, slug, _userId) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
-        const r = await finalizePipedreamConnection({ projectId, slug, app: conn.app, connectorId: conn.connectorId, userId: null });
+        const r = await finalizePipedreamConnection({
+          projectId,
+          slug,
+          app: conn.app,
+          connectorId: conn.connectorId,
+          userId: null,
+        });
         return { connected: r.connected, accountId: r.accountId };
       }
     : undefined,
@@ -799,7 +991,13 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
         if (!projectId || !slug) return false;
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return false;
-        await finalizePipedreamConnection({ projectId, slug, app: conn.app, connectorId: conn.connectorId, userId: userId ?? null });
+        await finalizePipedreamConnection({
+          projectId,
+          slug,
+          app: conn.app,
+          connectorId: conn.connectorId,
+          userId: userId ?? null,
+        });
         return true;
       }
     : undefined,

@@ -12,32 +12,33 @@ const s = kortix.session(projectId, sessionId);
 ```
 
 <Callout>
-**Session-scoped, by design.** A session owns its runtime, so you ask the *session*
-about health and previews — never a global "sandbox." The sandbox is plumbing the
-SDK resolves for you.
+  **Session-scoped, by design.** A session owns its runtime, so you ask the *session* about health
+  and previews — never a global "sandbox." The sandbox is plumbing the SDK resolves for you.
 </Callout>
 
 ## Lifecycle
 
 ```ts
-await s.get();                 // session detail
-await s.update({ /* … */ });   // rename, settings
-await s.start();               // provision + boot the runtime
-await s.restart();             // restart the runtime (may re-provision a new sandbox)
-await s.stop();                // stop the runtime without deleting the session
-await s.commit();              // commit the agent's work
-await s.setSharing(intent);    // sharing / visibility
+await s.get(); // session detail
+await s.update({/* … */}); // rename, settings
+await s.start(); // provision + boot the runtime
+await s.restart(); // restart the same runtime in place
+await s.stop(); // stop the runtime without deleting the session
+await s.commit(); // commit the agent's work
+await s.setSharing(intent); // sharing / visibility
 await s.delete();
 ```
 
-`restart()` and `delete()` both forget this handle's cached runtime (a restart
-may land on a different sandbox); `stop()` does the same without deleting the
+`restart()` preserves the session's established sandbox identity and refreshes
+the handle's cached readiness state. If the original provider object is
+unavailable, restart fails explicitly instead of attaching an empty replacement.
+`delete()` removes the runtime; `stop()` clears readiness without deleting the
 session itself.
 
 ### Previews & public shares
 
 ```ts
-await s.previews();            // candidate preview ports the runtime exposes
+await s.previews(); // candidate preview ports the runtime exposes
 await s.publicShares.list();
 await s.publicShares.create(input);
 await s.publicShares.revoke(shareId);
@@ -58,17 +59,17 @@ right read for a scoped/embedded host that only has a session token.
 The session owns its runtime, so these resolve the active sandbox for you — you
 pass a port or a URL, never a sandbox id.
 
-| method | returns | what |
-|---|---|---|
-| `s.health(init?)` | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready |
-| `s.previewUrl(port, path?)` | `string` | proxy/preview URL for a port the agent exposed |
-| `s.proxyUrl(url?)` | `string \| undefined` | rewrite a localhost URL the agent printed into a reachable proxy URL |
+| method                      | returns                        | what                                                                 |
+| --------------------------- | ------------------------------ | -------------------------------------------------------------------- |
+| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready                         |
+| `s.previewUrl(port, path?)` | `string`                       | proxy/preview URL for a port the agent exposed                       |
+| `s.proxyUrl(url?)`          | `string \| undefined`          | rewrite a localhost URL the agent printed into a reachable proxy URL |
 
 ```ts
 const { ok, health } = await s.health();
 // health?.runtimeReady · health?.status · health?.version …
 
-const url = s.previewUrl(3000, '/docs');       // → the live preview URL
+const url = s.previewUrl(3000, '/docs'); // → the live preview URL
 const fixed = s.proxyUrl('http://localhost:8080');
 ```
 
@@ -78,9 +79,9 @@ do require a resolved runtime; call `s.ensureReady()` first (or `s.send()` /
 `s.abort()`, which call it internally).
 
 <Callout>
-Stateless URL helpers — detecting localhost URLs in agent output, parsing preview
-URLs — live at [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The
-session handle wraps them with the sandbox context already resolved.
+  Stateless URL helpers — detecting localhost URLs in agent output, parsing preview URLs — live at
+  [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The session handle wraps them with
+  the sandbox context already resolved.
 </Callout>
 
 ## Talking to the agent
@@ -93,13 +94,13 @@ whatever sandbox happens to be globally "active" — so two handles on two
 different sessions never cross wires.
 
 ```ts
-await s.ensureReady();                 // provision/resume the runtime; idempotent
-s.setModel({ providerID, modelID });   // sticky model for subsequent send()s
-s.setAgent('build');                   // sticky agent for subsequent send()s
+await s.ensureReady(); // provision/resume the runtime; idempotent
+s.setModel({ providerID, modelID }); // sticky model for subsequent send()s
+s.setAgent('build'); // sticky agent for subsequent send()s
 
-await s.send('Refactor the auth module');           // prompt the agent
-await s.send('One-off task', { model, agent });     // per-call override
-await s.abort();                                     // abort the current run
+await s.send('Refactor the auth module'); // prompt the agent
+await s.send('One-off task', { model, agent }); // per-call override
+await s.abort(); // abort the current run
 ```
 
 Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
@@ -145,17 +146,16 @@ await s.runtime.session.prompt({
 ```
 
 <Callout type="warn">
-The OpenCode `sessionID` the runtime expects is **not** the Kortix `sessionId`
-passed to `kortix.session(projectId, sessionId)` — it's resolved server-side at
-`/start` and cached on the handle. Prefer `s.send()` / `s.abort()`, which
-resolve it for you; only reach for raw `s.runtime` calls when you need
-something those wrappers don't cover.
+  The OpenCode `sessionID` the runtime expects is **not** the Kortix `sessionId` passed to
+  `kortix.session(projectId, sessionId)` — it's resolved server-side at `/start` and cached on the
+  handle. Prefer `s.send()` / `s.abort()`, which resolve it for you; only reach for raw `s.runtime`
+  calls when you need something those wrappers don't cover.
 </Callout>
 
 <Callout type="warn">
-Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by
-the SDK, with the full opencode type surface re-exported from
-[`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
+  Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by the SDK, with
+  the full opencode type surface re-exported from
+  [`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
 </Callout>
 
 ## Files — `s.files`

@@ -74,6 +74,7 @@ mock.module('../repositories/account-tokens', () => ({
 }));
 
 mock.module('../shared/jwt-verify', () => ({
+  decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async (token: string) => {
     if (token === 'jwt-owner') {
       return { ok: true, userId: 'user-owner', email: 'owner@kortix.dev' };
@@ -155,6 +156,12 @@ describe('preview auth ownership', () => {
       headers: { Cookie: '__preview_session=kortix_owner' },
     });
     expect(res.status).toBe(200);
+  });
+
+  test('rejects query-string bearer tokens on ordinary HTTP preview routes', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status?token=kortix_owner');
+    expect(res.status).toBe(401);
   });
 
   test('rejects non-owner kortix token', async () => {

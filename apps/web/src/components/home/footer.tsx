@@ -31,6 +31,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Resources',
     links: [
+      { label: 'Use Cases', href: '/use-cases' },
       { label: 'Blog', href: '/blog' },
       { label: 'Changelog', href: '/changelog' },
       { label: 'Docs', href: '/docs' },
@@ -99,7 +100,13 @@ const Footer = () => {
               <div key={section.title}>
                 <h3 className="text-muted-foreground pb-2 text-sm">{section.title}</h3>
                 <ul className="space-y-0">
-                  {section.links.map((link) => (
+                  {section.links
+                    .filter(
+                      (link) =>
+                        process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'true' ||
+                        link.href !== '/use-cases',
+                    )
+                    .map((link) => (
                     <li key={link.label}>
                       <FooterLink {...link} />
                     </li>

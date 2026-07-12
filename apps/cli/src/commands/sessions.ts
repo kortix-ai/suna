@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { loadAuth } from '../api/auth.ts';
 import {
   emitJson,
+  locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -12,6 +12,7 @@ import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './ses
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
+import { runSessionsShell } from './sessions-shell.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
@@ -34,6 +35,10 @@ Subcommands:
                                     one-shot with --prompt). --new starts one.
   connect [<session-id>]            Attach local OpenCode to the running
                                     session sandbox. Pass args after --.
+  shell [<session-id>]              Open a raw interactive terminal (PTY) in
+                                    the sandbox — no agent, just a shell.
+                                    Reattaches to the existing one; --new
+                                    starts fresh.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
@@ -83,6 +88,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'connect' || sub === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
+  // `shell` owns its own flag parsing (incl. --new + a positional session id).
+  if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {
+    return runSessionsShell(argv.slice(1));
+  }
   // `log` owns its own flag parsing (incl. --limit + a positional session id),
   // so route it before we consume flags below.
   if (sub === 'log' || sub === 'messages' || sub === 'history') {
@@ -108,6 +117,15 @@ export async function runSessions(argv: string[]): Promise<number> {
     return runSessionsAnswer(argv.slice(1));
   }
   const rest = argv.slice(1);
+  // None of the subcommands below (ls/new/info/preview/restart/rename/rm/
+  // open) own dedicated help text or parse -h/--help themselves, so without
+  // this a bare `--help` falls through as an ordinary positional arg — e.g.
+  // `sessions info --help` would try to look up a session literally named
+  // "--help" instead of showing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const json = takeFlagBool(rest, ['--json']);
   const wait = takeFlagBool(rest, ['--wait']);
   let projectFlag: string | undefined;
@@ -333,17 +351,13 @@ async function sessionsInfo(
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let s: ProjectSession;
-  try {
-    s = await ctx.client.get<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions info ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const s = located.located.session;
 
   if (json) {
     emitJson(s);
@@ -384,17 +398,13 @@ async function sessionsPreview(
     process.stderr.write(`${status.err(`Invalid port "${portArg}".`)}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-
-  let s: ProjectSession;
-  try {
-    s = await ctx.client.get<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
-    );
-  } catch (err) {
-    return surfaceApiError(err);
-  }
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions preview ${sessionId} --port ${port} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { session: s, auth } = located.located;
 
   if (!s.sandbox_url) {
     process.stderr.write(
@@ -409,12 +419,12 @@ async function sessionsPreview(
     return 1;
   }
   const ext = m[1];
-  const base = new URL(ctx.auth.api_base);
+  const base = new URL(auth.api_base);
   // Kortix subdomain preview: served at root (so SPA/Next assets resolve), the
   // `?token` authorizes the subdomain (in-memory TTL) and sets a cookie for
   // subsequent asset requests. `*.localhost` resolves to 127.0.0.1 in browsers.
   const scheme = base.protocol.replace(':', '');
-  const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(ctx.auth.token)}`;
+  const url = `${scheme}://p${port}-${ext}.${base.host}/?token=${encodeURIComponent(auth.token)}`;
 
   if (json) {
     emitJson({ session_id: s.session_id, port, sandbox: ext, url });
@@ -432,12 +442,16 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions restart ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
 
   try {
-    await ctx.client.post<{ ok: true; status: string }>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}/restart`,
+    await located.located.client.post<{ ok: true; status: string }>(
+      `/projects/${located.located.projectId}/sessions/${sessionId}/restart`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -459,13 +473,17 @@ async function sessionsRename(
     process.stderr.write(`${status.err('Pass a name (use "" to clear it).')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions rename ${sessionId} "${name}" --host ${host}`,
+  );
+  if (!located) return 1;
 
   let updated: ProjectSession;
   try {
-    updated = await ctx.client.patch<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+    updated = await located.located.client.patch<ProjectSession>(
+      `/projects/${located.located.projectId}/sessions/${sessionId}`,
       { name },
     );
   } catch (err) {
@@ -485,11 +503,15 @@ async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions rm ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
 
   try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/sessions/${sessionId}`);
+    await located.located.client.delete(`/projects/${located.located.projectId}/sessions/${sessionId}`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -502,11 +524,13 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return 1;
-  const auth = loadAuth();
-  if (!auth) return 1;
-  const url = sessionWebUrl(auth.api_base, ctx.projectId, sessionId);
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions open ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const url = sessionWebUrl(located.located.auth.api_base, located.located.projectId, sessionId);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;

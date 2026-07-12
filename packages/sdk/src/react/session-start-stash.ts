@@ -7,7 +7,6 @@
  * the SDK so the producer (new-session screen) and consumer (`useSession`)
  * share one contract.
  */
-import type { PromptPart } from './use-opencode-sessions/keys';
 
 export interface StartStash {
   prompt: string;
@@ -169,46 +168,4 @@ export function migrateLegacyStash(
       sessionStorage.removeItem(fromOptionsKey);
     } catch {}
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fork-draft stash. A sibling hand-off to the start-stash above, but for the
-// "fork this message" flow: apps/web's session-chat stashes the forked
-// message's parts (text + file refs) under the NEW forked session's id so its
-// composer can pick them up as a pre-filled draft once it mounts. Previously
-// apps/web/session-chat.tsx and session-chat-input.tsx each independently
-// redefined the same `opencode_fork_prompt:<id>` key — unified here so both
-// (and any future host) share one contract. The storage key is unchanged for
-// back-compat with anything already stashed under it.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function forkDraftKey(sessionId: string): string {
-  return `opencode_fork_prompt:${sessionId}`;
-}
-
-/** Stash a fork's prompt parts for the forked session to pick up as a draft.
- * No-ops when there's nothing to stash. */
-export function writeForkDraft(sessionId: string, prompt: PromptPart[]): void {
-  if (prompt.length === 0) return;
-  try {
-    sessionStorage.setItem(forkDraftKey(sessionId), JSON.stringify(prompt));
-  } catch {}
-}
-
-/** Read back a stashed fork draft, if any. Does not clear it — call
- * `clearForkDraft` once consumed. */
-export function readForkDraft(sessionId: string): PromptPart[] | null {
-  try {
-    const raw = sessionStorage.getItem(forkDraftKey(sessionId));
-    if (!raw) return null;
-    return JSON.parse(raw) as PromptPart[];
-  } catch {
-    return null;
-  }
-}
-
-export function clearForkDraft(sessionId: string): void {
-  try {
-    sessionStorage.removeItem(forkDraftKey(sessionId));
-  } catch {}
 }

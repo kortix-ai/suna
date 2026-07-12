@@ -11,6 +11,7 @@ import {
   useOpenCodeCommands,
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
@@ -69,10 +70,18 @@ export function ComposerChatInput({
   boundAgentName?: string | null;
 }) {
   const { data: agents } = useOpenCodeAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const projectConfig = useProjectConfig(projectId);
+  const local = useOpenCodeLocal({
+    agents,
+    providers,
+    config,
+    sessionId,
+    boundAgentName,
+    defaultAgentName: projectConfig?.open_code_default_agent,
+  });
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
@@ -113,6 +122,7 @@ export function ComposerChatInput({
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
       modelRequired
+      modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}

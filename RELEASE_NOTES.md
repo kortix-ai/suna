@@ -1,3 +1,7 @@
-slack bind-thread + pending main
+Staging release: auth, chat input, Slack defaults, and runtime reliability
 
-Adds `slack bind-thread` (bind a session to a Slack thread for approval-reply loops; #4385) plus all other pending main changes promoted through staging (v0.9.102-staging, commit 6275ff93). Enables the WRING funding-request APPROVE-in-thread flow.
+- Promote the fully tested staging candidate to production.
+- Includes sandbox identity race protection and restored health deployment identity.
+- Includes staged authentication redesign and chat input model-state fixes.
+- Includes reliable Slack project default agent/model handling.
+- Staging artifact build and deploy passed; public staging ke2e passed 9/9.
