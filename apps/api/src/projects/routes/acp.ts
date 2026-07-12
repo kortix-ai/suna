@@ -8,6 +8,16 @@ import { inspectSandboxRuntime, sandboxOpencodeEndpoint } from '../opencode-mapp
 
 type Envelope = Record<string, unknown>;
 
+function decodedResponseHeaders(upstream: Response): Headers {
+  const headers = new Headers(upstream.headers);
+  // fetch transparently decodes gzip/br/zstd. Re-emitting the original encoding
+  // or compressed content length makes downstream clients decode plain bytes a
+  // second time (Bun surfaces this as ZstdDecompressionError).
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return headers;
+}
+
 async function resolveAcpTarget(c: any) {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
@@ -145,6 +155,7 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
     body: requestBody,
     signal: c.req.raw.signal,
   });
+  const responseHeaders = decodedResponseHeaders(upstream);
 
   if (method === 'POST' && upstream.ok && upstream.status !== 202 && upstream.body) {
     const responseBody = await upstream.text();
@@ -179,14 +190,14 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
         ));
       }
     } catch {}
-    return new Response(responseBody, { status: upstream.status, headers: upstream.headers });
+    return new Response(responseBody, { status: upstream.status, headers: responseHeaders });
   }
 
   if (method === 'GET' && upstream.ok && upstream.body) {
     const [clientBody, persistenceBody] = upstream.body.tee();
     void persistSse(persistenceBody, target);
-    return new Response(clientBody, { status: upstream.status, headers: upstream.headers });
+    return new Response(clientBody, { status: upstream.status, headers: responseHeaders });
   }
 
-  return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 });
