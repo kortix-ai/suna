@@ -11,10 +11,26 @@ describe('teams channel catalog', () => {
     const actions = channelCatalog('teams');
     const byPath = Object.fromEntries(actions.map((a) => [a.path, a]));
     expect(Object.keys(byPath).sort()).toEqual(
-      ['get_channel', 'get_team', 'get_user', 'list_channels', 'list_members'].sort(),
+      [
+        'get_channel',
+        'get_message',
+        'get_team',
+        'get_user',
+        'list_channels',
+        'list_members',
+        'list_messages',
+        'list_replies',
+        'list_teams',
+      ].sort(),
     );
-    const listChannels = byPath.list_channels!;
-    expect(listChannels.binding).toEqual({ kind: 'http', method: 'GET', path: '/teams/{team-id}/channels' });
+    const listChannels = byPath.list_channels;
+    expect(listChannels).toBeDefined();
+    if (!listChannels) throw new Error('list_channels missing from Teams catalog');
+    expect(listChannels.binding).toEqual({
+      kind: 'http',
+      method: 'GET',
+      path: '/teams/{team-id}/channels',
+    });
     expect(listChannels.risk).toBe('read');
     expect(channelCatalog('teams').every((a) => a.risk === 'read')).toBe(true);
   });

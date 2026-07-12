@@ -1,16 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
 import { teamsPendingUploads } from '@kortix/db';
+import { eq, lt } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { graphToken } from '../teams-auth';
 import { loadTeamsBotCredentials, loadTeamsTenantForProject } from '../install-store';
 import { sendActivity } from '../teams-api';
+import { graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
 
-const ALLOWED_DOWNLOAD_HOST = /(^|\.)(sharepoint\.com|sharepoint-df\.com|svc\.ms|microsoft\.com|office\.com)$/i;
+const ALLOWED_DOWNLOAD_HOST =
+  /(^|\.)(sharepoint\.com|sharepoint-df\.com|svc\.ms|microsoft\.com|office\.com)$/i;
 
 export type FileProxyError = { ok: false; error: string; status: number };
 
@@ -61,15 +62,26 @@ export async function initiateTeamsUpload(
   args: TeamsUploadArgs,
 ): Promise<{ ok: true; uploadId: string } | FileProxyError> {
   if (!args.serviceUrl || !args.conversationId || !args.filename || !args.contentBase64) {
-    return { ok: false, error: 'serviceUrl, conversationId, filename and content_base64 are required', status: 400 };
+    return {
+      ok: false,
+      error: 'serviceUrl, conversationId, filename and content_base64 are required',
+      status: 400,
+    };
   }
   const size = Buffer.byteLength(args.contentBase64, 'base64');
   if (size <= 0) return { ok: false, error: 'empty file', status: 400 };
   if (size > MAX_UPLOAD_BYTES) {
-    return { ok: false, error: `file exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`, status: 400 };
+    return {
+      ok: false,
+      error: `file exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`,
+      status: 400,
+    };
   }
 
-  await db.delete(teamsPendingUploads).where(lt(teamsPendingUploads.expiresAt, new Date())).catch(() => {});
+  await db
+    .delete(teamsPendingUploads)
+    .where(lt(teamsPendingUploads.expiresAt, new Date()))
+    .catch(() => {});
 
   const uploadId = randomUUID();
   await db.insert(teamsPendingUploads).values({
@@ -85,7 +97,12 @@ export async function initiateTeamsUpload(
     expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
   });
 
-  const ref: TeamsConversationRef = { serviceUrl: args.serviceUrl, conversationId: args.conversationId, botId: args.botId, projectId };
+  const ref: TeamsConversationRef = {
+    serviceUrl: args.serviceUrl,
+    conversationId: args.conversationId,
+    botId: args.botId,
+    projectId,
+  };
   const posted = await sendActivity(ref, {
     type: 'message',
     attachments: [
@@ -94,7 +111,7 @@ export async function initiateTeamsUpload(
         content: {
           description: args.description ?? `Kortix wants to send you ${args.filename}.`,
           sizeInBytes: size,
-            acceptContext: { uploadId },
+          acceptContext: { uploadId },
           declineContext: { uploadId },
         },
         name: args.filename,
@@ -102,7 +119,10 @@ export async function initiateTeamsUpload(
     ],
   });
   if (!posted) {
-    await db.delete(teamsPendingUploads).where(eq(teamsPendingUploads.uploadId, uploadId)).catch(() => {});
+    await db
+      .delete(teamsPendingUploads)
+      .where(eq(teamsPendingUploads.uploadId, uploadId))
+      .catch(() => {});
     return { ok: false, error: 'failed to post the file consent card', status: 502 };
   }
   return { ok: true, uploadId };
@@ -111,7 +131,13 @@ export async function initiateTeamsUpload(
 interface FileConsentValue {
   action?: 'accept' | 'decline';
   context?: { uploadId?: string };
-  uploadInfo?: { uploadUrl?: string; contentUrl?: string; name?: string; uniqueId?: string; fileType?: string };
+  uploadInfo?: {
+    uploadUrl?: string;
+    contentUrl?: string;
+    name?: string;
+    uniqueId?: string;
+    fileType?: string;
+  };
 }
 
 export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<void> {
@@ -133,14 +159,23 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
   };
 
   if (value.action !== 'accept') {
-    await db.delete(teamsPendingUploads).where(eq(teamsPendingUploads.uploadId, uploadId)).catch(() => {});
+    await db
+      .delete(teamsPendingUploads)
+      .where(eq(teamsPendingUploads.uploadId, uploadId))
+      .catch(() => {});
     return;
   }
   if (!row || !value.uploadInfo?.uploadUrl) {
     if (ref.serviceUrl && ref.conversationId) {
-      await sendActivity(ref, { type: 'message', text: 'That upload expired — ask me to send the file again.' });
+      await sendActivity(ref, {
+        type: 'message',
+        text: 'That upload expired — ask me to send the file again.',
+      });
     }
-    await db.delete(teamsPendingUploads).where(eq(teamsPendingUploads.uploadId, uploadId)).catch(() => {});
+    await db
+      .delete(teamsPendingUploads)
+      .where(eq(teamsPendingUploads.uploadId, uploadId))
+      .catch(() => {});
     return;
   }
 
@@ -155,7 +190,10 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     signal: AbortSignal.timeout(120_000),
   }).catch(() => null);
 
-  await db.delete(teamsPendingUploads).where(eq(teamsPendingUploads.uploadId, uploadId)).catch(() => {});
+  await db
+    .delete(teamsPendingUploads)
+    .where(eq(teamsPendingUploads.uploadId, uploadId))
+    .catch(() => {});
 
   if (!put || !put.ok) {
     if (ref.serviceUrl && ref.conversationId) {

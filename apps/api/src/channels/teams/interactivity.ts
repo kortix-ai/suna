@@ -27,14 +27,20 @@ function tenantOf(activity: TeamsActivity): string | null {
   return activity.conversation?.tenantId ?? activity.channelData?.tenant?.id ?? null;
 }
 
-function parseAction(activity: TeamsActivity): { verb: string; data: Record<string, unknown> } | null {
-  const value = activity.value as { action?: { verb?: string; data?: Record<string, unknown> } } | undefined;
+function parseAction(
+  activity: TeamsActivity,
+): { verb: string; data: Record<string, unknown> } | null {
+  const value = activity.value as
+    | { action?: { verb?: string; data?: Record<string, unknown> } }
+    | undefined;
   const verb = value?.action?.verb ?? (value?.action?.data as { verb?: string } | undefined)?.verb;
   if (!verb) return null;
   return { verb, data: value?.action?.data ?? {} };
 }
 
-export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise<TeamsInvokeResponse> {
+export async function handleAdaptiveCardAction(
+  activity: TeamsActivity,
+): Promise<TeamsInvokeResponse> {
   const action = parseAction(activity);
   if (!action) return cardResponse(buildNoticeCard("This action isn't available."));
 
@@ -106,7 +112,13 @@ async function handlePickProject(
   const convo = convoOf(activity);
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
-  await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
+  const switched = await setConversationProject({
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    projectId,
+  });
+  if (!switched)
+    return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
   return cardResponse(buildNoticeCard('This conversation now runs the selected project.'));
 }
 
@@ -119,7 +131,8 @@ async function handleAnswer(
   if (!convo || !answer) return cardResponse(buildNoticeCard("I couldn't record that answer."));
 
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  if (!projectId)
+    return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   const synthetic: TeamsActivity = {
     ...activity,
@@ -151,20 +164,28 @@ async function handleReview(
   const reviewItemId = typeof data.reviewItemId === 'string' ? data.reviewItemId : null;
   const verdict = typeof data.verdict === 'string' ? VERDICT_MAP[data.verdict] : undefined;
   const uid = teamsUserId(activity);
-  if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
+  if (!convo || !reviewItemId || !verdict)
+    return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
   const identity = uid ? await lookupTeamsIdentity(convo.tenantId, uid) : null;
   if (!identity) {
-    return cardResponse(buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'));
+    return cardResponse(
+      buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'),
+    );
   }
 
   const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  if (!projectId)
+    return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
 
   const item = await getReviewItemById(reviewItemId, projectId);
   if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
 
-  await applyVerdict(reviewItemId, projectId, { verdict, feedback: null, actingUserId: identity.userId });
+  await applyVerdict(reviewItemId, projectId, {
+    verdict,
+    feedback: null,
+    actingUserId: identity.userId,
+  });
 
   const decisionLine =
     verdict === 'approve'
@@ -186,7 +207,11 @@ async function handleReview(
   }).catch((err) => console.error('[teams-webhook] review resume failed', err));
 
   const ack =
-    verdict === 'approve' ? `Approved "${item.title}" — resuming the agent.` : verdict === 'reject' ? `Rejected "${item.title}".` : `Requested changes on "${item.title}".`;
+    verdict === 'approve'
+      ? `Approved "${item.title}" — resuming the agent.`
+      : verdict === 'reject'
+        ? `Rejected "${item.title}".`
+        : `Requested changes on "${item.title}".`;
   return cardResponse(buildNoticeCard(ack));
 }
 
@@ -198,7 +223,9 @@ async function handleRequestAccess(
   const userId = teamsUserId(activity);
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
   if (!tenantId || !userId || !projectId) {
-    return cardResponse(buildNoticeCard("I couldn't file that request. Try again from the prompt."));
+    return cardResponse(
+      buildNoticeCard("I couldn't file that request. Try again from the prompt."),
+    );
   }
 
   const outcome = await createTeamsAccessRequest({ tenantId, teamsUserId: userId, projectId });
@@ -212,9 +239,13 @@ async function handleRequestAccess(
       });
       return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.'));
     case 'already-member':
-      return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
+      return cardResponse(
+        buildNoticeCard("You already have access — send your message again and I'll pick it up."),
+      );
     case 'no-identity':
-      return cardResponse(buildNoticeCard('Connect your Kortix account first, then request access.'));
+      return cardResponse(
+        buildNoticeCard('Connect your Kortix account first, then request access.'),
+      );
     case 'no-project':
       return cardResponse(buildNoticeCard("I couldn't find that project."));
   }

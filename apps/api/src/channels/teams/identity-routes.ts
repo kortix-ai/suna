@@ -1,14 +1,15 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { inArray } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { db } from '../../shared/db';
+import { inArray } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { config } from '../../config';
-import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { combinedAuth } from '../../middleware/auth';
+import { auth, errors, json, makeOpenApiApp } from '../../openapi';
+import { db } from '../../shared/db';
 import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage } from './auth-resume';
-import { verifyTeamsLoginState } from './login';
 import { isAccountMember, linkTeamsIdentity } from './identity';
+import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
 
 export const teamsIdentityApp = makeOpenApiApp();
@@ -22,8 +23,8 @@ teamsIdentityApp.openapi(
     request: { params: z.object({ token: z.string().min(1) }) },
     responses: { 200: { description: 'HTML redirect to web Teams login page' } },
   }),
-  async (c: any) => {
-    const token = c.req.param('token');
+  async (c: Context) => {
+    const token = c.req.param('token') ?? '';
     const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
     const target = `${base}/teams/login/${encodeURIComponent(token)}`;
     return c.html(`<!doctype html>
@@ -60,16 +61,23 @@ teamsIdentityApp.openapi(
     ...auth,
     middleware: [combinedAuth] as const,
     request: { body: { content: { 'application/json': { schema: BindBody } } } },
-    responses: { 200: json(BindResult, 'Identity linked'), ...errors(400, 403, 404, 410) },
+    responses: { 200: json(BindResult, 'Identity linked'), ...errors(400, 403, 404, 410, 503) },
   }),
-  async (c: any) => {
+  async (c: Context) => {
     if (!config.TEAMS_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
+    if (!config.MICROSOFT_APP_PASSWORD) {
+      return c.json({ error: 'Teams identity binding is not configured on this server.' }, 503);
+    }
     const userId = c.get('userId') as string;
     const { token } = (await c.req.json().catch(() => ({}))) as { token?: string };
     if (!token) return c.json({ error: 'Missing token' }, 400);
 
     const payload = verifyTeamsLoginState(token);
-    if (!payload) return c.json({ error: 'This link is invalid or has expired. Run the Teams login again.' }, 410);
+    if (!payload)
+      return c.json(
+        { error: 'This link is invalid or has expired. Run the Teams login again.' },
+        410,
+      );
 
     const projectIds = await listProjectsForWorkspace('teams', payload.tenantId);
     if (projectIds.length === 0) {
@@ -83,7 +91,11 @@ teamsIdentityApp.openapi(
     const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
     const hasAccess = memberships.some(Boolean);
 
-    await linkTeamsIdentity({ tenantId: payload.tenantId, teamsUserId: payload.teamsUserId, userId });
+    await linkTeamsIdentity({
+      tenantId: payload.tenantId,
+      teamsUserId: payload.teamsUserId,
+      userId,
+    });
 
     const pending = await consumePendingTeamsAuthMessage({
       pendingId: payload.pendingId,
@@ -98,10 +110,13 @@ teamsIdentityApp.openapi(
         tenantId: payload.tenantId,
         conversationId: pending.activity.conversation?.id ?? '',
         activity: pending.activity,
-      }).catch((err) => console.error('[teams-auth] failed to resume pending Teams message after bind', err));
+      }).catch((err) =>
+        console.error('[teams-auth] failed to resume pending Teams message after bind', err),
+      );
     }
 
-    const workspaceName = (await loadTeamsInstall(projectIds[0]).catch(() => null))?.teamName ?? null;
+    const workspaceName =
+      (await loadTeamsInstall(projectIds[0]).catch(() => null))?.teamName ?? null;
     return c.json({ ok: true, workspaceName, hasAccess, resumed });
   },
 );

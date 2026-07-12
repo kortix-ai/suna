@@ -1,41 +1,61 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { ExecutorError, createExecutorClient } from '../../../../packages/executor-sdk/src/index';
 import {
-  parseArgs,
-  out,
   CliError,
-  handleError,
   getEnv,
+  handleError,
+  kortixPost,
   kortixProjectId,
   kortixSessionId,
-  kortixPost,
+  out,
+  parseArgs,
 } from '../lib';
-import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
 
 const TEAMS_CONNECTOR = 'teams';
+
+function resolveDownloadOutput(outPath: string): string {
+  const trimmed = outPath.trim();
+  if (!trimmed) throw new CliError('--out must be a file path');
+  if (trimmed.endsWith('/') || trimmed.endsWith('\\'))
+    throw new CliError('--out must point to a file, not a directory');
+  return resolve(trimmed);
+}
 
 async function downloadFile(url: string, outPath: string) {
   const apiUrl = getEnv('KORTIX_API_URL');
   const tok = getEnv('KORTIX_CLI_TOKEN') ?? getEnv('KORTIX_TOKEN');
   const projectId = kortixProjectId();
   if (!apiUrl || !tok || !projectId) {
-    throw new CliError('KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.');
+    throw new CliError(
+      'KORTIX_API_URL / KORTIX_CLI_TOKEN / KORTIX_PROJECT_ID not set — cannot download.',
+    );
   }
   const proxyUrl = new URL(
     `/v1/projects/${projectId}/channels/teams/file?url=${encodeURIComponent(url)}`,
     apiUrl,
   ).href;
-  const res = await fetch(proxyUrl, { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(60_000) });
+  const res = await fetch(proxyUrl, {
+    headers: { Authorization: `Bearer ${tok}` },
+    signal: AbortSignal.timeout(60_000),
+  });
   if (!res.ok) {
     let msg = `Download failed: HTTP ${res.status}`;
-    try { const j = (await res.json()) as { error?: string }; if (j?.error) msg = j.error; } catch { /* keep */ }
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j?.error) msg = j.error;
+    } catch {
+      /* keep */
+    }
     throw new CliError(msg);
   }
   const buf = await res.arrayBuffer();
-  const dir = outPath.split('/').slice(0, -1).join('/');
-  if (dir) mkdirSync(dir, { recursive: true });
-  writeFileSync(outPath, Buffer.from(buf));
-  return { ok: true, path: outPath, size: buf.byteLength };
+  const resolvedOut = resolveDownloadOutput(outPath);
+  mkdirSync(dirname(resolvedOut), { recursive: true });
+  await Bun.write(resolvedOut, Buffer.from(buf));
+  chmodSync(resolvedOut, 0o600);
+  return { ok: true, path: resolvedOut, size: buf.byteLength };
 }
 
 async function sendFile(filePath: string, description?: string) {
@@ -45,7 +65,9 @@ async function sendFile(filePath: string, description?: string) {
   const conversationId = getEnv('MS_TEAMS_CONVERSATION_ID');
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set — cannot upload.');
   if (!serviceUrl || !conversationId) {
-    throw new CliError('MS_TEAMS_SERVICE_URL / MS_TEAMS_CONVERSATION_ID not set — no active Teams conversation.');
+    throw new CliError(
+      'MS_TEAMS_SERVICE_URL / MS_TEAMS_CONVERSATION_ID not set — no active Teams conversation.',
+    );
   }
   const data = readFileSync(filePath);
   const filename = filePath.split('/').pop() || 'file';
@@ -71,7 +93,7 @@ function executorClient() {
   return createExecutorClient({ apiUrl, token, projectId: kortixProjectId() });
 }
 
-async function executorCall(action: string, args: Record<string, unknown>): Promise<any> {
+async function executorCall(action: string, args: Record<string, unknown>): Promise<unknown> {
   try {
     const res = await executorClient().call(TEAMS_CONNECTOR, action, args);
     return res.data ?? res;
@@ -149,7 +171,8 @@ async function main(): Promise<void> {
         break;
       }
       const text = readTextFlag(flags) ?? args[0];
-      if (!text) throw new CliError('message text required, e.g. teams send "Done — here is the summary"');
+      if (!text)
+        throw new CliError('message text required, e.g. teams send "Done — here is the summary"');
       const relayed = await relayTurnStream('answer', text.slice(0, 11000));
       if (relayed) {
         out({ ok: true, delivered: 'stream' });
@@ -171,7 +194,9 @@ async function main(): Promise<void> {
       break;
     case 'channel':
       if (!flags.team || !flags.channel) throw new CliError('--team and --channel required');
-      out(await executorCall('get_channel', { 'team-id': flags.team, 'channel-id': flags.channel }));
+      out(
+        await executorCall('get_channel', { 'team-id': flags.team, 'channel-id': flags.channel }),
+      );
       break;
     case 'members':
       if (!flags.team) throw new CliError('--team <team-id> required');
@@ -181,7 +206,6 @@ async function main(): Promise<void> {
       if (!flags.id) throw new CliError('--id <user-id> required');
       out(await executorCall('get_user', { 'user-id': flags.id }));
       break;
-    case 'help':
     default:
       console.log(`
 teams — Microsoft Teams adapter

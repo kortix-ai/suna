@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -40,14 +39,16 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
+import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import {
+  type ChannelBinding,
   useChannelBindings,
   useUpdateChannelBinding,
-  type ChannelBinding,
 } from '@/hooks/channels/use-channel-bindings';
 import {
+  type EmailInstallation,
+  type SlackInstallation,
   useConnectSlack,
   useDisconnectEmail,
   useDisconnectSlack,
@@ -55,20 +56,19 @@ import {
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
-  type EmailInstallation,
-  type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import {
+  type Agent,
   useOpenCodeProviders,
   useVisibleAgents,
-  type Agent,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
-import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
+import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -76,6 +76,12 @@ import { useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
+const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2', 'channel-loading-3'];
+const SLACK_MANIFEST_STEPS = [
+  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+  'On the next screen, click Install to Workspace and approve.',
+  'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
+];
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -93,7 +99,10 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     EMAIL_CONNECTOR_SLUG,
   );
   const loading =
-    loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
+    loadingInstall ||
+    loadingMode ||
+    projectQuery.isLoading ||
+    (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -125,8 +134,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
           </InfoBanner>
         ) : loading ? (
           <div className="space-y-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 rounded-md" />
+            {CHANNEL_LOADING_ROWS.map((key) => (
+              <Skeleton key={key} className="h-10 rounded-md" />
             ))}
           </div>
         ) : !oauthInstallUrl && !install ? (
@@ -205,15 +214,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            {projectId ? (
-              <div className="border-border/60 border-t pt-6">
-                <TeamsChannelPanel projectId={projectId} />
-              </div>
-            ) : null}
+            <div className="border-border/60 border-t pt-6">
+              <TeamsChannelPanel projectId={projectId} />
+            </div>
 
-            {install ? (
-              <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
-            ) : null}
+            {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
           </>
         )}
       </div>
@@ -251,8 +256,8 @@ function ChannelBindingsSection({
     <div className="space-y-2">
       <Label>Channel bindings</Label>
       <p className="text-muted-foreground text-xs">
-        Which agent, model, and join policy each connected channel uses. A channel with
-        no override follows the project default.
+        Which agent, model, and join policy each connected channel uses. A channel with no override
+        follows the project default.
       </p>
       <Table>
         <TableHeader>
@@ -279,11 +284,12 @@ function ChannelBindingsSection({
   );
 }
 
-const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> = [
-  { value: 'project_open', label: 'Project members can join' },
-  { value: 'owner_only', label: 'Owner only' },
-  { value: 'owner_approval', label: 'Owner approval' },
-];
+const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
+  [
+    { value: 'project_open', label: 'Project members can join' },
+    { value: 'owner_only', label: 'Owner only' },
+    { value: 'owner_approval', label: 'Owner approval' },
+  ];
 
 /** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
 function agentDefaultLabel(projectDefaultAgent: string | null): string {
@@ -304,7 +310,9 @@ function stripOpencodeNamespace(model: string): string {
 function describeEffectiveModel(binding: ChannelBinding): string {
   if (binding.opencodeModel) {
     const label = stripOpencodeNamespace(binding.opencodeModel);
-    return binding.effectiveModel.source === 'explicit' ? label : `${label} (unavailable — using default)`;
+    return binding.effectiveModel.source === 'explicit'
+      ? label
+      : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
   return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
@@ -339,7 +347,7 @@ function ChannelBindingTableRow({
   const agentSelectorAgents = useMemo<Agent[]>(() => {
     const defaultEntry = {
       name: agentDefaultLabel(projectDefaultAgent),
-      description: 'Falls back to the project\'s configured default agent.',
+      description: "Falls back to the project's configured default agent.",
       mode: 'primary',
       permission: {},
       options: {},
@@ -349,7 +357,14 @@ function ChannelBindingTableRow({
     // removed, so the picker never renders a value it can't display.
     const missingCurrent =
       binding.agentName && !names.has(binding.agentName)
-        ? [{ name: binding.agentName, mode: 'primary', permission: {}, options: {} } as unknown as Agent]
+        ? [
+            {
+              name: binding.agentName,
+              mode: 'primary',
+              permission: {},
+              options: {},
+            } as unknown as Agent,
+          ]
         : [];
     return [defaultEntry, ...visibleAgents, ...missingCurrent];
   }, [visibleAgents, projectDefaultAgent, binding.agentName]);
@@ -357,7 +372,9 @@ function ChannelBindingTableRow({
 
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
+  const selectedModel = binding.opencodeModel
+    ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel))
+    : null;
 
   const update = useUpdateChannelBinding();
 
@@ -772,12 +789,8 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
         </div>
 
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5 text-sm">
-          {[
-            'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-            'On the next screen, click Install to Workspace and approve.',
-            'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
-          ].map((line, i) => (
-            <li key={i}>{line}</li>
+          {SLACK_MANIFEST_STEPS.map((line) => (
+            <li key={line}>{line}</li>
           ))}
         </ol>
 
