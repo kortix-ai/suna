@@ -69,7 +69,13 @@ export default function GoogleSignIn({
       className="w-full"
       type="button"
     >
-      {isLoading ? <Loading /> : <Icon.NewGoogle className="h-4 w-4" />}
+      {/* Loading defaults to `text-background` inside a button — correct on the
+          primary (dark) button, invisible on this secondary one. */}
+      {isLoading ? (
+        <Loading className="text-foreground! size-4 shrink-0" />
+      ) : (
+        <Icon.NewGoogle className="h-4 w-4" />
+      )}
       <span>{isLoading ? t('signingIn') : t('continueWithGoogle')}</span>
     </Button>
   );
