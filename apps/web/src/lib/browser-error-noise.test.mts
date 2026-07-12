@@ -10,6 +10,7 @@ import {
   isKnownBrowserNoiseMessage,
   isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
+  isPaperShaderNullContextNoise,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -1161,4 +1162,126 @@ test('does NOT suppress a frameless empty-message event (origin unverifiable)', 
     isEmptyMessageUnresolvedBrowserChunkNoise({ message: '' }),
     false,
   )
+})
+
+// Reproduces the Paper Shaders (`@paper-design/shaders-react`) null-WebGL2-
+// context crash class — the `getSupportedExtensions` null-context path that
+// ESCAPES `<ShaderSafe>` (Better Stack pattern `34127fa4…`, call site `new b2`
+// in chunk `app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js`, prod, 2
+// occurrences, last 2026-07-12 15:23:38 UTC) plus its known sibling
+// `getAttribLocation`. Paper Shaders' shader-mount `useEffect`/rAF callback
+// calls a WebGL2 context method on a context that became `null` after a
+// context-loss / GPU-blacklist event; the throw is in an async callback so the
+// React error boundary can't catch it → global error → Sentry → Better Stack.
+// The matcher is the leak-path backstop; the `supportsWebGL2()` probe in
+// `shader-safe.tsx` is the primary guard.
+const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
+  "Cannot read properties of null (reading 'getSupportedExtensions')",
+  "TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Cannot read properties of null (reading 'getAttribLocation')",
+  "TypeError: Cannot read properties of null (reading 'getAttribLocation')",
+  "Unhandled promise rejection: Cannot read properties of null (reading 'getAttribLocation')",
+  // Old JSC form.
+  "Cannot read property 'getSupportedExtensions' of null",
+  "Cannot read property 'getAttribLocation' of null",
+]
+
+test('classifies every Paper Shaders null-context WebGL message as noise', () => {
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      isPaperShaderNullContextNoise(message),
+      true,
+      `expected "${message}" to be classified as Paper Shaders null-context noise`,
+    )
+  }
+})
+
+test('suppresses every Paper Shaders null-context message via the runtime (window.onerror) gate', () => {
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+  }
+})
+
+test('suppresses every Paper Shaders null-context message via the Sentry beforeSend gate', () => {
+  // The message is specific enough (WebGL2 API method names that first-party
+  // app code never calls) that no chunk-frame anchor is required — but the
+  // Sentry event usually still carries the chunk frame, so verify both shapes.
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" with a chunk frame`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" even with NO chunk frame (message is specific enough)`,
+    )
+  }
+})
+
+test('does NOT suppress a real app TypeError with a different null-property name', () => {
+  // A genuine first-party `foo.bar` null-deref regression throws the same
+  // `Cannot read properties of null (reading '<name>')` SHAPE but with an
+  // app-property name, not a WebGL2 API method — it must keep reporting so a
+  // real null-deref regression is never hidden by the Paper Shaders guard.
+  const realAppNullDerefMessages = [
+    "Cannot read properties of null (reading 'map')",
+    "Cannot read properties of null (reading 'length')",
+    "TypeError: Cannot read properties of null (reading 'id')",
+    "Cannot read property 'foo' of null",
+    // A non-null access on getSupportedExtensions (e.g. typo'd as a property
+    // of a non-null object) is a different message and must keep reporting.
+    "Cannot read properties of undefined (reading 'getSupportedExtensions')",
+  ]
+  for (const message of realAppNullDerefMessages) {
+    assert.equal(
+      isPaperShaderNullContextNoise(message),
+      false,
+      `expected real app TypeError "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      false,
+      `expected runtime gate to keep reporting real app TypeError "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
+    )
+  }
 })
