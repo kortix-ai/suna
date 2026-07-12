@@ -22,6 +22,7 @@ import {
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import {
   preserveEstablishedRuntime,
+  retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
@@ -606,6 +607,33 @@ async function preserveEstablishedRuntimeOnOpen(
   };
 }
 
+async function recoverConfirmedMissingRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  visible: {
+    row: {
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      metadata?: Record<string, unknown> | null;
+    };
+  },
+  projectId: string,
+  sessionId: string,
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+): Promise<SessionStartResult> {
+  const retired = await retireConfirmedMissingRuntime(row, reason);
+  if (retired) await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+  return {
+    stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: true,
+    sandbox: null,
+    opencode_session_id: null,
+    reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
+  };
+}
+
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
@@ -755,7 +783,7 @@ export async function openSession(args: {
         reason: 'runtime_removed_checking',
       };
     }
-    return preserveEstablishedRuntimeOnOpen(
+    return recoverConfirmedMissingRuntimeOnOpen(
       loaded,
       visible,
       projectId,

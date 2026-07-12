@@ -15,10 +15,8 @@ import {
   isMissingRuntimeError,
 } from '../routes/shared';
 import {
-  preserveEstablishedRuntime,
+  retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
-  RUNTIME_IDENTITY_UNAVAILABLE,
-  RUNTIME_IDENTITY_ERROR,
 } from '../runtime-identity';
 
 export async function deleteSession(input: {
@@ -205,15 +203,18 @@ export async function restartSession(input: {
     const provider = getProvider(existingSandbox.provider as SandboxProviderName);
     const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
     if (providerStatus === 'removed') {
-      await preserveEstablishedRuntime(existingSandbox, 'restart_removed_runtime');
+      const retired = await retireConfirmedMissingRuntime(
+        existingSandbox,
+        'restart_removed_runtime',
+      );
+      if (retired) await provisionReplacementRuntime();
       return {
-        status: 409,
+        status: 202,
         body: {
-          error: RUNTIME_IDENTITY_ERROR,
-          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          ok: true,
           session_id: sessionId,
-          external_id: externalId,
-          reason: RUNTIME_IDENTITY_UNAVAILABLE,
+          status: 'provisioning',
+          reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
         },
       };
     }
@@ -247,7 +248,11 @@ export async function restartSession(input: {
       } catch (err) {
         console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
         if (isMissingRuntimeError(err)) {
-          await preserveEstablishedRuntime(existingSandbox, 'restart_missing_runtime').catch(() => {});
+          const retired = await retireConfirmedMissingRuntime(
+            existingSandbox,
+            'restart_missing_runtime',
+          ).catch(() => false);
+          if (retired) await provisionReplacementRuntime();
           return;
         }
         await db
