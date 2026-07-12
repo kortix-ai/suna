@@ -2,7 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import { isAutoResuming, isSandboxResumable } from '@/features/session/session-resume';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
@@ -22,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
+import { getProjectDetail, restartProjectSession, sessionStartKey } from '@kortix/sdk/projects-client';
 import { readStartStash, useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
 
@@ -81,6 +83,41 @@ export default function ProjectSessionPage() {
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
 
+  // ── Auto-resume a hibernated-but-resumable sandbox ────────────────────────
+  // On the first /start of an idle-stopped session the backend can race into a
+  // TERMINAL 'stopped' (openSession's self-preserve path on a transient provider
+  // getStatus()) even though the row is left EXACTLY resumable (status 'stopped'
+  // + external_id). useSession then stops polling and the page used to pin a
+  // dead-end "open a new session" card — yet a hard refresh's fresh /start hits
+  // the resume path and wakes the box. So: re-issue /start ourselves a few times
+  // (what the refresh did) before ever surfacing a manual control.
+  const queryClient = useQueryClient();
+  const sandboxResumable = isSandboxResumable(sandbox);
+  const MAX_AUTO_RESUME = 3;
+  const [resumeAttempts, setResumeAttempts] = useState(0);
+  const restartMutation = useMutation({
+    mutationFn: () => restartProjectSession(projectId, sessionId),
+    onSuccess: () => {
+      setResumeAttempts(0);
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    },
+  });
+  useEffect(() => {
+    if (!sandboxResumable || resumeAttempts >= MAX_AUTO_RESUME) return;
+    // First attempt fires immediately (match the refresh); back off after that.
+    const t = setTimeout(
+      () => {
+        setResumeAttempts((n) => n + 1);
+        queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+      },
+      resumeAttempts === 0 ? 0 : 1500,
+    );
+    return () => clearTimeout(t);
+  }, [sandboxResumable, resumeAttempts, projectId, sessionId, queryClient]);
+  // While we still have auto-resume attempts left, a resumable box is "waking",
+  // not "dead" — render the boot loader, never the dead-end card.
+  const autoResuming = isAutoResuming(sandbox, resumeAttempts, MAX_AUTO_RESUME);
+
   // Belt-and-suspenders: clear the legacy active-instance cookie once on mount for
   // this route so no later navigation can be hijacked onto a stale sandbox.
   useEffect(() => {
@@ -124,6 +161,7 @@ export default function ProjectSessionPage() {
     }
     freshRef.current = fresh;
     setShellSubmitted(pending);
+    if (resumeAttempts !== 0) setResumeAttempts(0);
   }
   const isFresh = freshRef.current;
   useEffect(() => {
@@ -185,21 +223,48 @@ export default function ProjectSessionPage() {
 
     if (fatal) {
       const meta = (sandbox?.metadata as Record<string, unknown>) ?? {};
-      return sandbox?.status === 'error' ? (
-        <InlineSessionError
-          title={`Couldn't start ${sandboxLabel ?? 'session'}`}
-          message={
-            (meta.provisioningError as string) ||
-            (meta.errorMessage as string) ||
-            'Something went wrong while provisioning this session.'
-          }
-        />
-      ) : (
+      if (sandbox?.status === 'error') {
+        return (
+          <InlineSessionError
+            title={`Couldn't start ${sandboxLabel ?? 'session'}`}
+            message={
+              (meta.provisioningError as string) ||
+              (meta.errorMessage as string) ||
+              'Something went wrong while provisioning this session.'
+            }
+          />
+        );
+      }
+      // Stopped but resumable → we're auto-waking it. Show the boot loader, not a
+      // dead-end, so the user just sees it come back (as a hard refresh would).
+      if (autoResuming) {
+        return (
+          <SessionStartingLoader stage="starting" projectId={projectId} sessionId={sessionId} />
+        );
+      }
+      // Auto-resume exhausted (or genuinely un-resumable): give an in-place
+      // Restart instead of forcing a manual browser refresh.
+      return (
         <InlineSessionError
           title={`${sandboxLabel ?? 'session'} is stopped`}
           message={tI18nHardcoded.raw(
             'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
           )}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => restartMutation.mutate()}
+              disabled={restartMutation.isPending}
+            >
+              {restartMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+              Restart session
+            </Button>
+          }
         />
       );
     }
