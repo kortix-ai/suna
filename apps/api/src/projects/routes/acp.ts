@@ -30,7 +30,6 @@ async function resolveAcpTarget(c: any) {
     projectId,
     sessionId,
     runtimeId: sessionId,
-    agentName: visible.row.agentName ?? 'kortix',
     endpoint,
   };
 }
@@ -116,7 +115,7 @@ projectsApp.get('/:projectId/sessions/:sessionId/acp/transcript', async (c: any)
 projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp', async (c: any) => {
   const target = await resolveAcpTarget(c);
   if (!target) return c.json({ error: 'Session runtime not found' }, 404);
-  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}?agent=${encodeURIComponent(target.agentName)}`;
+  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}`;
   const method = c.req.method.toUpperCase();
   const headers = new Headers(target.endpoint.headers);
 
