@@ -112,68 +112,124 @@ export function buildAnswerCard(body: string, sessionUrl?: string): Record<strin
   return card(elements);
 }
 
+function headerBlock(emoji: string, title: string, subtitle?: string): CardElement[] {
+  const els: CardElement[] = [text(`${emoji}  ${title}`, { size: 'large', weight: 'bolder', spacing: 'none' })];
+  if (subtitle) els.push(text(subtitle, { isSubtle: true, size: 'small', spacing: 'small' }));
+  return els;
+}
+
+function emphasisContainer(items: CardElement[]): CardElement {
+  return { type: 'Container', style: 'emphasis', spacing: 'medium', bleed: true, items };
+}
+
 export function buildConnectAccountCard(loginUrl: string): Record<string, unknown> {
   return card(
-    [text('Connect a Kortix account to let me run from Teams.', { weight: 'bolder', size: 'medium' })],
+    headerBlock(
+      '🔗',
+      'Connect your Kortix account',
+      'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
+    ),
     [openUrlAction('Connect or create account', loginUrl)],
   );
 }
 
 export function buildRequestAccessCard(projectId: string): Record<string, unknown> {
   return card(
-    [text("You're connected, but your account doesn't have access to this project yet.", { weight: 'bolder' })],
+    headerBlock('🔒', 'Request access', "You're connected, but your account can't run this project yet."),
     [executeAction('Request access', 'teams_request_access', { projectId })],
   );
 }
 
-export function buildNoticeCard(body: string): Record<string, unknown> {
-  return card([text(body, { wrap: true })]);
+export function buildNoticeCard(body: string, emoji = ''): Record<string, unknown> {
+  return card([text(emoji ? `${emoji}  ${body}` : body, { wrap: true })]);
 }
 
-export function buildChoiceCard(opts: {
+export interface SelectOption {
+  label: string;
+  hint?: string;
+  current?: boolean;
+  data: Record<string, unknown>;
+}
+
+function selectRow(o: SelectOption, verb: string, separator: boolean): CardElement {
+  const labelItems: CardElement[] = [
+    text(o.label, { weight: o.current ? 'bolder' : 'default', spacing: 'none', color: o.current ? 'good' : 'default' }),
+  ];
+  if (o.hint) labelItems.push(text(o.hint, { isSubtle: true, size: 'small', spacing: 'none' }));
+  return {
+    type: 'ColumnSet',
+    separator,
+    spacing: 'medium',
+    columns: [
+      { type: 'Column', width: 'stretch', verticalContentAlignment: 'center', items: labelItems },
+      {
+        type: 'Column',
+        width: 'auto',
+        verticalContentAlignment: 'center',
+        items: [
+          {
+            type: 'ActionSet',
+            actions: [
+              {
+                type: 'Action.Execute',
+                title: o.current ? '✓ In use' : 'Use',
+                verb,
+                data: { verb, ...o.data },
+                ...(o.current ? {} : { style: 'positive' }),
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildSelectCard(opts: {
+  emoji: string;
   title: string;
+  subtitle?: string;
   verb: string;
-  choices: Array<{ title: string; data: Record<string, unknown> }>;
-  body?: string;
+  options: SelectOption[];
+  footer?: string;
 }): Record<string, unknown> {
-  const elements: CardElement[] = [text(opts.title, { weight: 'bolder', size: 'medium' })];
-  if (opts.body) elements.push(text(opts.body, { isSubtle: true, size: 'small', spacing: 'none' }));
-  const actions = opts.choices.slice(0, 6).map((c) => executeAction(c.title, opts.verb, c.data));
-  return card(elements, actions);
+  const body: CardElement[] = [...headerBlock(opts.emoji, opts.title, opts.subtitle)];
+  if (opts.options.length) {
+    body.push(emphasisContainer(opts.options.map((o, i) => selectRow(o, opts.verb, i > 0))));
+  }
+  if (opts.footer) body.push(text(opts.footer, { isSubtle: true, size: 'small', spacing: 'small', wrap: true }));
+  return card(body);
 }
 
 export function buildPanelCard(opts: {
+  emoji?: string;
   title: string;
   rows: Array<{ label: string; value: string }>;
   url?: string;
 }): Record<string, unknown> {
-  const facts = opts.rows.map((r) => ({ title: r.label, value: r.value }));
-  const elements: CardElement[] = [
-    text(opts.title, { weight: 'bolder', size: 'medium' }),
-    { type: 'FactSet', facts },
+  const body: CardElement[] = [
+    ...headerBlock(opts.emoji ?? 'ℹ️', opts.title),
+    emphasisContainer([{ type: 'FactSet', facts: opts.rows.map((r) => ({ title: r.label, value: r.value })) }]),
   ];
   const actions = opts.url ? [openUrlAction('Open in Kortix', opts.url)] : undefined;
-  return card(elements, actions);
+  return card(body, actions);
 }
 
 export function buildQuestionCard(
   questions: Array<{ question: string; options?: Array<{ label: string }> }>,
 ): Record<string, unknown> {
-  const elements: CardElement[] = [];
-  for (const q of questions) {
-    elements.push(text(q.question, { weight: 'bolder', wrap: true }));
-  }
-  const options = questions.flatMap((q) => q.options ?? []);
+  const body: CardElement[] = [...headerBlock('💬', 'A quick question')];
+  for (const q of questions) body.push(text(q.question, { weight: 'bolder', wrap: true, spacing: 'small' }));
   const seen = new Set<string>();
   const actions: CardElement[] = [];
-  for (const o of options) {
+  for (const o of questions.flatMap((q) => q.options ?? [])) {
     if (!o.label || seen.has(o.label)) continue;
     seen.add(o.label);
     actions.push(executeAction(o.label, 'teams_answer', { answer: o.label }));
     if (actions.length >= 6) break;
   }
-  elements.push(text('Tap an option or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'small' }));
-  return card(elements, actions.length ? actions : undefined);
+  body.push(text('Tap an option, or just reply in the chat.', { isSubtle: true, size: 'small', spacing: 'medium' }));
+  return card(body, actions.length ? actions : undefined);
 }
 
 export function buildReviewCard(opts: {
@@ -183,35 +239,46 @@ export function buildReviewCard(opts: {
   risk: string;
   viewUrl?: string;
 }): Record<string, unknown> {
-  const elements: CardElement[] = [
-    text(opts.title, { weight: 'bolder', size: 'medium' }),
-    text(opts.summary, { wrap: true, isSubtle: true, size: 'small' }),
-  ];
+  const riskColor = opts.risk === 'high' ? 'attention' : opts.risk === 'medium' ? 'warning' : 'good';
+  const body: CardElement[] = [...headerBlock('📝', opts.title, opts.summary)];
   if (opts.risk && opts.risk !== 'none') {
-    elements.push(text(`Risk: ${opts.risk}`, { size: 'small', spacing: 'none', color: opts.risk === 'high' ? 'attention' : 'warning' }));
+    body.push(
+      emphasisContainer([
+        text(`Risk · ${opts.risk}`, { size: 'small', weight: 'bolder', color: riskColor, spacing: 'none' }),
+      ]),
+    );
   }
   const actions: CardElement[] = [
-    executeAction('Approve', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'approve' }),
+    { type: 'Action.Execute', title: 'Approve', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'approve' }, style: 'positive' },
     executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),
-    executeAction('Deny', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'reject' }),
+    { type: 'Action.Execute', title: 'Deny', verb: 'teams_review', data: { verb: 'teams_review', reviewItemId: opts.reviewItemId, verdict: 'reject' }, style: 'destructive' },
   ];
   if (opts.viewUrl) actions.push(openUrlAction('View in Kortix', opts.viewUrl));
-  return card(elements, actions);
+  return card(body, actions);
 }
 
 export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
-  const elements: CardElement[] = [
-    text('Kortix is connected here', { weight: 'bolder', size: 'medium' }),
-    text('@-mention me with a task and an agent gets on it, replying right here with live progress. Type `/help` to see what I can do.'),
-  ];
+  const body = headerBlock(
+    '👋',
+    'Kortix is connected here',
+    '@-mention me with a task and an agent gets on it — replying right here with live progress. Type `/help` to see what I can do.',
+  );
   const actions = opts.projectUrl ? [openUrlAction('Open in Kortix', opts.projectUrl)] : undefined;
-  return card(elements, actions);
+  return card(body, actions);
 }
 
 export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): Record<string, unknown> {
-  const elements: CardElement[] = [text('Kortix commands', { weight: 'bolder', size: 'medium' })];
-  for (const c of commands) {
-    elements.push(text(`**${c.cmd}** — ${c.desc}`, { spacing: 'none', size: 'small' }));
-  }
-  return card(elements);
+  const rows: CardElement[] = commands.map((c, i) => ({
+    type: 'ColumnSet',
+    separator: i > 0,
+    spacing: 'small',
+    columns: [
+      { type: 'Column', width: '90px', items: [text(c.cmd, { weight: 'bolder', spacing: 'none', color: 'accent' })] },
+      { type: 'Column', width: 'stretch', items: [text(c.desc, { isSubtle: true, size: 'small', spacing: 'none', wrap: true })] },
+    ],
+  }));
+  return card([
+    ...headerBlock('⚡', 'Kortix commands', 'Run a command, or just @-mention me with a task.'),
+    emphasisContainer(rows),
+  ]);
 }

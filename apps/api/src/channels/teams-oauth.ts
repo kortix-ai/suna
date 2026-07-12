@@ -77,10 +77,12 @@ teamsOauthApp.get('/callback', async (c: any) => {
   await saveTeamsInstall({ projectId: state.projectId, tenantId }).catch((err) =>
     console.error('[teams-oauth] saveTeamsInstall failed', err),
   );
-  const published = await publishTeamsAppToCatalog({ tenantId, baseUrl: state.baseUrl, appId }).catch(() => ({
-    ok: false,
-    teamsAppId: undefined as string | undefined,
-  }));
+  const published = await publishTeamsAppToCatalog({
+    tenantId,
+    baseUrl: state.baseUrl,
+    appId,
+    appName: config.TEAMS_APP_NAME,
+  }).catch(() => ({ ok: false, teamsAppId: undefined as string | undefined }));
   if (published.ok) {
     await setTeamsOrgInstalled(state.projectId, true).catch(() => {});
     if (published.teamsAppId) await setTeamsCatalogAppId(state.projectId, published.teamsAppId).catch(() => {});

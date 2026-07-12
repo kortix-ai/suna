@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildAnswerCard,
-  buildChoiceCard,
   buildConnectAccountCard,
   buildFinalCard,
   buildPlanCard,
   buildQuestionCard,
   buildRequestAccessCard,
   buildReviewCard,
+  buildSelectCard,
 } from '../channels/teams/cards';
 import type { StreamTaskChunk } from '../channels/slack-api';
 
@@ -23,6 +23,22 @@ function texts(card: Record<string, unknown>): string[] {
 
 function actions(card: Record<string, unknown>): Array<{ type: string; verb?: string; url?: string; data?: Record<string, unknown> }> {
   return (card.actions as Array<{ type: string; verb?: string; url?: string; data?: Record<string, unknown> }>) ?? [];
+}
+
+function allExecuteActions(
+  node: unknown,
+): Array<{ type: string; title?: string; verb?: string; data?: Record<string, unknown> }> {
+  const out: Array<{ type: string; title?: string; verb?: string; data?: Record<string, unknown> }> = [];
+  const walk = (n: unknown) => {
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (n && typeof n === 'object') {
+      const o = n as Record<string, unknown>;
+      if (o.type === 'Action.Execute') out.push(o as (typeof out)[number]);
+      for (const v of Object.values(o)) walk(v);
+    }
+  };
+  walk(node);
+  return out;
 }
 
 describe('buildPlanCard', () => {
@@ -84,15 +100,23 @@ describe('interactive cards', () => {
     expect(a[0]?.data?.projectId).toBe('proj-1');
   });
 
-  test('choice card renders one Execute action per choice (capped at 6)', () => {
-    const card = buildChoiceCard({
-      title: 'Pick',
+  test('select card renders one per-row Execute action, marks the current option', () => {
+    const card = buildSelectCard({
+      emoji: '🧠',
+      title: 'Model',
       verb: 'teams_set_model',
-      choices: Array.from({ length: 8 }, (_, i) => ({ title: `m${i}`, data: { model: `m${i}` } })),
+      options: [
+        { label: 'a', current: true, data: { model: 'a' } },
+        { label: 'b', current: false, data: { model: 'b' } },
+        { label: 'c', current: false, data: { model: 'c' } },
+      ],
     });
-    const a = actions(card);
-    expect(a).toHaveLength(6);
-    expect(a.every((x) => x.type === 'Action.Execute' && x.verb === 'teams_set_model')).toBe(true);
+    const execs = allExecuteActions(card);
+    expect(execs).toHaveLength(3);
+    expect(execs.every((x) => x.verb === 'teams_set_model')).toBe(true);
+    expect(execs.map((x) => (x.data as { model?: string }).model)).toEqual(['a', 'b', 'c']);
+    expect(execs[0]!.title).toContain('In use');
+    expect(execs[1]!.title).toBe('Use');
   });
 
   test('question card turns option labels into answer actions', () => {
