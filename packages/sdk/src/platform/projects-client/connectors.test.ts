@@ -1,21 +1,26 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../config';
 import {
+  activateConnectionProfile,
   createConnector,
   deleteConnector,
+  getConnectStatus,
   getConnectorConfig,
   getConnectorPolicies,
-  getConnectStatus,
+  listConnectionProfiles,
   listConnectors,
   listPipedreamApps,
   pipedreamConnect,
   pipedreamFinalize,
+  reconcileConnectionProfile,
+  revokeConnectionProfile,
   setConnectorCredential,
   setConnectorCredentialMode,
   setConnectorName,
   setConnectorPolicies,
   setConnectorSensitive,
   syncConnectors,
+  updateConnectionProfileCredential,
 } from './connectors';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -210,4 +215,42 @@ test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', a
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result).toEqual({ connected: true, accountId: 'acc_1' });
+});
+
+test('connection profile lifecycle uses the typed project profile routes', async () => {
+  nextResponse = { status: 200, body: { profiles: [] } };
+  await listConnectionProfiles('P1');
+  expect(last().url).toContain('/projects/P1/connector-profiles');
+  expect(last().method).toBe('GET');
+
+  nextResponse = {
+    status: 201,
+    body: {
+      profile_id: 'profile-1',
+      connector_alias: 'veyris',
+      owner_type: 'external',
+      owner_id: 'thread-1',
+      label: 'Thread 1',
+      status: 'active',
+      is_default: false,
+      metadata: {},
+    },
+  };
+  await reconcileConnectionProfile('P1', {
+    connector_alias: 'veyris',
+    owner_type: 'external',
+    owner_id: 'thread-1',
+    label: 'Thread 1',
+  });
+  expect(last().method).toBe('POST');
+  expect(last().body).not.toHaveProperty('credential');
+
+  nextResponse = { status: 200, body: { ok: true } };
+  await updateConnectionProfileCredential('P1', 'profile-1', { value: 'capability' });
+  expect(last().url).toContain('/connector-profiles/profile-1/credential');
+  expect(last().body).toEqual({ value: 'capability' });
+  await revokeConnectionProfile('P1', 'profile-1');
+  expect(last().url).toContain('/connector-profiles/profile-1/revoke');
+  await activateConnectionProfile('P1', 'profile-1');
+  expect(last().url).toContain('/connector-profiles/profile-1/activate');
 });

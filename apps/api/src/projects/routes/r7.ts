@@ -361,7 +361,7 @@ projectsApp.openapi(
     responses: {
         201: json(SessionSchema, 'The created session'),
         202: json(SessionCreateAcceptedSchema, 'Create accepted; poll the session'),
-        ...errors(400, 404),
+        ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -372,6 +372,20 @@ projectsApp.openapi(
   // Per-agent gate: starting a session provisions compute. A scoped agent token
   // must hold project.session.start (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  const requestedConnectorBindings = body.connector_bindings;
+  if (
+    requestedConnectorBindings &&
+    typeof requestedConnectorBindings === 'object' &&
+    Object.keys(requestedConnectorBindings).length > 0
+  ) {
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+    );
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).

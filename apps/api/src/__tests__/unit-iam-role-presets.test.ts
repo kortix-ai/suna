@@ -26,6 +26,15 @@ describe('built-in role presets', () => {
     expect(BUILTIN_BY_ID.has('builtin:nope')).toBe(false);
   });
 
+  test('only manager-tier project presets can bind and manage connection profiles', () => {
+    const manager = new Set(BUILTIN_BY_ID.get('builtin:manager')?.actions ?? []);
+    const editor = new Set(BUILTIN_BY_ID.get('builtin:editor')?.actions ?? []);
+    expect(manager.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(true);
+    expect(manager.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE)).toBe(true);
+    expect(editor.has(PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE)).toBe(false);
+    expect(editor.has(PROJECT_ACTIONS.PROJECT_CONNECTOR_PROFILES_MANAGE)).toBe(false);
+  });
+
   test('User tier = read + run: has session start/stop + trigger.fire, NOT write/config', () => {
     const set = new Set(USER_PRESET_ACTIONS);
     expect(set.has(PROJECT_ACTIONS.PROJECT_READ)).toBe(true);
@@ -45,9 +54,17 @@ describe('built-in role presets', () => {
 
 describe('validateActions', () => {
   test('accepts known actions and dedupes', () => {
-    const r = validateActions([PROJECT_ACTIONS.PROJECT_READ, PROJECT_ACTIONS.PROJECT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE]);
+    const r = validateActions([
+      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_READ,
+      PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+    ]);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.actions).toEqual([PROJECT_ACTIONS.PROJECT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE]);
+    if (r.ok)
+      expect(r.actions).toEqual([
+        PROJECT_ACTIONS.PROJECT_READ,
+        PROJECT_ACTIONS.PROJECT_AGENT_WRITE,
+      ]);
   });
 
   test('rejects an unknown / injected action string', () => {
@@ -97,24 +114,33 @@ describe('validateActions — privilege-escalation ceiling', () => {
   });
 
   test('every non-delegable action is in the built-in admin/owner presets (so they are not lost, just non-delegable)', () => {
-    const owner = new Set(BUILTIN_BY_ID.get('builtin:owner')!.actions);
+    const owner = new Set(BUILTIN_BY_ID.get('builtin:owner')?.actions ?? []);
     for (const a of FORBIDDEN) expect(owner.has(a)).toBe(true);
   });
 
   test('benign account-read actions ARE delegable into an account role', () => {
-    const r = validateActions([ACCOUNT_ACTIONS.AUDIT_READ, ACCOUNT_ACTIONS.ROLE_READ, ACCOUNT_ACTIONS.POLICY_READ], 'account');
+    const r = validateActions(
+      [ACCOUNT_ACTIONS.AUDIT_READ, ACCOUNT_ACTIONS.ROLE_READ, ACCOUNT_ACTIONS.POLICY_READ],
+      'account',
+    );
     expect(r.ok).toBe(true);
   });
 });
 
 describe('validateActions — namespace integrity', () => {
   test('a project role rejects account-scoped actions', () => {
-    const r = validateActions([PROJECT_ACTIONS.PROJECT_READ, ACCOUNT_ACTIONS.AUDIT_READ], 'project');
+    const r = validateActions(
+      [PROJECT_ACTIONS.PROJECT_READ, ACCOUNT_ACTIONS.AUDIT_READ],
+      'project',
+    );
     expect(r.ok).toBe(false);
   });
 
   test('an account role rejects project-scoped actions', () => {
-    const r = validateActions([ACCOUNT_ACTIONS.AUDIT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE], 'account');
+    const r = validateActions(
+      [ACCOUNT_ACTIONS.AUDIT_READ, PROJECT_ACTIONS.PROJECT_AGENT_WRITE],
+      'account',
+    );
     expect(r.ok).toBe(false);
   });
 

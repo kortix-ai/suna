@@ -35,6 +35,10 @@ import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
   connectorId: string;
+  /** Non-secret concrete identity selected for this session. */
+  profileId?: string | null;
+  profileIsDefault?: boolean;
+  profileMetadata?: Record<string, unknown>;
   slug: string;
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel' | 'computer';
   platform?: string | null;
@@ -67,6 +71,7 @@ export interface ExecutionRecord {
   accountId: string;
   projectId: string;
   connectorId: string | null;
+  profileId: string | null;
   actionPath: string;
   actingUserId: string;
   sessionId: string | null;
@@ -76,7 +81,7 @@ export interface ExecutionRecord {
 }
 
 export interface EmailSessionContext {
-  inboxId: string;
+  inboxId?: string | null;
   threadId?: string | null;
   messageId?: string | null;
 }
@@ -318,15 +323,36 @@ async function resolveEmailExecutionContext(
     return { args, secretOverride: null };
   }
 
-  const sessionContext =
+  // Session metadata is user-writable and is never an authorization source.
+  // A selected profile may carry a server-owned inbox id; legacy/default
+  // connectors otherwise resolve their existing install context.
+  const profileInboxId =
+    typeof connector.profileMetadata?.inbox_id === 'string'
+      ? connector.profileMetadata.inbox_id
+      : null;
+  const metadataContext =
     input.sessionId && deps.loadEmailSessionContext
       ? await deps.loadEmailSessionContext(input.projectId, input.sessionId)
       : null;
+  const sessionContext = profileInboxId
+    ? {
+        inboxId: profileInboxId,
+        threadId: metadataContext?.threadId ?? null,
+        messageId: metadataContext?.messageId ?? null,
+      }
+    : null;
   const connectorContext =
     !sessionContext?.inboxId && deps.loadEmailConnectorContext
       ? await deps.loadEmailConnectorContext(input.projectId, connectorSlug)
       : null;
-  const context = sessionContext?.inboxId ? sessionContext : connectorContext;
+  const authorizedInboxContext = sessionContext?.inboxId ? sessionContext : connectorContext;
+  const context = authorizedInboxContext
+    ? {
+        ...authorizedInboxContext,
+        threadId: metadataContext?.threadId ?? null,
+        messageId: metadataContext?.messageId ?? null,
+      }
+    : null;
   if (!context?.inboxId) return { args, secretOverride: null };
 
   args.inbox_id = context.inboxId;
@@ -363,14 +389,14 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const action = await deps.loadAction(connector.connectorId, input.actionPath);
   if (!action) {
-    await audit(deps, input, connector.connectorId, 'denied', null, { reason: 'action_not_found' });
+    await audit(deps, input, connector, 'denied', null, { reason: 'action_not_found' });
     return { status: 'denied', reason: 'action_not_found' };
   }
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   const usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   if (!usable.ok) {
-    await audit(deps, input, connector.connectorId, 'denied', action.risk, {
+    await audit(deps, input, connector, 'denied', action.risk, {
       reason: usable.reason,
     });
     return { status: 'denied', reason: usable.reason };
@@ -425,7 +451,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       sensitive: connector.sensitive,
     });
     if (decision.action === 'block') {
-      await audit(deps, input, connector.connectorId, 'denied', action.risk, {
+      await audit(deps, input, connector, 'denied', action.risk, {
         reason: 'policy_block',
         policy_source: decision.source,
       });
@@ -469,7 +495,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
             })
           : false;
       if (sessionAllowed || carriedOver) {
-        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+        await audit(deps, input, connector, 'ok', action.risk, {
           reason: sessionAllowed ? 'session_allow' : 'approval_carryover',
           policy_source: decision.source,
         });
@@ -479,7 +505,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         // call records a fresh pending row.
         const executionId =
           input.approvalExecutionId ??
-          (await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+          (await audit(deps, input, connector, 'pending_approval', action.risk, {
             reason: 'policy_require_approval',
             policy_source: decision.source,
           }));
@@ -500,14 +526,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
             // The supplied approvalExecutionId does not belong to THIS
             // (session, connector, action). Never honor another row's approval —
             // open a fresh pending gate that a human must actually resolve.
-            const freshId = await audit(
-              deps,
-              input,
-              connector.connectorId,
-              'pending_approval',
-              action.risk,
-              { reason: 'policy_require_approval', policy_source: decision.source },
-            );
+            const freshId = await audit(deps, input, connector, 'pending_approval', action.risk, {
+              reason: 'policy_require_approval',
+              policy_source: decision.source,
+            });
             return {
               status: 'pending_approval',
               reason: 'policy_require_approval',
@@ -567,13 +589,13 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         args: rest,
       });
       if (outcome.ok) {
-        await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+        await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
         return { status: 'ok', data: outcome.data, risk: action.risk };
       }
       if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+        await audit(deps, input, connector, 'pending_approval', action.risk, {
           reason: 'tunnel_permission_required',
           request_id: outcome.requestId,
         });
@@ -582,7 +604,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
         };
       }
-      await audit(deps, input, connector.connectorId, 'error', action.risk, {
+      await audit(deps, input, connector, 'error', action.risk, {
         reason: outcome.message.slice(0, 500),
       });
       logger.warn(`[executor] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
@@ -640,13 +662,13 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
     }
     if (result.ok) {
-      await audit(deps, input, connector.connectorId, 'ok', action.risk, {
+      await audit(deps, input, connector, 'ok', action.risk, {
         http_status: result.status,
       });
       return { status: 'ok', data: result.data, risk: action.risk };
     }
     const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
-    await audit(deps, input, connector.connectorId, 'error', action.risk, {
+    await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
@@ -656,7 +678,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'error', reason };
   } catch (e) {
     const reason = (e as Error).message + fallbackHint(connector, action.binding);
-    await audit(deps, input, connector.connectorId, 'error', action.risk, {
+    await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
     });
     logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
@@ -712,7 +734,7 @@ function fallbackHint(connector: GatewayConnector, binding: ActionBinding): stri
 async function audit(
   deps: GatewayDeps,
   input: CallInput,
-  connectorId: string | null,
+  connector: GatewayConnector | null,
   status: ExecutionRecord['status'],
   risk: Risk | null,
   summary: Record<string, unknown> | null,
@@ -721,7 +743,8 @@ async function audit(
     return await deps.recordExecution({
       accountId: input.accountId,
       projectId: input.projectId,
-      connectorId,
+      connectorId: connector?.connectorId ?? null,
+      profileId: connector?.profileId ?? null,
       actionPath: `${input.connectorSlug}.${input.actionPath}`,
       actingUserId: input.subject.userId,
       sessionId: input.sessionId ?? null,
