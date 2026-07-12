@@ -2,15 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
+import { CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AuthCardShell, BackToSignIn } from '@/components/auth/auth-card-shell';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { errorToast } from '@/components/ui/toast';
 import { resetPassword } from '../actions';
 
 function ResetPasswordContent() {
@@ -32,9 +33,13 @@ function ResetPasswordContent() {
         setSuccess(true);
         return;
       }
-      setErrorMessage((result as any)?.message || 'Could not update password');
+      const msg = (result as any)?.message || 'Could not update password';
+      setErrorMessage(msg);
+      errorToast(msg);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'An unexpected error occurred');
+      const msg = err?.message || 'An unexpected error occurred';
+      setErrorMessage(msg);
+      errorToast(msg);
     } finally {
       setPending(false);
     }
@@ -46,11 +51,15 @@ function ResetPasswordContent() {
     return (
       <AuthCardShell
         title={tHardcodedUi.raw('appAuthResetPasswordPage.line45JsxAttrTitleLinkExpired')}
-        description={tHardcodedUi.raw('appAuthResetPasswordPage.line46JsxAttrDescriptionThisPasswordResetLinkIsInvalidOrHas')}
+        description={tHardcodedUi.raw(
+          'appAuthResetPasswordPage.line46JsxAttrDescriptionThisPasswordResetLinkIsInvalidOrHas',
+        )}
         footer={<BackToSignIn />}
       >
-        <Button asChild size="lg" className="w-full text-sm">
-          <Link href="/auth/forgot-password">{tHardcodedUi.raw('appAuthResetPasswordPage.line50JsxTextRequestANewLink')}</Link>
+        <Button asChild size="lg" className="w-full">
+          <Link href="/auth/forgot-password">
+            {tHardcodedUi.raw('appAuthResetPasswordPage.line50JsxTextRequestANewLink')}
+          </Link>
         </Button>
       </AuthCardShell>
     );
@@ -60,15 +69,21 @@ function ResetPasswordContent() {
     return (
       <AuthCardShell
         title={tHardcodedUi.raw('appAuthResetPasswordPage.line59JsxAttrTitlePasswordUpdated')}
-        description={tHardcodedUi.raw('appAuthResetPasswordPage.line60JsxAttrDescriptionYouCanNowSignInWithYourNew')}
+        description={tHardcodedUi.raw(
+          'appAuthResetPasswordPage.line60JsxAttrDescriptionYouCanNowSignInWithYourNew',
+        )}
         footer={<BackToSignIn />}
       >
-        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
-          <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">{tHardcodedUi.raw('appAuthResetPasswordPage.line65JsxTextYourPasswordHasBeenChanged')}</span>
+        <div className="border-border bg-muted/60 text-foreground/80 mb-4 flex items-center gap-2 rounded-md border px-3 py-2.5">
+          <CheckCircle2 className="text-kortix-green size-4 shrink-0" />
+          <span className="text-sm">
+            {tHardcodedUi.raw('appAuthResetPasswordPage.line65JsxTextYourPasswordHasBeenChanged')}
+          </span>
         </div>
-        <Button asChild size="lg" className="w-full text-sm">
-          <Link href="/auth">{tHardcodedUi.raw('appAuthResetPasswordPage.line68JsxTextGoToSignIn')}</Link>
+        <Button asChild size="lg" className="w-full">
+          <Link href="/auth">
+            {tHardcodedUi.raw('appAuthResetPasswordPage.line68JsxTextGoToSignIn')}
+          </Link>
         </Button>
       </AuthCardShell>
     );
@@ -77,41 +92,45 @@ function ResetPasswordContent() {
   return (
     <AuthCardShell
       title={tHardcodedUi.raw('appAuthResetPasswordPage.line76JsxAttrTitleSetANewPassword')}
-      description={tHardcodedUi.raw('appAuthResetPasswordPage.line77JsxAttrDescriptionChooseANewPasswordForYourAccount')}
+      description={tHardcodedUi.raw(
+        'appAuthResetPasswordPage.line77JsxAttrDescriptionChooseANewPasswordForYourAccount',
+      )}
       footer={<BackToSignIn />}
     >
-      {errorMessage && (
-        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">{errorMessage}</span>
-        </div>
-      )}
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          placeholder={tHardcodedUi.raw('appAuthResetPasswordPage.line92JsxAttrPlaceholderNewPassword')}
-          required
-          autoComplete="new-password"
-          className="text-sm"
-        />
-        <Input
-          id="confirmPassword"
-          name="confirmPassword"
-          type="password"
-          placeholder={tHardcodedUi.raw('appAuthResetPasswordPage.line101JsxAttrPlaceholderConfirmNewPassword')}
-          required
-          autoComplete="new-password"
-          className="text-sm"
-        />
-        <Button
-          type="submit"
-          size="lg"
-          disabled={pending}
-          className="w-full text-sm"
-        >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-3">
+          <label htmlFor="password" className="text-muted-foreground text-sm font-medium">
+            New password
+          </label>
+          <Input
+            id="password"
+            aria-invalid={!!errorMessage || undefined}
+            name="password"
+            type="password"
+            size="md"
+            placeholder="Your new password"
+            required
+            autoComplete="new-password"
+            autoFocus
+          />
+        </div>
+        <div className="space-y-3">
+          <label htmlFor="confirmPassword" className="text-muted-foreground text-sm font-medium">
+            Confirm password
+          </label>
+          <Input
+            id="confirmPassword"
+            aria-invalid={!!errorMessage || undefined}
+            name="confirmPassword"
+            type="password"
+            size="md"
+            placeholder="Confirm your new password"
+            required
+            autoComplete="new-password"
+          />
+        </div>
+        <Button type="submit" size="lg" disabled={pending} className="w-full">
           {pending ? 'Updating password…' : 'Reset password'}
         </Button>
       </form>
@@ -122,7 +141,15 @@ function ResetPasswordContent() {
 export default function ResetPassword() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthResetPasswordPage.line121JsxAttrTitleResettingPassword')} />}>
+    <Suspense
+      fallback={
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appAuthResetPasswordPage.line121JsxAttrTitleResettingPassword')}
+        />
+      }
+    >
       <ResetPasswordContent />
     </Suspense>
   );
