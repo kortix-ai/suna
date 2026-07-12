@@ -22,10 +22,31 @@ describe('ACP harness registry', () => {
     expect(registry.get('claude')?.launch.env).toBeUndefined();
   });
 
-  test('does not leak the Claude gateway environment into other harnesses', () => {
+  test('routes Codex through the scoped Kortix Responses gateway by default', () => {
     const registry = createAcpHarnessRegistry({ KORTIX_API_URL: 'https://api.test/v1', KORTIX_TOKEN: 'token' });
-    expect(registry.get('codex')?.launch.env).toBeUndefined();
+    expect(registry.get('codex')?.launch.env).toEqual({
+      NO_BROWSER: '1',
+      DEFAULT_AUTH_REQUEST: JSON.stringify({
+        methodId: 'gateway',
+        _meta: {
+          gateway: {
+            baseUrl: 'https://api.test/v1/router/openai',
+            providerName: 'Kortix Gateway',
+            headers: { Authorization: 'Bearer token' },
+          },
+        },
+      }),
+    });
     expect(registry.get('opencode')?.launch.env).toBeUndefined();
     expect(registry.get('pi')?.launch.env).toBeUndefined();
+  });
+
+  test('preserves native Codex credentials when the project supplied them', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_API_URL: 'https://api.test/v1',
+      KORTIX_TOKEN: 'token',
+      OPENAI_API_KEY: 'project-key',
+    });
+    expect(registry.get('codex')?.launch.env).toBeUndefined();
   });
 });

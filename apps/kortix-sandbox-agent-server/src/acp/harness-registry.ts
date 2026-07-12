@@ -55,9 +55,26 @@ function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEn
 }
 
 function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
-  if (id !== 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return undefined
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
+  if (id === 'codex') {
+    if (env.CODEX_API_KEY || env.OPENAI_API_KEY || env.CODEX_AUTH_JSON) return undefined
+    if (!apiUrl || !token) return undefined
+    return {
+      NO_BROWSER: '1',
+      DEFAULT_AUTH_REQUEST: JSON.stringify({
+        methodId: 'gateway',
+        _meta: {
+          gateway: {
+            baseUrl: `${apiUrl}/router/openai`,
+            providerName: 'Kortix Gateway',
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        },
+      }),
+    }
+  }
+  if (id !== 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return undefined
   if (!apiUrl || !token) return undefined
   return {
     ANTHROPIC_BASE_URL: `${apiUrl}/router`,

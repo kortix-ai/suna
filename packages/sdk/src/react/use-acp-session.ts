@@ -44,7 +44,11 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
           const replayIds = new Set(history.envelopes.map((row) => `${row.direction}:${row.streamEventId}`));
           return [...history.envelopes, ...current.filter((row) => row.streamEventId === null || !replayIds.has(`${row.direction}:${row.streamEventId}`))].sort((a, b) => a.ordinal - b.ordinal);
         });
-        await client.initialize({ protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' } });
+        await client.initialize({
+          protocolVersion: 1,
+          clientCapabilities: { auth: { _meta: { gateway: true } } },
+          clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' },
+        });
         let id = runtimeSessionId;
         if (id) await client.loadSession({ sessionId: id, cwd: '/workspace', mcpServers: [] });
         else id = (await client.newSession({ cwd: '/workspace', mcpServers: [] })).sessionId;

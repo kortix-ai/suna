@@ -165,7 +165,7 @@ async function main() {
     });
     await client.initialize({
       protocolVersion: 1,
-      clientCapabilities: {},
+      clientCapabilities: { auth: { _meta: { gateway: true } } },
       clientInfo: { name: "kortix-e2e", version: "1" },
     });
     const conversationId =
