@@ -11,6 +11,12 @@ import { motion, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
+import {
+  applyBackspace,
+  applyBoxInput,
+  CODE_LENGTH,
+  insertDigits,
+} from '@/features/auth/code-input-logic';
 import { cn } from '@/lib/utils';
 
 export const AUTH_EASE = [0.23, 1, 0.32, 1] as const;
@@ -115,19 +121,17 @@ export function CodeInput({
 }) {
   const refs = useRef<Array<HTMLInputElement | null>>([]);
 
-  const focusBox = (i: number) => refs.current[Math.max(0, Math.min(5, i))]?.focus();
+  const focusBox = (i: number) => refs.current[Math.max(0, Math.min(CODE_LENGTH - 1, i))]?.focus();
 
-  const insertAt = (i: number, text: string) => {
-    const digits = text.replace(/\D/g, '');
-    if (!digits) return;
-    const next = (value.slice(0, i) + digits + value.slice(i + digits.length)).slice(0, 6);
-    onChange(next);
-    focusBox(i + digits.length);
+  const applyEdit = (edit: { next: string; focus: number } | null) => {
+    if (!edit) return;
+    onChange(edit.next);
+    focusBox(edit.focus);
   };
 
   return (
     <div className={cn('flex gap-2.5', invalid && 'motion-safe:animate-shake')}>
-      {Array.from({ length: 6 }, (_, i) => (
+      {Array.from({ length: CODE_LENGTH }, (_, i) => (
         <input
           key={i}
           ref={(el) => {
@@ -141,18 +145,12 @@ export function CodeInput({
           disabled={disabled}
           autoFocus={autoFocus && i === 0}
           onChange={(e) => {
-            const v = e.target.value;
-            insertAt(i, v.length > 1 ? v.slice(-1) : v);
+            applyEdit(applyBoxInput(value, i, e.target.value));
           }}
           onKeyDown={(e) => {
             if (e.key === 'Backspace') {
               e.preventDefault();
-              if (value[i]) {
-                onChange(value.slice(0, i) + value.slice(i + 1));
-              } else {
-                onChange(value.slice(0, Math.max(0, i - 1)) + value.slice(i));
-                focusBox(i - 1);
-              }
+              applyEdit(applyBackspace(value, i));
             } else if (e.key === 'ArrowLeft') {
               focusBox(i - 1);
             } else if (e.key === 'ArrowRight') {
@@ -161,7 +159,8 @@ export function CodeInput({
           }}
           onPaste={(e) => {
             e.preventDefault();
-            insertAt(i, e.clipboardData.getData('text'));
+            const digits = e.clipboardData.getData('text').replace(/\D/g, '');
+            if (digits) applyEdit(insertDigits(value, i, digits));
           }}
           onFocus={(e) => e.currentTarget.select()}
           aria-invalid={invalid || undefined}
