@@ -1507,6 +1507,47 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
+  test('dashboard start keeps polling while a provider-running ACP daemon is not reachable yet', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, status: 'running' };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-acp-booting',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: { initStatus: 'ready' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    inspectedRuntime = null;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'acp_starting',
+      runtime_protocol: 'acp',
+      runtime_id: null,
+      runtime_url: '/p/box-acp-booting/8000',
+      sandbox: { external_id: 'box-acp-booting', status: 'active' },
+    });
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
   test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
