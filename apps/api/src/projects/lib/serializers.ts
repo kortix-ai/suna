@@ -93,7 +93,6 @@ export function serializeSession(
     error: row.error,
     metadata: row.metadata ?? {},
     runtime_sessions: runtimeSessions,
-    opencode_sessions: runtimeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,

@@ -164,7 +164,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.runtime_id).toBe('runtime-1');
     expect(parsed.runtime_session_id).toBe('conversation-1');
     expect(parsed.acp_session_id).toBe('conversation-1');
-    expect(parsed.opencode_session_id).toBeNull();
+    expect('opencode_sessions' in parsed).toBe(false);
   });
 });
 
@@ -182,7 +182,9 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
-      opencode_session_id: 'ses_abc',
+      runtime_protocol: 'acp' as const,
+      runtime_id: 'runtime-1',
+      runtime_session_id: 'conversation-1',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };
