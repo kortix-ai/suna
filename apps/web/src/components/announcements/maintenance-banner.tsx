@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
 
 interface MaintenanceBannerProps {
@@ -58,6 +59,8 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [countdown, setCountdown] = useState<string>('');
   const pathname = normalizeAppPathname(usePathname());
+  const { data: adminRole } = useAdminRole();
+  const isAdmin = adminRole?.isAdmin === true;
 
   // Show the banner app-wide (dashboard + marketing) so a system notice reaches
   // everyone, not just a handful of routes. Only suppress it where it would be
@@ -69,11 +72,15 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   const level = config.level;
   const lc = level !== 'none' && level !== 'blocking' ? levelConfig[level] : null;
 
+  // Admins can always dismiss/bypass any banner — including the normally
+  // non-dismissible `critical` level — so a system notice never traps them.
+  const canDismiss = (lc?.dismissible ?? false) || isAdmin;
+
   const dismissKey = `maintenance-dismissed-${config.updatedAt}`;
 
   useEffect(() => {
     setIsMounted(true);
-    if (lc?.dismissible) {
+    if (canDismiss) {
       try {
         if (localStorage.getItem(dismissKey) === 'true') {
           setIsDismissed(true);
@@ -82,7 +89,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
         // ignore
       }
     }
-  }, [dismissKey, lc?.dismissible]);
+  }, [dismissKey, canDismiss]);
 
   // Countdown timer for scheduled maintenance
   useEffect(() => {
@@ -124,7 +131,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
 
   // Don't render for none/blocking levels, before mount, or on suppressed paths.
   if (!lc || !isMounted || isSuppressedPath) return null;
-  if (isDismissed && lc.dismissible) return null;
+  if (isDismissed && canDismiss) return null;
 
   const Icon = lc.icon;
   const title = config.title || lc.defaultTitle;
@@ -158,7 +165,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
         className="fixed bottom-4 right-4 z-[110] w-[340px]"
       >
         <div className="relative bg-muted rounded-2xl overflow-hidden border">
-          {lc.dismissible && (
+          {canDismiss && (
             <Button variant="ghost" size="icon-sm" onClick={handleDismiss} className="absolute top-2 right-2 z-10">
               <X className="h-3 w-3 text-foreground" />
             </Button>
