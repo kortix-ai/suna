@@ -5,8 +5,8 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.105"
-kortixVersion: "0.9.105"
+  tag: "0.9.106"
+kortixVersion: "0.9.106"
 env:
   internalKortixEnv: prod
 # Explicit container env (overrides the kortix-prod-env secret bundle — k8s env

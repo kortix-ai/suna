@@ -1,6 +1,5 @@
 'use client';
 
-import { COMPETITORS } from '@/features/marketing/marketing-pages';
 import { cn } from '@/lib/utils';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -21,8 +20,8 @@ const FOOTER_SECTIONS: FooterSection[] = [
   {
     title: 'Product',
     links: [
-      { label: 'CLI', href: '/developers' },
-      { label: 'Developer', href: '/developers' },
+      { label: 'CLI', href: '/docs/reference/cli' },
+      { label: 'Developers', href: '/developers' },
       { label: 'Marketplace', href: '/marketplace' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
@@ -38,13 +37,6 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Brand', href: '/design-system' },
       { label: 'Status', href: 'https://status.kortix.com', external: true },
     ],
-  },
-  {
-    title: 'Compare',
-    links: COMPETITORS.map((competitor) => ({
-      label: competitor.name,
-      href: `/compare/${competitor.slug}`,
-    })),
   },
   {
     title: 'Legal',

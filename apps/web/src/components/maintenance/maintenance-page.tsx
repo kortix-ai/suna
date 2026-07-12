@@ -87,7 +87,7 @@ export function MaintenancePage() {
           <KortixLogo size={32} />
 
           {/* Title - 43px */}
-          <h1 className="text-5xl font-normal tracking-tight textforeground leading-none">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line46JsxTextWeLlBeRightBack')}</h1>
+          <h1 className="text-foreground text-5xl font-normal tracking-tight text-balance leading-none">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line46JsxTextWeLlBeRightBack')}</h1>
 
           {/* Description - 16px */}
           <p className="text-base text-foreground/60 text-center leading-relaxed">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line51JsxTextPerformingScheduledMaintenanceToEnhanceSystemStabilityAll')}</p>
@@ -99,10 +99,13 @@ export function MaintenancePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col gap-1">
                     <div className='flex items-center gap-2'>
-                      <div className="h-2.5 w-2.5 rounded-full border border-red-500 border-t-transparent animate-spin"></div>
-                      <span className="text-base font-medium text-red-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line62JsxTextServicesOffline')}</span>
+                      <span className="relative flex size-2.5 shrink-0">
+                        <span className="bg-kortix-red/60 absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"></span>
+                        <span className="bg-kortix-red relative inline-flex size-2.5 rounded-full"></span>
+                      </span>
+                      <span className="text-kortix-red text-base font-medium">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line62JsxTextServicesOffline')}</span>
                     </div>
-                    <p className="text-base text-gray-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line64JsxTextAllWorkerExecutionsAreCurrentlyPaused')}</p>
+                    <p className="text-muted-foreground text-base">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line64JsxTextAllWorkerExecutionsAreCurrentlyPaused')}</p>
                   </div>
                 </div>
                 <Button
