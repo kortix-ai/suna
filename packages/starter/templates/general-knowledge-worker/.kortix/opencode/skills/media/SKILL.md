@@ -14,7 +14,7 @@ Kortix creates and transforms media through dedicated, provider-backed skills. T
 | Video generation — text-to-video, image-to-video | **`replicate`** | pick a video model on Replicate |
 | Programmatic / templated video — compositions, frame chaining, multi-scene | **`remotion`** | render with code |
 | Text-to-speech, voices, multi-speaker dialogue | **`elevenlabs`** | needs `ELEVENLABS_API_KEY` |
-| Audio/video transcription — diarization, timestamps | **`whisper`** | speech-to-text |
+| Audio/video transcription — speech-to-text, timestamps | **`replicate`** | run a Whisper/speech model on Replicate |
 | Logos & brand marks | **`logo-creator`** | purpose-built for marks |
 
 Load the relevant skill (e.g. `replicate`) and follow its guidance — that's the single source of truth for available models and parameters.
