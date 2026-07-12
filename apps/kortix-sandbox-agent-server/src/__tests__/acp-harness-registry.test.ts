@@ -26,6 +26,7 @@ describe('ACP harness registry', () => {
     expect(registry.get('claude')?.launch.env).toEqual({
       ANTHROPIC_BASE_URL: 'https://api.example.test/v1/router',
       ANTHROPIC_AUTH_TOKEN: 'sandbox-token',
+      ANTHROPIC_MODEL: 'claude-sonnet-4-6',
     });
   });
 

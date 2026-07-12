@@ -88,6 +88,12 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
   return {
     ANTHROPIC_BASE_URL: `${apiUrl}/router`,
     ANTHROPIC_AUTH_TOKEN: token,
+    // Claude Code's release-channel default can be newer than the model exposed
+    // by a compatible gateway. Pin the managed Kortix default so the harness
+    // never scrapes a styled model name from CLI output or guesses a model the
+    // account cannot use. A project-supplied Claude credential keeps native
+    // Claude behavior and is intentionally not overridden above.
+    ANTHROPIC_MODEL: 'claude-sonnet-4-6',
   }
 }
 
