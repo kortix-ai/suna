@@ -865,6 +865,13 @@ export interface FeaturedMarketplace {
 export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
   // Official / first-party (off by default, one-click to enable)
   {
+    address: "anthropics/skills",
+    label: "Anthropic Skills",
+    owner: "anthropics",
+    description: "Official Anthropic Agent Skills",
+    license: "Apache-2.0",
+  },
+  {
     address: "anthropics/knowledge-work-plugins",
     label: "Anthropic Knowledge Work",
     owner: "anthropics",
