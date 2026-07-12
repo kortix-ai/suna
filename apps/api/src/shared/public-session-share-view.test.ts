@@ -25,10 +25,14 @@ let endpointResult: { url: string; headers: Record<string, string> } | null = {
   headers: {},
 };
 let resolvedRootId: string | null = 'oc-root-1';
+let opencodeListCalls = 0;
 
 mock.module('../projects/opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => endpointResult,
-  listSandboxOpencodeSessions: async () => listResult,
+  listSandboxOpencodeSessions: async () => {
+    opencodeListCalls += 1;
+    return listResult;
+  },
   resolveRootSessionId: () => resolvedRootId,
 }));
 
@@ -40,6 +44,7 @@ beforeEach(() => {
   listResult = { ok: true, sessions: [] };
   endpointResult = { url: 'http://daemon.local', headers: {} };
   resolvedRootId = 'oc-root-1';
+  opencodeListCalls = 0;
   globalThis.fetch = mock(async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
 });
 
@@ -108,8 +113,8 @@ describe('getPublicSessionMessages', () => {
     expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
   });
 
-  test('reads ACP envelopes from persistence without touching OpenCode', async () => {
-    sessionRows = [{ opencodeSessionId: null, metadata: { runtime_protocol: 'acp' } }];
+  test('reads ACP envelopes from persistence without touching OpenCode even without legacy metadata', async () => {
+    sessionRows = [{ opencodeSessionId: null, metadata: {} }];
     orderedRows = [
       { ordinal: 1, direction: 'client_to_agent', streamEventId: null, createdAt: new Date('2026-01-01'), envelope: { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: { prompt: [{ type: 'text', text: 'Hello' }] } } },
       { ordinal: 2, direction: 'agent_to_client', streamEventId: 1, createdAt: new Date('2026-01-01'), envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } } } } },
@@ -126,6 +131,7 @@ describe('getPublicSessionMessages', () => {
       ['user', 'Hello'],
       ['assistant', 'Hi'],
     ]);
+    expect(opencodeListCalls).toBe(0);
   });
 
   test('degrades to an unavailable digest (still 200) when the daemon reports not_ready', async () => {

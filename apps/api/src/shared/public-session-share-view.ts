@@ -174,7 +174,7 @@ function unavailable(reason: string, runtimeSessionId: string | null = null): Pu
  * public share row. `row` must already have passed `resolvePublicShare`
  * (404/410/503 handled by the caller) — this only covers what happens once a
  * token is known-good. Degrades to `{available: false, reason}` (still a 200)
- * for transient/expected sandbox states (booting, opencode not ready) so a
+ * for transient/expected sandbox states (booting, runtime not ready) so a
  * polling frontend can retry — mirrors `buildSessionTranscriptDigest`'s
  * behavior for the authenticated equivalent. Returns a hard error status only
  * for conditions the caller can't usefully retry past (sandbox not running).
@@ -191,18 +191,18 @@ export async function getPublicSessionMessages(
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, row.sessionId))
     .limit(1);
-  const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
   const metadata = (sessionRow?.metadata ?? {}) as Record<string, unknown>;
-  if (metadata.runtime_protocol === 'acp') {
-    const rows = await db.select({
-      ordinal: acpSessionEnvelopes.ordinal,
-      direction: acpSessionEnvelopes.direction,
-      streamEventId: acpSessionEnvelopes.streamEventId,
-      envelope: acpSessionEnvelopes.envelope,
-      createdAt: acpSessionEnvelopes.createdAt,
-    }).from(acpSessionEnvelopes)
-      .where(eq(acpSessionEnvelopes.sessionId, row.sessionId))
-      .orderBy(asc(acpSessionEnvelopes.ordinal));
+  const rows = await db.select({
+    ordinal: acpSessionEnvelopes.ordinal,
+    direction: acpSessionEnvelopes.direction,
+    streamEventId: acpSessionEnvelopes.streamEventId,
+    envelope: acpSessionEnvelopes.envelope,
+    createdAt: acpSessionEnvelopes.createdAt,
+  }).from(acpSessionEnvelopes)
+    .where(eq(acpSessionEnvelopes.sessionId, row.sessionId))
+    .orderBy(asc(acpSessionEnvelopes.ordinal));
+
+  if (metadata.runtime_protocol === 'acp' || rows.length > 0) {
     const messages = projectAcpTranscript(rows.map((entry) => ({
       ...entry,
       createdAt: entry.createdAt.toISOString(),
@@ -220,23 +220,24 @@ export async function getPublicSessionMessages(
     };
   }
 
+  const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
   const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
   if (!listed.ok) {
     return {
       ok: true,
       transcript: unavailable(
         listed.reason === 'not_ready'
-          ? 'OpenCode is not ready in the sandbox yet'
+          ? 'Runtime is not ready in the sandbox yet'
           : listed.reason === 'no_key'
             ? 'Sandbox credentials unavailable'
-            : 'OpenCode session list unreachable in the sandbox',
+            : 'Runtime session list unreachable in the sandbox',
       ),
     };
   }
 
   const opencodeSessionId = resolveRootSessionId({ pinnedRootId, sessions: listed.sessions });
   if (!opencodeSessionId) {
-    return { ok: true, transcript: unavailable('No OpenCode session found in the sandbox yet') };
+    return { ok: true, transcript: unavailable('No runtime session found in the sandbox yet') };
   }
 
   const endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
@@ -254,10 +255,10 @@ export async function getPublicSessionMessages(
       signal: AbortSignal.timeout(8_000),
     });
     if (res.status === 503) {
-      return { ok: true, transcript: unavailable('OpenCode is not ready in the sandbox yet', opencodeSessionId) };
+      return { ok: true, transcript: unavailable('Runtime is not ready in the sandbox yet', opencodeSessionId) };
     }
     if (!res.ok) {
-      return { ok: true, transcript: unavailable(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId) };
+      return { ok: true, transcript: unavailable(`Runtime messages unavailable: HTTP ${res.status}`, opencodeSessionId) };
     }
     const payload = (await res.json().catch(() => null)) as unknown;
     const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);

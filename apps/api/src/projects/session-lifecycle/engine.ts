@@ -303,15 +303,15 @@ export async function continueSession(
   }
 
   // Runtime is ready — hand off the prompt, healing + retrying through the
-  // transient failures a freshly-woken sandbox throws (rotated opencode session
-  // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
-  // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
-  // the old code gave up on the first hiccup and dropped the user's message.
+  // transient failures a freshly-woken sandbox throws (adapter 404, daemon 5xx
+  // while it binds, externalId/runtime_session_id briefly null). Bounce to
+  // 'pending' only after the bounded window genuinely exhausts; the old code
+  // gave up on the first hiccup and dropped the user's message.
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    opencodeSessionId: o.opencode_session_id,
-    runtimeProtocol: o.runtime_protocol ?? (o.opencode_session_id ? 'opencode' : null),
+    opencodeSessionId: o.runtime_protocol === 'opencode' ? o.runtime_session_id ?? null : null,
+    runtimeProtocol: o.runtime_protocol ?? null,
     runtimeId: o.runtime_id ?? null,
     runtimeSessionId: o.runtime_session_id ?? null,
   });
