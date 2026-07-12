@@ -51,24 +51,25 @@ export default function Error({
   }, [runtimeNotReady, reset]);
 
   // Only genuine crashes are worth logging / reporting. A transient
-  // runtime-not-ready race is expected background noise during a session switch.
+  // runtime-not-ready race is expected background noise during a session switch —
+  // it is an info state, not an error, so it goes to the console and nowhere else.
   useEffect(() => {
-    if (runtimeNotReady) return;
+    if (runtimeNotReady) {
+      console.debug('[runtime] not ready yet (sandbox still loading) — retrying', error?.message);
+      return;
+    }
     console.error('[Kortix Home Error]', error);
     Sentry.captureException(error);
   }, [error, runtimeNotReady]);
 
   if (runtimeNotReady) {
-    // A calm, minimal loader — the route re-mounts as soon as the URL lands.
-    return (
-      <div
-        className="bg-background flex min-h-screen items-center justify-center"
-        role="status"
-        aria-label="Loading session"
-      >
-        <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
-      </div>
-    );
+    // Render NOTHING. "Sandbox still loading" is a transient info state, never an
+    // error UI — no logo, no card, no message. We silently soft-reset (above) until
+    // the runtime URL pins, at which point the real page renders in place. The only
+    // trace is the console.debug. This is the last-ditch backstop; the session
+    // subtree's own gating + SandboxLoadingBoundary normally prevent the throw from
+    // ever reaching here at all.
+    return null;
   }
 
   return (
