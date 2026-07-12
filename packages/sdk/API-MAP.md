@@ -7,7 +7,7 @@ Two layers, one client:
 | Layer | Reached via | Owns |
 |---|---|---|
 | **Kortix REST API** (`apps/api`, `/v1/*`) | `backendApi` (Supabase bearer) | control plane — projects, session lifecycle, sandbox provisioning, git/versions, secrets, billing |
-| **OpenCode runtime** (in-sandbox daemon) | `/v1/p/{sandboxId}/8000/...` proxy → OpenCode v2 client + raw daemon `/file`·`/find` | agent runtime — messages, events, files, pty, permissions |
+| **ACP session runtime** (in-sandbox daemon) | `/v1/projects/{projectId}/sessions/{sessionId}/acp` for agent conversation + `/v1/p/{sandboxId}/8000/...` for daemon helpers | agent runtime — ACP messages/events plus files, pty, permissions and other daemon helper surfaces |
 
 Legend: **✅ in SDK** · **🟡 partial** (client fn in SDK, hook not) · **❌ gap** (web-local / not wrapped)
 
@@ -201,7 +201,7 @@ Two small project-scoped mutations, added to `projects-client/projects.ts`:
 ### 14. Sandbox lifecycle  ✅ / 🟡
 - session-sandbox status/metrics/instances → `projects-client/{sandbox,session-sandbox}.ts` ✅
 - `GET /v1/projects/:id/{sandbox-health,sandboxes}`, snapshots, warm-pool, `GET /v1/platform/sandbox/version*` → 🟡 client in `@kortix/sdk/platform-client` ✅; hooks web-local (`hooks/platform`)
-- sandbox proxy `ALL /v1/p/:sandboxId/:port/*` + preview auth/share → used by opencode-client baseURL ✅
+- sandbox proxy `ALL /v1/p/:sandboxId/:port/*` + preview auth/share → used by daemon/runtime helper clients ✅
 
 ### 15. Billing  ✅ (read + a curated mutation surface)
 Read surface (unchanged) — `kortix.billing.{accountState, accountStateMinimal,
@@ -285,12 +285,12 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Channels (Slack/email/Meet installs + apps deploy family) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Executor connectors runtime | 🟡 web-local |
-| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's an opencode-runtime surface, reached via the opencode-client subpath) |
+| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/runtime-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's a daemon/runtime surface, reached via the runtime-client subpath) |
 
 ### To make the SDK the whole data layer
 1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
 2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests (`useChangeRequests` ✅ done; commits/branches/diff still web-local), triggers (`useProjectTriggers` ✅ done), gateway-observability, sandbox-admin, billing/account-state.
 3. ~~Framework-free event stream~~ — **done**: `openEventStream` (`@kortix/sdk` root barrel / `@kortix/sdk/event-stream`) is a framework-free connect/reconnect/heartbeat/coalescing primitive with zero React deps, and `session.stream()` is a thin facade over it (`ensureReady()` + the session's own runtime client). `@kortix/sdk/react`'s `useOpenCodeEventStream` is now just a React wrapper around the same primitive — a non-React host (server wrapper, worker, CLI) subscribes directly via `session.stream()` or `openEventStream()`.
-4. ~~Land + export the kortix-master daemon client~~ — **done**: the client (`opencode/kortix-master.ts`) is re-exported from `@kortix/sdk/opencode-client`, and its React Query layer lives in `@kortix/sdk/react` (`use-kortix-master.ts`, with the injectable `KortixMasterIdentity` seam); apps/web's six former hook files (`hooks/kortix/*` + `hooks/use-sandbox-services.ts`) are thin wrappers over it.
+4. ~~Land + export the kortix-master daemon client~~ — **done**: the client (`opencode/kortix-master.ts`) is re-exported from `@kortix/sdk/runtime-client`, and its React Query layer lives in `@kortix/sdk/react` (`use-kortix-master.ts`, with the injectable `KortixMasterIdentity` seam); apps/web's six former hook files (`hooks/kortix/*` + `hooks/use-sandbox-services.ts`) are thin wrappers over it.
 5. **Mobile adoption** — the SDK is the shared implementation in principle, but the mobile app hasn't migrated its data layer onto it yet.
 6. Everything else (the agent loop) is already SDK — that's the verified path.

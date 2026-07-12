@@ -52,7 +52,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { getAuthToken } from '@/api/config';
 
-import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent, FlatModel, Command } from '@/lib/runtime/hooks/use-runtime-data';
 import type { Session } from '@/lib/platform/types';
 import { MentionSuggestions } from './MentionSuggestions';
 import { AudioWaveform } from '@/components/attachments/AudioWaveform';

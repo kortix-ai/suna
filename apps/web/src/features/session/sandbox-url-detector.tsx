@@ -550,7 +550,7 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
 }) => {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Strip kortix_system XML tags before any processing/rendering.
-  // These tags contain internal/system content injected by OpenCode plugins
+  // These tags contain internal/system content injected by Runtime plugins
   // that should not appear in the UI.
   const rawContent = typeof content === 'string' ? content : content ? String(content) : '';
   const safeContent = stripKortixSystemTags(rawContent);

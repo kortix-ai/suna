@@ -138,6 +138,7 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
   resolveTreeOid: async () => 'b'.repeat(40),
@@ -278,6 +279,40 @@ mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
     execute: async () => [],
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        insert: (table: unknown) => ({
+          values: (values: any) => ({
+            returning: async () => {
+              const now = new Date('2026-01-02T00:00:00Z');
+              if (table === projectSessions) {
+                const row: typeof projectSessions.$inferSelect = {
+                  sessionId: values.sessionId,
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  branchName: values.branchName,
+                  baseRef: values.baseRef,
+                  sandboxProvider: values.sandboxProvider,
+                  sandboxId: values.sandboxId ?? null,
+                  sandboxUrl: null,
+                  opencodeSessionId: null,
+                  agentName: values.agentName ?? 'default',
+                  status: values.status ?? 'provisioning',
+                  error: null,
+                  createdBy: values.createdBy ?? null,
+                  visibility: values.visibility ?? 'private',
+                  metadata: values.metadata ?? {},
+                  createdAt: values.createdAt ?? now,
+                  updatedAt: values.updatedAt ?? now,
+                };
+                sessionRows.push(row);
+                return [row];
+              }
+              return [{ sessionId: values.sessionId }];
+            },
+          }),
+        }),
+      }),
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {

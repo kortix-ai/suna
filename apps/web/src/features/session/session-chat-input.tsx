@@ -8,18 +8,14 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
-import { normalizeProviderList } from '@/hooks/opencode/provider-selection';
+import { normalizeProviderList } from '@/hooks/runtime/provider-selection';
 import type {
   Agent,
   Command,
   MessageWithParts,
   ProviderListResponse,
   Session,
-} from '@/hooks/opencode/use-opencode-sessions';
-import {
-  useOpenCodeSessionTodo,
-  useOpenCodeSessions,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@/hooks/runtime/use-runtime-sessions';
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -997,9 +993,8 @@ function MentionPopover({
 
 // --- Todo Chip (inline inside the chat input card, same style as sub-session context) ---
 
-function TodoChip({ sessionId }: { sessionId: string }) {
+function TodoChip({ todos }: { todos?: Array<any> }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: todos } = useOpenCodeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
   if (!Array.isArray(todos) || todos.length === 0) return null;
@@ -1220,6 +1215,10 @@ export interface SessionChatInputProps {
   onQuestionAction?: () => void;
   /** Number of ESC presses so far (0 = none, 1 = first, 2 = second). Triple-ESC to stop. */
   escCount?: number;
+  /** Harness-neutral todo projection supplied by the session owner. */
+  todos?: Array<any>;
+  /** Harness-neutral sessions available for @ mentions. */
+  mentionSessions?: Session[];
 }
 
 export function SessionChatInput({
@@ -1270,6 +1269,8 @@ export function SessionChatInput({
   questionCanAct = true,
   onQuestionAction,
   escCount = 0,
+  todos,
+  mentionSessions = [],
 }: SessionChatInputProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const placeholderVariants = useMemo(
@@ -1421,7 +1422,7 @@ export function SessionChatInput({
   }, [disabled]);
 
   // Sessions for @ mention search
-  const { data: allSessions } = useOpenCodeSessions();
+  const allSessions = mentionSessions;
 
   useEffect(() => {
     if (text.trim().length > 0) return;
@@ -1811,9 +1812,9 @@ export function SessionChatInput({
       return;
     }
 
-    // Send directly. The OpenCode server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe even
-    // without queuing — this path is only reached when no queue is wired up.
+    // Send directly. The Runtime server serializes concurrent prompt calls
+    // per session, so sending while the agent is busy is safe even without
+    // queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
       for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
@@ -2176,7 +2177,7 @@ export function SessionChatInput({
                   </span>
                 </button>
               )}
-              {sessionId && <TodoChip sessionId={sessionId} />}
+              {sessionId && <TodoChip todos={todos} />}
               {inputSlot}
             </div>
           )}

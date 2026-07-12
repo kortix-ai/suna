@@ -4,10 +4,10 @@
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
 // (connectors/secrets/skills/kortix_cli/workspace/enabled); the agent's own
-// native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
-// OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
-// color/hidden/permission) plus the prompt itself. This route is the ONE
-// place that merges them into a single wire shape (`block.opencode = {...}`)
+// runtime-native markdown frontmatter + body carries every behavioral field
+// (mode/model/temperature/top_p/steps/variant/color/hidden/permission) plus
+// the prompt itself. This route is the ONE place that merges them into a single
+// wire shape (`block.behavior = {...}`)
 // so the dashboard editor's data binding never has to know two files exist —
 // see agent-editor.tsx. GET reads both; PUT writes governance to kortix.yaml
 // and behavior to the `.md` in ONE atomic commit (commitMultipleFilesToBranch)
@@ -31,6 +31,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import {
   type AgentBlockV2,
+  type AgentBlockV3,
   type ManifestIssue,
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
@@ -41,7 +42,14 @@ import { db } from '../../shared/db';
 import { readRepoFile } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { applyAgentBlockV2, applyDefaultAgentV2, readAgentBlockV2 } from '../lib/agent-config-v2';
+import {
+  applyAgentBlockV2,
+  applyAgentBlockV3,
+  applyDefaultAgentV2,
+  applyRuntimeProfilesV3,
+  readAgentBlockV2,
+  readAgentBlockV3,
+} from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
 import { projectsApp } from '../lib/app';
 import {
@@ -63,23 +71,32 @@ const GrantSetSchema = z.union([
 ]);
 
 // The KORTIX layer — governance only (spec §2.2 redirect). No model, no
-// description, no behavior: those all moved into `opencode` (defined in
-// ../lib/compile-agent-config alongside its canonical KNOWN_BEHAVIOR_KEYS —
-// see that module for why), which this route writes to the `.md`, never to
-// kortix.yaml.
+// description, no behavior: those all moved into `behavior` (defined by
+// ../lib/compile-agent-config's canonical KNOWN_BEHAVIOR_KEYS), which this
+// route writes to the `.md`, never to kortix.yaml.
 const AgentBlockSchema = z
   .object({
+    runtime: z.string().min(1).max(200).optional(),
+    agent: z.string().min(1).max(200).optional(),
     enabled: z.boolean().optional(),
     connectors: GrantSetSchema.optional(),
     secrets: GrantSetSchema.optional(),
     skills: GrantSetSchema.optional(),
     kortix_cli: GrantSetSchema.optional(),
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
+    behavior: OpencodeAgentConfigSchema.optional(),
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
 
 const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
+const RuntimeProfileSchema = z.object({
+  harness: z.enum(['claude', 'codex', 'opencode', 'pi']),
+  config_dir: z.string().min(1).max(500).optional(),
+}).strict();
+const RuntimeProfilesBodySchema = z.object({
+  runtimes: z.record(z.string(), RuntimeProfileSchema),
+});
 const DefaultAgentResponseSchema = z.object({
   ok: z.boolean(),
   default_agent: z.string(),
@@ -121,7 +138,7 @@ function mergeFrontmatter(
 }
 
 /** Project the recognized behavior fields out of a `.md`'s parsed
- *  frontmatter, for the GET response's `block.opencode`. */
+ *  frontmatter, for the GET response's `block.behavior`. */
 function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of KNOWN_BEHAVIOR_KEYS) {
@@ -135,6 +152,73 @@ function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string
 // behavior from the agent's `.md` frontmatter+body. schemaVersion tells the
 // UI whether the full editor applies (2) or it should degrade to the limited
 // scope editor (1).
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/runtime-profiles',
+    tags: ['projects'],
+    summary: 'Get ACP runtime profiles from kortix.yaml v3',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Runtime profiles'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const manifest = await loadManifestForEdit(loaded.row).catch((error) => null);
+    if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
+    if (manifest.schemaVersion !== 3) {
+      return c.json({ schema_version: manifest.schemaVersion, editable: false, runtimes: {} });
+    }
+    const runtimes = manifest.raw.runtimes;
+    if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) {
+      return c.json({ error: '`runtimes` is malformed', code: 'manifest_malformed' }, 400);
+    }
+    return c.json({ schema_version: 3, editable: true, runtimes });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/runtime-profiles',
+    tags: ['projects'],
+    summary: 'Replace ACP runtime profiles in kortix.yaml v3',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: RuntimeProfilesBodySchema } } },
+    },
+    responses: { 200: json(z.any(), 'Updated runtime profiles'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const parsed = RuntimeProfilesBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+    const manifest = await loadManifestForEdit(loaded.row).catch(() => null);
+    if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
+    const applied = applyRuntimeProfilesV3(manifest, parsed.data.runtimes);
+    if (!applied.ok) return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+    manifest.raw = applied.raw;
+    const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      await commitMultipleFilesToBranch(gitProject, {
+        files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+        message: 'chore: update ACP runtime profiles',
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (error) {
+      return c.json({ error: `Failed to commit runtime profiles: ${(error as Error).message || String(error)}` }, 502);
+    }
+    return c.json({ schema_version: 3, editable: true, runtimes: parsed.data.runtimes });
+  },
+);
+
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -161,16 +245,29 @@ projectsApp.openapi(
       );
     }
 
+    if (manifest.schemaVersion === 3) {
+      const read = readAgentBlockV3(manifest, agentName);
+      if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
+      return c.json({
+        agent: agentName,
+        schema_version: 3,
+        editable: true,
+        default_agent: read.defaultAgent,
+        block: read.block,
+        runtimes: read.runtimes,
+      });
+    }
+
     const read = readAgentBlockV2(manifest, agentName);
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
-    let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
+    let block: (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> }) | null = read.block;
     if (read.schemaVersion === 2) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
       const { frontmatter, body } = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+      const behavior = pickBehaviorFields(frontmatter);
+      if (body.trim()) behavior.prompt = body;
+      block = { ...(read.block ?? {}), behavior, opencode: behavior };
     }
 
     return c.json({
@@ -304,10 +401,17 @@ projectsApp.openapi(
       return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
     }
 
-    // Split the wire body into its two homes. Drop undefined keys
+    // Split the wire body into its native v2/v3 homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
-    const { opencode: opencodeDraft, ...governanceRaw } = parsed.data;
+    const {
+      behavior: behaviorDraft,
+      opencode: opencodeDraft,
+      runtime,
+      agent: nativeAgent,
+      ...governanceRaw
+    } = parsed.data;
+    const runtimeBehaviorDraft = behaviorDraft ?? opencodeDraft;
     const governanceBlock: AgentBlockV2 = {};
     for (const [key, value] of Object.entries(governanceRaw)) {
       if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
@@ -323,6 +427,50 @@ projectsApp.openapi(
       );
     }
 
+    if (manifest.schemaVersion === 3) {
+      if (runtimeBehaviorDraft !== undefined) {
+        return c.json({
+          error: 'Runtime behavior is not edited through kortix.yaml v3. Edit the selected runtime native config directly.',
+          code: 'native_config_owned',
+        }, 400);
+      }
+      const existing = readAgentBlockV3(manifest, agentName);
+      if (!existing.ok) return c.json({ error: existing.error, code: 'manifest_malformed' }, 400);
+      const selectedRuntime = runtime ?? existing.block?.runtime;
+      if (!selectedRuntime) {
+        return c.json({ error: 'runtime is required for a v3 logical agent', code: 'invalid_config' }, 400);
+      }
+      const block: AgentBlockV3 = {
+        runtime: selectedRuntime,
+        ...(nativeAgent ? { agent: nativeAgent } : {}),
+        ...governanceBlock,
+      };
+      const applied = applyAgentBlockV3(manifest, agentName, block);
+      if (!applied.ok) {
+        return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+      }
+      manifest.raw = applied.raw;
+      const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+      try {
+        const gitProject = await withProjectGitAuth(loaded.row);
+        await commitMultipleFilesToBranch(gitProject, {
+          files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+          message: `chore: update agent ${agentName} runtime and governance`,
+          branch: loaded.row.defaultBranch,
+        });
+      } catch (err) {
+        return c.json({ error: `Failed to commit agent config: ${(err as Error).message || String(err)}` }, 502);
+      }
+      return c.json({ ok: true, agent: agentName, schema_version: 3, block });
+    }
+
+    if (runtime !== undefined || nativeAgent !== undefined) {
+      return c.json({
+        error: 'runtime routing fields require kortix_version 3',
+        code: 'invalid_config',
+      }, 400);
+    }
+
     const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
     if (!applied.ok) {
       return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
@@ -334,13 +482,13 @@ projectsApp.openapi(
     let mdPath: string | null = null;
     let nextFrontmatter: Record<string, unknown> | null = null;
     let nextBody: string | null = null;
-    if (opencodeDraft !== undefined) {
+    if (runtimeBehaviorDraft !== undefined) {
       mdPath = agentMarkdownPath(applied.raw, agentName);
       const existing = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
-      const draftRecord: Record<string, unknown> = { ...opencodeDraft };
+      const draftRecord: Record<string, unknown> = { ...runtimeBehaviorDraft };
       delete draftRecord.prompt;
       nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);
-      nextBody = opencodeDraft.prompt ?? '';
+      nextBody = runtimeBehaviorDraft.prompt ?? '';
 
       const issues: ManifestIssue[] = [];
       validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
@@ -393,7 +541,7 @@ projectsApp.openapi(
     }
 
     const read = readAgentBlockV2(manifest, agentName);
-    const responseOpencode =
+    const responseBehavior =
       nextFrontmatter !== null
         ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
         : undefined;
@@ -402,7 +550,10 @@ projectsApp.openapi(
       agent: agentName,
       schema_version: manifest.schemaVersion,
       block: read.ok
-        ? { ...(read.block ?? {}), ...(responseOpencode ? { opencode: responseOpencode } : {}) }
+        ? {
+            ...(read.block ?? {}),
+            ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}),
+          }
         : governanceBlock,
     });
   },

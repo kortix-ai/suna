@@ -50,7 +50,7 @@ export function useKortixProjectForSession(sessionId: string, options: KortixPro
 
 /**
  * Fetch sessions linked to a specific project.
- * Returns OpenCode session objects enriched with title, time, etc.
+ * Returns Runtime session objects enriched with title, time, etc.
  */
 export function useKortixProjectSessions(
   projectId: string,

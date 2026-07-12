@@ -15,7 +15,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useFileContent, useInvalidateFileContent } from '@/features/files/hooks/use-file-content';
-import { uploadFile } from '@/features/files/api/opencode-files';
+import { uploadFile } from '@/features/files/api/runtime-files';
 import { Button } from '@/components/ui/button';
 import {
   FileText,

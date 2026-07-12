@@ -6,11 +6,11 @@
  * - Delete: removes the skill directory via the SDK file client (`deleteFile`)
  *
  * Skills are created in .opencode/skills/<name>/SKILL.md (project-relative).
- * After any mutation, `instance.dispose()` is called to force the OpenCode
+ * After any mutation, `instance.dispose()` is called to force the Runtime
  * server to rescan skill directories (the skill list is cached at startup).
  */
 
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { uploadFile, mkdir, deleteFile } from '@kortix/sdk/files';
 import type {
   Skill,
@@ -43,7 +43,7 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 // ---------------------------------------------------------------------------
 
 /**
- * Force the OpenCode server to rescan skill directories.
+ * Force the Runtime server to rescan skill directories.
  *
  * The server caches the skill list at startup. After creating, updating,
  * or deleting a skill file we need to dispose the current instance so
@@ -59,7 +59,7 @@ async function refreshSkills(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * List all available skills from the OpenCode server.
+ * List all available skills from the Runtime server.
  */
 export async function listSkills(): Promise<Skill[]> {
   const client = getClient();

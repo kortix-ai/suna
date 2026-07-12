@@ -1,5 +1,5 @@
 /**
- * Workspace file types — the OpenCode daemon REST shapes.
+ * Workspace file types — the Runtime daemon REST shapes.
  * Owned by the SDK so every host shares one definition.
  */
 
@@ -56,7 +56,7 @@ export interface FindMatch {
 }
 
 /** `GET /project/current` response. */
-export interface OpenCodeProjectInfo {
+export interface RuntimeProjectInfo {
   id: string;
   worktree: string;
   vcs?: 'git';

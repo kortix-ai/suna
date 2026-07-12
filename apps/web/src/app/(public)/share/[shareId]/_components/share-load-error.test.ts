@@ -45,8 +45,8 @@ describe('describeShareError', () => {
 
 describe('transcriptUnavailableMessage', () => {
   test('includes the reason when present', () => {
-    expect(transcriptUnavailableMessage('OpenCode is not ready in the sandbox yet')).toBe(
-      'Conversation temporarily unavailable — OpenCode is not ready in the sandbox yet.',
+    expect(transcriptUnavailableMessage('Runtime is not ready in the sandbox yet')).toBe(
+      'Conversation temporarily unavailable — Runtime is not ready in the sandbox yet.',
     );
   });
 

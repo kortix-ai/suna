@@ -14,13 +14,13 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 const DIGEST_HELP = help`Usage: kortix sessions digest [options]
 
 Compact review of recent sessions for reflection / handoff. It lists sessions
-in a time window and, for running sessions, reads the live OpenCode transcript
+in a time window and, for running sessions, reads the live runtime transcript
 through the project sessions API. Tool calls are compressed to name/status only;
 tool inputs and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per running session (default 40).
+  --messages, -n <N>   Recent runtime messages per running session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -33,7 +33,7 @@ Aliases: review, summary.
 
 Notes:
 - Running sessions include a compact transcript when the sandbox is reachable.
-- Stopped/failed sessions include metadata and any mirrored OpenCode titles, but
+- Stopped/failed sessions include metadata and any mirrored runtime titles, but
   their transcript is unavailable unless the sandbox is running/resumed.
 `;
 
@@ -66,13 +66,13 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
-    opencode_session_id: string | null;
-    opencode_titles: string[];
+    runtime_session_id: string | null;
+    runtime_titles: string[];
   };
   transcript: {
     available: boolean;
     reason: string | null;
-    opencode_session_id: string | null;
+    runtime_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
   };
@@ -188,7 +188,7 @@ async function buildDigest(
     const transcript = await client.get<unknown>(
       `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
     );
-    base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
+    base.transcript = sanitizeTranscript(transcript, s.runtime_session_id);
     return base;
   } catch (err) {
     base.transcript.reason = `could not read session transcript: ${(err as Error).message}`;
@@ -196,7 +196,7 @@ async function buildDigest(
   }
 }
 
-function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
+function sanitizeTranscript(raw: unknown, fallbackRuntimeSessionId: string | null): SessionDigest['transcript'] {
   const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
   const messages = Array.isArray(obj.messages)
     ? obj.messages.map(sanitizeCompactMessage)
@@ -207,9 +207,9 @@ function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | nu
   return {
     available: obj.available === true,
     reason: typeof obj.reason === 'string' ? obj.reason : null,
-    opencode_session_id: typeof obj.opencode_session_id === 'string'
-      ? obj.opencode_session_id
-      : fallbackOpencodeSessionId,
+    runtime_session_id: typeof obj.runtime_session_id === 'string'
+      ? obj.runtime_session_id
+      : fallbackRuntimeSessionId,
     message_count: count,
     messages,
   };
@@ -264,13 +264,13 @@ function baseDigest(s: ProjectSession): SessionDigest {
       created_at: s.created_at,
       updated_at: s.updated_at,
       error: s.error,
-      opencode_session_id: s.opencode_session_id,
-      opencode_titles: opencodeTitles(s),
+      runtime_session_id: s.runtime_session_id,
+      runtime_titles: runtimeTitles(s),
     },
     transcript: {
       available: false,
       reason: null,
-      opencode_session_id: s.opencode_session_id,
+      runtime_session_id: s.runtime_session_id,
       message_count: 0,
       messages: [],
     },
@@ -302,8 +302,8 @@ function printHumanDigest(
     process.stdout.write(`  ${C.dim}branch${C.reset} ${s.branch}  ${C.dim}base${C.reset} ${s.base_ref}  ${C.dim}provider${C.reset} ${s.provider}\n`);
     process.stdout.write(`  ${C.dim}created${C.reset} ${s.created_at}  ${C.dim}updated${C.reset} ${s.updated_at}\n`);
     if (s.error) process.stdout.write(`  ${C.red}error${C.reset} ${s.error}\n`);
-    if (s.opencode_titles.length > 0) {
-      process.stdout.write(`  ${C.dim}opencode titles${C.reset} ${s.opencode_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
+    if (s.runtime_titles.length > 0) {
+      process.stdout.write(`  ${C.dim}runtime titles${C.reset} ${s.runtime_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
     }
 
     if (!d.transcript.available) {
@@ -344,14 +344,11 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-function opencodeTitles(s: ProjectSession): string[] {
-  const raw = s.metadata?.opencode_sessions;
-  if (!Array.isArray(raw)) return [];
-  return raw
+function runtimeTitles(s: ProjectSession): string[] {
+  return (s.runtime_sessions ?? [])
     .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const title = (entry as { title?: unknown }).title;
-      return typeof title === 'string' && title.trim() ? title.trim() : null;
+      const title = entry.title;
+      return title?.trim() ? title.trim() : null;
     })
     .filter((t): t is string => Boolean(t));
 }

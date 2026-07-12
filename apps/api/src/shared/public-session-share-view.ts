@@ -23,13 +23,12 @@
  * (anonymous/public surface vs. the authenticated project routes).
  */
 
-import { eq } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
+import { asc, eq } from 'drizzle-orm';
+import { acpSessionEnvelopes, projectSessions } from '@kortix/db';
+import { projectAcpTranscript } from '@kortix/sdk/acp/transcript';
 import { db } from './db';
-import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
 
-const WORKSPACE_DIRECTORY = '/workspace';
 const MAX_MESSAGE_CHARS = 4000;
 const MAX_MESSAGES = 200;
 
@@ -95,7 +94,8 @@ export interface CompactPublicMessage {
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
+  runtime_protocol?: 'acp';
   message_count: number;
   messages: CompactPublicMessage[];
 }
@@ -104,67 +104,8 @@ export type PublicSessionMessagesResult =
   | { ok: true; transcript: PublicSessionTranscript }
   | { ok: false; status: number; error: string };
 
-type RawMessage = {
-  info?: { role?: string; time?: { created?: number; completed?: number } };
-  role?: string;
-  time?: { created?: number; completed?: number };
-  parts?: RawPart[];
-};
-
-type RawPart = {
-  type?: string;
-  text?: string;
-  synthetic?: boolean;
-  tool?: string;
-  state?: { status?: string };
-  filename?: string;
-  mime?: string;
-};
-
-function normalizeMessageList(payload: unknown): RawMessage[] {
-  const list = Array.isArray(payload)
-    ? payload
-    : typeof payload === 'object' && payload && Array.isArray((payload as { messages?: unknown }).messages)
-      ? (payload as { messages: unknown[] }).messages
-      : [];
-  return list.filter((m): m is RawMessage => typeof m === 'object' && m !== null);
-}
-
-function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, Math.max(0, max - 1))}…`;
-}
-
-function compactMessage(msg: RawMessage): CompactPublicMessage {
-  const info = msg.info ?? msg;
-  const parts = Array.isArray(msg.parts) ? msg.parts : [];
-  const text = parts
-    .filter((p) => p.type === 'text' && !p.synthetic && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .filter(Boolean)
-    .join('\n');
-  const tools = parts
-    .filter((p) => p.type === 'tool')
-    .map((p) => ({ tool: p.tool ?? 'tool', status: p.state?.status ?? null }));
-  const files = parts
-    .filter((p) => p.type === 'file')
-    .map((p) => ({ filename: p.filename ?? null, mime: p.mime ?? null }));
-  return {
-    role: info.role ?? 'unknown',
-    created: info.time?.created ? new Date(info.time.created).toISOString() : null,
-    completed: info.time?.completed ? new Date(info.time.completed).toISOString() : null,
-    text: truncate(normalizeWhitespace(text), MAX_MESSAGE_CHARS),
-    tools,
-    files,
-    reasoning_omitted: parts.some((p) => p.type === 'reasoning'),
-  };
-}
-
-function unavailable(reason: string, opencodeSessionId: string | null = null): PublicSessionTranscript {
-  return { available: false, reason, opencode_session_id: opencodeSessionId, message_count: 0, messages: [] };
+function unavailable(reason: string, runtimeSessionId: string | null = null): PublicSessionTranscript {
+  return { available: false, reason, runtime_session_id: runtimeSessionId, message_count: 0, messages: [] };
 }
 
 /**
@@ -172,7 +113,7 @@ function unavailable(reason: string, opencodeSessionId: string | null = null): P
  * public share row. `row` must already have passed `resolvePublicShare`
  * (404/410/503 handled by the caller) — this only covers what happens once a
  * token is known-good. Degrades to `{available: false, reason}` (still a 200)
- * for transient/expected sandbox states (booting, opencode not ready) so a
+ * for transient/expected sandbox states (booting, runtime not ready) so a
  * polling frontend can retry — mirrors `buildSessionTranscriptDigest`'s
  * behavior for the authenticated equivalent. Returns a hard error status only
  * for conditions the caller can't usefully retry past (sandbox not running).
@@ -185,70 +126,38 @@ export async function getPublicSessionMessages(
   }
 
   const [sessionRow] = await db
-    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+    .select({ metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, row.sessionId))
     .limit(1);
-  const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
+  const metadata = (sessionRow?.metadata ?? {}) as Record<string, unknown>;
+  const rows = await db.select({
+    ordinal: acpSessionEnvelopes.ordinal,
+    direction: acpSessionEnvelopes.direction,
+    streamEventId: acpSessionEnvelopes.streamEventId,
+    envelope: acpSessionEnvelopes.envelope,
+    createdAt: acpSessionEnvelopes.createdAt,
+  }).from(acpSessionEnvelopes)
+    .where(eq(acpSessionEnvelopes.sessionId, row.sessionId))
+    .orderBy(asc(acpSessionEnvelopes.ordinal));
 
-  const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
-  if (!listed.ok) {
-    return {
-      ok: true,
-      transcript: unavailable(
-        listed.reason === 'not_ready'
-          ? 'OpenCode is not ready in the sandbox yet'
-          : listed.reason === 'no_key'
-            ? 'Sandbox credentials unavailable'
-            : 'OpenCode session list unreachable in the sandbox',
-      ),
-    };
-  }
-
-  const opencodeSessionId = resolveRootSessionId({ pinnedRootId, sessions: listed.sessions });
-  if (!opencodeSessionId) {
-    return { ok: true, transcript: unavailable('No OpenCode session found in the sandbox yet') };
-  }
-
-  const endpoint = await sandboxOpencodeEndpoint(row.externalId, undefined);
-  if (!endpoint) {
-    return { ok: true, transcript: unavailable('Sandbox credentials unavailable', opencodeSessionId) };
-  }
-
-  try {
-    const url = new URL(`${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}/message`);
-    url.searchParams.set('directory', WORKSPACE_DIRECTORY);
-    url.searchParams.set('limit', String(MAX_MESSAGES));
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: endpoint.headers,
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (res.status === 503) {
-      return { ok: true, transcript: unavailable('OpenCode is not ready in the sandbox yet', opencodeSessionId) };
-    }
-    if (!res.ok) {
-      return { ok: true, transcript: unavailable(`OpenCode messages unavailable: HTTP ${res.status}`, opencodeSessionId) };
-    }
-    const payload = (await res.json().catch(() => null)) as unknown;
-    const rawMessages = normalizeMessageList(payload).slice(-MAX_MESSAGES);
+  if (metadata.runtime_protocol === 'acp' || rows.length > 0) {
+    const messages = projectAcpTranscript(rows.map((entry) => ({
+      ...entry,
+      createdAt: entry.createdAt.toISOString(),
+    })), { limit: MAX_MESSAGES, maxChars: MAX_MESSAGE_CHARS });
     return {
       ok: true,
       transcript: {
         available: true,
         reason: null,
-        opencode_session_id: opencodeSessionId,
-        message_count: rawMessages.length,
-        messages: rawMessages.map(compactMessage),
+        runtime_protocol: 'acp',
+        runtime_session_id: typeof metadata.acp_session_id === 'string' ? metadata.acp_session_id : null,
+        message_count: messages.length,
+        messages,
       },
     };
-  } catch (err) {
-    // Anonymous audience — surface a generic reason, never the raw fetch/daemon
-    // error text (host shapes, internal paths). Log the detail server-side.
-    console.warn('[public-session-share-view] transcript read failed:', err);
-    return {
-      ok: true,
-      transcript: unavailable('Could not read the shared session right now.', opencodeSessionId),
-    };
   }
+
+  return { ok: true, transcript: unavailable('Transcript export is only available for ACP sessions.') };
 }

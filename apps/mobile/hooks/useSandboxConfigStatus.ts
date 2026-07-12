@@ -10,7 +10,7 @@
 import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
+import { runtimeFetch } from '@/lib/runtime/hooks/use-runtime-data';
 
 // ─── Types (mirror the web SidebarSandbox* interfaces) ───────────────────────
 
@@ -99,7 +99,7 @@ export function useSandboxConfigStatus() {
     queryKey: ['sandbox-config-status', sandboxId, sandboxUrl],
     enabled: !!sandboxUrl,
     queryFn: async () => {
-      const data = await opencodeFetch<unknown>(sandboxUrl!, '/config/status');
+      const data = await runtimeFetch<unknown>(sandboxUrl!, '/config/status');
       if (!isSandboxConfigStatus(data)) {
         throw new Error('This runtime does not expose config diagnostics yet.');
       }
@@ -118,7 +118,7 @@ export function useSandboxConfigStatus() {
     queryKey: ['sandbox-config-projects', sandboxId, sandboxUrl],
     enabled: !!sandboxUrl && hasProblem,
     queryFn: async () => {
-      const data = await opencodeFetch<unknown>(sandboxUrl!, '/kortix/projects');
+      const data = await runtimeFetch<unknown>(sandboxUrl!, '/kortix/projects');
       return Array.isArray(data) ? data as SandboxProjectSummary[] : [];
     },
     staleTime: 30_000,
@@ -139,7 +139,7 @@ export function useSandboxConfigStatus() {
       if (!sandboxUrl || !configStatus || configStatus.valid) {
         throw new Error('No invalid config source is currently being skipped.');
       }
-      const targetProject = configFixProject ?? await opencodeFetch<SandboxProjectSummary>(sandboxUrl, '/kortix/projects', {
+      const targetProject = configFixProject ?? await runtimeFetch<SandboxProjectSummary>(sandboxUrl, '/kortix/projects', {
         method: 'POST',
         body: JSON.stringify({
           name: 'Workspace',
@@ -148,7 +148,7 @@ export function useSandboxConfigStatus() {
         }),
       });
 
-      const task = await opencodeFetch<{ id: string }>(sandboxUrl, '/kortix/tasks', {
+      const task = await runtimeFetch<{ id: string }>(sandboxUrl, '/kortix/tasks', {
         method: 'POST',
         body: JSON.stringify({
           project_id: targetProject.id,
@@ -161,7 +161,7 @@ export function useSandboxConfigStatus() {
         }),
       });
 
-      await opencodeFetch(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
+      await runtimeFetch(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
         method: 'POST',
       });
 

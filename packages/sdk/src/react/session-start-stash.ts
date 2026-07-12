@@ -26,21 +26,18 @@ export function writeStartStash(sessionId: string, stash: StartStash): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Legacy hand-off shape (pre-dates this module). apps/web had several
-// independent "new session" producers (dashboard, project workspace, legacy
-// composer) that stash a bare prompt string under `opencode_pending_prompt:<id>`
-// plus an optional `{ agent, model, variant }` JSON blob under
-// `opencode_pending_options:<id>` — instead of one JSON stash. Those call sites
-// are unchanged (out of scope for this migration); `readStartStash` /
-// `clearStartStash` understand both shapes so every existing producer keeps
-// working through the one shared contract.
+// Legacy hand-off shape (pre-dates this module). Older apps/web producers
+// stashed a bare prompt string plus an optional `{ agent, model, variant }`
+// JSON blob under runtime-specific raw keys instead of one JSON stash.
+// `readStartStash` / `clearStartStash` keep reading those keys so any in-flight
+// browser hand-off survives the ACP/runtime-neutral cutover.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function legacyPromptKey(sessionId: string): string {
+function legacyRuntimePromptKey(sessionId: string): string {
   return `opencode_pending_prompt:${sessionId}`;
 }
 
-function legacyOptionsKey(sessionId: string): string {
+function legacyRuntimeOptionsKey(sessionId: string): string {
   return `opencode_pending_options:${sessionId}`;
 }
 
@@ -64,12 +61,12 @@ function parseLegacyModel(value: unknown): StartStash['model'] {
 
 function readLegacyStash(sessionId: string): StartStash | null {
   try {
-    const prompt = sessionStorage.getItem(legacyPromptKey(sessionId));
+    const prompt = sessionStorage.getItem(legacyRuntimePromptKey(sessionId));
     if (!prompt) return null;
     let agent: string | null = null;
     let model: StartStash['model'] = null;
     let variant: string | null = null;
-    const raw = sessionStorage.getItem(legacyOptionsKey(sessionId));
+    const raw = sessionStorage.getItem(legacyRuntimeOptionsKey(sessionId));
     if (raw) {
       const parsed = JSON.parse(raw) as { agent?: string; model?: unknown; variant?: string };
       if (parsed?.agent) agent = parsed.agent;
@@ -84,8 +81,8 @@ function readLegacyStash(sessionId: string): StartStash | null {
 
 function clearLegacyStash(sessionId: string): void {
   try {
-    sessionStorage.removeItem(legacyPromptKey(sessionId));
-    sessionStorage.removeItem(legacyOptionsKey(sessionId));
+    sessionStorage.removeItem(legacyRuntimePromptKey(sessionId));
+    sessionStorage.removeItem(legacyRuntimeOptionsKey(sessionId));
   } catch {}
 }
 
@@ -109,10 +106,10 @@ export function clearStartStash(sessionId: string): void {
 /**
  * Migrate a stash — canonical or legacy shape — from one session-id namespace
  * to another. Producers sometimes stash under an id that isn't the eventual
- * OpenCode session id (e.g. a project's route id, before the canonical
+ * Runtime session id (e.g. a project's route id, before the canonical
  * session exists); once a later render resolves the real id, this hands the
  * stash off. Reads the source via {@link readStartStash} (so it understands
- * both the canonical JSON shape and the bare-prompt legacy shape at
+ * both the canonical JSON shape and the legacy bare-prompt shape at
  * `fromSessionId`), writes the canonical shape at `toSessionId` — skipping the
  * write if `toSessionId` already has a stash — and always clears the source
  * (both its canonical and legacy keys), whether or not there was anything to

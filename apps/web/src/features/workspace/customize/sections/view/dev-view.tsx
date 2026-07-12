@@ -274,7 +274,7 @@ const LAUNCHERS: { label: string; command: string; icon: LauncherIcon }[] = [
   { label: 'Claude Code', command: 'claude', icon: Icon.Claude },
   { label: 'Cursor', command: 'cursor .', icon: Icon.Cursor },
   { label: 'Codex', command: 'codex', icon: Icon.Codex },
-  { label: 'opencode', command: 'opencode', icon: Icon.OpenCode },
+  { label: 'opencode', command: 'opencode', icon: Icon.Runtime },
 ];
 
 function Launchers() {

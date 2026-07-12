@@ -46,20 +46,20 @@ import {
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
-  useOpenCodeConfig,
-  useOpenCodeProviders,
-  useOpenCodeToolIds,
-  useOpenCodeMcpStatus,
-  useUpdateOpenCodeConfig,
+  useRuntimeConfig,
+  useRuntimeProviders,
+  useRuntimeToolIds,
+  useRuntimeMcpStatus,
+  useUpdateRuntimeConfig,
   useAddMcpServer,
   useConnectMcpServer,
   useDisconnectMcpServer,
   useMcpAuthStart,
   useMcpAuthCallback,
   flattenModels,
-  type OpenCodeConfig,
+  type RuntimeConfig,
   type McpStatus,
-} from '@/lib/opencode/hooks/use-opencode-data';
+} from '@/lib/runtime/hooks/use-runtime-data';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -112,13 +112,13 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // Data
-  const { data: config, refetch: refetchConfig } = useOpenCodeConfig(sandboxUrl);
-  const { data: providersData } = useOpenCodeProviders(sandboxUrl);
-  const { data: toolIds } = useOpenCodeToolIds(sandboxUrl);
-  const { data: mcpStatus, refetch: refetchMcp } = useOpenCodeMcpStatus(sandboxUrl);
+  const { data: config, refetch: refetchConfig } = useRuntimeConfig(sandboxUrl);
+  const { data: providersData } = useRuntimeProviders(sandboxUrl);
+  const { data: toolIds } = useRuntimeToolIds(sandboxUrl);
+  const { data: mcpStatus, refetch: refetchMcp } = useRuntimeMcpStatus(sandboxUrl);
 
   // Mutations
-  const updateConfig = useUpdateOpenCodeConfig(sandboxUrl);
+  const updateConfig = useUpdateRuntimeConfig(sandboxUrl);
   const addMcpServer = useAddMcpServer(sandboxUrl);
   const connectMcp = useConnectMcpServer(sandboxUrl);
   const disconnectMcp = useDisconnectMcpServer(sandboxUrl);
@@ -201,7 +201,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const markDirty = () => setHasDraft(true);
 
   const handleSave = useCallback(async () => {
-    const update: Partial<OpenCodeConfig> = {};
+    const update: Partial<RuntimeConfig> = {};
     const inst = draftInstructions.trim();
     update.instructions = inst ? inst.split('\n').map((s: string) => s.trim()).filter(Boolean) : [];
     update.model = draftModel || undefined;

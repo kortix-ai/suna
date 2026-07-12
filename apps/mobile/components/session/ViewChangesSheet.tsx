@@ -3,7 +3,7 @@
  * Ported from web's SessionDiffViewer, adapted for mobile.
  *
  * Features:
- * - Fetches diffs from API (GET /session/:id/diff), falls back to message extraction
+ * - Fetches diffs from the runtime diff API, falls back to already-loaded message extraction
  * - Unified / side-by-side view toggle
  * - Expandable file cards that fill available space
  */
@@ -37,11 +37,11 @@ import {
   Columns2,
 } from 'lucide-react-native';
 
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSyncStore } from '@/lib/runtime/sync-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
-import { extractDiffsFromMessages, type FileDiffData } from '@/lib/opencode/extract-diffs';
-import { generateLineDiff, type DiffLine } from '@/lib/opencode/diff-utils';
+import { runtimeFetch } from '@/lib/runtime/hooks/use-runtime-data';
+import { extractDiffsFromMessages, type FileDiffData } from '@/lib/runtime/extract-diffs';
+import { generateLineDiff, type DiffLine } from '@/lib/runtime/diff-utils';
 import { getSheetBg } from '@/lib/theme-colors';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
       if (!sessionId || !sandboxUrl) return;
       setApiLoading(true);
       try {
-        const result = await opencodeFetch<ApiFileDiff[]>(
+        const result = await runtimeFetch<ApiFileDiff[]>(
           sandboxUrl,
           `/session/${sessionId}/diff`,
         );

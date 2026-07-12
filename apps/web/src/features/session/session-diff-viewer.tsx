@@ -18,10 +18,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { STATUS_TEXT, DiffStat, StatusBadge } from '@/components/ui/status';
-import { useOpenCodeSessionDiff, useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeSessionDiff } from '@/hooks/runtime/use-runtime-sessions';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { createTwoFilesPatch } from 'diff';
-import type { FileDiff, ApplyPatchFile } from '@/ui/types';
+import type { FileDiff } from '@/ui/types';
 import { DiffView } from '@/components/diff/diff-view';
 
 // ============================================================================
@@ -219,91 +219,6 @@ function DiffSummaryBar({
 }
 
 // ============================================================================
-// Extract diffs from message tool parts (fallback)
-// ============================================================================
-
-const EDIT_TOOLS = new Set(['edit', 'morph_edit']);
-const PATCH_TOOLS = new Set(['apply_patch']);
-
-function extractDiffsFromMessages(
-  messages: Array<{ info: { role: string }; parts: Array<any> }> | undefined,
-): FileDiff[] {
-  if (!messages) return [];
-
-  // Track last known state per file so we can build the cumulative diff
-  const fileMap = new Map<string, { before: string; after: string }>();
-
-  for (const msg of messages) {
-    for (const part of msg.parts) {
-      if (part.type !== 'tool') continue;
-      const state = part.state;
-      if (!state || (state.status !== 'completed' && state.status !== 'running')) continue;
-
-      const toolName: string = part.tool ?? '';
-      const input = state.input ?? {};
-      const metadata = (state.metadata as Record<string, unknown>) ?? {};
-
-      if (EDIT_TOOLS.has(toolName)) {
-        const filePath = (input.filePath as string) || '';
-        if (!filePath) continue;
-        const filediff = metadata.filediff as Record<string, unknown> | undefined;
-        const before = (filediff?.before as string) ?? (input.oldString as string) ?? '';
-        const after = (filediff?.after as string) ?? (input.newString as string) ?? '';
-        if (!before && !after) continue;
-
-        const existing = fileMap.get(filePath);
-        if (existing) {
-          existing.after = after;
-        } else {
-          fileMap.set(filePath, { before, after });
-        }
-      } else if (PATCH_TOOLS.has(toolName)) {
-        const files = (Array.isArray(metadata.files) ? metadata.files : []) as ApplyPatchFile[];
-        for (const file of files) {
-          const filePath = file.filePath || file.relativePath || '';
-          if (!filePath) continue;
-          const before = file.before ?? '';
-          const after = file.after ?? '';
-          if (!before && !after) continue;
-
-          const existing = fileMap.get(filePath);
-          if (existing) {
-            existing.after = after;
-          } else {
-            fileMap.set(filePath, { before, after });
-          }
-        }
-      }
-    }
-  }
-
-  const result: FileDiff[] = [];
-  for (const [file, { before, after }] of fileMap) {
-    const beforeLines = before.split('\n');
-    const afterLines = after.split('\n');
-    let additions = 0;
-    let deletions = 0;
-
-    const beforeSet = new Set(beforeLines);
-    const afterSet = new Set(afterLines);
-    for (const line of afterLines) {
-      if (!beforeSet.has(line)) additions++;
-    }
-    for (const line of beforeLines) {
-      if (!afterSet.has(line)) deletions++;
-    }
-
-    let status: 'added' | 'deleted' | 'modified' = 'modified';
-    if (!before) status = 'added';
-    else if (!after) status = 'deleted';
-
-    result.push({ file, before, after, additions, deletions, status });
-  }
-
-  return result;
-}
-
-// ============================================================================
 // Main SessionDiffViewer
 // ============================================================================
 
@@ -315,17 +230,10 @@ interface SessionDiffViewerProps {
 
 export function SessionDiffViewer({ sessionId, isFullscreen, onToggleFullscreen }: SessionDiffViewerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: apiDiffs, isLoading, error } = useOpenCodeSessionDiff(sessionId);
-  const { data: messages } = useOpenCodeMessages(sessionId);
+  const { data: apiDiffs, isLoading, error } = useRuntimeSessionDiff(sessionId);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
-  // Fall back to extracting diffs from tool part metadata when the API returns empty
-  const messageDiffs = useMemo(
-    () => extractDiffsFromMessages(messages as any),
-    [messages],
-  );
-
-  const diffs = (apiDiffs && apiDiffs.length > 0) ? apiDiffs : messageDiffs;
+  const diffs: FileDiff[] = (apiDiffs ?? []) as FileDiff[];
 
   if (isLoading) {
     return (

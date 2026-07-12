@@ -1,5 +1,5 @@
 import {
-  getActiveOpenCodeUrl,
+  getActiveRuntimeUrl,
   deriveSubdomainOpts,
 } from '@/stores/server-store';
 import {
@@ -17,7 +17,7 @@ export interface SandboxProxyContext {
 /** Build a proxy context from the active runtime (opencode URL + sandbox id). */
 export function createSandboxProxyContext(): SandboxProxyContext {
   return {
-    serverUrl: getActiveOpenCodeUrl(),
+    serverUrl: getActiveRuntimeUrl(),
     subdomainOpts: deriveSubdomainOpts(),
   };
 }

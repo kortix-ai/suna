@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
+import { toSandboxAbsolutePath } from '@/features/files/api/runtime-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { parseImageOutput } from '@/features/session/image-output-path';
 import { QuestionPrompt } from '@/features/session/question-prompt';
@@ -31,7 +31,6 @@ import {
   stripMarkupForToolOutput,
 } from '@/features/session/tool-renderers-sanitization';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
@@ -48,7 +47,7 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useSyncStore } from '@/stores/runtime-sync-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import {
@@ -1950,7 +1949,7 @@ ToolRegistry.register('oc-mem-search', MemorySearchTool);
 
 // --- Memory (file-based `.kortix/memory` editor) ---
 //
-// The OpenCode `memory` tool is a file editor scoped to `.kortix/memory/`
+// The Runtime `memory` tool is a file editor scoped to `.kortix/memory/`
 // (the project brain). It mirrors the Anthropic memory-tool command shape:
 //   view        { path }                       → dir listing or file content
 //   create      { path, file_text }            → write a new file
@@ -5626,7 +5625,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
   // Always load child messages — hook is stable even with empty string (returns nothing)
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const childMessages = undefined;
 
   // Collect tool parts from child session for inline activity list
   const childToolParts = useMemo(() => {
@@ -5699,7 +5698,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   // Extract child session ID from output text
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const childMessages = undefined;
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
@@ -6475,7 +6474,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
+  const childMessages = undefined;
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
     return getChildSessionToolParts(childMessages as MessageWithParts[]);

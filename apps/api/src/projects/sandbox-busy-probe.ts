@@ -7,10 +7,8 @@
  * autostop TTL to 120m on 2026-06-24 ("idle sandboxes were stopping too
  * quickly mid-session") — and the 2h TTL then billed every box ~2h of idle
  * tail. Instead of a huge TTL, ask the box directly before stopping it:
- * opencode's `GET /session/status` returns `{ [sessionId]: { type } }` with
- * type 'busy' | 'retry' | 'idle' for every session in the box (root and
- * subagents). Reached through the daemon's catch-all proxy, so it works on
- * every already-provisioned sandbox — no image change required.
+ * the Kortix daemon's health document reports whether its ACP process has an
+ * in-flight JSON-RPC request. This works identically for every harness.
  *
  * Fail direction: 'unknown' (unreachable box, legacy opencode without the
  * endpoint, timeout) falls through to the stop — identical to pre-probe
@@ -26,15 +24,11 @@ export type SandboxBusyState = 'busy' | 'idle' | 'unknown';
 const PROBE_TIMEOUT_MS = 3_000;
 const SANDBOX_SERVICE_PORT = 8000;
 
-/** Pure classifier for opencode's /session/status body. Exported for tests. */
+/** Pure classifier for the harness-neutral daemon health body. */
 export function classifySessionStatusBody(body: unknown): SandboxBusyState {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'unknown';
-  const statuses = Object.values(body as Record<string, unknown>);
-  for (const s of statuses) {
-    const type = (s as { type?: unknown } | null)?.type;
-    if (type === 'busy' || type === 'retry') return 'busy';
-  }
-  return 'idle';
+  const busy = (body as { acp_busy?: unknown }).acp_busy;
+  return typeof busy === 'boolean' ? (busy ? 'busy' : 'idle') : 'unknown';
 }
 
 export async function probeSandboxBusy(row: {
@@ -62,7 +56,7 @@ export async function probeSandboxBusy(row: {
       ),
     };
     if (link.token) headers['X-Daytona-Preview-Token'] = link.token;
-    const res = await fetch(`${link.url}/session/status`, {
+    const res = await fetch(`${link.url}/kortix/health`, {
       headers,
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });

@@ -1,5 +1,5 @@
 /**
- * Types matching the OpenCode server REST API responses.
+ * Types matching the Runtime server REST API responses.
  * See: https://opencode.ai/docs/server/#files
  */
 
@@ -125,7 +125,7 @@ export interface LssSearchResult {
 }
 
 /** GET /project/current response */
-export interface OpenCodeProjectInfo {
+export interface RuntimeProjectInfo {
   id: string;
   worktree: string;
   vcs?: 'git';

@@ -3,15 +3,14 @@
 import type { ReactNode } from 'react';
 
 import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
+import { useRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
+import { type ModelKey, useRuntimeLocal } from '@/hooks/runtime/use-runtime-local';
+import { useProjectConfig } from '@kortix/sdk/react';
 import {
   type Command,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useProjectConfig } from '@kortix/sdk/react';
+  useRuntimeAgents,
+  useRuntimeProviders,
+} from '@/hooks/runtime/use-runtime-sessions';
 
 export interface ComposerOptions {
   agent?: string;
@@ -21,12 +20,12 @@ export interface ComposerOptions {
 
 /**
  * The canonical "compose a first message" input: {@link SessionChatInput}
- * pre-wired with the OpenCode model / agent / variant / command selectors (the
+ * pre-wired with the Runtime model / agent / variant / command selectors (the
  * four catalog queries + per-session selection state). Used by the home composer
  * and the instant session shell so neither hand-rolls the selector wiring.
  *
  * The current selections are handed to `onSend` / `onCommand` as `options`, so
- * callers never need their own `useOpenCodeLocal`.
+ * callers never need their own `useRuntimeLocal`.
  */
 export function ComposerChatInput({
   onSend,
@@ -74,18 +73,21 @@ export function ComposerChatInput({
   /** Immutable project-session agent. When set, sends are locked to this agent. */
   boundAgentName?: string | null;
 }) {
-  const { data: agents } = useOpenCodeAgents({ projectId });
-  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
-  const { data: commands } = useOpenCodeCommands();
-  const { data: config } = useOpenCodeConfig();
+  const { data: agents } = useRuntimeAgents({ projectId });
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
+  const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const local = useOpenCodeLocal({
+  const commands: Command[] = (projectConfig?.commands ?? []).map((command) => ({
+    ...command,
+    id: command.name,
+  }));
+  const local = useRuntimeLocal({
     agents,
     providers,
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.runtime_default_agent,
   });
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
@@ -131,7 +133,7 @@ export function ComposerChatInput({
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
-      commands={commands || []}
+      commands={commands}
     />
   );
 }

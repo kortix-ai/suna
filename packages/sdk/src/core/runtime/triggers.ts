@@ -6,7 +6,7 @@
  * instead of `authenticatedFetch('/kortix/triggers...')` directly.
  *
  * The trigger payload/response shapes are host-defined (cron/webhook trigger
- * CRUD, executions) rather than part of the OpenCode protocol, so this stays a
+ * CRUD, executions) rather than part of the Runtime protocol, so this stays a
  * thin typed passthrough rather than a full typed surface per endpoint.
  */
 import { authenticatedFetch } from '../http/auth';

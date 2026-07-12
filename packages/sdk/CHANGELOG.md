@@ -18,9 +18,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Deprecated
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
-- `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
-  `KortixMasterProject`. The platform's `KortixProject` (from the root) is
-  unchanged and keeps its name.
+- The daemon-project `KortixProject` alias — renamed to `KortixMasterProject`.
+  The platform's `KortixProject` (from the root) is unchanged and keeps its name.
 
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
@@ -133,7 +132,7 @@ domains promoted into the facade.
   are now real classes (`instanceof`-able, enumerable `message`, `name`/shape
   preserved for legacy string-sniffers) instead of ad-hoc
   `Object.create(Error.prototype)` objects — and every layer (`backendApi` /
-  `platformFetch`/`authenticatedFetch`, the files client, the opencode client,
+  `platformFetch`/`authenticatedFetch`, the files client, the runtime client,
   `ensureReady()`) now throws/returns the SAME classes instead of duck-typed
   shapes. `BillingError`/`RequestTooLargeError` + their helpers
   (`parseBillingError`, `isBillingError`, `formatBillingErrorForUI`) are

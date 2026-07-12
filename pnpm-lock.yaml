@@ -111,6 +111,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -187,6 +190,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
@@ -1426,9 +1432,6 @@ importers:
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
-      '@opencode-ai/sdk':
-        specifier: 1.17.11
-        version: 1.17.11
       zustand:
         specifier: ^5.0.3
         version: 5.0.14(@types/react@19.1.17)(react@19.1.0)(use-sync-external-store@1.6.0)
@@ -5640,12 +5643,6 @@ packages:
       mkdirp: 1.0.4
       rimraf: 3.0.2
     dev: true
-
-  /@opencode-ai/sdk@1.17.11:
-    resolution: {integrity: sha512-UdSwnNM4/cD5rHnI8O7VaHuiwYnsEOglpRPVeeYE2S5Nm1K34ijCyZGDvBecb0ShdBQgn49XvyQWJH6cREsIPw==}
-    dependencies:
-      cross-spawn: 7.0.6
-    dev: false
 
   /@opentelemetry/api-logs@0.214.0:
     resolution: {integrity: sha512-40lSJeqYO8Uz2Yj7u94/SJWE/wONa7rmMKjI1ZcIjgf3MHNHv1OZUCrCETGuaRF62d5pQD1wKIW+L4lmSMTzZA==}

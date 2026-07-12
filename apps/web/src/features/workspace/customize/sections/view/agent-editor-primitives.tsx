@@ -77,8 +77,8 @@ export function SectionHeader({ icon: Icon, title }: { icon: typeof Bot; title: 
 }
 
 /**
- * The top-level layer divider — makes the Kortix/OpenCode split visually
- * unmistakable (spec §2.2 structural refactor: "Kortix concerns and OpenCode
+ * The top-level layer divider — makes the Kortix/Runtime split visually
+ * unmistakable (spec §2.2 structural refactor: "Kortix concerns and Runtime
  * concerns are 100% distinct"). Each layer's fields sit in their own labeled
  * group below this header.
  */

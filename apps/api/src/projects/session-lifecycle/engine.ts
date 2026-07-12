@@ -1,4 +1,4 @@
-import { executorExecutions, projectSessions, projects } from '@kortix/db';
+import { acpSessionEnvelopes, executorExecutions, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
+import { consumeHeadlessAcpSse, selectHeadlessPermissionOption } from './headless-acp';
 import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
@@ -191,7 +192,6 @@ export async function startSession(command: StartSessionCommand) {
           sandboxProvider: projectSessions.sandboxProvider,
           baseRef: projectSessions.baseRef,
           agentName: projectSessions.agentName,
-          opencodeSessionId: projectSessions.opencodeSessionId,
           accountId: projectSessions.accountId,
           metadata: projectSessions.metadata,
         })
@@ -268,7 +268,6 @@ export async function continueSession(
         sandboxProvider: projectSessions.sandboxProvider,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
-        opencodeSessionId: projectSessions.opencodeSessionId,
         accountId: projectSessions.accountId,
         metadata: projectSessions.metadata,
       })
@@ -301,15 +300,15 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  // Runtime is ready — hand off the prompt, healing + retrying through the
-  // transient failures a freshly-woken sandbox throws (rotated opencode session
-  // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
-  // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
-  // the old code gave up on the first hiccup and dropped the user's message.
+  // Runtime is ready — hand off the prompt through ACP, healing + retrying
+  // through transient wake/bind failures. Bounce to 'pending' only after the
+  // bounded window genuinely exhausts.
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    opencodeSessionId: o.opencode_session_id,
+    runtimeProtocol: o.runtime_protocol === 'acp' ? 'acp' : null,
+    runtimeId: o.runtime_id ?? null,
+    runtimeSessionId: o.runtime_session_id ?? null,
   });
 
   return deliverWithRetry({
@@ -319,8 +318,16 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId),
+    send: (externalId, runtimeId, target) =>
+      postAcpPrompt({
+        externalId,
+        runtimeId,
+        acpSessionId: target.runtimeSessionId ?? null,
+        projectId: session.projectId,
+        sessionId,
+        text,
+        userId,
+      }),
   });
 }
 
@@ -597,34 +604,145 @@ function sandboxExternalId(
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
 }
 
-async function postPrompt(
-  externalId: string,
-  opencodeSessionId: string,
-  text: string,
-  userId: string,
-): Promise<boolean> {
-  const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
-  try {
-    const res = await forwardToSandbox(
-      externalId,
+async function postAcpPrompt(input: {
+  externalId: string;
+  runtimeId: string;
+  acpSessionId: string | null;
+  projectId: string;
+  sessionId: string;
+  text: string;
+  userId: string;
+}): Promise<boolean> {
+  let rpcId = Date.now();
+  const persist = async (
+    direction: 'client_to_agent' | 'agent_to_client',
+    envelope: Record<string, unknown>,
+    streamEventId: number | null = null,
+  ) => {
+    await db.insert(acpSessionEnvelopes).values({
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      runtimeId: input.runtimeId,
+      direction,
+      envelope,
+      streamEventId,
+    }).onConflictDoNothing();
+  };
+  const postEnvelope = async (request: Record<string, unknown>) => {
+    await persist('client_to_agent', request);
+    const body = new TextEncoder().encode(JSON.stringify(request));
+    const response = await forwardToSandbox(
+      input.externalId,
       DAEMON_PORT,
-      { kind: 'principal', userId },
+      { kind: 'principal', userId: input.userId },
       'POST',
-      `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      `?directory=${encodeURIComponent(WORKSPACE)}`,
+      `/acp/${encodeURIComponent(input.runtimeId)}`,
+      '',
       new Headers({ 'Content-Type': 'application/json' }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );
-    if (res.ok || res.status === 204) return true;
-    if (res.status !== 404)
-      console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
-    return false;
-  } catch (err) {
-    // A connection refused/reset while the sandbox finishes resuming — treat as a
-    // retryable miss (the deliver loop will heal + retry) instead of letting it
-    // bubble up and silently drop the turn.
-    console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
+    if (!response.ok) throw new Error(`ACP request returned HTTP ${response.status}`);
+    if (response.status === 202 || response.status === 204) return null;
+    const envelope = await response.json() as Record<string, any>;
+    await persist('agent_to_client', envelope);
+    return envelope;
+  };
+  const call = async (method: string, params: unknown) => {
+    const envelope = await postEnvelope({ jsonrpc: '2.0', id: rpcId++, method, params });
+    if (!envelope) throw new Error(`ACP ${method} returned no response`);
+    if (envelope.error) throw new Error(envelope.error.message || `ACP ${method} failed`);
+    return envelope.result;
+  };
+
+  try {
+    await call('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: {},
+      clientInfo: { name: 'kortix-api', title: 'Kortix Automations', version: '3' },
+    });
+    let acpSessionId = input.acpSessionId;
+    if (acpSessionId) {
+      await call('session/load', { sessionId: acpSessionId, cwd: WORKSPACE, mcpServers: [] });
+    } else {
+      const created = await call('session/new', { cwd: WORKSPACE, mcpServers: [] });
+      acpSessionId = typeof created?.sessionId === 'string' ? created.sessionId : null;
+      if (!acpSessionId) throw new Error('ACP session/new returned no sessionId');
+      const [current] = await db.select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, input.sessionId))
+        .limit(1);
+      await db.update(projectSessions).set({
+        metadata: {
+          ...((current?.metadata as Record<string, unknown> | null) ?? {}),
+          runtime_protocol: 'acp',
+          runtime_id: input.runtimeId,
+          acp_session_id: acpSessionId,
+        },
+        updatedAt: new Date(),
+      }).where(eq(projectSessions.sessionId, input.sessionId));
+    }
+    const stream = await forwardToSandbox(
+      input.externalId,
+      DAEMON_PORT,
+      { kind: 'principal', userId: input.userId },
+      'GET',
+      `/acp/${encodeURIComponent(input.runtimeId)}`,
+      '',
+      new Headers({ Accept: 'text/event-stream' }),
+      undefined,
+      config.KORTIX_URL ?? '',
+    );
+    if (!stream.ok || !stream.body) throw new Error(`ACP stream returned HTTP ${stream.status}`);
+    const streamAbort = new AbortController();
+    const streamTask = consumeHeadlessAcpSse(stream.body, async (eventId, envelope) => {
+      await persist('agent_to_client', envelope, eventId);
+      if (!Object.prototype.hasOwnProperty.call(envelope, 'id') || typeof envelope.method !== 'string') return;
+      if (envelope.method === 'session/request_permission') {
+        const optionId = selectHeadlessPermissionOption(envelope.params);
+        await postEnvelope({
+          jsonrpc: '2.0',
+          id: envelope.id,
+          result: {
+            outcome: optionId
+              ? { outcome: 'selected', optionId }
+              : { outcome: 'cancelled' },
+          },
+        });
+        return;
+      }
+      // Headless channels cannot truthfully invent answers to agent
+      // elicitation requests. Fail closed so the turn can terminate cleanly.
+      await postEnvelope({
+        jsonrpc: '2.0',
+        id: envelope.id,
+        error: { code: -32601, message: 'Interactive request unavailable in this headless run' },
+      });
+    }, streamAbort.signal).catch((error) => {
+      if (!streamAbort.signal.aborted) throw error;
+    });
+    try {
+      const promptTask = call('session/prompt', {
+        sessionId: acpSessionId,
+        prompt: [{ type: 'text', text: input.text }],
+      });
+      const completed = await Promise.race([
+        promptTask,
+        streamTask.then(() => {
+          throw new Error('ACP event stream closed before the prompt completed');
+        }),
+      ]);
+      if (typeof completed?.stopReason !== 'string') throw new Error('ACP prompt returned no stopReason');
+    } finally {
+      streamAbort.abort();
+      await streamTask;
+    }
+    return true;
+  } catch (error) {
+    console.warn('[session-lifecycle] ACP prompt delivery failed (will retry)', {
+      sessionId: input.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

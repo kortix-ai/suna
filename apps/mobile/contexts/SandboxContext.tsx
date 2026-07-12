@@ -3,18 +3,15 @@
  *
  * 1. After login, calls useSandbox() to ensure user has a sandbox
  * 2. Detects provisioning state and exposes it for the progress screen
- * 3. Mounts the SSE event stream once sandbox is ready
- * 4. Passes sandboxUrl down to all children via context
- * 5. Supports switching to a different sandbox via switchSandbox()
+ * 3. Passes sandboxUrl down to file/terminal/preview consumers
+ * 4. Supports switching to a different session runtime via switchSandbox()
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSandbox, platformKeys } from '@/lib/platform/hooks';
 import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
-import { useOpenCodeEventStream } from '@/lib/opencode/event-stream';
 import { useAuthContext } from '@/contexts/AuthContext';
-import { useSyncStore } from '@/lib/opencode/sync-store';
 import { log } from '@/lib/logger';
 
 interface SandboxContextValue {
@@ -93,13 +90,9 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
   }, [queryClient]);
 
-  // Mount SSE event stream globally (no-ops when sandboxUrl is undefined)
-  useOpenCodeEventStream(sandboxUrl);
-
-  // Reset sync store on logout and clear override
+  // Clear the selected session runtime on logout.
   useEffect(() => {
     if (!isAuthenticated) {
-      useSyncStore.getState().reset();
       setOverride(null);
     }
   }, [isAuthenticated]);

@@ -19,7 +19,7 @@ export type {
   FindMatch,
   LssHit,
   LssSearchResult,
-  OpenCodeProjectInfo,
+  RuntimeProjectInfo,
   ServerHealth,
   GitCommit,
   FileHistoryResult,

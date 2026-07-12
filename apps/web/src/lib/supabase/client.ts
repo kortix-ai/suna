@@ -10,7 +10,7 @@ import { getEnv } from '@/lib/env-config'
  * from and the preview proxy (next.config.ts: /supabase/* -> in-sandbox
  * Supabase) forwards the request. supabase-js requires an ABSOLUTE URL, so
  * resolve the relative value against the current origin. Mirrors
- * getAbsoluteBackendUrl() in opencode-sdk.ts.
+ * the runtime backend URL resolver.
  */
 function resolveBrowserSupabaseUrl(url: string): string {
   if (url.startsWith('/') && typeof window !== 'undefined') {

@@ -93,7 +93,7 @@ async function serializeBinding(
     explicit: row.agentName,
     projectDefault: projectDefaultAgent,
   });
-  const effectiveModel = await resolveBindingEffectiveModel(row.opencodeModel, effectiveAgent.agent, modelCtx);
+  const effectiveModel = await resolveBindingEffectiveModel(row.model, effectiveAgent.agent, modelCtx);
   return {
     bindingId: row.bindingId,
     platform: row.platform,
@@ -102,7 +102,7 @@ async function serializeBinding(
     channelName: row.channelName,
     channelType: row.channelType,
     agentName: row.agentName,
-    opencodeModel: row.opencodeModel,
+    model: row.model,
     conversationPolicy: row.conversationPolicy,
     installedAt: row.installedAt.toISOString(),
     effectiveAgent,
@@ -167,7 +167,7 @@ projectsApp.openapi(
 const ChannelBindingPatchBody = z.object({
   // null resets the override to the project default; omit to leave unchanged.
   agentName: z.string().max(128).nullable().optional(),
-  opencodeModel: z.string().max(256).nullable().optional(),
+  model: z.string().max(256).nullable().optional(),
   conversationPolicy: z.enum(CONVERSATION_POLICIES).optional(),
 });
 
@@ -215,7 +215,7 @@ projectsApp.openapi(
     const body = parsed.data;
     if (
       body.agentName === undefined &&
-      body.opencodeModel === undefined &&
+      body.model === undefined &&
       body.conversationPolicy === undefined
     ) {
       return c.json({ error: "No fields to update", code: "empty_patch" }, 400);
@@ -263,10 +263,10 @@ projectsApp.openapi(
       }
     }
 
-    if (body.opencodeModel !== undefined) {
+    if (body.model !== undefined) {
       let stored: string | null = null;
-      if (body.opencodeModel !== null) {
-        const trimmed = body.opencodeModel.trim();
+      if (body.model !== null) {
+        const trimmed = body.model.trim();
         if (!trimmed || /\s/.test(trimmed)) {
           return c.json(
             { error: `"${trimmed}" doesn't look like a model id`, code: "invalid_model" },

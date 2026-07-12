@@ -6,9 +6,10 @@ import { Terminal as XTerm, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
+import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/runtime/use-runtime-pty';
 import { invalidateTokenCache } from '@/lib/auth-token';
-import type { Pty } from '@kortix/sdk/opencode-client';
+
+type Pty = { id: string };
 
 // ============================================================================
 // Theme

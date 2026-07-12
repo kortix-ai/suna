@@ -23,8 +23,8 @@ import {
 // straight from the SDK's public `projects-client` subpath instead of adding
 // an export mobile itself doesn't otherwise need.
 import { stopProjectSession } from '@kortix/sdk/projects-client';
-// The SDK's kortix-master service wrappers are public via the
-// `@kortix/sdk/opencode-client` subpath (client.ts re-exports the module).
+// The SDK's kortix-master service wrappers are public via the provider-neutral
+// `@kortix/sdk/runtime-client` subpath.
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
@@ -36,7 +36,7 @@ import {
   listServices as sdkListServices,
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
-} from '@kortix/sdk/opencode-client';
+} from '@kortix/sdk/runtime-client';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -105,7 +105,7 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime server URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {
@@ -276,7 +276,10 @@ export async function ensureSandbox(opts?: {
     throw new Error('Create a project before starting a sandbox');
   }
 
-  const session = (await createProjectSession(project.project_id, {})) as unknown as ProjectSessionSummary;
+  const session = (await createProjectSession(
+    project.project_id,
+    {}
+  )) as unknown as ProjectSessionSummary;
   const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
   const sandbox = toSandboxInfo(project, session, runtime);
 

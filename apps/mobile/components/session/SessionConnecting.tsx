@@ -1,7 +1,7 @@
 /**
  * SessionConnecting — the middle-pane "starting a session" state.
  *
- * Shown while a project session provisions its sandbox + resolves its OpenCode
+ * Shown while a project session provisions its sandbox + resolves its runtime
  * root. Uses the brand Lottie loader (KortixLoader) and a shimmering status
  * label (ShimmerText) so the wait reads as alive and on-brand, matching the
  * provisioning screen's aesthetic rather than a bare ActivityIndicator.
@@ -9,7 +9,7 @@
  * When the runtime fails to boot (e.g. a repo-materialization / git-clone
  * failure surfaced via /kortix/health `boot_error`), it instead renders an
  * inline error with the failure detail + a Restart button — web parity with
- * the dashboard's "OpenCode runtime is not ready" screen
+ * the dashboard's runtime-not-ready screen
  * (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  */
 

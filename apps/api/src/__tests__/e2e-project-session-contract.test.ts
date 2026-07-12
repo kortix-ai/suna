@@ -44,6 +44,13 @@ let providerRecoveryGate: Promise<void> | null = null;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
+let inspectedRuntime: {
+  runtime: 'acp' | 'opencode-legacy';
+  runtimeReady: boolean;
+  acpServerId: string | null;
+  acpHarness: 'claude' | 'codex' | 'opencode' | 'pi' | null;
+  bootError: string | null;
+} | null = null;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -98,6 +105,7 @@ function resetState() {
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
+  inspectedRuntime = null;
   activeSessionCount = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
@@ -321,6 +329,7 @@ mock.module('../projects/opencode-mapping', () => ({
   pickCanonicalRoot: () => 'ses_root_existing',
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => null,
+  inspectSandboxRuntime: async () => inspectedRuntime,
   listSandboxOpencodeSessions: async () => ({
     ok: false,
     reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
@@ -331,6 +340,11 @@ mock.module('../projects/opencode-mapping', () => ({
     reason: opencodeEnsureReason,
     sessions: [],
   }),
+}));
+
+mock.module('../projects/runtime-inspection', () => ({
+  sandboxRuntimeEndpoint: async () => null,
+  inspectSandboxRuntime: async () => inspectedRuntime,
 }));
 
 mock.module('../billing/services/compute-metering', () => ({
@@ -1398,6 +1412,59 @@ describe('project session API contract', () => {
     expect(branchCreateCalls).toBe(0);
   });
 
+  test('dashboard start treats a healthy ACP process as canonical and never resolves an OpenCode root', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: null,
+      agentName: 'reviewer',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-acp',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    inspectedRuntime = {
+      runtime: 'acp',
+      runtimeReady: true,
+      acpServerId: SESSION_ID,
+      acpHarness: 'codex',
+      bootError: null,
+    };
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'ready',
+      agent_name: 'reviewer',
+      retriable: false,
+      runtime_protocol: 'acp',
+      runtime_id: SESSION_ID,
+      runtime_session_id: null,
+      runtime_url: '/p/box-acp/8000',
+      reason: 'acp_ready',
+    });
+  });
+
   test('dashboard start does not expose a stale sandbox while the provider is waking', async () => {
     const app = createApp();
     sessionRow = {
@@ -1648,7 +1715,7 @@ describe('project session API contract', () => {
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
-        opencode_model: 'anthropic/claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4-6',
       },
     };
     sessionSandboxRows = [
@@ -1736,7 +1803,6 @@ describe('project session API contract', () => {
       stage: 'starting',
       reason: 'runtime_restoring_in_place',
       sandbox: { external_id: 'box-restorable' },
-      opencode_session_id: 'ses_root_existing',
     });
     expect(providerRecoveryCalls).toBe(1);
     expect(providerStartCalls).toBe(0);
@@ -1746,6 +1812,13 @@ describe('project session API contract', () => {
     expect(computeReopenCalls).toBe(0);
 
     providerStatus = 'running';
+    inspectedRuntime = {
+      runtime: 'acp',
+      runtimeReady: true,
+      acpServerId: SESSION_ID,
+      acpHarness: 'claude',
+      bootError: null,
+    };
     const ready = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
@@ -1753,7 +1826,7 @@ describe('project session API contract', () => {
     expect(await ready.json()).toMatchObject({
       stage: 'ready',
       sandbox: { external_id: 'box-restorable', status: 'active' },
-      opencode_session_id: 'ses_root_existing',
+      runtime_protocol: 'acp',
     });
     expect(providerRecoveryCalls).toBe(1);
     expect(sessionSandboxRows[0]?.status).toBe('active');
@@ -1876,7 +1949,7 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  test('dashboard start preserves but rejects a running sandbox that is not ACP-native', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1891,15 +1964,15 @@ describe('project session API contract', () => {
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
         provider: 'platinum',
-        externalId: 'box-opencode-dead',
+        externalId: 'box-legacy-runtime',
         baseUrl: null,
         status: 'active',
         config: {},
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitReason: 'unreachable',
+          legacyRuntimeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          legacyRuntimeReadyWaitReason: 'non_acp_runtime',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -1907,7 +1980,13 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'running';
-    opencodeEnsureReason = 'unreachable';
+    inspectedRuntime = {
+      runtime: 'opencode-legacy',
+      runtimeReady: false,
+      acpServerId: null,
+      acpHarness: null,
+      bootError: null,
+    };
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
@@ -1916,14 +1995,18 @@ describe('project session API contract', () => {
     expect(await res.json()).toMatchObject({
       stage: 'failed',
       retriable: false,
-      reason: 'runtime_identity_unavailable',
-      sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+      reason: 'non_acp_runtime',
+      runtime_protocol: null,
+      runtime_id: null,
+      runtime_session_id: null,
+      runtime_url: '/p/box-legacy-runtime/8000',
+      sandbox: { external_id: 'box-legacy-runtime', status: 'active' },
     });
 
     expect(providerStartCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
     expect(sessionSandboxRows).toHaveLength(1);
-    expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-legacy-runtime');
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
@@ -2126,7 +2209,7 @@ describe('project session API contract', () => {
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
-        opencode_model: 'anthropic/claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4-6',
       },
     };
     sessionSandboxRows = [];
@@ -2164,7 +2247,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBeNull();
+    expect('opencode_session_id' in body).toBe(false);
     expect(body.status).toBe('provisioning');
     expect(body.metadata).toEqual({
       existing: true,
@@ -2301,6 +2384,27 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+  });
+
+  test('rejects removed OpenCode model aliases on session create', async () => {
+    const app = createApp();
+
+    for (const body of [{ opencode_model: 'anthropic/claude-opus-4-8' }, { opencodeModel: 'anthropic/claude-opus-4-8' }]) {
+      sessionRow = null;
+      sandboxProvisionCalls = 0;
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      expect(res.status).toBe(400);
+      const payload = await res.json();
+      expect(payload).toMatchObject({ message: 'Validation failed' });
+      expect(JSON.stringify(payload)).toContain(Object.keys(body)[0]!);
+      expect(sessionRow).toBeNull();
+      expect(sandboxProvisionCalls).toBe(0);
+    }
   });
 
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {

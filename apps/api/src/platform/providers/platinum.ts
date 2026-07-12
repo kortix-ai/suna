@@ -184,9 +184,9 @@ export class PlatinumProvider implements SandboxProvider {
     const _exposeMs = Date.now() - _tExpose0;
 
     // Return as soon as the VM is running and the agent port is exposed — do NOT
-    // block on the in-guest runtime (repo clone + opencode). That readiness is
-    // polled by the frontend (useOpenCodeRuntimeReady + the react-query
-    // "opencode not ready" retry) EXACTLY as it is for Daytona, whose create()
+    // block on the in-guest runtime (repo clone + runtime boot). That readiness is
+    // polled by the frontend (useRuntimeReady + the react-query
+    // "runtime not ready" retry) EXACTLY as it is for Daytona, whose create()
     // also returns a not-yet-usable box and defers readiness to the FE.
     //
     // Why this matters: the old code polled /kortix/health for runtimeReady up

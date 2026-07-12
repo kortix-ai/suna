@@ -1,14 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { requestRuntimeReconnect, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
+import { runtimeKeys } from '@/hooks/runtime/use-runtime-sessions';
+import type { ServerHealth, RuntimeProjectInfo } from '@/features/file-browser/types';
 import { fileServerHealthState } from './server-health-state';
 
 /**
- * Check if the active OpenCode server is reachable and healthy.
+ * Check if the active Runtime server is reachable and healthy.
  *
  * CONSOLIDATED: This now reads from the sandbox-connection-store (Zustand)
  * which is populated by the single health-check polling loop in
@@ -40,18 +40,18 @@ export function useServerHealth(options?: { enabled?: boolean }) {
 }
 
 /**
- * Get current project info from the active OpenCode server.
+ * Get current project info from the active Runtime server.
  *
- * CONSOLIDATED: Now uses the same React Query key as useOpenCodeCurrentProject
- * (opencodeKeys.currentProject()) to share cache and prevent duplicate fetches.
+ * CONSOLIDATED: Now uses the same React Query key as useRuntimeCurrentProject
+ * (runtimeKeys.currentProject()) to share cache and prevent duplicate fetches.
  * Previously used a different key ['opencode-server', 'project', serverUrl]
  * which caused independent duplicate requests.
  */
 export function useCurrentProject(options?: { enabled?: boolean }) {
   const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
 
-  return useQuery<OpenCodeProjectInfo>({
-    queryKey: opencodeKeys.currentProject(),
+  return useQuery<RuntimeProjectInfo>({
+    queryKey: runtimeKeys.currentProject(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.project.current();
@@ -59,7 +59,7 @@ export function useCurrentProject(options?: { enabled?: boolean }) {
         const err = result.error as any;
         throw new Error(err?.data?.message || err?.message || 'SDK request failed');
       }
-      return result.data as OpenCodeProjectInfo;
+      return result.data as RuntimeProjectInfo;
     },
     enabled: runtimeReady && options?.enabled !== false,
     staleTime: Infinity,

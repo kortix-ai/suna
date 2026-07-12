@@ -21,15 +21,21 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   manifest: Record<string, unknown>;
   env: { required: string[]; optional: string[] };
+  runtime_config_raw: string | null;
+  runtime_default_agent: string | null;
+  agent_source: 'native' | 'declarative';
+  /** @deprecated Use runtime_config_raw. */
   open_code_raw: string | null;
+  /** @deprecated Use runtime_default_agent. */
   open_code_default_agent: string | null;
+  /** @deprecated Use agent_source. */
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
-    source: 'opencode' | 'kortix.yaml';
+    source: 'runtime' | 'opencode' | 'kortix.yaml';
     enabled?: boolean;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).

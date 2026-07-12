@@ -157,13 +157,14 @@ type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' 
 export function resolveConfigAgents(
   nativeAgents: NativeAgentSummary[],
   loadedAgents: LoadedAgents,
-): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
+): Pick<ProjectConfigSummary, 'agent_discovery' | 'agent_source' | 'agents'> {
   if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
     return {
       agent_discovery: 'opencode',
+      agent_source: 'native',
       agents: nativeAgents.map((agent) => ({
         ...agent,
-        source: 'opencode' as const,
+        source: 'runtime' as const,
         enabled: true,
       })),
     };
@@ -173,6 +174,7 @@ export function resolveConfigAgents(
   const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
   return {
     agent_discovery: 'declarative',
+    agent_source: 'declarative',
     agents: loadedAgents.specs
       .filter((spec) => spec.enabled)
       .map((spec) => {
@@ -268,7 +270,7 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const { agent_discovery, agent_source, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -320,17 +322,22 @@ export async function loadProjectConfig(
     openCodeAgent: agents.length > 0,
   };
 
+  const runtimeDefaultAgent =
+    loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent');
+
   return {
     is_kortix_repo: Object.values(signals).some(Boolean),
     signals,
     manifest_raw: manifestRaw,
     manifest,
     env: envRequirements(manifest),
+    runtime_config_raw: openCodeRaw,
+    runtime_default_agent: runtimeDefaultAgent,
+    agent_source,
     open_code_raw: openCodeRaw,
     // v2 makes the manifest's declared default authoritative. Legacy projects
     // keep reading OpenCode's native default_agent for backwards compatibility.
-    open_code_default_agent:
-      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
+    open_code_default_agent: runtimeDefaultAgent,
     agent_discovery,
     agents,
     skills,

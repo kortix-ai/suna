@@ -2,14 +2,14 @@ import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../http/config';
 import { setCurrentRuntime } from '../session/current-runtime';
 
-// This file used to fake `getActiveOpenCodeUrl` entirely via
+// This file used to fake `getActiveRuntimeUrl` entirely via
 // `mock.module('../session/server-store/active', ...)`. That's a process-wide,
 // permanent-for-the-sweep override (see the hermetic-pattern comment below) —
 // and since it replaced the WHOLE module with only one export, any other file
 // that imports `state/server-store/active` for real (e.g. a direct test of
 // that module) would see every other export silently gutted to `undefined`.
 // Driving the same "active runtime url" control through the REAL state seam
-// instead (`setCurrentRuntime` — the same primitive `getActiveOpenCodeUrl`
+// instead (`setCurrentRuntime` — the same primitive `getActiveRuntimeUrl`
 // itself reads — plus `configureKortix({ billingEnabled: true })` so "no
 // active session" resolves to '', matching the old default) gives this file
 // identical control with no mock at all — nothing left to collide with.
@@ -59,7 +59,7 @@ beforeEach(() => {
   resetPublicClient();
   setCurrentRuntime(null);
   authToken = 'test-token';
-  // billingEnabled: true so `getActiveOpenCodeUrl()` resolves to '' with no
+  // billingEnabled: true so `getActiveRuntimeUrl()` resolves to '' with no
   // active session (matching this file's old `activeUrl = ''` default),
   // instead of the self-hosted local-dev fallback sandbox url.
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null, billingEnabled: true });
@@ -128,7 +128,7 @@ test('getPublicClientForUrl never sends an Authorization header, even with a tok
 
 test('getPublicClientForUrl works without configureKortix ever having been called (no token-provider requirement)', async () => {
   // A real anonymous visitor's tab may never call configureKortix() with a
-  // getToken — getClientForUrl would throw '[opencode-sdk] No auth token
+  // getToken — getClientForUrl would throw a missing auth token error
   // provider configured' here; the public client must not.
   const calls = captureRequests();
   const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');

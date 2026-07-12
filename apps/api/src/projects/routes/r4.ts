@@ -1345,8 +1345,7 @@ projectsApp.openapi(
       sources?: Array<{ url?: string; text?: string }>;
       blocks?: unknown[];
       status?: string;
-      opencode_session_id?: string;
-      // Turn-end error detail (opencode AssistantMessage.error / session.error),
+      // Turn-end error detail supplied by the runtime,
       // so Slack can render "out of credits" / rate-limit / the real error.
       error_name?: string;
       error_message?: string;
@@ -1423,11 +1422,10 @@ projectsApp.openapi(
       });
     }
 
-    // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
+    // `end` / `turn_end` carry no text — the sandbox observed the agent turn
     // finish (idle) or die (error) without the agent closing its Slack message;
     // finalize it gracefully instead of letting it rot into a timeout failure.
-    // (`turn_end` is the alias newer sandboxes send, with status + the opencode
-    // session id for the server-side root-session guard.)
+    // (`turn_end` is the alias newer sandboxes send with explicit status.)
     if (body.kind === 'end' || body.kind === 'turn_end') {
       const status = body.status === 'error' ? 'error' : 'idle';
       const errorInfo =
@@ -1443,26 +1441,6 @@ projectsApp.openapi(
           : undefined;
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
       return c.json({ ok });
-    }
-
-    // `opencode_session` carries the canonical opencode ROOT id the sandbox just
-    // bootstrapped (or reused after a restart). Persist it as the durable pin so
-    // the Kortix session resolves to the LIVE root with NO dependency on a browser
-    // ever opening it — closing the null-pin gap that left Slack/trigger/cron
-    // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
-    // is already scoped to this project (checked above); the daemon only ever
-    // reports its own pin-file root, never a subagent.
-    if (body.kind === 'opencode_session') {
-      const ocId = body.opencode_session_id?.trim();
-      if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
-      const updated = await db
-        .update(projectSessions)
-        .set({ opencodeSessionId: ocId, updatedAt: new Date() })
-        .where(
-          and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
-        )
-        .returning({ sessionId: projectSessions.sessionId });
-      return c.json({ ok: updated.length > 0 });
     }
 
     const text = (body.text ?? '').trim();

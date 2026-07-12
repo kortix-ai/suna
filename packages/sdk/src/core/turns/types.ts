@@ -1,11 +1,11 @@
 /**
  * Structural protocol types for the turn helpers — framework-agnostic.
  *
- * The turn functions are pure data transformations over opencode wire data.
+ * The turn functions are pure data transformations over runtime wire data.
  * They are typed against minimal structural ("Like") protocols instead of the
- * full generated opencode types so every host can flow its own message/part
- * unions through unchanged: web passes the rich `@kortix/sdk/opencode-client`
- * types, mobile passes its lean local mirrors, and generics preserve the
+ * full generated harness types so every host can flow its own message/part
+ * unions through unchanged: web passes the SDK runtime types, mobile passes its
+ * lean local mirrors, and generics preserve the
  * caller's concrete types end to end.
  */
 
@@ -22,7 +22,7 @@ export interface MessageInfoLike {
   error?: unknown;
 }
 
-/** A message with its pre-resolved parts — the shape returned by `session.messages()`. */
+/** A native harness message with its pre-resolved parts. */
 export interface MessageWithPartsLike {
   info: MessageInfoLike;
   parts: PartLike[];
