@@ -124,6 +124,38 @@ const EXTENSION_PROTOCOL_PREFIXES = [
   'extension://',
 ] as const;
 
+// The SDK's client-side request deadline. `packages/sdk/src/core/http/api-client.ts`
+// aborts a non-streaming fetch once its 30s budget elapses (the `didTimeout`
+// branch — distinct from an external abort) and surfaces
+// `ApiError("Request timed out after <N>s: <endpoint>", { code: 'TIMEOUT' })`.
+//
+// This is the frontend mirror of the API's request-deadline 503
+// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// https://github.com/kortix-ai/suna/pull/4524). The API bounds every
+// non-streaming request to a 25s server deadline that returns a clean 503 +
+// `Retry-After: 10`, and react-query retries background polls (the session-audit
+// route that produced Better Stack pattern `b1db01e5…` is polled every 5–15s
+// from several session surfaces), so a 30s client abort is an EXPECTED,
+// retryable degradation under momentary API saturation — never an actionable
+// bug. The saturation signal remains visible in the per-route
+// `http_request_duration_seconds` metric and the structured
+// `Request completed: … 503 …` warn log, exactly as for the server-side 503.
+//
+// `handleApiError` already drops `code === 'TIMEOUT'` from `captureException`;
+// this is the telemetry-side backstop that drops it from any capture path that
+// bypasses that guard — `<ClientErrorBoundary>`, `route-error`/`system-fault`,
+// `app/error`, and the Sentry SDK's own `onunhandledrejection` — same shape as
+// the billing-gate / runtime-not-ready backstops. The match is anchored on the
+// SDK's exact `Request timed out after <N>s:` prefix (with the canonical
+// wrappers) so a third-party library's generic "request timed out" message, or
+// the API's different `Request exceeded the 25s server processing deadline`
+// wording, is never matched.
+const CLIENT_REQUEST_TIMEOUT_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^Request timed out after \d+s: /,
+  /^ApiError: Request timed out after \d+s: /,
+  /^Unhandled promise rejection: (?:ApiError: )?Request timed out after \d+s: /,
+];
+
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
@@ -254,6 +286,20 @@ export function isStaleWebpackRuntimeCallNoise(input: {
   return isWebpackRuntimeChunkFilename(throwingFrame?.filename);
 }
 
+/**
+ * Whether a message is the SDK's client-side request-deadline timeout —
+ * `Request timed out after <N>s: <endpoint>` (and its canonical wrappers). This
+ * is an EXPECTED, retryable degradation (the API's 25s server deadline returns
+ * a 503 + Retry-After and react-query retries background polls), never an
+ * actionable bug — see `CLIENT_REQUEST_TIMEOUT_WRAPPERS` for the full
+ * rationale. Such a message must NEVER page Better Stack, regardless of which
+ * capture path delivered it.
+ */
+export function isClientRequestTimeoutMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return CLIENT_REQUEST_TIMEOUT_WRAPPERS.some((re) => re.test(normalized));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -287,6 +333,13 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   if (isRuntimeNotReadyNoiseMessage(message)) {
+    return true;
+  }
+
+  // Expected client-side request-deadline timeouts (SDK 30s fetch abort) — the
+  // frontend mirror of the API's request-deadline 503 (de-noised by #4524). An
+  // expected, retryable degradation; never page Better Stack for it.
+  if (isClientRequestTimeoutMessage(message)) {
     return true;
   }
 
@@ -349,6 +402,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // switch/provisioning window, self-heals in ~1s, never an error. Drop it
   // before it pages Better Stack, no matter which capture path delivered it.
   if (isRuntimeNotReadyNoiseMessage(message)) {
+    return true;
+  }
+
+  // Expected client-side request-deadline timeouts (SDK 30s fetch abort) — the
+  // frontend mirror of the API's request-deadline 503 (de-noised by #4524). An
+  // expected, retryable degradation under momentary API saturation; the signal
+  // remains in per-route metrics + the structured 503 warn log. Drop it before
+  // it pages Better Stack, no matter which capture path delivered it.
+  if (isClientRequestTimeoutMessage(message)) {
     return true;
   }
 
