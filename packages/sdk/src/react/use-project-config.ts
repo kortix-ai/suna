@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { type ProjectConfigSummary, getProjectDetail } from '../platform/projects-client';
+import { type ProjectConfigSummary, getProjectDetail } from '../core/rest/projects-client';
 
 /**
  * Server-side project config — the single source of truth for everything a user

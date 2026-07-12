@@ -79,4 +79,27 @@ describe('/api/preview-token', () => {
     expect(cliTokenCalls[0]!.authorization).toBe(`Bearer ${WRAPPER_KEY}`);
     expect(mock.authViolations).toHaveLength(0);
   });
+
+  test('a 200 upstream response missing secret_key is a 502, never a token-less 200', async () => {
+    const email = uniqueEmail('preview-malformed');
+    const token = await loginUser(app, email, DEMO_PASSWORD);
+
+    const provision = await fetch(`${app.baseUrl}/api/kortix/projects/provision`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Preview Malformed' }),
+    });
+    const project = (await provision.json()) as { project_id: string };
+    mock.malformCliTokenFor(project.project_id);
+
+    const res = await fetch(`${app.baseUrl}/api/preview-token?projectId=${project.project_id}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    // The preview panel only checks `res.ok` — a 200 with `token: undefined`
+    // would silently build a broken preview URL. Malformed success must fail loud.
+    expect(res.status).toBe(502);
+    const data = (await res.json()) as { error?: string; token?: string };
+    expect(data.error).toBeTruthy();
+    expect(data.token).toBeUndefined();
+  });
 });

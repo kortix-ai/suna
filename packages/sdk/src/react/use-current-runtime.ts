@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from 'react';
 
-import { type CurrentRuntimeState, currentRuntimeStore } from '../state/current-runtime';
+import { type CurrentRuntimeState, currentRuntimeStore } from '../core/session/current-runtime';
 
 /**
  * React selector hook over the framework-free `currentRuntimeStore`. Keep

@@ -106,7 +106,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 
   if (session.mode === 'subscription') {
-    await handleSubscriptionCheckout(session, accountId);
+    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId));
   }
 }
 
@@ -220,7 +220,7 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
       'tier_grant',
       creditDesc,
       true,
-      session.id,
+      `subscription_activation:${subscriptionId}`,
     );
   }
 
@@ -379,7 +379,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
         accountId,
         credits,
         `Recovered Stripe subscription: ${credits} credits`,
-        `legacy_sync:${subscription.id}`,
+        `subscription_activation:${subscription.id}`,
       );
     }
   }

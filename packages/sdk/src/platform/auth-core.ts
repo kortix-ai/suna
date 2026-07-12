@@ -4,7 +4,7 @@
  * ordering.
  *
  * Why this file exists: several test suites register process-wide
- * `mock.module('../platform/auth', …)` stubs (Bun's `mock.module` replaces a
+ * `mock.module('../core/http/auth', …)` stubs (Bun's `mock.module` replaces a
  * specifier for the remainder of the process, for every importer — see the
  * note in `opencode/client.test.ts`). Any test that wants to exercise the real
  * retry/timeout semantics therefore can't import them from `./auth` — on some

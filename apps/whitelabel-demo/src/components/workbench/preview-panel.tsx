@@ -51,8 +51,7 @@ import { kortix } from '@/lib/kortix';
 import { buildDirectPreviewUrl, parseProxiedPreviewUrl } from '@/lib/preview';
 import { getSessionToken } from '@/lib/session';
 import { cn } from '@/lib/utils';
-import { SessionNotReadyError } from '@kortix/sdk';
-import type { SessionPublicShare } from '@kortix/sdk/projects-client';
+import { SessionNotReadyError, type SessionPublicShare } from '@kortix/sdk';
 import { useWrapperMode } from '@/app/providers';
 
 // Session sharing intent — a subset of the SDK's ConnectorSharing union that

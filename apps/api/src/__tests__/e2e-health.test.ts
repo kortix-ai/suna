@@ -20,6 +20,8 @@ describe('Health & System endpoints', () => {
     expect(body.status).toBe('ok');
     expect(body.service).toBe('kortix-api');
     expect(body.timestamp).toBeDefined();
+    expect(body.environment).toBe('dev');
+    expect(body.version).toBe('dev');
   });
 
   // ─── GET /v1/health ─────────────────────────────────────────────────────
@@ -30,8 +32,10 @@ describe('Health & System endpoints', () => {
 
     const body = await res.json();
     expect(body.status).toBe('ok');
-    expect(body.service).toBe('kortix');
+    expect(body.service).toBe('kortix-api');
     expect(body.timestamp).toBeDefined();
+    expect(body.environment).toBe('dev');
+    expect(body.version).toBe('dev');
   });
 
   // ─── GET /v1/system/status ──────────────────────────────────────────────

@@ -13,8 +13,7 @@ import {
 } from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions } from '@/lib/query-keys';
-import { generateSessionId } from '@kortix/sdk';
-import type { SandboxTemplate } from '@kortix/sdk/projects-client';
+import { generateSessionId, type SandboxTemplate } from '@kortix/sdk';
 import {
   type ModelKey,
   useProjectConfig,

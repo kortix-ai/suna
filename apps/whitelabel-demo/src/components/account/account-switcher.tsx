@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { kortix } from '@/lib/kortix';
-import type { KortixAccount } from '@kortix/sdk/projects-client';
+import type { KortixAccount } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';

@@ -1,5 +1,5 @@
 import { ScopedCache } from '../../platform/storage/managed-storage';
-import { getCurrentRuntimeSandboxId } from '../../state/current-runtime';
+import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
 import type {
   Session,
   Agent,

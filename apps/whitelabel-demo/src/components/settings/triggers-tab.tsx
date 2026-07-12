@@ -24,7 +24,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import type { ProjectTrigger } from '@kortix/sdk/projects-client';
+import type { ProjectTrigger } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Play, Trash2, Zap } from 'lucide-react';
 import { useState } from 'react';

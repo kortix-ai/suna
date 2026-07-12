@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ClassifiedPart } from '../../turns';
+import type { ClassifiedPart } from '../../core/turns';
 import { type PartRenderers, renderParts } from './render-parts';
 
 const renderers: PartRenderers<string> = {

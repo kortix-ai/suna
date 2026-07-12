@@ -8,7 +8,7 @@ import {
   listProjectTriggers,
   updateProjectTrigger,
   type ProjectTriggerListing,
-} from '../platform/projects-client';
+} from '../core/rest/projects-client';
 
 /** Stable query-key factory — reuse to read/invalidate the same cache entry
  *  `useProjectTriggers` populates. */

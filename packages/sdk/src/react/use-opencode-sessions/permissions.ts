@@ -1,5 +1,5 @@
 import type { PermissionRuleset } from '@opencode-ai/sdk/v2/client';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
 
 // ============================================================================
