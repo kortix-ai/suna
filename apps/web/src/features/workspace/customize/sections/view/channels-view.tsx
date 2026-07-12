@@ -319,7 +319,7 @@ function ChannelBindingTableRow({
 
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
+  const selectedModel = binding.model ? wireToModelKey(stripOpencodeNamespace(binding.model)) : null;
 
   const update = useUpdateChannelBinding();
 
@@ -372,7 +372,7 @@ function ChannelBindingTableRow({
                   {
                     projectId,
                     bindingId: binding.bindingId,
-                    opencodeModel: m ? modelKeyToWire(m) : null,
+                    model: m ? modelKeyToWire(m) : null,
                   },
                   {
                     onSuccess: () => successToast('Channel model updated'),
@@ -384,7 +384,7 @@ function ChannelBindingTableRow({
           </div>
         ) : (
           <Badge variant="outline" size="sm" className="font-mono">
-            {binding.opencodeModel ?? 'Auto'}
+            {binding.model ?? 'Auto'}
           </Badge>
         )}
       </TableCell>
