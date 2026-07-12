@@ -3,13 +3,28 @@ import {
   AUTO_DEFAULT_MODEL_ID,
   AUTO_MODEL_ENABLED,
   AUTO_MODEL_ID,
+  DEFAULT_MODEL_FALLBACK_POLICY,
   getManagedModel,
   pickAutoModel,
+  routeDefaultModelFallbacks,
 } from "./index";
 
 const msg = (content: string) => ({ role: "user", content });
 
 describe("pickAutoModel", () => {
+  test("platform default is Codex GPT-5.6 Sol with a bounded GLM 5.2 fallback", () => {
+    expect(AUTO_DEFAULT_MODEL_ID).toBe("codex/gpt-5.6-sol");
+    expect(DEFAULT_MODEL_FALLBACK_POLICY).toEqual({
+      primary: "codex/gpt-5.6-sol",
+      fallbacks: ["glm-5.2"],
+      fallbackOn: "any-error",
+    });
+    expect(routeDefaultModelFallbacks("codex/gpt-5.6-sol")).toEqual({
+      fallbackModels: ["glm-5.2"],
+      fallbackOn: "any-error",
+    });
+    expect(routeDefaultModelFallbacks("glm-5.2")).toBeNull();
+  });
   test("returns null for any non-auto model (pass-through)", () => {
     expect(
       pickAutoModel("claude-opus-4.8", { messages: [msg("hi")] }),
@@ -25,19 +40,19 @@ describe("pickAutoModel", () => {
     ).not.toBeNull();
   });
 
-  test("text requests resolve to GLM 5.2 (regardless of size / tools)", () => {
+  test("text requests resolve to Codex GPT-5.6 (regardless of size / tools)", () => {
     expect(pickAutoModel("auto", { messages: [msg("hello there")] })).toBe(
-      "glm-5.2",
+      "codex/gpt-5.6-sol",
     );
     expect(
       pickAutoModel("auto", {
         messages: [msg("x".repeat(250_000))],
         tools: [{ name: "edit" }],
       }),
-    ).toBe("glm-5.2");
+    ).toBe("codex/gpt-5.6-sol");
   });
 
-  test("image requests route to a vision model (not blind GLM)", () => {
+  test("image requests keep the vision-capable Codex default", () => {
     const withImage = {
       messages: [
         {
@@ -52,11 +67,11 @@ describe("pickAutoModel", () => {
         },
       ],
     };
-    expect(pickAutoModel("auto", withImage)).toBe("claude-sonnet-4.6");
+    expect(pickAutoModel("auto", withImage)).toBe("codex/gpt-5.6-sol");
   });
 
-  test("both auto targets are real managed models", () => {
-    expect(getManagedModel("glm-5.2"), "glm-5.2 must exist").toBeDefined();
+  test("the fallback and managed vision override are real managed models", () => {
+    expect(getManagedModel("glm-5.2"), "fallback glm-5.2 must exist").toBeDefined();
     expect(
       getManagedModel("claude-sonnet-4.6"),
       "claude-sonnet-4.6 must exist",
@@ -67,15 +82,11 @@ describe("pickAutoModel", () => {
     expect(AUTO_MODEL_ID).toBe("auto");
   });
 
-  test("AUTO is hidden by default; its target is the GLM 5.2 explicit default", () => {
+  test("AUTO is hidden by default; its target is the Codex explicit default", () => {
     // The picker hides AUTO for now (explicit opt-in), but the resolution path
     // stays intact — and AUTO's text target IS the explicit default model.
     expect(AUTO_MODEL_ENABLED).toBe(false);
-    expect(AUTO_DEFAULT_MODEL_ID).toBe("glm-5.2");
-    expect(
-      getManagedModel(AUTO_DEFAULT_MODEL_ID),
-      "the auto/default target must be a real managed model",
-    ).toBeDefined();
+    expect(AUTO_DEFAULT_MODEL_ID).toBe("codex/gpt-5.6-sol");
     expect(pickAutoModel("auto", { messages: [msg("hi")] })).toBe(
       AUTO_DEFAULT_MODEL_ID,
     );

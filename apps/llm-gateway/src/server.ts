@@ -1,5 +1,5 @@
+import { pickAutoModel, routeDefaultModelFallbacks } from '@kortix/llm-catalog';
 import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -67,6 +67,7 @@ export function buildServer(): GatewayServer {
       // API-side in withResolvedTier and carried across the authorize RPC).
       autoRouter: (model, body, principal) =>
         pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
+      modelFallbackRouter: (model) => routeDefaultModelFallbacks(model),
     },
     { logger },
   );
