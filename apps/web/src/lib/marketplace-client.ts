@@ -259,10 +259,18 @@ export async function installMarketplaceItemAsSession(
 }
 
 export async function listInstalledItems(projectId: string): Promise<InstalledItem[]> {
-  const res = unwrap(
-    await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
-  );
-  return res.installed ?? [];
+  try {
+    const res = unwrap(
+      await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
+    );
+    return res.installed ?? [];
+  } catch (e) {
+    // A project with no registry yet — or a scratch/debug project that doesn't
+    // exist — 404s. That just means "nothing installed", not a real error, so
+    // don't let it bubble up as a failed query (it also stops the retry spam).
+    if ((e as { status?: number })?.status === 404) return [];
+    throw e;
+  }
 }
 
 export type RegistryItemStatus = 'up-to-date' | 'update-available' | 'orphaned';
@@ -278,11 +286,17 @@ export interface RegistryUpdate {
 export async function listRegistryUpdates(
   projectId: string,
 ): Promise<{ updates: RegistryUpdate[]; update_available: string[] }> {
-  return unwrap(
-    await backendApi.get<{ updates: RegistryUpdate[]; update_available: string[] }>(
-      `/projects/${projectId}/registry/updates`,
-    ),
-  );
+  try {
+    return unwrap(
+      await backendApi.get<{ updates: RegistryUpdate[]; update_available: string[] }>(
+        `/projects/${projectId}/registry/updates`,
+      ),
+    );
+  } catch (e) {
+    // No registry yet / scratch project → nothing to update (see listInstalledItems).
+    if ((e as { status?: number })?.status === 404) return { updates: [], update_available: [] };
+    throw e;
+  }
 }
 
 export async function updateMarketplaceItem(
