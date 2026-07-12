@@ -3496,7 +3496,10 @@ function detectCommandFromText(
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   for (const cmd of commands) {
-    if (!cmd.template) continue;
+    // `template` is typed as string but can arrive non-string from MCP/skill
+    // command sources; guard before `.trim()` to avoid a TypeError crash.
+    // Canonical implementation: apps/web/src/features/session/detect-command.ts.
+    if (typeof cmd.template !== 'string') continue;
     const tpl = cmd.template.trim();
 
     // Large templates — fast exact/prefix match
