@@ -97,6 +97,11 @@ describe('buildProjectSeedFiles — the seeded manifest satisfies its own requir
       nativeAgent: 'kortix',
       skills: 'all',
     });
+    expect(compiled.agents).toMatchObject({
+      claude: { runtime: 'claude', harness: 'claude', nativeAgent: null, skills: 'all' },
+      codex: { runtime: 'codex', harness: 'codex', nativeAgent: null, skills: 'all' },
+      pi: { runtime: 'pi', harness: 'pi', nativeAgent: null, skills: 'all' },
+    });
     expect(compiled.runtimes).toMatchObject({
       claude: { harness: 'claude', configDir: '.claude' },
       codex: { harness: 'codex', configDir: '.codex' },

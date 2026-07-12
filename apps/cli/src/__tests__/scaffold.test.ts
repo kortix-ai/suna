@@ -67,6 +67,9 @@ describe('applyScaffold', () => {
 
     expect(manifest).not.toMatch(/^sandbox:/m);
     expect(manifest).toContain('config_dir: .kortix/opencode');
+    expect(manifest).toContain('claude:\n    runtime: claude');
+    expect(manifest).toContain('codex:\n    runtime: codex');
+    expect(manifest).toContain('pi:\n    runtime: pi');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);

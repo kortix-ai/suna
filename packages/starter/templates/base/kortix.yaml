@@ -94,6 +94,27 @@ agents:
     kortix_cli: all
     skills: all
 
+  claude:
+    runtime: claude
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  codex:
+    runtime: codex
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+  pi:
+    runtime: pi
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
   memory-reflector:
     runtime: opencode
     agent: memory-reflector
