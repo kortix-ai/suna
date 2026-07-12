@@ -71,6 +71,7 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
     if (!apiUrl || !token) return undefined
     return {
       NO_BROWSER: '1',
+      CODEX_CONFIG: JSON.stringify({ model: 'openai/gpt-5.4' }),
       DEFAULT_AUTH_REQUEST: JSON.stringify({
         methodId: 'gateway',
         _meta: {

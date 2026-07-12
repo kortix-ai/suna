@@ -996,6 +996,13 @@ export default {
       server.timeout(req, 0);
     }
 
+    // ACP JSON-RPC prompt requests intentionally remain open until the harness
+    // finishes the turn. Codex regularly takes longer than the global 30s idle
+    // socket budget before producing the RPC response.
+    if (url.pathname.includes('/sessions/') && url.pathname.endsWith('/acp')) {
+      server.timeout(req, 0);
+    }
+
     // ── Subdomain preview routing ──────────────────────────────────────
     // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
     // Same per-request long-poll/SSE timeout posture as /v1/p/.

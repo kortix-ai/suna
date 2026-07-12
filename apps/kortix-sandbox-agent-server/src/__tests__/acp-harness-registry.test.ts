@@ -43,6 +43,7 @@ describe('ACP harness registry', () => {
     const registry = createAcpHarnessRegistry({ KORTIX_API_URL: 'https://api.test/v1', KORTIX_TOKEN: 'token' });
     expect(registry.get('codex')?.launch.env).toEqual({
       NO_BROWSER: '1',
+      CODEX_CONFIG: JSON.stringify({ model: 'openai/gpt-5.4' }),
       DEFAULT_AUTH_REQUEST: JSON.stringify({
         methodId: 'gateway',
         _meta: {
