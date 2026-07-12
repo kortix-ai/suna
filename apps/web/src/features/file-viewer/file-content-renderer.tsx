@@ -802,14 +802,15 @@ export function FileContentRenderer({
             {headerActions}
 
             <Button
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground/60 hover:text-foreground h-7 w-7"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-3 text-xs font-medium"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
               title="Download"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
+              Download
             </Button>
           </div>
         </div>

@@ -336,13 +336,14 @@ export function FilePreviewModal({
           <History className="h-4 w-4" />
         </Button>
         <Button
-          variant="ghost"
-          size="icon"
-          className="text-muted-foreground hover:text-foreground h-8 w-8"
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 px-3 text-xs font-medium"
           onClick={handleDownload}
           title="Download"
         >
-          <Download className="h-4 w-4" />
+          <Download className="h-3.5 w-3.5" />
+          Download
         </Button>
         {shareContext && (
           <PublicShareLinkButton
