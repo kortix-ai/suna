@@ -19,7 +19,6 @@ export const siteConfig = {
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Use Cases', href: '/use-cases' },
       { id: 4, name: 'Pricing', href: '/pricing' },
-      { id: 5, name: 'Blog', href: '/blog' },
       { id: 6, name: 'Docs', href: '/docs' },
     ] as NavLink[],
   },
