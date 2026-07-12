@@ -4,17 +4,20 @@
 # around a production rollout, from CI.
 #
 # Called by .github/workflows/deploy-prod.yml:
-#   on  <version>   activate a dismissible WARNING banner ("new version rolling
-#                   out, may be briefly unavailable") at the START of the rollout.
+#   on  <version>   activate a non-dismissible CRITICAL banner ("new version
+#                   rolling out, may be briefly unavailable") at the START of the
+#                   rollout, so every user sees it for the whole window.
 #   off             clear it (level none) — only called AFTER the rollout is green.
 #
 # It writes the same maintenance config the admin console does, via
 # `PUT /v1/system/maintenance` (platform-admin bearer required).
 #
-# SAFETY — it never clobbers a human-set incident banner:
-#   * `on`  refuses to downgrade an active `critical`/`blocking` incident.
+# SAFETY — it never clobbers a human-set incident banner. Since the rollout banner
+# is itself `critical` now, "ours" is identified by its title, not its level:
+#   * `on`  refuses to override an active `critical`/`blocking` incident whose
+#           title is NOT our rollout title (a real, human-set incident).
 #   * `off` only clears the banner if it is STILL our rollout banner (same title
-#           and warning level); if an admin changed it mid-rollout, we leave it.
+#           and `critical` level); if an admin changed it mid-rollout, we leave it.
 #
 # Env:
 #   MAINTENANCE_TOKEN     (required) platform-admin bearer (kortix_pat_/kortix_sa_ or JWT)
@@ -27,7 +30,7 @@ set -euo pipefail
 
 API_BASE="${MAINTENANCE_API_BASE:-https://api.kortix.com/v1}"
 ENDPOINT="${API_BASE%/}/system/maintenance"
-ROLLOUT_TITLE="New version rolling out"
+ROLLOUT_TITLE="Release in progress"
 
 CMD="${1:-}"
 
@@ -57,20 +60,23 @@ case "$CMD" in
     version="${2:-}"
     level="$(get_field '.level')"
     level="${level:-none}"
-    if [[ "$level" == "critical" || "$level" == "blocking" ]]; then
-      echo "An active incident banner ($level) is up — leaving it in place, not showing the rollout notice."
+    title="$(get_field '.title')"
+    # Never override a human-set incident. The rollout banner is itself `critical`
+    # now, so "ours" is identified by title — skip only when a critical/blocking
+    # banner with a DIFFERENT title (a real incident) is up.
+    if [[ ( "$level" == "critical" || "$level" == "blocking" ) && "$title" != "$ROLLOUT_TITLE" ]]; then
+      echo "An active incident banner ($level: '${title}') is up — leaving it in place, not showing the rollout notice."
       exit 0
     fi
-    msg="Kortix is rolling out a new version"
-    [[ -n "$version" ]] && msg="Kortix is rolling out ${version}"
-    msg="${msg} and may be briefly unavailable or behave unexpectedly. Please check back in a few minutes."
-    put "warning" "$ROLLOUT_TITLE" "$msg"
-    echo "Rollout warning banner activated${version:+ for $version}."
+    msg="Deploying a new version — Kortix may be briefly unavailable."
+    [[ -n "$version" ]] && msg="Deploying ${version} — Kortix may be briefly unavailable."
+    put "critical" "$ROLLOUT_TITLE" "$msg"
+    echo "Rollout critical banner activated${version:+ for $version}."
     ;;
   off)
     level="$(get_field '.level')"
     title="$(get_field '.title')"
-    if [[ "$level" == "warning" && "$title" == "$ROLLOUT_TITLE" ]]; then
+    if [[ "$level" == "critical" && "$title" == "$ROLLOUT_TITLE" ]]; then
       put "none" "" ""
       echo "Rollout banner cleared."
     else

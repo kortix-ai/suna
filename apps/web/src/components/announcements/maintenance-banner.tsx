@@ -16,40 +16,41 @@ interface MaintenanceBannerProps {
   config: MaintenanceConfig;
 }
 
+// Per-level styling — brand tokens only (kortix-*), mirroring the InfoBanner tone
+// scale so a system banner reads the same as every other alert in the app. The
+// card border is tinted to the level so severity is legible before you read a word.
 const levelConfig: Record<
   Exclude<MaintenanceLevel, 'none' | 'blocking'>,
   {
     icon: typeof Info;
-    iconBg: string;
-    iconBorder: string;
-    iconColor: string;
+    /** Tinted icon-tile classes (bg + foreground). */
+    tile: string;
+    /** Tone-tinted card border. */
+    border: string;
     dismissible: boolean;
     defaultTitle: string;
   }
 > = {
   info: {
     icon: Info,
-    iconBg: 'bg-blue-500/10',
-    iconBorder: 'border-blue-500/25',
-    iconColor: 'text-blue-600 dark:text-blue-400',
+    tile: 'bg-kortix-blue/10 text-kortix-blue',
+    border: 'border-kortix-blue/25',
     dismissible: true,
     defaultTitle: 'Notice',
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: 'bg-amber-500/10',
-    iconBorder: 'border-amber-500/30',
-    iconColor: 'text-amber-600 dark:text-amber-400',
+    tile: 'bg-kortix-orange/10 text-kortix-orange',
+    border: 'border-kortix-orange/25',
     dismissible: true,
-    defaultTitle: 'Scheduled Maintenance',
+    defaultTitle: 'Scheduled maintenance',
   },
   critical: {
     icon: AlertCircle,
-    iconBg: 'bg-destructive/10',
-    iconBorder: 'border-destructive/25',
-    iconColor: 'text-destructive',
+    tile: 'bg-kortix-red/10 text-kortix-red',
+    border: 'border-kortix-red/25',
     dismissible: false,
-    defaultTitle: 'Service Disruption',
+    defaultTitle: 'Service disruption',
   },
 };
 
@@ -129,15 +130,7 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
     return () => clearInterval(interval);
   }, [config.startTime, config.endTime]);
 
-  // Don't render for none/blocking levels, before mount, or on suppressed paths.
-  if (!lc || !isMounted || isSuppressedPath) return null;
-  if (isDismissed && canDismiss) return null;
-
-  const Icon = lc.icon;
-  const title = config.title || lc.defaultTitle;
-
-  const handleDismiss = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDismiss = () => {
     setIsDismissed(true);
     try {
       localStorage.setItem(dismissKey, 'true');
@@ -155,66 +148,80 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
     }
   };
 
+  // Render nothing (but keep AnimatePresence mounted so a dismiss animates out)
+  // for none/blocking levels, before hydration, on suppressed paths, or once
+  // dismissed.
+  const shouldRender = !!lc && isMounted && !isSuppressedPath && !(isDismissed && canDismiss);
+  const Icon = lc?.icon ?? Info;
+  const title = config.title || lc?.defaultTitle || '';
+
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed bottom-4 right-4 z-[110] w-[340px]"
-      >
-        <div className="relative bg-muted rounded-2xl overflow-hidden border">
-          {canDismiss && (
-            <Button variant="ghost" size="icon-sm" onClick={handleDismiss} className="absolute top-2 right-2 z-10">
-              <X className="h-3 w-3 text-foreground" />
-            </Button>
-          )}
-
+      {shouldRender && lc && (
+        <motion.div
+          key="maintenance-banner"
+          initial={{ opacity: 0, y: 24, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed right-4 bottom-4 z-[110] w-[360px] max-w-[calc(100vw-2rem)]"
+        >
           <div
             className={cn(
-              'p-4 bg-muted/50 transition-colors',
-              config.statusUrl && 'cursor-pointer hover:bg-muted',
+              'bg-background relative flex items-start gap-3 rounded-[0.64rem] border p-4 shadow-lg',
+              lc.border,
             )}
-            onClick={config.statusUrl ? handleStatusClick : undefined}
           >
-            <div className="flex items-start gap-3">
-              <div
-                className={cn(
-                  'w-12 h-12 rounded-2xl border flex items-center justify-center flex-shrink-0',
-                  lc.iconBg,
-                  lc.iconBorder,
-                )}
-              >
-                <Icon className={cn('h-5 w-5', lc.iconColor)} />
-              </div>
-              <div className="flex-1 min-w-0 pr-4">
-                <h3 className="text-foreground text-sm font-semibold mb-1">
-                  {title}
-                </h3>
-                <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">
+            <span
+              className={cn(
+                'flex size-10 shrink-0 items-center justify-center rounded-sm border',
+                lc.tile,
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+
+            <div className={cn('min-w-0 flex-1', canDismiss && 'pr-6')}>
+              <h3 className="text-foreground text-sm font-semibold text-balance">{title}</h3>
+              {config.message && (
+                <p className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">
                   {config.message}
                 </p>
-                {countdown && (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                    <Clock className="h-3 w-3" />
-                    <span>{countdown}</span>
-                  </div>
-                )}
-                {config.statusUrl && (
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={handleStatusClick}
-                    className="mt-2"
-                  >{tHardcodedUi.raw('componentsAnnouncementsMaintenanceBanner.line201JsxTextViewStatus')}<ExternalLink className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              )}
+              {countdown && (
+                <div className="text-kortix-orange mt-2 flex items-center gap-1.5 text-xs font-medium tabular-nums">
+                  <Clock className="size-3 shrink-0" />
+                  <span>{countdown}</span>
+                </div>
+              )}
+              {config.statusUrl && (
+                <Button
+                  variant="transparent"
+                  size="sm"
+                  onClick={handleStatusClick}
+                  className="text-muted-foreground hover:text-foreground mt-2 h-auto gap-1 p-0 text-xs"
+                >
+                  {tHardcodedUi.raw(
+                    'componentsAnnouncementsMaintenanceBanner.line201JsxTextViewStatus',
+                  )}
+                  <ExternalLink className="size-3" />
+                </Button>
+              )}
             </div>
+
+            {canDismiss && (
+              <button
+                type="button"
+                aria-label="Dismiss"
+                onClick={handleDismiss}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 absolute top-2.5 right-2.5 flex size-7 items-center justify-center rounded-md transition-colors active:scale-[0.96]"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

@@ -88,9 +88,10 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
-  # ── Raise the "new version rolling out" banner ──────────────────────────────
-  # Show users a dismissible WARNING banner for the duration of the rollout.
-  # Best-effort and non-blocking: it never gates or fails the deploy, and it
+  # ── Raise the "release in progress" banner ──────────────────────────────────
+  # Show users a CRITICAL banner for the duration of the rollout (non-dismissible
+  # for members; admins can still dismiss). Best-effort and non-blocking: it never
+  # gates or fails the deploy, and it
   # never clobbers an active incident banner (see scripts/ci-maintenance-banner.sh).
   # Cleared again by `maintenance-banner-off`, but ONLY once the rollout is green.
   # Requires the PROD_MAINTENANCE_TOKEN secret (a platform-admin bearer); if it
@@ -1070,12 +1071,12 @@ jobs:
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
 
-  # ── Lower the "new version rolling out" banner — ONLY when the rollout is green ─
+  # ── Lower the "release in progress" banner — ONLY when the rollout is green ───
   # `needs: deploy-api` with the default `if: success()` means this runs only
   # after the API has rolled out to the new version AND passed its health gate
   # (deploy-api hard-fails otherwise). migrate-db is upstream of deploy-api, so a
   # failed migration also keeps the banner up. If the rollout fails, this job is
-  # skipped and the warning banner stays raised — deliberately, so users keep
+  # skipped and the critical banner stays raised — deliberately, so users keep
   # seeing it until an admin clears or escalates it from the console. Best-effort
   # and non-clobbering: only clears the banner if it is still OUR rollout banner.
   maintenance-banner-off:
