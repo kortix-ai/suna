@@ -80,6 +80,8 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
   }, [addEnvelope, busy, client, nativeId]);
 
   const respondPermission = useCallback((id: AcpJsonRpcId, optionId?: string) => client.respond(id, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } }), [client]);
+  const respondQuestion = useCallback((id: AcpJsonRpcId, content: Record<string, unknown>) => client.respond(id, { action: 'accept', content }), [client]);
+  const rejectQuestion = useCallback((id: AcpJsonRpcId) => client.respond(id, { action: 'decline' }), [client]);
   const cancel = useCallback(() => nativeId ? client.cancel(nativeId) : Promise.resolve(), [client, nativeId]);
-  return { ready, busy, error, envelopes, runtimeSessionId: nativeId, send, cancel, respondPermission };
+  return { ready, busy, error, envelopes, runtimeSessionId: nativeId, send, cancel, respondPermission, respondQuestion, rejectQuestion };
 }

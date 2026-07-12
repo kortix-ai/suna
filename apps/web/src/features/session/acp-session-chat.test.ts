@@ -11,6 +11,7 @@ describe('ACP-native chat projection', () => {
       { ordinal: 4, direction: 'agent_to_client', streamEventId: 3, envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'good' } } } } },
       { ordinal: 5, direction: 'agent_to_client', streamEventId: 4, envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'tool_call', title: 'Read file' } } } },
       { ordinal: 6, direction: 'agent_to_client', streamEventId: 5, envelope: { jsonrpc: '2.0', id: 9, method: 'session/request_permission', params: { options: [{ optionId: 'allow', name: 'Allow' }] } } },
+      { ordinal: 7, direction: 'agent_to_client', streamEventId: 6, envelope: { jsonrpc: '2.0', id: 10, method: 'elicitation/create', params: { message: 'Choose environment', requestedSchema: { type: 'object', properties: { environment: { title: 'Environment', enum: ['staging', 'production'] } } } } } },
     ];
 
     expect(projectAcpEnvelopes(rows)).toMatchObject([
@@ -19,6 +20,7 @@ describe('ACP-native chat projection', () => {
       { kind: 'message', role: 'assistant', text: 'Looks good' },
       { kind: 'tool', title: 'Read file' },
       { kind: 'permission', id: 9, method: 'session/request_permission' },
+      { kind: 'question', id: 10, method: 'elicitation/create', questions: [{ key: 'environment', question: 'Environment' }] },
     ]);
   });
 });

@@ -12,6 +12,7 @@ export type AcpChatItem =
   | { kind: 'message'; role: 'user' | 'assistant' | 'thought'; text: string }
   | { kind: 'tool'; title: string; data: unknown }
   | { kind: 'permission'; id: string | number; method: string; params: Record<string, unknown> }
+  | { kind: 'question'; id: string | number; method: string; questions: AcpPendingQuestionItem[]; params: Record<string, unknown> }
   | { kind: 'raw'; method: string; data: unknown };
 
 export type AcpPendingOption = {
@@ -79,8 +80,12 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
       } else items.push({ kind: 'raw', method: String(kind ?? envelope.method), data: update });
       continue;
     }
-    if ('id' in envelope && (envelope.method.includes('permission') || envelope.method.includes('request'))) {
+    if ('id' in envelope && isPermissionMethod(envelope.method)) {
       items.push({ kind: 'permission', id: envelope.id, method: envelope.method, params: envelope.params ?? {} });
+    } else if ('id' in envelope && isQuestionMethod(envelope.method)) {
+      const params = isRecord(envelope.params) ? envelope.params : {};
+      const question = projectQuestion(envelope.id as AcpJsonRpcId, envelope.method, params);
+      items.push({ kind: 'question', id: envelope.id, method: envelope.method, questions: question.questions, params });
     } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
   }
   return items;

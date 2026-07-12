@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { projectAcpPendingPrompts, projectAcpTranscript } from './transcript';
+import { projectAcpChatItems, projectAcpPendingPrompts, projectAcpTranscript } from './transcript';
 
 describe('projectAcpTranscript', () => {
   test('projects prompts, streamed replies, thoughts, and tools without harness types', () => {
@@ -82,6 +82,39 @@ describe('projectAcpPendingPrompts', () => {
             ],
           }),
         ],
+      }),
+    ]);
+  });
+});
+
+describe('projectAcpChatItems', () => {
+  test('renders ACP elicitation as a question item, not raw JSON', () => {
+    const items = projectAcpChatItems([
+      {
+        ordinal: 1,
+        direction: 'agent_to_client',
+        envelope: {
+          jsonrpc: '2.0',
+          id: 'q1',
+          method: 'elicitation/create',
+          params: {
+            message: 'Choose an environment',
+            requestedSchema: {
+              type: 'object',
+              properties: {
+                environment: { title: 'Environment', enum: ['staging'] },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        kind: 'question',
+        id: 'q1',
+        questions: [expect.objectContaining({ key: 'environment', question: 'Environment' })],
       }),
     ]);
   });
