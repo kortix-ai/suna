@@ -281,7 +281,7 @@ export async function allocateRuntimeOnOpen(
       metadata?: { legacy_migration?: { source_sandbox_id?: unknown } };
     }
   ).metadata?.legacy_migration?.source_sandbox_id;
-  const opencodeModel =
+  const runtimeModel =
     typeof session.metadata?.model === 'string'
       ? session.metadata.model
       : typeof session.metadata?.opencode_model === 'string'
@@ -310,7 +310,7 @@ export async function allocateRuntimeOnOpen(
         repoUrl: loaded.row.repoUrl,
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
-        opencodeModel,
+        runtimeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),

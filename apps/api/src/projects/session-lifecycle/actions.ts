@@ -148,7 +148,7 @@ export async function restartSession(input: {
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
-    const opencodeModel =
+    const runtimeModel =
       typeof session.metadata?.model === 'string'
         ? (session.metadata.model as string)
         : typeof session.metadata?.opencode_model === 'string'
@@ -187,7 +187,7 @@ export async function restartSession(input: {
           baseRef: session.baseRef ?? loaded.row.defaultBranch,
           agentName: session.agentName ?? 'default',
           initialPrompt,
-          opencodeModel,
+          runtimeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),

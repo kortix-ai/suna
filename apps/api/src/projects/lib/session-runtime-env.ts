@@ -10,7 +10,7 @@ export interface SessionRuntimeEnvInput {
   /** Frontend base URL (no /v1) the sandbox surfaces as user-facing links. */
   frontendUrl?: string;
   initialPrompt?: string | null;
-  opencodeModel?: string | null;
+  runtimeModel?: string | null;
   /** Discriminated v2 compatibility config or v3 ACP launch plan. */
   compiledRuntimeConfig?: CompiledRuntimeConfig | null;
 }
@@ -39,8 +39,8 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // must never create a parallel OpenCode HTTP session.
     ...(compiled?.kind !== 'acp' ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(input.opencodeModel && compiled?.kind !== 'acp'
-      ? { KORTIX_OPENCODE_MODEL: input.opencodeModel }
+    ...(input.runtimeModel && compiled?.kind !== 'acp'
+      ? { KORTIX_OPENCODE_MODEL: input.runtimeModel }
       : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on

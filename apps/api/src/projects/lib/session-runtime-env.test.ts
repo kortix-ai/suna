@@ -35,7 +35,7 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledRuntimeConfig: { kind: 'opencode-legacy', version: 2, config },
-      opencodeModel: 'anthropic/claude-opus-4-8',
+      runtimeModel: 'anthropic/claude-opus-4-8',
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(JSON.stringify(config));
@@ -45,7 +45,7 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       agentName: 'reviewer',
-      opencodeModel: 'must/not-leak',
+      runtimeModel: 'must/not-leak',
       compiledRuntimeConfig: {
         kind: 'acp',
         version: 3,

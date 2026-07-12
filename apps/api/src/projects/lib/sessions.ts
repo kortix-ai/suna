@@ -209,7 +209,7 @@ export async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
-  opencodeModel?: string | null;
+  runtimeModel?: string | null;
   /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
    *  OFF (default) → native BYOK providers must reach opencode, so the deny
@@ -361,7 +361,7 @@ export async function buildSessionSandboxEnvVars(input: {
       initialPrompt: input.initialPrompt,
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
-      opencodeModel: input.opencodeModel,
+      runtimeModel: input.runtimeModel,
       compiledRuntimeConfig,
     }),
   };
@@ -659,14 +659,14 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.model ?? body.runtime_model);
+  const runtimeModel = normalizeString(body.model ?? body.runtime_model);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
-    ...(opencodeModel ? { model: opencodeModel } : {}),
+    ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -782,7 +782,7 @@ export async function createProjectSession(input: {
           baseRef,
           agentName,
           initialPrompt,
-          opencodeModel,
+          runtimeModel,
           llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,
