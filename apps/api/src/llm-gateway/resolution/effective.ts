@@ -74,6 +74,33 @@ export function chooseEffectiveModel(params: {
 }
 
 /**
+ * Guard a resolved DEFAULT-chain model against staleness before it's handed to
+ * `auto` resolution / the UI. A stored default can silently go unservable after
+ * the fact — overwhelmingly a BYOK model (`provider/model`) whose provider key was
+ * later disconnected, or that was auto-seeded on connect and never had a key in
+ * THIS environment (the `seedProjectDefaultModelOnConnect` path). Returning it
+ * routes `auto` to a model with no upstream and dead-turns every session that
+ * didn't pick a model by hand — the exact "No upstream configured" failure the
+ * explicit-pin path in `resolveEffectiveModel` already guards against.
+ *
+ * Managed/platform defaults are servable whenever the tier allows (already enforced
+ * upstream by `chooseEffectiveModel`'s free-tier drop), so they are trusted without
+ * a per-request probe — only BYOK/codex defaults are probed. An unservable one
+ * degrades to the platform default (`null`), never a dead turn. The `probe` is
+ * injected so the decision stays pure and unit-testable without a DB.
+ */
+export async function degradeUnservableDefault(
+  model: string | null | undefined,
+  ctx: { hasProject: boolean },
+  probe: () => Promise<boolean>,
+): Promise<string | null> {
+  if (!model) return null;
+  if (isManagedRef(model)) return model;
+  if (!ctx.hasProject) return null; // BYOK resolves its key from a project secret
+  return (await probe()) ? model : null;
+}
+
+/**
  * Pure precedence for the effective AGENT:
  *   explicit (channel/session) → project default → 'default'.
  */

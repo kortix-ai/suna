@@ -3,9 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ArrowRight } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useApiHealth } from '@/hooks/usage/use-health';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnimatedBg } from '@/components/ui/animated-bg';
@@ -15,7 +16,25 @@ export function MaintenancePage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
+  const { data: adminRole } = useAdminRole();
+  const [isBypassing, setIsBypassing] = useState(false);
+
   const { data: healthData, isLoading: isCheckingHealth, refetch } = useApiHealth();
+
+  // Admins can bypass a full lockdown: mint a signed bypass cookie server-side
+  // (after an admin-role check), then hard-navigate so middleware re-evaluates
+  // with the cookie present and lets us into the app.
+  const handleAdminBypass = async () => {
+    setIsBypassing(true);
+    try {
+      const res = await fetch('/api/maintenance/bypass', { method: 'POST' });
+      if (!res.ok) throw new Error(`bypass failed (${res.status})`);
+      window.location.href = '/projects';
+    } catch (error) {
+      console.error('Admin maintenance bypass failed:', error);
+      setIsBypassing(false);
+    }
+  };
 
   const checkHealth = async () => {
     try {
@@ -36,6 +55,29 @@ export function MaintenancePage() {
 
   return (
     <div className="w-full relative overflow-hidden min-h-screen">
+      {/* Admin bypass — top-right. Only admins can mint the bypass cookie; the
+          server re-checks the role, so this button is safe to always render. */}
+      {adminRole?.isAdmin && (
+        <div className="absolute top-4 right-4 z-[60]">
+          <Button
+            onClick={handleAdminBypass}
+            disabled={isBypassing}
+            size="sm"
+            variant="outline"
+            className="gap-1.5 bg-card/80 backdrop-blur"
+          >
+            {isBypassing ? (
+              <KortixLoader size="small" customSize={14} />
+            ) : (
+              <>
+                Enter app (admin)
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
       <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
         {/* Animated background - exactly like hero section */}
         <AnimatedBg variant="hero" />
@@ -45,7 +87,7 @@ export function MaintenancePage() {
           <KortixLogo size={32} />
 
           {/* Title - 43px */}
-          <h1 className="text-5xl font-normal tracking-tight textforeground leading-none">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line46JsxTextWeLlBeRightBack')}</h1>
+          <h1 className="text-foreground text-5xl font-normal tracking-tight text-balance leading-none">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line46JsxTextWeLlBeRightBack')}</h1>
 
           {/* Description - 16px */}
           <p className="text-base text-foreground/60 text-center leading-relaxed">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line51JsxTextPerformingScheduledMaintenanceToEnhanceSystemStabilityAll')}</p>
@@ -57,10 +99,13 @@ export function MaintenancePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col gap-1">
                     <div className='flex items-center gap-2'>
-                      <div className="h-2.5 w-2.5 rounded-full border border-red-500 border-t-transparent animate-spin"></div>
-                      <span className="text-base font-medium text-red-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line62JsxTextServicesOffline')}</span>
+                      <span className="relative flex size-2.5 shrink-0">
+                        <span className="bg-kortix-red/60 absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"></span>
+                        <span className="bg-kortix-red relative inline-flex size-2.5 rounded-full"></span>
+                      </span>
+                      <span className="text-kortix-red text-base font-medium">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line62JsxTextServicesOffline')}</span>
                     </div>
-                    <p className="text-base text-gray-400">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line64JsxTextAllWorkerExecutionsAreCurrentlyPaused')}</p>
+                    <p className="text-muted-foreground text-base">{tHardcodedUi.raw('componentsMaintenanceMaintenancePage.line64JsxTextAllWorkerExecutionsAreCurrentlyPaused')}</p>
                   </div>
                 </div>
                 <Button

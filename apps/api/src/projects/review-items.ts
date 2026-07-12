@@ -10,10 +10,13 @@
 
 import { changeRequests, executorExecutions, reviewItems } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
 import { changeRequestToReviewItem, executorExecutionToReviewItem } from './review-adapters';
 
 type ReviewItemRow = typeof reviewItems.$inferSelect;
+type ChangeRequestRow = typeof changeRequests.$inferSelect;
+type ExecutorExecutionRow = typeof executorExecutions.$inferSelect;
 
 export type ReviewSegment = 'needs_you' | 'waiting' | 'done';
 export type ReviewVerdict = 'approve' | 'reject' | 'changes' | 'answer' | 'dismiss';
@@ -99,31 +102,72 @@ export async function listReviewItems(
 }
 
 /**
+ * One inbox source (native items, change requests, executor approvals). Each is
+ * fetched INDEPENDENTLY and folded in memory — there is no SQL join.
+ */
+export interface InboxSources {
+  native: () => Promise<ReviewItemRow[]>;
+  changeRequests: () => Promise<ChangeRequestRow[]>;
+  executorApprovals: () => Promise<ExecutorExecutionRow[]>;
+}
+
+/**
+ * Run one inbox source, degrading a failure to an empty contribution.
+ *
+ * This endpoint is POLLED by the sidebar (every 8–20s) and the Review Center, so
+ * one flaky source must NEVER 500 the whole inbox. The recurring real-world cause
+ * is schema/enum drift on a DB the API code has outrun (e.g. `review_items` not
+ * yet migrated, or an `executor_execution_status` value the deployed enum lacks):
+ * that throws a Postgres error which — unguarded — took the entire response down.
+ * We surface the failure to Sentry (so the drift is still visible and fixable) but
+ * return `[]` for that source and keep serving the sources that DO work.
+ */
+async function safeSource<T>(label: string, run: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await run();
+  } catch (error) {
+    console.error(`[review-items] inbox source "${label}" failed; degrading to empty`, error);
+    captureException(error, { reviewInboxSource: label });
+    return [];
+  }
+}
+
+/** Map rows to DTOs, skipping (not throwing on) any single row that fails to serialize. */
+function safeMap<T, R>(label: string, rows: T[], fn: (row: T) => R): R[] {
+  const out: R[] = [];
+  for (const row of rows) {
+    try {
+      out.push(fn(row));
+    } catch (error) {
+      console.error(`[review-items] failed to serialize a "${label}" row; skipping`, error);
+      captureException(error, { reviewInboxSource: label, phase: 'serialize' });
+    }
+  }
+  return out;
+}
+
+/**
  * The full inbox read model: native review items UNIONed with adapted sources
  * (Change Requests now; executor/tunnel approvals next), filtered to a segment /
  * kind and sorted newest-first. Returns already-serialized DTOs.
+ *
+ * Every source and every row is fault-isolated (see {@link safeSource} /
+ * {@link safeMap}) so a partial failure degrades to a partial (or empty) inbox
+ * rather than a 500. Pure over its injected `sources` — unit-testable without a DB.
  */
-export async function listInboxItems(
-  projectId: string,
+export async function collectInboxItems(
+  sources: InboxSources,
   opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
 ) {
   const [nativeRows, crRows, execRows] = await Promise.all([
-    db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
-    db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
-    db
-      .select()
-      .from(executorExecutions)
-      .where(
-        and(
-          eq(executorExecutions.projectId, projectId),
-          eq(executorExecutions.status, 'pending_approval'),
-        ),
-      ),
+    safeSource('native', sources.native),
+    safeSource('change_requests', sources.changeRequests),
+    safeSource('executor_executions', sources.executorApprovals),
   ]);
   const items = [
-    ...nativeRows.map(serializeReviewItem),
-    ...crRows.map(changeRequestToReviewItem),
-    ...execRows.map(executorExecutionToReviewItem),
+    ...safeMap('native', nativeRows, serializeReviewItem),
+    ...safeMap('change_requests', crRows, changeRequestToReviewItem),
+    ...safeMap('executor_executions', execRows, executorExecutionToReviewItem),
   ];
   const segmentStatuses = opts.segment ? statusesForSegment(opts.segment) : null;
   return items
@@ -133,6 +177,31 @@ export async function listInboxItems(
         (!opts.kind || i.kind === opts.kind),
     )
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export async function listInboxItems(
+  projectId: string,
+  opts: { segment?: ReviewSegment; kind?: ReviewItemRow['kind'] } = {},
+) {
+  return collectInboxItems(
+    {
+      native: () =>
+        db.select().from(reviewItems).where(eq(reviewItems.projectId, projectId)),
+      changeRequests: () =>
+        db.select().from(changeRequests).where(eq(changeRequests.projectId, projectId)),
+      executorApprovals: () =>
+        db
+          .select()
+          .from(executorExecutions)
+          .where(
+            and(
+              eq(executorExecutions.projectId, projectId),
+              eq(executorExecutions.status, 'pending_approval'),
+            ),
+          ),
+    },
+    opts,
+  );
 }
 
 export interface InsertReviewItemInput {

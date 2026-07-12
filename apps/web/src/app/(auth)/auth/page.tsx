@@ -141,6 +141,7 @@ function AuthCardForm({
   const [verifying, setVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const lastTriedCode = useRef('');
+  const emailRef = useRef<HTMLInputElement>(null);
 
   // Gentle two-part entrance per step: header first, body 60ms behind.
   const rise = (delay = 0) => ({
@@ -314,14 +315,33 @@ function AuthCardForm({
         }
       }
 
-      if (passwordEnabled) {
-        setStep('credentials');
+      // Magic link is the default path: Continue emails a code and lands the
+      // user on the code step. Password is the secondary route, reachable from
+      // the button below the form — so it only loads for people who want it.
+      if (magicLinkEnabled) {
+        await sendMagic(trimmed, 'continue');
         return;
       }
-      await sendMagic(trimmed, 'continue');
+      setStep('credentials');
     } finally {
       setPendingAction(null);
     }
+  };
+
+  // Escape hatch off the code step for people who'd rather type a password.
+  // The address can live in either field depending on how the step was reached,
+  // and the credentials step renders it read-only from `email` — so settle on
+  // one before switching, and bounce focus back if we somehow have neither.
+  const goToPassword = () => {
+    const target = (email || sentEmail || '').trim();
+    if (!target) {
+      emailRef.current?.focus();
+      return;
+    }
+    if (email !== target) setEmail(target);
+    clearNotices();
+    setCode('');
+    setStep('credentials');
   };
 
   const handleCredentialsSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -466,14 +486,32 @@ function AuthCardForm({
                     </button>
                   )}
                 </p>
-                <p>
+                {/* The two ways off this step, side by side — same weight, same
+                    dialect as the resend line above. `-my-2 py-2` grows the hit
+                    area to ~40px without opening a gap between the rows. */}
+                <p className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={goToEntry}
-                    className="hover:text-foreground underline-offset-4 transition-colors hover:underline"
+                    className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
                   >
                     Use a different email
                   </button>
+                  {passwordEnabled && (
+                    <>
+                      <span aria-hidden className="text-muted-foreground/40 select-none">
+                        ·
+                      </span>
+                      <button
+                        type="button"
+                        onClick={goToPassword}
+                        disabled={pending}
+                        className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                      >
+                        Use password instead
+                      </button>
+                    </>
+                  )}
                 </p>
               </>
             )}
@@ -571,7 +609,7 @@ function AuthCardForm({
       <motion.div {...rise(0)}>
         <StepHeader
           title={mode === 'signup' ? 'Create your account' : 'Welcome to Kortix'}
-          tagline="Your AI workforce"
+          tagline="Your AI Command Center"
         />
       </motion.div>
 
@@ -593,6 +631,7 @@ function AuthCardForm({
           <div className="space-y-3">
             <FieldLabel htmlFor="email">Email</FieldLabel>
             <Input
+              ref={emailRef}
               id="email"
               name="email"
               type="email"
@@ -697,7 +736,7 @@ function AuthContent() {
   if (user) {
     return (
       <AuthFrame footerVariant="default">
-        <StepHeader title="Welcome to Kortix" tagline="Your AI workforce" />
+        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
       </AuthFrame>
     );
   }
