@@ -1,5 +1,3 @@
-import type { Part } from '@kortix/sdk/opencode-client';
-
 /** Debounce window before the run-complete reconcile fires (ms). */
 export const IDLE_RECONCILE_DELAY_MS = 400;
 
@@ -9,11 +7,15 @@ type ToolPartState = {
   raw?: unknown;
 };
 
+export type IdleReconcilePart = {
+  type: string;
+  state?: ToolPartState;
+};
+
 /** Narrow a part to its tool state, or undefined if it isn't a tool part. */
-function readToolState(part: Part): ToolPartState | undefined {
-  const p = part as { type?: string; state?: ToolPartState };
-  if (p.type !== 'tool') return undefined;
-  return p.state;
+function readToolState(part: IdleReconcilePart): ToolPartState | undefined {
+  if (part.type !== 'tool') return undefined;
+  return part.state;
 }
 
 /**
@@ -32,7 +34,7 @@ function readToolState(part: Part): ToolPartState | undefined {
  */
 export function hasUnsettledToolPart(
   messages: ReadonlyArray<{ id: string }>,
-  partsByMessageId: Readonly<Record<string, readonly Part[] | undefined>>,
+  partsByMessageId: Readonly<Record<string, readonly IdleReconcilePart[] | undefined>>,
 ): boolean {
   for (const m of messages) {
     const parts = partsByMessageId[m.id];

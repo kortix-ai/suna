@@ -1,7 +1,24 @@
 'use client';
 
 import { create } from 'zustand';
-import type { SessionStatus } from '@kortix/sdk/opencode-client';
+
+export type SessionStatus =
+  | { type: 'idle' }
+  | { type: 'busy' }
+  | {
+      type: 'retry';
+      attempt: number;
+      message: string;
+      next: number;
+      action?: {
+        reason: string;
+        provider: string;
+        title: string;
+        message: string;
+        label: string;
+        link?: string;
+      };
+    };
 
 interface SessionStatusState {
   statuses: Record<string, SessionStatus>;
