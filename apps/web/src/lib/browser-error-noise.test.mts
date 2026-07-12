@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isClientRequestTimeoutMessage,
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
@@ -656,6 +657,141 @@ test('does NOT suppress a same-shaped message reading a different property', () 
       }),
       false,
       `expected "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error b1db01e5c9dec8c62bf37ca994cbe304550a7699b8fcd04c8f5c01cc76fc9dc7
+// (Kortix Frontend prod, application_id 2346967): a single
+// `ApiError — Request timed out after 30s: /projects/<id>/sessions/<sid>/audit`
+// at 2026-07-12 13:53 UTC. The SDK's `makeRequest` aborts a non-streaming fetch
+// once its 30s budget elapses (`packages/sdk/src/core/http/api-client.ts`,
+// `didTimeout` branch) and surfaces `ApiError(..., { code: 'TIMEOUT' })`. This
+// is the frontend mirror of the API's request-deadline 503
+// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// kortix-ai/suna#4524): the API bounds every non-streaming request to a 25s
+// server deadline (clean 503 + Retry-After), and react-query retries background
+// polls — the session-audit route is polled every 5–15s from several session
+// surfaces — so a 30s client abort is an EXPECTED, retryable degradation under
+// momentary API saturation, not an actionable bug. The saturation signal stays
+// in per-route metrics + the structured 503 warn log. `handleApiError` already
+// drops `code === 'TIMEOUT'` from `captureException`; these checks are the
+// telemetry-side backstop for leak paths (ClientErrorBoundary / route-error /
+// app-error / onunhandledrejection).
+const CLIENT_REQUEST_TIMEOUT_EVENTS = [
+  // The exact assigned occurrence — endpoint varies per call, so match the
+  // SDK's `Request timed out after <N>s: ` prefix, not the full URL.
+  'Request timed out after 30s: /projects/24e99500-c925-481a-bc88-5b89dba4d965/sessions/88488045-8cd7-4c6b-ad0f-2b56a4c9cb25/audit',
+  // The budget is configurable per call; the seconds value is not load-bearing.
+  'Request timed out after 60s: /accounts',
+  // The ApiError-class-prefixed wrapper.
+  'ApiError: Request timed out after 30s: /projects/p/sessions/s/sandbox-health',
+  // An unhandled-rejection leak path preserving the message.
+  'Unhandled promise rejection: Request timed out after 30s: /projects/p/sessions/s/audit',
+  'Unhandled promise rejection: ApiError: Request timed out after 30s: /change-requests',
+]
+
+test('classifies every client-side request-deadline timeout as expected noise', () => {
+  for (const message of CLIENT_REQUEST_TIMEOUT_EVENTS) {
+    assert.equal(
+      isClientRequestTimeoutMessage(message),
+      true,
+      `expected ${message} to be classified as a client request timeout`,
+    )
+  }
+})
+
+test('suppresses a client-side request-timeout Sentry event regardless of capture path', () => {
+  for (const value of CLIENT_REQUEST_TIMEOUT_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/sdk.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a client-side request-timeout unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Request timed out after 30s: /projects/p/sessions/s/audit',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the API server-deadline 503 message (different wording)', () => {
+  // The API's request-deadline 503 is `Request exceeded the 25s server processing
+  // deadline` — a different, server-side wording that must keep reporting if it
+  // ever reaches the frontend Sentry config (it is de-noised at the API source
+  // by #4524, not here).
+  for (const value of [
+    'Request exceeded the 25s server processing deadline',
+    'Request exceeded the 30s server processing deadline',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected server-deadline message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected server-deadline Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a generic third-party "request timed out" message', () => {
+  // A third-party library's generic timeout wording must not be matched — only
+  // the SDK's exact `Request timed out after <N>s: ` prefix is suppressed.
+  for (const value of [
+    'The request timed out',
+    'Request timed out',
+    'request timed out after 5000ms',
+    'Network request timed out, please retry',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected generic message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected generic Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real 5xx server ApiError', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'Service maintenance in progress. Please try again later.',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected real server error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected real server error "${value}" to keep reporting`,
     )
   }
 })
