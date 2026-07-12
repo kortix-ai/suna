@@ -237,6 +237,28 @@ export async function restartSession(input: {
       try {
         await provider.stop(externalId).catch(() => {});
         await provider.start(externalId);
+        // A provider may acknowledge start before discovering that the backing
+        // runtime is gone (observed live with Platinum: POST start succeeded,
+        // the next GET returned removed). Never mark the DB running from command
+        // acceptance alone; verify provider truth first.
+        let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        for (let attempt = 1; verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15; attempt += 1) {
+          await Bun.sleep(1_000);
+          verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        }
+        if (verifiedStatus === 'removed') {
+          const retired = await retireConfirmedMissingRuntime(
+            existingSandbox,
+            'restart_post_start_removed',
+          ).catch(() => false);
+          if (retired) await provisionReplacementRuntime();
+          return;
+        }
+        if (verifiedStatus !== 'running') {
+          throw new Error(
+            `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
+          );
+        }
         await db
           .update(sessionSandboxes)
           .set({ status: 'active', updatedAt: new Date() })
