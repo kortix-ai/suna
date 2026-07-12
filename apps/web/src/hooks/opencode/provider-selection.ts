@@ -1,9 +1,13 @@
-import type { ProviderListResponse as SdkProviderListResponse } from '@kortix/sdk/opencode-client';
-
 import type { ProjectLlmCatalogResponse } from '@kortix/sdk/projects-client';
 import { LLM_PROVIDERS } from '@/lib/llm-providers';
 
-export type ProviderListResponse = SdkProviderListResponse;
+export type ProviderListResponse = {
+  all?: Array<{ id: string; name: string; models: Record<string, any>; [key: string]: any }>;
+  connected?: string[];
+  default?: Record<string, string>;
+  providers?: Array<{ id: string; name: string; models: Record<string, any>; [key: string]: any }>;
+  [key: string]: any;
+};
 
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 const NATIVE_EXCLUDED_PROVIDER_IDS = new Set(['kortix']);
