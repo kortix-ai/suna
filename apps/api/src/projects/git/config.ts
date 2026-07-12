@@ -7,10 +7,16 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
-} from '@kortix/manifest-schema';
-import { type LoadedAgents, extractAgents } from '../agents';
-import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
-import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
+} from "@kortix/manifest-schema";
+import { type LoadedAgents, extractAgents } from "../agents";
+import { compileRuntimeConfig } from "../lib/compile-runtime-config";
+import type { CompiledRuntimeConfig } from "../lib/compile-runtime-config";
+import { listRepoFiles, readManifestFromRepo, readRepoFile } from "./files";
+import type {
+  GitBackedProject,
+  ProjectConfigSummary,
+  ProjectFileEntry,
+} from "./types";
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
   try {
@@ -24,11 +30,11 @@ function stripTomlComment(line: string) {
   let quote: string | null = null;
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
-    if ((ch === '"' || ch === "'") && line[i - 1] !== '\\') {
+    if ((ch === '"' || ch === "'") && line[i - 1] !== "\\") {
       quote = quote === ch ? null : quote || ch;
       continue;
     }
-    if (ch === '#' && !quote) return line.slice(0, i);
+    if (ch === "#" && !quote) return line.slice(0, i);
   }
   return line;
 }
@@ -41,14 +47,14 @@ function parseTomlValue(rawValue: string): unknown {
   ) {
     return value.slice(1, -1);
   }
-  if (value.startsWith('[') && value.endsWith(']')) {
+  if (value.startsWith("[") && value.endsWith("]")) {
     const inner = value.slice(1, -1).trim();
     if (!inner) return [];
     return Array.from(inner.matchAll(/"([^"]*)"|'([^']*)'|([^,\s][^,]*)/g))
-      .map((match) => (match[1] ?? match[2] ?? match[3] ?? '').trim())
+      .map((match) => (match[1] ?? match[2] ?? match[3] ?? "").trim())
       .filter(Boolean);
   }
-  if (value === 'true' || value === 'false') return value === 'true';
+  if (value === "true" || value === "false") return value === "true";
   if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
   return value;
 }
@@ -79,7 +85,7 @@ function asStringArray(value: unknown) {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of value) {
-    if (typeof item !== 'string') continue;
+    if (typeof item !== "string") continue;
     const key = item.trim().toUpperCase();
     if (!/^[A-Z_][A-Z0-9_]*$/.test(key) || seen.has(key)) continue;
     seen.add(key);
@@ -90,7 +96,7 @@ function asStringArray(value: unknown) {
 
 function envRequirements(manifest: Record<string, unknown>) {
   const env =
-    typeof manifest.env === 'object' && manifest.env
+    typeof manifest.env === "object" && manifest.env
       ? (manifest.env as Record<string, unknown>)
       : {};
   return {
@@ -106,20 +112,20 @@ function parseJsonCString(raw: string | null, key: string) {
 }
 
 function parseFrontmatter(raw: string | null) {
-  if (!raw?.startsWith('---')) return {};
-  const end = raw.indexOf('\n---', 3);
+  if (!raw?.startsWith("---")) return {};
+  const end = raw.indexOf("\n---", 3);
   if (end === -1) return {};
   const meta: Record<string, string> = {};
   for (const line of raw.slice(3, end).split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
     if (!match) continue;
-    meta[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
+    meta[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
   }
   return meta;
 }
 
 function agentNameFromPath(path: string) {
-  return path.split('/').pop()?.replace(/\.md$/, '') || path;
+  return path.split("/").pop()?.replace(/\.md$/, "") || path;
 }
 
 function parseFullManifest(
@@ -136,7 +142,9 @@ function parseFullManifest(
 
 function hasAgentsDeclaration(raw: string | null): boolean {
   // TOML `[[agents]]` / `[agents]`, OR YAML `agents:`.
-  return Boolean(raw && (/^\s*\[\[?agents\]?\]/m.test(raw) || /^\s*agents\s*:/m.test(raw)));
+  return Boolean(
+    raw && (/^\s*\[\[?agents\]?\]/m.test(raw) || /^\s*agents\s*:/m.test(raw)),
+  );
 }
 
 /** Tolerant `kortix_version` read for a raw parsed manifest object — mirrors
@@ -144,48 +152,56 @@ function hasAgentsDeclaration(raw: string | null): boolean {
  *  same back-compat rule every other manifest reader in this package uses). */
 function manifestSchemaVersionFor(parsed: Record<string, unknown>): number {
   const raw = parsed.kortix_version;
-  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.floor(raw);
-  if (typeof raw === 'string') {
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.floor(raw);
+  if (typeof raw === "string") {
     const n = Number(raw);
     if (Number.isFinite(n)) return Math.floor(n);
   }
   return 1;
 }
 
-type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' | 'enabled'>;
+type NativeAgentSummary = Omit<
+  ProjectConfigSummary["agents"][number],
+  "source" | "enabled"
+>;
 
 export function resolveConfigAgents(
   nativeAgents: NativeAgentSummary[],
   loadedAgents: LoadedAgents,
-): Pick<ProjectConfigSummary, 'agent_discovery' | 'agent_source' | 'agents'> {
+): Pick<ProjectConfigSummary, "agent_discovery" | "agent_source" | "agents"> {
   if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
     return {
-      agent_discovery: 'opencode',
-      agent_source: 'native',
+      agent_discovery: "opencode",
+      agent_source: "native",
       agents: nativeAgents.map((agent) => ({
         ...agent,
-        source: 'runtime' as const,
+        source: "runtime" as const,
         enabled: true,
       })),
     };
   }
 
-  const nativeByName = new Map(nativeAgents.map((agent) => [agent.name, agent]));
-  const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
+  const nativeByName = new Map(
+    nativeAgents.map((agent) => [agent.name, agent]),
+  );
+  const nativeByPath = new Map(
+    nativeAgents.map((agent) => [agent.path, agent]),
+  );
   return {
-    agent_discovery: 'declarative',
-    agent_source: 'declarative',
+    agent_discovery: "declarative",
+    agent_source: "declarative",
     agents: loadedAgents.specs
       .filter((spec) => spec.enabled)
       .map((spec) => {
         const native =
-          (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
+          (spec.file ? nativeByPath.get(spec.file) : undefined) ??
+          nativeByName.get(spec.name);
         return {
           name: spec.name,
           path: spec.file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
-          source: 'kortix.yaml' as const,
+          source: "kortix.yaml" as const,
           enabled: spec.enabled,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
@@ -199,11 +215,26 @@ export function resolveConfigAgents(
   };
 }
 
+export function attachCompiledRuntimeIdentity(
+  agents: ProjectConfigSummary["agents"],
+  compiledRuntime: CompiledRuntimeConfig | null,
+): ProjectConfigSummary["agents"] {
+  return agents.map((agent) => {
+    const launch = compiledRuntime?.agents[agent.name];
+    return {
+      ...agent,
+      runtime: launch?.runtime ?? null,
+      harness: launch?.harness ?? null,
+    };
+  });
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
 ): Promise<ProjectConfigSummary> {
-  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+  const repoFiles =
+    files ?? (await listRepoFiles(project, project.defaultBranch));
   // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
   // the matched format. Without this, a yaml-only project reads no manifest here
   // → its [[agents]] scoping silently vanishes from the config introspection.
@@ -213,7 +244,9 @@ export async function loadProjectConfig(
     project.defaultBranch,
   ).catch(() => null);
   const manifestRaw = resolved?.content ?? null;
-  const manifestFormat: ManifestFormat = resolved ? manifestFormatForPath(resolved.path) : 'toml';
+  const manifestFormat: ManifestFormat = resolved
+    ? manifestFormatForPath(resolved.path)
+    : "toml";
   const manifestFilePath = resolved?.path ?? project.manifestPath;
   const parsedManifest = parseFullManifest(manifestRaw, manifestFormat);
   const manifest = parsedManifest ?? parseManifest(manifestRaw);
@@ -234,9 +267,9 @@ export async function loadProjectConfig(
           specs: [],
           errors: [
             {
-              name: '(manifest)',
+              name: "(manifest)",
               path: manifestFilePath,
-              error: 'Failed to parse agents declaration',
+              error: "Failed to parse agents declaration",
             },
           ],
         }
@@ -244,7 +277,10 @@ export async function loadProjectConfig(
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
-  const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
+  const openCodeRaw = await optionalFile(
+    project,
+    `${opencodeDir}/opencode.jsonc`,
+  );
 
   // Build matchers off the configured opencode dir. The trailing
   // `s?` on agents/commands is opencode's own historical quirk (it
@@ -270,7 +306,19 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const { agent_discovery, agent_source, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const resolvedAgents = resolveConfigAgents(nativeAgents, loadedAgents);
+  const compiledRuntime = (() => {
+    try {
+      return parsedManifest ? compileRuntimeConfig(parsedManifest) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const agents = attachCompiledRuntimeIdentity(
+    resolvedAgents.agents,
+    compiledRuntime,
+  );
+  const { agent_discovery, agent_source } = resolvedAgents;
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -281,7 +329,10 @@ export async function loadProjectConfig(
       seenSkills.add(match[1]);
       return true;
     })
-    .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
+    .map((match) => ({
+      slug: match[1],
+      path: `${opencodeDir}/skills/${match[1]}/SKILL.md`,
+    }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
   const skills = await Promise.all(
     skillPaths.map(async ({ slug, path }) => {
@@ -323,7 +374,7 @@ export async function loadProjectConfig(
   };
 
   const runtimeDefaultAgent =
-    loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent');
+    loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, "default_agent");
 
   return {
     is_kortix_repo: Object.values(signals).some(Boolean),
@@ -352,21 +403,21 @@ export async function loadProjectConfig(
  */
 function resolveOpencodeDir(manifest: Record<string, unknown>): string {
   const opencode = manifest.opencode;
-  if (opencode && typeof opencode === 'object' && !Array.isArray(opencode)) {
+  if (opencode && typeof opencode === "object" && !Array.isArray(opencode)) {
     const raw = (opencode as Record<string, unknown>).config_dir;
-    if (typeof raw === 'string' && raw.trim()) {
+    if (typeof raw === "string" && raw.trim()) {
       const trimmed = raw.trim();
       // Reject absolute paths + `..` segments here too. parseManifestString
       // already validates the same on the trigger path; this is a
       // belt-and-suspenders since loadProjectConfig uses its own parser.
-      if (!trimmed.startsWith('/') && !trimmed.split('/').includes('..')) {
-        return trimmed.replace(/\/+$/, '');
+      if (!trimmed.startsWith("/") && !trimmed.split("/").includes("..")) {
+        return trimmed.replace(/\/+$/, "");
       }
     }
   }
-  return '.kortix/opencode';
+  return ".kortix/opencode";
 }
 
 function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

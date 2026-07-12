@@ -11,7 +11,7 @@ export interface GitBackedProject {
 
 export interface ProjectFileEntry {
   path: string;
-  type: 'file';
+  type: "file";
   size: number | null;
 }
 
@@ -23,28 +23,30 @@ export interface ProjectConfigSummary {
   env: { required: string[]; optional: string[] };
   runtime_config_raw: string | null;
   runtime_default_agent: string | null;
-  agent_source: 'native' | 'declarative';
+  agent_source: "native" | "declarative";
   /** @deprecated Use runtime_config_raw. */
   open_code_raw: string | null;
   /** @deprecated Use runtime_default_agent. */
   open_code_default_agent: string | null;
   /** @deprecated Use agent_source. */
-  agent_discovery: 'opencode' | 'declarative';
+  agent_discovery: "opencode" | "declarative";
   agents: Array<{
     name: string;
     path: string;
     description: string | null;
     mode: string | null;
-    source: 'runtime' | 'opencode' | 'kortix.yaml';
+    source: "runtime" | "opencode" | "kortix.yaml";
     enabled?: boolean;
+    runtime?: string | null;
+    harness?: "claude" | "codex" | "opencode" | "pi" | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`
      *  means unscoped (every secret/connector the launching user can see). */
     scope?: {
-      env: string[] | 'all';
-      connectors: string[] | 'all';
-      kortix_cli: string[] | 'all';
+      env: string[] | "all";
+      connectors: string[] | "all";
+      kortix_cli: string[] | "all";
     };
   }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
@@ -93,7 +95,8 @@ export interface GitLogEntry {
 export interface GitCommitFile {
   path: string;
   old_path: string | null;
-  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  status:
+    "added" | "modified" | "deleted" | "renamed" | "copied" | "typechange";
   additions: number;
   deletions: number;
 }

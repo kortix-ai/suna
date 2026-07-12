@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * @kortix/sdk/react — Runtime React hook surface.
@@ -25,13 +25,17 @@
 // Router-agnostic route scope: the host injects "the project the user is
 // looking at" here (Next hosts derive it from useParams once, near the root);
 // `useRuntimeProviders`/`useRuntimeLocal` resolve it via this context.
-export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
-export * from './use-runtime-sessions';
-export * from './use-runtime-local';
-export * from './use-runtime-mcp';
-export * from './use-runtime-pty';
-export * from './use-runtime-config';
-export * from './use-model-store';
+export {
+  KortixProjectProvider,
+  useKortixRouteProjectId,
+} from "./route-project";
+export * from "./use-runtime-sessions";
+export * from "./use-runtime-local";
+export * from "./harness-capabilities";
+export * from "./use-runtime-mcp";
+export * from "./use-runtime-pty";
+export * from "./use-runtime-config";
+export * from "./use-model-store";
 // Runtime health has three independent layers, each covering a failure mode
 // the others can't see — do not collapse them:
 //   1. Boot readiness is server-truth: `useSession`'s /start resolves
@@ -50,31 +54,31 @@ export * from './use-model-store';
 //      every 30s (`POLL_CONNECTED`), so a mid-session death can take up to
 //      ~30s to surface — traded against not hammering a healthy sandbox with a
 //      tight poll forever.
-export * from './use-runtime-reconnect';
+export * from "./use-runtime-reconnect";
 // Legacy runtime pending-request store. ACP-native prompts are surfaced through
 // `useSession().acp.envelopes`; this remains exported only for runtime adapter
 // screens that have not yet been rewritten.
-export { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
+export { useRuntimePendingStore } from "../browser/stores/runtime-pending-store";
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-} from '../browser/stores/sandbox-connection-store';
+} from "../browser/stores/sandbox-connection-store";
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
-export { prefetchSessionStart } from './prefetch-session-start';
-export * from './use-canonical-runtime-session';
-export * from './use-gateway-catalog-sync';
-export * from './use-visible-agents';
-export * from './provider-refresh';
+export { prefetchSessionStart } from "./prefetch-session-start";
+export * from "./use-canonical-runtime-session";
+export * from "./use-gateway-catalog-sync";
+export * from "./use-visible-agents";
+export * from "./provider-refresh";
 // Runtime-free model catalog → selectable model list. Lets a host build a model
 // picker BEFORE a session runtime exists (e.g. on a "new session" screen) by
 // feeding `project(id).llmCatalog()` through these, with correct provider/model
 // ids — no guessing the gateway-vs-BYOK key format.
-export { flattenModels, type FlatModel } from './model-flatten';
-export { projectLlmCatalogToProviderList } from './provider-selection';
-export { useProjectModels } from './use-project-models';
-export { useProjectConfig } from './use-project-config';
-export type { ProjectConfigSummary } from '../core/rest/projects-client';
+export { flattenModels, type FlatModel } from "./model-flatten";
+export { projectLlmCatalogToProviderList } from "./provider-selection";
+export { useProjectModels } from "./use-project-models";
+export { useProjectConfig } from "./use-project-config";
+export type { ProjectConfigSummary } from "../core/rest/projects-client";
 
 // ── The one-hook session surface ─────────────────────────────────────────────
 // `useSession(projectId, sessionId)` collapses the entire runtime dance (start →
@@ -87,20 +91,20 @@ export {
   type SessionPhase,
   type UseSessionResult,
   type UseSessionOptions,
-} from './use-session';
-export { useSessionPicks, type SessionPicks } from './use-session-picks';
-export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
+} from "./use-session";
+export { useSessionPicks, type SessionPicks } from "./use-session-picks";
+export { useRuntimePhase, type RuntimePhase } from "./use-runtime-phase";
 export {
   useQuestionSelfHeal,
   hasRunningQuestionTool,
   type UseQuestionSelfHealOptions,
-} from './use-question-self-heal';
+} from "./use-question-self-heal";
 export {
   usePermissionSelfHeal,
   findPermissionBlockedCandidate,
   hasActiveNonQuestionTool,
   type UsePermissionSelfHealOptions,
-} from './use-permission-self-heal';
+} from "./use-permission-self-heal";
 export {
   startStashKey,
   writeStartStash,
@@ -109,4 +113,4 @@ export {
   migrateStash,
   migrateLegacyStash,
   type StartStash,
-} from './session-start-stash';
+} from "./session-start-stash";

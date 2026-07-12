@@ -1,17 +1,23 @@
-'use client';
+"use client";
 
-import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
-import type { Agent } from '../../core/runtime/wire-types';
-import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
+import { useQuery } from "@tanstack/react-query";
+import { getClient } from "../../core/runtime/client";
+import type { Agent } from "../../core/runtime/wire-types";
+import { runtimeKeys, useRuntimeReady } from "./keys";
+import {
+  unwrap,
+  getLSCache,
+  setLSCache,
+  LS_AGENTS,
+  CACHE_SCOPE_GLOBAL,
+} from "./shared";
 import {
   getProjectDetail,
   type ProjectConfigSummary,
-} from '../../core/rest/projects-client';
+} from "../../core/rest/projects-client";
 
 // Re-export filtered agents hook for UI agent selectors
-export { useVisibleAgents } from '../use-visible-agents';
+export { useVisibleAgents } from "../use-visible-agents";
 
 // ============================================================================
 // Agent Hooks
@@ -23,7 +29,10 @@ export { useVisibleAgents } from '../use-visible-agents';
  * projects and Runtime file discovery for legacy projects. Without `projectId`,
  * this falls back to the sandbox runtime.
  */
-export function useRuntimeAgents(options?: { directory?: string; projectId?: string | null }) {
+export function useRuntimeAgents(options?: {
+  directory?: string;
+  projectId?: string | null;
+}) {
   const directory = options?.directory;
   const projectId = options?.projectId ?? null;
   const runtimeReady = useRuntimeReady();
@@ -34,9 +43,9 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
       : CACHE_SCOPE_GLOBAL;
   return useQuery<Agent[]>({
     queryKey: projectId
-      ? ['project-detail', projectId, 'agents']
+      ? ["project-detail", projectId, "agents"]
       : directory
-        ? [...runtimeKeys.agents(), 'dir', directory]
+        ? [...runtimeKeys.agents(), "dir", directory]
         : runtimeKeys.agents(),
     queryFn: async () => {
       if (projectId) {
@@ -46,9 +55,13 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
         return agents;
       }
       const client = getClient();
-      const result = await client.app.agents(directory ? { directory } : undefined);
+      const result = await client.app.agents(
+        directory ? { directory } : undefined,
+      );
       const data = unwrap(result);
-      const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
+      const agents: Agent[] = Array.isArray(data)
+        ? data
+        : Object.values(data as Record<string, Agent>);
       // Agents are defined in the project repo through the selected runtime, so the
       // roster is stable across every session that shares a working directory.
       // Cache under a directory-scoped (or global) STABLE key — not the
@@ -70,9 +83,12 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
  * "first visible agent" fallback agrees with the project contract. Explicit
  * per-session/user picks still resolve by name and therefore keep precedence.
  */
-export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary): Agent[] {
+export function projectConfigAgentsToRuntimeAgents(
+  config: ProjectConfigSummary,
+): Agent[] {
   const agents = config.agents.map(projectConfigAgentToRuntimeAgent);
-  const defaultName = config.runtime_default_agent ?? config.open_code_default_agent;
+  const defaultName =
+    config.runtime_default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;
@@ -82,7 +98,7 @@ export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary)
 }
 
 function projectConfigAgentToRuntimeAgent(
-  agent: ProjectConfigSummary['agents'][number],
+  agent: ProjectConfigSummary["agents"][number],
 ): Agent {
   return {
     name: agent.name,
@@ -90,6 +106,8 @@ function projectConfigAgentToRuntimeAgent(
     mode: agent.mode ?? undefined,
     source: agent.source,
     hidden: agent.enabled === false,
+    runtime: agent.runtime ?? undefined,
+    harness: agent.harness ?? undefined,
   } as unknown as Agent;
 }
 

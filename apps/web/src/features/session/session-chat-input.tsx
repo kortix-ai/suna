@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
@@ -40,12 +41,12 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import { resolveComposerResetOnSend } from './composer-reset';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
@@ -314,15 +315,22 @@ export function AgentSelector({
                     }}
                   >
                     <div className="min-w-0 flex-1 py-0.5">
-                      <div
-                        className={cn(
-                          'truncate text-sm leading-tight capitalize',
-                          isSelected
-                            ? 'text-foreground font-semibold'
-                            : 'text-foreground/90 font-medium',
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <div
+                          className={cn(
+                            'truncate text-sm leading-tight capitalize',
+                            isSelected
+                              ? 'text-foreground font-semibold'
+                              : 'text-foreground/90 font-medium',
+                          )}
+                        >
+                          {agent.name}
+                        </div>
+                        {agent.harness && (
+                          <Badge variant="outline" size="xs" className="shrink-0 capitalize">
+                            {agent.harness}
+                          </Badge>
                         )}
-                      >
-                        {agent.name}
                       </div>
                       {agent.description && (
                         <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
@@ -1344,9 +1352,7 @@ export function SessionChatInput({
   useEffect(() => {
     if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
     setText((current) =>
-      prefillMode === 'merge'
-        ? mergeFailedSubmissionText(current, prefillText)
-        : prefillText,
+      prefillMode === 'merge' ? mergeFailedSubmissionText(current, prefillText) : prefillText,
     );
     if (prefillFiles?.length) {
       setAttachedFiles((current) =>
@@ -1825,12 +1831,8 @@ export function SessionChatInput({
       // overwriting newer work.
       if (clearOnSend) {
         setText((current) => mergeFailedSubmissionText(current, trimmed));
-        setAttachedFiles((current) =>
-          mergeFailedSubmissionFiles(current, filesToSend ?? []),
-        );
-        setMentions((current) =>
-          mergeFailedSubmissionMentions(current, mentionsToSend ?? []),
-        );
+        setAttachedFiles((current) => mergeFailedSubmissionFiles(current, filesToSend ?? []));
+        setMentions((current) => mergeFailedSubmissionMentions(current, mentionsToSend ?? []));
       }
     }
   }, [

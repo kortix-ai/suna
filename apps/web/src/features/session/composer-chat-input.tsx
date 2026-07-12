@@ -5,17 +5,32 @@ import type { ReactNode } from 'react';
 import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
 import { type ModelKey, useRuntimeLocal } from '@/hooks/runtime/use-runtime-local';
-import { useProjectConfig } from '@kortix/sdk/react';
 import {
+  type Agent,
   type Command,
   useRuntimeAgents,
   useRuntimeProviders,
 } from '@/hooks/runtime/use-runtime-sessions';
+import { agentRequiresCatalogModel, useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
   model?: ModelKey;
   variant?: string;
+}
+
+export function buildComposerOptions(input: {
+  agent: Agent | undefined;
+  lockedAgentName?: string | null;
+  model?: ModelKey;
+  variant?: string;
+}): ComposerOptions {
+  const options: ComposerOptions = {};
+  const agentName = input.lockedAgentName?.trim() || input.agent?.name;
+  if (agentName) options.agent = agentName;
+  if (agentRequiresCatalogModel(input.agent) && input.model) options.model = input.model;
+  if (input.variant) options.variant = input.variant;
+  return options;
 }
 
 /**
@@ -93,15 +108,16 @@ export function ComposerChatInput({
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  const catalogModelRequired = agentRequiresCatalogModel(local.agent.current);
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
-    const o: ComposerOptions = {};
-    if (lockedAgentName) o.agent = lockedAgentName;
-    else if (local.agent.current) o.agent = local.agent.current.name;
-    if (local.model.currentKey) o.model = local.model.currentKey;
-    if (local.model.variant.current) o.variant = local.model.variant.current;
-    return o;
+    return buildComposerOptions({
+      agent: local.agent.current,
+      lockedAgentName,
+      model: local.model.currentKey,
+      variant: local.model.variant.current,
+    });
   };
 
   return (
@@ -125,10 +141,12 @@ export function ComposerChatInput({
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
-      models={local.model.list}
-      selectedModel={local.model.currentKey ?? null}
-      onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-      modelRequired
+      models={catalogModelRequired ? local.model.list : []}
+      selectedModel={catalogModelRequired ? (local.model.currentKey ?? null) : null}
+      onModelChange={
+        catalogModelRequired ? (m) => local.model.set(m ?? undefined, { recent: true }) : undefined
+      }
+      modelRequired={catalogModelRequired}
       modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
