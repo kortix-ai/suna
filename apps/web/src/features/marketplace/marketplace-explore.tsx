@@ -1,6 +1,6 @@
 'use client';
 
-import { PackageSearch, Search } from 'lucide-react';
+import { PackageSearch, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,10 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import Loading from '@/components/ui/loading';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { useAddMarketplaceSource, useFeaturedMarketplaces } from '@/hooks/marketplace';
+import { AddMarketplaceModal } from './add-marketplace-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
@@ -99,6 +103,35 @@ function SourceRow({
       {count !== undefined ? (
         <span className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">{count}</span>
       ) : null}
+    </button>
+  );
+}
+
+/** A not-yet-enabled source in the rail — one click activates it and its items
+ *  join the catalog. */
+function FeaturedSourceRow({
+  label,
+  avatar,
+  busy,
+  onEnable,
+}: {
+  label: string;
+  avatar?: React.ReactNode;
+  busy: boolean;
+  onEnable: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onEnable}
+      disabled={busy}
+      className="group text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm transition-colors disabled:opacity-60"
+    >
+      {avatar ? <span className="shrink-0 opacity-70 grayscale group-hover:opacity-100 group-hover:grayscale-0">{avatar}</span> : null}
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      <span className="text-muted-foreground/60 group-hover:text-foreground shrink-0">
+        {busy ? <Loading className="size-3.5" /> : <Plus className="size-3.5" />}
+      </span>
     </button>
   );
 }
@@ -223,6 +256,41 @@ export function MarketplaceExplore({
     return () => clearTimeout(t);
   }, [query]);
 
+  // "Other sources" you can activate — featured registries not yet enabled on
+  // this account, plus a custom "Add a source" flow. Authenticated surface only
+  // (the public marketing page stays browse-only).
+  const canManageSources = !publicOnly;
+  const featuredQuery = useFeaturedMarketplaces({ enabled: canManageSources });
+  const addSource = useAddMarketplaceSource();
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [enabling, setEnabling] = useState<string | null>(null);
+  const featuredSources = useMemo(() => {
+    if (!canManageSources) return [];
+    const seen = new Set<string>();
+    return (featuredQuery.data ?? []).filter((f) => {
+      if (f.added || seen.has(f.address)) return false;
+      seen.add(f.address);
+      return true;
+    });
+  }, [canManageSources, featuredQuery.data]);
+
+  const onEnableSource = useCallback(
+    (address: string, label: string) => {
+      setEnabling(address);
+      addSource
+        .mutateAsync({ address, label })
+        .then(
+          () =>
+            successToast(`Enabled ${label}`, {
+              description: 'Its items now appear in the catalog.',
+            }),
+          (e) => errorToast('Could not enable', { description: (e as Error).message }),
+        )
+        .finally(() => setEnabling(null));
+    },
+    [addSource],
+  );
+
   const searching = debounced.length > 0;
   const isAll = source === ALL_SOURCES;
   const showProjects = !searching && (isAll || source === 'kortix');
@@ -332,7 +400,42 @@ export function MarketplaceExplore({
                 onClick={() => selectSource(m.id)}
               />
             ))}
+
+            {canManageSources && featuredSources.length > 0 ? (
+              <>
+                <div className="text-muted-foreground/70 px-2.5 pt-3 pb-1 text-xs font-medium tracking-wide uppercase">
+                  Add sources
+                </div>
+                {featuredSources.map((f) => (
+                  <FeaturedSourceRow
+                    key={f.address}
+                    label={displayCompanyLabel(f.address, f.label)}
+                    busy={enabling === f.address}
+                    avatar={
+                      <MarketplaceAvatar id={f.address} owner={f.owner} label={f.label} size="xs" />
+                    }
+                    onEnable={() => onEnableSource(f.address, f.label)}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {canManageSources ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground mt-1 h-9 w-full justify-start gap-2 px-2.5 font-normal"
+                onClick={() => setAddSourceOpen(true)}
+              >
+                <Plus className="size-3.5 shrink-0" />
+                Add a source
+              </Button>
+            ) : null}
           </div>
+
+          {canManageSources ? (
+            <AddMarketplaceModal open={addSourceOpen} onOpenChange={setAddSourceOpen} />
+          ) : null}
         </>
       }
     >

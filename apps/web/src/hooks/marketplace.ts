@@ -127,11 +127,12 @@ export function useMarketplaces(opts?: { publicOnly?: boolean }) {
   });
 }
 
-export function useFeaturedMarketplaces() {
+export function useFeaturedMarketplaces(opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['marketplaces-featured'],
     queryFn: listFeaturedMarketplaces,
     staleTime: 60_000,
+    enabled: opts?.enabled ?? true,
   });
 }
 
