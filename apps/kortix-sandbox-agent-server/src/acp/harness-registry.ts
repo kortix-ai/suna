@@ -21,12 +21,12 @@ const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
     displayName: 'Claude Code',
     adapter: '@agentclientprotocol/claude-agent-acp',
-    launch: { command: 'claude-agent-acp', args: [] },
+    launch: { command: '/usr/local/bin/claude-agent-acp', args: [] },
   },
   codex: {
     displayName: 'Codex',
     adapter: '@agentclientprotocol/codex-acp',
-    launch: { command: 'codex-acp', args: [] },
+    launch: { command: '/usr/local/bin/codex-acp', args: [] },
   },
   opencode: {
     displayName: 'OpenCode',
@@ -36,7 +36,7 @@ const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   pi: {
     displayName: 'Pi',
     adapter: 'pi-acp',
-    launch: { command: 'pi-acp', args: [] },
+    launch: { command: '/usr/local/bin/pi-acp', args: [] },
   },
 }
 
