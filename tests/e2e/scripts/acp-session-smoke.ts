@@ -10,6 +10,7 @@ const SUPABASE = process.env.E2E_SUPABASE_URL || "http://127.0.0.1:54321";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const HARNESS = process.env.E2E_ACP_HARNESS || "opencode";
+const PROVIDER = process.env.E2E_ACP_PROVIDER || "daytona";
 if (!["opencode", "claude", "codex", "pi"].includes(HARNESS))
   throw new Error(`Unsupported E2E_ACP_HARNESS=${HARNESS}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,7 +101,7 @@ async function main() {
     const createdSession = await api(
       "POST",
       `/projects/${projectId}/sessions`,
-      { name: "ACP smoke" },
+      { name: "ACP smoke", provider: PROVIDER },
     );
     const sessionId =
       createdSession.json?.session_id ?? createdSession.json?.id;
@@ -108,7 +109,7 @@ async function main() {
       throw new Error(
         `session create failed: ${createdSession.response.status} ${createdSession.text}`,
       );
-    console.log(`[acp-smoke] session=${sessionId}`);
+    console.log(`[acp-smoke] session=${sessionId} provider=${PROVIDER}`);
 
     let start: any = null;
     // A cold runtime-layer build may take ~9 minutes and provider provisioning
