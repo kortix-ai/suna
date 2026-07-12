@@ -1,10 +1,12 @@
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { setChannelAgent, setChannelModel } from '../slack/selection';
 import { resolveConversationProject, setConversationProject, teamsChannelCtx } from './binding';
 import { buildNoticeCard } from './cards';
 import {
   createTeamsAccessRequest,
+  lookupTeamsIdentity,
   notifyAdminsOfTeamsAccessRequest,
   teamsUserId,
 } from './identity';
@@ -47,6 +49,8 @@ export async function handleAdaptiveCardAction(activity: TeamsActivity): Promise
       return handlePickProject(activity, action.data);
     case 'teams_answer':
       return handleAnswer(activity, action.data);
+    case 'teams_review':
+      return handleReview(activity, action.data);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -131,6 +135,59 @@ async function handleAnswer(
   }).catch((err) => console.error('[teams-webhook] answer follow-up failed', err));
 
   return cardResponse(buildNoticeCard(`Answer received: ${answer}`));
+}
+
+const VERDICT_MAP: Record<string, 'approve' | 'reject' | 'changes'> = {
+  approve: 'approve',
+  reject: 'reject',
+  changes: 'changes',
+};
+
+async function handleReview(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const reviewItemId = typeof data.reviewItemId === 'string' ? data.reviewItemId : null;
+  const verdict = typeof data.verdict === 'string' ? VERDICT_MAP[data.verdict] : undefined;
+  const uid = teamsUserId(activity);
+  if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
+
+  const identity = uid ? await lookupTeamsIdentity(convo.tenantId, uid) : null;
+  if (!identity) {
+    return cardResponse(buildNoticeCard('Connect your Kortix account (`/login`) to act on reviews.'));
+  }
+
+  const projectId = await resolveConversationProject(convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+
+  const item = await getReviewItemById(reviewItemId, projectId);
+  if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
+
+  await applyVerdict(reviewItemId, projectId, { verdict, feedback: null, actingUserId: identity.userId });
+
+  const decisionLine =
+    verdict === 'approve'
+      ? `The review "${item.title}" was approved.`
+      : verdict === 'reject'
+        ? `The review "${item.title}" was rejected — do not proceed with it.`
+        : `Changes were requested on the review "${item.title}". Ask what to change, then revise.`;
+  const synthetic: TeamsActivity = {
+    ...activity,
+    type: 'message',
+    text: [decisionLine, '', 'Continue the turn based on this decision.'].join('\n'),
+    id: `${activity.id ?? 'review'}:review`,
+  };
+  void createOrJoinTeamsConversationSession({
+    projectId,
+    tenantId: convo.tenantId,
+    conversationId: convo.conversationId,
+    activity: synthetic,
+  }).catch((err) => console.error('[teams-webhook] review resume failed', err));
+
+  const ack =
+    verdict === 'approve' ? `Approved "${item.title}" — resuming the agent.` : verdict === 'reject' ? `Rejected "${item.title}".` : `Requested changes on "${item.title}".`;
+  return cardResponse(buildNoticeCard(ack));
 }
 
 async function handleRequestAccess(

@@ -176,6 +176,29 @@ export function buildQuestionCard(
   return card(elements, actions.length ? actions : undefined);
 }
 
+export function buildReviewCard(opts: {
+  reviewItemId: string;
+  title: string;
+  summary: string;
+  risk: string;
+  viewUrl?: string;
+}): Record<string, unknown> {
+  const elements: CardElement[] = [
+    text(opts.title, { weight: 'bolder', size: 'medium' }),
+    text(opts.summary, { wrap: true, isSubtle: true, size: 'small' }),
+  ];
+  if (opts.risk && opts.risk !== 'none') {
+    elements.push(text(`Risk: ${opts.risk}`, { size: 'small', spacing: 'none', color: opts.risk === 'high' ? 'attention' : 'warning' }));
+  }
+  const actions: CardElement[] = [
+    executeAction('Approve', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'approve' }),
+    executeAction('Request changes', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'changes' }),
+    executeAction('Deny', 'teams_review', { reviewItemId: opts.reviewItemId, verdict: 'reject' }),
+  ];
+  if (opts.viewUrl) actions.push(openUrlAction('View in Kortix', opts.viewUrl));
+  return card(elements, actions);
+}
+
 export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
   const elements: CardElement[] = [
     text('Kortix is connected here', { weight: 'bolder', size: 'medium' }),
