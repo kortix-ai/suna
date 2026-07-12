@@ -374,8 +374,20 @@ export function MarketplaceExplore({
           </InputGroupSearch>
 
           <div className="space-y-1">
-            <div className="text-muted-foreground/70 px-2.5 pb-1 text-xs font-medium tracking-wide uppercase">
-              Sources
+            <div className="flex items-center justify-between gap-2 px-2.5 pb-1">
+              <div className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
+                Sources
+              </div>
+              {canManageSources ? (
+                <button
+                  type="button"
+                  onClick={() => setAddSourceOpen(true)}
+                  className="text-muted-foreground/70 hover:text-foreground -mr-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium transition-colors"
+                >
+                  <Plus className="size-3.5 shrink-0" />
+                  Add
+                </button>
+              ) : null}
             </div>
             <SourceRow
               label="All sources"
@@ -418,18 +430,6 @@ export function MarketplaceExplore({
                   />
                 ))}
               </>
-            ) : null}
-
-            {canManageSources ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground mt-1 h-9 w-full justify-start gap-2 px-2.5 font-normal"
-                onClick={() => setAddSourceOpen(true)}
-              >
-                <Plus className="size-3.5 shrink-0" />
-                Add a source
-              </Button>
             ) : null}
           </div>
 
