@@ -7,6 +7,7 @@ import {
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
   isRuntimeNotReadyNoiseMessage,
+  isStorageDisabledWebViewNoiseMessage,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -480,4 +481,45 @@ test('does NOT suppress a longer real error containing the billing-gate phrase',
       `expected longer runtime error "${value}" to keep reporting`,
     )
   }
+})
+
+test('suppresses storage-disabled WebView null.getItem TypeErrors (V8 + JSC)', () => {
+  for (const value of [
+    "TypeError: Cannot read properties of null (reading 'getItem')",
+    "Cannot read properties of null (reading 'setItem')",
+    "Cannot read properties of null (reading 'removeItem')",
+    "TypeError: Cannot read property 'getItem' of null",
+    "Cannot read property 'setItem' of null",
+  ]) {
+    assert.equal(
+      isStorageDisabledWebViewNoiseMessage(value),
+      true,
+      `expected "${value}" to be classified as storage-disabled WebView noise`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      true,
+      `expected runtime error "${value}" to be suppressed`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected Sentry event "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress a real null-access error on a non-storage method', () => {
+  assert.equal(
+    isStorageDisabledWebViewNoiseMessage("Cannot read properties of null (reading 'map')"),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: "Cannot read properties of null (reading 'map')" }] },
+    }),
+    false,
+  )
 })

@@ -89,6 +89,20 @@ if (SENTRY_DSN) {
       // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
       "Cannot assign to read only property 'then' of object '#<Promise>'",
       'Cannot assign to read only property',
+      // Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser)
+      // resolve `window.localStorage` / `window.sessionStorage` to `null`. Any
+      // direct `storage.getItem/setItem/removeItem` then throws
+      // `TypeError: Cannot read properties of null (reading 'getItem')` (V8) /
+      // `Cannot read property 'getItem' of null` (JSC). Browser-environment
+      // noise, not an app defect — `getItem/setItem/removeItem` are Web Storage
+      // API method names, so matching them on a `null` access is specific. See
+      // browser-error-noise.ts `STORAGE_NULL_ACCESS_NOISE_PATTERNS`.
+      "Cannot read properties of null (reading 'getItem')",
+      "Cannot read properties of null (reading 'setItem')",
+      "Cannot read properties of null (reading 'removeItem')",
+      "Cannot read property 'getItem' of null",
+      "Cannot read property 'setItem' of null",
+      "Cannot read property 'removeItem' of null",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

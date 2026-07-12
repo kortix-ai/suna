@@ -33,3 +33,15 @@ test('sentry.client.config anchors expected billing-gate 402 markers', async () 
   // errors that merely mention the billing-gate phrase.
   expect(source).not.toContain("'Out of credits. Top up to continue.'");
 });
+
+test('sentry.client.config ignores storage-disabled WebView null-access TypeErrors', async () => {
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  // Storage-disabled in-app WebViews resolve localStorage/sessionStorage to
+  // null; direct .getItem/.setItem/.removeItem then throw. These are
+  // browser-environment failures, not app defects, so the SDK drops them.
+  expect(source).toContain("Cannot read properties of null (reading 'getItem')");
+  expect(source).toContain("Cannot read properties of null (reading 'setItem')");
+  expect(source).toContain("Cannot read properties of null (reading 'removeItem')");
+  // JSC variant (older Safari/iOS WebView).
+  expect(source).toContain("Cannot read property 'getItem' of null");
+});
