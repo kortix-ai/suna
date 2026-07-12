@@ -77,9 +77,36 @@ await kortix.project(projectId).sessions.create({
 });
 ```
 
-Do not put credentials in this map. Session-specific connector credentials are
-resolved server-side through connector profiles; raw env and MCP config are not
-session-create inputs.
+Do not put credentials in this map. For a white-label/backend wrapper, create a
+server-owned connection profile, store its credential through the dedicated
+credential endpoint, and pass only the non-secret profile id at session create:
+
+```ts
+const project = kortix.project(projectId);
+const profile = await project.connectors.profiles.reconcile({
+  connector_alias: 'customer-data',
+  owner_type: 'external',
+  owner_id: wrapperUserId,
+  label: 'Customer data',
+  metadata: { tenant_ref: wrapperTenantReference },
+});
+await project.connectors.profiles.updateCredential(profile.profile_id, {
+  value: shortLivedCapability,
+  kind: 'secret',
+});
+await project.sessions.create({
+  runtime_context: { locale: 'de' },
+  connector_bindings: {
+    'customer-data': { profile_id: profile.profile_id },
+  },
+});
+```
+
+Profiles are project/connector scoped, manager-authorized, and resolved on
+every Executor request. Revocation therefore takes effect without restarting
+the session. The credential is encrypted server-side and is never returned,
+placed in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment.
+Raw env and MCP configuration are not session-create inputs.
 
 `session.stream()` is a thin facade over the framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client

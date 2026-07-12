@@ -129,6 +129,8 @@ export interface EmailSenderPolicy {
 }
 
 export interface EmailInstallation {
+  /** Canonical Kortix connection profile to pass in connector_bindings.email. */
+  profileId: string | null;
   profileSlug: string;
   inboxId: string;
   email: string;
@@ -136,6 +138,15 @@ export interface EmailInstallation {
   webhookId: string | null;
   senderPolicy: EmailSenderPolicy;
   installedAt: string;
+}
+
+type EmailInstallationWire = Omit<EmailInstallation, 'profileId'> & {
+  profile_id?: string | null;
+  profileId?: string | null;
+};
+
+function normalizeEmailInstallation(value: EmailInstallationWire): EmailInstallation {
+  return { ...value, profileId: value.profileId ?? value.profile_id ?? null };
 }
 
 export interface EmailMode {
@@ -151,12 +162,12 @@ export async function getEmailInstallation(
   connectorSlug?: string | null,
 ): Promise<EmailInstallation | null> {
   const query = connectorSlug ? `?connector_slug=${encodeURIComponent(connectorSlug)}` : '';
-  const res = await backendApi.get<EmailInstallation | null>(
+  const res = await backendApi.get<EmailInstallationWire | null>(
     `/projects/${encodeURIComponent(projectId)}/channels/email/installation${query}`,
     { showErrors: false },
   );
   if (!res.success) return null;
-  return res.data ?? null;
+  return res.data ? normalizeEmailInstallation(res.data) : null;
 }
 
 export async function getEmailMode(projectId: string): Promise<EmailMode> {
@@ -183,14 +194,15 @@ export async function connectEmail(
   projectId: string,
   input: ConnectEmailInput,
 ): Promise<EmailInstallation> {
-  return unwrap(
-    await backendApi.post<EmailInstallation>(
+  const installation = unwrap(
+    await backendApi.post<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/connect`,
       input,
       { showErrors: false },
     ),
     'Failed to connect email',
   );
+  return normalizeEmailInstallation(installation);
 }
 
 export async function disconnectEmail(
@@ -210,14 +222,15 @@ export async function updateEmailPolicy(
   connectorSlug: string | null | undefined,
   senderPolicy: EmailSenderPolicy,
 ): Promise<EmailInstallation> {
-  return unwrap(
-    await backendApi.patch<EmailInstallation>(
+  const installation = unwrap(
+    await backendApi.patch<EmailInstallationWire>(
       `/projects/${encodeURIComponent(projectId)}/channels/email/installation`,
       { connector_slug: connectorSlug ?? 'kortix_email', sender_policy: senderPolicy },
       { showErrors: false },
     ),
     'Failed to update email policy',
   );
+  return normalizeEmailInstallation(installation);
 }
 
 // ── Meet — the bot voice + display name a project's Google/Zoom Meet channel uses ──
@@ -245,7 +258,10 @@ export async function getMeetVoices(projectId: string): Promise<MeetVoicesRespon
   return res.data ?? null;
 }
 
-export async function setMeetVoice(projectId: string, voice: string): Promise<{ selected: string }> {
+export async function setMeetVoice(
+  projectId: string,
+  voice: string,
+): Promise<{ selected: string }> {
   return unwrap(
     await backendApi.put<{ selected: string }>(
       `/projects/${encodeURIComponent(projectId)}/channels/meet/voice`,
@@ -256,7 +272,10 @@ export async function setMeetVoice(projectId: string, voice: string): Promise<{ 
   );
 }
 
-export async function setMeetBotName(projectId: string, name: string): Promise<{ bot_name: string }> {
+export async function setMeetBotName(
+  projectId: string,
+  name: string,
+): Promise<{ bot_name: string }> {
   return unwrap(
     await backendApi.put<{ bot_name: string }>(
       `/projects/${encodeURIComponent(projectId)}/channels/meet/name`,
@@ -268,10 +287,7 @@ export async function setMeetBotName(projectId: string, name: string): Promise<{
 }
 
 /** Returns a base64-encoded audio sample for the given voice, or null on failure. */
-export async function previewMeetVoice(
-  projectId: string,
-  voiceId: string,
-): Promise<string | null> {
+export async function previewMeetVoice(projectId: string, voiceId: string): Promise<string | null> {
   const res = await backendApi.post<{ b64: string }>(
     `/projects/${encodeURIComponent(projectId)}/channels/meet/voices/${encodeURIComponent(voiceId)}/preview`,
     {},

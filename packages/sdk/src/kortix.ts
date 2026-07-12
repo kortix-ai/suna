@@ -24,17 +24,13 @@ import * as P from './platform/projects-client';
 import { getSessionHealth } from './session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from './session/url';
 import { setCurrentRuntime } from './state/current-runtime';
-import {
-  clearSessionRuntime,
-  getSessionRuntime,
-  type SessionRuntimeEntry,
-} from './state/session-runtime-registry';
+import { type EventStreamHandle, type OpenCodeEvent, openEventStream } from './state/event-stream';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
 import {
-  openEventStream,
-  type EventStreamHandle,
-  type OpenCodeEvent,
-} from './state/event-stream';
+  type SessionRuntimeEntry,
+  clearSessionRuntime,
+  getSessionRuntime,
+} from './state/session-runtime-registry';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };
@@ -405,6 +401,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.setConnectorCredential(projectId, ...a),
         setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
           P.setConnectorSensitive(projectId, ...a),
+        profiles: {
+          list: () => P.listConnectionProfiles(projectId),
+          reconcile: (...a: DropFirst<Parameters<typeof P.reconcileConnectionProfile>>) =>
+            P.reconcileConnectionProfile(projectId, ...a),
+          updateCredential: (
+            ...a: DropFirst<Parameters<typeof P.updateConnectionProfileCredential>>
+          ) => P.updateConnectionProfileCredential(projectId, ...a),
+          revoke: (...a: DropFirst<Parameters<typeof P.revokeConnectionProfile>>) =>
+            P.revokeConnectionProfile(projectId, ...a),
+          activate: (...a: DropFirst<Parameters<typeof P.activateConnectionProfile>>) =>
+            P.activateConnectionProfile(projectId, ...a),
+        },
         policies: {
           get: (...a: DropFirst<Parameters<typeof P.getConnectorPolicies>>) =>
             P.getConnectorPolicies(projectId, ...a),
@@ -492,11 +500,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /** Review Center — the per-project human-in-the-loop inbox (change requests, tool approvals, agent outputs/decisions). */
       review: {
-        list: (params?: Parameters<typeof P.listReviewItems>[1]) => P.listReviewItems(projectId, params),
+        list: (params?: Parameters<typeof P.listReviewItems>[1]) =>
+          P.listReviewItems(projectId, params),
         get: (reviewItemId: string) => P.getReviewItem(projectId, reviewItemId),
         submit: (input: Parameters<typeof P.submitReviewItem>[1]) =>
           P.submitReviewItem(projectId, input),
-        act: (...a: DropFirst<Parameters<typeof P.actReviewItem>>) => P.actReviewItem(projectId, ...a),
+        act: (...a: DropFirst<Parameters<typeof P.actReviewItem>>) =>
+          P.actReviewItem(projectId, ...a),
         bulkAct: (input: Parameters<typeof P.bulkActReviewItems>[1]) =>
           P.bulkActReviewItems(projectId, input),
       },
@@ -513,7 +523,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /** Gateway observability — LLM request logs, cost/latency rollups, budgets, gateway API keys. */
       gateway: {
-        logs: (opts?: Parameters<typeof P.listGatewayLogs>[1]) => P.listGatewayLogs(projectId, opts),
+        logs: (opts?: Parameters<typeof P.listGatewayLogs>[1]) =>
+          P.listGatewayLogs(projectId, opts),
         log: (logId: string) => P.getGatewayLog(projectId, logId),
         overview: (days?: number) => P.getGatewayOverview(projectId, days),
         series: (days?: number) => P.getGatewaySeries(projectId, days),
@@ -536,7 +547,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       channels: {
         slack: {
           installation: () => P.getSlackInstallation(projectId),
-          connect: (input: Parameters<typeof P.connectSlack>[1]) => P.connectSlack(projectId, input),
+          connect: (input: Parameters<typeof P.connectSlack>[1]) =>
+            P.connectSlack(projectId, input),
           mode: () => P.getSlackMode(projectId),
           manifest: () => P.getSlackManifest(projectId),
           disconnect: () => P.disconnectSlack(projectId),
@@ -550,8 +562,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           installation: (connectorSlug?: string | null) =>
             P.getEmailInstallation(projectId, connectorSlug),
           mode: () => P.getEmailMode(projectId),
-          connect: (input: Parameters<typeof P.connectEmail>[1]) => P.connectEmail(projectId, input),
-          disconnect: (connectorSlug?: string | null) => P.disconnectEmail(projectId, connectorSlug),
+          connect: (input: Parameters<typeof P.connectEmail>[1]) =>
+            P.connectEmail(projectId, input),
+          disconnect: (connectorSlug?: string | null) =>
+            P.disconnectEmail(projectId, connectorSlug),
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
         },
@@ -569,7 +583,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Project apps/deployments — the `/projects/:id/apps/*` family. */
       apps: {
         list: () => P.listProjectApps(projectId),
-        create: (input: Parameters<typeof P.createProjectApp>[1]) => P.createProjectApp(projectId, input),
+        create: (input: Parameters<typeof P.createProjectApp>[1]) =>
+          P.createProjectApp(projectId, input),
         update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
           P.updateProjectApp(projectId, ...a),
         remove: (slug: string) => P.deleteProjectApp(projectId, slug),
@@ -582,13 +597,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
-      updateExperimentalFeature: (...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>) =>
-        P.updateExperimentalFeature(projectId, ...a),
+      updateExperimentalFeature: (
+        ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>
+      ) => P.updateExperimentalFeature(projectId, ...a),
 
       /** Default model preferences (account/agent/project scope, gateway-resolved). */
       modelDefaults: {
         get: () => P.getModelDefaults(projectId),
-        set: (input: Parameters<typeof P.setModelDefault>[1]) => P.setModelDefault(projectId, input),
+        set: (input: Parameters<typeof P.setModelDefault>[1]) =>
+          P.setModelDefault(projectId, input),
         clear: (params: Parameters<typeof P.clearModelDefault>[1]) =>
           P.clearModelDefault(projectId, params),
       },
@@ -609,7 +626,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
         buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
-        setProvider: (provider: string | null) => P.updateProjectSandboxProvider(projectId, provider),
+        setProvider: (provider: string | null) =>
+          P.updateProjectSandboxProvider(projectId, provider),
       },
 
       /** Bind specific secrets + connectors to an agent (the inheritance pyramid's declaration step). */
@@ -687,16 +705,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         }
         const externalId = (started.sandbox as { external_id?: string | null }).external_id;
         if (!externalId) {
-          throw new ApiError('Session sandbox has no external_id — cannot resolve its runtime URL', {
+          throw new ApiError(
+            'Session sandbox has no external_id — cannot resolve its runtime URL',
+            {
             code: 'RUNTIME_UNAVAILABLE',
-          });
+            },
+          );
         }
         const runtimeUrl = getSandboxUrlForExternalId(externalId);
         // Point the app's shared runtime store at this session too, so React
         // hosts (which read the global current-runtime) keep working — but this
         // handle's own operations never read it back, only `_ready` below.
         setCurrentRuntime(runtimeUrl, externalId);
-        return { opencodeSessionId: started.opencode_session_id, runtimeUrl, sandboxId: externalId };
+        return {
+          opencodeSessionId: started.opencode_session_id,
+          runtimeUrl,
+          sandboxId: externalId,
+        };
       })();
 
       inFlightSessionStarts.set(key, startPromise);
@@ -789,7 +814,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       health: (init?: RequestInit) => getSessionHealth(tryResolveReady()?.runtimeUrl ?? null, init),
       /** Proxy/preview URL for a port THIS session's runtime exposes. */
       previewUrl: (port: number, path = '/') =>
-        rewriteLocalhostUrl(port, path, resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId)),
+        rewriteLocalhostUrl(
+          port,
+          path,
+          resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId),
+        ),
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) =>
         proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
@@ -888,19 +917,25 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       files: {
         list: async (dirPath: string) => F.listFiles(dirPath, (await ensureReady()).runtimeUrl),
         read: async (filePath: string) => F.readFile(filePath, (await ensureReady()).runtimeUrl),
-        readBlob: async (filePath: string) => F.readBlob(filePath, (await ensureReady()).runtimeUrl),
+        readBlob: async (filePath: string) =>
+          F.readBlob(filePath, (await ensureReady()).runtimeUrl),
         status: async () => F.getFileStatus((await ensureReady()).runtimeUrl),
-        findFiles: async (query: string, options?: { type?: 'file' | 'directory'; limit?: number }) =>
-          F.findFiles(query, options, (await ensureReady()).runtimeUrl),
+        findFiles: async (
+          query: string,
+          options?: { type?: 'file' | 'directory'; limit?: number },
+        ) => F.findFiles(query, options, (await ensureReady()).runtimeUrl),
         findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
         upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
           F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
-        create: async (filePath: string) => F.createFile(filePath, (await ensureReady()).runtimeUrl),
+        create: async (filePath: string) =>
+          F.createFile(filePath, (await ensureReady()).runtimeUrl),
         copy: async (sourcePath: string, destPath: string) =>
           F.copyFile(sourcePath, destPath, (await ensureReady()).runtimeUrl),
-        remove: async (filePath: string) => F.deleteFile(filePath, (await ensureReady()).runtimeUrl),
+        remove: async (filePath: string) =>
+          F.deleteFile(filePath, (await ensureReady()).runtimeUrl),
         mkdir: async (dirPath: string) => F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
-        rename: async (from: string, to: string) => F.renameFile(from, to, (await ensureReady()).runtimeUrl),
+        rename: async (from: string, to: string) =>
+          F.renameFile(from, to, (await ensureReady()).runtimeUrl),
       },
     };
   }

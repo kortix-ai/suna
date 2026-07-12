@@ -79,6 +79,7 @@ export const PROJECT_ACTIONS = {
   PROJECT_SESSION_READ: 'project.session.read',
   PROJECT_SESSION_START: 'project.session.start',
   PROJECT_SESSION_STOP: 'project.session.stop',
+  PROJECT_SESSION_BINDINGS_WRITE: 'project.session.bindings.write',
 
   PROJECT_MEMBERS_READ: 'project.members.read',
   PROJECT_MEMBERS_MANAGE: 'project.members.manage',
@@ -118,6 +119,7 @@ export const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',
+  PROJECT_CONNECTOR_PROFILES_MANAGE: 'project.connector.profiles.manage',
   PROJECT_CONNECTOR_WRITE: 'project.connector.write',
 
   // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts

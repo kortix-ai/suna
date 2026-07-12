@@ -1,44 +1,66 @@
+import { randomUUID } from 'node:crypto';
+import {
+  projectSessionConnectorBindings,
+  projectSessionRuntimeContexts,
+  projectSessions,
+} from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { config, type SandboxProviderName } from '../../config';
-import { resolveSessionProvider } from './provider-precedence';
+import { type SandboxProviderName, config } from '../../config';
+import { agentMayUseConnector } from '../../iam/agent-scope';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
+import { selectProvider } from '../../platform/services/provider-balancer';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { resolveAccountSessionLimit } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
+import {
+  grantFromLoadedAgents,
+  loadProjectAgents,
+  projectRequiresDeclaredAgents,
+  resolveGovernedAgentGrant,
+} from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
-import { grantFromLoadedAgents, loadProjectAgents, projectRequiresDeclaredAgents, resolveGovernedAgentGrant } from '../agents';
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { projectSessions } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { Context } from 'hono';
-import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
-import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
-import { selectProvider } from '../../platform/services/provider-balancer';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
-import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
+import { resolveSessionProvider } from './provider-precedence';
+import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
+import {
+  ACTIVE_SESSION_STATUSES,
+  PROVISIONING_SESSION_STATUSES,
+  type ProjectRow,
+  type ProjectSessionRow,
+  type RequestAuditContext,
+  UUID_V4_REGEX,
+  deriveKortixApiRoot,
+  normalizeJsonObject,
+  normalizeString,
+} from './serializers';
+import {
+  parseSessionConnectorBindings,
+  validateSessionConnectorBindings,
+} from './session-connector-bindings';
 import { allocateSessionRuntime } from './session-runtime-allocator';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildSessionRuntimeContextEnv,
   mergeSessionSandboxEnv,
   parseSessionRuntimeContext,
-  persistSessionRuntimeContext,
 } from './session-runtime-context';
+import { buildSessionRuntimeEnv } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
   body: Record<string, unknown>;
   headers?: Record<string, string>;
 };
-
 
 export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   for (const [key, value] of Object.entries(error.headers ?? {})) {
@@ -47,36 +69,41 @@ export function sendSessionCreateError(c: Context, error: SessionCreateError) {
   return c.json(error.body, error.status as any);
 }
 
-
 export async function countActiveProjectSessions(accountId: string): Promise<number> {
   const [row] = await db
     .select({ activeCount: sql<number>`count(*)::int` })
     .from(projectSessions)
-    .where(and(
+    .where(
+      and(
       eq(projectSessions.accountId, accountId),
       inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
-    ))
+      ),
+    )
     .limit(1);
 
   return Number(row?.activeCount ?? 0);
 }
 
-
 export async function countProvisioningProjectSessions(projectId: string): Promise<number> {
   const [row] = await db
     .select({ provisioningCount: sql<number>`count(*)::int` })
     .from(projectSessions)
-    .where(and(
+    .where(
+      and(
       eq(projectSessions.projectId, projectId),
       inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
-    ))
+      ),
+    )
     .limit(1);
 
   return Number(row?.provisioningCount ?? 0);
 }
 
-
-export async function enforceConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<SessionCreateError | null> {
+export async function enforceConcurrentSessionCap(
+  accountId: string,
+  userId: string,
+  request?: RequestAuditContext,
+): Promise<SessionCreateError | null> {
   const { tier, limit, source } = await resolveAccountSessionLimit(accountId);
   const activeSessions = await countActiveProjectSessions(accountId);
   if (activeSessions < limit) return null;
@@ -117,8 +144,11 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
   };
 }
 
-
-export async function checkConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<{
+export async function checkConcurrentSessionCap(
+  accountId: string,
+  userId: string,
+  request?: RequestAuditContext,
+): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
 }> {
@@ -139,9 +169,7 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
   };
 }
 
-
 export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
-
 
 /**
  * Re-derive a session's chat-channel env (SLACK_*) from its persisted binding so
@@ -164,7 +192,10 @@ async function buildSessionChannelEnv(sessionId: string): Promise<Record<string,
     if (typeof slack.user === 'string') env.SLACK_USER_ID = slack.user;
     return env;
   } catch (err) {
-    console.warn('[session-env] failed to restore channel binding', { sessionId, err: (err as Error).message });
+    console.warn('[session-env] failed to restore channel binding', {
+      sessionId,
+      err: (err as Error).message,
+    });
     return {};
   }
 }
@@ -251,7 +282,11 @@ export async function buildSessionSandboxEnvVars(input: {
 
   let runtimeSecrets: { env: Record<string, string>; names: string[]; revision: string };
   try {
-    runtimeSecrets = await listProjectSecretsSnapshotForUser(input.projectId, input.userId, agentGrantEnv);
+    runtimeSecrets = await listProjectSecretsSnapshotForUser(
+      input.projectId,
+      input.userId,
+      agentGrantEnv,
+    );
   } catch (err) {
     if (err instanceof AmbiguousSecretGrantError) {
       console.error(
@@ -390,7 +425,6 @@ export function sandboxCallbackUnreachableReason(): string | null {
   );
 }
 
-
 export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
@@ -406,7 +440,11 @@ export async function createProjectSession(input: {
    * otherwise be invisible to everyone but the account's first owner.
    */
   visibility?: 'private' | 'project' | 'restricted';
-}): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
+}): Promise<{
+  row?: ProjectSessionRow;
+  error?: SessionCreateError;
+  headers?: Record<string, string>;
+}> {
   const { project, userId, body } = input;
   const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
@@ -423,6 +461,18 @@ export async function createProjectSession(input: {
       },
     };
   }
+  const parsedConnectorBindings = parseSessionConnectorBindings(body.connector_bindings);
+  if (!parsedConnectorBindings.ok) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: parsedConnectorBindings.error,
+          code: 'INVALID_SESSION_CONNECTOR_BINDINGS',
+        },
+      },
+    };
+  }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
@@ -435,6 +485,39 @@ export async function createProjectSession(input: {
   );
   const agentName =
     normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+  let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
+  if (parsedConnectorBindings.bindings) {
+    loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
+    for (const alias of Object.keys(parsedConnectorBindings.bindings)) {
+      if (!agentMayUseConnector(loadedAgentGrant, alias)) {
+        return {
+          error: {
+            status: 403,
+            body: {
+              error: `Agent "${agentName}" is not granted connector "${alias}"`,
+              code: 'CONNECTOR_NOT_ASSIGNED',
+            },
+          },
+        };
+      }
+    }
+  }
+  const validatedConnectorBindings = await validateSessionConnectorBindings({
+    accountId,
+    projectId,
+    bindings: parsedConnectorBindings.bindings,
+  });
+  if (!validatedConnectorBindings.ok) {
+    return {
+      error: {
+        status: validatedConnectorBindings.code === 'CONNECTOR_PROFILE_NOT_FOUND' ? 404 : 409,
+        body: {
+          error: validatedConnectorBindings.error,
+          code: validatedConnectorBindings.code,
+        },
+      },
+    };
+  }
   // MANDATORY DECLARED AGENTS (flagged — docs/specs/2026-07-05-agent-first-config-
   // unification.md §2.1/§3 Phase 2). Only projects "subject" to enforcement (the
   // platform-wide flag, or a project stamped `metadata.require_declared_agents`
@@ -464,7 +547,9 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
   const sandboxSlug =
-    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
+    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ??
+    projectDefaultSandboxSlug ??
+    undefined;
   // Sandbox provider: explicit request › per-project pin (Customize → Settings) ›
   // weighted balancer. The pin lets you put ONE project on e.g. platinum regardless
   // of the global distribution weights — see resolveSessionProvider.
@@ -478,14 +563,21 @@ export async function createProjectSession(input: {
     isEnabled: (p) => config.isProviderEnabled(p as SandboxProviderName),
   });
   if ('badRequest' in picked) {
-    return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${picked.badRequest}` } } };
+    return {
+      error: {
+        status: 400,
+        body: { error: `Unknown or disabled sandbox provider: ${picked.badRequest}` },
+      },
+    };
   }
   const providerName: SandboxProviderName =
     'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
 
   const callbackUnreachable = sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
-    return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
+    return {
+      error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } },
+    };
   }
 
   // Validate the requested sandbox template up front so the user gets a clean
@@ -569,7 +661,8 @@ export async function createProjectSession(input: {
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
-    const [row] = await db
+    sessionRow = await db.transaction(async (tx) => {
+      const [row] = await tx
       .insert(projectSessions)
       .values({
         sessionId,
@@ -590,10 +683,36 @@ export async function createProjectSession(input: {
       })
       .returning();
     if (!row) throw new Error('Session insert returned no row');
-    sessionRow = row;
     if (parsedRuntimeContext.context !== undefined) {
-      await persistSessionRuntimeContext(sessionId, parsedRuntimeContext.context);
+        await tx
+          .insert(projectSessionRuntimeContexts)
+          .values({
+            sessionId,
+            context: parsedRuntimeContext.context,
+            byteSize: new TextEncoder().encode(JSON.stringify(parsedRuntimeContext.context))
+              .byteLength,
+          })
+          .returning({ sessionId: projectSessionRuntimeContexts.sessionId });
     }
+      if (validatedConnectorBindings.bindings.length > 0) {
+        await tx
+          .insert(projectSessionConnectorBindings)
+          .values(
+            validatedConnectorBindings.bindings.map((binding) => ({
+              sessionId,
+              accountId,
+              projectId,
+              connectorAlias: binding.alias,
+              connectorId: binding.connectorId,
+              profileId: binding.profileId,
+              source: 'request' as const,
+              createdBy: userId,
+            })),
+          )
+          .returning({ sessionId: projectSessionConnectorBindings.sessionId });
+      }
+      return row;
+    });
   } catch (error) {
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
@@ -601,11 +720,8 @@ export async function createProjectSession(input: {
     // resolveSessionProvider validates against config, never against the DB.
     // (That is how prod, whose faked baseline skipped 'platinum', 500'd every
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
-    // The context FK requires the parent session first. Roll the parent back if
-    // context persistence fails before provisioning is kicked off.
-    if (sessionRow !== null) {
-      await db.delete(projectSessions).where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
-    }
+    // Session, context and profile bindings are one transaction. Nothing is
+    // visible and provisioning never starts when any child insert fails.
     const message = (error as Error).message || 'Insert failed';
     return { error: { status: 500, body: { error: message, retry: true } } };
   }
@@ -644,7 +760,8 @@ export async function createProjectSession(input: {
         resolveCommitSha(project, baseRef).catch(() => undefined),
         new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
       ]);
-      const envPromise = baseShaPromise.then((baseSha) =>
+      const envPromise = baseShaPromise
+        .then((baseSha) =>
         buildSessionSandboxEnvVars({
           accountId,
           projectId,
@@ -661,7 +778,8 @@ export async function createProjectSession(input: {
           defaultBranch: project.defaultBranch,
           manifestPath: project.manifestPath,
         }),
-      ).then((envVars) => {
+        )
+        .then((envVars) => {
         tl.mark('env-vars');
         return envVars;
       });
@@ -694,12 +812,18 @@ export async function createProjectSession(input: {
         body.branch_already_created === true || body.branchAlreadyCreated === true;
       const branchPromise: Promise<void> = branchAlreadyCreated
         ? Promise.resolve()
-        : projectWithGitAuthPromise.then((projectWithGitAuth) =>
+        : projectWithGitAuthPromise
+            .then((projectWithGitAuth) =>
             createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-          ).then(() => {
+            )
+            .then(() => {
             tl.mark('branch-pushed');
             void mergeSessionMetadata({
-              remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
+                remote_branch: {
+                  status: 'ready',
+                  branch: sessionId,
+                  updated_at: new Date().toISOString(),
+                },
             }).catch(() => {});
           });
       branchPromise.catch((err) => {

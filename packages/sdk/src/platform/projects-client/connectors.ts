@@ -42,6 +42,73 @@ export interface ConnectorSyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
+export interface ConnectionProfile {
+  profile_id: string;
+  connector_alias: string;
+  owner_type: 'project' | 'agent' | 'member' | 'subject' | 'external';
+  owner_id: string | null;
+  label: string;
+  status: 'active' | 'revoked' | 'error';
+  is_default: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface ReconcileConnectionProfileInput {
+  connector_alias: string;
+  owner_type: 'agent' | 'member' | 'subject' | 'external';
+  owner_id: string;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+export async function listConnectionProfiles(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ profiles: ConnectionProfile[] }>(
+      `/projects/${projectId}/connector-profiles`,
+    ),
+  );
+}
+
+export async function reconcileConnectionProfile(
+  projectId: string,
+  input: ReconcileConnectionProfileInput,
+) {
+  return unwrap(
+    await backendApi.post<ConnectionProfile>(`/projects/${projectId}/connector-profiles`, input),
+  );
+}
+
+export async function updateConnectionProfileCredential(
+  projectId: string,
+  profileId: string,
+  input: { value: string; kind?: 'secret' | 'connection' },
+) {
+  return unwrap(
+    await backendApi.put<{ ok: true }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/credential`,
+      input,
+    ),
+  );
+}
+
+export async function revokeConnectionProfile(projectId: string, profileId: string) {
+  return unwrap(
+    await backendApi.put<{ ok: true }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/revoke`,
+      {},
+    ),
+  );
+}
+
+export async function activateConnectionProfile(projectId: string, profileId: string) {
+  return unwrap(
+    await backendApi.put<{ ok: true }>(
+      `/projects/${projectId}/connector-profiles/${profileId}/activate`,
+      {},
+    ),
+  );
+}
+
 export async function listConnectors(projectId: string) {
   return unwrap(
     // Background read fired at workspace mount (project-home tiles, sidebar
@@ -54,17 +121,16 @@ export async function listConnectors(projectId: string) {
 
 export async function syncConnectors(projectId: string) {
   return unwrap(
-    await backendApi.post<ConnectorSyncResult>(`/executor/projects/${projectId}/connectors/sync`, {}),
+    await backendApi.post<ConnectorSyncResult>(
+      `/executor/projects/${projectId}/connectors/sync`,
+      {},
+    ),
   );
 }
 
 /** `shared` is the only credential mode (`per_user` removed 2026-07-05) — kept
  *  for back-compat callers, restricted to a no-op on the API side. */
-export async function setConnectorCredentialMode(
-  projectId: string,
-  slug: string,
-  mode: 'shared',
-) {
+export async function setConnectorCredentialMode(projectId: string, slug: string, mode: 'shared') {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
@@ -98,7 +164,11 @@ export async function getConnectorPolicies(projectId: string, slug: string) {
   );
 }
 
-export async function setConnectorPolicies(projectId: string, slug: string, policies: ConnectorPolicyRule[]) {
+export async function setConnectorPolicies(
+  projectId: string,
+  slug: string,
+  policies: ConnectorPolicyRule[],
+) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
@@ -120,7 +190,12 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: {
+    type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1' | 'oauth1';
+    in: 'header' | 'query';
+    name: string | null;
+    prefix: string | null;
+  };
 }
 
 export async function getConnectorConfig(projectId: string, slug: string) {
@@ -217,7 +292,7 @@ export async function listPipedreamApps(projectId: string, q?: string, cursor?: 
 export async function getConnectStatus() {
   return unwrap(
     await backendApi.get<{ configured: boolean; provider: string | null }>(
-      `/executor/connect-status`,
+      '/executor/connect-status',
     ),
   );
 }

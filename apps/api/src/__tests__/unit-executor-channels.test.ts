@@ -9,6 +9,7 @@
  *     as a real error (parity with the in-sandbox CLI's throw).
  */
 import { describe, expect, test } from 'bun:test';
+import { config } from '../config';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   MEET_CHANNEL_CONNECTOR_SLUG,
@@ -18,7 +19,6 @@ import {
   channelCatalog,
   channelDefaultSlug,
 } from '../executor/channels';
-import { config } from '../config';
 import {
   type CallInput,
   type GatewayAction,
@@ -132,10 +132,16 @@ describe('channelCatalog(email)', () => {
   });
 
   test('profile-scoped actions do not require agents to supply inbox_id', () => {
-    expect(objectSchema(action('list_messages').inputSchema).required ?? []).not.toContain('inbox_id');
-    expect(objectSchema(action('list_threads').inputSchema).required ?? []).not.toContain('inbox_id');
+    expect(objectSchema(action('list_messages').inputSchema).required ?? []).not.toContain(
+      'inbox_id',
+    );
+    expect(objectSchema(action('list_threads').inputSchema).required ?? []).not.toContain(
+      'inbox_id',
+    );
     expect(objectSchema(action('send_message').inputSchema).required ?? []).toEqual(['to']);
-    expect(objectSchema(action('reply_message').inputSchema).required ?? []).toEqual(['message_id']);
+    expect(objectSchema(action('reply_message').inputSchema).required ?? []).toEqual([
+      'message_id',
+    ]);
   });
 
   test('api base + default slug', () => {
@@ -166,7 +172,11 @@ describe('channelCatalog(meet)', () => {
 
   test('send_chat_message → POST /bot/{id}/send_chat_message/, write, id+message required', () => {
     const a = action('send_chat_message');
-    expect(a.binding).toEqual({ kind: 'http', method: 'POST', path: '/bot/{id}/send_chat_message/' });
+    expect(a.binding).toEqual({
+      kind: 'http',
+      method: 'POST',
+      path: '/bot/{id}/send_chat_message/',
+    });
     expect(a.risk).toBe('write');
     expect(objectSchema(a.inputSchema).required).toEqual(['id', 'message']);
     expect((objectSchema(a.inputSchema).properties as Record<string, any>).id['x-in']).toBe('path');
@@ -194,7 +204,9 @@ describe('channelCatalog(meet)', () => {
     expect(t.binding).toEqual({ kind: 'http', method: 'GET', path: '/transcript/' });
     expect(t.risk).toBe('read');
     // bot_id has no x-in hint → on a GET it becomes a query param (?bot_id=…).
-    expect((objectSchema(t.inputSchema).properties as Record<string, any>).bot_id['x-in']).toBeUndefined();
+    expect(
+      (objectSchema(t.inputSchema).properties as Record<string, any>).bot_id['x-in'],
+    ).toBeUndefined();
     expect(objectSchema(t.inputSchema).required).toEqual(['bot_id']);
     const s = action('bot_status');
     expect(s.binding).toEqual({ kind: 'http', method: 'GET', path: '/bot/{id}/' });
@@ -208,8 +220,18 @@ describe('channelCatalog(meet)', () => {
   });
 
   test('meet auth is `Authorization: Token …` (custom header), not Bearer', () => {
-    expect(channelAuth('meet')).toEqual({ type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' });
-    expect(channelAuth('slack')).toEqual({ type: 'bearer', in: 'header', name: null, prefix: null });
+    expect(channelAuth('meet')).toEqual({
+      type: 'custom',
+      in: 'header',
+      name: 'Authorization',
+      prefix: 'Token ',
+    });
+    expect(channelAuth('slack')).toEqual({
+      type: 'bearer',
+      in: 'header',
+      name: null,
+      prefix: null,
+    });
   });
 });
 
@@ -246,7 +268,11 @@ provider = "channel"
 platform = "email"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ slug: 'kortix_email', provider: 'channel', platform: 'email' });
+    expect(specs[0]).toMatchObject({
+      slug: 'kortix_email',
+      provider: 'channel',
+      platform: 'email',
+    });
     expect(connectorSpecToTomlEntry(expectDefined(specs[0]))).toMatchObject({
       provider: 'channel',
       platform: 'email',
@@ -335,7 +361,11 @@ const EMAIL_REPLY: GatewayAction = {
     required: ['inbox_id', 'message_id'],
   },
   risk: 'write',
-  binding: { kind: 'http', method: 'POST', path: '/inboxes/{inbox_id}/messages/{message_id}/reply' },
+  binding: {
+    kind: 'http',
+    method: 'POST',
+    path: '/inboxes/{inbox_id}/messages/{message_id}/reply',
+  },
 };
 
 const EMAIL_LIST_MESSAGES: GatewayAction = {
@@ -512,6 +542,11 @@ describe('handleCall — channel (email)', () => {
       ...EMAIL,
       connectorId: 'conn-email-stale-profile',
       slug: 'email_old_profile',
+      profileId: 'profile-active-inbox',
+      profileMetadata: {
+        connector_slug: 'email_active_profile',
+        inbox_id: 'inb_active',
+      },
     };
     const fetchCalls: Array<{
       url: string;
@@ -554,7 +589,9 @@ describe('handleCall — channel (email)', () => {
     expect(res.status).toBe('ok');
     expect(fetchCalls).toHaveLength(1);
     const call = expectDefined(fetchCalls[0]);
-    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/inb_active/messages/msg_active/reply');
+    expect(call.url).toBe(
+      'https://api.agentmail.to/v0/inboxes/inb_active/messages/msg_active/reply',
+    );
     expect(call.headers.Authorization).toBe('Bearer am_active_inbox_token');
     expect(JSON.parse(expectDefined(call.body))).toEqual({ text: 'Thanks' });
   });
@@ -602,7 +639,9 @@ describe('handleCall — channel (email)', () => {
     expect(res.status).toBe('ok');
     expect(fetchCalls).toHaveLength(1);
     const call = expectDefined(fetchCalls[0]);
-    expect(call.url).toBe('https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1');
+    expect(call.url).toBe(
+      'https://api.agentmail.to/v0/inboxes/email-inbox%40agentmail.to/messages?limit=1',
+    );
     expect(call.headers.Authorization).toBe('Bearer am_profile_token');
   });
 });
@@ -646,7 +685,12 @@ const MEET_TRANSCRIPT: GatewayAction = {
 };
 
 function meetDeps(action: GatewayAction, body: string, status = 200) {
-  const fetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = [];
+  const fetchCalls: Array<{
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  }> = [];
   const deps: GatewayDeps = {
     loadConnectorBySlug: async () => MEET,
     loadAction: async () => action,
@@ -685,8 +729,19 @@ describe('handleCall — channel (meet)', () => {
   test('join_meeting injects the realtime webhook + bot metadata server-side (live relay)', async () => {
     const { deps, fetchCalls } = meetDeps(MEET_JOIN, '{"id":"bot_abc"}', 201);
     deps.resolveMeetJoinContext = async (projectId, sessionId) => ({
-      metadata: { kortix_project_id: projectId, kortix_session_id: sessionId, kortix_token: 'sig', kortix_wake: 'kortix' },
-      realtimeEndpoints: [{ type: 'webhook', url: 'https://pub.example/v1/webhooks/meet/realtime', events: ['transcript.data'] }],
+      metadata: {
+        kortix_project_id: projectId,
+        kortix_session_id: sessionId,
+        kortix_token: 'sig',
+        kortix_wake: 'kortix',
+      },
+      realtimeEndpoints: [
+        {
+          type: 'webhook',
+          url: 'https://pub.example/v1/webhooks/meet/realtime',
+          events: ['transcript.data'],
+        },
+      ],
       automaticAudioOutput: { in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } },
       botName: 'Acme Notetaker',
     });
@@ -695,7 +750,10 @@ describe('handleCall — channel (meet)', () => {
       sessionId: 'sess-xyz',
       connectorSlug: MEET_CHANNEL_CONNECTOR_SLUG,
       actionPath: 'join_meeting',
-      args: { meeting_url: 'https://meet.google.com/abc-defg-hij', recording_config: { transcript: { provider: { meeting_captions: {} } } } },
+      args: {
+        meeting_url: 'https://meet.google.com/abc-defg-hij',
+        recording_config: { transcript: { provider: { meeting_captions: {} } } },
+      },
     });
     expect(res.status).toBe('ok');
     const body = JSON.parse(expectDefined(expectDefined(fetchCalls[0]).body));
@@ -703,11 +761,17 @@ describe('handleCall — channel (meet)', () => {
     expect(body.recording_config.transcript).toEqual({ provider: { meeting_captions: {} } });
     // … and the realtime webhook + session-tagged metadata are merged in.
     expect(body.recording_config.realtime_endpoints).toEqual([
-      { type: 'webhook', url: 'https://pub.example/v1/webhooks/meet/realtime', events: ['transcript.data'] },
+      {
+        type: 'webhook',
+        url: 'https://pub.example/v1/webhooks/meet/realtime',
+        events: ['transcript.data'],
+      },
     ]);
     expect(body.metadata).toMatchObject({ kortix_session_id: 'sess-xyz', kortix_token: 'sig' });
     // … and the bot is enabled to speak (output_audio) via automatic_audio_output.
-    expect(body.automatic_audio_output).toEqual({ in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } } });
+    expect(body.automatic_audio_output).toEqual({
+      in_call_recording: { data: { kind: 'mp3', b64_data: 'c2lsZW50' } },
+    });
     // … and the project's configured bot name is used (caller passed none).
     expect(body.bot_name).toBe('Acme Notetaker');
   });

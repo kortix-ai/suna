@@ -257,6 +257,10 @@ resource (an agent, a skill, a secret) rather than the whole project:
 | `setCredential(connectorId, input)` | set its credential value |
 | `setSensitive(connectorId, sensitive)` | mark it sensitive (extra approval gating) |
 | `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
+| `profiles.list()` | list concrete server-side identities (manager-only) |
+| `profiles.reconcile(input)` | idempotently create/update one external/member/subject identity |
+| `profiles.updateCredential(profileId, input)` | encrypt/rotate that profile's credential without returning it |
+| `profiles.revoke(profileId)` · `profiles.activate(profileId)` | deny or restore the identity live |
 
 `p.connectors.pipedream` drives the easy-connect (Pipedream) app-catalog handshake:
 
@@ -267,10 +271,12 @@ resource (an agent, a skill, a secret) rather than the whole project:
 | `pipedream.finalize(input)` | finalize it into a connector |
 
 <Callout>
-Connectors are how tools reach a session (the **Executor** surface). The
-runtime-side MCP management hooks are being folded into this — see the
-[note in React hooks](/docs/sdk/react#mcp-servers). The deeper Executor-connector
-surface is still being brought into the SDK.
+Connectors are how tools reach a session (the **Executor** surface). A logical
+connector remains manifest/project configuration; `profiles` select the
+concrete identity for a session. Session creation accepts
+`connector_bindings: { alias: { profile_id } }`. Credentials remain encrypted
+in the control plane and are resolved for each Executor request, so profile
+revocation is immediate and no credential enters the sandbox.
 </Callout>
 
 ### `p.policies` — project policies

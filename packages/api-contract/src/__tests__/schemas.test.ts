@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ConnectionProfileMetadataSchema,
   EXPERIMENTAL_FEATURE_KEYS,
   ErrorEnvelopeSchema,
   OkResponseSchema,
   ProjectSchema,
   ProjectSessionSandboxSchema,
   ProjectSessionSchema,
+  ReconcileConnectionProfileInputSchema,
   SecretSchema,
+  SessionConnectorBindingsSchema,
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
   SessionRuntimeContextSchema,
@@ -14,6 +17,7 @@ import {
   SharingIntentSchema,
   TriggerListSchema,
   TriggerSchema,
+  UpdateConnectionProfileCredentialInputSchema,
 } from '../index';
 
 const NOW = '2026-07-01T12:00:00.000Z';
@@ -403,7 +407,9 @@ describe('SessionCreateInputSchema runtime_context', () => {
       'authorization',
       'session.cookie',
     ]) {
-      expect(SessionRuntimeContextSchema.safeParse({ [key]: 'must-not-land-here' }).success).toBe(false);
+      expect(SessionRuntimeContextSchema.safeParse({ [key]: 'must-not-land-here' }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -412,16 +418,23 @@ describe('SessionCreateInputSchema runtime_context', () => {
       Array.from({ length: 65 }, (_, index) => [`key_${index}`, index]),
     );
     expect(SessionRuntimeContextSchema.safeParse(tooMany).success).toBe(false);
-    expect(SessionRuntimeContextSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(false);
+    expect(SessionRuntimeContextSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
+      false,
+    );
   });
 
   test('rejects unknown create fields instead of accepting raw env or MCP config', () => {
-    expect(SessionCreateInputSchema.safeParse({ runtime_env: { VEYRIS_TOKEN: 'secret' } }).success).toBe(false);
-    expect(SessionCreateInputSchema.safeParse({ mcp: { url: 'https://attacker.test' } }).success).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ runtime_env: { VEYRIS_TOKEN: 'secret' } }).success,
+    ).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ mcp: { url: 'https://attacker.test' } }).success,
+    ).toBe(false);
   });
 
   test('retains deprecated camelCase inputs already accepted by the route', () => {
-    expect(SessionCreateInputSchema.safeParse({
+    expect(
+      SessionCreateInputSchema.safeParse({
       baseRef: 'main',
       agentName: 'veyris',
       sandboxSlug: 'default',
@@ -429,6 +442,57 @@ describe('SessionCreateInputSchema runtime_context', () => {
       opencodeModel: 'kortix/auto',
       sessionId: '11111111-1111-4111-a111-111111111111',
       branchAlreadyCreated: true,
-    }).success).toBe(true);
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe('session connector profile contracts', () => {
+  const profileId = '11111111-1111-4111-a111-111111111111';
+
+  test('accepts typed connector bindings and rejects escape hatches', () => {
+    expect(
+      SessionCreateInputSchema.safeParse({
+        connector_bindings: { veyris: { profile_id: profileId } },
+      }).success,
+    ).toBe(true);
+    expect(
+      SessionConnectorBindingsSchema.safeParse({
+        veyris: { profile_id: profileId, credential: 'secret' },
+      }).success,
+    ).toBe(false);
+    expect(
+      SessionConnectorBindingsSchema.safeParse({
+        VEYRIS: { profile_id: profileId },
+      }).success,
+    ).toBe(false);
+  });
+
+  test('bounds binding count and non-secret profile metadata', () => {
+    const tooMany = Object.fromEntries(
+      Array.from({ length: 65 }, (_, index) => [`connector_${index}`, { profile_id: profileId }]),
+    );
+    expect(SessionConnectorBindingsSchema.safeParse(tooMany).success).toBe(false);
+    expect(ConnectionProfileMetadataSchema.safeParse({ access_token: 'nope' }).success).toBe(false);
+    expect(ConnectionProfileMetadataSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(
+      false,
+    );
+  });
+
+  test('profile reconcile and credential mutation reject unknown or oversized input', () => {
+    const valid = {
+      connector_alias: 'veyris',
+      owner_type: 'external' as const,
+      owner_id: 'thread-123',
+      label: 'VEYRIS thread',
+      metadata: { workspace_id: 'workspace-1' },
+    };
+    expect(ReconcileConnectionProfileInputSchema.safeParse(valid).success).toBe(true);
+    expect(
+      ReconcileConnectionProfileInputSchema.safeParse({ ...valid, credential: 'secret' }).success,
+    ).toBe(false);
+    expect(
+      UpdateConnectionProfileCredentialInputSchema.safeParse({ value: 'x'.repeat(65537) }).success,
+    ).toBe(false);
   });
 });
