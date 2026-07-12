@@ -871,6 +871,10 @@ projectsApp.openapi(
   },
 );
 
+function teamsPublicBaseUrl(): string | undefined {
+  return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
+}
+
 // ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
 
 projectsApp.openapi(
@@ -906,7 +910,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const baseUrl = resolveBaseUrl(new URL(c.req.url));
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
     return c.json({
@@ -932,11 +936,12 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
-    const mode = teamsMode(resolveBaseUrl(new URL(c.req.url)), { projectId, byoAppId });
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+    const mode = teamsMode(baseUrl, { projectId, byoAppId });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
-    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl: resolveBaseUrl(new URL(c.req.url)) }));
+    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl }));
   },
 );
 
