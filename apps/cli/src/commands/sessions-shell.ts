@@ -1,7 +1,11 @@
 import { kortixPtyWsUrl, type OpencodePty } from '../api/sandbox-proxy.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
-import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
+import {
+  loadOpenCodeSession,
+  resolveRunningSessionId,
+  type ResolvedOpenCodeSession,
+} from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -80,7 +84,7 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to open a shell in');
   if (!sessionId) return 1;
 
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions shell');
+  const resolved = await loadOpenCodeSession(sessionId, opts, 'sessions shell');
   if (!resolved) return 1;
 
   let pty: OpencodePty;
@@ -102,19 +106,19 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
 /** Reuse the session's existing terminal if one's already running (matches
  *  the dashboard's "ambient shell" — one persistent terminal per session,
  *  never killed on disconnect), else spawn one. */
-async function ensurePty(resolved: ResolvedSession): Promise<OpencodePty> {
+async function ensurePty(resolved: ResolvedOpenCodeSession): Promise<OpencodePty> {
   const existing = await resolved.oc.listPty();
   if (existing.length > 0) return existing[0]!;
   return createPty(resolved);
 }
 
-function createPty(resolved: ResolvedSession): Promise<OpencodePty> {
+function createPty(resolved: ResolvedOpenCodeSession): Promise<OpencodePty> {
   return resolved.oc.createPty({ title: 'Session terminal', env: { ...PTY_ENV } });
 }
 
 /** Put the local terminal in raw mode, pipe bytes to/from the remote PTY's
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
-function runPtySession(resolved: ResolvedSession, pty: OpencodePty): Promise<number> {
+function runPtySession(resolved: ResolvedOpenCodeSession, pty: OpencodePty): Promise<number> {
   const wsUrl = kortixPtyWsUrl(resolved.auth, resolved.proxyId, pty.id);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';

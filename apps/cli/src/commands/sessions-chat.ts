@@ -29,16 +29,19 @@ type CtxOpts = { projectArg?: string; hostArg?: string };
 export interface ResolvedSession {
   /** Kortix session row. */
   session: ProjectSession;
-  /** Auth used (so opencodeClient builds with the right base URL). */
+  /** Auth used for the host where this session was located. */
   auth: Auth;
-  /** Convenience: bound OpenCode client. */
+  /** Kortix-side API client (for PATCH/save-back). */
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+}
+
+export interface ResolvedOpenCodeSession extends ResolvedSession {
+  /** Convenience: bound OpenCode client for legacy OpenCode-only commands. */
   oc: ReturnType<typeof opencodeClient>;
   /** The sandbox's external/provider id — the `/v1/p/{proxyId}/…` proxy key. */
   proxyId: string;
   /** The OpenCode session id INSIDE the sandbox. May need creating. */
   opencodeSessionId: string | null;
-  /** Kortix-side API client (for PATCH/save-back). */
-  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
 
 type AcpResponse<T = unknown> = {
@@ -170,31 +173,44 @@ export async function loadSessionForChat(
     );
     return null;
   }
+  return {
+    session,
+    auth,
+    ctx,
+  };
+}
+
+export async function loadOpenCodeSession(
+  sessionId: string,
+  opts: CtxOpts,
+  cliCommand: string,
+): Promise<ResolvedOpenCodeSession | null> {
+  const resolved = await loadSessionForChat(sessionId, opts, cliCommand);
+  if (!resolved) return null;
+
   // The OpenCode proxy is keyed by the sandbox's *external* (provider) id,
   // which only ever appears inside sandbox_url:
   //   https://<host>/v1/p/<external-id>/8000
   // `sandbox_id` is the Kortix row id and the proxy rejects it ("sandbox not
   // found"). The external id is also ephemeral — it changes on every restart —
-  // so we always derive it fresh from the just-fetched session row.
-  const proxyId = proxyIdFromSession(session);
+  // so legacy OpenCode commands derive it fresh from the just-fetched row.
+  const proxyId = proxyIdFromSession(resolved.session);
   if (!proxyId) {
     process.stderr.write(
       `${status.err('Session has no reachable sandbox yet — provisioning may not be done.')}\n` +
-        `  ${C.dim}Check \`kortix sessions info ${session.session_id}\`.${C.reset}\n`,
+        `  ${C.dim}Check \`kortix sessions info ${resolved.session.session_id}\`.${C.reset}\n`,
     );
     return null;
   }
 
   // Same auth `locateSessionAnywhere` resolved the session with, so the
   // sandbox proxy auth header matches the host the session actually lives on.
-  const oc = opencodeClient({ auth, sandboxId: proxyId });
+  const oc = opencodeClient({ auth: resolved.auth, sandboxId: proxyId });
   return {
-    session,
-    auth,
+    ...resolved,
     oc,
     proxyId,
-    opencodeSessionId: session.opencode_session_id,
-    ctx,
+    opencodeSessionId: resolved.session.opencode_session_id,
   };
 }
 
@@ -204,7 +220,7 @@ export async function loadSessionForChat(
  * create one — and persist the id back to Kortix so subsequent CLI calls
  * stay glued to the same conversation.
  */
-export async function ensureOpencodeSession(r: ResolvedSession): Promise<string | null> {
+export async function ensureOpencodeSession(r: ResolvedOpenCodeSession): Promise<string | null> {
   if (r.opencodeSessionId) return r.opencodeSessionId;
 
   // First try to discover an existing session inside the sandbox.
@@ -241,7 +257,7 @@ export async function ensureOpencodeSession(r: ResolvedSession): Promise<string 
 }
 
 async function persistOpencodeSessionId(
-  r: ResolvedSession,
+  r: ResolvedOpenCodeSession,
   opencodeSessionId: string,
 ): Promise<void> {
   try {

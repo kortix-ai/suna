@@ -5,7 +5,7 @@ import { takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
   ensureOpencodeSession,
-  loadSessionForChat,
+  loadOpenCodeSession,
   resolveRunningSessionId,
 } from './sessions-chat.ts';
 
@@ -68,9 +68,9 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
-  // currently active/linked — loadSessionForChat locates it on its own
+  // currently active/linked — loadOpenCodeSession locates it on its own
   // (--project/--host still pin it) instead of surfacing a bare "Not found".
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions connect');
+  const resolved = await loadOpenCodeSession(sessionId, opts, 'sessions connect');
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
