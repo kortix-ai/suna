@@ -6,17 +6,16 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import {
-  buildSessionSandboxEnvVars,
-  sandboxCallbackUnreachableReason,
-} from '../lib/sessions';
+import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isMissingRuntimeError } from '../routes/shared';
 import {
-  isMissingRuntimeError,
-} from '../routes/shared';
-import {
-  retireConfirmedMissingRuntime,
+  claimInPlaceRuntimeRecovery,
+  markInPlaceRuntimeRecoveryAccepted,
+  preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
+  RUNTIME_IDENTITY_ERROR,
+  RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 
@@ -74,7 +73,9 @@ export async function deleteSession(input: {
           initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
           ...(sandbox.status === 'active'
             ? {}
-            : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
+            : {
+                lastInitError: 'Session was stopped before sandbox initialization completed',
+              }),
         },
         updatedAt: new Date(),
       })
@@ -128,12 +129,18 @@ export async function restartSession(input: {
   const { loaded, session, projectId, sessionId } = input;
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-    return { status: 400, body: { error: `Restart is not supported for provider ${providerName}` } };
+    return {
+      status: 400,
+      body: { error: `Restart is not supported for provider ${providerName}` },
+    };
   }
 
   const restartUnreachable = sandboxCallbackUnreachableReason();
   if (restartUnreachable) {
-    return { status: 503, body: { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' } };
+    return {
+      status: 503,
+      body: { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
+    };
   }
 
   const [existingSandbox] = await db
@@ -206,42 +213,76 @@ export async function restartSession(input: {
     const provider = getProvider(existingSandbox.provider as SandboxProviderName);
     const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
     if (providerStatus === 'removed') {
-      const retired = await retireConfirmedMissingRuntime(
-        existingSandbox,
-        'restart_removed_runtime',
-      );
-      if (retired) await provisionReplacementRuntime();
+      const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+      if (!claim) {
+        return {
+          status: 202,
+          body: {
+            ok: true,
+            session_id: sessionId,
+            status: 'provisioning',
+            reason: 'runtime_recovery_in_progress',
+          },
+        };
+      }
+      const recovery = await provider
+        .recoverInPlace?.(externalId)
+        .catch(() => 'unavailable' as const);
+      if (recovery === 'running' || recovery === 'recovering') {
+        const accepted = await markInPlaceRuntimeRecoveryAccepted(claim, recovery);
+        if (!accepted) {
+          return {
+            status: 409,
+            body: {
+              error: RUNTIME_IDENTITY_ERROR,
+              code: 'SESSION_RUNTIME_RECOVERY_CANCELLED',
+              session_id: sessionId,
+              external_id: externalId,
+              reason: 'runtime_recovery_cancelled',
+            },
+          };
+        }
       return {
         status: 202,
         body: {
           ok: true,
           session_id: sessionId,
           status: 'provisioning',
-          reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
+            reason:
+              recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
+          },
+        };
+      }
+      await preserveEstablishedRuntime(claim.row, 'restart_removed_runtime');
+      return {
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: RUNTIME_IDENTITY_UNAVAILABLE,
         },
       };
     }
 
     // A daemon boot error is commonly caused by immutable sandbox process env
-    // (for example a missing/old compiled ACP plan). Stop/start preserves that
-    // env and can never heal it, so a user-requested restart must replace the
-    // provider runtime and rebuild the environment from current kortix.yaml.
+    // (for example a missing/old compiled ACP plan). Preserve the established
+    // runtime identity instead of silently replacing a sandbox that may contain
+    // uncommitted user data; provider recovery or explicit deletion remains the
+    // safe path out of this state.
     const runtimeHealth = await inspectSandboxRuntime(externalId, loaded.userId);
     if (runtimeHealth?.bootError) {
-      await provider.remove(externalId);
-      let removed = await provider.getStatus(externalId).catch(() => 'unknown' as const);
-      for (let attempt = 1; removed !== 'removed' && attempt < 15; attempt += 1) {
-        await Bun.sleep(1_000);
-        removed = await provider.getStatus(externalId).catch(() => 'unknown' as const);
-      }
-      if (removed !== 'removed') {
-        return { status: 503, body: { error: 'Failed to replace the broken session runtime' } };
-      }
-      const retired = await retireConfirmedMissingRuntime(existingSandbox, 'restart_boot_error');
-      if (retired) await provisionReplacementRuntime();
+      await preserveEstablishedRuntime(existingSandbox, 'restart_boot_error');
       return {
-        status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'boot_error_reprovisioning' },
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: 'restart_boot_error',
+        },
       };
     }
 
@@ -268,16 +309,27 @@ export async function restartSession(input: {
         // the next GET returned removed). Never mark the DB running from command
         // acceptance alone; verify provider truth first.
         let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
-        for (let attempt = 1; verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15; attempt += 1) {
+        for (
+          let attempt = 1;
+          verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15;
+          attempt += 1
+        ) {
           await Bun.sleep(1_000);
           verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
         }
         if (verifiedStatus === 'removed') {
-          const retired = await retireConfirmedMissingRuntime(
-            existingSandbox,
-            'restart_post_start_removed',
-          ).catch(() => false);
-          if (retired) await provisionReplacementRuntime();
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(claim.row, 'restart_post_start_removed').catch(
+              () => null,
+            );
+          }
           return;
         }
         if (verifiedStatus !== 'running') {
@@ -296,11 +348,18 @@ export async function restartSession(input: {
       } catch (err) {
         console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
         if (isMissingRuntimeError(err)) {
-          const retired = await retireConfirmedMissingRuntime(
-            existingSandbox,
-            'restart_missing_runtime',
-          ).catch(() => false);
-          if (retired) await provisionReplacementRuntime();
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(claim.row, 'restart_missing_runtime').catch(
+              () => null,
+            );
+          }
           return;
         }
         await db
@@ -321,7 +380,10 @@ export async function restartSession(input: {
       }
     })();
 
-    return { status: 202, body: { ok: true, session_id: sessionId, status: 'provisioning' } };
+    return {
+      status: 202,
+      body: { ok: true, session_id: sessionId, status: 'provisioning' },
+    };
   }
 
   if (existingSandbox) {
@@ -338,5 +400,8 @@ export async function restartSession(input: {
   }
 
   await provisionReplacementRuntime();
-  return { status: 202, body: { ok: true, session_id: sessionId, status: 'provisioning' } };
+  return {
+    status: 202,
+    body: { ok: true, session_id: sessionId, status: 'provisioning' },
+  };
 }
