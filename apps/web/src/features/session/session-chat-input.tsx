@@ -52,6 +52,7 @@ import {
 } from './model-availability';
 import { ModelConnectionGate } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
 import {
@@ -1675,12 +1676,17 @@ export function SessionChatInput({
     selectedModel,
     lockForQuestion,
   });
-  // Stricter than modelUnavailable: true only once we're confident the catalog
-  // is genuinely empty (not mid-fetch) — this is when the whole input gets
-  // replaced with the "connect a model" teaching moment, not just the send
-  // button being disabled.
+  // Stricter than modelUnavailable: true only once we're confident NOTHING is
+  // usable (not mid-fetch) — this is when the whole input gets replaced with
+  // the "connect a model" teaching moment, not just the send button being
+  // disabled. Deliberately NOT `models.length === 0` — the gateway bakes its
+  // whole catalog into every project regardless of plan or connected keys, so
+  // the raw list is basically never empty even for a brand-new, unpaid,
+  // no-BYOK account. `hasSelectableModels` accounts for free-tier gating and
+  // which providers are actually connected.
+  const { hasSelectableModels } = useModelConnectionGate(models);
   const noModelsConnected =
-    modelRequired && !lockForQuestion && !modelsLoading && models.length === 0;
+    modelRequired && !lockForQuestion && !modelsLoading && !hasSelectableModels;
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
