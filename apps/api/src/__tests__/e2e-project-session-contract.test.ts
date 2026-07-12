@@ -409,6 +409,9 @@ mock.module('../shared/supabase', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
   db: {
+    transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return fn(this);
+    },
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -1693,7 +1696,7 @@ describe('project session API contract', () => {
     releaseProviderStart?.();
   });
 
-  test('dashboard start preserves a provider-removed sandbox and never reallocates', async () => {
+  test('dashboard start retires a provider-confirmed missing sandbox and reallocates once', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1731,17 +1734,26 @@ describe('project session API contract', () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'failed',
+      stage: 'provisioning',
       agent_name: 'default',
-      retriable: false,
-      reason: 'runtime_identity_unavailable',
-      sandbox: { external_id: 'box-deleted', status: 'stopped' },
+      retriable: true,
+      reason: 'runtime_recovery_provisioning',
+      sandbox: null,
     });
 
     expect(providerStartCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(0);
-    expect(sessionSandboxRows).toHaveLength(1);
-    expect(sessionSandboxRows[0]?.externalId).toBe('box-deleted');
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(sessionRow?.status).toBe('provisioning');
+    expect(sessionRow?.opencodeSessionId).toBeNull();
+    expect(sessionRow?.metadata).toMatchObject({
+      lastRuntimeRecovery: {
+        externalId: 'box-deleted',
+        reason: 'runtime_removed',
+        opencodeSessionId: 'ses_root_existing',
+      },
+    });
   });
 
   test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
@@ -1797,7 +1809,7 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
   });
 
-  test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
+  test('restart of a provider-removed sandbox provisions a replacement', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1828,19 +1840,63 @@ describe('project session API contract', () => {
       `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
       { method: 'POST' },
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({
-      code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+      ok: true,
       session_id: SESSION_ID,
-      external_id: 'box-deleted',
-      reason: 'runtime_identity_unavailable',
+      status: 'provisioning',
+      reason: 'runtime_recovery_provisioning',
     });
 
     expect(providerStartCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(0);
-    expect(sessionRow?.status).toBe('stopped');
-    expect(sessionSandboxRows).toHaveLength(1);
-    expect(sessionSandboxRows[0]?.externalId).toBe('box-deleted');
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionRow?.status).toBe('provisioning');
+    expect(sessionSandboxRows).toHaveLength(0);
+  });
+
+  test('restart self-heals when provider status is uncertain but start returns not-found', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-missing-on-start',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    providerStartError = Object.assign(new Error('sandbox not found'), { status: 404 });
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionRow?.status).toBe('provisioning');
+    expect(sessionRow?.metadata).toMatchObject({
+      lastRuntimeRecovery: {
+        externalId: 'box-missing-on-start',
+        reason: 'restart_missing_runtime',
+      },
+    });
   });
 
   test('dashboard start recovery of an already-bootstrapped session provisions without replaying the initial prompt', async () => {

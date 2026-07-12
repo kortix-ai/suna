@@ -1,5 +1,5 @@
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { endComputeSession } from '../billing/services/compute-metering';
 import { db } from '../shared/db';
@@ -103,5 +103,103 @@ export async function retireUnmaterializedRuntime(
         isNull(sessionSandboxes.externalId),
       ),
     );
+  return true;
+}
+
+/**
+ * Detach a provider-confirmed missing runtime so the same logical session can
+ * provision replacement compute. This never calls provider.remove(): the
+ * provider already says the object is gone. A guarded project-session update
+ * prevents duplicate recovery and refuses to revive explicit deletions.
+ */
+export async function retireConfirmedMissingRuntime(
+  row: RuntimeIdentityRow,
+  reason: string,
+  now = new Date(),
+): Promise<boolean> {
+  if (!row.externalId) {
+    throw new Error(
+      `Cannot retire sandbox ${row.sandboxId} as provider-missing without an external_id`,
+    );
+  }
+  const externalId = row.externalId;
+
+  const retired = await db.transaction(async (tx) => {
+    const [session] = await tx
+      .select({
+        metadata: projectSessions.metadata,
+        opencodeSessionId: projectSessions.opencodeSessionId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, row.sessionId))
+      .limit(1);
+    if (!session) return false;
+
+    const sessionMetadata = {
+      ...((session.metadata as Record<string, unknown> | null) ?? {}),
+    };
+    if (typeof sessionMetadata.deletedAt === 'string') return false;
+
+    const previousRecoveries = Array.isArray(sessionMetadata.runtimeRecoveries)
+      ? sessionMetadata.runtimeRecoveries.slice(-9)
+      : [];
+    const recovery = {
+      externalId,
+      detectedAt: now.toISOString(),
+      reason,
+      opencodeSessionId: session.opencodeSessionId ?? null,
+    };
+    const [won] = await tx
+      .update(projectSessions)
+      .set({
+        status: 'provisioning',
+        error: null,
+        sandboxUrl: null,
+        opencodeSessionId: null,
+        metadata: {
+          ...sessionMetadata,
+          runtimeRecoveries: [...previousRecoveries, recovery],
+          lastRuntimeRecovery: recovery,
+        },
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(projectSessions.sessionId, row.sessionId),
+          sql`(${projectSessions.metadata}->>'deletedAt') is null`,
+          sql`exists (
+            select 1 from ${sessionSandboxes} current_runtime
+            where current_runtime.session_id = ${row.sessionId}
+              and current_runtime.external_id = ${externalId}
+          )`,
+        ),
+      )
+      .returning({ sessionId: projectSessions.sessionId });
+    if (!won) return false;
+
+    await tx
+      .delete(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          eq(sessionSandboxes.externalId, externalId),
+        ),
+      );
+    return true;
+  });
+
+  if (!retired) return false;
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[runtime-identity] failed to close compute for provider-missing ${row.sandboxId}/${externalId}:`,
+      err,
+    ),
+  );
+  console.error('[runtime-identity] retired provider-confirmed missing sandbox', {
+    sessionId: row.sessionId,
+    sandboxId: row.sandboxId,
+    externalId,
+    reason,
+  });
   return true;
 }
