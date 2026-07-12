@@ -134,6 +134,33 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
   'invalid group specifier name',
 ] as const;
 
+// Old-browser / stripped-down-WebView minified-chunk parse failures. When a
+// browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
+// WebView, in-app browsers, mail-client preview WebViews) tries to evaluate a
+// Next.js `_next/static/chunks/…` bundle, it throws a parse-time `SyntaxError`
+// — `Unexpected token '='` / `'('` / `'{'` (V8/SpiderMonkey), `Invalid or
+// unexpected token` (V8), or `Cannot use import statement outside a module`
+// (V8, when an ES-module chunk is loaded as a classic script) — failing the
+// whole chunk for that visitor. These are NOT product bugs: the browser is
+// simply incompatible with the shipped syntax. They are 1–2 occurrences each,
+// 0 identified users, all from `app:///_next/static/chunks/…` frames.
+//
+// The message prefixes are GENERIC (a real `new Function('…')` / `eval('…')`
+// eval bug in first-party app code throws the same wording), so matching on
+// message alone would swallow real app SyntaxErrors. Require BOTH the message
+// prefix AND a minified-chunk source (`_next/static/chunks/` or a `?dpl=dpl_…`
+// deploy hash). Parse failures happen at raw chunk load time, BEFORE Sentry's
+// sourcemap resolution, so the frame filename stays as the raw chunk path —
+// a genuine first-party eval bug de-minifies to `apps/web/src/…` and is never
+// hidden. `SyntaxError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers
+// are stripped before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently.
+const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Unexpected token\b/,
+  /^Invalid or unexpected token$/,
+  /^Cannot use import statement outside a module$/,
+];
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -332,6 +359,59 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
   );
 }
 
+// Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
+// rejection: ` (and stacked) wrappers a browser/Sentry prefixes a throw with,
+// so the underlying message can be matched by an anchored pattern regardless
+// of which capture path delivered it.
+function stripErrorWrappers(message: string): string {
+  return message.trim().replace(/^(?:Unhandled promise rejection: )?(?:[A-Za-z]+Error: )?/, '');
+}
+
+// A raw Next.js minified chunk source — `_next/static/chunks/…` (the bundled
+// JS chunk) or a Vercel `?dpl=dpl_…` deploy-hash URL. Parse-time SyntaxErrors
+// in old browsers fire at chunk LOAD time, before Sentry's sourcemap
+// resolution, so the frame filename stays as this raw path. A genuine
+// first-party eval/`new Function` SyntaxError de-minifies to `apps/web/src/…`
+// and is NOT matched here — that is the negative guard.
+function isMinifiedChunkSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  if (!normalized) return false;
+  return (
+    normalized.includes('/_next/static/chunks/')
+    || /[?&]dpl=dpl_[A-Za-z0-9]+/.test(normalized)
+  );
+}
+
+/**
+ * Whether an event is the old-browser / stripped-down-WebView minified-chunk
+ * parse-failure class: a `SyntaxError` whose message is one of
+ * `Unexpected token …`, `Invalid or unexpected token`, or
+ * `Cannot use import statement outside a module`, AND whose throwing frame (or
+ * window.onerror filename) is a raw `_next/static/chunks/…` / `?dpl=dpl_…`
+ * source. Old browsers that cannot parse modern minified JS throw these at
+ * chunk load time; the browser is incompatible, not broken. Requiring a
+ * minified-chunk source means a real first-party `new Function(...)` /
+ * `eval(...)` SyntaxError (de-minified to `apps/web/src/…`) keeps reporting.
+ * Never page Better Stack for the old-browser class.
+ */
+export function isOldBrowserSyntaxParseError(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!message) return false;
+  const stripped = stripErrorWrappers(message);
+  if (!OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some((filename) => isMinifiedChunkSource(filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -386,6 +466,16 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
+    return true;
+  }
+
+  // Old-browser / stripped-down-WebView minified-chunk parse failures
+  // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
+  // statement outside a module`) from `window.onerror`. The browser cannot
+  // parse the modern minified chunk — incompatible, not an app defect.
+  // Requires a `_next/static/chunks/` / `?dpl=dpl_…` filename so a real
+  // first-party eval/`new Function` SyntaxError keeps reporting.
+  if (isOldBrowserSyntaxParseError({ message, filename: input.filename })) {
     return true;
   }
 
@@ -469,6 +559,20 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // visitors hit it. The de-minified frame points at our own chunk, so this
   // is matched by message, not by source.
   if (isOldWebkitRegexNoiseMessage(message)) {
+    return true;
+  }
+
+  // Old-browser / stripped-down-WebView minified-chunk parse failures
+  // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
+  // statement outside a module`) thrown when an incompatible browser tries to
+  // evaluate a modern `_next/static/chunks/…` bundle. Requires a chunk frame
+  // so a real first-party `new Function(...)` / `eval(...)` SyntaxError
+  // (de-minified to `apps/web/src/…`) keeps reporting. NOTE: deliberately NOT
+  // added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has
+  // no frame context, so a bare-string match there would swallow real app
+  // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
+  // safe gate because it can anchor on the chunk frame.
+  if (isOldBrowserSyntaxParseError({ message, frames })) {
     return true;
   }
 
