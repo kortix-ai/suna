@@ -52,7 +52,7 @@ function serializeBinding(row: ChannelBindingRow, projectDefaultAgent: string | 
     channelName: row.channelName,
     channelType: row.channelType,
     agentName: row.agentName,
-    model: row.opencodeModel,
+    model: row.model,
     conversationPolicy: row.conversationPolicy,
     installedAt: row.installedAt.toISOString(),
     effectiveAgent,

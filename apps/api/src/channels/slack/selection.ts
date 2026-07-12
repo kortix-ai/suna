@@ -12,7 +12,7 @@ import { listRepoFiles, loadProjectConfig } from '../../projects/git';
 export interface ChannelSelection {
   projectId: string;
   agentName: string | null;
-  opencodeModel: string | null;
+  model: string | null;
   conversationPolicy: string | null;
 }
 
@@ -28,13 +28,13 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null; conversationPolicy: string | null } | undefined;
+  let binding: { projectId: string | null; agentName: string | null; model: string | null; conversationPolicy: string | null } | undefined;
   try {
     [binding] = await db
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
-        opencodeModel: chatChannelBindings.opencodeModel,
+        model: chatChannelBindings.opencodeModel,
         conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
@@ -48,13 +48,13 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
     if (!isMissingSelectionColumnError(err)) throw err;
     console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
     const projectId = await currentChannelProjectId(ctx);
-    return projectId ? { projectId, agentName: null, opencodeModel: null, conversationPolicy: null } : null;
+    return projectId ? { projectId, agentName: null, model: null, conversationPolicy: null } : null;
   }
   if (!binding?.projectId) return null;
   return {
     projectId: binding.projectId,
     agentName: binding.agentName ?? null,
-    opencodeModel: binding.opencodeModel ?? null,
+    model: binding.model ?? null,
     conversationPolicy: binding.conversationPolicy ?? null,
   };
 }
@@ -127,12 +127,12 @@ export async function setChannelAgent(
 }
 
 /** Update the channel binding's model (null clears → project/platform default). */
-export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | null): Promise<boolean> {
+export async function setChannelModel(ctx: ChannelCtx, model: string | null): Promise<boolean> {
   if (!ctx.channelId) return false;
   try {
     const rows = await db
       .update(chatChannelBindings)
-      .set({ opencodeModel })
+      .set({ opencodeModel: model })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
@@ -238,7 +238,7 @@ export interface ChannelBindingRow {
   channelName: string | null;
   channelType: string | null;
   agentName: string | null;
-  opencodeModel: string | null;
+  model: string | null;
   conversationPolicy: string;
   installedAt: Date;
 }
@@ -255,7 +255,7 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      model: chatChannelBindings.opencodeModel,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -282,7 +282,7 @@ export async function getChannelBindingById(
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      model: chatChannelBindings.opencodeModel,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })

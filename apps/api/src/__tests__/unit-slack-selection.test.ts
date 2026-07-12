@@ -64,14 +64,14 @@ describe('isValidModelId — provider/model shape only (no stale-catalog gate)',
 
 describe('currentChannelSelection', () => {
   test('returns the binding + its agent/model overrides', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
+    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
+    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
   });
   test('null agent/model overrides surface as null', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null }]];
+    dbResults = [[{ projectId: 'p1', agentName: null, model: null, conversationPolicy: null }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, model: null, conversationPolicy: null });
   });
   test('unbound channel → null', async () => {
     dbResults = [[]];
@@ -83,7 +83,7 @@ describe('currentChannelSelection', () => {
       [{ projectId: 'p1' }],
     ];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, model: null, conversationPolicy: null });
   });
   test('no channel id → null (no query)', async () => {
     expect(await currentChannelSelection({ teamId: 'T1', channelId: '' })).toBeNull();

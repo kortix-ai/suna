@@ -199,7 +199,7 @@ beforeEach(() => {
 });
 
 test('channel agent + model override flow into the session body', async () => {
-  selection = { projectId: 'proj-1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
+  selection = { projectId: 'proj-1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8' };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('reviewer');
@@ -208,7 +208,7 @@ test('channel agent + model override flow into the session body', async () => {
 });
 
 test('no overrides → agent "default" and NO model key', async () => {
-  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: null, model: null };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
@@ -229,7 +229,7 @@ test('unbound channel (null selection) → agent "default", no model', async () 
 // collapses into the dead-end "try again" copy — it renders an inline picker of
 // the project's live agents so the user re-points the channel in one click.
 test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not the generic error', async () => {
-  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: 'ghost', model: null };
   scopedAgents = [
     { name: 'reviewer', description: null },
     { name: 'shipper', description: 'Ships things.' },
@@ -258,7 +258,7 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
 
 // A non-agent failure still renders honest, specific copy (not the picker).
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
-  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'proj-1', agentName: null, model: null };
   setSlackSessionLifecycleForTest({
     continueSession: async () => 'delivered',
     createSession: async () => ({
