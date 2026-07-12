@@ -66,6 +66,7 @@ import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import { AcpSessionPage } from './AcpSessionPage';
 
 // AnimatedToggleIcon was extracted to components/ui/animated-toggle-icon.tsx
 // so it can be shared with PageHeader and page-level headers across the app.
@@ -73,6 +74,9 @@ import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
+  projectId?: string;
+  runtimeProtocol?: 'acp' | 'opencode' | null;
+  runtimeSessionId?: string | null;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
@@ -86,7 +90,14 @@ interface SessionPageProps {
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+export function SessionPage(props: SessionPageProps) {
+  if (props.runtimeProtocol === 'acp' && props.projectId) {
+    return <AcpSessionPage projectId={props.projectId} sessionId={props.sessionId} runtimeSessionId={props.runtimeSessionId} onBack={props.onBack} />;
+  }
+  return <LegacySessionPage {...props} />;
+}
+
+function LegacySessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';

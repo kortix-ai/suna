@@ -29,6 +29,9 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  runtime_protocol?: 'acp' | 'opencode' | null;
+  runtime_id?: string | null;
+  acp_session_id?: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
    * auto title mirrored from OpenCode server-side during project session reads.

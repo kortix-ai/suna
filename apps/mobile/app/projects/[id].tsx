@@ -1439,7 +1439,8 @@ export default function ProjectSessionScreen() {
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
   const connectToProjectSession = useCallback(
     (ps: ProjectSession) => {
-      if (!ps.sandbox_url || !ps.opencode_session_id) return false;
+      const isAcp = ps.runtime_protocol === 'acp';
+      if (!ps.sandbox_url || (isAcp ? !ps.runtime_id : !ps.opencode_session_id)) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
       switchSandbox({
@@ -1456,12 +1457,12 @@ export default function ProjectSessionScreen() {
       setConnectError(null);
       erroredSessionRef.current = null;
       setActiveProjectSessionId(ps.session_id);
-      navigateToSession(ps.opencode_session_id);
+      navigateToSession(isAcp ? ps.session_id : ps.opencode_session_id!);
       // Deliver the composer's first prompt now that the OpenCode root exists.
       const pending = pendingPromptsRef.current[ps.session_id];
-      if (pending) {
+      if (pending && !isAcp) {
         delete pendingPromptsRef.current[ps.session_id];
-        void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id, pending);
+        void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id!, pending);
       }
       return true;
     },
@@ -1531,6 +1532,21 @@ export default function ProjectSessionScreen() {
               `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`
             );
 
+            if (start?.stage === 'ready' && start.runtime_protocol === 'acp' && start.runtime_id) {
+              connectToProjectSession({
+                session_id: sessionId,
+                sandbox_id: sandbox.sandbox_id,
+                sandbox_url: sandboxUrl,
+                opencode_session_id: null,
+                runtime_protocol: 'acp',
+                runtime_id: start.runtime_id,
+                acp_session_id: start.runtime_session_id,
+                sandbox_provider: sandbox.provider ?? 'daytona',
+                created_at: sandbox.created_at,
+                updated_at: sandbox.updated_at,
+              } as ProjectSession);
+              return;
+            }
             if (start?.stage === 'ready' && start.opencode_session_id) {
               connectToProjectSession({
                 session_id: sessionId,
@@ -2845,7 +2861,10 @@ export default function ProjectSessionScreen() {
               ) : /* Active session */
               activeSessionId && !showTabsOverview ? (
                 <SessionPage
-                  sessionId={activeSessionId}
+                  sessionId={activeProjectSession?.runtime_protocol === 'acp' ? activeProjectSession.session_id : activeSessionId}
+                  projectId={projectId}
+                  runtimeProtocol={activeProjectSession?.runtime_protocol}
+                  runtimeSessionId={activeProjectSession?.acp_session_id}
                   onBack={handleBack}
                   onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
                   onOpenRightDrawer={
