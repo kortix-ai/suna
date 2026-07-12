@@ -703,6 +703,10 @@ function ProjectSessionListItem({
   );
 }
 
+function projectSessionRuntimeConversationId(session: ProjectSession | null | undefined): string | null {
+  return session?.runtime_session_id ?? session?.acp_session_id ?? null;
+}
+
 /**
  * Build a map from parent session ID → array of child session IDs.
  * Ported from childMapByParent() in @kortix/sdk/turns.
@@ -1531,7 +1535,7 @@ export default function ProjectSessionScreen() {
                 session_id: sessionId,
                 sandbox_id: sandbox.sandbox_id,
                 sandbox_url: sandboxUrl,
-                opencode_session_id: null,
+                runtime_session_id: start.runtime_session_id ?? null,
                 runtime_protocol: 'acp',
                 runtime_id: start.runtime_id,
                 acp_session_id: start.runtime_session_id,
@@ -1671,7 +1675,7 @@ export default function ProjectSessionScreen() {
   const handleOpenChangeRequest = useCallback(async () => {
     const ps = activeProjectSession;
     const targetSandboxUrl = ps?.sandbox_url || sandboxUrl;
-    const targetSessionId = ps?.acp_session_id;
+    const targetSessionId = projectSessionRuntimeConversationId(ps);
 
     if (!ps || !targetSandboxUrl || !targetSessionId) {
       Alert.alert(
@@ -1739,7 +1743,7 @@ export default function ProjectSessionScreen() {
 
   // Delete the active session (web parity: deleteProjectSession — destroys the
   // sandbox, the git branch is preserved server-side). API takes the Kortix
-  // UUID; the tab is keyed by the OpenCode id, and closeTab (not just
+  // UUID; the tab is keyed by the Kortix session id, and closeTab (not just
   // deselect) so no dead pill survives in the persisted tab strip.
   const handleDeleteActiveSession = useCallback(() => {
     const ps = activeProjectSession;
@@ -1757,11 +1761,8 @@ export default function ProjectSessionScreen() {
             haptics.tap();
             try {
               await deleteProjectSession(projectId, ps.session_id);
-              if (ps.opencode_session_id) {
-                closeTab(ps.opencode_session_id);
-              } else if (useTabStore.getState().activeSessionId) {
-                navigateToSession(null);
-              }
+              closeTab(ps.session_id);
+              useTabScreenshotStore.getState().removeScreenshot(ps.session_id);
               queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
               haptics.success();
             } catch (err: any) {
@@ -2852,7 +2853,7 @@ export default function ProjectSessionScreen() {
                 <SessionPage
                   sessionId={activeSessionId}
                   projectId={projectId}
-                  runtimeSessionId={activeProjectSession?.acp_session_id}
+                  runtimeSessionId={projectSessionRuntimeConversationId(activeProjectSession)}
                   onBack={handleBack}
                   onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
                   onOpenRightDrawer={
