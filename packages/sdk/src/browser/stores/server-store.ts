@@ -23,7 +23,7 @@ export {
  * old multi-instance registry, the persisted server list, and the server-
  * switching machinery are gone — there is no "active server" to switch.
  *
- * The resolution helpers themselves live in `../../state/server-store/active`
+ * The resolution helpers themselves live in `../../core/session/server-store/active`
  * (framework-free, part of the isomorphic core); this module adds only the
  * zustand read surface for React hosts.
  */

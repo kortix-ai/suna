@@ -91,11 +91,28 @@ try {
 
   console.log('✔ install smoke test passed');
 } finally {
-  if (staged) copyFileSync(backup, join(PKG_DIR, 'package.json'));
-  if (catalogStaged) copyFileSync(catalogBackup, join(CATALOG_DIR, 'package.json'));
-  rmSync(backup, { force: true });
-  rmSync(catalogBackup, { force: true });
-  if (tarballPath) rmSync(tarballPath, { force: true });
-  if (catalogTarballPath) rmSync(catalogTarballPath, { force: true });
-  rmSync(workdir, { recursive: true, force: true });
+  // Every cleanup/restore step must run even if an earlier one throws. Flat
+  // statements meant the FIRST failure (e.g. the copyFileSync that restores the
+  // real package.json) skipped everything after it — leaving packages/sdk/
+  // package.json staged with the throwaway `0.0.0-smoke` dist manifest in the
+  // working tree. Run each step in isolation, collect failures, and rethrow them
+  // as one aggregate so a cleanup fault stays loud instead of being swallowed.
+  const cleanupErrors = [];
+  const step = (fn) => {
+    try {
+      fn();
+    } catch (err) {
+      cleanupErrors.push(err);
+    }
+  };
+  if (staged) step(() => copyFileSync(backup, join(PKG_DIR, 'package.json')));
+  if (catalogStaged) step(() => copyFileSync(catalogBackup, join(CATALOG_DIR, 'package.json')));
+  step(() => rmSync(backup, { force: true }));
+  step(() => rmSync(catalogBackup, { force: true }));
+  if (tarballPath) step(() => rmSync(tarballPath, { force: true }));
+  if (catalogTarballPath) step(() => rmSync(catalogTarballPath, { force: true }));
+  step(() => rmSync(workdir, { recursive: true, force: true }));
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(cleanupErrors, 'smoke-install cleanup failed');
+  }
 }

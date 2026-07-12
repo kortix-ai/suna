@@ -56,24 +56,42 @@ function resolveRelative(fromFile: string, spec: string): string | null {
   return existsSync(base) ? base : null;
 }
 
+/** Every module specifier `source` imports, in source order. One place so the
+ *  tripwire and the examples scan can never drift on WHICH import forms they
+ *  see. Covers `import … from '…'` / `export … from '…'`, dynamic `import('…')`,
+ *  `require('…')`, and — the easy-to-miss one — a bare side-effect
+ *  `import '…'` (no `from`, no binding). Type-only imports included, since
+ *  `import type` still shows up here (the point: a type-only react import still
+ *  forces the dependency onto every consumer's typecheck).
+ *
+ *  The side-effect alternative is last and load-bearing: `import 'react';` pulls
+ *  the whole framework in yet a naive `…from…` scan never sees it, so without it
+ *  the framework-free tripwire would be bypassable with two characters. Both
+ *  quote styles; the specifier is captured between the quotes so a trailing
+ *  semicolon or whitespace is irrelevant. */
+function importSpecifiers(source: string): string[] {
+  const importRe =
+    /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|import\s+['"]([^'"]+)['"]/g;
+  const specs: string[] = [];
+  for (const match of source.matchAll(importRe)) {
+    const spec = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (spec) specs.push(spec);
+  }
+  return specs;
+}
+
 /** Walks `entryFile`'s full relative-import graph (type-only imports
- *  included — a `import type` still shows up in this regex, which is the
- *  point: a type-only react import still forces the dependency on every
- *  consumer's typecheck). Returns every reachable local file plus every
- *  external (non-relative) specifier imported, and by whom. */
+ *  included — see `importSpecifiers`). Returns every reachable local file plus
+ *  every external (non-relative) specifier imported, and by whom. */
 function collectGraph(entryFile: string): { files: string[]; externals: Map<string, string[]> } {
   const seen = new Set<string>();
   const externals = new Map<string, string[]>();
-  const importRe =
-    /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)/g;
 
   function walk(file: string) {
     if (seen.has(file)) return;
     seen.add(file);
     const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(importRe)) {
-      const spec = match[1] ?? match[2] ?? match[3];
-      if (!spec) continue;
+    for (const spec of importSpecifiers(source)) {
       if (spec.startsWith('.')) {
         const resolved = resolveRelative(file, spec);
         expect(resolved).not.toBeNull();
@@ -93,6 +111,19 @@ function collectGraph(entryFile: string): { files: string[]; externals: Map<stri
 function collectRootGraph() {
   return collectGraph(join(SRC_ROOT, 'index.ts'));
 }
+
+test('importSpecifiers sees bare side-effect imports (both quote styles)', () => {
+  // A framework smuggled in via a side-effect `import 'react'` — no `from`, no
+  // binding — must still surface here. If it doesn't, the whole framework-free
+  // tripwire (which walks THIS list) is bypassable with two characters, and a
+  // React import could ride into the isomorphic core unseen.
+  expect(importSpecifiers("import 'react';")).toContain('react');
+  expect(importSpecifiers('import "react-dom";')).toContain('react-dom');
+  // …and it still catches everything it caught before — no regression.
+  expect(importSpecifiers("import { useState } from 'react';")).toContain('react');
+  expect(importSpecifiers("const m = await import('some-dep');")).toContain('some-dep');
+  expect(importSpecifiers("const r = require('legacy-dep');")).toContain('legacy-dep');
+});
 
 test('root export graph pulls no react/next/zustand/react-query code', () => {
   const { externals } = collectRootGraph();
@@ -258,22 +289,55 @@ function walkDir(dir: string): string[] {
   return out;
 }
 
+/** Every relative specifier in `source` that resolves across the tier boundary
+ *  — out of the importing file's directory into `browser/`, `node/`, or
+ *  `react/`. `file` anchors relative resolution; it need not exist on disk,
+ *  which is what makes this probeable with synthetic sources. Specifier
+ *  extraction is the shared `importSpecifiers` — so side-effect imports,
+ *  dynamic `import()`, and `require()` cross this boundary just as visibly as
+ *  `… from '…'` does, and the two scans can never drift. */
+function tierCrossings(file: string, source: string): string[] {
+  const crossings: string[] = [];
+  for (const spec of importSpecifiers(source)) {
+    if (!spec.startsWith('.')) continue;
+    const resolved = resolve(dirname(file), spec);
+    if (
+      resolved.startsWith(join(SRC_ROOT, 'browser')) ||
+      resolved.startsWith(join(SRC_ROOT, 'node')) ||
+      resolved.startsWith(join(SRC_ROOT, 'react'))
+    ) {
+      crossings.push(spec);
+    }
+  }
+  return crossings;
+}
+
+test('tier-boundary scan sees bare side-effect imports (both quote styles)', () => {
+  // A side-effect `import '../../browser/…'` executes the module — it drags the
+  // browser tier into core/ exactly like a named import, yet a `…from…`-only
+  // scan never sees it. Same blind spot as the framework tripwire's (fixed
+  // above); the tier rule must not be bypassable with the same two characters.
+  const probe = join(SRC_ROOT, 'core', 'session', 'probe.ts'); // synthetic anchor, never on disk
+  expect(tierCrossings(probe, "import '../../browser/stores/server-store';")).toEqual([
+    '../../browser/stores/server-store',
+  ]);
+  expect(tierCrossings(probe, 'import "../../react/index";')).toEqual(['../../react/index']);
+  // …and the forms it already caught still register — no regression.
+  expect(tierCrossings(probe, "import { x } from '../../node/server';")).toEqual(['../../node/server']);
+  expect(tierCrossings(probe, "export { x } from '../../browser/stores/sync-store';")).toEqual([
+    '../../browser/stores/sync-store',
+  ]);
+  // A relative import that stays inside core/ is not a crossing.
+  expect(tierCrossings(probe, "import './health';")).toEqual([]);
+});
+
 test('core/ never imports from browser/, node/, or react/', () => {
   const coreDir = join(SRC_ROOT, 'core');
   if (!existsSync(coreDir)) return; // pre-restructure: nothing to check
-  const importRe = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]/g;
   for (const file of walkDir(coreDir)) {
-    const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(importRe)) {
-      const spec = match[1];
-      const resolved = spec.startsWith('.') ? resolve(dirname(file), spec) : null;
-      const crosses =
-        resolved &&
-        (resolved.startsWith(join(SRC_ROOT, 'browser')) ||
-          resolved.startsWith(join(SRC_ROOT, 'node')) ||
-          resolved.startsWith(join(SRC_ROOT, 'react')));
+    for (const spec of tierCrossings(file, readFileSync(file, 'utf8'))) {
       expect(
-        crosses ? `${file.slice(SRC_ROOT.length + 1)} imports "${spec}" — crosses a tier boundary` : null,
+        `${file.slice(SRC_ROOT.length + 1)} imports "${spec}" — crosses a tier boundary`,
       ).toBeNull();
     }
   }
@@ -327,12 +391,10 @@ test('core/ never touches a bare process/window/document/localStorage global', (
 
 test('examples/ pull no react, no DOM, no framework', () => {
   const examplesDir = join(SRC_ROOT, '..', 'examples');
-  const importRe = /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]/g;
   for (const file of readdirSync(examplesDir)) {
     if (!file.endsWith('.ts') || file.endsWith('.d.ts')) continue;
     const source = readFileSync(join(examplesDir, file), 'utf8');
-    for (const match of source.matchAll(importRe)) {
-      const spec = match[1];
+    for (const spec of importSpecifiers(source)) {
       if (spec.startsWith('.')) continue; // relative into ../src, already covered
       const forbidden = FORBIDDEN_MODULES.find((m) => spec === m || spec.startsWith(`${m}/`));
       expect(forbidden ? `examples/${file} imports "${spec}"` : null).toBeNull();

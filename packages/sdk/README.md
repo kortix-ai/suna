@@ -42,6 +42,12 @@ no build step required:
 </script>
 ```
 
+> **CORS:** a `<script>` page calls the API from its own origin, so that origin
+> must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
+> are allowed out of the box; any third-party origin (or a local page on another
+> port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
+> blocks the request before it leaves the page.
+
 ## Entry points
 
 `@kortix/sdk` is the canonical entry — everything framework-free lives there.

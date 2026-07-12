@@ -3,6 +3,13 @@
 <title>Kortix SDK — no build step</title>
 <pre id="out">connecting…</pre>
 
+<!-- CORS: this page calls the Kortix API from whatever origin it is served on.
+     The API's allowlist is static (kortix.com domains + localhost:3000/3010), so
+     opening this file on any other origin — e.g. `python3 -m http.server 8099` →
+     http://localhost:8099 — is CORS-blocked until that origin is added to the
+     API's `CORS_ALLOWED_ORIGINS` env (local dev). The CDN bundle only works from
+     origins the API already allows. -->
+
 <!-- The IIFE bundle. `window.Kortix` IS the root barrel: createKortix,
      classifyTurn, ApiError, narrowChatEvent — no namespaces, no build step. -->
 <script src="../dist/kortix.global.js"></script>

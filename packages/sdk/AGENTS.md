@@ -329,14 +329,21 @@ For (2), know exactly what is and is not covered:
 
 - ✅ `scripts/stage-npm-publish.mjs:60-80` runs on every PR and fails if any path
   in `publishConfig.exports` is **missing from the emitted `dist/`**.
-- ❌ **Nothing asserts `exports` and `publishConfig.exports` have the same keys.**
-  Add `./foo` to `exports`, forget `publishConfig.exports`, and CI stays green
-  while `npm install @kortix/sdk` gets no `./foo` subpath at all.
-- ❌ Nothing installs the tarball and imports it, so a resolution or runtime
-  failure in the published artifact is invisible until a user hits it.
+- ✅ `src/package-exports.test.ts:15-21` asserts `exports` and
+  `publishConfig.exports` declare the **same key set** (and that each
+  `publishConfig` entry carries both `types` and `import`). Add `./foo` to one
+  map and forget the other, and this test goes red — before `npm install
+  @kortix/sdk` can ship a subpath that resolves in the workspace but not on npm.
+- ✅ `scripts/smoke-install.mjs` — run in CI as the step **"Install smoke test"**,
+  or locally via `pnpm --filter @kortix/sdk run smoke:install` — packs the
+  tarball, installs it into a throwaway project, and imports it, so a resolution
+  or runtime failure in the published artifact fails a PR instead of a stranger's
+  build.
 
-So: **check the key sets match**, and never trust a green CI to mean the published
-package imports.
+So both of those old gaps are now guarded — but a green CI is still not a promise
+the package is *perfect*. Nothing loads the IIFE global in a real browser, and the
+runtime-target matrix (Safari, RN, Workers) is only partly exercised. Read the
+diff; don't outsource the judgment to the checkmarks.
 
 `./react` is deliberately excluded from the tripwire. It is the one place React
 belongs.
@@ -352,10 +359,12 @@ belongs.
 ```
 
 `npm view @kortix/sdk main` returns `./dist/index.js`, so the swap works today.
-But nothing in the test suite exercises an actual *install*, which makes this the
-most likely thing to be quietly broken by a refactor. When you touch entry points,
-the only proof is `npm pack` → install the tarball into a throwaway project →
-`import` it.
+`scripts/smoke-install.mjs` (CI step **"Install smoke test"**, or `pnpm --filter
+@kortix/sdk run smoke:install`) now exercises an actual *install* — it packs,
+installs the tarball into a throwaway project, and imports it — so this swap is no
+longer unguarded. It is still the subtlest thing a refactor can quietly break, so
+when you touch entry points, run it: `npm pack` → install the tarball into a
+throwaway project → `import` it is exactly what it does.
 
 ## Workspace dependencies get pinned at publish
 
@@ -593,10 +602,10 @@ these, and **paste the real output**:
 ```bash
 pnpm --filter @kortix/sdk typecheck   # tsc --noEmit + examples/tsconfig.json
 pnpm --filter @kortix/sdk test        # bun test src — includes the tripwire
-pnpm --filter @kortix/sdk run smoke:install   # once it exists: pack → install → import
+pnpm --filter @kortix/sdk run smoke:install   # pack → install → import the tarball
 ```
 
-Baseline: **1046 passing, 0 failing, across 65 test files.** If your run shows
+Baseline: **1069 passing, 0 failing, across 71 test files.** If your run shows
 fewer tests than the baseline, you did not run them all — a filtered `bun test`
 that matches nothing exits 0 and tells you nothing.
 
