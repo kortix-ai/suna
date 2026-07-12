@@ -75,6 +75,17 @@ if (SENTRY_DSN) {
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
+      // Old WebKit (Safari/iOS < 16.4) cannot parse lookbehind assertions
+      // (`(?<=…)` / `(?<!…)`): JSC reads `(?<` as a named-capture-group opener,
+      // sees `=` / `!`, and throws `SyntaxError: Invalid regular expression:
+      // invalid group specifier name` at chunk PARSE time, failing the whole
+      // chunk. The lookbehind literals live in bundled third-party deps
+      // (`mdast-util-gfm-autolink-literal` GFM email-autolink regex +
+      // `@pierre/diffs` `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is
+      // WebKit-specific (V8/Node say "Invalid group"), and only very old
+      // Safari/iOS visitors hit it. `browser-error-noise.ts` drops it from
+      // `beforeSend` too; this string gate covers frameless onerror captures.
+      'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
       // Third-party injected scripts / wallet extensions
@@ -89,6 +100,20 @@ if (SENTRY_DSN) {
       // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
       "Cannot assign to read only property 'then' of object '#<Promise>'",
       'Cannot assign to read only property',
+      // Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser)
+      // resolve `window.localStorage` / `window.sessionStorage` to `null`. Any
+      // direct `storage.getItem/setItem/removeItem` then throws
+      // `TypeError: Cannot read properties of null (reading 'getItem')` (V8) /
+      // `Cannot read property 'getItem' of null` (JSC). Browser-environment
+      // noise, not an app defect — `getItem/setItem/removeItem` are Web Storage
+      // API method names, so matching them on a `null` access is specific. See
+      // browser-error-noise.ts `STORAGE_NULL_ACCESS_NOISE_PATTERNS`.
+      "Cannot read properties of null (reading 'getItem')",
+      "Cannot read properties of null (reading 'setItem')",
+      "Cannot read properties of null (reading 'removeItem')",
+      "Cannot read property 'getItem' of null",
+      "Cannot read property 'setItem' of null",
+      "Cannot read property 'removeItem' of null",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

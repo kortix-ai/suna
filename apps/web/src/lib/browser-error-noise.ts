@@ -14,6 +14,26 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'Cannot assign to read only property',
 ] as const;
 
+// Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser, UA
+// `… wv … cici;AppName/Dola`) resolve `window.localStorage` / `window.sessionStorage`
+// to `null` instead of throwing. Any call site that still reaches for storage
+// directly then throws `TypeError: Cannot read properties of null (reading
+// 'getItem')` (V8) / `Cannot read property 'getItem' of null` (JSC). The
+// managed-storage layer + the analytics route-change path route through
+// never-throw accessors now, but residual direct call sites elsewhere can still
+// surface this as a breadcrumb/cascade on the marketing site. These are
+// browser-environment failures (storage genuinely unavailable in that WebView),
+// not app defects — `getItem` / `setItem` / `removeItem` are Web Storage API
+// method names, so matching them on a `null` access is safe and specific.
+const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
+  "Cannot read properties of null (reading 'getItem')",
+  "Cannot read properties of null (reading 'setItem')",
+  "Cannot read properties of null (reading 'removeItem')",
+  "Cannot read property 'getItem' of null",
+  "Cannot read property 'setItem' of null",
+  "Cannot read property 'removeItem' of null",
+] as const;
+
 const KNOWN_TEST_NOISE_MESSAGES = [
   'E2E FINAL:',
   'E2E test:',
@@ -72,12 +92,86 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
+// Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
+// cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
+// the webpack runtime chunk is served from a different deployment, so
+// `__webpack_require__(moduleId)` (minified to function `c`) looks up a module
+// id that isn't registered in this runtime's `__webpack_modules__` map →
+// `undefined` → `__webpack_modules__[moduleId].call(...)` throws
+// `TypeError: Cannot read properties of undefined (reading 'call')`. It is a
+// one-off, self-healing-on-reload browser state (single occurrence, 0
+// identified users across the four sibling patterns 83e0c2af…/5d02255f…/
+// e77f06d4…/1cb3009d…, all last_seen 2026-07-12 08:44 UTC), not an app defect.
+// Suppress ONLY when the throwing frame (Sentry's oldest-first stack ordering
+// → last frame) is the Next.js webpack runtime chunk, so a genuine app
+// TypeError with the same message text — e.g. calling `.call(...)` on an
+// `undefined` value inside app code — still reports normally.
+const STALE_WEBPACK_RUNTIME_CALL_MESSAGE =
+  "Cannot read properties of undefined (reading 'call')";
+
+function isWebpackRuntimeChunkFilename(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return (
+    /^app:\/\/\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
+    || /^https?:\/\/[^/]+\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
+  );
+}
+
+// Old WebKit (Safari < 16.4, iOS < 16.4) cannot parse lookbehind assertions
+// `(?<=…)` / `(?<!…)`. JavaScriptCore reads the `(?<` as a named-capture-group
+// opener, sees the following `=` / `!`, and throws
+// `SyntaxError: Invalid regular expression: invalid group specifier name` at
+// chunk PARSE time — so the entire JS chunk fails to load for that visitor.
+// The lookbehind literals live in bundled THIRD-PARTY deps we ship on the
+// marketing site (the GFM email-autolink regex in `mdast-util-gfm-autolink-
+// literal@2.0.1` and `SPLIT_WITH_NEWLINES = /(?<=\n)/` in `@pierre/diffs`),
+// not in first-party source, and the wording is WebKit-specific — V8/Node
+// never produce it (they say "Invalid group"). Only very old Safari/iOS
+// visitors hit it. Suppress this distinctive message so it stops paging
+// Better Stack; a genuine first-party regex regression surfaces with a
+// different message on modern browsers (which all support lookbehind).
+const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
+  'invalid group specifier name',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
   'safari-web-extension://',
   'extension://',
 ] as const;
+
+// The SDK's client-side request deadline. `packages/sdk/src/core/http/api-client.ts`
+// aborts a non-streaming fetch once its 30s budget elapses (the `didTimeout`
+// branch — distinct from an external abort) and surfaces
+// `ApiError("Request timed out after <N>s: <endpoint>", { code: 'TIMEOUT' })`.
+//
+// This is the frontend mirror of the API's request-deadline 503
+// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// https://github.com/kortix-ai/suna/pull/4524). The API bounds every
+// non-streaming request to a 25s server deadline that returns a clean 503 +
+// `Retry-After: 10`, and react-query retries background polls (the session-audit
+// route that produced Better Stack pattern `b1db01e5…` is polled every 5–15s
+// from several session surfaces), so a 30s client abort is an EXPECTED,
+// retryable degradation under momentary API saturation — never an actionable
+// bug. The saturation signal remains visible in the per-route
+// `http_request_duration_seconds` metric and the structured
+// `Request completed: … 503 …` warn log, exactly as for the server-side 503.
+//
+// `handleApiError` already drops `code === 'TIMEOUT'` from `captureException`;
+// this is the telemetry-side backstop that drops it from any capture path that
+// bypasses that guard — `<ClientErrorBoundary>`, `route-error`/`system-fault`,
+// `app/error`, and the Sentry SDK's own `onunhandledrejection` — same shape as
+// the billing-gate / runtime-not-ready backstops. The match is anchored on the
+// SDK's exact `Request timed out after <N>s:` prefix (with the canonical
+// wrappers) so a third-party library's generic "request timed out" message, or
+// the API's different `Request exceeded the 25s server processing deadline`
+// wording, is never matched.
+const CLIENT_REQUEST_TIMEOUT_WRAPPERS: ReadonlyArray<RegExp> = [
+  /^Request timed out after \d+s: /,
+  /^ApiError: Request timed out after \d+s: /,
+  /^Unhandled promise rejection: (?:ApiError: )?Request timed out after \d+s: /,
+];
 
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
@@ -116,6 +210,18 @@ function extractMessage(value: unknown): string {
 export function isKnownBrowserNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES);
+}
+
+/**
+ * Whether a message is the storage-disabled-WebView crash class: a
+ * `null.getItem/setItem/removeItem` `TypeError` from `window.localStorage` /
+ * `window.sessionStorage` being `null` in an embedded in-app browser. These are
+ * browser-environment failures, not app defects (see
+ * `STORAGE_NULL_ACCESS_NOISE_PATTERNS`), so they must never page Better Stack.
+ */
+export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
 }
 
 export function isExtensionSource(filename: unknown): boolean {
@@ -172,6 +278,60 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
   );
 }
 
+/**
+ * Whether a Sentry exception is the stale-deploy webpack-runtime
+ * `… (reading 'call')` TypeError. Requires BOTH the exact webpack
+ * module-loader message AND the throwing frame (the last stack frame, per
+ * Sentry's oldest-first ordering) to be the Next.js webpack runtime chunk
+ * (`_next/static/chunks/webpack-*.js`). A real app TypeError that calls
+ * `.call(...)` on an `undefined` value throws inside an app chunk, not the
+ * runtime, so it is never hidden. Returns false when there are no frames
+ * (can't confirm the runtime scope — keep reporting).
+ */
+export function isStaleWebpackRuntimeCallNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  if (normalizeString(input.message) !== STALE_WEBPACK_RUNTIME_CALL_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  const throwingFrame = frames[frames.length - 1];
+  return isWebpackRuntimeChunkFilename(throwingFrame?.filename);
+}
+
+/**
+ * Whether a message is the SDK's client-side request-deadline timeout —
+ * `Request timed out after <N>s: <endpoint>` (and its canonical wrappers). This
+ * is an EXPECTED, retryable degradation (the API's 25s server deadline returns
+ * a 503 + Retry-After and react-query retries background polls), never an
+ * actionable bug — see `CLIENT_REQUEST_TIMEOUT_WRAPPERS` for the full
+ * rationale. Such a message must NEVER page Better Stack, regardless of which
+ * capture path delivered it.
+ */
+export function isClientRequestTimeoutMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return CLIENT_REQUEST_TIMEOUT_WRAPPERS.some((re) => re.test(normalized));
+}
+
+/**
+ * Whether a message is the old-WebKit (< 16.4) lookbehind parse failure
+ * `SyntaxError: Invalid regular expression: invalid group specifier name`.
+ * The lookbehind lives in bundled third-party deps
+ * (`mdast-util-gfm-autolink-literal`, `@pierre/diffs`), the wording is
+ * WebKit-specific (V8/Node say "Invalid group"), and only very old Safari/iOS
+ * visitors hit it — never page Better Stack for it.
+ */
+export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).toLowerCase();
+  return OLD_WEBKIT_REGEX_NOISE_PATTERNS.some((pattern) =>
+    normalized.includes(pattern.toLowerCase()),
+  );
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -182,6 +342,13 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     .find((value) => Boolean(value)) ?? '';
 
   if (isKnownBrowserNoiseMessage(message)) {
+    return true;
+  }
+
+  // Storage-disabled in-app WebViews (storage accessor resolves to `null`)
+  // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
+  // noise, never an app defect — drop it.
+  if (isStorageDisabledWebViewNoiseMessage(message)) {
     return true;
   }
 
@@ -201,11 +368,24 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Expected client-side request-deadline timeouts (SDK 30s fetch abort) — the
+  // frontend mirror of the API's request-deadline 503 (de-noised by #4524). An
+  // expected, retryable degradation; never page Better Stack for it.
+  if (isClientRequestTimeoutMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes are user-facing business states handled
   // by a toast/upgrade dialog — never page Better Stack for them, even when the
   // SDK's `ApiError` reaches window.onerror / unhandledrejection before
   // `handleApiError` can gate it.
   if (isExpectedBillingGateMessage(message)) {
+    return true;
+  }
+
+  // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
+  // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
+  if (isOldWebkitRegexNoiseMessage(message)) {
     return true;
   }
 
@@ -236,6 +416,13 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Storage-disabled in-app WebViews (storage accessor resolves to `null`)
+  // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
+  // noise, never an app defect — drop it at the Sentry gate too.
+  if (isStorageDisabledWebViewNoiseMessage(message)) {
+    return true;
+  }
+
   // This helper is also used by the server and edge Sentry configs. Require a
   // browser bundle frame here so a same-worded server exception is not hidden.
   // The client config additionally has an anchored ignoreErrors regex for
@@ -256,6 +443,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Expected client-side request-deadline timeouts (SDK 30s fetch abort) — the
+  // frontend mirror of the API's request-deadline 503 (de-noised by #4524). An
+  // expected, retryable degradation under momentary API saturation; the signal
+  // remains in per-route metrics + the structured 503 warn log. Drop it before
+  // it pages Better Stack, no matter which capture path delivered it.
+  if (isClientRequestTimeoutMessage(message)) {
+    return true;
+  }
+
   // Expected billing-gate 402 outcomes (insufficient credits / no account /
   // subscription required) are user-facing business states handled by a toast
   // or upgrade dialog. The SDK's `ApiError` can leak to Sentry through capture
@@ -268,7 +464,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
+  // deps on the marketing site — WebKit-specific wording, only old Safari/iOS
+  // visitors hit it. The de-minified frame points at our own chunk, so this
+  // is matched by message, not by source.
+  if (isOldWebkitRegexNoiseMessage(message)) {
+    return true;
+  }
+
   if (environment === 'test' || environment.startsWith('e2e')) {
+    return true;
+  }
+
+  // Stale webpack runtime chunk after a deploy — the throwing frame (last
+  // stack frame) is the Next.js webpack runtime (`__webpack_require__`,
+  // minified `c`) looking up a module id that isn't registered in a
+  // mismatched deployment's module map. One-off, self-heals on reload;
+  // suppress only when the throwing frame is the runtime chunk so a real app
+  // `.call` TypeError keeps reporting. See `isStaleWebpackRuntimeCallNoise`.
+  if (isStaleWebpackRuntimeCallNoise({ message, frames })) {
     return true;
   }
 

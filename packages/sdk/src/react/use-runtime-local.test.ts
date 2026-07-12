@@ -67,16 +67,17 @@ describe('Runtime local model selection scoping', () => {
     ).toBeUndefined();
   });
 
-  test('substitutes hidden AUTO with the explicit managed default when available', () => {
+  test('substitutes hidden AUTO with the provider-qualified gateway default when available', () => {
     expect(
       resolveHiddenAutoModel(
         { providerID: 'kortix', modelID: 'auto' },
         {
           enableAutoModel: false,
-          isModelValid: (model) => model.providerID === 'kortix' && model.modelID === 'glm-5.2',
+          isModelValid: (model) =>
+            model.providerID === 'kortix' && model.modelID === 'codex/gpt-5.6-sol',
         },
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
+    ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' });
   });
 
   test('keeps AUTO only when the feature is explicitly enabled', () => {

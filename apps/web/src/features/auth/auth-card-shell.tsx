@@ -16,14 +16,19 @@ import Link from 'next/link';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { AuthMobileLogo } from '@/features/auth/auth-primitives';
+import { openExternalRoute } from '@/lib/desktop';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 /** Tiny legal line pinned to the bottom of every auth surface. */
 export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' | 'signup' }) {
+  const onLegalClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (openExternalRoute(href)) event.preventDefault();
+  };
   const terms = (
     <Link
       href="/legal?tab=terms"
+      onClick={(event) => onLegalClick(event, '/legal?tab=terms')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
       Terms of Service
@@ -32,6 +37,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' |
   const privacy = (
     <Link
       href="/legal?tab=privacy"
+      onClick={(event) => onLegalClick(event, '/legal?tab=privacy')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
       Privacy Policy
@@ -41,7 +47,9 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' |
   return (
     <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
       {variant === 'signup' ? (
-        <>By creating an account, you agree to the {terms} and {privacy}</>
+        <>
+          By creating an account, you agree to the {terms} and {privacy}
+        </>
       ) : (
         <>
           {terms} and {privacy}

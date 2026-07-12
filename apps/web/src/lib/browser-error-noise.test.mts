@@ -2,11 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isClientRequestTimeoutMessage,
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
+  isOldWebkitRegexNoiseMessage,
   isRuntimeNotReadyNoiseMessage,
+  isStaleWebpackRuntimeCallNoise,
+  isStorageDisabledWebViewNoiseMessage,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -480,4 +484,393 @@ test('does NOT suppress a longer real error containing the billing-gate phrase',
       `expected longer runtime error "${value}" to keep reporting`,
     )
   }
+})
+
+test('suppresses storage-disabled WebView null.getItem TypeErrors (V8 + JSC)', () => {
+  for (const value of [
+    "TypeError: Cannot read properties of null (reading 'getItem')",
+    "Cannot read properties of null (reading 'setItem')",
+    "Cannot read properties of null (reading 'removeItem')",
+    "TypeError: Cannot read property 'getItem' of null",
+    "Cannot read property 'setItem' of null",
+  ]) {
+    assert.equal(
+      isStorageDisabledWebViewNoiseMessage(value),
+      true,
+      `expected "${value}" to be classified as storage-disabled WebView noise`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      true,
+      `expected runtime error "${value}" to be suppressed`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected Sentry event "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('does NOT suppress a real null-access error on a non-storage method', () => {
+  assert.equal(
+    isStorageDisabledWebViewNoiseMessage("Cannot read properties of null (reading 'map')"),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: "Cannot read properties of null (reading 'map')" }] },
+    }),
+    false,
+  )
+})
+
+// Reproduces Better Stack error 83e0c2af...189c3b17 (Kortix Frontend prod,
+// application_id 2346967) + siblings 5d02255f…, e77f06d4…, 1cb3009d… — all
+// `TypeError: Cannot read properties of undefined (reading 'call')`, count 1,
+// 0 identified users, last_seen 2026-07-12 08:44 UTC. The raw stack's throwing
+// frame (last frame, Sentry oldest-first ordering) is the Next.js webpack
+// runtime chunk `webpack-<hash>.js` function `c` (= `__webpack_require__`), and
+// the webpack runtime chunk carries a *different* Vercel `?dpl=` deployment id
+// than the app chunks in the same stack — the stale-deploy-chunk signature:
+// a long-lived tab holds app chunks/module ids from one deploy while the
+// runtime chunk is served from another, so `__webpack_modules__[moduleId]` is
+// `undefined` and `.call(...)` throws. One-off, self-heals on reload; not an
+// app defect. Suppressed ONLY when the throwing frame is the runtime chunk, so
+// a real app `.call` TypeError (which throws inside an app chunk, not the
+// runtime) still reports.
+const WEBPACK_RUNTIME_FRAME = {
+  filename:
+    'app:///_next/static/chunks/webpack-35676c5ce2292e1c.js?dpl=dpl_CTqmc8S7CG7w9gkCs2ySzURsbhxm',
+  function: 'c',
+}
+const APP_CHUNK_FRAME = {
+  filename:
+    'app:///_next/static/chunks/app/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+  function: '81761',
+}
+
+test('suppresses the stale-deploy webpack-runtime call TypeError (assigned pattern)', () => {
+  // The exact frame chain from the raw 83e0c2af… event: webpack `c` recurses
+  // through app chunks, and the throwing frame (last) is the runtime `c`.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'call')",
+            stacktrace: {
+              frames: [
+                WEBPACK_RUNTIME_FRAME,
+                APP_CHUNK_FRAME,
+                WEBPACK_RUNTIME_FRAME,
+                {
+                  filename:
+                    'app:///_next/static/chunks/65820-89cc54263b2034da.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+                  function: '65820',
+                },
+                WEBPACK_RUNTIME_FRAME,
+                {
+                  filename:
+                    'app:///_next/static/chunks/27594-5ca3ed0a68bbd353.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+                  function: '36735',
+                },
+                WEBPACK_RUNTIME_FRAME,
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses a minimal stale-webpack-runtime call event', () => {
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [APP_CHUNK_FRAME, WEBPACK_RUNTIME_FRAME],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the same message when the throwing frame is an app chunk', () => {
+  // A real app TypeError calling `.call(...)` on an `undefined` value throws
+  // inside the app chunk, not the runtime — keep reporting it.
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [WEBPACK_RUNTIME_FRAME, APP_CHUNK_FRAME],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'call')",
+            stacktrace: { frames: [WEBPACK_RUNTIME_FRAME, APP_CHUNK_FRAME] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the webpack-call message when there are no frames', () => {
+  // Can't confirm the runtime scope — keep reporting rather than guess.
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: "Cannot read properties of undefined (reading 'call')" }],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a same-shaped message reading a different property', () => {
+  // `reading id` / `reading src` are the existing real-app TypeError fixtures;
+  // the exact-message match must not catch them.
+  for (const value of [
+    'Cannot read properties of undefined (reading id)',
+    'Cannot read properties of undefined (reading src)',
+    'TypeError: Cannot read properties of undefined (reading call)',
+  ]) {
+    assert.equal(
+      isStaleWebpackRuntimeCallNoise({
+        message: value,
+        frames: [WEBPACK_RUNTIME_FRAME],
+      }),
+      false,
+      `expected "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error b1db01e5c9dec8c62bf37ca994cbe304550a7699b8fcd04c8f5c01cc76fc9dc7
+// (Kortix Frontend prod, application_id 2346967): a single
+// `ApiError — Request timed out after 30s: /projects/<id>/sessions/<sid>/audit`
+// at 2026-07-12 13:53 UTC. The SDK's `makeRequest` aborts a non-streaming fetch
+// once its 30s budget elapses (`packages/sdk/src/core/http/api-client.ts`,
+// `didTimeout` branch) and surfaces `ApiError(..., { code: 'TIMEOUT' })`. This
+// is the frontend mirror of the API's request-deadline 503
+// (`apps/api/src/middleware/request-deadline.ts`, de-noised from Sentry by
+// kortix-ai/suna#4524): the API bounds every non-streaming request to a 25s
+// server deadline (clean 503 + Retry-After), and react-query retries background
+// polls — the session-audit route is polled every 5–15s from several session
+// surfaces — so a 30s client abort is an EXPECTED, retryable degradation under
+// momentary API saturation, not an actionable bug. The saturation signal stays
+// in per-route metrics + the structured 503 warn log. `handleApiError` already
+// drops `code === 'TIMEOUT'` from `captureException`; these checks are the
+// telemetry-side backstop for leak paths (ClientErrorBoundary / route-error /
+// app-error / onunhandledrejection).
+const CLIENT_REQUEST_TIMEOUT_EVENTS = [
+  // The exact assigned occurrence — endpoint varies per call, so match the
+  // SDK's `Request timed out after <N>s: ` prefix, not the full URL.
+  'Request timed out after 30s: /projects/24e99500-c925-481a-bc88-5b89dba4d965/sessions/88488045-8cd7-4c6b-ad0f-2b56a4c9cb25/audit',
+  // The budget is configurable per call; the seconds value is not load-bearing.
+  'Request timed out after 60s: /accounts',
+  // The ApiError-class-prefixed wrapper.
+  'ApiError: Request timed out after 30s: /projects/p/sessions/s/sandbox-health',
+  // An unhandled-rejection leak path preserving the message.
+  'Unhandled promise rejection: Request timed out after 30s: /projects/p/sessions/s/audit',
+  'Unhandled promise rejection: ApiError: Request timed out after 30s: /change-requests',
+]
+
+test('classifies every client-side request-deadline timeout as expected noise', () => {
+  for (const message of CLIENT_REQUEST_TIMEOUT_EVENTS) {
+    assert.equal(
+      isClientRequestTimeoutMessage(message),
+      true,
+      `expected ${message} to be classified as a client request timeout`,
+    )
+  }
+})
+
+test('suppresses a client-side request-timeout Sentry event regardless of capture path', () => {
+  for (const value of CLIENT_REQUEST_TIMEOUT_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/sdk.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a client-side request-timeout unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Request timed out after 30s: /projects/p/sessions/s/audit',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the API server-deadline 503 message (different wording)', () => {
+  // The API's request-deadline 503 is `Request exceeded the 25s server processing
+  // deadline` — a different, server-side wording that must keep reporting if it
+  // ever reaches the frontend Sentry config (it is de-noised at the API source
+  // by #4524, not here).
+  for (const value of [
+    'Request exceeded the 25s server processing deadline',
+    'Request exceeded the 30s server processing deadline',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected server-deadline message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected server-deadline Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a generic third-party "request timed out" message', () => {
+  // A third-party library's generic timeout wording must not be matched — only
+  // the SDK's exact `Request timed out after <N>s: ` prefix is suppressed.
+  for (const value of [
+    'The request timed out',
+    'Request timed out',
+    'request timed out after 5000ms',
+    'Network request timed out, please retry',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected generic message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected generic Sentry event "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real 5xx server ApiError', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'Service maintenance in progress. Please try again later.',
+  ]) {
+    assert.equal(
+      isClientRequestTimeoutMessage(value),
+      false,
+      `expected real server error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({ exception: { values: [{ value }] } }),
+      false,
+      `expected real server error "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error 6d987ab4...34e7ed (1 occurrence, 0 users),
+// Kortix Frontend (prod), application_id 2346967: a Safari 15.6.1 visitor on
+// the marketing homepage (`https://kortix.com/`) hit a chunk parse-time
+// `SyntaxError: Invalid regular expression: invalid group specifier name`.
+// Old WebKit (< 16.4) cannot parse lookbehind assertions — JSC reads `(?<` as
+// a named-capture-group opener, sees the following `=` / `!`, and throws this
+// message, failing the whole chunk. The lookbehind literals live in bundled
+// THIRD-PARTY deps (`mdast-util-gfm-autolink-literal@2.0.1`'s GFM email
+// autolink regex `/(?<=^|\s|\p{P}|\p{S})…/gu` and `@pierre/diffs`'s
+// `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is WebKit-specific (V8/Node
+// say "Invalid group"), and only very old Safari/iOS visitors hit it. The
+// de-minified frame points at our own chunk, so it is matched by message, not
+// by source.
+const OLD_WEBKIT_REGEX_EVENTS = [
+  // The exact raw event value from Better Stack (Safari 15.6.1, macOS 10.15.7).
+  'Invalid regular expression: invalid group specifier name',
+  // window.onerror can prefix the message with the exception type.
+  'SyntaxError: Invalid regular expression: invalid group specifier name',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: Invalid regular expression: invalid group specifier name',
+]
+
+test('classifies every old-WebKit lookbehind parse variant as noise', () => {
+  for (const message of OLD_WEBKIT_REGEX_EVENTS) {
+    assert.equal(
+      isOldWebkitRegexNoiseMessage(message),
+      true,
+      `expected ${message} to be classified as old-WebKit regex noise`,
+    )
+  }
+})
+
+test('suppresses an old-WebKit lookbehind Sentry event from the marketing site', () => {
+  for (const value of OLD_WEBKIT_REGEX_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/76904-c52ab52c4900447c.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an old-WebKit lookbehind unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Invalid regular expression: invalid group specifier name',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real V8/Node regex error with different wording', () => {
+  // Modern V8/Node say "Invalid group" / "Invalid regular expression: \(\?<=\)",
+  // never "invalid group specifier name" — those keep reporting.
+  assert.equal(isOldWebkitRegexNoiseMessage('Invalid regular expression: /(?!<=)/: Invalid group'), false)
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: 'TypeError: Cannot read properties of undefined (reading id)' }] },
+    }),
+    false,
+  )
 })
