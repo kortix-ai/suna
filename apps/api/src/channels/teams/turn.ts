@@ -120,6 +120,7 @@ export async function startTurn(
     projectId,
   };
   await sendTyping(ref);
+  const messageActivityId = (await sendCard(ref, buildPlanCard(LIVE_PLAN_TITLE, []))) ?? '';
 
   return {
     conversationId,
@@ -128,7 +129,7 @@ export async function startTurn(
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     triggerActivityId: activity.id,
-    messageActivityId: '',
+    messageActivityId,
     steps: [],
     expiry: Date.now() + STREAM_TTL_MS,
     finalized: false,
@@ -247,7 +248,7 @@ export async function finalizeTurn(
       : undefined;
 
   try {
-    if (handle.messageActivityId && handle.steps.length > 0) {
+    if (handle.messageActivityId) {
       const last = handle.steps[handle.steps.length - 1];
       if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
       await updateCard(
