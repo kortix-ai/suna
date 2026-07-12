@@ -137,8 +137,15 @@ export default function ProjectSessionPage() {
   }, []);
 
   useEffect(() => {
-    if (session.switched && sandbox) sessionMark(sandbox.session_id, 'server-switched');
-  }, [session.switched, sandbox]);
+    if (session.switched && sandbox) {
+      sessionMark(sandbox.session_id, 'server-switched');
+      // The sidebar's session-list status ('running' vs 'stopped') is a SEPARATE
+      // query that /start never touches, so opening a session left the dot stale
+      // until a manual refresh. Refresh the list once the runtime switches in so
+      // the status flips to running on its own.
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    }
+  }, [session.switched, sandbox, queryClient, projectId]);
 
   // The moment we know there's no plan, pop the one Team plan modal.
   const billingGatedRef = useRef(false);
