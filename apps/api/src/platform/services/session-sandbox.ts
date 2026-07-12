@@ -460,13 +460,15 @@ export async function provisionSessionSandbox(opts: {
       const timeline = tl.summary();
 
       const [currentSession] = await db
-        .select({ status: projectSessions.status })
+        .select({ status: projectSessions.status, metadata: projectSessions.metadata })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .limit(1);
-      if (currentSession?.status === 'stopped') {
-        // The session was explicitly deleted while this box was still being
-        // created — deletion is the one case where we remove the provider box.
+      const currentSessionMetadata =
+        (currentSession?.metadata as Record<string, unknown> | null) ?? {};
+      if (typeof currentSessionMetadata.deletedAt === 'string') {
+        // Only an explicit deletion authorizes provider removal. A normal stop
+        // uses the same status and must never be mistaken for deletion.
         await provider.remove(result.externalId).catch((err) => {
           console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
@@ -495,6 +497,48 @@ export async function provisionSessionSandbox(opts: {
         recordProviderEvent({
           provider: providerName, kind: 'provision', outcome: 'stopped',
           totalMs: stopTl.totalMs, marks: stopTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
+
+      if (currentSession?.status === 'stopped') {
+        // A manual stop or idle reconciliation won while provider.create was
+        // in flight. Preserve the disk/identity and power it down.
+        await provider.stop(result.externalId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to stop concurrently-paused sandbox ${result.externalId}:`,
+            err,
+          );
+        });
+        await db
+          .update(sessionSandboxes)
+          .set({
+            externalId: result.externalId,
+            baseUrl: result.baseUrl || null,
+            status: 'stopped',
+            metadata: {
+              ...buildSandboxInitSuccessMetadata(
+                sandbox.metadata as Record<string, unknown> | null,
+                {
+                  ...result.metadata,
+                  provisionTimeline: timeline,
+                  daytonaSandboxId: result.externalId,
+                },
+                attempts,
+              ),
+              stoppedDuringProvisioning: true,
+              stoppedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        tl.mark('row-stopped-during-provision');
+        tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
+        const stoppedTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stoppedTl.totalMs, marks: stoppedTl.marks, attempts,
           sessionId: sandbox.sandboxId, accountId,
         });
         return;

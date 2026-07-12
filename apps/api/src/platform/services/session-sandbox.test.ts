@@ -53,11 +53,17 @@ let updateCalls: Array<{
   sql: string;
   params: unknown[];
 }> = [];
-let scenario: { archiveBeforeFinish: boolean; projectSessionStatusAtCheck: string } = {
+let scenario: {
+  archiveBeforeFinish: boolean;
+  projectSessionStatusAtCheck: string;
+  projectSessionMetadataAtCheck: Record<string, unknown>;
+} = {
   archiveBeforeFinish: false,
   projectSessionStatusAtCheck: 'provisioning',
+  projectSessionMetadataAtCheck: {},
 };
 let removedIds: string[] = [];
+let stoppedIds: string[] = [];
 let onRemoved: (() => void) | null = null;
 let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
 let onComputeOpened: (() => void) | null = null;
@@ -110,7 +116,10 @@ mock.module('../../shared/db', () => ({
         where: (_cond: unknown) => ({
           limit: async (_n: number) => {
             if (table === projectSessions) {
-              return [{ status: scenario.projectSessionStatusAtCheck }];
+              return [{
+                status: scenario.projectSessionStatusAtCheck,
+                metadata: scenario.projectSessionMetadataAtCheck,
+              }];
             }
             return [];
           },
@@ -150,7 +159,9 @@ mock.module('../providers', () => ({
       onRemoved?.();
     },
     start: async () => {},
-    stop: async () => {},
+    stop: async (externalId: string) => {
+      stoppedIds.push(externalId);
+    },
     getStatus: async () => 'running',
     resolveEndpoint: async () => ({ url: '', headers: {} }),
     resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
@@ -228,8 +239,13 @@ function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): 
 
 beforeEach(() => {
   updateCalls = [];
-  scenario = { archiveBeforeFinish: false, projectSessionStatusAtCheck: 'provisioning' };
+  scenario = {
+    archiveBeforeFinish: false,
+    projectSessionStatusAtCheck: 'provisioning',
+    projectSessionMetadataAtCheck: {},
+  };
   removedIds = [];
+  stoppedIds = [];
   onRemoved = null;
   computeSessionsOpened = [];
   onComputeOpened = null;
@@ -325,5 +341,21 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(flipCall).toBeUndefined();
 
     expect(recordedEvents.some((e) => e.outcome === 'stopped')).toBe(true);
+  });
+
+  test('manual stop racing provider create stops and preserves the sandbox instead of removing it', async () => {
+    scenario.projectSessionStatusAtCheck = 'stopped';
+    const eventRecorded = waitFor((resolve) => { onProviderEvent = resolve; });
+    await provisionSessionSandbox(baseOpts());
+    await eventRecorded;
+
+    expect(removedIds).toEqual([]);
+    expect(stoppedIds).toEqual([EXTERNAL_ID]);
+    expect(computeSessionsOpened).toEqual([]);
+    const preserved = updateCalls.find(
+      (c) => c.table === sessionSandboxes && c.updates.status === 'stopped',
+    );
+    expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
+    expect(preserved?.updates.metadata).toMatchObject({ stoppedDuringProvisioning: true });
   });
 });

@@ -67,9 +67,9 @@ export const SessionLayout = memo(function SessionLayout({
   const { data: messages } = useOpenCodeMessages(sessionId);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
-  // (e.g. currentSandboxId, files store resets). Destructuring the whole store
-  // subscribes to ALL properties and causes unnecessary re-renders for every
-  // open session tab.
+  // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
+  // store subscribes to ALL properties and causes unnecessary re-renders for
+  // every open session tab.
   const isSidePanelOpen = useKortixComputerStore((s) => s.isSidePanelOpen);
   const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
   const setActiveSession = useKortixComputerStore((s) => s.setActiveSession);
