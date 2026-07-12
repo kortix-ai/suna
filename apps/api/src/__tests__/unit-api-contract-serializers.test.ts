@@ -164,6 +164,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.runtime_id).toBe('runtime-1');
     expect(parsed.runtime_session_id).toBe('conversation-1');
     expect(parsed.acp_session_id).toBe('conversation-1');
+    expect('opencode_session_id' in parsed).toBe(false);
     expect('opencode_sessions' in parsed).toBe(false);
   });
 });

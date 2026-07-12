@@ -1980,7 +1980,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBeNull();
+    expect('opencode_session_id' in body).toBe(false);
     expect(body.status).toBe('provisioning');
     expect(body.metadata).toEqual({
       existing: true,

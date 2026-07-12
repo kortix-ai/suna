@@ -348,7 +348,6 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  opencode_session_id: z.string().nullable(),
   runtime_session_id: z.string().nullable(),
   runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
   runtime_id: z.string().nullable().optional(),

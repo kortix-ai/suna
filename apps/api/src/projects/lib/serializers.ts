@@ -81,7 +81,6 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
     runtime_session_id: runtimeProtocol === 'acp' ? acpSessionId : row.opencodeSessionId,
     runtime_protocol: runtimeProtocol,
     runtime_id: typeof row.metadata?.runtime_id === 'string' ? row.metadata.runtime_id : null,
