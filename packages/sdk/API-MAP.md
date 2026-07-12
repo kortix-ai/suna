@@ -63,7 +63,7 @@ try/catching every call.
 | op | v2 client / daemon |
 |---|---|
 | create / list / get / delete / update | `client.session.{create,list,get,delete,update}` |
-| fork / init / summarize / abort | `client.session.{fork,summarize,abort}`, `/kortix/abort` |
+| init / summarize / abort | `client.session.summarize`, `/kortix/abort` |
 | messages | `client.session.messages` → `GET /session/:id/message` |
 | **send prompt (sync / async)** | `client.session.prompt` → `POST /session/:id/prompt[_async]` |
 | parts edit / delete | `client.part.{update,delete}` |
@@ -91,7 +91,11 @@ try/catching every call.
 | MCP status/add/connect/disconnect/oauth | `client.mcp.*` | ✅ |
 
 ### 9. Terminal (PTY)  ✅
-`client.pty.{list,create,remove,update}` + `WS /pty/:id/connect?token=` → `getPtyWebSocketUrl`.
+Kortix-native (`opencode/pty.ts`), independent of the agent runtime — daemon
+`/kortix/pty` (`list/create/update/remove`) + `WS /kortix/pty/:id/connect?token=`
+→ `getKortixPtyWebSocketUrl`. Same hook names/shapes as before (`useOpenCodePtyList`,
+`useCreatePty`, `useRemovePty`, `useUpdatePty`, `getPtyWebSocketUrl`) — only the
+transport moved off `client.pty.*`/OpenCode's own `/pty`.
 
 ### 10. Workspace files  ✅ (client) · 🟡 (hooks)
 Daemon-direct (bypasses v2 client), full 12-op client now in the SDK (`@kortix/sdk/files` → `files/client.ts`):

@@ -22,6 +22,12 @@ A session row (`project_sessions`) carries a `status`. The enum defines `queued`
 
 Concurrent-session caps are enforced per account; exceeding your tier returns `429`.
 
+## Active-turn protection
+
+While any OpenCode root or subagent session is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease vetoes the idle reaper, and each renewal touches the provider edge so the provider's native inactivity timer cannot hibernate the VM during a long tool-only phase. The daemon also caches that provider edge and continues the busy-only keep-alive if the Kortix API is temporarily unavailable. `session.idle` and `session.error` release the lease.
+
+An open dashboard, preview, SSE connection, or health poll does **not** create an execution lease. Passive tabs therefore cannot keep genuinely idle compute alive.
+
 ## Branch model
 
 - The session branch is **named after the session id** (a UUID). `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` are the same value.
@@ -65,7 +71,7 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
-| `KORTIX_SANDBOX_TOKEN` | The sandbox **service key** — the daemon's own identity. It signs and validates its own control-surface requests with it (HMAC key for `X-Kortix-User-Context`) and is the bearer for the sandbox-identity routes (clone-credential / turn-stream / turn-question). It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. `KORTIX_TOKEN` is injected with the same value as a back-compat alias for daemons baked before the rename to `KORTIX_SANDBOX_TOKEN`; a planned Phase 2 will drop the `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` aliases and repurpose `KORTIX_TOKEN` to mean the session token instead, so don't depend on `KORTIX_TOKEN` continuing to carry the sandbox identity long-term. |
+| `KORTIX_SANDBOX_TOKEN` | The sandbox **service key** — the daemon's own identity. It signs and validates its own control-surface requests with it (HMAC key for `X-Kortix-User-Context`) and is the bearer for the sandbox-identity routes (clone-credential / turn-stream, including execution leases / turn-question). It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. `KORTIX_TOKEN` is injected with the same value as a back-compat alias for daemons baked before the rename to `KORTIX_SANDBOX_TOKEN`; a planned Phase 2 will drop the `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` aliases and repurpose `KORTIX_TOKEN` to mean the session token instead, so don't depend on `KORTIX_TOKEN` continuing to carry the sandbox identity long-term. |
 | `KORTIX_CLI_TOKEN` | The project-scoped PAT the in-sandbox `kortix` CLI authenticates with (same value as `KORTIX_EXECUTOR_TOKEN`). |
 | `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT — acts as the launching user, scoped to the project. Also backs the `kortix-executor` MCP gateway. |
 | `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. The sandbox daemon owns OpenCode root creation on every cold boot; this tells it to create/open the OpenCode root at boot, and the API adopts whatever root the daemon creates rather than racing to create its own. |

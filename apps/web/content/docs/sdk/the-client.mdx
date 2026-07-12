@@ -458,6 +458,12 @@ Account/agent/project-scoped model defaults, resolved by the gateway.
 | `set(input)` | set a default at some scope |
 | `clear(params)` | clear an override |
 
+### `p.setDefaultAgent` — project default agent
+
+`p.setDefaultAgent(agentName)` validates that the agent is declared and enabled,
+then commits it as `default_agent` in the project&apos;s v2 `kortix.yaml`. New
+project chats prefer this agent unless the user explicitly picks another one.
+
 ### `p.sandbox` — templates and snapshot builds
 
 Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the project

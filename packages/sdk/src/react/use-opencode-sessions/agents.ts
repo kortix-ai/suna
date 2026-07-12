@@ -41,7 +41,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
     queryFn: async () => {
       if (projectId) {
         const detail = await getProjectDetail(projectId);
-        const agents = detail.config.agents.map(projectConfigAgentToOpenCodeAgent);
+        const agents = projectConfigAgentsToOpenCodeAgents(detail.config);
         setLSCache(LS_AGENTS, agents, cacheScope);
         return agents;
       }
@@ -62,6 +62,22 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
     enabled: projectId ? true : runtimeReady,
     staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
+  });
+}
+
+/**
+ * Put the declared project default first so every consumer's ordinary
+ * "first visible agent" fallback agrees with the project contract. Explicit
+ * per-session/user picks still resolve by name and therefore keep precedence.
+ */
+export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
+  const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
+  const defaultName = config.open_code_default_agent;
+  if (!defaultName) return agents;
+  return agents.sort((left, right) => {
+    if (left.name === defaultName) return -1;
+    if (right.name === defaultName) return 1;
+    return 0;
   });
 }
 

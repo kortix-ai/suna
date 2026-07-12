@@ -29,16 +29,6 @@ export {
   type BillingErrorUI,
 } from '../platform/api/errors';
 
-// Fork-draft stash — see `session-start-stash.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
-// directly here (same reasoning as the start-stash exports it lives beside).
-export {
-  forkDraftKey,
-  writeForkDraft,
-  readForkDraft,
-  clearForkDraft,
-} from './session-start-stash';
-
 // The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding

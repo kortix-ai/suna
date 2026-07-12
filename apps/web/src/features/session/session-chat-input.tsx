@@ -13,7 +13,6 @@ import type {
   Agent,
   Command,
   MessageWithParts,
-  PromptPart,
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -25,7 +24,6 @@ import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
 
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
@@ -33,6 +31,7 @@ import {
   ArrowUpLeft,
   Check,
   ChevronDown,
+  Clock,
   Folder,
   ListTodo,
   Loader2,
@@ -1098,6 +1097,16 @@ export interface SessionChatInputProps {
     mentions?: TrackedMention[],
   ) => void | Promise<void>;
   isBusy?: boolean;
+  /**
+   * Messages queued while `isBusy` was true — held client-side (mirrors
+   * Claude Code/Codex) and flushed one at a time by the parent at the next
+   * safe boundary instead of interleaving into the live turn. When present
+   * alongside `onQueueMessage`, submitting while busy enqueues instead of
+   * sending immediately.
+   */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
    * Render the stop button in its disabled state even without an `onStop` — used
@@ -1155,9 +1164,8 @@ export interface SessionChatInputProps {
   /** Full provider list response (for connect/manage provider dialogs) */
   providers?: ProviderListResponse;
 
-  /** Thread/fork context — renders an inline indicator inside the input card */
+  /** Sub-session context — renders an inline indicator inside the input card */
   threadContext?: {
-    variant: 'thread' | 'fork';
     parentTitle: string;
     onBackToParent: () => void;
   };
@@ -1196,32 +1204,12 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-function parseForkDraft(parts: PromptPart[] | null | undefined) {
-  if (!parts?.length) return { text: '', files: [] as AttachedFile[] };
-  const files: AttachedFile[] = [];
-  let text = '';
-
-  for (const part of parts) {
-    if (part.type === 'text') {
-      text = part.text;
-      continue;
-    }
-    if (part.type !== 'file') continue;
-    files.push({
-      kind: 'remote',
-      url: part.url,
-      filename: part.filename || 'Attachment',
-      mime: part.mime,
-      isImage: part.mime.startsWith('image/'),
-    });
-  }
-
-  return { text, files };
-}
-
 export function SessionChatInput({
   onSend,
   isBusy = false,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -1361,26 +1349,6 @@ export function SessionChatInput({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to lockForQuestion changes
   }, [lockForQuestion]);
-
-  useEffect(() => {
-    if (!sessionId || typeof window === 'undefined') return;
-    const parsed = readForkDraft(sessionId);
-    if (parsed) {
-      const next = parseForkDraft(parsed);
-      setText(next.text);
-      setAttachedFiles((prev) => {
-        for (const file of prev) {
-          if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-        }
-        return next.files;
-      });
-      setSlashFilter(null);
-      setMentionQuery(null);
-      setMentions([]);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-    clearForkDraft(sessionId);
-  }, [sessionId]);
 
   // ChatGPT-like behavior: if the user starts typing while the textarea is not
   // focused, redirect the keystroke into this textarea and focus it.
@@ -1780,9 +1748,19 @@ export function SessionChatInput({
       }
     }
 
+    // While the agent is busy, hold the message client-side instead of
+    // sending it straight through — mirrors Claude Code/Codex's "queued
+    // while busy" behavior. The parent flushes it at the next safe boundary
+    // (a tool call finishing, or the turn going idle) rather than
+    // interleaving it into the live turn.
+    if (isBusy && onQueueMessage) {
+      onQueueMessage(trimmed, filesToSend, mentionsToSend);
+      return;
+    }
+
     // Send directly. The OpenCode server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe — the
-    // server queues it. (No client-side message queue.)
+    // calls per-session, so sending while the agent is busy is safe even
+    // without queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
     } catch {
@@ -1798,6 +1776,8 @@ export function SessionChatInput({
     modelUnavailable,
     clearOnSend,
     onSend,
+    isBusy,
+    onQueueMessage,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -2068,8 +2048,36 @@ export function SessionChatInput({
           )}
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
-          {(threadContext || sessionId || inputSlot || replyTo) && (
+          {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
             <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
+              <AnimatePresence initial={false}>
+                {queuedMessages?.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    layout
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 2 }}
+                    transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
+                  >
+                    <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
+                    <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                      {m.text.length > 120 ? `${m.text.slice(0, 120)}…` : m.text}
+                    </span>
+                    {onRemoveQueuedMessage && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveQueuedMessage(m.id)}
+                        className="text-muted-foreground hover:text-foreground -m-1.5 flex-shrink-0 rounded-full p-1.5 transition-[color,transform] active:scale-[0.96]"
+                        aria-label="Remove queued message"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {replyTo && (
                 <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
@@ -2099,7 +2107,7 @@ export function SessionChatInput({
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    {threadContext.variant === 'fork' ? 'Fork of' : 'Sub-session of'}{' '}
+                    {'Sub-session of'}{' '}
                     <span className="text-foreground/80 font-medium">
                       {threadContext.parentTitle}
                     </span>

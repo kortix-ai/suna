@@ -147,6 +147,88 @@ export const SESSION_VISIBILITIES = ['private', 'project', 'restricted'] as cons
 export const SessionVisibilitySchema = z.enum(SESSION_VISIBILITIES);
 export type SessionVisibility = z.infer<typeof SessionVisibilitySchema>;
 
+/**
+ * Non-secret, wrapper-supplied context attached durably to one Kortix session.
+ * This is not an environment-variable map: the server serializes the whole
+ * object into one server-owned `KORTIX_SESSION_CONTEXT` JSON envelope.
+ */
+export const SESSION_RUNTIME_CONTEXT_MAX_KEYS = 64;
+export const SESSION_RUNTIME_CONTEXT_MAX_BYTES = 16 * 1024;
+export const SESSION_RUNTIME_CONTEXT_KEY_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
+const SESSION_RUNTIME_CONTEXT_SENSITIVE_KEY_PATTERN =
+  /(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/;
+
+export const SessionRuntimeContextScalarSchema = z.union([
+  z.string().max(4096),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+export type SessionRuntimeContextScalar = z.infer<typeof SessionRuntimeContextScalarSchema>;
+
+export const SessionRuntimeContextSchema = z
+  .record(
+    z.string()
+      .regex(
+        SESSION_RUNTIME_CONTEXT_KEY_PATTERN,
+        'runtime_context keys must start with a lower-case letter and contain only lower-case letters, numbers, dots, dashes, or underscores (max 64 characters)',
+      )
+      .refine(
+        (key) => !SESSION_RUNTIME_CONTEXT_SENSITIVE_KEY_PATTERN.test(key),
+        'runtime_context is non-secret and cannot contain credential-like keys',
+      ),
+    SessionRuntimeContextScalarSchema,
+  )
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > SESSION_RUNTIME_CONTEXT_MAX_KEYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `runtime_context may contain at most ${SESSION_RUNTIME_CONTEXT_MAX_KEYS} entries`,
+      });
+    }
+    const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    if (bytes > SESSION_RUNTIME_CONTEXT_MAX_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `runtime_context must be at most ${SESSION_RUNTIME_CONTEXT_MAX_BYTES} UTF-8 bytes`,
+      });
+    }
+  });
+export type SessionRuntimeContext = z.infer<typeof SessionRuntimeContextSchema>;
+
+/** Authoritative public body for POST /v1/projects/:projectId/sessions. */
+export const SessionCreateInputSchema = z
+  .object({
+    base_ref: z.string().min(1).optional(),
+    agent_name: z.string().min(1).optional(),
+    sandbox_slug: z.string().min(1).optional(),
+    initial_prompt: z.string().optional(),
+    opencode_model: z.string().min(1).optional(),
+    name: z.string().optional(),
+    session_id: z.string().regex(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'session_id must be an RFC 4122 v4 UUID',
+    ).optional(),
+    provider: SandboxProviderSchema.optional(),
+    branch_already_created: z.boolean().optional(),
+    metadata: JsonObjectSchema.optional(),
+    runtime_context: SessionRuntimeContextSchema.optional(),
+    // Deprecated camelCase compatibility accepted by the pre-contract route.
+    // New SDK/API consumers use the snake_case fields above.
+    baseRef: z.string().min(1).optional(),
+    agentName: z.string().min(1).optional(),
+    sandboxSlug: z.string().min(1).optional(),
+    initialPrompt: z.string().optional(),
+    opencodeModel: z.string().min(1).optional(),
+    sessionId: z.string().regex(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'sessionId must be an RFC 4122 v4 UUID',
+    ).optional(),
+    branchAlreadyCreated: z.boolean().optional(),
+  })
+  .strict();
+export type SessionCreateInput = z.infer<typeof SessionCreateInputSchema>;
+
 /** A project session as serialized by `serializeSession`. */
 export const ProjectSessionSchema = z.object({
   session_id: z.string(),

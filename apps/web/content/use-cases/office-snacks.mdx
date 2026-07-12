@@ -1,0 +1,137 @@
+---
+title: "How we keep the office stocked"
+description: People request snacks through a Slack shortcut, and an agent batches the requests weekly, prepares an order, and posts it for the office manager to approve before placing anything.
+date: "2026-01-28"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - Fun
+---
+
+Keeping an office stocked is a small recurring chore that never quite has an
+owner. Requests come in over Slack, hallway conversations, and sticky notes; the
+office manager reconciles them into an order; and half the time a request is
+forgotten by the time the order goes in. It's low-stakes, but it's steady work.
+
+We handle it with an agent on Kortix. People request snacks through a Slack
+shortcut, and once a week the agent batches every request, prepares an order, and
+posts it for the office manager to approve. Nothing is placed until a person signs
+off.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Control surface">Slack</Fact>
+  <Fact label="Connected systems">Slack · Ordering account</Fact>
+  <Fact label="Mode">Weekly batch · human-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+Snack requests arrive one at a time and out of band. Someone asks in a channel,
+someone else mentions it in passing, and the office manager is left assembling a
+list from memory. Requests get dropped, duplicates slip through, and the order
+goes in later than it should.
+
+The task is simple but constant. It needs one place to collect requests, a way to
+batch them on a schedule, and a person's sign-off before any money is spent — none
+of which a shared spreadsheet or a recurring calendar reminder actually provides.
+
+## What we built
+
+Requests come in through a Slack shortcut, so there's one place to submit them.
+Once a week a cron trigger spawns an isolated session that collects the week's
+requests, prepares an order against the ordering account, and posts the draft in
+Slack for the office manager to approve. Only after approval does it place
+anything.
+
+<Figure
+  caption="A batched snack order posted for approval in Slack"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Collect requests through a Slack shortcut">
+
+Slack is connected as a **channel**, and a shortcut is the way people submit
+requests. Each submission is collected against the week's batch. There's one place
+to ask, and nobody has to track requests in their head.
+
+</Step>
+<Step title="Batch them on a weekly cron">
+
+A **cron trigger** fires once a week and spawns a fresh **session** in its own
+isolated sandbox. The run gathers every request submitted since the last order.
+One run, one sandbox, torn down when it's done.
+
+</Step>
+<Step title="Give the agent the ordering rules">
+
+The preferred vendor, the budget, standing staples to always include, and how to
+consolidate duplicate requests live as **skills** and **memory**. The rules are
+updated as preferences and the budget change.
+
+</Step>
+<Step title="Connect Slack and the ordering account">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read requests from Slack** — the week's submissions from the shortcut.
+- **Prepare an order in the ordering account** — build the cart against the
+  vendor, but not check out.
+- **Post to Slack** — the draft order for the office manager to review.
+
+</Step>
+<Step title="Approve before it places anything">
+
+The prepared order stops at a **human approval gate** in Slack. The office manager
+sees the full cart and the total, and nothing is purchased until they approve.
+Credentials for the ordering account are encrypted in the secrets manager and
+injected at runtime, never shown to the model or written to logs.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Collect requests through a Slack **channel** shortcut, batch them on a **cron
+  trigger**, keep the vendor and budget rules in **skills** and **memory**, and hold
+  the order at a **human approval gate** before it spends. One place in, one approved
+  order out.
+</Callout>
+
+## Guardrails
+
+Because the agent can prepare an order that spends money, the controls matter even
+for a small chore:
+
+- **Isolation.** Each weekly run executes in its own microVM sandbox, and only the
+  prepared order and Slack post it's explicitly allowed to send leave the sandbox.
+- **Scoped secrets.** The ordering-account credential is encrypted in the secrets
+  manager and injected into the sandbox at runtime, never exposed to the model or
+  the logs.
+- **Human approval gates.** No purchase is placed until the office manager approves
+  the draft order in Slack.
+- **Everything is code.** The vendor, the budget, the staples, and the batching
+  schedule are files in the repo — versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="The order held at the approval gate before checkout"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Weekly" label="Requests batched into one order on a schedule" />
+  <Stat value="One place" label="Every request comes in through a Slack shortcut" />
+  <Stat value="Approve first" label="Nothing is purchased without a person signing off" />
+</StatGrid>
+
+Requests stop getting lost, duplicates get consolidated, and the office manager
+reviews a finished order instead of assembling one. The spending step stays behind
+a person, so the automation saves the busywork without ever placing an order on
+its own.

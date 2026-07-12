@@ -179,13 +179,6 @@ router.push(`/projects/${projectId}/sessions/${sessionId}`);
 
 Also `readStartStash(sessionId)` / `clearStartStash(sessionId)` / `startStashKey`.
 
-A sibling **fork-draft** stash covers the same hand-off for forking a session at
-a message: stash the draft under the new forked session's id before navigating
-to it, then `useForkSession()` (below, under "Session list & CRUD") picks it up
-the same way `useSession` picks up a start-stash. `forkDraftKey`,
-`writeForkDraft(sessionId, draft)`, `readForkDraft(sessionId)`,
-`clearForkDraft(sessionId)`.
-
 ## Session list & CRUD
 
 The session list and per-session lifecycle, as React Query queries and mutations.
@@ -212,7 +205,7 @@ function Sidebar() {
 | `useOpenCodeSessions()` · `useOpenCodeSession(id)` | the live session list · one record |
 | `useCreateOpenCodeSession()` | create `{ directory?, title? }` |
 | `useUpdateOpenCodeSession()` | rename / archive `{ sessionId, title?, archived? }` |
-| `useDeleteOpenCodeSession()` · `useForkSession()` | delete · branch at a message |
+| `useDeleteOpenCodeSession()` | delete |
 | `useSummarizeOpenCodeSession()` · `useInitSession()` | compact the thread · run `/init` |
 | `useOpenCodeSessionDiff(id)` · `useOpenCodeSessionTodo(id)` | working diff · todo list |
 
@@ -269,7 +262,9 @@ connectors for new code.
 ## PTY terminal
 
 A live terminal into the session's sandbox — list/create/remove/resize PTYs, then
-open a WebSocket for the byte stream.
+open a WebSocket for the byte stream. Backed by Kortix's own PTY implementation
+in the sandbox daemon (`/kortix/pty`), independent of whatever agent runtime is
+running — the hook names/shapes below are unchanged from before that move.
 
 ```tsx
 import { useOpenCodePtyList, useCreatePty, useRemovePty, getPtyWebSocketUrl } from '@kortix/sdk/react';

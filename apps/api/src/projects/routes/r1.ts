@@ -489,9 +489,14 @@ projectsApp.openapi(
 
   // Resolve a push credential for seeding / the CLI's first push. The managed
   // GitHub backend mints an installation token.
-  let pushToken = provisioned.initialToken;
-  if (!pushToken) {
-    pushToken = (await resolveProjectGitAuth(row)).auth?.token ?? null;
+  let internalPushToken = provisioned.initialToken;
+  let exportablePushToken = provisioned.initialToken;
+  if (!internalPushToken) {
+    const resolved = await resolveProjectGitAuth(row);
+    internalPushToken = resolved.auth?.token ?? null;
+    exportablePushToken = resolved.authSource === 'pat'
+      ? null
+      : resolved.auth?.token ?? null;
   }
 
   // Seed the starter into the empty repo when the caller has no local working
@@ -505,7 +510,7 @@ projectsApp.openapi(
   if (seedStarter) {
     const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
     try {
-      if (!pushToken) throw new Error('no push credential resolved for seeding');
+      if (!internalPushToken) throw new Error('no push credential resolved for seeding');
       const seed = await buildProjectSeedFiles({
         projectName: name,
         repoFullName: repoSlug,
@@ -522,7 +527,7 @@ projectsApp.openapi(
         // root) — the single biggest spawn-latency win. The per-project name
         // customization is applied in-sandbox at fork (not committed to the
         // shared remote root) so the warm reuse is never broken by a divergent tip.
-        await backend.seedFiles(connRef, pushToken, seed.files, {
+        await backend.seedFiles(connRef, internalPushToken, seed.files, {
           branch: provisioned.defaultBranch,
           message: 'chore: scaffold Kortix project',
           baseFiles: seed.baseFiles,
@@ -530,7 +535,7 @@ projectsApp.openapi(
       } else {
         await seedRepoViaGitPush({
           upstreamUrl: connRef.upstreamUrl,
-          token: pushToken,
+          token: internalPushToken,
           files: seed.files,
           branch: provisioned.defaultBranch,
           commitMessage: 'chore: scaffold Kortix project',
@@ -552,7 +557,7 @@ projectsApp.openapi(
         repoUrl: row.repoUrl,
         defaultBranch: row.defaultBranch,
         manifestPath: row.manifestPath,
-        gitAuthToken: pushToken,
+        gitAuthToken: internalPushToken,
       },
       { accountId: scope.accountId, source: 'project-create' },
     );
@@ -561,7 +566,7 @@ projectsApp.openapi(
   return c.json(
     {
       ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: pushToken,
+      push_token: exportablePushToken,
       repo_id: provisioned.externalRepoId,
       seeded,
     },
@@ -612,6 +617,12 @@ projectsApp.openapi(
   const gitAuth = await resolveProjectGitAuth(loaded.row);
   if (!gitAuth.auth?.token) {
     return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+  }
+  if (gitAuth.authSource === 'pat') {
+    return c.json(
+      { error: 'Managed git push token export requires a repo-scoped installation token' },
+      503,
+    );
   }
   const upstream = await resolveProjectUpstream(loaded.row, 'write');
 

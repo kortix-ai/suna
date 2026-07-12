@@ -6,7 +6,7 @@ import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
-import { verifySupabaseJwt } from '../shared/jwt-verify';
+import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 import { syncSsoMembership } from '../iam/sso-sync';
@@ -306,6 +306,12 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('userId', user.id);
     c.set('userEmail', user.email || '');
     c.set('authType', 'supabase');
+    const payload = decodeSupabaseJwtPayload(token);
+    if (payload?.aal) c.set('mfaAal', payload.aal);
+    if (payload?.session_id) c.set('sessionId', payload.session_id);
+    if (typeof payload?.iat === 'number') {
+      c.set('sessionIat', payload.iat);
+    }
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
@@ -318,7 +324,12 @@ export async function supabaseAuth(c: Context, next: Next) {
     // SAML JIT on the network-verify path too (a token whose kid isn't in the
     // cached JWKS lands here, NOT the local path) — `user.app_metadata` is the
     // authoritative record straight from Supabase.
-    await jitSyncSso(user.id, user.email || '', user as unknown as Record<string, unknown>);
+    await jitSyncSso(
+      user.id,
+      user.email || '',
+      (payload as unknown as Record<string, unknown> | null) ??
+        (user as unknown as Record<string, unknown>),
+    );
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
@@ -375,16 +386,14 @@ export async function combinedAuth(c: Context, next: Next) {
   }
 
   if (!token) {
-    // Last resort: check query param for preview proxy routes and SSE endpoints.
-    // Browser WebSocket API can't set custom headers, so PTY terminals
-    // and other WS clients pass the token as ?token=<jwt>.
-    // EventSource (SSE) also can't set headers, so provision-stream uses this.
+    // Last resort: query tokens are allowed only for legacy EventSource
+    // provision-stream. Browser WebSocket preview auth is handled by the Bun
+    // upgrade path (ws-proxy.ts), not this HTTP middleware. Do not accept
+    // ?token= on ordinary preview HTTP routes: it leaks bearer material into
+    // URLs, logs, history, and Referer headers.
     const url = new URL(c.req.url);
     const queryToken = url.searchParams.get('token');
-    if (queryToken && (
-      c.req.path.startsWith('/v1/p/') ||
-      c.req.path.includes('/provision-stream')
-    )) {
+    if (queryToken && c.req.path.includes('/provision-stream')) {
       token = queryToken;
     }
   }
@@ -600,6 +609,12 @@ export async function combinedAuth(c: Context, next: Next) {
     c.set('userId', user.id);
     c.set('userEmail', user.email || '');
     c.set('authType', 'supabase');
+    const payload = decodeSupabaseJwtPayload(token);
+    if (payload?.aal) c.set('mfaAal', payload.aal);
+    if (payload?.session_id) c.set('sessionId', payload.session_id);
+    if (typeof payload?.iat === 'number') {
+      c.set('sessionIat', payload.iat);
+    }
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
@@ -611,7 +626,12 @@ export async function combinedAuth(c: Context, next: Next) {
       metadata: { verify_path: 'network' },
     });
     // SAML JIT — combinedAuth network-verify path.
-    await jitSyncSso(user.id, user.email || '', user as unknown as Record<string, unknown>);
+    await jitSyncSso(
+      user.id,
+      user.email || '',
+      (payload as unknown as Record<string, unknown> | null) ??
+        (user as unknown as Record<string, unknown>),
+    );
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;

@@ -2,7 +2,7 @@
 
 import { backendApi } from '../api-client';
 import { markSessionFresh } from '../fresh-sessions';
-import { unwrap, type ConnectorSharing } from './shared';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -54,6 +54,27 @@ export interface ProjectSession {
   can_manage_sharing?: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type SessionRuntimeContextScalar = string | number | boolean | null;
+export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
+
+/** Public body for POST /projects/:projectId/sessions. */
+export interface CreateProjectSessionInput {
+  base_ref?: string;
+  agent_name?: string;
+  /** Slug of the sandbox template to boot from. Defaults to "default". */
+  sandbox_slug?: string;
+  initial_prompt?: string;
+  opencode_model?: string;
+  name?: string;
+  /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
+  session_id?: string;
+  provider?: 'daytona' | 'managed' | 'local_docker' | 'justavps' | 'platinum';
+  branch_already_created?: boolean;
+  metadata?: Record<string, unknown>;
+  /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
+  runtime_context?: SessionRuntimeContext;
 }
 
 export interface ProjectOpenCodeSession {
@@ -179,20 +200,7 @@ export async function revokeSessionPublicShare(
 
 export async function createProjectSession(
   projectId: string,
-  input?: {
-    base_ref?: string;
-    agent_name?: string;
-    /** Slug of the sandbox template to boot from. Defaults to "default". */
-    sandbox_slug?: string;
-    initial_prompt?: string;
-    name?: string;
-    /**
-     * Client-generated session id. The API accepts any RFC 4122 v4 UUID;
-     * we use this so the FE can navigate optimistically the moment the user
-     * clicks "send" — the page renders before the POST has even returned.
-     */
-    session_id?: string;
-  },
+  input?: CreateProjectSessionInput,
 ) {
   const session = unwrap(
     await backendApi.post<ProjectSession>(

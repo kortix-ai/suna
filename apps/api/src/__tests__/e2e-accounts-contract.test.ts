@@ -36,6 +36,7 @@ interface InviteRow {
   invitedBy: string | null;
   initialRole: AccountRole;
   acceptedAt: Date | null;
+  acceptedByUserId?: string | null;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -223,6 +224,7 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
     existing.expiresAt = (set?.expiresAt ?? values.expiresAt) as Date;
     existing.invitedBy = (set?.invitedBy ?? values.invitedBy) as string;
     existing.acceptedAt = (set?.acceptedAt ?? null) as Date | null;
+    existing.acceptedByUserId = (set?.acceptedByUserId ?? null) as string | null;
     return existing;
   }
   const invite: InviteRow = {
@@ -232,6 +234,7 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
     invitedBy: values.invitedBy ?? null,
     initialRole: values.initialRole ?? 'member',
     acceptedAt: values.acceptedAt ?? null,
+    acceptedByUserId: values.acceptedByUserId ?? null,
     createdAt: baseDate,
     expiresAt: values.expiresAt,
   };
@@ -321,6 +324,7 @@ mock.module('../shared/resolve-account', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -739,6 +743,7 @@ describe('accounts API contract', () => {
     });
     expect(membership(INVITEE_ID, ACCOUNT_ID)?.accountRole).toBe('member');
     expect(inviteRows[0]?.acceptedAt).toBeInstanceOf(Date);
+    expect(inviteRows[0]?.acceptedByUserId).toBe(INVITEE_ID);
 
     const again = await app.request(`/v1/account-invites/${INVITE_ID}/accept`, { method: 'POST' });
     expect(again.status).toBe(200);
@@ -747,6 +752,14 @@ describe('accounts API contract', () => {
       account_role: 'member',
       already_accepted: true,
       bootstrap_grants_applied: [],
+    });
+
+    currentUserId = MEMBER_ID;
+    currentUserEmail = 'invitee@example.test';
+    const otherIdentity = await app.request(`/v1/account-invites/${INVITE_ID}/accept`, { method: 'POST' });
+    expect(otherIdentity.status).toBe(409);
+    expect(await otherIdentity.json()).toEqual({
+      error: 'Invite has already been accepted by another account.',
     });
 
     inviteRows[0] = {

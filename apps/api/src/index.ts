@@ -14,6 +14,7 @@ import {
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
+import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { cors } from 'hono/cors';
@@ -49,6 +50,7 @@ import { startAccessControlCache, stopAccessControlCache } from './shared/access
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
+import { templatesApp } from './projects/templates/routes';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -347,18 +349,7 @@ const HealthSchema = z
   .object({
     status: z.string(),
     service: z.string(),
-    version: z.string(),
-    commit: z.string(),
-    environment: z.string(),
-    instance: z.string(),
-    started_at: z.string(),
-    uptime_seconds: z.number(),
-    memory_mb: z.number(),
     timestamp: z.string(),
-    billing_enabled: z.boolean(),
-    tunnel: z.any(),
-    leader: z.boolean(),
-    trigger_scheduler: z.any(),
   })
   .openapi('Health');
 
@@ -366,25 +357,7 @@ const healthHandler = (c: any) =>
   c.json({
     status: 'ok',
     service: 'kortix-api',
-    version: API_VERSION,
-    commit: API_COMMIT,
-    environment: config.INTERNAL_KORTIX_ENV,
-    instance: API_INSTANCE,
-    started_at: STARTED_AT,
-    uptime_seconds: Math.round(process.uptime()),
-    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
-    // the container's memory limit, without needing metrics-server/dashboards.
-    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    tunnel: getTunnelServiceStatus(),
-    leader: isLeader(),
-    // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
-    // took, and what it did. On a non-leader pod the fields are null (the sweep
-    // only runs on the leader) — so "all pods null" = no leader = no triggers.
-    // `stale` is true when we're the leader but the sweep has frozen (started
-    // and not completed within the stale window) — the signal to alert on.
-    trigger_scheduler: { ...getTriggerSchedulerHealth(), stale: schedulerSweepIsStale(isLeader()) },
   });
 
 app.openapi(
@@ -443,7 +416,23 @@ const livenessHandler = (c: any) => {
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
 
+function hasInternalObservabilityAuth(c: any): boolean {
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
+  const expected = config.INTERNAL_SERVICE_KEY;
+  const safeEq = (a: string, b: string) => {
+    const aa = Buffer.from(a);
+    const bb = Buffer.from(b);
+    return aa.length === bb.length && timingSafeEqual(aa, bb);
+  };
+  return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
+}
+
 app.get('/metrics', (c) => {
+  if (!hasInternalObservabilityAuth(c)) {
+    return c.text('unauthorized\n', 401);
+  }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return c.body(renderMetrics());
@@ -637,6 +626,7 @@ registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),

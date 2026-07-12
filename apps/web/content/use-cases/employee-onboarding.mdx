@@ -1,0 +1,146 @@
+---
+title: "How we onboard new hires"
+description: A new-hire record triggers an agent to provision accounts, add the person to the right groups and channels, and file a first-week checklist, with account creation and group membership held for approval.
+date: "2026-03-11"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - HR
+---
+
+Onboarding a new hire spans several systems on day one. There's a Google
+Workspace account to create, groups and aliases to add them to, Slack channels to
+invite them into, and a first-week checklist someone has to remember to file.
+Each step is small, but they live in different tools, and the person doing the
+setup is rarely the person who owns every system. Steps get missed, and a new
+hire waits on access they should have had on their first morning.
+
+We handle this by tying the setup to the event that starts it: a new record in
+our HR system. This writes up how we run that on Kortix — the connections, the
+steps, and the guardrails — so you can set up the same flow for your own team.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Trigger">A new-hire record</Fact>
+  <Fact label="Connected systems">Google Workspace · Slack · Linear</Fact>
+  <Fact label="Mode">Trigger-driven · Approval-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+The common approaches each leave gaps. A written runbook depends on a person
+following every step by hand, and the steps drift as the tools change. A no-code
+automation handles the happy path it was built for but can't reason about which
+groups a given role needs. And handing each system to a different owner means the
+new hire's access lands piecemeal over their first few days.
+
+We wanted the accounts, memberships, and checklist a new hire needs to be
+prepared the moment their record exists, with the irreversible steps held for a
+person to confirm.
+
+## What we built
+
+On Kortix, a new-hire record triggers an agent. Each new hire runs in its own
+isolated session — a cloud sandbox — with scoped access to what onboarding needs:
+Google Workspace, Slack, and Linear. The agent reads the role, prepares the
+account, the group and channel memberships, and a first-week onboarding
+checklist, and files them. Account creation and group membership stop at an
+approval gate before anything is provisioned.
+
+<Figure
+  caption="The agent preparing a new hire's accounts and holding provisioning for approval"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the HR record as the trigger">
+
+A signed webhook from our HR system points at the project. A new-hire record
+fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
+with the role, team, and start date. One hire, one session, one disposable
+machine. Nothing carries over between runs.
+
+</Step>
+<Step title="Give the agent the onboarding standard">
+
+Which groups a role belongs to, which channels a team joins, and what a good
+first week looks like are stored as **skills** and **memory** that load into
+every session. The agent works to that standard rather than guessing, and it
+updates as we refine the process.
+
+</Step>
+<Step title="Connect what onboarding can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Create the Google Workspace account** — mailbox, aliases, and the group
+  memberships the role calls for.
+- **Add the hire to Slack** — the channels their team works in.
+- **File the checklist in Linear** — a first-week onboarding project with the
+  tasks their role needs.
+
+</Step>
+<Step title="Set the guardrails">
+
+Account creation and group membership are the steps that grant access, so they
+stop at a **human approval gate** before anything is provisioned. A person
+confirms the account and the memberships in one place. Credentials are encrypted
+in the secrets manager and injected at runtime, never shown to the model or
+written to logs.
+
+</Step>
+<Step title="Let each new hire arrive set up">
+
+With that in place, a new-hire record prepares the mailbox, the group and channel
+memberships, and the first-week checklist, and holds the access-granting steps
+for a person. A new engineer's record becomes a Workspace account, the right
+Slack channels, and a Linear onboarding project, ready on day one.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect the HR record via a **trigger**, give the agent scoped **connectors**
+  into Google Workspace, Slack, and Linear, encode the onboarding standard as
+  **skills** and **memory**, and gate account creation and group membership
+  behind a human.
+</Callout>
+
+## Guardrails
+
+Giving an agent the ability to create accounts and grant access is a trust
+question. The relevant controls on Kortix:
+
+- **Isolation.** Every new hire runs in its own microVM sandbox on its own
+  branch. The session can reach only the systems it's scoped to, and only what
+  it's explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** Each credential is encrypted in the secrets manager,
+  injected into the sandbox at runtime, and never exposed to the model or the
+  logs.
+- **Human approval gate.** Account creation and group membership require a person
+  to approve before anything is provisioned.
+- **Everything is code.** The agent's persona, skills, and per-system
+  permissions are files in the repo — versioned and changed through a reviewed
+  **change request**, not a dashboard setting.
+
+<Figure
+  caption="A new hire's accounts and memberships held for human approval before provisioning"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Day one" label="Accounts and access prepared before the hire starts" />
+  <Stat value="Approval-gated" label="Every account and group membership confirmed by a person" />
+  <Stat value="3 systems" label="Google Workspace, Slack, and Linear — one agent" />
+</StatGrid>
+
+The scramble to set up a new hire across several tools now arrives as one
+prepared, reviewable setup the moment their record exists, with the
+access-granting steps held for a person. Extending it to another system means
+connecting one more platform.

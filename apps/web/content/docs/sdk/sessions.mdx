@@ -23,15 +23,17 @@ SDK resolves for you.
 await s.get();                 // session detail
 await s.update({ /* … */ });   // rename, settings
 await s.start();               // provision + boot the runtime
-await s.restart();             // restart the runtime (may re-provision a new sandbox)
+await s.restart();             // restart the same runtime in place
 await s.stop();                // stop the runtime without deleting the session
 await s.commit();              // commit the agent's work
 await s.setSharing(intent);    // sharing / visibility
 await s.delete();
 ```
 
-`restart()` and `delete()` both forget this handle's cached runtime (a restart
-may land on a different sandbox); `stop()` does the same without deleting the
+`restart()` preserves the session's established sandbox identity and refreshes
+the handle's cached readiness state. If the original provider object is
+unavailable, restart fails explicitly instead of attaching an empty replacement.
+`delete()` removes the runtime; `stop()` clears readiness without deleting the
 session itself.
 
 ### Previews & public shares

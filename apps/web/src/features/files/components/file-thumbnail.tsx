@@ -43,7 +43,7 @@ export function FileThumbnail({ filePath, fileName, className, deferPreview }: F
   }
 
   return (
-    <div className={cn('relative overflow-hidden bg-muted/20', className)}>
+    <div data-pptx-thumb="" className={cn('relative overflow-hidden bg-muted/20', className)}>
       <div
         className="absolute top-0 left-0 origin-top-left pointer-events-none select-none [&_*]:!cursor-default"
         style={isImage ? { width: '100%', height: '100%' } : {

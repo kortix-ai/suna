@@ -74,7 +74,12 @@ import {
   sessionSandboxes,
 } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
+import { discoverExecutionKeepAliveEndpoint, releaseExecutionLease, renewExecutionLease } from "../execution-lease";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
+import {
+  bindChatThread,
+  resolveWorkspaceIdForChannel,
+} from "../../channels/slack/binding";
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from "../lib/app";
 import {
   APPS_DISABLED_BODY,
@@ -1018,6 +1023,7 @@ projectsApp.openapi(
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
     const authType = (c as any).get("authType") as string | undefined;
+    let authenticatedSandboxId: string | null = null;
     if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
       const accountId = (c as any).get("accountId") as string | undefined;
       const sandboxId = (c as any).get("sandboxId") as string | undefined;
@@ -1025,7 +1031,7 @@ projectsApp.openapi(
         return c.json({ error: "turn-stream requires a sandbox token" }, 403);
       }
       const [sandbox] = await db
-        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId })
         .from(sessionSandboxes)
         .where(
           and(
@@ -1042,6 +1048,7 @@ projectsApp.openapi(
           403,
         );
       }
+      authenticatedSandboxId = sandbox.sandboxId;
     } else {
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
@@ -1064,6 +1071,7 @@ projectsApp.openapi(
       error_status?: number;
       error_retryable?: boolean;
       error_provider?: string;
+      lease_ttl_seconds?: number;
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -1073,6 +1081,13 @@ projectsApp.openapi(
     const sessionId = body.session_id?.trim();
     if (!sessionId) {
       return c.json({ error: "session_id is required" }, 400);
+    }
+
+    if (authenticatedSandboxId) {
+      const [ownedSession] = await db.select({ sessionId: sessionSandboxes.sessionId }).from(sessionSandboxes).where(and(
+        eq(sessionSandboxes.sandboxId, authenticatedSandboxId), eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.projectId, projectId),
+      )).limit(1);
+      if (!ownedSession) return c.json({ error: "sandbox token is not scoped to this session" }, 403);
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -1090,6 +1105,28 @@ projectsApp.openapi(
       .limit(1);
     if (!turnStreamSession) {
       return c.json({ error: "Not found" }, 404);
+    }
+
+    if (body.kind === "execution_heartbeat" || body.kind === "execution_lease_release" || body.kind === "execution_lease_discover") {
+      if (!authenticatedSandboxId) return c.json({ error: "execution lease requires a sandbox token" }, 403);
+      const target = { sandboxId: authenticatedSandboxId, sessionId, projectId };
+      if (body.kind === "execution_lease_release") return c.json({ ok: await releaseExecutionLease(target) });
+      if (body.kind === "execution_lease_discover") {
+        const provider = await discoverExecutionKeepAliveEndpoint(target);
+        return c.json({
+          ok: provider !== null,
+          provider_url: provider?.url ?? null,
+          provider_headers: provider?.headers ?? null,
+        });
+      }
+      const result = await renewExecutionLease(target, body.lease_ttl_seconds);
+      return c.json({
+        ok: result.ok,
+        lease_until: result.leaseUntil,
+        provider_url: result.providerUrl,
+        provider_headers: result.providerHeaders,
+        provider_touched: result.providerUrl !== null,
+      });
     }
 
     // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
@@ -1271,6 +1308,116 @@ projectsApp.openapi(
     if (!result.ok)
       return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
+  },
+);
+
+// POST /v1/projects/:projectId/channels/slack/bind-thread
+// Bind a Slack thread the agent created (e.g. from a webhook/cron run) to its
+// session, so a later human reply in that thread routes back into this session
+// (approval loops, follow-up Q&A). This writes the same `chat_threads` row the
+// inbound `bind_chat_thread` post-create action does; without it, replies to a
+// non-Slack-originated thread are classified `ignore` and dropped.
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/slack/bind-thread",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/slack/bind-thread",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { "application/json": { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), bound: z.boolean() }).passthrough(),
+        "Bound",
+      ),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
+    // back to this project) or a project/session-scoped user PAT.
+    const authType = (c as any).get("authType") as string | undefined;
+    if (authType === "apiKey" && (c as any).get("apiKeyType") === "sandbox") {
+      const accountId = (c as any).get("accountId") as string | undefined;
+      const sandboxId = (c as any).get("sandboxId") as string | undefined;
+      if (!accountId || !sandboxId) {
+        return c.json({ error: "bind-thread requires a sandbox token" }, 403);
+      }
+      const [sandbox] = await db
+        .select({ sandboxId: sessionSandboxes.sandboxId })
+        .from(sessionSandboxes)
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandboxId),
+            eq(sessionSandboxes.projectId, projectId),
+            eq(sessionSandboxes.accountId, accountId),
+            inArray(sessionSandboxes.status, ["provisioning", "active"]),
+          ),
+        )
+        .limit(1);
+      if (!sandbox) {
+        return c.json(
+          { error: "sandbox token is not scoped to this project" },
+          403,
+        );
+      }
+    } else {
+      const loaded = await loadProjectForUser(c, projectId, "read");
+      if (!loaded) return c.json({ error: "Not found" }, 404);
+    }
+
+    let body: {
+      session_id?: string;
+      channel?: string;
+      thread_ts?: string;
+      workspace_id?: string;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const sessionId = body.session_id?.trim();
+    const channel = body.channel?.trim();
+    const threadTs = body.thread_ts?.trim();
+    if (!sessionId || !channel || !threadTs) {
+      return c.json(
+        { error: "session_id, channel, and thread_ts are required" },
+        400,
+      );
+    }
+    // the session must belong to this project
+    const [sess] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(
+        and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!sess) {
+      return c.json({ error: "session not found in project" }, 404);
+    }
+    const workspaceId =
+      body.workspace_id?.trim() ||
+      (await resolveWorkspaceIdForChannel(projectId, channel));
+    if (!workspaceId) {
+      return c.json(
+        {
+          error:
+            "could not resolve Slack workspace for channel (is the channel bound to this project?)",
+        },
+        400,
+      );
+    }
+    await bindChatThread({ projectId, workspaceId, threadId: threadTs, sessionId });
+    return c.json({ ok: true, bound: true, channel, thread_ts: threadTs });
   },
 );
 

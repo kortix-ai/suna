@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
+import { useProjectConfig } from '@kortix/sdk/react';
 import {
   type Command,
   useOpenCodeAgents,
@@ -72,7 +73,15 @@ export function ComposerChatInput({
   const { data: providers } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const projectConfig = useProjectConfig(projectId);
+  const local = useOpenCodeLocal({
+    agents,
+    providers,
+    config,
+    sessionId,
+    boundAgentName,
+    defaultAgentName: projectConfig?.open_code_default_agent,
+  });
   // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
   // the new-session picker is switchable; the chosen agent rides through on create.
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;

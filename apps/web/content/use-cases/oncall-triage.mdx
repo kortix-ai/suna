@@ -1,0 +1,151 @@
+---
+title: "How we triage on-call alerts before paging a human"
+description: The triage agent we run on Kortix — connected to Sentry, our logs, and GitHub. It works up a first-pass diagnosis on every alert and only pages a human when it can't resolve it.
+date: "2026-02-25"
+author: team
+tags:
+  - SRE
+  - Case Study
+  - Enterprise
+---
+
+An alert fires at 3am. Before anyone can act on it, someone has to wake up, pull
+the stack trace, check what deployed recently, grep the logs, and work out
+whether this is a real incident or noise. Most of that is mechanical, and most of
+it happens before the human has any context — which is the worst time to be doing
+it.
+
+We run a triage agent on Kortix that does the first pass. When an alert fires, the
+agent gathers the stack trace, the recent deploys, and the correlated logs, posts
+a first-pass diagnosis to the incident channel, and only pages a human when it
+can't resolve the alert or the severity is high. This write-up covers how the
+setup works: the trigger, the session model, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every alert, as it fires</Fact>
+  <Fact label="Connected systems">Sentry · Logs · GitHub</Fact>
+  <Fact label="Mode">Trigger-driven · pages a human only when needed</Fact>
+</KeyFacts>
+
+## The problem
+
+The first minutes of an incident are spent gathering context, not fixing
+anything. Which error is this, when did it start, what shipped just before, is it
+one user or all of them — the on-call engineer answers these by hand, half-awake,
+before they can even judge whether the page was warranted.
+
+The common fixes are incomplete. Paging on every alert burns the on-call rotation
+on noise and trains people to ignore the pager. Tuning thresholds cuts the noise
+but also hides real regressions. A runbook helps, but someone still has to be
+awake to follow it. None of it does the gathering for you.
+
+## What we built
+
+On Kortix, each alert triggers an agent. When Sentry fires, the alert spawns an
+isolated session (a cloud sandbox) with scoped, read-only access to Sentry, the
+logs, and GitHub. The agent pulls the stack trace, lists the deploys since the
+error first appeared, correlates the logs around the spike, and posts a first-pass
+diagnosis to the incident channel. It pages a human only when it can't resolve the
+alert or the severity is high.
+
+<Figure
+  caption="The triage agent posting a first-pass diagnosis in the incident channel"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the alert as the trigger">
+
+A signed webhook from Sentry points at the project. Every alert fires it, and each
+firing spawns a fresh **session** in its own sandbox, seeded with the alert
+payload. One alert maps to one session on one disposable machine, so nothing
+carries over between incidents and concurrent alerts triage in parallel.
+
+</Step>
+<Step title="Give the agent the triage playbook">
+
+How we triage lives as **skills** and **memory** that travel with the agent: which
+services are noisy, what a real regression looks like versus a known flake, the
+severity rules for when to page, and past incidents with their root causes. When
+an alert turns out to be benign, we write it down and the agent recognizes it next
+time.
+
+</Step>
+<Step title="Connect the systems triage needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the Sentry issue** — the stack trace, the frequency, and the first-seen
+  timestamp, to place the error in time.
+- **Correlate the logs** — pull the log lines around the spike and line them up
+  against the trace.
+- **Check recent deploys on GitHub** — the commits and PRs that shipped just
+  before the error appeared, to surface a likely cause.
+- **Post to the incident channel** — the diagnosis, the suspected deploy, and the
+  evidence, as a single message.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only**: it investigates across Sentry, the logs, and GitHub,
+but it does not deploy, roll back, or change anything. High-severity alerts and
+anything it can't resolve page a human straight away — the diagnosis is attached,
+not a substitute for the page. Credentials are encrypted in the secrets manager
+and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each alert triage itself">
+
+With that in place, an alert gathers its own context: the trace, the deploy
+window, the correlated logs, and a first-pass diagnosis land in the channel within
+the first minute. A known-benign spike is closed with the reasoning attached. A
+high-severity or unresolved alert pages the on-call engineer with the work already
+done, so they open the page to context instead of a blank terminal.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **trigger** on every alert spawns a session with scoped, read-only
+  **connectors** into Sentry, the logs, and GitHub. The triage playbook is encoded
+  as **skills** and **memory**. The agent diagnoses first and pages a human only
+  when it can't resolve the alert or the severity is high.
+</Callout>
+
+## Guardrails
+
+The agent reads production telemetry, so the access is scoped and contained:
+
+- **Isolation.** Every alert runs in its own microVM sandbox. The session can pull
+  traces, logs, and deploy history to build the diagnosis; only the posted message
+  and any page leave the sandbox.
+- **Scoped secrets.** The Sentry, logging, and GitHub credentials are encrypted in
+  the secrets manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gate.** The agent never deploys or rolls back. High-severity and
+  unresolved alerts page a human, who owns any action taken.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A high-severity alert paged to on-call with the diagnosis attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="First-pass" label="Diagnosis in the channel before the pager fires" />
+  <Stat value="Less noise" label="Benign alerts closed with reasoning, not paged" />
+  <Stat value="3 systems" label="Sentry, logs, and deploy history in one agent" />
+</StatGrid>
+
+The mechanical first minutes of an incident happen before anyone is paged, and
+when the agent does page, it pages with the trace, the suspect deploy, and the
+correlated logs attached. The on-call engineer spends their time deciding and
+fixing rather than gathering context half-awake.

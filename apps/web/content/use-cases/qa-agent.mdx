@@ -1,0 +1,147 @@
+---
+title: "How we QA every pull request automatically"
+description: The QA agent we run on Kortix — connected to GitHub and our test environment. It checks out each PR, runs the suite, exercises the change, and posts the result.
+date: "2026-07-05"
+author: team
+tags:
+  - QA
+  - Case Study
+  - Engineering
+---
+
+Code review catches problems a person can find by reading a diff. It misses the
+ones you only find by running the change: a test that passes locally but flakes
+in CI, a path that works in the happy case and 500s on an edge case, a migration
+that reads fine but locks a table under load. These tend to surface in staging or
+production, after the PR is approved.
+
+We run a QA agent on Kortix that does this checking when the PR opens. This is how
+we QA our own changes, including the connections and guardrails involved.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every PR, on open and on push</Fact>
+  <Fact label="Connected systems">GitHub · Test environment · Cloudflare</Fact>
+  <Fact label="Mode">Trigger-driven · result posted on the PR</Fact>
+</KeyFacts>
+
+## The problem
+
+Some bugs don't show up in a diff. A reviewer reads the code and approves, but no
+one has checked out the branch, run the suite, hit the new endpoint, and watched
+what happens. CI runs the tests the author wrote; it doesn't cover the paths they
+missed.
+
+The common fixes are incomplete. Green CI shows the existing tests pass, not that
+the change is correct. A manual QA pass is thorough but slow and lands after the
+review. A generic AI reviewer only sees the diff; it can't run the branch, so it
+misses failures that only appear at runtime.
+
+## What we built
+
+On Kortix, each PR triggers an agent. On open and on every push, the PR spawns an
+isolated session (a cloud sandbox) with scoped access to the branch, the test
+suite, a deployable test environment, and the Cloudflare edge in front of it. The
+agent checks out the change, runs the suite, exercises the new behavior on a live
+deploy, and posts a pass/fail result on the PR.
+
+<Figure
+  caption="The QA agent posting its result as a PR check"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect GitHub as the trigger">
+
+A signed GitHub webhook points at the project. Every PR opened or updated fires
+it, and each firing spawns a fresh **session** in its own sandbox, seeded with
+the branch under test. One PR maps to one session on one disposable machine, so
+nothing carries over between runs and concurrent PRs run in parallel.
+
+</Step>
+<Step title="Give the agent the branch and the test playbook">
+
+The session checks out the branch and installs it clean. Our QA conventions live
+as **skills** and **memory** that travel with the agent: how to run the suite,
+which flows are critical, edge cases that have caused problems before, and what a
+result should contain. When a bug slips through, we write it down and the agent
+picks it up on the next run.
+
+</Step>
+<Step title="Connect the systems QA needs">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Run the full suite** — unit, integration, and e2e inside the sandbox, with the
+  failure output captured in full.
+- **Deploy to the test environment** — it stands the change up on an ephemeral
+  deploy and exercises it end-to-end against the new paths.
+- **Reach the edge via Cloudflare** — it checks behavior through the edge
+  (routing, headers, caching, redirects), not just localhost.
+- **Report on GitHub** — the pass/fail result and any reproduction post as a check
+  and a comment on the PR.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent operates against the **test environment only**; production is out of
+scope. It does not merge or deploy to prod. Its output is a result, and a human
+owns the merge. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each PR arrive pre-QA'd">
+
+With that in place, a new PR checks itself out, runs the suite, deploys to the
+test environment, exercises the change through Cloudflare, and posts a result:
+green when it passes, or a red check with the failing command, the logs, and
+steps to reproduce. A flaky test is flagged with the evidence. A broken edge
+route is caught before staging.
+
+</Step>
+</Steps>
+
+<Callout title="Summary" tone="accent">
+  A **trigger** on every PR spawns a session with scoped **connectors** into the
+  branch, the test suite, the test environment, and Cloudflare. The QA playbook is
+  encoded as **skills** and **memory**. The agent stays on the test environment
+  and a human owns the merge.
+</Callout>
+
+## Guardrails
+
+The agent has access to the test environment and the edge, so the access is
+scoped and contained:
+
+- **Isolation.** Every PR runs in its own microVM sandbox on its own branch. The
+  session can install, deploy, and exercise the change to reproduce a failure;
+  only the reported result leaves the sandbox.
+- **Scoped secrets.** The GitHub, test-environment, and Cloudflare credentials are
+  encrypted in the Secrets Manager and injected into the sandbox at runtime, never
+  exposed to the model or the logs.
+- **Test environment only.** The agent's access stops at the test plane: no
+  production access, no prod deploy, no merge. It reports; the team decides.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A red QA result with the failing command and repro steps attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every PR" label="Run, deployed, and exercised before human review" />
+  <Stat value="Pre-merge" label="Runtime failures caught before they reach staging" />
+  <Stat value="4 systems" label="Branch, suite, test environment, and edge in one agent" />
+</StatGrid>
+
+Runtime failures that a diff can't show now surface on the PR when it opens, with
+the failing command, the logs, and the repro attached. Reviewers spend their time
+on design rather than checking out branches by hand, and the changes that reach
+staging have already been run against the test environment.

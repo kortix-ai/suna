@@ -593,6 +593,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.clearModelDefault(projectId, params),
       },
 
+      /** Set the agent used when a new project session does not name one explicitly. */
+      setDefaultAgent: (agentName: string) => P.updateProjectDefaultAgent(projectId, agentName),
+
       /** Sandbox templates + snapshot builds — Dockerfile/image/warm-pool config, beyond `sandboxHealth`/`sandboxTemplates`. */
       sandbox: {
         list: () => P.listProjectSandboxes(projectId),
@@ -734,8 +737,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
         P.startProjectSession(projectId, sessionId, ...a),
       restart: () => {
-        // Restart may re-provision a DIFFERENT sandbox — a stale cached/
-        // registered runtime would route subsequent calls at a dead box.
+        // Restart preserves the established sandbox identity, but readiness
+        // and the proxy connection must still be resolved again after reboot.
         forgetReady();
         return P.restartProjectSession(projectId, sessionId);
       },

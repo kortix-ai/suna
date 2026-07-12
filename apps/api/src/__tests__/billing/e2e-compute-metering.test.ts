@@ -47,9 +47,16 @@ interface InMemorySession {
 
 let sessions: InMemorySession[] = [];
 let debitCalls: { accountId: string; amount: number; description: string; ledgerType: string }[] = [];
+let simulateUniqueViolationOnInsert = false;
 
 mock.module('../../billing/repositories/compute-sessions', () => ({
   insertComputeSession: async (data: any) => {
+    if (simulateUniqueViolationOnInsert) {
+      simulateUniqueViolationOnInsert = false;
+      const err = new Error('duplicate open compute session') as Error & { code?: string };
+      err.code = '23505';
+      throw err;
+    }
     const row: InMemorySession = {
       id: `cs_${sessions.length + 1}`,
       accountId: data.accountId,
@@ -123,6 +130,7 @@ const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 beforeEach(() => {
   sessions = [];
   debitCalls = [];
+  simulateUniqueViolationOnInsert = false;
   resetMockRegistry();
   // Default to a per-seat account so metering engages.
   mockRegistry.getCreditAccount = async () =>
@@ -222,6 +230,41 @@ describe('compute metering — per-seat happy path', () => {
     });
     expect(first).toBe(second);
     expect(sessions.length).toBe(1);
+  });
+
+  test('start recovers from database unique-open-session races by returning the winning row', async () => {
+    const winner: InMemorySession = {
+      id: 'cs_winner',
+      accountId: 'acc_test_123',
+      sandboxId: 'sb_race',
+      sessionId: null,
+      actorUserId: null,
+      cpuCores: SPEC.cpuCores,
+      memoryGb: SPEC.memoryGb,
+      diskGb: SPEC.diskGb,
+      gpuCount: SPEC.gpuCount,
+      state: 'active',
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      lastBilledAt: new Date().toISOString(),
+      costUsd: '0',
+      ledgerId: null,
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    simulateUniqueViolationOnInsert = true;
+    queueMicrotask(() => sessions.push(winner));
+
+    const id = await startComputeSession({
+      sandboxId: 'sb_race',
+      accountId: 'acc_test_123',
+      spec: SPEC,
+    });
+
+    expect(id).toBe('cs_winner');
+    expect(sessions.filter((s) => s.sandboxId === 'sb_race')).toHaveLength(1);
   });
 
   test('pause is a safe no-op when no open session exists', async () => {

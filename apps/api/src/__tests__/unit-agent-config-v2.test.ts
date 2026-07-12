@@ -16,7 +16,11 @@
  * `@kortix/manifest-schema`'s `validateAgentMdFrontmatter` tests instead.
  */
 import { describe, expect, test } from 'bun:test';
-import { applyAgentBlockV2, readAgentBlockV2 } from '../projects/lib/agent-config-v2';
+import {
+  applyAgentBlockV2,
+  applyDefaultAgentV2,
+  readAgentBlockV2,
+} from '../projects/lib/agent-config-v2';
 import { parseManifestString } from '../projects/triggers';
 
 const V2 = `
@@ -154,5 +158,51 @@ describe('applyAgentBlockV2', () => {
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('valid agent name');
+  });
+});
+
+describe('applyDefaultAgentV2', () => {
+  const twoAgentManifest = () =>
+    v2Manifest(`
+kortix_version: 2
+default_agent: support
+agents:
+  support: {}
+  reviewer: {}
+  disabled:
+    enabled: false
+`);
+
+  test('sets a declared enabled agent without changing the agent map', () => {
+    const manifest = twoAgentManifest();
+    const applied = applyDefaultAgentV2(manifest, 'reviewer');
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.raw.default_agent).toBe('reviewer');
+    expect(applied.raw.agents).toEqual(manifest.raw.agents);
+  });
+
+  test('rejects an undeclared agent', () => {
+    const applied = applyDefaultAgentV2(twoAgentManifest(), 'ghost');
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.error).toContain('does not match any declared agent');
+  });
+
+  test('rejects a disabled agent', () => {
+    const applied = applyDefaultAgentV2(twoAgentManifest(), 'disabled');
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.error).toContain('disabled agent can never resolve as the default');
+  });
+
+  test('refuses a v1 manifest', () => {
+    const applied = applyDefaultAgentV2(
+      parseManifestString(V1, 'toml', 'kortix.toml'),
+      'kortix',
+    );
+    expect(applied.ok).toBe(false);
+    if (applied.ok) return;
+    expect(applied.error).toContain('kortix_version 2');
   });
 });

@@ -1,9 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
-import { json, makeOpenApiApp } from '../openapi';
+import { errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
 
 import { accountDeletionRouter } from './routes/account-deletion';
@@ -26,6 +27,9 @@ billingApp.use('*', async (c, next) => {
   if (c.req.path.includes('/webhook')) {
     return next();
   }
+  if (c.req.path.includes('/cron/')) {
+    return next();
+  }
   return supabaseAuth(c, next);
 });
 
@@ -37,7 +41,7 @@ billingApp.route('/account-state', accountStateRouter);
 // never hit Stripe, never get blocked by credits, never see subscription UI.
 // Account-state (above) already returns the "Local (Unlimited)" mock.
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks')) {
+  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks') || c.req.path.includes('/cron/')) {
     return next();
   }
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -64,6 +68,27 @@ accountDeletionApp.use('*', async (c, next) => {
 });
 accountDeletionApp.route('/', accountDeletionRouter);
 
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return aa.length === bb.length && timingSafeEqual(aa, bb);
+}
+
+function requireInternalCronAuth(c: Context<AppEnv>): Response | null {
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
+  const expected = config.INTERNAL_SERVICE_KEY;
+  const ok =
+    (bearer && timingSafeStringEqual(bearer, expected)) ||
+    (header && timingSafeStringEqual(header, expected));
+
+  if (!ok) {
+    return c.json({ error: 'Internal cron authentication required' }, 401);
+  }
+  return null;
+}
+
 // Yearly credit rotation cron endpoint
 billingApp.openapi(
   createRoute({
@@ -73,9 +98,12 @@ billingApp.openapi(
     summary: 'Run the yearly credit rotation (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
+      ...errors(401),
     },
   }),
   async (c: Context<AppEnv>) => {
+    const authError = requireInternalCronAuth(c);
+    if (authError) return authError as any;
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
@@ -94,9 +122,12 @@ billingApp.openapi(
     summary: 'Run the free-tier monthly credit rotation (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
+      ...errors(401),
     },
   }),
   async (c: Context<AppEnv>) => {
+    const authError = requireInternalCronAuth(c);
+    if (authError) return authError as any;
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }

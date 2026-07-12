@@ -1,5 +1,7 @@
 export { createGateway } from './create-gateway';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
+export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-response';
+export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';

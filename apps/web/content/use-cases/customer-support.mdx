@@ -1,0 +1,147 @@
+---
+title: "How we run customer support with an AI agent"
+description: The support agent we run on Kortix — connected to Plain, our codebase, and Stripe. It triages and resolves inbound threads, and stops for human approval on anything sensitive.
+date: "2026-07-03"
+author: team
+tags:
+  - Customer Support
+  - Case Study
+  - Enterprise
+template: customer-support
+---
+
+We run our own customer support on Kortix with an AI agent connected to Plain
+(our support tool), our codebase, and Stripe. Most support questions need
+product knowledge, engineering context, and billing data at the same time: a
+help-center chatbot can quote documentation but can't read the code behind a
+bug, confirm whether a subscription renewed, or take a scoped action on an
+account.
+
+This write-up covers how the setup works: the connections, the session model,
+and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix — the company behind this platform</Fact>
+  <Fact label="Support stack">Plain.com</Fact>
+  <Fact label="Connected systems">Codebase · Stripe · Plain</Fact>
+  <Fact label="Mode">Trigger-driven · human-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+Support volume grows faster than the team. The questions that matter most are
+the ones a canned macro can't answer: "why was I charged twice?", "this button
+does nothing", "does your API support X?" Each one needs someone who understands
+the product, can read the code, and can check the customer's account — usually a
+senior engineer.
+
+A help-desk bot handles the easy questions but not these. Hiring scales linearly
+with tickets. And giving a generic AI assistant real access to production
+systems is hard to justify in a security review.
+
+## What we built
+
+Our support inbox in **Plain** is connected to an agent running on Kortix. Every
+inbound thread spawns its own isolated session with scoped access to the systems
+a support issue can touch: the product's knowledge, the codebase, and Stripe. It
+investigates, resolves what it can, and stops at a human for sensitive actions.
+
+<Figure
+  src="/usecases/support/support_1.JPEG"
+  alt="The support agent replying inside a Plain thread"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect Plain as the trigger">
+
+A signed webhook from Plain points at the project. Every new thread or customer
+reply fires it, and each firing spawns a fresh **session** in its own isolated
+sandbox. One customer, one thread, one sandbox. Sessions don't share state, and a
+busy inbox means more sessions running in parallel.
+
+</Step>
+<Step title="Give the agent the product's knowledge">
+
+Product knowledge lives as **skills** and **memory** loaded into every session:
+how the product works, our support playbook, the reply tone, and resolutions that
+worked before. The knowledge is updated as threads are resolved.
+
+</Step>
+<Step title="Connect the systems an issue can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Search the codebase** — for a reported bug, find the relevant code path,
+  check recent changes, and see whether it's already known.
+- **Look up Stripe** — plan, invoices, and subscription state, to answer billing
+  questions from account data.
+- **Read and reply in Plain** — full thread context in, a reply out.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-mostly by default**: it investigates freely, but writes are
+scoped. Refunds, plan changes, and anything touching a customer's money or
+account stop at a **human approval gate**. Credentials are encrypted in the
+secrets manager and injected at runtime, never shown to the model or written to
+logs.
+
+</Step>
+<Step title="Let each thread run">
+
+An inbound thread triages, investigates across the three systems, and either
+resolves directly or hands off to a human with the work done and context
+attached. "Why was I charged twice?" becomes a Stripe lookup with an answer.
+"This button does nothing" becomes a codebase search that either explains the
+behavior or files a bug report for engineering.
+
+</Step>
+</Steps>
+
+<Callout title="Summary" tone="accent">
+  Connect the support platform via a **trigger**, give the agent scoped
+  **connectors** into the systems an issue can touch, encode product knowledge as
+  **skills** and **memory**, and gate sensitive actions behind a human. Each
+  inbound thread then runs in its own session.
+</Callout>
+
+## Guardrails
+
+Giving an agent access to the codebase, Stripe, and the support inbox is a
+security question as much as a product one. The controls on Kortix:
+
+- **Isolation.** Each thread runs in its own microVM sandbox on its own branch. A
+  session can install, run, and experiment to reproduce a bug, and only what it's
+  explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** The Plain, Stripe, and GitHub credentials are encrypted in
+  the secrets manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gates.** Irreversible actions (money, account state) require a
+  person to approve.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A refund held at a human approval gate before it executes"
+  src="/usecases/support/support_2.JPEG"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="24/7" label="Coverage without a night shift" />
+  <Stat value="First-touch" label="Many inbound threads resolved before a human opens them" />
+  <Stat value="3 systems" label="Product knowledge, Stripe, and the codebase in one agent" />
+</StatGrid>
+
+The agent handles the investigation-heavy tickets that used to pull a senior
+engineer off their work, and when it escalates, it escalates with the diagnosis
+attached. Customers get an answer to the question at any hour.
+
+The setup relies on four pieces: sandbox isolation to contain each session, a
+secrets manager to broker tokens, human approval gates for irreversible actions,
+and memory that improves as threads are resolved.
