@@ -308,7 +308,7 @@ export async function continueSession(
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    runtimeProtocol: o.runtime_protocol ?? null,
+    runtimeProtocol: o.runtime_protocol === 'acp' ? 'acp' : null,
     runtimeId: o.runtime_id ?? null,
     runtimeSessionId: o.runtime_session_id ?? null,
   });

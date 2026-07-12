@@ -858,7 +858,7 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
     const bootError =
       typeof data?.boot_error === 'string' && data.boot_error ? data.boot_error : null;
     if (data?.runtimeReady === true) return { status: 'ready' };
-    if (data?.acp === 'ok' || data?.acp === true || data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
+    if (data?.acp === 'ok' || data?.acp === true || data?.runtimeReady === true) return { status: 'ready' };
     if (data?.status && !['starting', 'down', 'error'].includes(data.status))
       return { status: 'ready' };
     return { status: 'starting', bootError };

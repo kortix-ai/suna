@@ -21,8 +21,6 @@ export type SessionHealthResponse = {
   status?: string;
   runtimeReady?: boolean;
   version?: string;
-  /** Legacy daemon field retained while older sandbox images roll forward. */
-  opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;
   message?: string | null;
@@ -42,8 +40,6 @@ export interface SessionHealthResult {
 export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
   if (!health) return false;
   if (health.runtimeReady !== undefined) return health.runtimeReady === true;
-  if (health.opencode !== undefined)
-    return health.opencode === 'ok' || health.opencode === true;
   return (
     health.status !== 'starting' &&
     health.status !== 'down' &&

@@ -14,7 +14,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export interface DeliveryTarget {
   stage: string;
   externalId: string | null;
-  runtimeProtocol?: 'acp' | 'opencode' | null;
+  runtimeProtocol?: 'acp' | null;
   runtimeId?: string | null;
   runtimeSessionId?: string | null;
 }
