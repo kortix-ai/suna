@@ -1,7 +1,8 @@
-import { CircuitOpenError, UpstreamHttpError } from '../errors';
-import { CircuitBreaker } from '../resilience';
-import { callUpstream, type FetchImpl } from '../http';
 import type { GatewayConfig, GatewayLogger, UpstreamDescriptor } from '../domain';
+import { CircuitOpenError, UpstreamHttpError } from '../errors';
+import { type FetchImpl, callUpstream } from '../http';
+import type { CircuitBreaker } from '../resilience';
+import { gatewayErrorBody } from './error-response';
 import type { TraceEmitter, TraceFields } from './trace';
 
 // 4xx statuses that mean "this upstream won't serve you right now" rather than
@@ -18,6 +19,45 @@ function json(data: unknown, status = 200): Response {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function parseUpstreamBody(body: string): { message: string; code?: string } {
+  if (!body) return { message: 'Upstream request failed' };
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const nested = parsed.error;
+    if (typeof nested === 'string') {
+      return { message: nested, code: typeof parsed.code === 'string' ? parsed.code : undefined };
+    }
+    if (nested && typeof nested === 'object') {
+      const error = nested as Record<string, unknown>;
+      return {
+        message: typeof error.message === 'string' ? error.message : body,
+        code:
+          typeof error.code === 'string'
+            ? error.code
+            : typeof error.type === 'string'
+              ? error.type
+              : undefined,
+      };
+    }
+    return {
+      message: typeof parsed.message === 'string' ? parsed.message : body,
+      code: typeof parsed.code === 'string' ? parsed.code : undefined,
+    };
+  } catch {
+    return { message: body };
+  }
+}
+
+function suggestionFor(status: number): string {
+  if (status === 401 || status === 402 || status === 403) {
+    return 'Check the provider credentials, billing, and model access, or switch to another model.';
+  }
+  if (status === 429) {
+    return 'Retry after a short wait, or switch to another model.';
+  }
+  return 'Retry the request. If the error continues, switch to another model.';
 }
 
 export interface FailoverContext {
@@ -115,13 +155,27 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
           continue;
         }
         debug('upstream_client_error_return', { provider: descriptor.provider, status: err.status });
+        const upstreamError = parseUpstreamBody(err.body);
         emit({
           ...trace, resolvedModel: descriptor.resolvedModel, provider: descriptor.provider,
           billingMode: descriptor.billingMode, status: err.status, ok: false,
-          errorCode: 'upstream_client_error', errorMessage: err.body, attempts, candidatesTried: tried,
+          errorCode: 'upstream_client_error', errorMessage: upstreamError.message, attempts, candidatesTried: tried,
           request: capturedRequest,
         });
-        return { kind: 'response', response: json({ error: err.body || `Upstream error ${err.status}` }, err.status) };
+        return {
+          kind: 'response',
+          response: json(gatewayErrorBody({
+            message: upstreamError.message,
+            code: 'upstream_client_error',
+            upstreamCode: upstreamError.code,
+            upstreamStatus: err.status,
+            provider: descriptor.provider,
+            requestedModel: trace.requestedModel ?? '',
+            resolvedModel: descriptor.resolvedModel ?? trace.requestedModel ?? '',
+            requestId,
+            suggestion: suggestionFor(err.status),
+          }), err.status),
+        };
       }
     }
   }
@@ -130,13 +184,31 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const open = lastError instanceof CircuitOpenError;
     const status = open ? 503 : 502;
     const errorCode = open ? 'upstream_unavailable' : 'upstream_unreachable';
-    debug('all_upstreams_exhausted', { circuitOpen: open, status, tried, attempts, error: errorMessage(lastError) });
+    const lastDescriptor = candidates.findLast((candidate) => candidate.provider === tried.at(-1));
+    const upstreamError = lastError instanceof UpstreamHttpError
+      ? parseUpstreamBody(lastError.body)
+      : { message: errorMessage(lastError) };
+    debug('all_upstreams_exhausted', { circuitOpen: open, status, tried, attempts, error: upstreamError.message });
     emit({
       ...trace, provider: tried[tried.length - 1] ?? '', status, ok: false,
-      errorCode, errorMessage: errorMessage(lastError), attempts, candidatesTried: tried,
+      resolvedModel: lastDescriptor?.resolvedModel,
+      errorCode, errorMessage: upstreamError.message, attempts, candidatesTried: tried,
       request: capturedRequest,
     });
-    return { kind: 'response', response: json({ error: 'All upstreams unavailable', code: errorCode }, status) };
+    return {
+      kind: 'response',
+      response: json(gatewayErrorBody({
+        message: upstreamError.message || 'All upstreams unavailable',
+        code: errorCode,
+        upstreamCode: upstreamError.code,
+        upstreamStatus: lastError instanceof UpstreamHttpError ? lastError.status : undefined,
+        provider: lastDescriptor?.provider ?? tried.at(-1) ?? '',
+        requestedModel: trace.requestedModel ?? '',
+        resolvedModel: lastDescriptor?.resolvedModel ?? trace.requestedModel ?? '',
+        requestId,
+        suggestion: suggestionFor(lastError instanceof UpstreamHttpError ? lastError.status : status),
+      }), status),
+    };
   }
 
   return { kind: 'success', value: { upstream, chosen, tried, attempts } };
