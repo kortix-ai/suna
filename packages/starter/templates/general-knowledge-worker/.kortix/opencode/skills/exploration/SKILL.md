@@ -230,3 +230,55 @@ When exploring an unfamiliar data environment:
 3. Identify raw/staging/mart layers
 4. Map the transformation chain from raw data to analytical tables
 5. Note where data is enriched, filtered, or aggregated
+
+## Pre-Delivery QA Checklist
+
+Profiling and understanding a dataset is only half the job — before sharing any analysis built on it, run this checklist. It catches the errors that clean profiling doesn't: bad joins, wrong denominators, and results that don't actually mean what they appear to mean.
+
+### Data Quality Checks
+- [ ] **Source verification**: Confirmed which tables/data sources were used, and that they're the right ones for this question.
+- [ ] **Freshness**: Data is current enough for the analysis. Noted the "as of" date.
+- [ ] **Completeness**: No unexpected gaps in time series or missing segments.
+- [ ] **Null handling**: Checked null rates in key columns; nulls are excluded, imputed, or flagged appropriately.
+- [ ] **Deduplication**: No double-counting from bad joins or duplicate source records.
+- [ ] **Filter verification**: All WHERE clauses and filters are correct — no unintended exclusions.
+
+### Calculation Checks
+- [ ] **Aggregation logic**: GROUP BY includes all non-aggregated columns; aggregation level matches the analysis grain.
+- [ ] **Denominator correctness**: Rate/percentage calculations use the right, non-zero denominator.
+- [ ] **Date alignment**: Comparisons use equal-length periods; partial periods are excluded or noted.
+- [ ] **Join correctness**: JOIN types are appropriate (INNER vs LEFT); many-to-many joins haven't inflated counts.
+- [ ] **Metric definitions**: Match how stakeholders define them; deviations are noted.
+- [ ] **Subtotals sum**: Parts add up to the whole where expected — explain any overlap that breaks this.
+
+### Reasonableness Checks
+- [ ] **Magnitude**: Numbers are in a plausible range (no negative revenue, percentages within 0-100%).
+- [ ] **Trend continuity**: No unexplained jumps or drops in time series.
+- [ ] **Cross-reference**: Key numbers match other known sources (dashboards, prior reports, finance data).
+- [ ] **Edge cases**: Checked boundaries — empty segments, zero-activity periods, new entities.
+
+### Presentation Checks
+- [ ] **Chart accuracy**: Bar charts start at zero; axes labeled; scales consistent across panels.
+- [ ] **Number formatting**: Appropriate precision, consistent currency/percentage formatting.
+- [ ] **Caveat transparency**: Known limitations and assumptions are stated explicitly.
+- [ ] **Reproducibility**: Someone else could recreate this analysis from the documentation provided.
+
+### Common Pitfalls to Rule Out
+
+- **Join explosion**: a many-to-many join silently multiplies rows. Check row counts before and after every join; use `COUNT(DISTINCT id)` rather than `COUNT(*)` through joins.
+- **Survivorship bias**: analyzing only entities that exist today misses churned/deleted/failed ones. Ask "who is NOT in this dataset?"
+- **Incomplete period comparison**: comparing a partial period to a full one (e.g. mid-month vs. last full month). Always compare complete, equal-length periods.
+- **Denominator shifting**: the denominator's definition changes between compared periods, making rates incomparable.
+- **Average of averages**: averaging pre-computed averages gives the wrong answer when group sizes differ — always aggregate from raw data, or use a weighted average.
+- **Timezone mismatches**: standardize all timestamps to one timezone (UTC recommended) before comparing sources.
+- **Selection bias in segmentation**: segments defined by the outcome being measured create circular logic (e.g. "users who finished onboarding retain better" — of course they do).
+
+### Result Sanity Checking
+
+For every key number, run it through a smell test: does it match known MAU/DAU, is revenue in the right order of magnitude vs. known ARR, are conversion rates between 0-100% and consistent with dashboards, is 50%+ MoM growth actually plausible. Cross-validate by calculating the same metric two different ways, spot-checking a few individual records by hand, comparing to a known benchmark, and reverse-engineering (does per-unit x count ≈ the total?).
+
+**Red flags that warrant investigation before delivery:** any metric that moved >50% period-over-period without an obvious cause; suspiciously round totals; rates sitting exactly at 0% or 100%; results that perfectly confirm the hypothesis (reality is usually messier); identical values across periods or segments (often means a dimension is being ignored by the query).
+
+### Documentation Standards for Reproducibility
+
+Every non-trivial analysis should record: the question being answered, data sources with "as of" dates, exact metric/segment/time-period definitions, methodology steps, assumptions and limitations, key findings with supporting evidence, the queries used, and caveats the reader needs before acting on it. Save queries/code in version control or a shared docs system, note the data snapshot date, and link prior versions of recurring analyses for trend comparison.

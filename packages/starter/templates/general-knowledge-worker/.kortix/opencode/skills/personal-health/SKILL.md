@@ -1,18 +1,18 @@
 ---
 name: personal-health
-description: "Pull and analyze the user's own health data — wearable metrics (sleep, activity, steps, heart rate, HRV, recovery, workouts, nutrition, cycle) and electronic health records (lab results, medications, conditions, allergies, immunizations, procedures). Use when someone asks 'how did I sleep this week', 'what were my last labs', 'what meds am I on', 'show my resting heart rate trend', 'summarize my health', or anything that reads their personal wearable or clinical data. Routes to the wearables-data and electronic-health-records sub-skills. Marketplace skill — needs a configured Kortix health connector."
+description: "Pull and analyze the user's own health data — wearable/device metrics (sleep, activity, steps, heart rate, HRV, recovery, workouts, body metrics, nutrition, menstrual cycle) and electronic health records (lab results, medications, conditions, allergies, immunizations, procedures). Use when someone asks 'how did I sleep this week', 'my steps this week', 'is my resting heart rate trending up', 'am I recovered enough to train', 'what were my last labs', 'what meds am I on', 'summarize my health', or anything that reads their personal wearable or clinical data. Handles wearable/device metrics directly and routes to the electronic-health-records sub-skill for clinical records. Marketplace skill — needs a configured Kortix health connector."
 ---
 
 # Personal Health
 
 > **Marketplace skill** — requires a Kortix health connector (wearables and/or EHR). Install it when one is configured; without a connected provider this skill has nothing to read. It handles **private health data** — read the Privacy Discipline section before you touch any of it.
 
-This is the entry point for working with someone's own health data. It doesn't fetch anything itself — it figures out *which* kind of data the request needs, confirms a connector can serve it, and hands off to the right sub-skill:
+This is the entry point for working with someone's own health data. It handles **wearable / device telemetry directly** (sleep, activity, heart rate, HRV, recovery, workouts, body metrics, nutrition, cycle — see "Wearable & Device Metrics" below), and hands off to a sub-skill for the clinical side:
 
-- **wearables-data** — anything a device or health app measures day to day: sleep, activity and steps, heart rate / HRV, recovery and readiness, workouts, body metrics, nutrition, menstrual cycle.
-- **electronic-health-records** — anything a clinic or lab holds: lab results and blood work, medications, diagnosed conditions, allergies, procedures, immunizations, appointments, patient summaries.
+- **Wearable & device metrics** (handled directly, in this skill) — anything a device or health app measures day to day: sleep, activity and steps, heart rate / HRV, recovery and readiness, workouts, body metrics, nutrition, menstrual cycle.
+- **electronic-health-records** (sub-skill) — anything a clinic or lab holds: lab results and blood work, medications, diagnosed conditions, allergies, procedures, immunizations, appointments, patient summaries.
 
-Many real questions span both ("are my resting-HR spikes lining up with my thyroid labs?"). When they do, query each connector through its sub-skill and reconcile the two in your analysis.
+Many real questions span both ("are my resting-HR spikes lining up with my thyroid labs?"). When they do, query wearable metrics directly and the EHR connector through its sub-skill, then reconcile the two in your analysis.
 
 ## How the data actually reaches you
 
@@ -41,6 +41,55 @@ Providers are examples, not hardcoded tools. Wearable data can come from Apple H
 
 4. **Analyze.** Turn raw readings into the answer: trends over time, comparisons to the person's own baseline, plain-language context. Keep numbers exactly as the provider reported them.
 
+## Wearable & Device Metrics
+
+Day-to-day body telemetry from whatever device or app the user wears — sleep, activity, workouts, vitals, recovery, body metrics, nutrition, cycle. Read it through a Kortix connector and turn it into an answer — a trend, a comparison to their own baseline, a recovery read — rather than dumping a table of raw samples.
+
+The provider is generic. Apple Health, Fitbit, Oura, Garmin, Whoop, Google Fit — all are example sources reached the same way through Kortix's connector system. Discover what's actually connected; don't assume a brand.
+
+### What you can pull
+
+| Category | Typical metrics |
+| --- | --- |
+| **Sleep** | Total sleep, time in bed, stages (deep / REM / light), latency, efficiency, a nightly score |
+| **Activity** | Steps, active and total calories, distance, active minutes, sedentary time, floors |
+| **Workouts** | Per-session type, duration, distance, pace, calories, heart-rate zones |
+| **Vitals** | Resting and continuous heart rate, HRV, respiratory rate, SpO₂, skin/body temperature |
+| **Recovery** | Readiness / recovery / strain scores where the provider computes them |
+| **Body** | Weight, body-fat %, lean mass, BMI (when the device or a paired scale reports it) |
+| **Nutrition** | Logged calories in, macros, water intake, caffeine — only if the user logs them |
+| **Cycle** | Menstrual cycle phase, period and fertile windows, cycle-linked temperature and HRV shifts |
+
+Pull only the categories the question needs. "How did I sleep?" wants sleep (and maybe recovery and overnight HR) — not steps, not workouts.
+
+### Time range
+
+Wearable questions are almost always about a window, so make the range explicit:
+
+- **A single day** for "last night" or "today."
+- **~7 days** is the sensible default for "this week" / "lately" / "what's my trend" when the user doesn't say.
+- **A few weeks** for a trend that needs to settle (recovery patterns, HRV drift, cycle phases).
+
+Providers cap how far back a single pull reaches and may thin older data to daily summaries. If the user wants a long history, fetch in windows and note any gaps rather than presenting a partial series as complete. Always state the window you actually pulled.
+
+### How to run it
+
+Follow the connect → query → analyze loop above. The wearables specifics:
+
+1. **Confirm a wearables connector is live** (`connectors` tool / `kortix executor connectors`). If none is connected, mint a connect link for the provider the user names and surface it in the same turn — don't try to answer from nothing.
+2. **Query** the connector's read operation with the **categories** and **time range** above.
+3. **Analyze** against the person's own baseline. A resting HR of 60 means nothing in isolation; "8 bpm above your 30-day average, three nights running" means something.
+
+### Example requests and how to read them
+
+- *"How did I sleep this week?"* → sleep + recovery, last 7 days. Report average duration, deep/REM split, efficiency, and whether it's improving or sliding vs. the prior week.
+- *"Is my resting heart rate creeping up?"* → vitals, ~3–4 weeks. Plot the daily resting-HR trend and call out any sustained rise (a possible signal of strain, illness, or poor sleep — phrased as context, not diagnosis).
+- *"Break down my run on Tuesday."* → workouts, that day. Distance, pace, time in each HR zone, calories.
+- *"Am I recovered enough to train hard today?"* → recovery + last night's sleep + overnight HRV. Summarize today's readiness against the recent norm; leave the call to them.
+- *"Give me a two-week fitness snapshot."* → activity + sleep + vitals + workouts, 14 days. One scannable summary per category with the direction of travel.
+
+Wearable metrics follow the same Privacy Discipline as the rest of this skill (below) — tag every figure with its provider, metric, and window (e.g. "Avg deep sleep 1h12m (Fitbit, last 7 nights)"), never invent a missing reading, and surface/contextualize rather than diagnose.
+
 ## Privacy Discipline
 
 Non-negotiable. This is the most sensitive data the agent will ever touch.
@@ -57,9 +106,9 @@ Be upfront: this skill is dead without a configured health connector — there's
 
 ## Sub-skills
 
-| Need | Sub-skill |
+| Need | Handled by |
 | --- | --- |
-| Sleep, activity, heart rate, HRV, recovery, workouts, nutrition, cycle | **wearables-data** |
-| Labs, medications, conditions, allergies, procedures, immunizations | **electronic-health-records** |
+| Sleep, activity, heart rate, HRV, recovery, workouts, body metrics, nutrition, cycle | **This skill** — see "Wearable & Device Metrics" above |
+| Labs, medications, conditions, allergies, procedures, immunizations | **electronic-health-records** (sub-skill) |
 
-Each sub-skill inherits the connect loop and the privacy rules above — don't re-derive them, apply them.
+The electronic-health-records sub-skill inherits the connect loop and the privacy rules above — don't re-derive them, apply them.

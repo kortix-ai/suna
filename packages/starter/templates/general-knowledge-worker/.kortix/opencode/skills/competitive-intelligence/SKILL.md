@@ -395,6 +395,42 @@ Competitive intel gets stale. Recommended refresh:
 
 ---
 
+## Deeper Strategic Frameworks (For PM-Style / Landscape Analysis)
+
+The battlecard flow above is optimized for deal-facing sales intel. When the ask is broader — mapping the whole competitive landscape, running a structured feature comparison, or analyzing win/loss patterns for product strategy — pull in these frameworks before or alongside the battlecard build.
+
+### Classifying the Competitive Set
+
+Don't limit "competitors" to the 1-5 names given up front. Consider all four levels:
+- **Direct** — same problem, same users, same approach; the products that show up in deals and review-site matchups.
+- **Indirect** — same problem, different approach (e.g., spreadsheets vs. a dedicated tool); include "non-consumption" (doing nothing, or a manual process).
+- **Adjacent** — don't compete today but could — similar tech/customer base/distribution, or a larger platform that could add this as a feature.
+- **Substitute** — an entirely different way of solving the underlying need (hiring a person, using a general-purpose tool, outsourcing).
+
+### Feature Comparison Rating Scale
+
+Rate each capability consistently rather than just listing "has it / doesn't have it":
+- **Strong** — market-leading, deep, well-executed.
+- **Adequate** — functional, gets the job done, not differentiated.
+- **Weak** — exists but limited, significant gaps.
+- **Absent** — doesn't have it.
+
+Rate from real product experience, customer feedback, and reviews — not marketing claims. Weight by what matters to the target customer, not total feature count, and be honest about where a competitor is genuinely ahead.
+
+### Positioning Analysis
+
+Extract each competitor's positioning with this template: *For [target customer] who [need/problem], [Product] is a [category] that [key benefit]. Unlike [alternative], [Product] [key differentiator].* Pull it from their homepage headline, app-store/review-site description, and (for public companies) earnings-call language. Then look for **unclaimed positions** (value props nobody owns but buyers care about), **crowded positions** (claims everyone makes, now meaningless), and **vulnerable positions** (claims a competitor can't actually deliver on) — these are landmine-question and talk-track material.
+
+### Win/Loss Analysis
+
+The most actionable competitive intelligence, and a good source to feed the battlecard's win/loss section. Ask, for wins: what alternatives did you evaluate, why us, what almost changed your mind. For losses: what did you choose instead and why, where did we fall short, would you reconsider. Track reasons over time, segment by deal type (enterprise/SMB, new/expansion, vertical), and separate product reasons (features, quality) from non-product reasons (pricing, brand, relationship, timing, incumbent switching cost).
+
+### Market Trend Identification
+
+For a trend that keeps coming up (analyst reports, VC funding themes, conference buzz, tech/regulatory shifts): describe what's changing, why now, who's affected, and the timeline — then decide whether to **lead**, **fast follow**, **monitor**, or explicitly **ignore** it. Test every trend against your own customer data before acting on it; media hype without customer traction is noise, not signal.
+
+---
+
 ## Related Skills
 
 - **account-research** — Research a specific prospect before reaching out
