@@ -4,7 +4,7 @@ import { and, asc, eq, gt } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { inspectSandboxRuntime, sandboxOpencodeEndpoint } from '../opencode-mapping';
 
 type Envelope = Record<string, unknown>;
 
@@ -26,10 +26,12 @@ async function resolveAcpTarget(c: any) {
   if (!sandbox?.externalId) return null;
   const endpoint = await sandboxOpencodeEndpoint(sandbox.externalId, loaded.userId);
   if (!endpoint) return null;
+  const health = await inspectSandboxRuntime(sandbox.externalId, loaded.userId);
   return {
     projectId,
     sessionId,
     runtimeId: sessionId,
+    harness: health?.acpHarness ?? null,
     endpoint,
   };
 }
@@ -115,7 +117,8 @@ projectsApp.get('/:projectId/sessions/:sessionId/acp/transcript', async (c: any)
 projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp', async (c: any) => {
   const target = await resolveAcpTarget(c);
   if (!target) return c.json({ error: 'Session runtime not found' }, 404);
-  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}`;
+  const harnessQuery = target.harness ? `?agent=${encodeURIComponent(target.harness)}` : '';
+  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}${harnessQuery}`;
   const method = c.req.method.toUpperCase();
   const headers = new Headers(target.endpoint.headers);
 
