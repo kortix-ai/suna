@@ -46,6 +46,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
 import { resolveComposerResetOnSend } from './composer-reset';
 import {
+  mergeFailedSubmissionFiles,
+  mergeFailedSubmissionMentions,
+  mergeFailedSubmissionText,
+} from './composer-draft-recovery';
+import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
@@ -1162,8 +1167,15 @@ export interface SessionChatInputProps {
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
-  /** Imperative draft prefill used by parent composers for starter prompts. */
-  prefill?: { text: string; id: number } | null;
+  /** Imperative draft prefill used by parent composers for starter prompts or
+   * failed first-turn recovery. Recovery merges instead of overwriting any
+   * draft the user typed while the request was in flight. */
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
@@ -1324,9 +1336,24 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  const prefillId = prefill?.id;
+  const prefillText = prefill?.text ?? '';
+  const prefillFiles = prefill?.files;
+  const prefillMode = prefill?.mode;
   useEffect(() => {
-    if (!prefill?.text) return;
-    setText(prefill.text);
+    if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
+    setText((current) =>
+      prefillMode === 'merge'
+        ? mergeFailedSubmissionText(current, prefillText)
+        : prefillText,
+    );
+    if (prefillFiles?.length) {
+      setAttachedFiles((current) =>
+        prefillMode === 'merge'
+          ? mergeFailedSubmissionFiles(current, prefillFiles)
+          : [...prefillFiles],
+      );
+    }
     setStagedCommand(null);
     setSlashFilter(null);
     setMentionQuery(null);
@@ -1335,14 +1362,14 @@ export function SessionChatInput({
       const ta = textareaRef.current;
       if (!ta) return;
       ta.focus();
-      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.setSelectionRange(prefillText.length, prefillText.length);
       ta.style.height = 'auto';
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       if (highlightRef.current) {
         highlightRef.current.style.height = ta.style.height;
       }
     });
-  }, [prefill?.id, prefill?.text]);
+  }, [prefillId, prefillText, prefillFiles, prefillMode]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -1768,7 +1795,6 @@ export function SessionChatInput({
       setSlashFilter(null);
       setMentionQuery(null);
       setMentions([]);
-      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
       setAttachedFiles([]);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -1790,12 +1816,21 @@ export function SessionChatInput({
     // without queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
+      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
     } catch {
-      // Restore the text so the user can retry. The failure itself is surfaced
-      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
-      // handleSend's catch — a toast here would double-display it. (No-op when
-      // clearOnSend is false: the text was never cleared.)
-      if (clearOnSend) setText(trimmed);
+      // Restore the entire submitted draft, not just its text. Object URLs stay
+      // alive until success, so local files remain retryable. Merge with any
+      // text/files/mentions added while the request was in flight instead of
+      // overwriting newer work.
+      if (clearOnSend) {
+        setText((current) => mergeFailedSubmissionText(current, trimmed));
+        setAttachedFiles((current) =>
+          mergeFailedSubmissionFiles(current, filesToSend ?? []),
+        );
+        setMentions((current) =>
+          mergeFailedSubmissionMentions(current, mentionsToSend ?? []),
+        );
+      }
     }
   }, [
     text,
