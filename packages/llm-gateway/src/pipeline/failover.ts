@@ -184,7 +184,9 @@ export async function runFailover(ctx: FailoverContext): Promise<FailoverResult>
     const open = lastError instanceof CircuitOpenError;
     const status = open ? 503 : 502;
     const errorCode = open ? 'upstream_unavailable' : 'upstream_unreachable';
-    const lastDescriptor = candidates.findLast((candidate) => candidate.provider === tried.at(-1));
+    const lastDescriptor = [...candidates]
+      .reverse()
+      .find((candidate) => candidate.provider === tried.at(-1));
     const upstreamError = lastError instanceof UpstreamHttpError
       ? parseUpstreamBody(lastError.body)
       : { message: errorMessage(lastError) };
