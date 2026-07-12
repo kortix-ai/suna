@@ -344,7 +344,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         // caused streamed text to appear mid-word: later full-text snapshots
         // were rejected by upsertPart's prefix-growth guard because they
         // didn't start with the partial delta. Starting from "" matches web's
-        // applyPartDelta semantics (apps/web/src/stores/opencode-sync-store.ts).
+        // applyPartDelta semantics shared with the web runtime sync store.
         // Callers (event handlers) should still pre-create an empty stub to
         // avoid relying on this fallback, but this keeps delta data intact
         // even when they don't.

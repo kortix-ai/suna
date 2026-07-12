@@ -96,7 +96,7 @@ export function useSessionSync(
   // The poll stops as soon as the session goes idle or the hook unmounts.
   //
   // The poll skips fetching if SSE is still delivering data (part count
-  // grew between polls). Matches web apps/web/src/hooks/opencode/use-session-sync.ts.
+  // grew between polls). Matches the web runtime session-sync behavior.
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPartCountRef = useRef(0);
   // Subscribe to status so the effect re-runs when busy/idle flips.

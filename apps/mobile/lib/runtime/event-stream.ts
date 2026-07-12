@@ -39,7 +39,7 @@ interface SSEEvent {
  * Should be mounted ONCE at the app level, after sandbox is ready.
  */
 // Heartbeat — if no events arrive for this long, force a reconnect. Matches
-// the web consumer (apps/web/src/hooks/opencode/use-opencode-events.ts).
+// the web consumer's runtime event stream behavior.
 // This is the primary stall-recovery mechanism; mobile has no other watchdog.
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 
@@ -260,7 +260,7 @@ export function useRuntimeEventStream(sandboxUrl: string | undefined) {
 
           // Pre-create an empty stub part if it's missing, so appendPartDelta
           // appends to "" rather than initializing the part with the partial
-          // delta. This matches web (apps/web/src/stores/opencode-sync-store.ts
+          // delta. This matches the web runtime sync store.
           // line 845-850).
           const currentMsgs = syncStore.getState().messages[sessionID];
           const currentMsg = currentMsgs?.find((m) => m.info.id === messageID);

@@ -260,7 +260,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         // pinned (during a session switch) — that throw used to escape to the
         // route error boundary. Swallow + log; the next events + retries
         // recover.
-        console.warn('[opencode-events] event handler threw, skipping', e);
+        console.warn('[runtime-events] event handler threw, skipping', e);
       }
     }
   };
@@ -491,7 +491,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         } catch (parkedHandlerErr) {
           // A host's park handler must never crash the (already-terminal)
           // stream machine.
-          console.warn('[opencode-events] onParked handler threw', parkedHandlerErr);
+          console.warn('[runtime-events] onParked handler threw', parkedHandlerErr);
         }
         break;
       }
