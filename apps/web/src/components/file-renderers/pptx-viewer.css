@@ -46,32 +46,38 @@
  * pptx-react-viewer renders the entire Microsoft PowerPoint editor even in
  * read-only mode, with no prop to slim it down. We run it as a pure viewer, so
  * we hide the editing surface via CSS and keep only what a reader needs: the
- * slide canvas, the slides panel, Present, zoom, and the "More actions" menu
- * (which holds every export/save option — PDF, PNG, video, .pptx, print, …).
+ * slide canvas, the slides panel (toggle-able, open by default), Present, and
+ * zoom. Saving the deck is handled by the app's own file download, so the
+ * library's export/save menu is dropped too.
  *
  * Everything is scoped under [data-pptx-minimal] (set on our wrapper) so it can
  * never affect anything else, and targets the library's stable hooks
  * (aria-label / role / data-pptx-*) wherever they exist.
  * ─────────────────────────────────────────────────────────────────────────── */
 
-/* We render our own slim Kortix top bar (see PptxViewerToolbar), so the whole
-   PowerPoint header is dropped: the title bar (logo / filename / "Tell me what
-   you want to do" search) and the entire ribbon (tabs + formatting tools). */
+/* Drop the PowerPoint title bar (logo / filename / "Tell me what you want to
+   do" search) — the app's file panel already shows the filename. */
 [data-pptx-minimal] [data-pptx-title-bar] {
   display: none !important;
 }
 
-/* The ribbon holds the "More actions" menu that our Export dropdown drives
-   (PDF / PNG / video / GIF / print). We can't `display:none` it — a hidden
-   button won't open its menu — so we keep it mounted and interactive but
-   visually removed: transparent, click-through, behind the slide, and out of
-   flow so it doesn't take any space. Programmatic clicks still open its menu. */
-[data-pptx-minimal] [role='toolbar'][aria-label='Presentation toolbar'] {
-  position: absolute !important;
-  inset: 0 0 auto 0;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  z-index: -1 !important;
+/* The toolbar has three rows: a control strip (slides toggle / Present / …),
+   the ribbon tab bar (File/Home/Insert/…), and the formatting tools. Keep the
+   control strip; drop the two editing rows. */
+[data-pptx-minimal] [role='toolbar'][aria-label='Presentation toolbar'] > *:nth-child(2),
+[data-pptx-minimal] [role='toolbar'][aria-label='Presentation toolbar'] > *:nth-child(3) {
+  display: none !important;
+}
+
+/* Trim the control strip to viewer-only affordances. Editing, collaboration and
+   the export/save menu are dropped (the app's own file download saves the deck).
+   Left in place: Toggle slides panel, Present, Read-only. */
+[data-pptx-minimal] [aria-label='Comments'],
+[data-pptx-minimal] [aria-label='Share'],
+[data-pptx-minimal] [aria-label='Settings'],
+[data-pptx-minimal] [aria-label='More actions'],
+[data-pptx-minimal] [aria-label='Toggle inspector panel'] {
+  display: none !important;
 }
 
 /* Properties inspector stays closed for a pure viewer. */
@@ -81,5 +87,75 @@
 
 /* Fixed layout — no drag-to-resize handles for the panels. */
 [data-pptx-minimal] [data-pptx-viewer] [role='separator'] {
+  display: none !important;
+}
+
+/* Status bar: keep the slide counter and zoom controls; drop the view-mode
+   switches (Normal view / Slide sorter / Slide show) to free up space. */
+[data-pptx-minimal] [aria-label='Normal view'],
+[data-pptx-minimal] [aria-label='Slide sorter'],
+[data-pptx-minimal] [aria-label='Slide show'] {
+  display: none !important;
+}
+
+/* Recolor the amber "Read-only" chip to a subtle Kortix-muted pill. */
+[data-pptx-minimal] [data-pptx-viewer] .bg-amber-600\/90 {
+  background-color: color-mix(in oklab, var(--muted-foreground) 14%, transparent) !important;
+  color: var(--muted-foreground) !important;
+}
+
+/* ── Mobile layout ─────────────────────────────────────────────────────────
+ * On phones the library swaps to a different chrome the desktop rules above
+ * don't touch: a compact top toolbar (aria-label="Toolbar", distinct from the
+ * desktop "Presentation toolbar") and a bottom "Editor actions" tab bar. Give
+ * them the same read-only treatment — keep viewing (Present, Slides, Notes),
+ * drop everything that edits or collaborates.
+ *
+ * Top toolbar: keep Present; drop the hamburger Menu (opens the editing
+ * drawer), Undo, Redo, Save, Share. */
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Menu'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Undo'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Redo'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Save'],
+[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Share'] {
+  display: none !important;
+}
+
+/* Bottom "Editor actions" bar renders, in order: Slides, Insert, Format,
+   Comments, Notes. Keep Slides (navigate) and Notes (view); drop the three
+   editing/collab tabs in the middle. */
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(2),
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(3),
+[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(4) {
+  display: none !important;
+}
+
+/* The mobile "Slides"/"Notes" sheets are `position: fixed` full-viewport modals.
+   That's right on a real phone, but here the viewer often lives in a narrow
+   desktop panel — a fixed modal would cover the whole app. The sheet is rendered
+   inside our wrapper (made a positioning context via `relative` above), so
+   anchoring it there with `absolute` turns it into a bottom sheet bounded by the
+   viewer panel. Present mode is a fixed, non-modal layer and is unaffected. */
+[data-pptx-minimal] [role='dialog'][aria-modal='true'] {
+  position: absolute !important;
+}
+
+/* That sheet reuses the desktop slides <aside>; stretched to the full sheet
+   width its fixed-size thumbnails leave dead space. Cap + center the list so it
+   reads as an intentional column of slides. */
+[data-pptx-minimal] [role='dialog'][aria-modal='true'] aside {
+  max-width: 320px;
+  margin-inline: auto;
+  border-inline: 0 !important;
+}
+
+/* ── Drive-grid thumbnail ──────────────────────────────────────────────────
+ * The file grid renders this same viewer scaled down as a preview. There we
+ * want just the first slide — drop all chrome (desktop control strip + slides
+ * panel, and the mobile toolbar + bottom bar) so the thumbnail reads as a clean
+ * slide, not a shrunken editor. (data-pptx-thumb is set by FileThumbnail.) */
+[data-pptx-thumb] [data-pptx-viewer] [role='toolbar'],
+[data-pptx-thumb] [data-pptx-viewer] [role='navigation'],
+[data-pptx-thumb] [data-pptx-viewer] nav[aria-label='Editor actions'] {
   display: none !important;
 }

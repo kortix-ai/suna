@@ -189,3 +189,13 @@ To re-render specific slides after fixes:
 pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
 ls slide-fixed-*.jpg
 ```
+
+## Delivering
+
+The deliverable is the **`.pptx` file**, which renders inline for the user. Surface it directly:
+
+```
+show(type="file", path="/workspace/output.pptx")
+```
+
+Do **not** present the rendered slide JPEGs as the deliverable — those images exist only for visual QA. Showing them instead of the deck gives the user flat pictures they can't open, edit, or download as a real presentation.

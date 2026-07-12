@@ -1,11 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  PowerPointViewer,
-  type PowerPointViewerHandle,
-  type ViewerTheme,
-} from 'pptx-react-viewer';
+import React, { useCallback, useEffect, useState } from 'react';
+import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { I18nextProvider } from 'react-i18next';
 import { AlertTriangle, Download } from 'lucide-react';
 
@@ -15,7 +11,6 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { downloadFile } from '@/features/files/api/opencode-files';
 
 import { getPptxI18n } from './pptx-i18n';
-import { PptxViewerToolbar } from './pptx-toolbar';
 import './pptx-viewer.css';
 
 interface PptxRendererProps {
@@ -85,8 +80,6 @@ export function PptxRenderer({
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const viewerRef = useRef<PowerPointViewerHandle | null>(null);
-  const shellRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,23 +163,18 @@ export function PptxRenderer({
 
   return (
     <div
-      ref={shellRef}
       data-pptx-minimal=""
-      className={cn('flex h-full w-full flex-col overflow-hidden bg-background', className)}
+      className={cn('relative flex h-full w-full flex-col overflow-hidden bg-background', className)}
     >
-      <PptxViewerToolbar fileName={fileName} viewerRef={viewerRef} shellRef={shellRef} />
-      <div className="min-h-0 flex-1">
-        <I18nextProvider i18n={getPptxI18n()}>
-          <PowerPointViewer
-            ref={viewerRef}
-            content={bytes}
-            fileName={fileName}
-            canEdit={false}
-            theme={KORTIX_VIEWER_THEME}
-            className="h-full w-full min-h-0"
-          />
-        </I18nextProvider>
-      </div>
+      <I18nextProvider i18n={getPptxI18n()}>
+        <PowerPointViewer
+          content={bytes}
+          fileName={fileName}
+          canEdit={false}
+          theme={KORTIX_VIEWER_THEME}
+          className="h-full w-full min-h-0"
+        />
+      </I18nextProvider>
     </div>
   );
 }

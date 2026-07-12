@@ -18,7 +18,7 @@ import {
   saveLink,
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
-import { emitJson, takeFlagBool } from '../command-helpers.ts';
+import { emitJson, locateProjectAnywhere, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type { Auth } from '../api/auth.ts';
@@ -40,7 +40,9 @@ Subcommands:
                        --purge also deletes its managed git repo (irreversible).
                        -y / --yes skips the confirmation.
 
-A directory link (.kortix/link.json) always wins over the default; the
+An explicit <id> on info/open/rm resolves on its own: tries the active host
+first, then — unless you pass --host — scans every other logged-in host for
+it. A directory link (.kortix/link.json) always wins over the default; the
 default is what commands use anywhere else on your machine.
 
 Run \`kortix projects <subcommand> --help\` for options.
@@ -65,7 +67,14 @@ export async function runProjects(argv: string[]): Promise<number> {
     case 'info': {
       const restCopy = [...rest];
       const json = takeFlagBool(restCopy, ['--json']);
-      return projectsInfo(restCopy[0], json);
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsInfo(restCopy[0], json, hostArg);
     }
     case 'use':
     case 'default':
@@ -77,8 +86,17 @@ export async function runProjects(argv: string[]): Promise<number> {
       return projectsLink(rest[0]);
     case 'unlink':
       return projectsUnlink();
-    case 'open':
-      return projectsOpen(rest[0]);
+    case 'open': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsOpen(restCopy[0], hostArg);
+    }
     case 'rm':
     case 'remove':
       return projectsRm(rest);
@@ -244,9 +262,7 @@ function renderProjectTable(
   }
 }
 
-async function projectsInfo(arg?: string, json = false): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsInfo(arg?: string, json = false, hostArg?: string): Promise<number> {
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
@@ -254,13 +270,13 @@ async function projectsInfo(arg?: string, json = false): Promise<number> {
     );
     return 1;
   }
-  const client = clientFromAuth(auth);
-  let p: ProjectSummary;
-  try {
-    p = await client.get<ProjectSummary>(`/projects/${id}`);
-  } catch (err) {
-    return surface(err);
-  }
+  const located = await locateProjectAnywhere(
+    id,
+    { hostArg },
+    (host) => `kortix projects info ${id} --host ${host}`,
+  );
+  if (!located) return 1;
+  const p = located.located.project;
   if (json) {
     emitJson(p);
     return 0;
@@ -456,15 +472,19 @@ async function projectsUnlink(): Promise<number> {
   return 0;
 }
 
-async function projectsOpen(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsOpen(arg?: string, hostArg?: string): Promise<number> {
   const id = arg ?? resolveProjectId();
   if (!id) {
     process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
     return 1;
   }
-  const url = projectWebUrl(auth.api_base, id);
+  const located = await locateProjectAnywhere(
+    id,
+    { hostArg },
+    (host) => `kortix projects open ${id} --host ${host}`,
+  );
+  if (!located) return 1;
+  const url = projectWebUrl(located.located.auth.api_base, id);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -477,12 +497,16 @@ interface RmResult {
 }
 
 async function projectsRm(args: string[]): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
-
   const rest = [...args];
   const purge = takeFlagBool(rest, ['--purge']);
   const yes = takeFlagBool(rest, ['-y', '--yes']);
+  let hostArg: string | undefined;
+  try {
+    hostArg = takeFlagValue(rest, ['--host']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
   const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId();
   if (!id) {
     process.stderr.write(
@@ -491,14 +515,13 @@ async function projectsRm(args: string[]): Promise<number> {
     return 1;
   }
 
-  const client = clientFromAuth(auth);
-
-  let project: ProjectSummary;
-  try {
-    project = await client.get<ProjectSummary>(`/projects/${id}`);
-  } catch (err) {
-    return surface(err);
-  }
+  const located = await locateProjectAnywhere(
+    id,
+    { hostArg },
+    (host) => `kortix projects rm ${id} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, project } = located.located;
 
   if (!yes) {
     const msg = purge

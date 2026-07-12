@@ -258,6 +258,22 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x"}',
     });
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      message: "bad request",
+      code: "upstream_client_error",
+      upstream_status: 400,
+      provider: "a",
+      requested_model: "x",
+      resolved_model: "x",
+    });
+    expect(body.request_id).toMatch(/^req_/);
+    expect(body.suggestion).toContain("switch to another model");
+    expect(body.error).toMatchObject({
+      message: "bad request",
+      type: "upstream_client_error",
+      provider: "a",
+    });
     expect(bCalled).toBe(false);
   });
 
@@ -274,7 +290,15 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x"}',
     });
     expect(res.status).toBe(502);
-    expect((await res.json()).code).toBe("upstream_unreachable");
+    expect(await res.json()).toMatchObject({
+      message: "boom",
+      code: "upstream_unreachable",
+      upstream_status: 500,
+      provider: "openrouter",
+      requested_model: "x",
+      resolved_model: "x",
+      suggestion: "Retry the request. If the error continues, switch to another model.",
+    });
   });
 
   test("returns 503 once the provider circuit opens", async () => {
@@ -776,8 +800,19 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.error).toBe("Overloaded");
+    expect(body.message).toBe("Overloaded");
+    expect(body.error).toMatchObject({
+      message: "Overloaded",
+      type: "upstream_error",
+      code: "overloaded_error",
+      provider: "openrouter",
+    });
     expect(body.upstream_code).toBe("overloaded_error");
+    expect(body.provider).toBe("openrouter");
+    expect(body.requested_model).toBe("x");
+    expect(body.resolved_model).toBe("x");
+    expect(body.request_id).toMatch(/^req_/);
+    expect(body.suggestion).toContain("switch to another model");
     expect(calls).toBe(1); // the error candidate is excluded at once, not retried 3×
     await flush();
     expect(usage).toHaveLength(0);
