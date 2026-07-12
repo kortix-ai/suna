@@ -628,6 +628,57 @@ const TEAMS_ACTIONS: ChannelActionDef[] = [
     },
     required: ['user-id'],
   },
+  {
+    path: 'list_teams',
+    method: 'teams',
+    verb: 'GET',
+    name: 'List teams',
+    description: 'List the teams the bot can see in the tenant.',
+    risk: 'read',
+    properties: {},
+    required: [],
+  },
+  {
+    path: 'list_messages',
+    method: 'teams/{team-id}/channels/{channel-id}/messages',
+    verb: 'GET',
+    name: 'List channel messages',
+    description: 'List recent messages in a channel (history). Requires `team-id` and `channel-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+    },
+    required: ['team-id', 'channel-id'],
+  },
+  {
+    path: 'get_message',
+    method: 'teams/{team-id}/channels/{channel-id}/messages/{message-id}',
+    verb: 'GET',
+    name: 'Get channel message',
+    description: 'Fetch a single channel message. Requires `team-id`, `channel-id`, `message-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+      'message-id': { type: 'string', description: 'The message id.' },
+    },
+    required: ['team-id', 'channel-id', 'message-id'],
+  },
+  {
+    path: 'list_replies',
+    method: 'teams/{team-id}/channels/{channel-id}/messages/{message-id}/replies',
+    verb: 'GET',
+    name: 'List message replies',
+    description: 'List replies to a channel message (a thread). Requires `team-id`, `channel-id`, `message-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+      'message-id': { type: 'string', description: 'The message id.' },
+    },
+    required: ['team-id', 'channel-id', 'message-id'],
+  },
 ];
 
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
