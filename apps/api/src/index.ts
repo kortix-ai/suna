@@ -350,6 +350,8 @@ const HealthSchema = z
     status: z.string(),
     service: z.string(),
     timestamp: z.string(),
+    environment: z.string(),
+    version: z.string(),
   })
   .openapi('Health');
 
@@ -358,6 +360,8 @@ const healthHandler = (c: any) =>
     status: 'ok',
     service: 'kortix-api',
     timestamp: new Date().toISOString(),
+    environment: config.INTERNAL_KORTIX_ENV,
+    version: API_VERSION,
   });
 
 app.openapi(
