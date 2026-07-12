@@ -931,6 +931,30 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['x-request-id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
   });
 
+  test('does not forward the preview session credential cookie upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: '__preview_session=eyJhbGciOiJIUzI1NiJ9.secret-token',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
+  });
+
+  test('does not forward arbitrary caller cookies upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: 'tracking=abc; __preview_session=secret; prefs=dark',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
+  });
+
   test('does NOT inject preview token when null', async () => {
     mockPreviewToken = null;
     mockFetchResponses = [{ status: 200, body: 'OK' }];

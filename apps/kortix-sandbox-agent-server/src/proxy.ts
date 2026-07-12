@@ -15,6 +15,7 @@ import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import webProxyRouter from './routes/web-proxy'
+import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -32,6 +33,7 @@ const STRIP_REQUEST_HEADERS = new Set([
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
 const PTY_WS_PATH_RE = /^\/pty\/[^/]+\/connect\/?$/
+const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty\/([^/]+)\/connect\/?$/
 const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 // Bound on waiting for opencode to respond to a proxied request. Applied only
@@ -48,14 +50,20 @@ const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 // retry+auto-wake loop can act on immediately.
 const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
 
-type OpencodeWsData = {
-  type: 'opencode-pty'
-  url: string
-  headers?: Record<string, string>
-  upstream?: WebSocket
-  ready?: boolean
-  queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>
-}
+type OpencodeWsData =
+  | {
+      type: 'opencode-pty'
+      url: string
+      headers?: Record<string, string>
+      upstream?: WebSocket
+      ready?: boolean
+      queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>
+    }
+  | {
+      type: 'kortix-pty'
+      ptyId: string
+      handle?: PtyAttachHandle
+    }
 
 function jsonError(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -204,6 +212,39 @@ async function prepareOpencodePtyWsUpgrade(
   }
 }
 
+// The Kortix-native PTY WS upgrade — independent of opencode/repo readiness
+// entirely (it just spawns a shell), so unlike the opencode-proxied path
+// above this has no bootState gating: a raw terminal should work even while
+// the repo is still cloning or opencode hasn't come up yet.
+function prepareKortixPtyWsUpgrade(
+  req: Request,
+  cfg: Config,
+): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
+  const url = new URL(req.url)
+  const match = KORTIX_PTY_WS_PATH_RE.exec(url.pathname)
+  if (!match) {
+    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
+  }
+  const ptyId = match[1]!
+
+  if (!cfg.sandboxToken) {
+    logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
+    }
+  }
+
+  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
+  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  if (!auth.ok) {
+    logger.warn('[pty] reject websocket', { reason: auth.reason, path: url.pathname })
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+  }
+
+  return { ok: true, data: { type: 'kortix-pty', ptyId } }
+}
+
 export function buildOpencodeApp(
   cfg: Config,
   opencode: Opencode,
@@ -211,6 +252,7 @@ export function buildOpencodeApp(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
+  ptyRegistry?: PtyRegistry,
 ): Hono {
   const app = new Hono()
 
@@ -226,6 +268,10 @@ export function buildOpencodeApp(
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
   const gitRouter = createGitRouter(cfg)
+  // /kortix/pty — Kortix's own terminal, independent of opencode entirely
+  // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
+  // the parameter is optional only so tests can build the app without one.
+  const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -234,6 +280,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/abort/', abortRouter)
   kortixRouter.route('/git', gitRouter)
   kortixRouter.route('/git/', gitRouter)
+  kortixRouter.route('/pty', ptyRouter)
+  kortixRouter.route('/pty/', ptyRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -434,7 +482,10 @@ export function startProxy(
   // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
   let currentCfg = cfg
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
+  // Constructed once, outside reload() — pty state must survive a config
+  // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
+  const ptyRegistry = createPtyRegistry(cfg)
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
   const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
@@ -452,11 +503,39 @@ export function startProxy(
         if (upgraded) return undefined
         return jsonError(500, { error: 'websocket upgrade failed' })
       }
+      if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
+        const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
+        if (!prep.ok) return prep.response
+        const upgraded = srv.upgrade(req, { data: prep.data })
+        if (upgraded) return undefined
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
       return app.fetch(req, srv)
     },
     websocket: {
       open(ws: ServerWebSocket<OpencodeWsData>) {
         const state = ws.data
+
+        if (state.type === 'kortix-pty') {
+          const handle = ptyRegistry.attach(state.ptyId, {
+            onData: (chunk) => {
+              try { ws.send(chunk) } catch {}
+            },
+            onExit: (exitCode) => {
+              try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
+            },
+          })
+          if (!handle) {
+            try { ws.close(1011, 'pty not found') } catch {}
+            return
+          }
+          state.handle = handle
+          if (handle.replay) {
+            try { ws.send(handle.replay) } catch {}
+          }
+          return
+        }
+
         if (state.type !== 'opencode-pty') {
           try { ws.close(1011, 'unsupported websocket upgrade') } catch {}
           return
@@ -512,6 +591,10 @@ export function startProxy(
       },
       message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
         const state = ws.data
+        if (state.type === 'kortix-pty') {
+          state.handle?.write(typeof message === 'string' ? message : message.toString())
+          return
+        }
         const upstream = state.upstream
         if (state.ready && upstream && upstream.readyState === WebSocket.OPEN) {
           try { upstream.send(message as any) } catch {}
@@ -520,7 +603,12 @@ export function startProxy(
         }
       },
       close(ws: ServerWebSocket<OpencodeWsData>) {
-        try { ws.data.upstream?.close() } catch {}
+        const state = ws.data
+        if (state.type === 'kortix-pty') {
+          state.handle?.detach()
+          return
+        }
+        try { state.upstream?.close() } catch {}
       },
     },
   })
@@ -532,7 +620,7 @@ export function startProxy(
     port: boundPort,
     reload(next: Config) {
       currentCfg = next
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort)
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {

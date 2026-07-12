@@ -30,6 +30,8 @@ export interface ResolvedSession {
   auth: Auth;
   /** Convenience: bound OpenCode client. */
   oc: ReturnType<typeof opencodeClient>;
+  /** The sandbox's external/provider id — the `/v1/p/{proxyId}/…` proxy key. */
+  proxyId: string;
   /** The OpenCode session id INSIDE the sandbox. May need creating. */
   opencodeSessionId: string | null;
   /** Kortix-side API client (for PATCH/save-back). */
@@ -98,6 +100,7 @@ export async function loadSessionForChat(
     session,
     auth,
     oc,
+    proxyId,
     opencodeSessionId: session.opencode_session_id,
     ctx,
   };
@@ -429,6 +432,36 @@ export async function chooseRunningSession(
     })),
   });
   return picked ?? null;
+}
+
+/**
+ * Resolve a target session id when the caller may not have passed one:
+ * explicit id wins outright; otherwise resolve the project context and hand
+ * off to {@link chooseRunningSession}. Shared by commands like `connect` and
+ * `shell` that both need "an id, or let me pick a running one" up front.
+ * Prints its own "no running session" guidance (with `startHint` appended)
+ * on failure.
+ */
+export async function resolveRunningSessionId(
+  explicit: string | undefined,
+  opts: CtxOpts,
+  pickTitle: string,
+  startHint = 'kortix sessions new --wait',
+): Promise<string | null> {
+  if (explicit) return explicit;
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return null;
+  const chosen = await chooseRunningSession(ctx, pickTitle);
+  if (chosen === 'error') return null;
+  if (!chosen) {
+    process.stderr.write(
+      `${status.err('No running session to connect to.')}\n` +
+        `  ${C.dim}Start one: ${C.reset}${C.cyan}${startHint}${C.reset}` +
+        `${C.dim}, or pass a session id.${C.reset}\n`,
+    );
+    return null;
+  }
+  return chosen.session_id;
 }
 
 /** Poll a freshly-created session until it's running (or fails / times out). */

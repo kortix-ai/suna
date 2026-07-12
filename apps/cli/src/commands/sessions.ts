@@ -12,6 +12,7 @@ import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './ses
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import { runSessionsDigest } from './sessions-digest.ts';
+import { runSessionsShell } from './sessions-shell.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
@@ -34,6 +35,10 @@ Subcommands:
                                     one-shot with --prompt). --new starts one.
   connect [<session-id>]            Attach local OpenCode to the running
                                     session sandbox. Pass args after --.
+  shell [<session-id>]              Open a raw interactive terminal (PTY) in
+                                    the sandbox — no agent, just a shell.
+                                    Reattaches to the existing one; --new
+                                    starts fresh.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
@@ -82,6 +87,10 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `opencode attach`, so route it before we consume flags below.
   if (sub === 'connect' || sub === 'attach') {
     return runSessionsConnect(argv.slice(1));
+  }
+  // `shell` owns its own flag parsing (incl. --new + a positional session id).
+  if (sub === 'shell' || sub === 'terminal' || sub === 'ssh') {
+    return runSessionsShell(argv.slice(1));
   }
   // `log` owns its own flag parsing (incl. --limit + a positional session id),
   // so route it before we consume flags below.
