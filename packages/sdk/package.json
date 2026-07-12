@@ -159,7 +159,7 @@
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
-    "test": "bun test src",
+    "test": "bun test --isolate src",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",
