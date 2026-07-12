@@ -38,6 +38,16 @@ const SERVER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const MAX_REPLAY_EVENTS = 2_000
 const MAX_STDERR_LINES = 100
+const SENSITIVE_ENV_NAME = /(TOKEN|KEY|SECRET|PASSWORD|AUTH)/i
+
+export function redactHarnessStderr(line: string, env: NodeJS.ProcessEnv): string {
+  let redacted = line
+  for (const [name, value] of Object.entries(env)) {
+    if (!SENSITIVE_ENV_NAME.test(name) || !value || value.length < 6) continue
+    redacted = redacted.replaceAll(value, '[REDACTED]')
+  }
+  return redacted
+}
 
 function rpcIdKey(id: unknown): string {
   return JSON.stringify(id)
@@ -85,9 +95,10 @@ class AcpProcess {
     this.serverId = options.serverId
     this.descriptor = options.descriptor
     this.onUnexpectedExit = options.onUnexpectedExit
+    const childEnv = { ...options.env, ...options.descriptor.launch.env }
     this.child = spawn(options.descriptor.launch.command, options.descriptor.launch.args, {
       cwd: options.cwd,
-      env: { ...options.env, ...options.descriptor.launch.env },
+      env: childEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -96,12 +107,13 @@ class AcpProcess {
 
     const stderr = createInterface({ input: this.child.stderr })
     stderr.on('line', (line) => {
-      this.stderrTail.push(line)
+      const safeLine = redactHarnessStderr(line, childEnv)
+      this.stderrTail.push(safeLine)
       if (this.stderrTail.length > MAX_STDERR_LINES) this.stderrTail.shift()
       logger.warn('[acp] harness stderr', {
         serverId: this.serverId,
         harness: this.descriptor.id,
-        line,
+        line: safeLine,
       })
     })
 
