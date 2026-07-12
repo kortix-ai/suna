@@ -251,6 +251,70 @@ export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean 
   return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
 }
 
+// Sentry events whose exception carries NO message ("No error message" in
+// Better Stack) and whose stack frames are ALL unresolved minified chunk
+// frames (`?` function, no source line) inside our own browser bundle. These
+// are unactionable: there is no message to triage and no resolvable source
+// location to fix, so they only pollute error tracking. Better Stack surfaces
+// them as "No error message" with a `?` call site — e.g. production patterns
+// `a81b7cd3…` (count 11) and `576172fbd8…` (count 2), both in chunk
+// `21544-ac9e889808bbe0af.js`, 0 identified users, last 2026-07-12. The throw
+// is a `Promise.reject(<non-Error>)` / stripped-message / unresolved-frame
+// class — NOT the storage-disabled-WebView TypeError class de-noised by #4529
+// (those carry a non-empty `null.getItem` TypeError message that this guard
+// never touches; an empty-message exception is incompatible with #4529's
+// message-string matcher).
+//
+// A real first-party regression — `throw new Error()` /
+// `Promise.reject(new Error())` in our own code — keeps reporting: its frames
+// resolve (via uploaded sourcemaps) to a real source file:line, so the
+// "any resolved frame" negative guard preserves the event. Only events with
+// NEITHER a message NOR a single resolvable frame are dropped.
+function isFrameUnresolved(frame: {
+  filename?: unknown;
+  function?: unknown;
+  lineno?: unknown;
+}): boolean {
+  const fn = normalizeString(frame.function).trim();
+  const lineno = typeof frame.lineno === 'number' ? frame.lineno : 0;
+  return (fn === '' || fn === '?') && lineno <= 0;
+}
+
+/**
+ * Whether a Sentry event is the unactionable "No error message" + unresolved
+ * minified-chunk-frame class from our browser bundle — empty exception value
+ * AND every frame an unresolved (`?` function, no line) `_next/static/chunks`
+ * frame. Real errors (non-empty message, or any resolvable frame, or any
+ * non-browser-bundle frame) are never matched. See
+ * `isEmptyMessageUnresolvedBrowserChunkNoise` for the full rationale.
+ */
+export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown; lineno?: unknown }>;
+}): boolean {
+  // Negative guard #1: a real, actionable message always reports.
+  if (normalizeString(input.message).trim() !== '') {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm it's our browser chunk; keep reporting
+  // rather than blanket-dropping frameless events of unknown origin.
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard #2: any non-browser-bundle frame (extension / injected /
+  // third-party / cross-origin) → keep; don't hide non-app noise here.
+  if (!frames.every((frame) => isBrowserBundleSource(frame.filename))) {
+    return false;
+  }
+  // Negative guard #3: any resolvable frame (real source line via sourcemap,
+  // or a named function) → an actionable error; keep it.
+  if (frames.some((frame) => !isFrameUnresolved(frame))) {
+    return false;
+  }
+  return true;
+}
+
 export function isExtensionSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
@@ -587,6 +651,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // suppress only when the throwing frame is the runtime chunk so a real app
   // `.call` TypeError keeps reporting. See `isStaleWebpackRuntimeCallNoise`.
   if (isStaleWebpackRuntimeCallNoise({ message, frames })) {
+    return true;
+  }
+
+  // "No error message" exceptions whose only frames are unresolved minified
+  // chunk frames inside our browser bundle — empty exception value + `?`
+  // call site (e.g. chunk 21544 patterns a81b7cd3…/576172fbd8…). There is no
+  // message to triage and no resolvable source location to fix, so they are
+  // unactionable noise; a real first-party regression keeps reporting because
+  // its frames resolve to a source line. Distinct from #4529's
+  // storage-disabled-WebView class (non-empty `null.getItem` TypeError). See
+  // `isEmptyMessageUnresolvedBrowserChunkNoise`.
+  if (isEmptyMessageUnresolvedBrowserChunkNoise({ message, frames })) {
     return true;
   }
 

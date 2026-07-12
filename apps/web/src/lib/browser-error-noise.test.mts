@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   isClientRequestTimeoutMessage,
+  isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
@@ -1037,6 +1038,127 @@ test('does NOT suppress a real app SyntaxError from a de-minified first-party fr
       message: "SyntaxError: Unexpected token ')'",
       filename: 'app:///apps/web/src/features/foo.tsx',
     }),
+    false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// "No error message" + unresolved minified chunk frames (Better Stack
+// patterns a81b7cd3… / 576172fbd8… in chunk 21544-ac9e889808bbe0af.js).
+// ---------------------------------------------------------------------------
+
+const CHUNK_21544 = 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js?dpl=dpl_CTqmc8S7CG7w9gkCs2ySzURsbhxm'
+
+test('suppresses the "No error message" + unresolved chunk-21544 Sentry event', () => {
+  // Exact shape of the production noise: empty exception value, single frame
+  // in our numbered app chunk with a `?` function and no source line.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }],
+    }),
+    true,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: '', lineno: undefined }],
+    }),
+    true,
+  )
+  // Better Stack displays "No error message" because the SDK sent no value.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: undefined,
+            stacktrace: { frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real error that has a message', () => {
+  // A non-empty message is always actionable, even if its frame is unresolved.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'TypeError: Cannot read properties of null (reading \'getItem\')',
+      frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'Something went wrong',
+            stacktrace: { frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an empty-message error whose frame resolves to a source line', () => {
+  // `throw new Error()` / `Promise.reject(new Error())` in first-party code:
+  // sourcemaps resolve the frame to a real file:line → actionable, keep it.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: 'handleClick', lineno: 42 }],
+    }),
+    false,
+  )
+  // Mixed: one unresolved chunk frame + one resolved frame → keep.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [
+        { filename: CHUNK_21544, function: '?', lineno: 0 },
+        { filename: 'app:///_next/static/chunks/76904-c52ab52c4900447c.js', function: 'render', lineno: 17 },
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an empty-message error with a non-browser-bundle frame', () => {
+  // Extension / injected / cross-origin frames must not be hidden by this
+  // guard — only our own unresolved browser-bundle chunks qualify.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: 'chrome-extension://abc/content.js', function: '?', lineno: 0 }],
+    }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [
+        { filename: CHUNK_21544, function: '?', lineno: 0 },
+        { filename: 'https://evil.example/injected.js', function: '?', lineno: 0 },
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a frameless empty-message event (origin unverifiable)', () => {
+  // No frames at all → can't confirm it's our browser chunk; keep reporting.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: '', frames: [] }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: '' }),
     false,
   )
 })
