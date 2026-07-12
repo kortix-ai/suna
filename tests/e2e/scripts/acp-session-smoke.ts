@@ -125,8 +125,11 @@ async function main() {
         `[acp-smoke] start=${start?.stage} protocol=${start?.runtime_protocol ?? "-"} reason=${start?.reason ?? "-"}`,
       );
       if (start?.stage === "ready") break;
-      if (start?.stage === "failed")
+      if (start?.stage === "failed") {
+        const sessions = await api("GET", `/projects/${projectId}/sessions`);
+        console.error(`[acp-smoke] failed session detail=${sessions.text}`);
         throw new Error(`session start failed: ${result.text}`);
+      }
       await sleep(5_000);
     }
     if (
