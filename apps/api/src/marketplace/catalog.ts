@@ -1487,6 +1487,11 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill", "registry:project"]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
+  // `defaultProjectInstall` items are the base starter kit — they ship in every
+  // project already, so surfacing them as marketplace "add" cards is just noise.
+  // They stay installable (as deps, or into a project that lacks them) via the
+  // install engine, which doesn't consult this browse filter.
+  if (it.defaultProjectInstall && it.type !== "registry:project") return false;
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 

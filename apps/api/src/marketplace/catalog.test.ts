@@ -126,6 +126,17 @@ describe('pageCatalogItems', () => {
     expect(result.total).toBe(2);
   });
 
+  test('hides default-starter skills from browse, but keeps default projects', () => {
+    const items = [
+      item({ id: 'k:s1', name: 'add-me', type: 'registry:skill' }),
+      item({ id: 'k:s2', name: 'starter-skill', type: 'registry:skill', defaultProjectInstall: true }),
+      item({ id: 'k:p1', name: 'a-project', type: 'registry:project', defaultProjectInstall: true }),
+    ];
+    const result = pageCatalogItems(items, {});
+    expect(result.items.map((it) => it.name).sort()).toEqual(['a-project', 'add-me']);
+    expect(result.total).toBe(2);
+  });
+
   test('offset past the end returns empty items, hasMore false, and a correct total', () => {
     const items = synthetic(5);
     const result = pageCatalogItems(items, { limit: 10, offset: 50 });

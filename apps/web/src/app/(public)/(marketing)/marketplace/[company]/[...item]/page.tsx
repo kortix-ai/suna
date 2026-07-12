@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { MarketplaceDetail } from '@/features/marketplace/marketplace-detail';
+import { MarketplaceDetailPublic } from '@/features/marketplace/marketplace-detail-public';
 import { PublicMarketplaceProvider } from '@/features/marketplace/marketplace-public-surface';
 import {
   getPublicMarketplaceItem,
@@ -75,7 +75,7 @@ export default async function MarketplaceItemPage({ params }: { params: Promise<
 
   return (
     <PublicMarketplaceProvider>
-      <MarketplaceDetail data={detail} company={companySummary} otherProjects={otherProjects} />
+      <MarketplaceDetailPublic data={detail} company={companySummary} otherProjects={otherProjects} />
     </PublicMarketplaceProvider>
   );
 }
