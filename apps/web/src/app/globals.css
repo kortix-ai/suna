@@ -7,11 +7,6 @@
 
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
-/* pptx-react-viewer ships a prebuilt Tailwind stylesheet we deliberately do NOT
-   import (it carries its own preflight and would collide with ours). Instead we
-   let our own Tailwind v4 generate the library's utilities from its dist, so the
-   viewer inherits Kortix tokens. See components/file-renderers/pptx-renderer.tsx. */
-@source "../node_modules/pptx-react-viewer/dist/**/*.{js,mjs}";
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
 /* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
@@ -222,8 +217,8 @@
   --color-kortix-red: var(--kortix-red);
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: calc(1 / 0.75);
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
   --text-sm--line-height: calc(1.25 / 0.875);
   --text-base: 1rem;
@@ -287,6 +282,30 @@
   --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
   --animate-shiny-text: shiny-text 8s infinite;
   --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
+  /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
+  --animate-shake: shake 400ms var(--ease-in-out) both;
+
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    10% {
+      transform: translateX(-6px);
+    }
+    30% {
+      transform: translateX(5px);
+    }
+    50% {
+      transform: translateX(-3px);
+    }
+    70% {
+      transform: translateX(2px);
+    }
+    90% {
+      transform: translateX(-1px);
+    }
+  }
 
   @keyframes kortix-bullet-flow {
     0%,
@@ -527,13 +546,13 @@
   --primary-foreground: oklch(0.9851 0 0);
   --secondary: oklch(0.9502 0 0);
   --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9702 0 0);
+  --muted: oklch(0.9502 0 0);
   --muted-foreground: oklch(0.5555 0 0);
   --accent: oklch(0.9702 0 0);
   --accent-foreground: oklch(0.2046 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.9219 0 0);
+  --border: oklch(0.8819 0 0);
   --input: oklch(0.9612 0 0);
   --ring: oklch(0.709 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
@@ -607,7 +626,7 @@
   --accent-foreground: oklch(0.9851 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.274 0.006 286.033);
+  --border: oklch(0.2629 0 0);
   --input: oklch(0.2686 0 0);
   --ring: oklch(0.5555 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
@@ -939,6 +958,14 @@
 
 .animate-pulse-heartbeat {
   animation: pulse-heartbeat 1.2s ease-in-out infinite;
+}
+
+/* Shake is pure positional motion; the error state is already conveyed by
+   color/message, so drop it entirely under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake {
+    animation: none;
+  }
 }
 
 /* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
@@ -1633,6 +1660,81 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   }
   100% {
     opacity: 1;
+  }
+}
+
+/* Google/Material circular spinner. Two INDEPENDENTLY-SEAMLESS animations
+   compose into the signature "arc sweeps forward, growing then shrinking":
+     • the <svg> rotates the whole thing at a CONSTANT rate (linear) — base spin.
+     • the arc <circle> rotates a further 360° per cycle (ease-in-out, so it
+       speeds up then slows down) while its length grows then shrinks via
+       stroke-dashoffset.
+   Both loops return to their EXACT start state at 100% (offset 58→58, rotate
+   360°≡0°) AND meet at matching velocity (ease-in-out is ~0 at both ends, linear
+   is constant), so the loop boundary is invisible — no stop/restart glitch.
+   The old version jumped: its dash ended long (dasharray 37) and restarted as a
+   dot (dasharray 1) at a different offset, collapsing visibly every cycle. */
+@keyframes spinner-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* r=10 → circumference ≈ 62.83. Visible arc = 62.83 − dashoffset, so it breathes
+   between ~28° (offset 58) and ~280° (offset 14). Rotate advances monotonically,
+   so the arc's head and tail only ever move forward — they never rewind. */
+@keyframes spinner-dash {
+  0% {
+    stroke-dashoffset: 58;
+    transform: rotate(0deg);
+  }
+  50% {
+    stroke-dashoffset: 14;
+    transform: rotate(180deg);
+  }
+  100% {
+    stroke-dashoffset: 58;
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spinner-orbit {
+  transform-origin: center;
+  animation: spinner-orbit 1.4s linear infinite;
+}
+
+/* Refresh icon etc. — constant rotation, so linear. (ease-in-out on an infinite
+   full turn visibly stutters at every seam: ends fast, restarts slow.) */
+.animate-spinner-spin {
+  transform-origin: center;
+  animation: spinner-spin 1s linear infinite;
+}
+
+.animate-spinner-dash {
+  transform-origin: center;
+  transform-box: fill-box;
+  stroke-dasharray: 62.83;
+  animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+/* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
+   signal activity) but drop the arc's grow/shrink and speed modulation. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spinner-orbit,
+  .animate-spinner-spin {
+    animation: spinner-orbit 1.4s linear infinite;
+  }
+
+  .animate-spinner-dash {
+    animation: none;
+    stroke-dashoffset: 34;
+    transform: none;
   }
 }
 

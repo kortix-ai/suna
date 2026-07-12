@@ -95,10 +95,10 @@ export default function SlackLoginPage() {
   const busy = phase === 'binding';
   return (
     <Centered>
-      <div className="bg-background rounded-2xl border shadow-sm">
+      <div className="bg-background rounded-md border shadow-sm">
         <div className="p-7">
           <div className="mb-6 flex items-center gap-3">
-            <div className="bg-muted/40 grid size-11 place-items-center rounded-2xl border">
+            <div className="bg-muted/40 grid size-11 place-items-center rounded-sm border">
               <Icon.Slack className="size-5" />
             </div>
             <div>
@@ -112,7 +112,7 @@ export default function SlackLoginPage() {
             using your own credentials, secrets, and connected apps instead of the installer&apos;s.
           </p>
 
-          <dl className="bg-muted/30 mt-5 space-y-2 rounded-2xl border p-4 text-sm">
+          <dl className="bg-muted/30 mt-5 space-y-2 rounded-md border p-4 text-sm">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted-foreground">Kortix account</dt>
               <dd className="truncate font-mono text-xs">{user.email ?? 'You'}</dd>
@@ -120,7 +120,7 @@ export default function SlackLoginPage() {
           </dl>
 
           {phase === 'error' && error && (
-            <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-2xl border p-3 text-sm">
+            <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-md border p-3 text-sm">
               <XCircle className="mt-0.5 size-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -162,7 +162,7 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 function ResultCard({ ok, title, message }: { ok: boolean; title: string; message: string }) {
   return (
-    <div className="bg-background rounded-2xl border p-7 text-center shadow-sm">
+    <div className="bg-background rounded-md border p-7 text-center shadow-sm">
       <div
         className={
           ok
