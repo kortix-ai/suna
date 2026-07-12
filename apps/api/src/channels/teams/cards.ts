@@ -141,3 +141,25 @@ export function buildChoiceCard(opts: {
   const actions = opts.choices.slice(0, 6).map((c) => executeAction(c.title, opts.verb, c.data));
   return card(elements, actions);
 }
+
+export function buildPanelCard(opts: {
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+  url?: string;
+}): Record<string, unknown> {
+  const facts = opts.rows.map((r) => ({ title: r.label, value: r.value }));
+  const elements: CardElement[] = [
+    text(opts.title, { weight: 'bolder', size: 'medium' }),
+    { type: 'FactSet', facts },
+  ];
+  const actions = opts.url ? [openUrlAction('Open in Kortix', opts.url)] : undefined;
+  return card(elements, actions);
+}
+
+export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): Record<string, unknown> {
+  const elements: CardElement[] = [text('Kortix commands', { weight: 'bolder', size: 'medium' })];
+  for (const c of commands) {
+    elements.push(text(`**${c.cmd}** — ${c.desc}`, { spacing: 'none', size: 'small' }));
+  }
+  return card(elements);
+}

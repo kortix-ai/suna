@@ -1,7 +1,9 @@
-import { and, eq, lt } from 'drizzle-orm';
-import { chatEventDedup, chatInstalls } from '@kortix/db';
+import { lt } from 'drizzle-orm';
+import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { resolveConversationProject } from './binding';
+import { handleTeamsCommand, parseTeamsCommand } from './commands';
 import { createOrJoinTeamsConversationSession } from './session';
 import type { TeamsActivity } from './types';
 
@@ -30,15 +32,6 @@ async function alreadyHandled(activityId: string): Promise<boolean> {
   }
 }
 
-async function resolveProjectForTenant(tenantId: string): Promise<string | null> {
-  const rows = await db
-    .select({ projectId: chatInstalls.projectId })
-    .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.workspaceId, tenantId)))
-    .limit(1);
-  return rows[0]?.projectId ?? null;
-}
-
 export async function handleTeamsActivity(activity: TeamsActivity): Promise<void> {
   if (!isActionableMessage(activity)) return;
 
@@ -50,18 +43,21 @@ export async function handleTeamsActivity(activity: TeamsActivity): Promise<void
 
   if (await alreadyHandled(activity.id!)) return;
 
-  const projectId = await resolveProjectForTenant(tenantId);
+  const conversationId = activity.conversation!.id!;
+  const projectId = await resolveConversationProject(tenantId, conversationId);
   if (!projectId) {
     console.warn('[teams-webhook] no project installed for tenant', { tenantId });
     return;
   }
 
-  await createOrJoinTeamsConversationSession({
-    projectId,
-    tenantId,
-    conversationId: activity.conversation!.id!,
-    activity,
-  });
+  const command = parseTeamsCommand(activity.text);
+  if (command) {
+    await handleTeamsCommand({ command, activity, tenantId, projectId });
+    await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
+    return;
+  }
+
+  await createOrJoinTeamsConversationSession({ projectId, tenantId, conversationId, activity });
 
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, new Date())).catch(() => {});
 }

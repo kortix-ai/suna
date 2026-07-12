@@ -7,7 +7,9 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { currentChannelSelection } from '../slack/selection';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
 import { postTeamsIdentityPrompt, resolveTeamsActor, teamsUserId } from './identity';
 import { buildTeamsTurnEnv, finalizeTurn, persistServiceUrl, saveTurn, startTurn } from './turn';
 import { extractTeamsAttachments, type TeamsActivity } from './types';
@@ -133,6 +135,9 @@ export async function createOrJoinTeamsConversationSession(input: {
     }
   }
 
+  await ensureTeamsConversationBinding({ projectId, tenantId, conversationId });
+  const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
+
   const handle = await startTurn(projectId, tenantId, activity);
 
   const result = await teamsSessionLifecycle.createSession({
@@ -141,7 +146,8 @@ export async function createOrJoinTeamsConversationSession(input: {
     userId,
     body: {
       base_ref: project.defaultBranch,
-      agent_name: 'default',
+      agent_name: selection?.agentName || 'default',
+      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(activity),
     },
     enforceAccountCap: false,
