@@ -1,5 +1,5 @@
 import { chatInstalls, projectSecrets } from '@kortix/db';
-import { and, eq, isNull, like } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
 import { config } from '../config';
 import {
   decryptProjectSecret,
@@ -661,7 +661,7 @@ export async function setTeamsCatalogAppId(projectId: string, catalogAppId: stri
 }
 
 export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
-  const secrets = await listProjectSecrets(projectId);
+  const secrets = await readTeamsSecrets(projectId);
   const appId = secrets[MS_TEAMS_APP_ID];
   const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
   if (!appId || !appPassword) return null;
@@ -679,7 +679,7 @@ export async function saveTeamsServiceUrl(projectId: string, serviceUrl: string)
 }
 
 export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallSummary | null> {
-  const secrets = await listProjectSecrets(projectId);
+  const secrets = await readTeamsSecrets(projectId);
   const tenantId = secrets[MS_TEAMS_TENANT_ID];
   if (!tenantId) return null;
   const [row] = await db
@@ -768,6 +768,28 @@ function isUniqueConflict(err: unknown): boolean {
     error?.cause?.code === '23505' ||
     error?.cause?.cause?.code === '23505'
   );
+}
+
+async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        isNull(projectSecrets.ownerUserId),
+        inArray(projectSecrets.name, TEAMS_KEYS as unknown as string[]),
+      ),
+    );
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.valueEnc) continue;
+    try {
+      out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    } catch {
+    }
+  }
+  return out;
 }
 
 async function readSecret(projectId: string, name: string): Promise<string | null> {
