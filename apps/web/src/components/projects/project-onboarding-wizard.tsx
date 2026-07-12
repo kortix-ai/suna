@@ -14,7 +14,11 @@
  *                                and flip to a confirmed ✓ the moment it lands.
  *                                Gated (can't "Continue" until connected) with a
  *                                quiet "Skip for now" escape hatch.
- *   4. You're all set          — recap + into the product.
+ *   4. Connect a model         — upgrade to a Kortix plan or bring your own API
+ *                                key. Not hard-gated (the chat composer enforces
+ *                                it later if skipped) — same shared actions as
+ *                                the composer's own gate, see model-connection-gate.
+ *   5. You're all set          — recap + into the product.
  *
  * Self-gates: only renders while the project's onboarding status is 'pending'
  * (no `metadata.onboarding_completed_at`). Heavy deps (the Pipedream browser
@@ -25,12 +29,14 @@
  * to be generated for these strings before this ships beyond local testing.
  */
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
+  CreditCard,
+  KeyRound,
   Loader2,
   Plus,
   Search,
@@ -49,17 +55,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
+import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
+import { providerListHasModels } from '@/hooks/opencode/provider-selection';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
-import {
-  listConnectors,
-  listPipedreamApps,
-  type PipedreamApp,
-} from '@kortix/sdk/projects-client';
-import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { listConnectors, listPipedreamApps, type PipedreamApp } from '@kortix/sdk/projects-client';
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -84,7 +89,7 @@ const CustomConnectorForm = lazy(() =>
   })),
 );
 
-type StepId = 'welcome' | 'tools' | 'slack' | 'done';
+type StepId = 'welcome' | 'tools' | 'slack' | 'model' | 'done';
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -104,7 +109,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const [calOpen, setCalOpen] = useState(false);
   const [index, setIndex] = useState(0);
 
-  const steps = useMemo<StepId[]>(() => ['welcome', 'tools', 'slack', 'done'], []);
+  const steps = useMemo<StepId[]>(() => ['welcome', 'tools', 'slack', 'model', 'done'], []);
   const stepId = steps[index] ?? 'welcome';
 
   // `?onboarding-reset` reopens the wizard from the top (clears completion flag).
@@ -134,7 +139,8 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     ...Q,
   });
   const connectedSlugs = useMemo(
-    () => new Set((connectors.data?.connectors ?? []).filter((c) => c.secretSet).map((c) => c.slug)),
+    () =>
+      new Set((connectors.data?.connectors ?? []).filter((c) => c.secretSet).map((c) => c.slug)),
     [connectors.data],
   );
   const refreshConnectors = useCallback(() => {
@@ -167,7 +173,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         <div className="relative flex items-center px-5 py-4 md:px-8">
           <div className="flex items-center gap-2.5">
             <KortixAsterisk index={0} />
-            <span className="text-foreground text-sm font-semibold tracking-tight">Set up your project</span>
+            <span className="text-foreground text-sm font-semibold tracking-tight">
+              Set up your project
+            </span>
           </div>
           <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1.5 md:flex">
             {steps.map((s, i) => (
@@ -175,7 +183,11 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                 key={s}
                 className={cn(
                   'h-1 rounded-full transition-all duration-300',
-                  i < index ? 'bg-foreground/60 w-8' : i === index ? 'bg-foreground w-8' : 'bg-foreground/15 w-8',
+                  i < index
+                    ? 'bg-foreground/60 w-8'
+                    : i === index
+                      ? 'bg-foreground w-8'
+                      : 'bg-foreground/15 w-8',
                 )}
               />
             ))}
@@ -208,11 +220,9 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                   />
                 )}
                 {stepId === 'slack' && <SlackStep projectId={projectId} />}
+                {stepId === 'model' && <ModelStep />}
                 {stepId === 'done' && (
-                  <DoneStep
-                    connectedCount={connectedSlugs.size}
-                    onStart={complete}
-                  />
+                  <DoneStep connectedCount={connectedSlugs.size} onStart={complete} />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -268,6 +278,8 @@ function StepPrimaryAction({
 }) {
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
+  const modelProviders = useOpenCodeProviders();
+  const hasModels = providerListHasModels(modelProviders.data);
 
   if (stepId === 'slack') {
     return (
@@ -291,6 +303,22 @@ function StepPrimaryAction({
         <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
           Skip
         </Button>
+        <Button size="sm" className="gap-1.5" onClick={onNext}>
+          Continue
+          <ArrowRight className="size-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  if (stepId === 'model') {
+    return (
+      <div className="flex items-center gap-3">
+        {!hasModels && (
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
+            Skip
+          </Button>
+        )}
         <Button size="sm" className="gap-1.5" onClick={onNext}>
           Continue
           <ArrowRight className="size-4" />
@@ -329,8 +357,9 @@ function WelcomeStep({
             Let&apos;s get your command center set up
           </h1>
           <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
-            I&apos;m Marko, founder of Kortix. Book a quick 20-minute call and we&apos;ll set up your
-            company&apos;s AI command center together — or jump straight in and connect your tools below.
+            I&apos;m Marko, founder of Kortix. Book a quick 20-minute call and we&apos;ll set up
+            your company&apos;s AI command center together — or jump straight in and connect your
+            tools below.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -402,8 +431,8 @@ function ToolsStep({
           Connect your tools
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
-          Pick the apps you live in and authorize them right here. Your agent can read, write, and act
-          across everything you connect — Gmail, Notion, Salesforce, and 3,000+ more.
+          Pick the apps you live in and authorize them right here. Your agent can read, write, and
+          act across everything you connect — Gmail, Notion, Salesforce, and 3,000+ more.
         </p>
       </div>
 
@@ -599,8 +628,8 @@ function SlackStep({ projectId }: { projectId: string }) {
           Install Kortix into Slack
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
-          This is where most teams actually use Kortix. Install the app and you can @mention your agent,
-          kick off tasks, and get results right inside Slack.
+          This is where most teams actually use Kortix. Install the app and you can @mention your
+          agent, kick off tasks, and get results right inside Slack.
         </p>
       </div>
 
@@ -622,8 +651,8 @@ function SlackStep({ projectId }: { projectId: string }) {
                 Waiting for you to approve in Slack…
               </div>
               <p className="text-muted-foreground max-w-sm text-xs leading-5">
-                Approve the install in the window that opened. We&apos;ll detect it automatically — no
-                need to come back and click anything.
+                Approve the install in the window that opened. We&apos;ll detect it automatically —
+                no need to come back and click anything.
               </p>
               <Button variant="ghost" size="sm" className="mt-1" onClick={openInstall}>
                 Reopen Slack install
@@ -658,15 +687,15 @@ function SlackStep({ projectId }: { projectId: string }) {
             className="text-muted-foreground h-8 gap-1.5 px-0"
             onClick={() => setCustomOpen((o) => !o)}
           >
-            <ChevronDown className={cn('size-3.5 transition-transform', customOpen && 'rotate-180')} />
+            <ChevronDown
+              className={cn('size-3.5 transition-transform', customOpen && 'rotate-180')}
+            />
             <SlidersHorizontal className="size-3.5" />
             Use a custom Slack app instead
           </Button>
           {customOpen && (
             <div className="mt-3">
-              <Suspense
-                fallback={<Skeleton className="h-24 w-full rounded-2xl" />}
-              >
+              <Suspense fallback={<Skeleton className="h-24 w-full rounded-2xl" />}>
                 <SlackConnectForm projectId={projectId} onConnected={() => install.refetch()} />
               </Suspense>
             </div>
@@ -692,7 +721,65 @@ function SlackGlyph() {
   );
 }
 
-// ─── Step 4: Done ──────────────────────────────────────────────────────────────
+// ─── Step 4: Connect a model ────────────────────────────────────────────────────
+
+function ModelStep() {
+  const { data: providers, isLoading } = useOpenCodeProviders();
+  const hasModels = providerListHasModels(providers);
+  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+
+  return (
+    <div className="flex flex-col gap-5">
+      {modal}
+      <div className="space-y-2">
+        <h1 className="text-foreground text-[26px] leading-tight font-semibold tracking-tight">
+          Connect a model
+        </h1>
+        <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
+          Your agent needs an LLM to think with. Upgrade to a Kortix plan for instant access, or
+          bring your own API key from Anthropic, OpenAI, or any other provider.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="border-border/60 bg-card text-muted-foreground flex items-center justify-center gap-2 rounded-2xl border px-6 py-10 text-sm">
+          <Loader2 className="size-4 animate-spin" />
+          Checking your connected models…
+        </div>
+      ) : hasModels ? (
+        <InfoBanner tone="success" icon={Check} title="You're connected 🎉">
+          A model is ready to go — switch it anytime from the chat composer.
+        </InfoBanner>
+      ) : (
+        <div className="border-border/60 bg-card flex flex-col items-center gap-4 rounded-2xl border px-6 py-10 text-center">
+          <span className="border-border/60 bg-background flex size-14 items-center justify-center rounded-2xl border">
+            <KeyRound className="text-muted-foreground size-6" />
+          </span>
+          <p className="text-muted-foreground max-w-sm text-sm leading-6">
+            Pick whichever is faster for you right now — both take under a minute.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button size="lg" className="gap-2" onClick={openUpgrade}>
+              <CreditCard className="size-4" />
+              Upgrade
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="gap-2"
+              onClick={() => openConnectProvider('providers')}
+            >
+              <KeyRound className="size-4" />
+              Bring your own key
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Step 5: Done ──────────────────────────────────────────────────────────────
 
 function DoneStep({ connectedCount, onStart }: { connectedCount: number; onStart: () => void }) {
   return (
@@ -709,8 +796,8 @@ function DoneStep({ connectedCount, onStart }: { connectedCount: number; onStart
           {connectedCount > 0
             ? ` with ${connectedCount} ${connectedCount === 1 ? 'tool' : 'tools'} connected`
             : ''}
-          . Describe a task in the composer and your agent gets to work — it can research, write, and
-          act across everything you&apos;ve connected.
+          . Describe a task in the composer and your agent gets to work — it can research, write,
+          and act across everything you&apos;ve connected.
         </p>
       </div>
       <Button size="lg" className="gap-1.5" onClick={onStart}>

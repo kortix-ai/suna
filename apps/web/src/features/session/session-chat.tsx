@@ -1223,7 +1223,6 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // Edit Part Dialog — inline editing for text parts
 // ============================================================================
 
-
 // ============================================================================
 // User Message Row
 // ============================================================================
@@ -3561,7 +3560,7 @@ export function SessionChat({
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useOpenCodeCommands();
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
   const { data: config } = useOpenCodeConfig();
   const projectConfig = useProjectConfig(projectId);
@@ -5398,6 +5397,7 @@ export function SessionChat({
           onFileSearch={handleFileSearch}
           providers={providers}
           modelRequired
+          modelsLoading={providersLoading}
           threadContext={threadContext}
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}
