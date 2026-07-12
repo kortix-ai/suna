@@ -20,7 +20,7 @@
  * in the same process.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { __setConfigResolver, type KortixPlatformConfig } from './config';
+import { __setConfigResolver, type KortixPlatformConfig } from '../core/http/config';
 
 const als = new AsyncLocalStorage<KortixPlatformConfig>();
 __setConfigResolver(() => als.getStore());

@@ -1,11 +1,17 @@
 /**
  * Cost pass-through: aggregate `GET {upstream}/projects/:id/gateway/sessions`
- * across every project the caller owns, apply `COST_MARKUP`, and return both
- * the raw Kortix cost and the marked-up "your price" per session — the
+ * across every project the caller owns (via the SDK's
+ * `kortix.project(id).gateway.sessions()`), apply `COST_MARKUP`, and return
+ * both the raw Kortix cost and the marked-up "your price" per session — the
  * re-billing surface a real wrapper would show its own users. Rendered by
- * `src/app/usage/page.tsx`.
+ * `src/app/usage/page.tsx`. `createScopedKortix` (`@kortix/sdk/server`) is
+ * used instead of the shared `configureKortix()` singleton because this route
+ * serves concurrent requests carrying different end users' identities on one
+ * process — each call gets its own isolated config via `AsyncLocalStorage`.
  */
 
+import type { GatewaySessionStat } from '@kortix/sdk';
+import { createScopedKortix } from '@kortix/sdk/server';
 import { getRequestSession } from '@/server/auth';
 import { consumeRateLimit } from '@/server/rate-limit';
 import { isValidProjectId, listOwnedProjects } from '@/server/users';
@@ -13,16 +19,6 @@ import type { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-interface GatewaySessionStat {
-  session_id: string;
-  llm_cost?: number;
-  compute_cost?: number;
-  tokens?: number;
-  compute_seconds?: number;
-  total_cost?: number;
-  [key: string]: unknown;
-}
 
 function upstreamBase(): string {
   return (process.env.KORTIX_UPSTREAM ?? 'https://api.kortix.com/v1').replace(/\/+$/, '');
@@ -51,24 +47,22 @@ export async function GET(req: NextRequest) {
 
   const markup = markupMultiplier();
   const upstream = upstreamBase();
-  // listOwnedProjects already UUID-filters, but re-assert at the fetch site:
+  // listOwnedProjects already UUID-filters, but re-assert at the call site:
   // these ids come from a file and are interpolated into upstream URLs.
   const projectIds = listOwnedProjects(session.userId).filter(isValidProjectId);
 
+  const kortix = createScopedKortix({ backendUrl: upstream, getToken: async () => apiKey });
+
   const projects = await Promise.all(
     projectIds.map(async (projectId) => {
-      // Explicit per-item barrier right before the URL interpolation — the
-      // list is already UUID-filtered above, but static analysis needs the
-      // guard on the same control path as the fetch.
+      // Explicit per-item barrier right before the call — the list is already
+      // UUID-filtered above, but static analysis needs the guard on the same
+      // control path as the request.
       if (!isValidProjectId(projectId)) {
         return { projectId, sessions: [], error: 'invalid project id' };
       }
       try {
-        const res = await fetch(`${upstream}/projects/${encodeURIComponent(projectId)}/gateway/sessions`, {
-          headers: { authorization: `Bearer ${apiKey}` },
-        });
-        if (!res.ok) return { projectId, sessions: [], error: `upstream responded ${res.status}` };
-        const data = await res.json();
+        const data = await kortix.project(projectId).gateway.sessions();
         const sessions: GatewaySessionStat[] = Array.isArray(data?.sessions) ? data.sessions : [];
         return {
           projectId,
@@ -77,8 +71,9 @@ export async function GET(req: NextRequest) {
             billed_cost: round2((s.total_cost ?? 0) * markup),
           })),
         };
-      } catch {
-        return { projectId, sessions: [], error: 'request failed' };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'request failed';
+        return { projectId, sessions: [], error: message };
       }
     }),
   );

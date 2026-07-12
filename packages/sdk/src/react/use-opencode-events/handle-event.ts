@@ -12,9 +12,9 @@ import {
   notifySessionError,
   notifyTaskComplete,
 } from '../../platform/ui';
-import { deleteSessionFromIDB, saveSessionToIDB } from '../../state/idb-sync-cache';
-import { useSyncStore } from '../../state/sync-store';
-import { getClient } from '../../opencode/client';
+import { deleteSessionFromIDB, saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import { getClient } from '../../core/runtime/client';
 import { fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
 import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';

@@ -1652,7 +1652,15 @@ describe('project session API contract', () => {
     expect(providerStartCalls).toBe(0);
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionSandboxRows).toHaveLength(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: null,
+      status: 'provisioning',
+      metadata: {
+        retiredExternalId: 'box-deleted',
+        identityRecoveryAuthorizedAt: expect.any(String),
+      },
+    });
     expect(sessionRow?.status).toBe('provisioning');
     expect(sessionRow?.opencodeSessionId).toBeNull();
     expect(sessionRow?.metadata).toMatchObject({
@@ -1757,7 +1765,15 @@ describe('project session API contract', () => {
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionSandboxRows).toHaveLength(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: null,
+      status: 'provisioning',
+      metadata: {
+        retiredExternalId: 'box-deleted',
+        identityRecoveryAuthorizedAt: expect.any(String),
+      },
+    });
   });
 
   test('restart self-heals when provider status is uncertain but start returns not-found', async () => {

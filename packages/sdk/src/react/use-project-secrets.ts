@@ -8,7 +8,7 @@ import {
   setPersonalProjectSecret,
   upsertProjectSecret,
   type ProjectSecretsResponse,
-} from '../platform/projects-client';
+} from '../core/rest/projects-client';
 
 /** Stable query-key factory — reuse this to read/invalidate the same cache
  *  entry `useProjectSecrets` populates (e.g. from a settings page shell that

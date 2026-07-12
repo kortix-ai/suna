@@ -4,7 +4,7 @@ import {
   parseDiagnosticsFromToolOutput,
   useDiagnosticsStore,
   type RawDiagnostic,
-} from '../../state/diagnostics-store';
+} from '../../browser/stores/diagnostics-store';
 import type { NormalizeDiagnosticPaths } from './types';
 
 /**

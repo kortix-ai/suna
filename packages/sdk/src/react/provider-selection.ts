@@ -1,7 +1,7 @@
 import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { CATALOG } from '@kortix/llm-catalog';
 
-import type { ProjectLlmCatalogResponse } from '../platform/projects-client';
+import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 
 export type ProviderListResponse = SdkProviderListResponse;
 

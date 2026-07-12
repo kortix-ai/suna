@@ -8,8 +8,8 @@ import {
   removeKortixPty,
   updateKortixPty,
   type KortixPty,
-} from '../opencode/pty';
-import { getActiveOpenCodeUrl } from '../state/server-store';
+} from '../core/runtime/pty';
+import { getActiveOpenCodeUrl } from '../browser/stores/server-store';
 import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 // Kortix's own PTY implementation (routes/pty.ts in kortix-sandbox-agent-

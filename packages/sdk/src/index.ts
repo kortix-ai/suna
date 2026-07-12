@@ -1,20 +1,26 @@
 /**
  * @kortix/sdk — the Kortix frontend data layer, in one package.
  *
- * Configure once at startup, then use the React hooks (`@kortix/sdk/react`) or
- * the data modules (subpath imports below). Every host — web, mobile, demo —
- * shares this single implementation; nothing talks to the raw API or OpenCode.
+ * THIS ROOT ENTRY IS CANONICAL: the whole framework-free surface (client,
+ * session, turns, files, event stream, errors, REST clients) is exported
+ * here. Configure once at startup, then use one import. Every host — web,
+ * mobile, demo — shares this single implementation; nothing talks to the raw
+ * API or OpenCode directly.
  *
- * The data modules are exposed as subpaths (not merged here) to keep the
- * surface collision-free and tree-shakeable:
- *   @kortix/sdk/react            — all useOpenCode* hooks + providers
- *   @kortix/sdk/opencode-client  — the scoped OpenCode v2 client factory
- *   @kortix/sdk/auth             — authenticatedFetch + token accessors
- *   @kortix/sdk/api-client       — backendApi (typed REST)
- *   @kortix/sdk/projects-client  — project/session REST surface
- *   @kortix/sdk/server-store     — active sandbox/server state
- *   @kortix/sdk/sync-store       — live message/part/status store
- *   @kortix/sdk/event-stream     — framework-free SSE connect/reconnect/coalesce primitive
+ * Only three subpaths exist beyond the root, each for a reason that fits in
+ * one sentence:
+ *   @kortix/sdk/react       — React is an optional peer dependency
+ *   @kortix/sdk/server      — imports node:async_hooks (Node-only)
+ *   @kortix/sdk/internal/*  — apps/web's zustand stores; outside semver
+ *
+ * The 20 legacy subpaths (`/projects-client`, `/turns`, …) still resolve as
+ * `@deprecated` aliases under `src/deprecated/` and are removed only on a
+ * major.
+ *
+ * The explicit re-export blocks below double as TS2308 ambiguity pins: a name
+ * declared once but reachable through two `export *` paths (ours vs the
+ * vendor type star inside core/runtime/client) is pinned to its canonical
+ * module here, without renaming anything.
  */
 export {
   configureKortix,
@@ -22,7 +28,7 @@ export {
   isConfigured,
   type KortixPlatformConfig,
   type KortixFeatureFlagOverrides,
-} from './platform/config';
+} from './core/http/config';
 
 /**
  * The opinionated single entry point. `createKortix({ getToken })` wires the
@@ -36,11 +42,11 @@ export {
   type ProjectHandle,
   type SessionHandle,
   type SessionModel,
-} from './kortix';
+} from './core/client/kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */
-export { files } from './files/client';
-export type * from './files/types';
+export { files } from './core/files/client';
+export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
@@ -66,7 +72,7 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { SessionHealthResponse, SessionHealthResult } from './session/health';
+export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -75,7 +81,7 @@ export type { SessionHealthResponse, SessionHealthResult } from './session/healt
  * surface (TS's declaration emit needs this to describe `SessionHandle`'s
  * `ensureReady()` return type without reaching into an internal module path).
  */
-export type { SessionRuntimeEntry } from './state/session-runtime-registry';
+export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
@@ -91,7 +97,7 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from './state/event-stream';
+} from './core/stream/event-stream';
 
 /**
  * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
@@ -112,7 +118,7 @@ export {
   formatBillingErrorForUI,
   type ApiErrorFields,
   type BillingErrorUI,
-} from './platform/api/errors';
+} from './core/http/api/errors';
 
 /**
  * Exhaustive part/turn classification for building chat UIs — framework-free.
@@ -150,7 +156,7 @@ export {
   classifyTurn,
   humanizeToolName,
   toolInfo,
-} from './turns/index';
+} from './core/turns';
 
 /**
  * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
@@ -180,7 +186,7 @@ export {
   type KortixChatQuestionInfo,
   type KortixChatQuestionOption,
   type KortixChatToolRef,
-} from './state/chat-events';
+} from './core/stream/chat-events';
 
 /**
  * Domain result types from the REST facade (`kortix.project(id).*` /
@@ -283,7 +289,7 @@ export type {
   // Auth validate helper
   AccountIdentity,
   ValidateTokenResult,
-} from './platform/projects-client';
+} from './core/rest/projects-client';
 
 /**
  * Linear-time trailing-slash strip shared with hosts — see
@@ -313,4 +319,38 @@ export {
   type ToolViewModel,
   type WebSearchResultItem,
   toolViewModel,
-} from './turns/view-model';
+} from './core/turns/view-model';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canonical root (Axis 2): everything framework-free lives here.
+// The explicit blocks above pin TS2308-ambiguous names to their canonical
+// module; the stars below carry the rest of the isomorphic core.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ambiguity pins for names reachable both from our modules and from the
+// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// core/runtime/client). Each is declared ONCE in this package; naming it here
+// picks the canonical module and silences the ambiguity without renaming.
+export { type FileContent, type FileNode } from './core/files/types';
+export {
+  type PermissionAction,
+  type PermissionConfig,
+  type PermissionRule,
+} from './core/rest/projects-client/agent-config';
+
+export * from './core/client/kortix';
+export * from './core/http/api-client';
+export * from './core/http/auth';
+export * from './core/http/config';
+export * from './core/http/feature-flags';
+export * from './core/http/fresh-sessions';
+export * from './core/http/instance-routes';
+export * from './core/http/opencode-errors';
+export * from './core/rest/platform-client';
+export * from './core/rest/projects-client';
+export * from './core/runtime/client';
+export * from './core/session';
+export * from './core/session/url';
+export * from './core/stream/event-stream';
+export * from './core/turns';
+export * from './transcript';

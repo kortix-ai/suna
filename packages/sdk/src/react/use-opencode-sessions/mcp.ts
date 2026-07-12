@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import type { McpStatus } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap } from './shared';
