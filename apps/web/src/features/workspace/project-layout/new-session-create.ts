@@ -5,6 +5,23 @@ export interface NewSessionCreateInput {
   agent_name?: string;
 }
 
+export interface NewSessionAgentConfig {
+  runtime_default_agent: string | null;
+  agents: Array<{ name: string; enabled?: boolean }>;
+}
+
+/** Resolve the concrete immutable agent binding for a new session. */
+export function resolveNewSessionAgent(
+  config: NewSessionAgentConfig | null | undefined,
+  requested?: string | null,
+): string | undefined {
+  const picked = requested?.trim();
+  if (picked) return picked;
+  const configured = config?.runtime_default_agent?.trim();
+  if (configured) return configured;
+  return config?.agents.find((agent) => agent.enabled !== false && agent.name.trim())?.name;
+}
+
 /**
  * Build the session-create payload from the composer's send options.
  *

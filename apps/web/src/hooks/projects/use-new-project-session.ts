@@ -4,13 +4,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef } from 'react';
 
+import { resolveNewSessionAgent } from '@/features/workspace/project-layout/new-session-create';
 import { resolveCreateFailure } from '@/hooks/projects/new-session-failure';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession } from '@kortix/sdk/projects-client';
+import { createProjectSession, getProjectDetail } from '@kortix/sdk/projects-client';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
@@ -78,7 +79,20 @@ export function useNewProjectSession(projectId: string | undefined) {
       // Warm the route bundle while the create POST is in flight.
       router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
 
-      createProjectSession(projectId, { session_id: sessionId, ...opts?.create })
+      const createWithConcreteAgent = async () => {
+        let create = opts?.create;
+        if (!create?.agent_name) {
+          const detail = await queryClient.ensureQueryData({
+            queryKey: ['project-detail', projectId],
+            queryFn: () => getProjectDetail(projectId),
+          });
+          const agentName = resolveNewSessionAgent(detail.config);
+          if (agentName) create = { ...create, agent_name: agentName };
+        }
+        return createProjectSession(projectId, { session_id: sessionId, ...create });
+      };
+
+      createWithConcreteAgent()
         .then(() => {
           // The row exists — kick provisioning so it overlaps the navigation.
           prefetchSessionStart(queryClient, projectId, sessionId);

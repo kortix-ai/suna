@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { buildNewSessionCreateInput } from './new-session-create';
+import { buildNewSessionCreateInput, resolveNewSessionAgent } from './new-session-create';
 
 describe('buildNewSessionCreateInput', () => {
   it('binds the picked agent as agent_name so it matches the first prompt', () => {
@@ -34,5 +34,37 @@ describe('buildNewSessionCreateInput', () => {
     // An empty agent must NOT become agent_name:"" — that would mismatch the
     // proxy's `?? "default"` and 409 the first prompt.
     expect(buildNewSessionCreateInput({ agent: '' })).toBeUndefined();
+  });
+});
+
+describe('resolveNewSessionAgent', () => {
+  const config = {
+    runtime_default_agent: 'kortix',
+    agents: [{ name: 'reviewer' }, { name: 'disabled', enabled: false }],
+  };
+
+  it('preserves an explicit picker choice', () => {
+    expect(resolveNewSessionAgent(config, 'reviewer')).toBe('reviewer');
+  });
+
+  it('uses the configured project default', () => {
+    expect(resolveNewSessionAgent(config)).toBe('kortix');
+  });
+
+  it('does not override the project default just because it is absent from a stale agent list', () => {
+    expect(resolveNewSessionAgent({ ...config, agents: [{ name: 'reviewer' }] })).toBe('kortix');
+  });
+
+  it('keeps legacy declared-agent projects runnable when their default is missing', () => {
+    expect(resolveNewSessionAgent({ ...config, runtime_default_agent: null })).toBe('reviewer');
+  });
+
+  it('does not select disabled or absent agents', () => {
+    expect(
+      resolveNewSessionAgent({
+        runtime_default_agent: null,
+        agents: [{ name: 'x', enabled: false }],
+      }),
+    ).toBeUndefined();
   });
 });
