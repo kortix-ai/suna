@@ -527,8 +527,12 @@ export function useSession(
     // server-side capabilities (pre-runtime)
     models,
     agents,
-    defaultAgent: config?.open_code_default_agent ?? null,
-    commands: config?.commands ?? [],
+    defaultAgent: isAcp
+      ? (startData?.agent_name ?? null)
+      : (config?.open_code_default_agent ?? null),
+    // ACP slash commands/modes are advertised by the selected harness, not by
+    // the legacy OpenCode config projection.
+    commands: isAcp ? [] : (config?.commands ?? []),
     picks,
 
     // actions
