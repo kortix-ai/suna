@@ -46,6 +46,11 @@ export const uncoveredAllow: AllowEntry[] = [
     path: "/v1/webhooks/teams/:*/messages",
     reason: "Bot Framework BYO-bot inbound webhook — JWT-authed by Microsoft, same shape as the flow-covered managed /v1/webhooks/teams/messages",
   },
+  {
+    method: "GET",
+    path: "/v1/webhooks/teams/oauth/callback",
+    reason: "Teams admin-consent OAuth callback — browser redirect from Microsoft (admin_consent+tenant), not an API client route; mirrors the slack oauth callback",
+  },
 ];
 
 export const externalRoutes: AllowEntry[] = [

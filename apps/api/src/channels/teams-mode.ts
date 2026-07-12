@@ -6,6 +6,7 @@ export interface TeamsMode {
   appId: string | null;
   messagingEndpoint: string | null;
   adminConsentUrl: string | null;
+  deepLinkUrl: string | null;
   byo: boolean;
 }
 
@@ -13,7 +14,7 @@ export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId
   const byo = Boolean(opts?.byoAppId);
   const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
   if ((!byo && !teamsConfigured()) || !appId) {
-    return { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, byo };
+    return { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, deepLinkUrl: null, byo };
   }
   const base = baseUrl.replace(/\/$/, '');
   const messagingEndpoint =
@@ -25,6 +26,7 @@ export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId
     appId,
     messagingEndpoint,
     adminConsentUrl: `https://login.microsoftonline.com/organizations/adminconsent?client_id=${encodeURIComponent(appId)}`,
+    deepLinkUrl: `https://teams.microsoft.com/l/app/${encodeURIComponent(appId)}`,
     byo,
   };
 }

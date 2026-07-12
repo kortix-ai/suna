@@ -31,7 +31,7 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
       {loadingInstall || loadingMode ? (
         <Skeleton className="h-32 w-full rounded-2xl" />
       ) : install ? (
-        <ConnectedPanel projectId={projectId} installation={install} />
+        <ConnectedPanel projectId={projectId} installation={install} mode={mode} />
       ) : (
         <DisconnectedPanel projectId={projectId} mode={mode} />
       )}
@@ -42,9 +42,11 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
 function ConnectedPanel({
   projectId,
   installation,
+  mode,
 }: {
   projectId: string;
   installation: TeamsInstallation;
+  mode: TeamsMode | undefined;
 }) {
   const disconnect = useDisconnectTeams();
   const [confirming, setConfirming] = useState(false);
@@ -60,13 +62,28 @@ function ConnectedPanel({
         {installation.byo ? ' · bring-your-own Azure bot' : ' · managed Kortix bot'}
       </InfoBanner>
 
-      <SectionCard title="How to use it">
-        <p className="text-muted-foreground text-sm">
-          @-mention the Kortix bot in any Teams chat or channel and an agent gets on it — replying right
-          here with live progress. The agent posts via the <code className="font-mono text-xs">teams</code> CLI;
-          no token lives in the sandbox.
-        </p>
-      </SectionCard>
+      {mode?.deepLinkUrl && installation.orgInstalled ? (
+        <SectionCard title="Add Kortix to a chat or channel">
+          <p className="text-muted-foreground mb-3 text-sm">
+            Kortix is published to your Teams org. Anyone can add it in one click, then @-mention it with a task.
+          </p>
+          <a href={mode.deepLinkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex">
+            <Button size="sm">
+              <MessagesSquare className="mr-1.5 h-3.5 w-3.5" />
+              Add to Teams
+              <ExternalLink className="ml-1.5 h-3 w-3" />
+            </Button>
+          </a>
+        </SectionCard>
+      ) : (
+        <SectionCard title="How to use it">
+          <p className="text-muted-foreground text-sm">
+            @-mention the Kortix bot in any Teams chat or channel and an agent gets on it — replying right
+            here with live progress. The agent posts via the <code className="font-mono text-xs">teams</code> CLI;
+            no token lives in the sandbox.
+          </p>
+        </SectionCard>
+      )}
 
       <div className="flex items-center justify-end gap-2">
         {confirming ? (
@@ -97,7 +114,40 @@ function ConnectedPanel({
 }
 
 function DisconnectedPanel({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {
-  return <InstallFlow projectId={projectId} mode={mode} />;
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const oneClick = Boolean(mode?.available && !mode.byo && mode.orgConsentUrl);
+
+  if (!oneClick) return <InstallFlow projectId={projectId} mode={mode} />;
+
+  return (
+    <div className="space-y-4">
+      <SectionCard
+        title="Add Kortix to Microsoft Teams"
+        description="One-time admin approval publishes Kortix to your Teams org — then anyone adds it in a click."
+      >
+        <a href={mode!.orgConsentUrl!} className="inline-flex">
+          <Button size="lg">
+            <MessagesSquare className="mr-1.5 h-4 w-4" />
+            Add Kortix to Teams
+            <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        </a>
+        <p className="text-muted-foreground mt-3 text-xs">
+          You&apos;ll grant admin consent for your tenant. This binds this project to your Teams tenant and
+          publishes the app — no manifest, no upload.
+        </p>
+      </SectionCard>
+
+      <button
+        type="button"
+        onClick={() => setShowAdvanced((v) => !v)}
+        className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+      >
+        {showAdvanced ? 'Hide advanced' : 'Advanced: manual sideload or bring your own bot'}
+      </button>
+      {showAdvanced ? <InstallFlow projectId={projectId} mode={mode} /> : null}
+    </div>
+  );
 }
 
 function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {

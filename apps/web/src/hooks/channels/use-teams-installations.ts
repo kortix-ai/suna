@@ -18,6 +18,9 @@ export interface TeamsMode {
   appId: string | null;
   messagingEndpoint: string | null;
   adminConsentUrl: string | null;
+  deepLinkUrl: string | null;
+  orgConsentUrl: string | null;
+  orgInstalled: boolean;
   byo: boolean;
 }
 
@@ -51,7 +54,16 @@ export function useTeamsMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: async () => {
-      const fallback: TeamsMode = { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, byo: false };
+      const fallback: TeamsMode = {
+        available: false,
+        appId: null,
+        messagingEndpoint: null,
+        adminConsentUrl: null,
+        deepLinkUrl: null,
+        orgConsentUrl: null,
+        orgInstalled: false,
+        byo: false,
+      };
       if (!projectId) return fallback;
       const res = await backendApi.get<TeamsMode>(
         `/projects/${encodeURIComponent(projectId)}/channels/teams/mode`,

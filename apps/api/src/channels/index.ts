@@ -51,6 +51,7 @@ export {
 } from "./slack-webhook";
 export { teamsWebhookApp } from "./teams-webhook";
 export { teamsIdentityApp } from "./teams/identity-routes";
+export { teamsOauthApp } from "./teams-oauth";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,

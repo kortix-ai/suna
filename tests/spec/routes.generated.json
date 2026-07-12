@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 475,
+  "count": 476,
   "routes": [
     {
       "method": "GET",
@@ -1901,6 +1901,10 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/teams/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/teams/oauth/callback"
     }
   ]
 }

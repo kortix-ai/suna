@@ -55,6 +55,7 @@ import { type QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
 import { teamsMode } from '../../channels/teams-mode';
+import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
 import { relayTurnAnswer, relayTurnEnd, relayTurnQuestion, relayTurnStep } from '../../channels/turn-relay';
@@ -905,8 +906,14 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const baseUrl = resolveBaseUrl(new URL(c.req.url));
     const byoAppId = await loadTeamsAppIdForProject(projectId);
-    return c.json(teamsMode(resolveBaseUrl(new URL(c.req.url)), { projectId, byoAppId }));
+    const install = await loadTeamsInstall(projectId).catch(() => null);
+    return c.json({
+      ...teamsMode(baseUrl, { projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      orgInstalled: install?.orgInstalled ?? false,
+    });
   },
 );
 
