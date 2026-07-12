@@ -1,15 +1,12 @@
 import { spawn } from 'node:child_process';
 
 import { OPENCODE_PORT } from '../api/sandbox-proxy.ts';
-import {
-  resolveProjectContext,
-  takeFlagValue,
-} from '../command-helpers.ts';
+import { takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
-  chooseRunningSession,
   ensureOpencodeSession,
   loadSessionForChat,
+  resolveRunningSessionId,
 } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
@@ -67,7 +64,7 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveConnectSessionId(positional[0], opts);
+  const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to connect to');
   if (!sessionId) return 1;
 
   // A session id may belong to a different project (or host) than the one
@@ -78,22 +75,12 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
 
-  const proxyId = proxyIdFromSandboxUrl(resolved.session.sandbox_url)
-    ?? resolved.session.sandbox_id
-    ?? null;
-  if (!proxyId) {
-    process.stderr.write(
-      `${status.err('Session has no reachable sandbox yet — provisioning may not be done.')}\n`,
-    );
-    return 1;
-  }
-
   let proxy: RunningOpenCodeProxy;
   try {
     proxy = startOpenCodeProxy({
       apiBase: resolved.auth.api_base,
       token: resolved.auth.token,
-      sandboxId: proxyId,
+      sandboxId: resolved.proxyId,
       port: proxyPort,
     });
   } catch (err) {
@@ -113,26 +100,6 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   } finally {
     proxy.close();
   }
-}
-
-async function resolveConnectSessionId(
-  explicit: string | undefined,
-  opts: CtxOpts,
-): Promise<string | null> {
-  if (explicit) return explicit;
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return null;
-  const chosen = await chooseRunningSession(ctx, 'Pick a session to connect to');
-  if (chosen === 'error') return null;
-  if (!chosen) {
-    process.stderr.write(
-      `${status.err('No running session to connect to.')}\n` +
-        `  ${C.dim}Start one: ${C.reset}${C.cyan}kortix sessions new --wait${C.reset}` +
-        `${C.dim}, or pass a session id.${C.reset}\n`,
-    );
-    return null;
-  }
-  return chosen.session_id;
 }
 
 function parseConnectPort(raw: string | undefined): number | null {
@@ -281,12 +248,6 @@ async function forwardOpenCodeHttp(
 function buildProxyBase(apiBase: string, sandboxId: string): string {
   const base = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
   return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
-}
-
-function proxyIdFromSandboxUrl(sandboxUrl: string | null): string | null {
-  if (!sandboxUrl) return null;
-  const m = sandboxUrl.match(/\/v1\/p\/([^/]+)\//) ?? sandboxUrl.match(/\/p\/([^/]+)\//);
-  return m?.[1] ?? null;
 }
 
 function buildAttachArgs(

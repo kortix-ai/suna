@@ -91,6 +91,16 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   return payload as T;
 }
 
+/** Build the WebSocket URL for a raw terminal (PTY) session, mirroring what
+ *  the web app's browser client connects to — same host, same `?token=`
+ *  query auth (WebSocket can't set custom headers). */
+export function opencodePtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
+  const base = auth.api_base.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
+  const wsBase = httpBase.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+  return `${wsBase}/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
+}
+
 export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
@@ -181,6 +191,33 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
         method: 'POST',
         body: {},
       }),
+    listPty: () => sandboxRequest<OpencodePty[]>({ ...base, path: '/pty' }),
+    createPty: (body?: {
+      command?: string;
+      args?: string[];
+      cwd?: string;
+      title?: string;
+      env?: Record<string, string>;
+    }) =>
+      sandboxRequest<OpencodePty>({
+        ...base,
+        path: '/pty',
+        method: 'POST',
+        body: body ?? {},
+      }),
+    updatePty: (ptyId: string, body: { title?: string; size?: { rows: number; cols: number } }) =>
+      sandboxRequest<OpencodePty>({
+        ...base,
+        path: `/pty/${ptyId}`,
+        method: 'PATCH',
+        body,
+      }),
+    removePty: (ptyId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/pty/${ptyId}`,
+        method: 'DELETE',
+      }),
   };
 }
 
@@ -261,4 +298,16 @@ export interface OpencodeQuestionRequest {
   sessionID: string;
   questions: OpencodeQuestionInfo[];
   tool?: { messageID: string; callID: string };
+}
+
+/** A raw terminal (PTY) running inside the sandbox — same shape the web
+ *  app's xterm-based terminal panel binds to. */
+export interface OpencodePty {
+  id: string;
+  title?: string;
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  size?: { rows: number; cols: number };
+  time?: { created?: number };
 }
