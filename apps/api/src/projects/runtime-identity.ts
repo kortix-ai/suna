@@ -177,14 +177,30 @@ export async function retireConfirmedMissingRuntime(
       .returning({ sessionId: projectSessions.sessionId });
     if (!won) return false;
 
-    await tx
-      .delete(sessionSandboxes)
+    const runtimeMetadata = {
+      ...((row.metadata as Record<string, unknown> | null) ?? {}),
+      identityRecoveryAuthorizedAt: now.toISOString(),
+      retiredExternalId: externalId,
+      runtimeRecoveryReason: reason,
+    };
+    const [reset] = await tx
+      .update(sessionSandboxes)
+      .set({
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        config: {},
+        metadata: runtimeMetadata,
+        updatedAt: now,
+      })
       .where(
         and(
           eq(sessionSandboxes.sandboxId, row.sandboxId),
           eq(sessionSandboxes.externalId, externalId),
         ),
-      );
+      )
+      .returning({ sandboxId: sessionSandboxes.sandboxId });
+    if (!reset) throw new Error(`Failed to reset provider-missing runtime ${row.sandboxId}`);
     return true;
   });
 

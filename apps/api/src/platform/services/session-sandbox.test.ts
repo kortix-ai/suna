@@ -69,6 +69,7 @@ let computeSessionsOpened: Array<{ sandboxId: string; accountId: string }> = [];
 let onComputeOpened: (() => void) | null = null;
 let recordedEvents: Array<{ outcome: string }> = [];
 let identityConflict = false;
+let recoveryPlaceholder = false;
 let providerCreateCalls = 0;
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
@@ -135,6 +136,29 @@ mock.module('../../shared/db', () => ({
             table === sessionSandboxes && 'externalId' in updates && 'config' in updates;
           if (isSessionSandboxesFinish) {
             return updateResult(scenario.archiveBeforeFinish ? [] : [{ sandboxId: SANDBOX_ID }]);
+          }
+          const isRecoveryClaim =
+            table === sessionSandboxes &&
+            updates.provider === 'daytona' &&
+            updates.status === 'provisioning' &&
+            'config' in updates;
+          if (isRecoveryClaim) {
+            return updateResult(
+              recoveryPlaceholder
+                ? [{
+                    sandboxId: SANDBOX_ID,
+                    sessionId: SANDBOX_ID,
+                    accountId: ACCOUNT_ID,
+                    projectId: PROJECT_ID,
+                    provider: 'daytona',
+                    externalId: null,
+                    status: 'provisioning',
+                    baseUrl: null,
+                    config: {},
+                    metadata: { identityRecoveryAuthorizedAt: new Date().toISOString() },
+                  }]
+                : [],
+            );
           }
           return updateResult([{ ok: true }]);
         },
@@ -252,6 +276,7 @@ beforeEach(() => {
   recordedEvents = [];
   onProviderEvent = null;
   identityConflict = false;
+  recoveryPlaceholder = false;
   providerCreateCalls = 0;
 });
 
@@ -281,6 +306,19 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(removedIds).toEqual([]);
     expect(computeSessionsOpened).toEqual([]);
     expect(recordedEvents).toEqual([]);
+  });
+
+  test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    expect(providerCreateCalls).toBe(1);
+    expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toHaveLength(1);
   });
 
   test('nothing raced it: flips to running, guarded WHERE clauses are the expected shape, opens compute metering', async () => {
