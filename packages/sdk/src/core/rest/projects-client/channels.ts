@@ -343,8 +343,6 @@ export interface UpdateChannelBindingInput {
   agentName?: string | null;
   /** null resets the model override to the project/account/platform default. */
   model?: string | null;
-  /** @deprecated Use `model`. */
-  opencodeModel?: string | null;
   conversationPolicy?: ChannelConversationPolicy;
 }
 
