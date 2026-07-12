@@ -110,9 +110,10 @@ describe('pageCatalogItems', () => {
     expect(result.items.every((it) => it.name.startsWith('alpha'))).toBe(true);
   });
 
-  test('surfaces skills, agents, commands, and bundles as browseable; hides support types', () => {
+  test('surfaces skills and projects as browseable; hides agents/commands/bundles/support types', () => {
     const items = [
       item({ id: 'k:skill', name: 'a-skill', type: 'registry:skill' }),
+      item({ id: 'k:project', name: 'a-project', type: 'registry:project' }),
       item({ id: 'k:agent', name: 'a-agent', type: 'registry:agent' }),
       item({ id: 'k:command', name: 'a-command', type: 'registry:command' }),
       item({ id: 'k:bundle', name: 'a-bundle', type: 'registry:bundle' }),
@@ -121,10 +122,8 @@ describe('pageCatalogItems', () => {
     ];
     const result = pageCatalogItems(items, {});
     const visible = new Set(result.items.map((it) => it.type));
-    expect(visible).toEqual(
-      new Set(['registry:skill', 'registry:agent', 'registry:command', 'registry:bundle']),
-    );
-    expect(result.total).toBe(4);
+    expect(visible).toEqual(new Set(['registry:skill', 'registry:project']));
+    expect(result.total).toBe(2);
   });
 
   test('offset past the end returns empty items, hasMore false, and a correct total', () => {

@@ -10,7 +10,8 @@ import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, listInstallationRepositories, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
-import { buildProjectSeedFiles, normalizeMarketplaceItems } from '../seed-files';
+import { buildProjectSeedFiles, buildProjectSeedFilesFromItem, normalizeMarketplaceItems } from '../seed-files';
+import { getCatalogItemDetail } from '../../marketplace/catalog';
 import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
@@ -379,6 +380,18 @@ projectsApp.openapi(
       400,
     );
   }
+
+  // "Clone project" — seed the new repo from a `registry:project` marketplace
+  // item instead of the blank starter. Resolved + type-checked BEFORE any
+  // upstream repo/DB row is created, same as the name checks above.
+  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
+  if (sourceItemId) {
+    const sourceItem = await getCatalogItemDetail(sourceItemId);
+    if (!sourceItem || sourceItem.type !== 'registry:project') {
+      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
+    }
+  }
+
   // Managed repo name = a readable slug from the display name + the project's
   // UUID, so managed repos under the shared org NEVER collide (two projects can
   // share a name). We generate the project id up front to bake it into the repo
@@ -503,7 +516,7 @@ projectsApp.openapi(
   // tree to push (web "Create project"). The CLI leaves this false and pushes
   // its own files on first `kortix ship`. If seeding fails we roll back the
   // orphan repo + project so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
   const starterTemplate = normalizeStarterTemplateId(body.starter_template ?? body.starterTemplate);
   const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   let seeded = false;
@@ -511,13 +524,21 @@ projectsApp.openapi(
     const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
     try {
       if (!internalPushToken) throw new Error('no push credential resolved for seeding');
-      const seed = await buildProjectSeedFiles({
-        projectName: name,
-        repoFullName: repoSlug,
-        template: starterTemplate,
-        marketplaceItems,
-        now: now.toISOString(),
-      });
+      const seed = sourceItemId
+        ? await buildProjectSeedFilesFromItem({
+            id: sourceItemId,
+            projectName: name,
+            repoFullName: repoSlug,
+            extraMarketplaceItems: marketplaceItems,
+            now: now.toISOString(),
+          })
+        : await buildProjectSeedFiles({
+            projectName: name,
+            repoFullName: repoSlug,
+            template: starterTemplate,
+            marketplaceItems,
+            now: now.toISOString(),
+          });
       if (backend.seedFiles) {
         // Seed the project tip == the deterministic scaffold root (the constant
         // 'kortix-project' render), byte-identical to the image-baked scaffold

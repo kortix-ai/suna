@@ -26,16 +26,19 @@ describe('marketplace catalog', () => {
     expect(DEFAULT_MARKETPLACES).not.toContain('NousResearch/hermes-agent');
   });
 
-  test('surfaces skills + bundles through browse; support types stay internal', async () => {
+  test('surfaces skills + projects through browse; support types stay internal', async () => {
     const all = await listCatalogItems();
     expect(all.length).toBeGreaterThan(50);
 
     // The marketplace surfaces the one-click importables (skills, agents,
-    // commands, bundles). Tools/files stay internal for dependency handling.
-    expect(all.some((i) => i.type === 'registry:bundle')).toBe(true);
+    // commands, whole projects). No curated Kortix bundles anymore — those
+    // were removed as low-value; tools/files stay internal for dependency
+    // handling.
+    expect(all.some((i) => i.type === 'registry:bundle')).toBe(false);
+    expect(all.some((i) => i.type === 'registry:project')).toBe(true);
     expect(all.some((i) => i.type === 'registry:tool')).toBe(false);
     expect(all.some((i) => i.type === 'registry:file')).toBe(false);
-    expect(all.find((i) => i.id === 'kortix:research-pack')).toBeTruthy();
+    expect(all.find((i) => i.id === 'kortix-projects:research-analyst')).toBeTruthy();
 
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
@@ -89,9 +92,9 @@ describe('marketplace catalog', () => {
   });
 
   test('filters by type and query', async () => {
-    const bundles = await listCatalogItems({ type: 'bundle' });
-    expect(bundles.length).toBeGreaterThan(0); // bundles are browseable one-click starters
-    expect(bundles.every((i) => i.type === 'registry:bundle')).toBe(true);
+    const projects = await listCatalogItems({ type: 'project' });
+    expect(projects.length).toBeGreaterThan(0); // whole projects are browseable one-click clones
+    expect(projects.every((i) => i.type === 'registry:project')).toBe(true);
     expect((await listCatalogItems({ query: 'pdf' })).some((i) => i.name === 'pdf')).toBe(true);
     expect((await listCatalogItems({ query: 'zzzznotathing' })).length).toBe(0);
   });
@@ -178,9 +181,9 @@ describe('marketplace catalog', () => {
     expect(built.capabilities.tools).toContain('agent-browser');
   });
 
-  test('buildInstall(bundle) → pulls every dependency in one commit', async () => {
+  test('buildInstall(registry:project) → pulls every declared dependency in one commit', async () => {
     const built = await buildInstall({
-      id: 'kortix:research-pack',
+      id: 'kortix-projects:research-analyst',
       configDir: '.kortix/opencode',
       existingLockRaw: null,
       legacyLockRaw: null,

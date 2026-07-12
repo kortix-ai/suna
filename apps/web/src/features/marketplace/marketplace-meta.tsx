@@ -1,5 +1,6 @@
 import {
   Bot,
+  Boxes,
   FileText,
   Package,
   ScrollText,
@@ -26,6 +27,7 @@ const TYPE_META: Record<string, TypeMeta> = {
   'registry:command': { label: 'Command', Icon: SquareTerminal, tile: 'bg-kortix-green/10 text-kortix-green' },
   'registry:tool': { label: 'Tool', Icon: Wrench, tile: 'bg-kortix-orange/10 text-kortix-orange' },
   'registry:bundle': { label: 'Bundle', Icon: Package, tile: 'bg-kortix-yellow/15 text-kortix-yellow' },
+  'registry:project': { label: 'Project', Icon: Boxes, tile: 'bg-kortix-blue/10 text-kortix-blue' },
   'registry:rules': { label: 'Rules', Icon: ScrollText, tile: NEUTRAL },
   'registry:file': { label: 'File', Icon: FileText, tile: NEUTRAL },
 };

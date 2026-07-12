@@ -16,7 +16,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
-import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
+import { getCatalogEntry, getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
 import {
   buildInstall,
   buildInstallBatch,
@@ -29,7 +29,8 @@ import { readManifestFromRepo, readRepoFile } from '../git/files';
 import { assertCommitCapabilities, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { loadGitProject } from '../lib/git';
-import { readBody } from '../lib/serializers';
+import { readBody, requestAuditContext } from '../lib/serializers';
+import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 
 async function repoFileOrNull(
   project: Parameters<typeof readRepoFile>[0],
@@ -65,6 +66,20 @@ async function handleMarketplaceInstall(c: any) {
   if (!id) return c.json({ error: 'id is required' }, 400);
   const detail = await getCatalogItemDetail(id);
   if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
+  // registry:project items are whole-project scaffolds (kortix.yaml + agents) —
+  // a deterministic file commit here would clobber this project's own
+  // kortix.yaml. Cloning as a new project (POST /provision, source_item_id) or
+  // the agent-driven merge below (POST /marketplace/install-session) are the
+  // two supported ways to bring a project item in.
+  if (detail.type === 'registry:project') {
+    return c.json(
+      {
+        error:
+          'This item is a whole project — clone it as a new project, or use /marketplace/install-session to have an agent merge it into this one.',
+      },
+      400,
+    );
+  }
 
   const project = await loadGitProject(loaded);
   const manifestRaw = await manifestRawOrNull(project);
@@ -114,6 +129,88 @@ async function handleMarketplaceInstall(c: any) {
     },
     201,
   );
+}
+
+/** Build the initial prompt for an agent-driven merge of a `registry:project`
+ *  item into an EXISTING project. Unlike `handleMarketplaceInstall`'s
+ *  deterministic commit, this is judgment-heavy (does the incoming agent
+ *  persona collide with one that already exists? does the target project
+ *  even want a new default agent?) — so an agent reads both sides and opens
+ *  a change request rather than a blind file overwrite. */
+function buildRegistryProjectInstallPrompt(
+  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
+  targetManifestRaw: string | null,
+): string {
+  const item = entry.item;
+  const ownFiles = (item.files ?? []).filter((f) => typeof f.content === 'string');
+  const deps = item.registryDependencies ?? [];
+
+  const lines: string[] = [
+    `Integrate the "${item.title ?? item.name}" project template into THIS project — without breaking anything already here.`,
+    '',
+    item.description ?? '',
+    '',
+    "This project's current kortix.yaml:",
+    '```yaml',
+    targetManifestRaw ?? '(no manifest found)',
+    '```',
+    '',
+    'The template contributes these files. Its own kortix.yaml is a reference for what agent it expects to exist — do NOT overwrite this project\'s kortix.yaml with it verbatim.',
+  ];
+  for (const file of ownFiles) {
+    lines.push('', `--- ${file.path} ---`, '```', file.content ?? '', '```');
+  }
+  if (deps.length > 0) {
+    lines.push(
+      '',
+      "It also depends on these marketplace skills — install each one (they're additive, they won't conflict with anything already installed):",
+      ...deps.map((d) => `- ${d}`),
+    );
+  }
+  lines.push(
+    '',
+    'Steps:',
+    "1. Read this project's current kortix.yaml and .kortix/opencode/agents/ to see what already exists.",
+    '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
+    "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
+    '4. Install the marketplace skills listed above.',
+    '5. Open a change request with the result — do not push directly to the default branch.',
+  );
+  return lines.join('\n');
+}
+
+async function handleMarketplaceInstallSession(c: any) {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const body = await readBody(c);
+  const id = typeof body?.id === 'string' ? body.id.trim() : '';
+  if (!id) return c.json({ error: 'id is required' }, 400);
+
+  const entry = await getCatalogEntry(id);
+  if (!entry || entry.item.type !== 'registry:project') {
+    return c.json({ error: `Unknown or non-project item "${id}" — this endpoint only merges whole projects.` }, 400);
+  }
+
+  const project = await loadGitProject(loaded);
+  const manifestRaw = await manifestRawOrNull(project);
+  const prompt = buildRegistryProjectInstallPrompt(entry, manifestRaw);
+
+  const result = await createProjectSession({
+    project: loaded.row,
+    userId: loaded.userId,
+    body: {
+      initial_prompt: prompt,
+      name: `Add ${entry.item.title ?? entry.item.name}`,
+      metadata: { kind: 'registry-project-install', item_id: id },
+    },
+    visibility: 'project',
+    request: requestAuditContext(c),
+  });
+  if (result.error) return sendSessionCreateError(c, result.error);
+
+  return c.json({ session_id: result.row!.sessionId }, 201);
 }
 
 async function handleMarketplaceInstalled(c: any) {
@@ -374,6 +471,25 @@ projectsApp.openapi(
     },
   }),
   handleMarketplaceInstall,
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/marketplace/install-session',
+    tags: ['marketplace'],
+    summary: 'POST /:projectId/marketplace/install-session',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      201: json(z.any(), 'Session started'),
+      ...errors(400, 404),
+    },
+  }),
+  handleMarketplaceInstallSession,
 );
 
 projectsApp.openapi(

@@ -6,7 +6,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support', '/templates'];
+const MARKETING_ROUTES = ['/', '/legal', '/support'];
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -19,7 +19,6 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
-  '/templates', // Template pages should be public
   '/marketplace', // Public read-only marketplace directory; installs still require auth
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
@@ -91,7 +90,6 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/tunnel',
   '/github',
   '/cli',
-  '/templates',
   '/marketplace',
   '/maintenance',
   '/countryerror',

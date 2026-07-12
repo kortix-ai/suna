@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
+kortix_version: 2
+
+default_agent: analyst
+
+project:
+  name: "{{projectName}}"
+  description: A research analyst agent that investigates topics and writes cited reports.
+
+env:
+  required: []
+  optional: []
+
+opencode:
+  config_dir: .kortix/opencode
+
+agents:
+  analyst:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
+
+triggers: []

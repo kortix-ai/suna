@@ -1,7 +1,7 @@
 'use client';
 
 import { PackageSearch, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -11,36 +11,36 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { MarketplaceCompanyFilter } from '@/features/marketplace/marketplace-company-filter';
+import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
+import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
+import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-projects-grid';
 import {
   defaultProjectMarketplaceItems,
   type MarketplaceItem,
   type MarketplaceSummary,
 } from '@/lib/marketplace-client';
+import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
+import { cn } from '@/lib/utils';
 import {
   MARKETPLACE_GRID_COLUMNS,
-  resolveMarketplaceExploreViewMode,
   resolveMarketplaceTypeSectionTotal,
   shouldOfferMarketplaceSeeAll,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
+import { MarketplaceShell } from './marketplace-shell';
 
-const TYPE_ORDER = [
-  'registry:skill',
-  'registry:agent',
-  'registry:command',
-  'registry:bundle',
-  'registry:tool',
-  'registry:rules',
-  'registry:file',
-];
+// Only skills are browseable alongside Projects today (agents/commands/
+// bundles are hidden from browse — see MARKETPLACE_VISIBLE_TYPES on the API).
+const TYPE_ORDER = ['registry:skill'];
 
 const FEATURED_ID = 'featured';
 const PREVIEW_COUNT = 9;
 const SEARCH_GRID_COLUMNS = 2;
+
+const ALL_SOURCES = 'all';
 
 function sectionId(type: string): string {
   return `type-${type.replace('registry:', '')}`;
@@ -57,29 +57,69 @@ function pickFeatured(items: MarketplaceItem[]): MarketplaceItem[] {
   return (kortix.length ? kortix : items).slice(0, 8);
 }
 
+function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="mb-4 space-y-1">
+      <h2 className="text-foreground text-xl font-medium tracking-tight text-balance">{title}</h2>
+      {subtitle ? (
+        <p className="text-muted-foreground text-sm leading-relaxed text-pretty">{subtitle}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One row in the left-rail source filter. */
+function SourceRow({
+  label,
+  count,
+  active,
+  avatar,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  avatar?: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm transition-colors',
+        active
+          ? 'bg-primary/[0.06] text-foreground font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
+      )}
+    >
+      {avatar ? <span className="shrink-0">{avatar}</span> : null}
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {count !== undefined ? (
+        <span className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">{count}</span>
+      ) : null}
+    </button>
+  );
+}
+
 function ExploreSection({
   id,
   title,
   items,
   type,
   total,
-  showSource,
+  publicOnly,
+  scrollContainerRef,
   initial = PREVIEW_COUNT,
 }: {
   id: string;
   title: string;
   items: MarketplaceItem[];
-  /** The type filter this section maps to — when set, "See all" routes
-   *  through the server-scoped paged/virtualized view instead of mounting
-   *  every card (A4). Omitted for the curated Featured rail, which never
-   *  expands (it's already capped at 8). */
   type?: string;
-  /** True item count for this type across the whole catalog (from marketplace
-   *  summaries), not just the SSR-bounded preview — sizes the "See all N"
-   *  affordance correctly even when more items exist than made it into the
-   *  bounded landing fetch. */
   total?: number;
-  showSource?: boolean;
+  publicOnly: boolean;
+  scrollContainerRef?: RefObject<HTMLElement | null>;
   initial?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -109,16 +149,17 @@ function ExploreSection({
       {expanded && type ? (
         <MarketplacePagedGrid
           type={type}
+          publicOnly={publicOnly}
+          scrollContainerRef={scrollContainerRef}
           columns={MARKETPLACE_GRID_COLUMNS}
           gridClassName="sm:grid-cols-3"
-          showSource={showSource}
           emptyTitle="No matches"
           emptyDescription="No items match this type right now."
         />
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
           {visible.map((item) => (
-            <MarketplaceExploreCard key={item.id} item={item} showSource={showSource} />
+            <MarketplaceExploreCard key={item.id} item={item} />
           ))}
         </div>
       )}
@@ -129,31 +170,76 @@ function ExploreSection({
 export function MarketplaceExplore({
   items: catalogItems,
   marketplaces,
+  projectItems,
+  embedded = false,
+  syncUrl = true,
+  publicOnly = true,
+  scrollContainerRef,
 }: {
-  /** SSR-bounded first page of the catalog (`MARKETPLACE_EXPLORE_LANDING_LIMIT`
-   *  items, not the full catalog) — sized to fill the per-type previews below
-   *  in the common case. "See all" and search results are server-scoped
-   *  separately and aren't limited to this set (A4). */
+  /** SSR-bounded first page of the catalog (all sources) — feeds the
+   *  "All sources" sectioned preview + Featured rail. */
   items: MarketplaceItem[];
   marketplaces: MarketplaceSummary[];
+  /** Every `registry:project` item, server-rendered (not client-fetched) so
+   *  the Projects showcase is fully indexed/static. */
+  projectItems: MarketplaceItem[];
+  /** Render inside a panel (Customize tab) — drops the marketing page chrome. */
+  embedded?: boolean;
+  /** Mirror the source filter to the URL (`?source=`). Off when embedded. */
+  syncUrl?: boolean;
+  /** Unauthenticated catalog reads (public). Off for the in-project view. */
+  publicOnly?: boolean;
+  /** Ancestor scroll element to virtualize the grids against (in-project). */
+  scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
+  // Source filter lives in the left rail — one surface, filtered in place. On
+  // the public page ('all') stays fully SSR'd and a deep-linked `?source=` is
+  // picked up after hydration; embedded (Customize) keeps it purely local.
+  const [source, setSource] = useState<string>(ALL_SOURCES);
+
+  useEffect(() => {
+    if (!syncUrl) return;
+    const slug = new URLSearchParams(window.location.search).get('source');
+    if (slug) setSource(companyIdFromSlug(slug));
+  }, [syncUrl]);
+
+  const selectSource = useCallback(
+    (id: string) => {
+      setSource(id);
+      if (syncUrl) {
+        window.history.replaceState(null, '', marketplaceSourceHref(id));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        scrollContainerRef?.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    },
+    [syncUrl, scrollContainerRef],
+  );
+
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
-
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 250);
     return () => clearTimeout(t);
   }, [query]);
 
   const searching = debounced.length > 0;
+  const isAll = source === ALL_SOURCES;
+  const showProjects = !searching && (isAll || source === 'kortix');
+  const sourceLabel = isAll
+    ? null
+    : displayCompanyLabel(source, marketplaces.find((m) => m.id === source)?.label);
 
-  const featured = useMemo(() => pickFeatured(catalogItems), [catalogItems]);
-
+  const componentItems = useMemo(
+    () => catalogItems.filter((it) => it.type !== 'registry:project'),
+    [catalogItems],
+  );
+  const featured = useMemo(() => pickFeatured(componentItems), [componentItems]);
   const typeCounts = useMemo(() => sumMarketplaceTypeCounts(marketplaces), [marketplaces]);
 
   const groups = useMemo(() => {
     const byType = new Map<string, MarketplaceItem[]>();
-    for (const it of catalogItems) {
+    for (const it of componentItems) {
       const arr = byType.get(it.type) ?? [];
       arr.push(it);
       byType.set(it.type, arr);
@@ -173,89 +259,170 @@ export function MarketplaceExplore({
           total: resolveMarketplaceTypeSectionTotal(type, typeCounts, items.length),
         };
       });
-  }, [catalogItems, typeCounts]);
+  }, [componentItems, typeCounts]);
 
-  const viewMode = resolveMarketplaceExploreViewMode({
-    catalogEmpty: catalogItems.length === 0,
-    searching,
-  });
-
-  const scrollTo = (id: string) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    history.replaceState(null, '', `#${id}`);
-  };
+  const crumbs = isAll
+    ? [{ label: 'Marketplace' }]
+    : [
+        embedded
+          ? { label: 'Marketplace', onClick: () => selectSource(ALL_SOURCES) }
+          : { label: 'Marketplace', href: '/marketplace' },
+        { label: sourceLabel ?? source },
+      ];
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16 pt-28 pb-24 lg:px-0 lg:pt-40">
-      <div className="flex flex-col gap-2">
-        <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <MarketplaceShell
+      embedded={embedded}
+      crumbs={crumbs}
+      sidebar={
+        <>
           <div className="space-y-2">
-            <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance">
+            <span className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
               Marketplace
+            </span>
+            <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
+              Clone a project, or add a skill
             </h1>
+            <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
+              Start from a full, working Kortix project in one click — or add skills from every
+              source into a project you already have.
+            </p>
           </div>
-          <div className="w-full sm:w-80">
-            <InputGroupSearch>
-              <InputGroupSearchIcon>
-                <Search />
-              </InputGroupSearchIcon>
-              <InputGroupSearchInput
-                placeholder="Search the marketplace"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                variant="popover"
-              />
-              <InputGroupSearchClear onClick={() => setQuery('')} />
-            </InputGroupSearch>
-          </div>
-        </header>
 
-        <MarketplaceCompanyFilter marketplaces={marketplaces} activeId="all" className="mb-8" />
+          <InputGroupSearch>
+            <InputGroupSearchIcon>
+              <Search />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              placeholder="Search the marketplace"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              variant="popover"
+            />
+            <InputGroupSearchClear onClick={() => setQuery('')} />
+          </InputGroupSearch>
 
-        {viewMode === 'empty' ? (
-          <EmptyState
-            icon={PackageSearch}
-            title="Nothing here yet"
-            description="The catalog is empty right now — check back soon."
-          />
-        ) : viewMode === 'search' ? (
-          <MarketplacePagedGrid
-            query={debounced}
-            columns={SEARCH_GRID_COLUMNS}
-            gridClassName="sm:grid-cols-2"
-            emptyTitle="No matches"
-            emptyDescription={`No items match "${debounced}".`}
-            emptyAction={
-              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                Clear search
-              </Button>
-            }
-            header={({ total }) => (
-              <div className="text-muted-foreground text-sm">
-                <span className="tabular-nums">{total}</span> {total === 1 ? 'result' : 'results'}{' '}
-                for &ldquo;{debounced}&rdquo;
-              </div>
-            )}
-          />
-        ) : (
-          <div className="space-y-12">
-            <ExploreSection id={FEATURED_ID} title="Featured" items={featured} initial={8} />
-            {groups.map((g) => (
-              <ExploreSection
-                key={g.type}
-                id={sectionId(g.type)}
-                title={g.label}
-                items={g.items}
-                type={g.type}
-                total={g.total}
+          <div className="space-y-1">
+            <div className="text-muted-foreground/70 px-2.5 pb-1 text-xs font-medium tracking-wide uppercase">
+              Sources
+            </div>
+            <SourceRow
+              label="All sources"
+              active={isAll}
+              onClick={() => selectSource(ALL_SOURCES)}
+            />
+            {marketplaces.map((m) => (
+              <SourceRow
+                key={m.id}
+                label={displayCompanyLabel(m.id, m.label)}
+                count={m.count}
+                active={source === m.id}
+                avatar={
+                  <MarketplaceAvatar
+                    id={m.id}
+                    owner={m.owner}
+                    sourceUrl={m.sourceUrl}
+                    label={m.label}
+                    size="xs"
+                  />
+                }
+                onClick={() => selectSource(m.id)}
               />
             ))}
           </div>
-        )}
+        </>
+      }
+    >
+      <div className="space-y-16">
+        {showProjects ? (
+          <section className="scroll-mt-28">
+            <SectionHeading
+              title="Clone a project"
+              subtitle="A full, working Kortix project — cloned into your account, ready in one session."
+            />
+            <MarketplaceProjectsGrid items={projectItems} query={debounced} size="featured" />
+          </section>
+        ) : null}
+
+        <div className="space-y-12">
+          <SectionHeading
+            title={sourceLabel ?? 'Skills'}
+            subtitle="Add these into a project you already have."
+          />
+
+          {searching ? (
+            <MarketplacePagedGrid
+              query={debounced}
+              source={isAll ? undefined : source}
+              publicOnly={publicOnly}
+              scrollContainerRef={scrollContainerRef}
+              columns={SEARCH_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-2"
+              showSource={isAll}
+              emptyTitle="No matches"
+              emptyDescription={`No items match "${debounced}".`}
+              emptyAction={
+                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                  Clear search
+                </Button>
+              }
+              header={({ total }) => (
+                <div className="text-muted-foreground text-sm">
+                  <span className="tabular-nums">{total}</span> {total === 1 ? 'result' : 'results'}{' '}
+                  for &ldquo;{debounced}&rdquo;
+                </div>
+              )}
+            />
+          ) : isAll ? (
+            componentItems.length === 0 ? (
+              <EmptyState
+                icon={PackageSearch}
+                title="Nothing here yet"
+                description="The catalog is empty right now — check back soon."
+              />
+            ) : (
+              <div className="space-y-12">
+                <ExploreSection
+                  id={FEATURED_ID}
+                  title="Featured"
+                  items={featured}
+                  initial={8}
+                  publicOnly={publicOnly}
+                  scrollContainerRef={scrollContainerRef}
+                />
+                {groups.map((g) => (
+                  <ExploreSection
+                    key={g.type}
+                    id={sectionId(g.type)}
+                    title={g.label}
+                    items={g.items}
+                    type={g.type}
+                    total={g.total}
+                    publicOnly={publicOnly}
+                    scrollContainerRef={scrollContainerRef}
+                  />
+                ))}
+              </div>
+            )
+          ) : (
+            <MarketplacePagedGrid
+              source={source}
+              publicOnly={publicOnly}
+              scrollContainerRef={scrollContainerRef}
+              columns={SEARCH_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-2"
+              showSource={false}
+              emptyTitle="Nothing here yet"
+              emptyDescription="This source has no browseable items right now."
+              emptyAction={
+                <Button variant="outline" size="sm" onClick={() => selectSource(ALL_SOURCES)}>
+                  Browse all sources
+                </Button>
+              }
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </MarketplaceShell>
   );
 }

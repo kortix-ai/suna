@@ -7,6 +7,7 @@ import {
   getPublicMarketplaceItem,
   getPublicMarketplaceItemFile,
   installMarketplaceItem,
+  installMarketplaceItemAsSession,
   listFeaturedMarketplaces,
   listInstalledItems,
   listMarketplaceItems,
@@ -215,6 +216,17 @@ export function useInstallMarketplaceItem() {
       qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
       qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
     },
+  });
+}
+
+/** Merge a `registry:project` item into an existing project via an agent
+ *  session — no lock/installed-item cache to invalidate here, the agent's
+ *  own commits (skills, kortix.yaml edit, CR) drive those separately once
+ *  the session actually runs. */
+export function useInstallMarketplaceItemAsSession() {
+  return useMutation({
+    mutationFn: ({ projectId, id }: { projectId: string; id: string }) =>
+      installMarketplaceItemAsSession(projectId, id),
   });
 }
 

@@ -242,6 +242,22 @@ export async function installMarketplaceItem(
   );
 }
 
+/** Merge a `registry:project` item into an EXISTING project — agent-driven
+ *  (not a deterministic file commit, which would clobber the project's own
+ *  kortix.yaml). Starts a session with a constructed prompt; the caller
+ *  should navigate into `session_id` to watch it work. */
+export async function installMarketplaceItemAsSession(
+  projectId: string,
+  id: string,
+): Promise<{ session_id: string }> {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${projectId}/marketplace/install-session`,
+      { id },
+    ),
+  );
+}
+
 export async function listInstalledItems(projectId: string): Promise<InstalledItem[]> {
   const res = unwrap(
     await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
