@@ -24,9 +24,12 @@ const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>()
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
 // Accept-Encoding is forced to identity (raw byte passthrough).
+// Cookies may contain the caller's raw __preview_session credential and must
+// never reach arbitrary user-controlled apps running inside the sandbox.
 const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
+  'cookie',
   'traceparent',
   'x-request-id',
   'accept-encoding',
