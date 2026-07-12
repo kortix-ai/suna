@@ -44,6 +44,21 @@ export function Rise({
   );
 }
 
+/**
+ * The mark on mobile. Pinned to the top-left of the viewport instead of riding
+ * above the heading, so the centered column stays purely about the task. Its
+ * `left-6` matches the `px-6` gutter of the auth `<main>`, so it sits on the
+ * same optical edge as the fields below it. The parent surface must be
+ * `relative`. Desktop keeps the inline mark inside `StepHeader`.
+ */
+export function AuthMobileLogo() {
+  return (
+    <div className="absolute top-6 left-6 z-10 md:hidden">
+      <KortixLogo variant="icon" size={22} className="text-foreground" />
+    </div>
+  );
+}
+
 export function StepHeader({
   title,
   tagline,
@@ -56,8 +71,8 @@ export function StepHeader({
 }) {
   return (
     <div className="mb-10">
-      <KortixLogo variant="icon" size={22} className="text-foreground" />
-      <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight">{title}</h1>
+      <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+      <h1 className="text-foreground text-2xl font-medium tracking-tight md:mt-6">{title}</h1>
       {tagline ? (
         <p className="text-muted-foreground/60 text-2xl font-medium tracking-tight">{tagline}</p>
       ) : null}
