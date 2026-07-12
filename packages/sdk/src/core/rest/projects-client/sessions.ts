@@ -73,6 +73,9 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  model?: string;
+  runtime_model?: string;
+  /** @deprecated Use `model`. */
   opencode_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */

@@ -743,7 +743,7 @@ export async function fireGitTrigger(input: {
       // A trigger-level model pins this run's session to that model, taking
       // precedence over the agent/account/platform default chain. Omitted
       // (null) leaves resolution to that chain — see GitTriggerSpec.model.
-      ...(spec.model ? { opencode_model: spec.model } : {}),
+      ...(spec.model ? { model: spec.model } : {}),
       metadata: {
         trigger_source: source,
         trigger_kind: 'git',

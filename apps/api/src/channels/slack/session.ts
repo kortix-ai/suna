@@ -153,7 +153,7 @@ export async function createOrJoinThreadSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName ?? 'default',
-      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
+      ...(selection?.opencodeModel ? { model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },
     enforceAccountCap: false,

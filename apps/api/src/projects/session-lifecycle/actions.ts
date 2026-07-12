@@ -149,9 +149,11 @@ export async function restartSession(input: {
         ? (session.metadata.initial_prompt as string)
         : null;
     const opencodeModel =
-      typeof session.metadata?.opencode_model === 'string'
-        ? (session.metadata.opencode_model as string)
-        : null;
+      typeof session.metadata?.model === 'string'
+        ? (session.metadata.model as string)
+        : typeof session.metadata?.opencode_model === 'string'
+          ? (session.metadata.opencode_model as string)
+          : null;
 
     await db
       .update(projectSessions)

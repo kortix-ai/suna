@@ -130,6 +130,10 @@ export async function getSessionAgentContext(
   if (!row) return null;
   const metadata = row.metadata as Record<string, unknown> | null;
   const opencodeModel =
-    metadata && typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+    metadata && typeof metadata.model === 'string'
+      ? metadata.model
+      : metadata && typeof metadata.opencode_model === 'string'
+        ? metadata.opencode_model
+        : null;
   return { agentName: row.agentName, opencodeModel };
 }

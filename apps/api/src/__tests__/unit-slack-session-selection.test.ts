@@ -203,14 +203,16 @@ test('channel agent + model override flow into the session body', async () => {
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('reviewer');
-  expect(lastBody?.opencode_model).toBe('anthropic/claude-opus-4-8');
+  expect(lastBody?.model).toBe('anthropic/claude-opus-4-8');
+  expect('opencode_model' in (lastBody ?? {})).toBe(false);
 });
 
-test('no overrides → agent "default" and NO opencode_model key', async () => {
+test('no overrides → agent "default" and NO model key', async () => {
   selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
+  expect('model' in (lastBody ?? {})).toBe(false);
   expect('opencode_model' in (lastBody ?? {})).toBe(false);
 });
 

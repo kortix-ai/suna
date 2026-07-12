@@ -282,9 +282,11 @@ export async function allocateRuntimeOnOpen(
     }
   ).metadata?.legacy_migration?.source_sandbox_id;
   const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string'
-      ? session.metadata.opencode_model
-      : null;
+    typeof session.metadata?.model === 'string'
+      ? session.metadata.model
+      : typeof session.metadata?.opencode_model === 'string'
+        ? session.metadata.opencode_model
+        : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 

@@ -651,14 +651,16 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const opencodeModel = normalizeString(
+    body.model ?? body.runtime_model ?? body.opencode_model ?? body.opencodeModel,
+  );
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
-    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
+    ...(opencodeModel ? { model: opencodeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
