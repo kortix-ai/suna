@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 
 import {
   buildClaudeSubscriptionProvider,
@@ -18,7 +19,19 @@ describe('LLM provider auth presentation', () => {
       label: 'Claude subscription',
       envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
     });
+    expect(provider!.models.map((model) => model.id)).toEqual([
+      'claude-sonnet-4-6',
+      'claude-opus-4-6',
+      'claude-haiku-4-5',
+    ]);
     expect(providerCredentialSummary(provider!)).toBe('Claude subscription');
+  });
+
+  test('keeps Claude subscription and Anthropic API key as separate catalog providers', () => {
+    expect(LLM_PROVIDER_BY_ID.get('claude-subscription')?.envVars).toEqual([
+      'CLAUDE_CODE_OAUTH_TOKEN',
+    ]);
+    expect(LLM_PROVIDER_BY_ID.get('anthropic')?.envVars).toContain('ANTHROPIC_API_KEY');
   });
 
   test('requires protocol and base URL before presenting custom REST auth', () => {

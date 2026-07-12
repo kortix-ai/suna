@@ -105,7 +105,9 @@ export function ConnectedTab({
   }
 
   const confirmProvider = confirmId
-    ? (connectedProviders.find((p) => p.id === confirmId) ?? LLM_PROVIDER_BY_ID.get(confirmId) ?? null)
+    ? (connectedProviders.find((p) => p.id === confirmId) ??
+      LLM_PROVIDER_BY_ID.get(confirmId) ??
+      null)
     : null;
 
   return (
@@ -118,7 +120,11 @@ export function ConnectedTab({
               key={provider.id}
               className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors"
             >
-              <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+              <ProviderLogo
+                providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+                name={provider.label}
+                size="default"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-foreground truncate text-sm font-medium">
@@ -175,7 +181,9 @@ export function ConnectedTab({
           confirmProvider ? (
             <span className="text-xs">
               Remove <span className="text-foreground font-medium">{confirmProvider.label}</span>
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line366JsxTextThisDeletes',
+              )}{' '}
               {confirmProvider.envVars.length === 1 ? (
                 <>
                   the{' '}

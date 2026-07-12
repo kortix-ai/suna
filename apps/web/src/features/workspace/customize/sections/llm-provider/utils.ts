@@ -1,4 +1,8 @@
-import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
+import {
+  CLAUDE_SUBSCRIPTION_PROVIDER,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+} from '@/lib/llm-providers';
 
 import {
   CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
@@ -55,15 +59,7 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
 
 export function buildClaudeSubscriptionProvider(secretNames: Set<string>): LlmProviderEntry | null {
   if (!secretNames.has(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)) return null;
-  return {
-    id: 'claude-subscription',
-    label: 'Claude subscription',
-    envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME],
-    helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
-    hint: 'Claude Code subscription auth',
-    models: [],
-    featured: true,
-  };
+  return CLAUDE_SUBSCRIPTION_PROVIDER;
 }
 
 export function buildCustomRestProvider(secretNames: Set<string>): LlmProviderEntry | null {

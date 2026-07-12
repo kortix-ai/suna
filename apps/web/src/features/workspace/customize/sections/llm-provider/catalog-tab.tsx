@@ -98,13 +98,19 @@ export function CatalogTab({
   return (
     <div className="space-y-3 px-5 pt-3 pb-4">
       {canWrite && (
-        <button type="button" className={`${ROW} border-dashed`} onClick={() => setSubview({ kind: 'custom' })}>
+        <button
+          type="button"
+          className={`${ROW} border-dashed`}
+          onClick={() => setSubview({ kind: 'custom' })}
+        >
           <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-sm border border-dashed">
             <Plus className="size-4 shrink-0" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-foreground truncate text-sm font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line492JsxTextCustomProvider',
+              )}
             </div>
             <p className="text-muted-foreground mt-0.5 truncate text-xs">
               {tHardcodedUi.raw(
@@ -129,7 +135,11 @@ export function CatalogTab({
                   className={ROW}
                   onClick={() => setSubview({ kind: 'detail', providerId: provider.id })}
                 >
-                  <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+                  <ProviderLogo
+                    providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+                    name={provider.label}
+                    size="default"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-foreground truncate text-sm font-medium">
@@ -185,7 +195,11 @@ function ProviderDetail({
       </Button>
 
       <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-        <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
+        <ProviderLogo
+          providerID={provider.id === 'claude-subscription' ? 'anthropic' : provider.id}
+          name={provider.label}
+          size="default"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="text-foreground truncate text-sm font-medium">
@@ -234,7 +248,9 @@ function ProviderDetail({
 
         {models.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared')}
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared',
+            )}
           </p>
         ) : (
           <ul className="space-y-2">

@@ -75,6 +75,7 @@ const RAW = catalog as RawCatalog;
  * this list is still browsable below, sorted A-Z.
  */
 const FEATURED_IDS = new Set([
+  'claude-subscription',
   'anthropic',
   'openai',
   'google',
@@ -160,7 +161,30 @@ function order(entries: LlmProviderEntry[]): LlmProviderEntry[] {
   });
 }
 
-export const LLM_PROVIDERS: LlmProviderEntry[] = order(RAW.providers.map(toEntry));
+const catalogProviders = RAW.providers.map(toEntry);
+const anthropicCatalog = catalogProviders.find((provider) => provider.id === 'anthropic');
+const CLAUDE_SUBSCRIPTION_MODEL_IDS = new Set([
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+]);
+
+export const CLAUDE_SUBSCRIPTION_PROVIDER: LlmProviderEntry = {
+  id: 'claude-subscription',
+  label: 'Claude subscription',
+  envVars: ['CLAUDE_CODE_OAUTH_TOKEN'],
+  helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
+  hint: 'Claude Pro, Max, Team, or Enterprise',
+  models: (anthropicCatalog?.models ?? []).filter((model) =>
+    CLAUDE_SUBSCRIPTION_MODEL_IDS.has(model.id),
+  ),
+  featured: true,
+};
+
+export const LLM_PROVIDERS: LlmProviderEntry[] = order([
+  CLAUDE_SUBSCRIPTION_PROVIDER,
+  ...catalogProviders,
+]);
 
 /** Lookup by id. */
 export const LLM_PROVIDER_BY_ID = new Map<string, LlmProviderEntry>(
