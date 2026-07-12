@@ -4,7 +4,12 @@ import { signOut } from '@/app/(auth)/auth/actions';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
-import { Rise, StepHeader, SuccessStrip } from '@/features/auth/auth-primitives';
+import {
+  AuthMobileLogo,
+  Rise,
+  StepHeader,
+  SuccessStrip,
+} from '@/features/auth/auth-primitives';
 import { OtpVerification } from '@/features/auth/phone-verification/otp-verification';
 import { PhoneInput } from '@/features/auth/phone-verification/phone-input';
 import {
@@ -217,6 +222,7 @@ export default function PhoneVerificationPage() {
 
   return (
     <div className="bg-background relative flex min-h-svh flex-col">
+      <AuthMobileLogo />
       <div className="absolute top-6 right-6 z-10">
         <Button
           variant="ghost"
@@ -236,7 +242,7 @@ export default function PhoneVerificationPage() {
         </Button>
       </div>
 
-      <main className="flex flex-1 flex-col items-center justify-center px-4 pb-24">
+      <main className="flex flex-1 flex-col items-center justify-center px-6 pb-24">
         <div className="w-full max-w-[380px]">
           <Rise>
             <StepHeader

@@ -15,6 +15,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
+import { AuthMobileLogo } from '@/features/auth/auth-primitives';
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
@@ -38,7 +39,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' |
   );
 
   return (
-    <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-4 pb-10 text-center text-sm text-balance">
+    <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
       {variant === 'signup' ? (
         <>By creating an account, you agree to the {terms} and {privacy}</>
       ) : (
@@ -70,13 +71,14 @@ export function AuthCardShell({
   });
 
   return (
-    <div className="bg-background flex min-h-svh flex-col">
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-24">
+    <div className="bg-background relative flex min-h-svh flex-col">
+      <AuthMobileLogo />
+      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
         <div className="w-full max-w-[380px]">
           <motion.div {...rise(0)}>
             <div className="mb-10">
-              <KortixLogo variant="icon" size={22} className="text-foreground" />
-              <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight text-balance">
+              <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+              <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance md:mt-6">
                 {title}
               </h1>
               <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
