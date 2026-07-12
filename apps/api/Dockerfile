@@ -38,8 +38,10 @@ ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
 COPY packages/executor-sdk ./packages/executor-sdk
+COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
+COPY packages/sdk ./packages/sdk
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \
@@ -67,6 +69,7 @@ COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
 COPY packages/registry ./packages/registry
 COPY packages/llm-gateway ./packages/llm-gateway
+COPY packages/sdk ./packages/sdk
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
