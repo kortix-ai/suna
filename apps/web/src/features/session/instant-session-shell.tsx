@@ -74,7 +74,7 @@ export function InstantSessionShell({
     // `readStartStash` covers the canonical SDK stash (written under the route
     // session id by this shell, the project-home composer, and
     // `useConfigureThread` — all three producers now share the one canonical
-    // shape) plus its `opencode_pending_prompt` legacy fallback for any other
+    // shape) plus its legacy raw-key fallback for any other
     // as-yet-unconverted producer.
     const text = readStartStash(sessionId)?.prompt;
     if (!text) return null;

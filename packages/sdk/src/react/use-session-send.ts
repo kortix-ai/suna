@@ -106,7 +106,7 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 // duplicated `handleSendError`/`handlePromptError`.
 // ============================================================================
 
-/** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
+/** The minimal slice of `RuntimeClient` the recovery rehydrate needs. */
 export interface RuntimeMessagesClient {
   session: {
     messages: (args: { sessionID: string }) => Promise<{ data?: unknown }>;

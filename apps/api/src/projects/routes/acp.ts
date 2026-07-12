@@ -6,6 +6,7 @@ import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { decodedResponseHeaders } from '../lib/proxy-headers';
 import { inspectSandboxRuntime, sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
 
 type Envelope = Record<string, unknown>;
 
@@ -55,41 +56,27 @@ async function appendEnvelope(input: {
   }).onConflictDoNothing();
 }
 
-async function persistSse(
-  body: ReadableStream<Uint8Array>,
+async function persistSseBlock(
+  block: string,
   target: NonNullable<Awaited<ReturnType<typeof resolveAcpTarget>>>,
 ) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    if (done && buffer.trim()) buffer += '\n\n';
-    let boundary: number;
-    while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-      const block = buffer.slice(0, boundary).replace(/\r/g, '');
-      buffer = buffer.slice(boundary + 2);
-      let eventId: number | null = null;
-      const data: string[] = [];
-      for (const line of block.split('\n')) {
-        if (line.startsWith('id:')) eventId = Number(line.slice(3).trim());
-        else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
-      }
-      if (eventId !== null && Number.isSafeInteger(eventId) && data.length) {
-        try {
-          await appendEnvelope({
-            ...target,
-            direction: 'agent_to_client',
-            streamEventId: eventId,
-            envelope: JSON.parse(data.join('\n')) as Envelope,
-          });
-        } catch (error) {
-          console.warn(`[acp] failed to persist SSE event ${eventId} for ${target.sessionId}:`, error);
-        }
-      }
+  let eventId: number | null = null;
+  const data: string[] = [];
+  for (const line of block.split('\n')) {
+    if (line.startsWith('id:')) eventId = Number(line.slice(3).trim());
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+  }
+  if (eventId !== null && Number.isSafeInteger(eventId) && data.length) {
+    try {
+      await appendEnvelope({
+        ...target,
+        direction: 'agent_to_client',
+        streamEventId: eventId,
+        envelope: JSON.parse(data.join('\n')) as Envelope,
+      });
+    } catch (error) {
+      console.warn(`[acp] failed to persist SSE event ${eventId} for ${target.sessionId}:`, error);
     }
-    if (done) return;
   }
 }
 
@@ -185,9 +172,13 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
   }
 
   if (method === 'GET' && upstream.ok && upstream.body) {
-    const [clientBody, persistenceBody] = upstream.body.tee();
-    void persistSse(persistenceBody, target);
-    return new Response(clientBody, { status: upstream.status, headers: responseHeaders });
+    return new Response(createPersistedSseProxy(upstream.body, {
+      sessionId: target.sessionId,
+      persistBlock: (block) => persistSseBlock(block, target),
+    }), {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
   }
 
   return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });

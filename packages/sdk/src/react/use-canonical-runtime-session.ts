@@ -12,7 +12,7 @@ import { useRuntimeSessions, type Session } from './use-runtime-sessions';
  * The mapping is now fully SERVER-OWNED: `POST /sessions/:id/start` (see
  * openSession in apps/api) resolves + persists the canonical Runtime root and
  * returns the pin in its payload. This hook no longer creates/heals the pin from
- * the client (the old client-side `ensure-opencode` mutation caused the
+ * the client (the old client-side runtime ensure mutation caused the
  * "session replaced / data lost" drift). It just surfaces the pin:
  *   1. the value /start handed us this render (`pinFromStart`), else
  *   2. the persisted pin on the Kortix session row (`getProjectSession`).
@@ -20,12 +20,6 @@ import { useRuntimeSessions, type Session } from './use-runtime-sessions';
  * The Runtime session list is still read (read-only) for ?oc deep-links and
  * sidebar sub-session rendering.
  */
-
-/** Back-compat no-op: the pin is server-owned now, so there's no client guard to
- *  clear. Kept exported because the session page still calls it on teardown. */
-export function clearOpencodeEnsureGuard(): void {
-  /* no-op */
-}
 
 export interface CanonicalRuntimeSession {
   /** The authoritative pinned root id (server-managed), or null while resolving. */

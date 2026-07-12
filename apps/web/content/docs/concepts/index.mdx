@@ -53,16 +53,15 @@ branch work survives, and only a merged change request makes it permanent.
 
 ## Two config surfaces
 
-The manifest (`kortix.yaml`) + `.kortix/Dockerfile` are Kortix-owned;
-`.kortix/opencode/` is OpenCode-native runtime behavior. `agents:` is a
-name-keyed map that is governance only — `connectors`, `secrets`, `kortix_cli`,
-`skills`, which agent names are launchable, and what each may touch. Everything
-about how an agent behaves (prompt, mode, tools, permissions) lives in that
-agent's own `.kortix/opencode/agents/<name>.md`, a stock OpenCode agent file.
-`default_agent` is required and must name a declared, enabled agent. See
-[Kortix vs OpenCode config](/docs/reference/config-boundary). Drive any of it
-from a terminal with the [CLI](/docs/reference/cli) — it controls the cloud, it
-doesn't run the agent locally.
+The manifest (`kortix.yaml`) + `.kortix/Dockerfile` are Kortix-owned. Harness
+config directories are runtime-native behavior. `runtimes:` chooses ACP harness
+profiles, and `agents:` maps logical Kortix agents to those profiles plus
+governance (`connectors`, `secrets`, `kortix_cli`, `skills`, which agents are
+launchable, and what each may touch). Prompt, mode, tools, and permissions live
+in the selected harness's native files. `default_agent` is required and must name
+a declared, enabled agent. See [Kortix vs runtime config](/docs/reference/config-boundary).
+Drive any of it from a terminal with the [CLI](/docs/reference/cli) — it controls
+the cloud, it doesn't run the agent locally.
 
 <Callout type="info" title="Legacy kortix.toml">
 Existing projects may still run on `kortix_version: 1` (`kortix.toml`,

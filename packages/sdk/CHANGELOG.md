@@ -132,7 +132,7 @@ domains promoted into the facade.
   are now real classes (`instanceof`-able, enumerable `message`, `name`/shape
   preserved for legacy string-sniffers) instead of ad-hoc
   `Object.create(Error.prototype)` objects — and every layer (`backendApi` /
-  `platformFetch`/`authenticatedFetch`, the files client, the opencode client,
+  `platformFetch`/`authenticatedFetch`, the files client, the runtime client,
   `ensureReady()`) now throws/returns the SAME classes instead of duck-typed
   shapes. `BillingError`/`RequestTooLargeError` + their helpers
   (`parseBillingError`, `isBillingError`, `formatBillingErrorForUI`) are

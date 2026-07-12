@@ -174,7 +174,7 @@ describe('promptRuntimeMessage', () => {
     getClientImpl = () => {
       getClientCalls++;
       if (getClientCalls < 3) {
-        throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+        throw new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
       }
       return { session: { promptAsync: (args: unknown) => promptImpl(args) } };
     };
@@ -196,7 +196,7 @@ describe('promptRuntimeMessage', () => {
     let getClientCalls = 0;
     getClientImpl = () => {
       getClientCalls++;
-      throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+      throw new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
     };
 
     // The full boot window is ~29s of real backoff (see BOOT_BACKOFF_MS) —

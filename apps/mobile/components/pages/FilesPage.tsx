@@ -224,7 +224,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     }
   }, [selectedFile, onFileSelectionChange, onRequestMenu]);
 
-  // Fetch files via OpenCode API (same as frontend)
+  // Fetch files via the runtime API (same as frontend)
   const {
     data: files,
     isLoading,
@@ -233,7 +233,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     isRefetching,
   } = useRuntimeFiles(sandboxUrl, currentPath);
 
-  // Mutations via OpenCode API
+  // Mutations via the runtime API
   const uploadMutation = useRuntimeUploadFile();
   const deleteMutation = useRuntimeDeleteFile();
   const createFolderMutation = useRuntimeMkdir();

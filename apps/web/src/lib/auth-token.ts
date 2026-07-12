@@ -260,7 +260,7 @@ function buildAuthHeaders(
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
  *
- * Centralizes the pattern duplicated across opencode-sdk and
+ * Centralizes the pattern duplicated across runtime callers and
  * use-sandbox-connection. These auth injection points now go through this.
  *
  * Behavior:

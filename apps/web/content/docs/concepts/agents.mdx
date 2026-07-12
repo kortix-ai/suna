@@ -1,39 +1,42 @@
 ---
 title: Agents
-description: The agent runtime is OpenCode; the manifest's agents map is governance-only, agent behavior lives in .kortix/opencode.
+description: Kortix agents are logical entries in kortix.yaml that route to ACP harness runtimes.
 ---
 
-The agent in every [session](/docs/concepts/sessions) is
-**[OpenCode](https://opencode.ai/docs/)**. The `kortix-agent` daemon runs it as
-`opencode serve` with its config dir pointed at the project's `.kortix/opencode/`.
+An agent in Kortix is a logical project entry. It chooses a runtime profile,
+declares governance grants, and optionally points at a harness-native agent name.
+The runtime profile speaks ACP, so the same session UI can drive Claude Code,
+Codex, OpenCode, or another supported harness.
 
-OpenCode-native behavior lives there, in OpenCode's standard layout:
+Harness-native behavior stays in that harness's normal config directory:
 
-- **Agents** — a `.md` file per agent (frontmatter + prompt body) in `agents/`
-- **Skills** — on-demand `SKILL.md` know-how in `skills/`
-- **Commands, tools, plugins**
-- **Models, providers, MCP servers** — in `opencode.jsonc`
+- Claude Code uses `CLAUDE_CONFIG_DIR`.
+- Codex uses `CODEX_HOME`.
+- OpenCode uses `OPENCODE_CONFIG_DIR` (default `.kortix/opencode`).
+- Pi uses `PI_CODING_AGENT_DIR`.
 
-`opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers,
-providers, model/provider settings, permissions, and default runtime behavior.
-Kortix does not duplicate those settings in the manifest.
+Kortix does not translate those native behavior files. It compiles `kortix.yaml`
+to a launch plan and passes the selected config dir to the harness.
 
-## The manifest is governance, not behavior
+## The manifest is routing and governance
 
-`kortix.yaml`'s `agents:` is a **map keyed by agent name** — one entry per agent,
-joined to that agent's `.kortix/opencode/agents/<name>.md` by name. Each entry is
-governance only: `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`,
-`enabled`. Nothing about prompt, mode, tools, or permissions lives here — that's
-entirely the `.md` file's job. `default_agent` is required at the top level and
-must name a declared, enabled agent.
+In v3, `kortix.yaml` has two relevant maps:
 
-v2 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
+- `runtimes:` defines named ACP runtime profiles (`harness` + optional
+  `config_dir`).
+- `agents:` defines logical Kortix agents. Each agent chooses a `runtime`, can
+  set a harness-native `agent` name, and declares platform governance:
+  `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`, `enabled`.
+
+`default_agent` is required at the top level and must name a declared, enabled
+agent.
+
+v3 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
 `skills` key gets none of that access. Give it `all` explicitly to grant full
-access (the starter's default `kortix` agent does this). Chat inputs, trigger
-pickers, and channel pickers list registered agents from the API, not from a
-sandbox-local OpenCode query — this doesn't mean every native file under
-`.kortix/opencode/agents/` must be registered; unregistered files can still
-exist for local experiments or runtime internals.
+access. Chat inputs, trigger pickers, and channel pickers list registered agents
+from the API, not from a sandbox-local harness query — this doesn't mean every
+native harness agent file must be registered; unregistered files can still exist
+for local experiments or runtime internals.
 
 <Callout type="info" title="Legacy kortix.toml">
 v1 projects declare the same grants as an array, `[[agents]]`, with the secrets
@@ -49,6 +52,5 @@ connected integrations (per project — it only uses what's connected; see
 [Connecting your tools](/docs/guides/connecting-tools)).
 
 New agents, skills, or tools reach future sessions only after a
-[change request](/docs/concepts/change-requests) merges them. Authoring details:
-[opencode.ai/docs](https://opencode.ai/docs/) and
-[Kortix vs OpenCode config](/docs/reference/config-boundary).
+[change request](/docs/concepts/change-requests) merges them. For native
+behavior authoring, use the selected harness's own documentation.

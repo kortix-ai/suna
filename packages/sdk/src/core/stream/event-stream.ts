@@ -9,7 +9,7 @@
  * lookups) stays in the React wrapper and reaches this module only through the
  * injected `onEvent` / `onGapRehydrate` callbacks.
  *
- * Owns: connecting to the opencode SSE endpoint (with a connect timeout), the
+ * Owns: connecting to the runtime SSE endpoint (with a connect timeout), the
  * idle heartbeat watchdog, event coalescing + 16ms flush batching, gap
  * detection on reconnect, the exponential-backoff reconnect loop (fast 250ms
  * resume after an eventful stream, capped exponential backoff otherwise), and
@@ -34,7 +34,7 @@ export type RuntimeEvent =
       properties: { serverID: string; path: string };
     };
 
-/** The minimal slice of `OpencodeClient` this machine actually calls. */
+/** The minimal slice of `RuntimeClient` this machine actually calls. */
 export interface EventStreamClient {
   global: {
     event: (opts: {
@@ -64,7 +64,7 @@ const realTimers: EventStreamTimers = {
 };
 
 export interface OpenEventStreamOptions {
-  /** The opencode client to stream events from (same client the rest of the
+  /** The runtime client to stream events from (same client the rest of the
    *  SDK obtains via `getClient()`). */
   client: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
@@ -205,7 +205,7 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
 }
 
 /**
- * Connects to the opencode SSE event stream and keeps it alive: heartbeat
+ * Connects to the runtime SSE event stream and keeps it alive: heartbeat
  * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
  * and exponential-backoff reconnect. Framework-free — safe to call from any
  * host (the React wrapper calls this once per effect run; a non-React host can

@@ -8,7 +8,7 @@ import { getBackendUrl, getDefaultSandboxUrl } from './url-helpers';
 
 /**
  * Active-runtime resolution, framework-free. These are the read helpers the
- * isomorphic core (`createKortix`, the opencode client factory) resolves the
+ * isomorphic core (`createKortix`, the runtime client factory) resolves the
  * runtime through; the zustand read surface in `../server-store` layers on top
  * for React hosts.
  */

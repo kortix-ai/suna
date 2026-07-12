@@ -378,7 +378,7 @@ than `@kortix/sdk/react`.
 ## Rules of the road
 
 - **No native harness SDKs in host code.** Host apps and `@kortix/sdk` do not
-  depend on `@opencode-ai/sdk`. Conversation traffic is ACP-first; remaining
+  depend on native harness SDKs. Conversation traffic is ACP-first; remaining
   daemon helpers go through `@kortix/sdk/runtime-client`.
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its

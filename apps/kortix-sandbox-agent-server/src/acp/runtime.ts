@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 import { logger } from '../logger'
@@ -39,6 +41,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const MAX_REPLAY_EVENTS = 2_000
 const MAX_STDERR_LINES = 100
 const SENSITIVE_ENV_NAME = /(TOKEN|KEY|SECRET|PASSWORD|AUTH)/i
+const HARNESS_CONFIG_DIR_ENV = [
+  'CLAUDE_CONFIG_DIR',
+  'CODEX_HOME',
+  'OPENCODE_CONFIG_DIR',
+  'PI_CODING_AGENT_DIR',
+] as const
 
 export function redactHarnessStderr(line: string, env: NodeJS.ProcessEnv): string {
   let redacted = line
@@ -47,6 +55,14 @@ export function redactHarnessStderr(line: string, env: NodeJS.ProcessEnv): strin
     redacted = redacted.replaceAll(value, '[REDACTED]')
   }
   return redacted
+}
+
+export function ensureHarnessConfigDirs(env: NodeJS.ProcessEnv, cwd: string): void {
+  for (const name of HARNESS_CONFIG_DIR_ENV) {
+    const raw = env[name]?.trim()
+    if (!raw) continue
+    mkdirSync(isAbsolute(raw) ? raw : join(cwd, raw), { recursive: true })
+  }
 }
 
 function rpcIdKey(id: unknown): string {
@@ -96,6 +112,7 @@ class AcpProcess {
     this.descriptor = options.descriptor
     this.onUnexpectedExit = options.onUnexpectedExit
     const childEnv = { ...options.env, ...options.descriptor.launch.env }
+    ensureHarnessConfigDirs(childEnv, options.cwd)
     this.child = spawn(options.descriptor.launch.command, options.descriptor.launch.args, {
       cwd: options.cwd,
       env: childEnv,

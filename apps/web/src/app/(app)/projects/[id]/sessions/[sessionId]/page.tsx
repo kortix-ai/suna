@@ -115,8 +115,7 @@ export default function ProjectSessionPage() {
     let fresh = false;
     let pending = false;
     if (typeof window !== 'undefined') {
-      // Was two raw legacy-key checks (`opencode_pending_prompt:<id>` /
-      // `project_pending_prompt:<id>`) — now that every producer stashes
+      // Was two raw legacy-key checks — now that every producer stashes
       // canonically under the route id (see the `migrateStash` call below),
       // `readStartStash` is the one check that still sees a stash from any of
       // them (canonical or legacy shape) without knowing which key it lives

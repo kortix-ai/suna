@@ -122,7 +122,7 @@ export function useSandbox(enabled: boolean = true) {
 // ─── Session List Hook ───────────────────────────────────────────────────────
 
 /**
- * Lists all sessions from the OpenCode server.
+ * Lists all sessions from the runtime server.
  * GET {sandboxUrl}/session
  */
 export function useSessions(sandboxUrl: string | undefined) {

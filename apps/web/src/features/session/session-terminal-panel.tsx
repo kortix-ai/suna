@@ -40,9 +40,9 @@ export function SessionTerminalPanel({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
-  // The opencode runtime (in-sandbox daemon + opencode server) must be booted
+  // The session runtime (in-sandbox daemon + selected harness) must be booted
   // and healthy before any /pty REST call will resolve — otherwise the proxy
-  // 404s against a sandbox whose daemon isn't up yet. Every opencode hook gates
+  // 404s against a sandbox whose daemon isn't up yet. Every runtime hook gates
   // on this same signal; the PTY list query does too (so it stays disabled, and
   // `isLoading` reads false, until ready). We mirror it here so the lazy create
   // effect below doesn't fire a doomed POST during boot.

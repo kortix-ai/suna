@@ -146,7 +146,7 @@ describe('recoverFromSendFailure', () => {
 
   test('removes the optimistic message outright when the runtime client is not resolvable', () => {
     beginOptimisticSend('sess-1', 'msg-1', 'never made it');
-    getClientThrows = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    getClientThrows = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
 
     const classified = recoverFromSendFailure('sess-1', 'msg-1', new Error('boom'));
 

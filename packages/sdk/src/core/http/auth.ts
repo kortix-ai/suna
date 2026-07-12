@@ -140,7 +140,7 @@ function fetchWithAuth(
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
  *
- * Centralizes the pattern duplicated across opencode-sdk, use-sandbox-connection,
+ * Centralizes the pattern duplicated across runtime callers and use-sandbox-connection,
  * and server-selector. All three auth injection points now go through this.
  *
  * Behavior:

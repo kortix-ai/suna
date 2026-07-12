@@ -1,7 +1,7 @@
 /**
  * LlmProvidersPage — Manage LLM provider connections and API keys.
  *
- * API endpoints (via OpenCode server):
+ * Runtime API endpoints:
  *   GET    {sandboxUrl}/provider         — List all providers + connected status
  *   PUT    {sandboxUrl}/auth/{id}        — Connect provider (set API key)
  *   DELETE {sandboxUrl}/auth/{id}        — Disconnect provider (remove key)

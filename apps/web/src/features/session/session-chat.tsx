@@ -3643,7 +3643,7 @@ export function SessionChat({
   // ---- Optimistic prompt (from dashboard/project page) ----
   // Backed by the SDK's start-stash (`readStartStash`/`clearStartStash`), which
   // understands both the modern `kortix:start:<id>` shape and every legacy
-  // producer's bare `opencode_pending_prompt:<id>` + `opencode_pending_options:<id>`
+  // producer's legacy bare-prompt/options keys
   // pair — so pushState navigation still works with no `?new=true` dependency,
   // and no web code needs to know the storage key names directly.
   const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {

@@ -17,8 +17,6 @@ export {
 } from './pty';
 export * from './kortix-master';
 
-export type OpencodeClient = RuntimeClient;
-
 type Fetcher = typeof fetch;
 
 const clientsByUrl = new Map<string, RuntimeClient>();

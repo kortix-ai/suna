@@ -91,7 +91,7 @@ export function FileViewer({
   const canShowRaw =
     file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
 
-  // Fetch file content for text-based files (via OpenCode API)
+  // Fetch file content for text-based files via the runtime API
   const {
     data: textContent,
     isLoading: isLoadingText,
@@ -101,7 +101,7 @@ export function FileViewer({
     shouldFetchText ? file?.path : undefined
   );
 
-  // Fetch blob for binary files (via OpenCode API)
+  // Fetch blob for binary files via the runtime API
   const {
     data: imageBlob,
     isLoading: isLoadingImage,

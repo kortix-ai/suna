@@ -4,7 +4,7 @@
  *
  * Read (list/content/status/find) and write (upload/delete/mkdir/rename) all hit
  * the in-sandbox daemon for the active server; project/health go through the
- * opencode client. DOM-bound helpers (download / zip) stay in the host UI and
+ * runtime client. DOM-bound helpers (download / zip) stay in the host UI and
  * consume `readBlob`/`list` from here.
  */
 import { getClient } from '../runtime/client';
@@ -347,7 +347,7 @@ export async function renameFile(from: string, to: string, baseUrl: string = get
   return res.json();
 }
 
-// ── project / health (via opencode client) ────────────────────────────────────
+// ── project / health (via runtime client) ─────────────────────────────────────
 export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
   return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
 }

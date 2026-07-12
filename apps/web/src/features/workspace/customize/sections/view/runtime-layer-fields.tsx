@@ -1,8 +1,7 @@
 'use client';
 
-/** The Runtime-layer field block (behavior + permission tree) — the
- *  runtime-specific half of the agent, saves to
- *  `.kortix/opencode/agents/<name>.md`. */
+/** Legacy runtime-layer field block (behavior + permission tree). v3 agents
+ *  pick an ACP runtime profile instead; the native harness owns these fields. */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -222,7 +221,7 @@ export function RuntimeLayerFields({
         </div>
         <FieldRow
           label="System prompt"
-          hint={`saved to .kortix/opencode/agents/${agentName}.md`}
+          hint={`saved to ${agentName}'s runtime-native file`}
         >
           <Textarea
             value={behavior.prompt ?? ''}

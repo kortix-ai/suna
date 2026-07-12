@@ -57,7 +57,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
       emptyIcon={Bot}
       emptyTitle="No agents yet"
       emptyDescription="Create an agent to customize how sessions run."
-      emptyDocsHref="https://opencode.ai/docs/agents/"
+      emptyDocsHref="https://agentclientprotocol.com/get-started/agents"
       emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
       select={(config) => config.agents}
       renderContext={(config) => (

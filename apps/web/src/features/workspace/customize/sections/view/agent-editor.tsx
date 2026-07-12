@@ -1,10 +1,9 @@
 'use client';
 
 /**
- * The full v2 "agent builder" — the complete editor for one `agents.<name>`
- * block in a kortix_version 2 manifest (agent-first spec §2.2). Exposes the
- * ENTIRE agent-config field space: identity, behavior/model, Kortix governance
- * (skills/connectors/secrets/kortix_cli), and the full Runtime permission tree.
+ * Agent configuration editor for one `agents.<name>` block. v3 edits logical
+ * ACP runtime routing + Kortix governance; legacy v2 can still edit the
+ * runtime-native behavior fields it owns.
  *
  * Mounted from agents-view.tsx's detail aside via <AgentConfigEditor/>:
  *   - v2 project (editable) → a compact summary card + "Edit configuration",
@@ -144,8 +143,8 @@ function AgentEditorModal({
       return next;
     });
 
-  // Runtime-layer v2 behavior fields still live under the legacy `opencode`
-  // manifest key; keep the UI vocabulary runtime-neutral.
+  // Runtime-layer v2 behavior fields still arrive under the compatibility
+  // `opencode` wire key; keep the UI vocabulary runtime-neutral.
   const setRuntimeBehavior = <K extends keyof RuntimeAgentBehaviorConfig>(
     key: K,
     value: RuntimeAgentBehaviorConfig[K],
@@ -179,7 +178,7 @@ function AgentEditorModal({
             {schemaVersion === 3 ? (
               <>Logical runtime routing and governance saved to <span className="font-mono">kortix.yaml</span>.</>
             ) : (
-              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to the legacy runtime file <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.</>
+              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to this agent's runtime-native file.</>
             )}
           </ModalDescription>
         </ModalHeader>
@@ -339,8 +338,7 @@ export function AgentConfigEditor({
         {fallback}
         <InfoBanner tone="info" title="Upgrade for the full agent editor">
           This project uses a v1 manifest. Migrate to <span className="font-mono">kortix.yaml</span>{' '}
-          (kortix_version 2) to edit the agent's mode, model, temperature, permission tree, and
-          per-agent governance here.
+          (kortix_version 3) to edit ACP runtime routing and per-agent governance here.
         </InfoBanner>
       </div>
     );

@@ -93,7 +93,7 @@ async function serializeBinding(
     explicit: row.agentName,
     projectDefault: projectDefaultAgent,
   });
-  const effectiveModel = await resolveBindingEffectiveModel(row.opencodeModel, effectiveAgent.agent, modelCtx);
+  const effectiveModel = await resolveBindingEffectiveModel(row.model, effectiveAgent.agent, modelCtx);
   return {
     bindingId: row.bindingId,
     platform: row.platform,

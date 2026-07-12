@@ -20,7 +20,6 @@ export {
   resetClient as resetRuntimeClient,
   resetPublicClient as resetPublicRuntimeClient,
   systemReload,
-  type OpencodeClient as RuntimeClient,
   type SystemReloadMode,
   type SystemReloadResult,
 } from '../core/runtime/client';

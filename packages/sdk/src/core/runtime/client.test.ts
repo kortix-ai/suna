@@ -128,7 +128,7 @@ test('getPublicClientForUrl never sends an Authorization header, even with a tok
 
 test('getPublicClientForUrl works without configureKortix ever having been called (no token-provider requirement)', async () => {
   // A real anonymous visitor's tab may never call configureKortix() with a
-  // getToken — getClientForUrl would throw '[opencode-sdk] No auth token
+  // getToken — getClientForUrl would throw a missing auth token error
   // provider configured' here; the public client must not.
   const calls = captureRequests();
   const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');

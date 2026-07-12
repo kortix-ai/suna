@@ -64,7 +64,7 @@ export function serializeSession(
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
-  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // over the auto title (metadata.name) mirrored from the runtime server-side
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.

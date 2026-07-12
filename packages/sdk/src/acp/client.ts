@@ -109,7 +109,12 @@ export class AcpClient {
     const controller = new AbortController();
     let lastEventId = options.lastEventId ?? 0;
     let closed = false;
-    options.signal?.addEventListener('abort', () => controller.abort(), { once: true });
+    const closeReason = () => new Error('ACP stream closed');
+    options.signal?.addEventListener(
+      'abort',
+      () => controller.abort(options.signal?.reason ?? closeReason()),
+      { once: true },
+    );
 
     const run = async () => {
       let retryMs = 250;
@@ -143,7 +148,7 @@ export class AcpClient {
     return {
       close() {
         closed = true;
-        controller.abort();
+        controller.abort(closeReason());
       },
       get lastEventId() {
         return lastEventId;

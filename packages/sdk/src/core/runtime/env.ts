@@ -23,7 +23,7 @@ async function envErrorMessage(res: Response, fallback: string): Promise<string>
 
 function requireBaseUrl(baseUrl: string): string {
   if (!baseUrl) {
-    throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    throw new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
   }
   return baseUrl;
 }

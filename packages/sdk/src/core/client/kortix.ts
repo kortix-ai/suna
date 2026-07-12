@@ -631,7 +631,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     };
   }
 
-  /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
+  /** Id-bound handle for a single session: lifecycle (REST) + runtime protocol client. */
   function session(projectId: string, sessionId: string) {
     // Opinionated-action state, scoped to THIS handle. The runtime is
     // keyed by the Runtime session id (resolved server-side at /start), NOT the

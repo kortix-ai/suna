@@ -6,8 +6,8 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { hasUsableModel } from '@/hooks/opencode/use-model-store';
+import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { hasUsableModel } from '@/hooks/runtime/use-model-store';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
