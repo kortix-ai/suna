@@ -14,7 +14,7 @@ import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } 
 // Session Hooks
 // ============================================================================
 
-export function useOpenCodeSessions() {
+export function useOpenCodeSessions(enabled = true) {
   const runtimeReady = useOpenCodeRuntimeReady();
   // Subscribe to the active runtime sandbox so the query key recomputes the
   // instant the sandbox switches — returning to a warm session hits its cached
@@ -31,7 +31,7 @@ export function useOpenCodeSessions() {
       return sorted;
     },
     placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
-    enabled: runtimeReady,
+    enabled: enabled && runtimeReady,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,

@@ -43,9 +43,10 @@ export function useCanonicalOpenCodeSession(params: {
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
   pinFromStart?: string | null;
+  enabled?: boolean;
 }): CanonicalOpenCodeSession {
-  const { projectId, sessionId, pinFromStart } = params;
-  const sessionsQuery = useOpenCodeSessions();
+  const { projectId, sessionId, pinFromStart, enabled = true } = params;
+  const sessionsQuery = useOpenCodeSessions(enabled);
 
   // The Kortix session row carries the authoritative, server-managed pin — used
   // as a fallback when /start's value isn't in this render's props yet.
@@ -58,7 +59,7 @@ export function useCanonicalOpenCodeSession(params: {
   const projectSessionQuery = useQuery({
     queryKey: ['project-session', projectId, sessionId],
     queryFn: () => getProjectSession(projectId, sessionId, { showErrors: false }),
-    enabled: !!projectId && !!sessionId && !pinFromStart,
+    enabled: enabled && !!projectId && !!sessionId && !pinFromStart,
     staleTime: 10_000,
   });
   const pin = projectSessionQuery.data?.opencode_session_id ?? null;

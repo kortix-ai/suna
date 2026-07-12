@@ -816,7 +816,10 @@ export async function openSession(args: {
       opencode_session_id: null,
       runtime_protocol: 'acp',
       runtime_id: runtimeHealth.acpServerId,
-      runtime_session_id: null,
+      runtime_session_id:
+        typeof visible.row.metadata?.acp_session_id === 'string'
+          ? visible.row.metadata.acp_session_id
+          : null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: ready
         ? 'acp_ready'

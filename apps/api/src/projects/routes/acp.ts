@@ -1,4 +1,4 @@
-import { acpSessionEnvelopes, sessionSandboxes } from '@kortix/db';
+import { acpSessionEnvelopes, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, eq, gt } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
@@ -141,11 +141,35 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
   if (method === 'POST' && upstream.ok && upstream.status !== 202 && upstream.body) {
     const responseBody = await upstream.text();
     try {
+      const requestEnvelope = JSON.parse(requestBody ?? '{}') as Envelope;
+      const responseEnvelope = JSON.parse(responseBody) as Envelope;
       await appendEnvelope({
         ...target,
         direction: 'agent_to_client',
-        envelope: JSON.parse(responseBody) as Envelope,
+        envelope: responseEnvelope,
       });
+      const result = responseEnvelope.result as Record<string, unknown> | undefined;
+      if (requestEnvelope.method === 'session/new' && typeof result?.sessionId === 'string') {
+        const [current] = await db.select({ metadata: projectSessions.metadata })
+          .from(projectSessions)
+          .where(and(
+            eq(projectSessions.projectId, target.projectId),
+            eq(projectSessions.sessionId, target.sessionId),
+          ))
+          .limit(1);
+        await db.update(projectSessions).set({
+          metadata: {
+            ...((current?.metadata as Record<string, unknown> | null) ?? {}),
+            runtime_protocol: 'acp',
+            runtime_id: target.runtimeId,
+            acp_session_id: result.sessionId,
+          },
+          updatedAt: new Date(),
+        }).where(and(
+          eq(projectSessions.projectId, target.projectId),
+          eq(projectSessions.sessionId, target.sessionId),
+        ));
+      }
     } catch {}
     return new Response(responseBody, { status: upstream.status, headers: upstream.headers });
   }

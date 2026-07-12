@@ -14,6 +14,7 @@ import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-bound
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { AcpSessionChat } from '@/features/session/acp-session-chat';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import {
@@ -231,12 +232,21 @@ export default function ProjectSessionPage() {
           >
             <ProjectSessionRuntimeConnection>
               {mountChat && (
-                <ActiveSessionChat
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  pinFromStart={session.opencodeSessionId}
-                  onChatReady={() => setChatReady(true)}
-                />
+                session.runtimeProtocol === 'acp' ? (
+                  <AcpSessionChat
+                    projectId={projectId}
+                    sessionId={sessionId}
+                    runtimeSessionId={session.runtimeSessionId}
+                    onReady={() => setChatReady(true)}
+                  />
+                ) : (
+                  <ActiveSessionChat
+                    projectId={projectId}
+                    sessionId={sessionId}
+                    pinFromStart={session.opencodeSessionId}
+                    onChatReady={() => setChatReady(true)}
+                  />
+                )
               )}
             </ProjectSessionRuntimeConnection>
           </div>

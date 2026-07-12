@@ -317,6 +317,8 @@ export function useSession(
 
   const switched =
     startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const runtimeProtocol = startData?.runtime_protocol ?? (startData?.opencode_session_id ? 'opencode' : null);
+  const isAcp = runtimeProtocol === 'acp';
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -331,7 +333,7 @@ export function useSession(
   // 4. Open the live SSE stream. This was a provider component (OpenCodeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useOpenCodeEventStream();
+  useOpenCodeEventStream(!isAcp);
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -339,6 +341,7 @@ export function useSession(
     projectId,
     sessionId,
     pinFromStart: startData?.opencode_session_id ?? null,
+    enabled: !isAcp,
   });
   const ocSessionId = rootSessionId ?? '';
   // Always call the hook (rules-of-hooks) so it stays in the same position
@@ -471,6 +474,9 @@ export function useSession(
     sessionId,
     /** Canonical OpenCode root id, or null while resolving. */
     opencodeSessionId: rootSessionId ?? null,
+    runtimeProtocol,
+    runtimeId: startData?.runtime_id ?? null,
+    runtimeSessionId: startData?.runtime_session_id ?? null,
 
     // live data
     messages: sync.messages,

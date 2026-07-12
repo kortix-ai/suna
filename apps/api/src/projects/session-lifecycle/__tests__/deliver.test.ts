@@ -74,6 +74,31 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     expect(outcome).toBe('delivered');
   });
 
+  test('ACP delivery uses the runtime process id before session/new has produced a conversation id', async () => {
+    let received: DeliveryTarget | null = null;
+    const opened: DeliveryTarget = {
+      stage: 'ready',
+      externalId: 'ext-acp',
+      opencodeSessionId: null,
+      runtimeProtocol: 'acp',
+      runtimeId: 'runtime-acp',
+      runtimeSessionId: null,
+    };
+    const outcome = await deliverWithRetry({
+      opened,
+      reopen: async () => opened,
+      send: async (_externalId, runtimeId, target) => {
+        expect(runtimeId).toBe('runtime-acp');
+        received = target;
+        return true;
+      },
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('delivered');
+    expect((received as DeliveryTarget | null)?.runtimeProtocol).toBe('acp');
+  });
+
   test('send never succeeds before the deadline → pending (the honest last resort)', async () => {
     let sends = 0;
     const outcome = await deliverWithRetry({

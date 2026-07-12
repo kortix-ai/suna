@@ -18,6 +18,9 @@ export interface DeliveryTarget {
   stage: string;
   externalId: string | null;
   opencodeSessionId: string | null;
+  runtimeProtocol?: 'acp' | 'opencode' | null;
+  runtimeId?: string | null;
+  runtimeSessionId?: string | null;
 }
 
 // Pure, fully-injectable retry loop (mirrors awaitTerminalStage) so the wake/heal
@@ -28,7 +31,7 @@ export interface DeliveryTarget {
 export async function deliverWithRetry(input: {
   opened: DeliveryTarget;
   reopen: () => Promise<DeliveryTarget | null>;
-  send: (externalId: string, opencodeSessionId: string) => Promise<boolean>;
+  send: (externalId: string, opencodeSessionId: string, target: DeliveryTarget) => Promise<boolean>;
   sessionId?: string;
   now?: () => number;
   sleepFn?: (ms: number) => Promise<void>;
@@ -43,8 +46,11 @@ export async function deliverWithRetry(input: {
   let current = input.opened;
   const deadline = now() + deadlineMs;
   for (;;) {
-    if (current.externalId && current.opencodeSessionId) {
-      if (await input.send(current.externalId, current.opencodeSessionId)) return 'delivered';
+    const deliverableId = current.runtimeProtocol === 'acp'
+      ? current.runtimeId
+      : current.opencodeSessionId;
+    if (current.externalId && deliverableId) {
+      if (await input.send(current.externalId, deliverableId, current)) return 'delivered';
     }
     if (now() >= deadline) {
       console.warn('[session-lifecycle] could not deliver prompt before deadline', {

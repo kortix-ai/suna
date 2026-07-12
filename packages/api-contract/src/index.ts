@@ -158,6 +158,9 @@ export const ProjectSessionSchema = z.object({
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
   opencode_session_id: z.string().nullable(),
+  runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
+  runtime_id: z.string().nullable().optional(),
+  acp_session_id: z.string().nullable().optional(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */

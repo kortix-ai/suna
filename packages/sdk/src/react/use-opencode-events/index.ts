@@ -36,7 +36,7 @@ import { openEventStream } from '../../state/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream() {
+export function useOpenCodeEventStream(enabled = true) {
   const queryClient = useQueryClient();
   const addPermission = useOpenCodePendingStore((s) => s.addPermission);
   const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -63,6 +63,7 @@ export function useOpenCodeEventStream() {
   } = useEventStreamRefs({ queryClient, stopCompaction, applySyncEvent });
 
   useEffect(() => {
+    if (!enabled) return;
     // On first mount, always start clean — the provider may have remounted
     // after navigating away and back while the session's runtime changed. The
     // ref would have been initialized to the post-change runtimeVersion so the
@@ -238,6 +239,7 @@ export function useOpenCodeEventStream() {
     clearPending,
     runtimeVersion,
     activeServerUrl,
+    enabled,
     sandboxStatus,
     runtimeHealthy,
     applySyncEvent,

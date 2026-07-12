@@ -285,6 +285,9 @@ export async function continueSession(
     stage: o.stage,
     externalId: sandboxExternalId(o),
     opencodeSessionId: o.opencode_session_id,
+    runtimeProtocol: o.runtime_protocol ?? (o.opencode_session_id ? 'opencode' : null),
+    runtimeId: o.runtime_id ?? null,
+    runtimeSessionId: o.runtime_session_id ?? null,
   });
 
   return deliverWithRetry({
@@ -294,8 +297,18 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, opencodeSessionId) =>
-      postPrompt(externalId, opencodeSessionId, text, userId),
+    send: (externalId, runtimeId, target) =>
+      target.runtimeProtocol === 'acp'
+        ? postAcpPrompt({
+            externalId,
+            runtimeId,
+            acpSessionId: target.runtimeSessionId ?? null,
+            projectId: session.projectId,
+            sessionId,
+            text,
+            userId,
+          })
+        : postPrompt(externalId, runtimeId, text, userId),
   });
 }
 
@@ -591,6 +604,77 @@ async function postPrompt(
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
     console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
+    return false;
+  }
+}
+
+async function postAcpPrompt(input: {
+  externalId: string;
+  runtimeId: string;
+  acpSessionId: string | null;
+  projectId: string;
+  sessionId: string;
+  text: string;
+  userId: string;
+}): Promise<boolean> {
+  let rpcId = Date.now();
+  const call = async (method: string, params: unknown) => {
+    const request = { jsonrpc: '2.0', id: rpcId++, method, params };
+    const body = new TextEncoder().encode(JSON.stringify(request));
+    const response = await forwardToSandbox(
+      input.externalId,
+      DAEMON_PORT,
+      { kind: 'principal', userId: input.userId },
+      'POST',
+      `/acp/${encodeURIComponent(input.runtimeId)}`,
+      '',
+      new Headers({ 'Content-Type': 'application/json' }),
+      body.buffer as ArrayBuffer,
+      config.KORTIX_URL ?? '',
+    );
+    if (!response.ok) throw new Error(`ACP ${method} returned HTTP ${response.status}`);
+    const envelope = await response.json() as { result?: any; error?: { message?: string } };
+    if (envelope.error) throw new Error(envelope.error.message || `ACP ${method} failed`);
+    return envelope.result;
+  };
+
+  try {
+    await call('initialize', {
+      protocolVersion: 1,
+      clientCapabilities: {},
+      clientInfo: { name: 'kortix-api', title: 'Kortix Automations', version: '3' },
+    });
+    let acpSessionId = input.acpSessionId;
+    if (acpSessionId) {
+      await call('session/load', { sessionId: acpSessionId, cwd: WORKSPACE, mcpServers: [] });
+    } else {
+      const created = await call('session/new', { cwd: WORKSPACE, mcpServers: [] });
+      acpSessionId = typeof created?.sessionId === 'string' ? created.sessionId : null;
+      if (!acpSessionId) throw new Error('ACP session/new returned no sessionId');
+      const [current] = await db.select({ metadata: projectSessions.metadata })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, input.sessionId))
+        .limit(1);
+      await db.update(projectSessions).set({
+        metadata: {
+          ...((current?.metadata as Record<string, unknown> | null) ?? {}),
+          runtime_protocol: 'acp',
+          runtime_id: input.runtimeId,
+          acp_session_id: acpSessionId,
+        },
+        updatedAt: new Date(),
+      }).where(eq(projectSessions.sessionId, input.sessionId));
+    }
+    await call('session/prompt', {
+      sessionId: acpSessionId,
+      prompt: [{ type: 'text', text: input.text }],
+    });
+    return true;
+  } catch (error) {
+    console.warn('[session-lifecycle] ACP prompt delivery failed (will retry)', {
+      sessionId: input.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

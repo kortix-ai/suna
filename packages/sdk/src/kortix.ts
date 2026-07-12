@@ -754,9 +754,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           clientCapabilities: {},
           clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' },
         });
-        const created = await client.newSession({ cwd: '/workspace', mcpServers: [] });
-        _acpSessionId = created.sessionId;
-        ready.runtimeSessionId = created.sessionId;
+        if (ready.runtimeSessionId) {
+          await client.loadSession({ sessionId: ready.runtimeSessionId, cwd: '/workspace', mcpServers: [] });
+          _acpSessionId = ready.runtimeSessionId;
+        } else {
+          const created = await client.newSession({ cwd: '/workspace', mcpServers: [] });
+          _acpSessionId = created.sessionId;
+        }
+        ready.runtimeSessionId = _acpSessionId;
       }
       return { client, acpSessionId: _acpSessionId, ready };
     }
