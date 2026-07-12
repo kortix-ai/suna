@@ -17,6 +17,7 @@ import {
   extractUsageFromJson,
   jsonHasContent,
 } from '../usage';
+import { gatewayErrorBody } from './error-response';
 import { runFailover } from './failover';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
@@ -359,6 +360,9 @@ export async function handleChatCompletions(
       const message = lastErrorFrame
         ? lastErrorFrame.message
         : 'All upstream candidates returned an empty completion';
+      const failedDescriptor = candidates.findLast((candidate) =>
+        emptyProviders.has(candidate.provider),
+      );
       emit({
         ...id,
         requestedModel,
@@ -373,11 +377,16 @@ export async function handleChatCompletions(
         metadata,
       });
       return json(
-        {
-          error: message,
+        gatewayErrorBody({
+          message,
           code: errorCode,
-          ...(lastErrorFrame?.code !== undefined ? { upstream_code: lastErrorFrame.code } : {}),
-        },
+          upstreamCode: lastErrorFrame?.code,
+          provider: failedDescriptor?.provider ?? tried.at(-1) ?? '',
+          requestedModel,
+          resolvedModel: failedDescriptor?.resolvedModel ?? routedModel,
+          requestId,
+          suggestion: 'Retry the request. If the error continues, switch to another model.',
+        }),
         502,
       );
     }
