@@ -69,6 +69,17 @@ function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function isBareImageLoadNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return normalized === 'Failed to load image' || normalized === 'Error: Failed to load image';
+}
+
+function isBrowserBundleSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized.startsWith('app:///_next/static/')
+    || /^https?:\/\/[^/]+\/_next\/static\//.test(normalized);
+}
+
 function extractMessage(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value instanceof Error) return value.message;
@@ -130,6 +141,14 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser-native <img> / next/image load failures can surface as this exact
+  // message through window.onerror. Keep this exact: pptx-react-viewer throws
+  // actionable errors such as "Failed to load image for colour change
+  // processing", which must still reach error tracking.
+  if (isBareImageLoadNoiseMessage(message)) {
+    return true;
+  }
+
   if (isKnownTestNoiseMessage(message)) {
     return true;
   }
@@ -162,6 +181,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   const environment = normalizeString((event as { environment?: unknown }).environment);
 
   if (isKnownBrowserNoiseMessage(message)) {
+    return true;
+  }
+
+  // This helper is also used by the server and edge Sentry configs. Require a
+  // browser bundle frame here so a same-worded server exception is not hidden.
+  // The client config additionally has an anchored ignoreErrors regex for
+  // frame-less browser events.
+  if (isBareImageLoadNoiseMessage(message)
+    && frames.some((frame) => isBrowserBundleSource(frame.filename))) {
     return true;
   }
 

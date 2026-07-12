@@ -274,3 +274,81 @@ test('does NOT suppress a genuine runtime/server error that is not the transient
     false,
   )
 })
+
+// Reproduces Better Stack error 1426e718... (38 occurrences) and b04a2106...
+// (6 occurrences), Kortix Frontend (prod), application_id 2346967: a browser-
+// native image load failure raised through window.onerror. The app already
+// degrades gracefully via onError handlers, so the exact message is noise.
+test('suppresses the "Failed to load image" browser noise via runtime guard', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error: Failed to load image',
+      filename: 'app:///_next/static/chunks/main.js',
+    }),
+    true,
+  )
+})
+
+test('suppresses the bare "Failed to load image" Sentry exception', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://app.kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: 'Failed to load image',
+            stacktrace: {
+              frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real application error that merely mentions images', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://app.kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: 'TypeError: Cannot read properties of undefined (reading src)',
+            stacktrace: { frames: [{ filename: 'app:///_next/static/chunks/app.js' }] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an actionable pptx image-processing failure', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://app.kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: 'Failed to load image for colour change processing',
+            stacktrace: {
+              frames: [{ filename: 'app:///_next/static/chunks/pptx-viewer.js' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a same-worded server exception without a browser frame', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: 'Failed to load image' }] },
+    }),
+    false,
+  )
+})
