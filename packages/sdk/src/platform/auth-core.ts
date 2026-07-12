@@ -55,22 +55,22 @@ export async function withTokenRetry(
 export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 /**
- * Requests whose protocol owns its own lifetime. This includes SSE streams and
- * ACP: `session/prompt` is a synchronous JSON-RPC call that completes only when
- * the agent turn completes, which routinely takes longer than the generic 30s
- * HTTP budget. Their callers own cancellation and must not receive a synthetic
- * transport timeout.
+ * The one long-lived streaming call reached through the auth fetch injection
+ * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
+ * client's `global.event(...)` SSE endpoint (`GET {runtimeUrl}/global/event`).
+ * It manages its own lifecycle (heartbeat watchdog + explicit abort/reconnect
+ * loop) and must stay open far longer than any request timeout.
  */
 export function isStreamingRequest(input: RequestInfo | URL): boolean {
 	const url = input instanceof Request ? input.url : String(input);
-	return url.includes('/global/event') || /\/acp(?:[/?#]|$)/.test(url);
+	return url.includes('/global/event');
 }
 
 /**
  * Compose the request's own abort signal with a default 30s timeout, so a
  * hung non-streaming call can't wedge a "Kortix as a Backend" server-side
- * handler forever. Protocol-owned long requests are exempted (see
- * `isStreamingRequest`): their caller signal — if any — passes through
+ * handler forever. The SSE event stream is exempted (see
+ * `isStreamingRequest`): its caller signal — if any — passes through
  * untouched. Falls back to the caller's bare signal on a runtime without
  * `AbortSignal.any` (older Node/engines) — guarded so a caller-supplied
  * signal is never silently dropped.
@@ -114,7 +114,7 @@ export function buildAuthHeaders(
 
 /**
  * The synthetic 401 returned when no token is available — safe for all
- * callers including the Runtime SDK, which expects fetch() semantics
+ * callers including the OpenCode SDK, which expects fetch() semantics
  * (returns a Response, never throws), and it means the request never goes
  * out on the wire unauthenticated.
  */

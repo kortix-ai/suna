@@ -1,8 +1,8 @@
 /**
  * OpenCode Session Types
  *
- * These mirror runtime wire shapes but are defined locally to avoid pulling in
- * native harness SDK dependencies for mobile.
+ * These mirror the types from @opencode-ai/sdk but are defined locally
+ * to avoid pulling in the full SDK dependency for mobile.
  */
 
 export interface FileDiff {

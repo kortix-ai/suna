@@ -12,8 +12,6 @@ import {
   useFocusedToolCallId,
   useClearFocusedToolCall,
 } from '@/stores/kortix-computer-store';
-import type { AcpChatItem } from '@kortix/sdk';
-import { acpToolCallToPart } from './acp-tool-call-card';
 
 /**
  * Flatten a session's messages into the ordered list of tool calls worth
@@ -53,20 +51,12 @@ export function collectToolParts(
 export const SessionActionsPanel = memo(function SessionActionsPanel({
   sessionId,
   messages,
-  acpItems,
 }: {
   sessionId: string;
   messages: MessageWithParts[] | undefined;
-  acpItems?: AcpChatItem[];
 }) {
-  const acpTools = useMemo(() => acpItems?.filter((item): item is Extract<AcpChatItem, { kind: 'tool' }> => item.kind === 'tool') ?? [], [acpItems]);
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const parts = useMemo(
-    () => acpItems
-      ? acpTools.map((tool) => acpToolCallToPart(tool, sessionId))
-      : collectToolParts(messages),
-    [acpItems, acpTools, messages, sessionId],
-  );
+  const parts = useMemo(() => collectToolParts(messages), [messages]);
   const count = parts.length;
 
   const [index, setIndex] = useState(0);

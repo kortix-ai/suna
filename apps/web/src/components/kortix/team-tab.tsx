@@ -61,7 +61,7 @@ import {
   type ExecutionMode,
   type ToolGroup,
 } from '@/hooks/kortix/use-kortix-tickets';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import {
   AgentAvatar,
@@ -743,7 +743,7 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
 
 function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const byProvider = useMemo(() => {
     const m = new Map<string, { providerName: string; models: FlatModel[] }>();

@@ -2,19 +2,19 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { readFile } from '../api/runtime-files';
+import { readFile } from '../api/opencode-files';
 import type { FileContent } from '@/features/file-browser/types';
 import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 import { isSystemDirectoryPath } from './system-dir';
 
 export const fileContentKeys = {
-  all: ['runtime-files', 'content'] as const,
+  all: ['opencode-files', 'content'] as const,
   file: (serverUrl: string, filePath: string) =>
-    ['runtime-files', 'content', serverUrl, filePath] as const,
+    ['opencode-files', 'content', serverUrl, filePath] as const,
 };
 
 /**
- * Fetch the content of a single file from the active Runtime server.
+ * Fetch the content of a single file from the active OpenCode server.
  *
  * Uses GET /file/content?path=<path> which returns FileContent.
  * Text files return plain content; images/binaries return base64-encoded content.

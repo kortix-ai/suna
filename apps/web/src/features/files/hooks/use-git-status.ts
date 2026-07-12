@@ -2,14 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
-import { getFileStatus } from '../api/runtime-files';
+import { getFileStatus } from '../api/opencode-files';
 import type { GitFileStatus } from '@/features/file-browser/types';
 import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {
-  all: ['runtime-files', 'git-status'] as const,
+  all: ['opencode-files', 'git-status'] as const,
   status: (serverUrl: string) =>
-    ['runtime-files', 'git-status', serverUrl] as const,
+    ['opencode-files', 'git-status', serverUrl] as const,
 };
 
 /**

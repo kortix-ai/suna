@@ -1,5 +1,5 @@
-import { getActiveRuntimeUrl } from '@/stores/server-store';
-import { findFiles, listFiles } from '../api/runtime-files';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
+import { findFiles, listFiles } from '../api/opencode-files';
 import type { FileNode } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
@@ -215,7 +215,7 @@ async function buildWorkspaceIndex(): Promise<WorkspaceSearchEntry[]> {
 }
 
 async function getWorkspaceIndexEntries(): Promise<WorkspaceSearchEntry[]> {
-  const serverUrl = getActiveRuntimeUrl();
+  const serverUrl = getActiveOpenCodeUrl();
   const current = getCacheForServer(serverUrl);
   const now = Date.now();
 
@@ -326,7 +326,7 @@ export async function searchWorkspaceFilePaths(
 /**
  * One-shot async file+folder search with ranking.
  * Returns plain `string[]` paths (dirs have trailing `/`).
- * Drop-in replacement for `findRuntimeFiles`.
+ * Drop-in replacement for `findOpenCodeFiles`.
  */
 export async function searchWorkspaceFiles(
   query: string,

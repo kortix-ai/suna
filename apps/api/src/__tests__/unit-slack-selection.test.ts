@@ -27,7 +27,7 @@ mock.module('../shared/db', () => ({
 // selection.ts pulls these in at import; stub so the import is cheap + side-effect-free.
 // `projectConfig` is mutable so governance tests can flip a project between
 // legacy (no fixed catalog) and declarative (`[[agents]]` adopted).
-let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_source?: string } = { agents: [] };
+let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_discovery?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
 mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
@@ -64,14 +64,14 @@ describe('isValidModelId — provider/model shape only (no stale-catalog gate)',
 
 describe('currentChannelSelection', () => {
   test('returns the binding + its agent/model overrides', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
+    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
+    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
   });
   test('null agent/model overrides surface as null', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: null, model: null, conversationPolicy: null }]];
+    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, model: null, conversationPolicy: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('unbound channel → null', async () => {
     dbResults = [[]];
@@ -83,7 +83,7 @@ describe('currentChannelSelection', () => {
       [{ projectId: 'p1' }],
     ];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, model: null, conversationPolicy: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('no channel id → null (no query)', async () => {
     expect(await currentChannelSelection({ teamId: 'T1', channelId: '' })).toBeNull();
@@ -119,7 +119,7 @@ describe('setChannelAgent / setChannelModel', () => {
 
 describe('setChannelAgent — governance validation (declared [[agents]] projects)', () => {
   test('governed project rejects a name that is not a declared agent', async () => {
-    projectConfig = { agents: [{ name: 'reviewer' }], agent_source: 'declarative' };
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
     // 1st shift: projectId lookup. 2nd shift: loadProjectAgentGovernance's own
     // project row lookup. No 3rd shift — the write must never happen.
     dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }]];
@@ -130,7 +130,7 @@ describe('setChannelAgent — governance validation (declared [[agents]] project
     expect(dbResults.length).toBe(0);
   });
   test('governed project accepts a declared agent name', async () => {
-    projectConfig = { agents: [{ name: 'reviewer' }], agent_source: 'declarative' };
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
     dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }], [{ id: 'b1' }]];
     expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'reviewer')).toEqual({ ok: true });
   });

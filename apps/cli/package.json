@@ -24,7 +24,6 @@
     "@kortix/executor-sdk": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/registry": "workspace:*",
-    "@kortix/sdk": "workspace:*",
     "@kortix/starter": "workspace:*",
     "smol-toml": "^1.3.0",
     "yaml": "^2.8.2"

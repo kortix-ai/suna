@@ -39,7 +39,7 @@ sandbox:
       memory: 8
       disk: 20
 
-# Runtime runtime: the daemon launches opencode with OPENCODE_CONFIG_DIR
+# OpenCode runtime: the daemon launches opencode with OPENCODE_CONFIG_DIR
 # pointed here, so agents, skills and tools live under this folder.
 opencode:
   config_dir: .kortix/opencode

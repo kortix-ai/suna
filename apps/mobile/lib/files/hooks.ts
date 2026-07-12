@@ -15,18 +15,18 @@ import { normalizeFilenameToNFC } from './utils';
 
 export const fileKeys = {
   all: ['files'] as const,
-  // Runtime API keys (via sandboxUrl)
-  runtime: (sandboxUrl: string, path: string) => [...fileKeys.all, 'runtime', sandboxUrl, path] as const,
-  runtimeFile: (sandboxUrl: string, path: string) => [...fileKeys.all, 'runtime', sandboxUrl, 'file', path] as const,
-  runtimeBlob: (sandboxUrl: string, path: string) => [...fileKeys.all, 'runtime', sandboxUrl, 'blob', path] as const,
+  // OpenCode API keys (via sandboxUrl)
+  opencode: (sandboxUrl: string, path: string) => [...fileKeys.all, 'opencode', sandboxUrl, path] as const,
+  opencodeFile: (sandboxUrl: string, path: string) => [...fileKeys.all, 'opencode', sandboxUrl, 'file', path] as const,
+  opencodeBlob: (sandboxUrl: string, path: string) => [...fileKeys.all, 'opencode', sandboxUrl, 'blob', path] as const,
 };
 
 // ============================================================================
-// Runtime file API types (GET /file?path=... response)
+// OpenCode File API Types (GET /file?path=... response)
 // ============================================================================
 
-/** Response item from the runtime /file endpoint */
-export interface RuntimeFileNode {
+/** Response item from the OpenCode /file endpoint */
+export interface OpenCodeFileNode {
   name: string;
   path: string;       // relative to project root
   absolute: string;   // absolute filesystem path
@@ -34,8 +34,8 @@ export interface RuntimeFileNode {
   ignored: boolean;
 }
 
-/** Transform runtime FileNode to SandboxFile for UI compatibility */
-function transformRuntimeFile(node: RuntimeFileNode): SandboxFile {
+/** Transform OpenCode FileNode to SandboxFile for UI compatibility */
+function transformOpenCodeFile(node: OpenCodeFileNode): SandboxFile {
   return {
     name: node.name,
     path: node.absolute || node.path,
@@ -44,20 +44,20 @@ function transformRuntimeFile(node: RuntimeFileNode): SandboxFile {
 }
 
 // ============================================================================
-// Runtime file API hooks (via sandboxUrl — same as frontend)
+// OpenCode File API Hooks (via sandboxUrl — same as frontend)
 // ============================================================================
 
 /**
- * List files using the runtime API: GET {sandboxUrl}/file?path=...
+ * List files using the OpenCode API: GET {sandboxUrl}/file?path=...
  * This is the same endpoint the frontend uses.
  */
-export function useRuntimeFiles(
+export function useOpenCodeFiles(
   sandboxUrl: string | undefined,
   path: string = '/workspace',
   options?: Omit<UseQueryOptions<SandboxFile[], Error>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery({
-    queryKey: fileKeys.runtime(sandboxUrl || '', path),
+    queryKey: fileKeys.opencode(sandboxUrl || '', path),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
       const token = await getAuthToken();
@@ -70,8 +70,8 @@ export function useRuntimeFiles(
         },
       );
       if (!res.ok) throw new Error(`Failed to list files: ${res.status}`);
-      const data: RuntimeFileNode[] = await res.json();
-      return data.map(transformRuntimeFile);
+      const data: OpenCodeFileNode[] = await res.json();
+      return data.map(transformOpenCodeFile);
     },
     enabled: !!sandboxUrl,
     staleTime: 5_000,
@@ -86,15 +86,15 @@ export function useRuntimeFiles(
 }
 
 /**
- * Read file content using the runtime API: GET {sandboxUrl}/file/read?path=...
+ * Read file content using OpenCode API: GET {sandboxUrl}/file/read?path=...
  */
-export function useRuntimeFileContent(
+export function useOpenCodeFileContent(
   sandboxUrl: string | undefined,
   filePath: string | undefined,
   options?: Omit<UseQueryOptions<string, Error>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery({
-    queryKey: fileKeys.runtimeFile(sandboxUrl || '', filePath || ''),
+    queryKey: fileKeys.opencodeFile(sandboxUrl || '', filePath || ''),
     queryFn: async () => {
       if (!sandboxUrl || !filePath) throw new Error('Missing params');
       const token = await getAuthToken();
@@ -123,16 +123,16 @@ export function useRuntimeFileContent(
 }
 
 /**
- * Read file as blob using the runtime API.
+ * Read file as blob using OpenCode API.
  * Tries GET /file/raw first, falls back to /file/content (base64 decode).
  */
-export function useRuntimeFileBlob(
+export function useOpenCodeFileBlob(
   sandboxUrl: string | undefined,
   filePath: string | undefined,
   options?: Omit<UseQueryOptions<Blob, Error>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery({
-    queryKey: fileKeys.runtimeBlob(sandboxUrl || '', filePath || ''),
+    queryKey: fileKeys.opencodeBlob(sandboxUrl || '', filePath || ''),
     queryFn: async () => {
       if (!sandboxUrl || !filePath) throw new Error('Missing params');
       const token = await getAuthToken();
@@ -178,9 +178,9 @@ export function useRuntimeFileBlob(
 }
 
 /**
- * Upload file using the runtime API: POST {sandboxUrl}/file/upload
+ * Upload file using OpenCode API: POST {sandboxUrl}/file/upload
  */
-export function useRuntimeUploadFile(
+export function useOpenCodeUploadFile(
   options?: UseMutationOptions<
     any,
     Error,
@@ -216,7 +216,7 @@ export function useRuntimeUploadFile(
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['files', 'runtime', variables.sandboxUrl],
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,
         refetchType: 'all',
       });
@@ -226,7 +226,7 @@ export function useRuntimeUploadFile(
 }
 
 /**
- * Write (create or OVERWRITE) a text file's content via the runtime file API.
+ * Write (create or OVERWRITE) a text file's content via the OpenCode file API.
  *
  * /file/upload never overwrites — it suffixes on collision (`writeUploadUnique`,
  * flag 'wx'). So to save an edit in place we upload the new content to a unique
@@ -235,7 +235,7 @@ export function useRuntimeUploadFile(
  * if the rename fails the new bytes are still recoverable at the temp path. Works
  * for both creating a new file and overwriting an existing one.
  */
-export function useRuntimeWriteFile(
+export function useOpenCodeWriteFile(
   options?: UseMutationOptions<
     { path: string },
     Error,
@@ -295,10 +295,10 @@ export function useRuntimeWriteFile(
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: fileKeys.runtimeFile(variables.sandboxUrl, variables.path),
+        queryKey: fileKeys.opencodeFile(variables.sandboxUrl, variables.path),
       });
       queryClient.invalidateQueries({
-        queryKey: ['files', 'runtime', variables.sandboxUrl],
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,
         refetchType: 'all',
       });
@@ -308,9 +308,9 @@ export function useRuntimeWriteFile(
 }
 
 /**
- * Delete file using the runtime API: DELETE {sandboxUrl}/file
+ * Delete file using OpenCode API: DELETE {sandboxUrl}/file
  */
-export function useRuntimeDeleteFile(
+export function useOpenCodeDeleteFile(
   options?: UseMutationOptions<any, Error, { sandboxUrl: string; filePath: string }>
 ) {
   const queryClient = useQueryClient();
@@ -334,7 +334,7 @@ export function useRuntimeDeleteFile(
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['files', 'runtime', variables.sandboxUrl],
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,
         refetchType: 'all',
       });
@@ -344,9 +344,9 @@ export function useRuntimeDeleteFile(
 }
 
 /**
- * Create directory using the runtime API: POST {sandboxUrl}/file/mkdir
+ * Create directory using OpenCode API: POST {sandboxUrl}/file/mkdir
  */
-export function useRuntimeMkdir(
+export function useOpenCodeMkdir(
   options?: UseMutationOptions<any, Error, { sandboxUrl: string; dirPath: string }>
 ) {
   const queryClient = useQueryClient();
@@ -370,7 +370,7 @@ export function useRuntimeMkdir(
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['files', 'runtime', variables.sandboxUrl],
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,
         refetchType: 'all',
       });
@@ -380,9 +380,9 @@ export function useRuntimeMkdir(
 }
 
 /**
- * Rename/move a file using the runtime API: POST {sandboxUrl}/file/rename
+ * Rename/move a file using OpenCode API: POST {sandboxUrl}/file/rename
  */
-export function useRuntimeRenameFile(
+export function useOpenCodeRenameFile(
   options?: UseMutationOptions<any, Error, { sandboxUrl: string; from: string; to: string }>
 ) {
   const queryClient = useQueryClient();
@@ -406,7 +406,7 @@ export function useRuntimeRenameFile(
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ['files', 'runtime', variables.sandboxUrl],
+        queryKey: ['files', 'opencode', variables.sandboxUrl],
         exact: false,
         refetchType: 'all',
       });
@@ -481,3 +481,4 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
     reader.readAsDataURL(blob);
   });
 }
+

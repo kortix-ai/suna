@@ -1,6 +1,6 @@
 ---
 title: Modules
-description: 'The functional areas inside @kortix/sdk — ACP, files, session runtime, runtime helpers, auth, REST, turns — all importable from the canonical root entry.'
+description: 'The functional areas inside @kortix/sdk — files, session runtime, the opencode client, auth, REST, turns — all importable from the canonical root entry.'
 ---
 
 Most app code should use the [`createKortix`](/docs/sdk/the-client) facade and the
@@ -28,8 +28,7 @@ The functional areas, and where each lives:
 | -------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | files                | workspace file operations                             | root (was `/files`)                                                                    |
 | session runtime      | health probe + proxy/preview URL builders             | root (was `/session`, `/session/url`)                                                  |
-| ACP                  | client helpers, protocol types, and transcript projections | root and `/acp`                                                                        |
-| runtime helpers      | structural daemon/runtime helper client and wire types | root and `/runtime-client`                                                             |
+| opencode client      | the typed OpenCode v2 client + its full type surface  | root (was `/opencode-client`)                                                          |
 | auth                 | `authenticatedFetch` + token accessors                | root (was `/auth`)                                                                     |
 | projects REST        | the raw REST functions the facade wraps               | root (was `/projects-client`)                                                          |
 | api client           | `backendApi` — the low-level typed HTTP client        | root (was `/api-client`)                                                               |
@@ -45,7 +44,7 @@ The functional areas, and where each lives:
   exception is internal: `sandbox-connection-store` (see [below](#other-subpaths-internal-plumbing))
   tracks low-level health/reconnect state for the sandbox process itself and uses "sandbox" in its
   name — it's plumbing `useSession` consumes, not something host code should import directly. Host
-  code imports only from `@kortix/sdk/*` — never a native harness SDK, never raw `backendApi` /
+  code imports only from `@kortix/sdk/*` — never `@opencode-ai/sdk`, never raw `backendApi` /
   `authenticatedFetch` from elsewhere.
 </Callout>
 
@@ -111,24 +110,24 @@ Plus `parseLocalhostUrl`, `hasLocalhostUrls`, `isProxiableLocalhostUrl`,
 rendering agent output that mentions `localhost`, or building a preview iframe
 without going through the session handle.
 
-## `@kortix/sdk/runtime-client`
+## `@kortix/sdk/opencode-client`
 
-`getRuntimeClient()` returns the structural daemon/runtime client for the **active**
-runtime, with auth injected. Conversation traffic is ACP-first; this module is the
-lower-level escape hatch for daemon helpers that are not yet covered by the session
-facade.
+`getClient()` returns the typed [OpenCode](/docs/concepts/agents) v2 client for the
+**active** runtime, with auth injected. This module also re-exports the _entire_
+OpenCode v2 type surface (`Session`, `Message`, `Part`, `Agent`, `Config`, … and
+the `OpencodeClient` type), so you have one place for runtime types.
 
 ```ts
-import { getRuntimeClient, type RuntimeClient, type Session, type Part } from '@kortix/sdk/runtime-client';
+import { getClient, type Session, type Part } from '@kortix/sdk';
 
-const client = getRuntimeClient();
+const client = getClient();
 const { data } = await client.session.list({ limit: 100 });
 ```
 
-Also `getRuntimeClientForUrl(url)` (a client pinned to a specific runtime),
-`dropRuntimeClientForUrl(url)`, and `resetRuntimeClient()` (used on a runtime
-switch). **When to use:** a daemon/runtime call the facade doesn't yet wrap.
-Prefer `kortix.session(pid, sid).runtime`, the same client scoped to a session.
+Also `getClientForUrl(url)` (a client pinned to a specific runtime),
+`dropClientForUrl(url)`, and `resetClient()` (used on a runtime switch). **When to
+use:** a typed runtime call the facade doesn't yet wrap. Prefer
+`kortix.session(pid, sid).runtime`, the same client scoped to a session.
 
 ## `@kortix/sdk/auth`
 
@@ -226,15 +225,15 @@ talking to and how to reach it, owned by the active session via `useSession`;
 `sync-store` holds the **live thread state** that SSE events stream into.
 
 ```ts
-import { useServerStore, getActiveRuntimeUrl } from '@kortix/sdk/server-store';
+import { useServerStore, getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
 import { useSyncStore } from '@kortix/sdk/sync-store';
 
-const runtimeUrl = getActiveRuntimeUrl(); // outside React
+const runtimeUrl = getActiveOpenCodeUrl(); // outside React
 const messages = useSyncStore((s) => s.messages[sessionId]); // in React
 ```
 
 `server-store` also exports `getSandboxUrlForExternalId`, `getPublicShareUrlForToken`,
-`deriveSubdomainOpts`, `getActiveDbSandboxId`, `getActiveRuntimeUrl`,
+`deriveSubdomainOpts`, `getActiveDbSandboxId`, `getActiveOpenCodeUrl`,
 `getActiveSandboxId`, and `getBackendPort` — the resolution helpers behind
 `getActiveServerUrl()`. There's no "active server" to switch between anymore: an
 older multi-instance registry and server-switching layer were removed, and a
@@ -350,8 +349,8 @@ they're real, shipped exports:
   health/reconnect bookkeeping (`useSandboxConnectionStore`, `setSandboxStatus`,
   `incrementSandboxFail`, recovery-phase tracking). The one place "sandbox"
   appears as a concept in the public surface — see the callout above.
-- **`@kortix/sdk/runtime-pending-store`** — a zustand store of in-flight
-  permission/question requests from the runtime (`useRuntimePendingStore`),
+- **`@kortix/sdk/opencode-pending-store`** — a zustand store of in-flight
+  permission/question requests from the runtime (`useOpenCodePendingStore`),
   deduped against ones the user already answered.
 - **`@kortix/sdk/config`** — `configureKortix`, `platformConfig`, `isConfigured`;
   the same module the root `@kortix/sdk` entry re-exports, reachable directly.
@@ -364,8 +363,8 @@ they're real, shipped exports:
 - **`@kortix/sdk/instance-routes`** — the `kortix-active-instance` cookie and
   path helpers (`buildInstancePath`, `extractInstanceRoute`, …) for
   instance-scoped app routes.
-- **`@kortix/sdk/runtime-errors`** — normalizes runtime `ConfigInvalidError`
-  payloads into readable config-error helpers.
+- **`@kortix/sdk/opencode-errors`** — normalizes OpenCode `ConfigInvalidError`
+  payloads into a readable message (`formatOpenCodeRuntimeError`).
 - **`@kortix/sdk/idb-sync-cache`** — the IndexedDB persistence layer behind
   `sync-store`'s stale-while-revalidate cold-load cache.
 

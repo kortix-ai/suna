@@ -59,7 +59,7 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { toast } from '@/lib/toast';
@@ -278,7 +278,7 @@ function StepPrimaryAction({
 }) {
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
-  const modelProviders = useRuntimeProviders();
+  const modelProviders = useOpenCodeProviders();
   const { hasSelectableModels } = useModelConnectionGate(flattenModels(modelProviders.data));
 
   if (stepId === 'slack') {
@@ -724,7 +724,7 @@ function SlackGlyph() {
 // ─── Step 4: Connect a model ────────────────────────────────────────────────────
 
 function ModelStep() {
-  const { data: providers, isLoading } = useRuntimeProviders();
+  const { data: providers, isLoading } = useOpenCodeProviders();
   const { openConnectProvider, openUpgrade, modal, hasSelectableModels } = useModelConnectionGate(
     flattenModels(providers),
   );

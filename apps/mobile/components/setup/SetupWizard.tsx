@@ -73,8 +73,8 @@ import MoonshotIcon from '@/assets/images/models/Moonshot.svg';
 import type { SvgProps } from 'react-native-svg';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useRuntimeProviders, flattenModels, filterToLatestModels, type FlatModel } from '@/lib/runtime/hooks/use-runtime-data';
-import { useLocalConfigStore } from '@/lib/runtime/hooks/use-local-config';
+import { useOpenCodeProviders, flattenModels, filterToLatestModels, type FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
+import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { getAuthToken } from '@/api/config';
 import { useTabStore } from '@/stores/tab-store';
@@ -356,7 +356,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
   const { sandboxUrl } = useSandboxContext();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
-  const { data: providersData, isLoading, refetch } = useRuntimeProviders(sandboxUrl);
+  const { data: providersData, isLoading, refetch } = useOpenCodeProviders(sandboxUrl);
   const sheetRef = useRef<BottomSheetModal>(null);
 
   // Sheet navigation: list → methods → apikey | oauth
@@ -819,7 +819,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
 
 function DefaultModelStep({ onContinue, onBack, isDark, themeColors }: StepProps & { onContinue: () => void; onBack: () => void }) {
   const { sandboxUrl } = useSandboxContext();
-  const { data: providersData, isLoading } = useRuntimeProviders(sandboxUrl);
+  const { data: providersData, isLoading } = useOpenCodeProviders(sandboxUrl);
   const allModels = useMemo(() => (providersData ? flattenModels(providersData) : []), [providersData]);
   const visibleModels = useMemo(() => filterToLatestModels(allModels), [allModels]);
   const store = useLocalConfigStore();

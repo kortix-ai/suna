@@ -1,8 +1,12 @@
 import type { Auth } from './auth.ts';
 import { ApiError } from './client.ts';
 
-/** Kortix's harness-neutral sandbox daemon port. */
-export const KORTIX_DAEMON_PORT = 8000;
+/**
+ * The OpenCode HTTP API listens on this port inside every sandbox.
+ * The Kortix API exposes it at /v1/p/{sandboxId}/4096/* with the same
+ * Bearer-token auth the rest of the CLI uses.
+ */
+export const OPENCODE_PORT = 4096;
 
 interface RequestOpts {
   apiBase: string;
@@ -96,29 +100,102 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
  *  path than OpenCode's own (now-unused-by-the-CLI) `/pty`. */
 export function kortixPtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
   const base = auth.api_base.replace(/\/+$/, '').replace(/\/v1$/, '');
-  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${KORTIX_DAEMON_PORT}`;
+  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
   const wsBase = httpBase.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
   return `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
 }
 
-export interface SandboxRuntimeOpts {
+export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
 }
 
 /**
- * Harness-neutral Kortix daemon helpers bound to a session runtime.
+ * Convenience builder that returns OpenCode HTTP helpers bound to a
+ * specific sandbox.
  */
-export function sandboxRuntimeClient(opts: SandboxRuntimeOpts) {
+export function opencodeClient(opts: SandboxOpencodeOpts) {
   const { auth, sandboxId } = opts;
   const base = {
     apiBase: auth.api_base,
     token: auth.token,
     sandboxId,
-    port: KORTIX_DAEMON_PORT,
+    port: OPENCODE_PORT,
   };
   return {
-    listPty: () => sandboxRequest<KortixPty[]>({ ...base, path: '/kortix/pty' }),
+    listSessions: () =>
+      sandboxRequest<OpencodeSession[]>({ ...base, path: '/session' }),
+    createSession: (body?: { title?: string; parentID?: string }) =>
+      sandboxRequest<OpencodeSession>({
+        ...base,
+        path: '/session',
+        method: 'POST',
+        body: body ?? {},
+      }),
+    getSession: (sessionId: string) =>
+      sandboxRequest<OpencodeSession>({ ...base, path: `/session/${sessionId}` }),
+    deleteSession: (sessionId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/session/${sessionId}`,
+        method: 'DELETE',
+      }),
+    listMessages: (sessionId: string, limit?: number) =>
+      sandboxRequest<OpencodeMessageWithParts[]>({
+        ...base,
+        path: `/session/${sessionId}/message`,
+        query: { limit: limit ? String(limit) : undefined },
+      }),
+    /**
+     * Send a prompt. This BLOCKS until OpenCode finishes generating —
+     * pass a generous timeout (`timeoutMs`) for long completions.
+     */
+    sendPrompt: (
+      sessionId: string,
+      parts: OpencodePromptPart[],
+      extra?: { agent?: string; model?: { providerID: string; modelID: string } },
+      timeoutMs?: number,
+    ) =>
+      sandboxRequest<{ info: OpencodeAssistantMessage; parts: OpencodePart[] }>({
+        ...base,
+        path: `/session/${sessionId}/message`,
+        method: 'POST',
+        body: { parts, ...(extra ?? {}) },
+        timeoutMs: timeoutMs ?? 5 * 60_000,
+      }),
+    abortSession: (sessionId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/session/${sessionId}/abort`,
+        method: 'POST',
+        body: {},
+      }),
+    listPermissions: () =>
+      sandboxRequest<OpencodePermissionRequest[]>({ ...base, path: '/permission' }),
+    replyPermission: (requestId: string, reply: 'once' | 'always' | 'reject', message?: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/permission/${requestId}/reply`,
+        method: 'POST',
+        body: { reply, ...(message ? { message } : {}) },
+      }),
+    listQuestions: () =>
+      sandboxRequest<OpencodeQuestionRequest[]>({ ...base, path: '/question' }),
+    replyQuestion: (requestId: string, answers: string[][]) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reply`,
+        method: 'POST',
+        body: { answers },
+      }),
+    rejectQuestion: (requestId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reject`,
+        method: 'POST',
+        body: {},
+      }),
+    listPty: () => sandboxRequest<OpencodePty[]>({ ...base, path: '/kortix/pty' }),
     createPty: (body?: {
       command?: string;
       args?: string[];
@@ -126,14 +203,14 @@ export function sandboxRuntimeClient(opts: SandboxRuntimeOpts) {
       title?: string;
       env?: Record<string, string>;
     }) =>
-      sandboxRequest<KortixPty>({
+      sandboxRequest<OpencodePty>({
         ...base,
         path: '/kortix/pty',
         method: 'POST',
         body: body ?? {},
       }),
     updatePty: (ptyId: string, body: { title?: string; size?: { rows: number; cols: number } }) =>
-      sandboxRequest<KortixPty>({
+      sandboxRequest<OpencodePty>({
         ...base,
         path: `/kortix/pty/${ptyId}`,
         method: 'PATCH',
@@ -148,11 +225,90 @@ export function sandboxRuntimeClient(opts: SandboxRuntimeOpts) {
   };
 }
 
+// ── OpenCode response shapes (subset we use) ──────────────────────────────
+
+export interface OpencodeSession {
+  id: string;
+  parentID?: string | null;
+  title?: string;
+  version?: string;
+  time?: { created?: number; updated?: number };
+}
+
+export type OpencodePromptPart =
+  | { type: 'text'; text: string }
+  | { type: 'file'; mime: string; url: string; filename?: string };
+
+export interface OpencodeMessageWithParts {
+  info: OpencodeMessage;
+  parts: OpencodePart[];
+}
+
+export type OpencodeMessage = OpencodeUserMessage | OpencodeAssistantMessage;
+
+export interface OpencodeUserMessage {
+  id: string;
+  role: 'user';
+  sessionID: string;
+  time?: { created?: number };
+}
+
+export interface OpencodeAssistantMessage {
+  id: string;
+  role: 'assistant';
+  sessionID: string;
+  time?: { created?: number; completed?: number };
+  error?: { name?: string; message?: string } | null;
+  modelID?: string;
+  providerID?: string;
+}
+
+export type OpencodePart =
+  | { type: 'text'; text: string; synthetic?: boolean }
+  | { type: 'reasoning'; text: string }
+  | { type: 'tool'; tool: string; state?: { status?: string; output?: string } }
+  | { type: 'file'; mime?: string; filename?: string; url?: string }
+  | { type: string; [k: string]: unknown };
+
+/** A pending tool-permission ask (OpenCode holds the tool call open until
+ *  `/permission/{id}/reply`). */
+export interface OpencodePermissionRequest {
+  id: string;
+  sessionID: string;
+  permission: string;
+  patterns: string[];
+  metadata: Record<string, unknown>;
+  always: string[];
+  tool?: { messageID: string; callID: string };
+}
+
+export interface OpencodeQuestionOption {
+  label: string;
+  value?: string;
+  hint?: string;
+}
+
+export interface OpencodeQuestionInfo {
+  question: string;
+  header: string;
+  options: OpencodeQuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+/** A pending question the agent asked (blocks the turn until answered). */
+export interface OpencodeQuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: OpencodeQuestionInfo[];
+  tool?: { messageID: string; callID: string };
+}
+
 /** A raw terminal (PTY) running inside the sandbox — Kortix's own
  *  implementation (routes/pty.ts in the sandbox daemon), independent of
  *  whatever agent runtime is running. Same shape the web app's terminal
  *  panel binds to. */
-export interface KortixPty {
+export interface OpencodePty {
   id: string;
   title: string;
   command: string;

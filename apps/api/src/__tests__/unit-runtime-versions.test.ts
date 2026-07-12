@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   AGENT_BROWSER_VERSION,
+  OPENCODE_SDK_VERSION,
   OPENCODE_USER_AGENT,
   OPENCODE_VERSION,
   PLAYWRIGHT_VERSION,
@@ -17,24 +18,16 @@ function readRepoFile(path: string): string {
 }
 
 describe('runtime version drift guards', () => {
-  test('host applications and the Kortix SDK do not depend on the native OpenCode SDK', () => {
-    const packagePaths = [
-      'apps/web/package.json',
-      'apps/mobile/package.json',
-      'apps/whitelabel-demo/package.json',
-      'packages/sdk/package.json',
-    ];
+  test('web SDK package and lockfile use the canonical OpenCode SDK pin', () => {
+    const webPackage = JSON.parse(readRepoFile('apps/web/package.json')) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(webPackage.dependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
 
-    for (const packagePath of packagePaths) {
-      const pkg = JSON.parse(readRepoFile(packagePath)) as {
-        devDependencies?: Record<string, string>;
-        dependencies?: Record<string, string>;
-        peerDependencies?: Record<string, string>;
-      };
-      expect(pkg.dependencies?.['@opencode-ai/sdk'] ?? null).toBeNull();
-      expect(pkg.devDependencies?.['@opencode-ai/sdk'] ?? null).toBeNull();
-      expect(pkg.peerDependencies?.['@opencode-ai/sdk'] ?? null).toBeNull();
-    }
+    const lockfile = readRepoFile('pnpm-lock.yaml');
+    expect(lockfile).toContain(`'@opencode-ai/sdk':`);
+    expect(lockfile).toContain(`specifier: ${OPENCODE_SDK_VERSION}`);
+    expect(lockfile).toContain(`/@opencode-ai/sdk@${OPENCODE_SDK_VERSION}:`);
   });
 
   test('sandbox Dockerfile reads runtime pins from the shared manifest', () => {

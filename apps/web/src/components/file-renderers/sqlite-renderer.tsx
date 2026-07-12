@@ -258,7 +258,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
       setError(null);
 
       try {
-        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
+        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
         const blob = await readFileAsBlob(filePath);
         const arrayBuffer = await blob.arrayBuffer();
 
@@ -579,7 +579,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
       const blob = new Blob([data as unknown as BlobPart], { type: 'application/x-sqlite3' });
       const file = new File([blob], fileName, { type: 'application/x-sqlite3' });
       const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-      const { uploadFile } = await import('@/features/files/api/runtime-files');
+      const { uploadFile } = await import('@/features/files/api/opencode-files');
       await uploadFile(file, parentPath || undefined);
       setHasUnsavedChanges(false);
       toast.success('Database saved');
@@ -608,7 +608,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
     //  we just re-run init inline)
     (async () => {
       try {
-        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
+        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
         const blob = await readFileAsBlob(filePath);
         const arrayBuffer = await blob.arrayBuffer();
         if (!arrayBuffer.byteLength) throw new Error('Empty file');

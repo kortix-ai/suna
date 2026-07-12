@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useCreateKortixTask, useStartKortixTask } from '@/hooks/kortix/use-kortix-tasks';
 import type { KortixTaskStatus } from '@/hooks/kortix/use-kortix-tasks';
-import { uploadFile } from '@/features/files/api/runtime-files';
+import { uploadFile } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import { toast } from '@/lib/toast';
 

@@ -19,7 +19,7 @@ import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { getSheetBg } from '@/lib/theme-colors';
 
-import { useSyncStore } from '@/lib/runtime/sync-store';
+import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSession } from '@/lib/platform/hooks';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {

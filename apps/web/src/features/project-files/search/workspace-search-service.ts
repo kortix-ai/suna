@@ -1,7 +1,7 @@
 /**
  * Workspace search service — stubbed for project-files (read-only).
  *
- * The instance feature pre-indexes the workspace via Runtime's PTY +
+ * The instance feature pre-indexes the workspace via OpenCode's PTY +
  * SDK; project view has no such index, and the project files API does
  * not yet expose search. Returning empty results preserves the
  * call-shape callers expect.

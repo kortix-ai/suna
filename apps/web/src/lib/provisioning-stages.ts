@@ -33,5 +33,5 @@ export const STAGE_LABELS: Record<string, string> = {
   services_starting:  'Starting workspace services',
   services_ready:     'Waiting for services to come online',
   connecting:         'Connecting to workspace',
-  verifying_runtime:  'Verifying workspace is ready',
+  verifying_opencode: 'Verifying workspace is ready',
 } as const;

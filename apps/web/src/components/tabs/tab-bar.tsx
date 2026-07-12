@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   X,
   MessageCircle,
@@ -30,10 +31,15 @@ import {
 import { cn } from '@/lib/utils';
 import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
-import { useSyncStore } from '@/stores/runtime-sync-store';
-import { useRuntimeSessions } from '@/hooks/runtime/use-runtime-sessions';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
+import {
+  canQueryOpenCodeSession,
+  opencodeKeys,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { childMapByParent } from '@/ui';
+import { getClient } from '@/lib/opencode-sdk';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
@@ -564,6 +570,7 @@ export function TabBar() {
   const pathname = normalizeAppPathname(rawPathname);
   const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
 
@@ -611,11 +618,11 @@ export function TabBar() {
 
   // Status stores
   const statuses = useSyncStore((s) => s.sessionStatus);
-  const permissions = useRuntimePendingStore((s) => s.permissions);
-  const questions = useRuntimePendingStore((s) => s.questions);
+  const permissions = useOpenCodePendingStore((s) => s.permissions);
+  const questions = useOpenCodePendingStore((s) => s.questions);
 
   // Sessions data
-  const { data: sessions, isLoading: sessionsLoading } = useRuntimeSessions();
+  const { data: sessions, isLoading: sessionsLoading } = useOpenCodeSessions();
   const updateTabTitle = useTabStore((s) => s.updateTabTitle);
 
   // Sync session titles to tab titles
@@ -644,6 +651,29 @@ export function TabBar() {
       useTabStore.getState().closeTab(id);
     }
   }, [sessions, sessionsLoading]);
+
+  // Prefetch session metadata for all open tabs so switching is instant.
+  // NOTE: Message prefetching was removed — messages are now served from
+  // the Zustand sync store (populated by useSessionSync on mount and kept
+  // live by SSE events). The old message prefetch caused duplicate
+  // /session/{id}/message requests every time tabs changed.
+  useEffect(() => {
+    for (const id of tabOrder) {
+      const tab = tabs[id];
+      if (tab?.type !== 'session' || id === activeTabId) continue;
+      if (!canQueryOpenCodeSession(id)) continue;
+      queryClient.prefetchQuery({
+        queryKey: opencodeKeys.session(id),
+        queryFn: async () => {
+          const client = getClient();
+          const result = await client.session.get({ sessionID: id });
+          if (result.error) throw new Error('prefetch failed');
+          return result.data;
+        },
+        staleTime: 30 * 1000,
+      });
+    }
+  }, [tabOrder, tabs, activeTabId, queryClient]);
 
   const orderedTabs = useMemo(
     () => tabOrder.map((id) => tabs[id]).filter(Boolean),

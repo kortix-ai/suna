@@ -9,7 +9,7 @@ import {
 } from './session-activity-groups';
 
 describe('session activity groups', () => {
-  test('normalizes Runtime tool names', () => {
+  test('normalizes OpenCode tool names', () => {
     expect(normalizeActivityToolName('oc-bash')).toBe('bash');
     expect(normalizeActivityToolName('web-search')).toBe('web_search');
     expect(normalizeActivityToolName(undefined)).toBe('');

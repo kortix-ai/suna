@@ -2,6 +2,7 @@ import { createHmac } from 'crypto'
 import { describe, expect, it } from 'bun:test'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import type { Config } from '../config'
+import type { Opencode } from '../opencode'
 import { startProxy } from '../proxy'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
@@ -32,6 +33,15 @@ function baseConfig(over: Partial<Config> = {}): Config {
   }
 }
 
+function fakeOpencode(): Opencode {
+  return {
+    getState: () => 'ok',
+    getPid: () => null,
+    getInternalUrl: () => 'http://127.0.0.1:1',
+    restart: async () => {},
+  } as unknown as Opencode
+}
+
 function base64url(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
@@ -55,7 +65,7 @@ function authHeaders(): Record<string, string> {
 }
 
 function startTestProxy(cfg: Config = baseConfig()) {
-  return startProxy(cfg, Date.now(), { repoMaterializationError: null, timeline: [] })
+  return startProxy(cfg, fakeOpencode(), Date.now(), { repoMaterializationError: null, timeline: [] })
 }
 
 interface PtyMeta {

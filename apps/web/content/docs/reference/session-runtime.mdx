@@ -24,7 +24,7 @@ Concurrent-session caps are enforced per account; exceeding your tier returns `4
 
 ## Active-turn protection
 
-While any ACP root or subagent conversation is actively running, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease vetoes the idle reaper, and each renewal touches the provider edge so the provider's native inactivity timer cannot hibernate the VM during a long tool-only phase. The daemon also caches that provider edge and continues the busy-only keep-alive if the Kortix API is temporarily unavailable. Idle/error runtime states release the lease.
+While any OpenCode root or subagent session is `busy` or `retrying`, the sandbox daemon renews a short execution lease with the API every 20 seconds. The lease vetoes the idle reaper, and each renewal touches the provider edge so the provider's native inactivity timer cannot hibernate the VM during a long tool-only phase. The daemon also caches that provider edge and continues the busy-only keep-alive if the Kortix API is temporarily unavailable. `session.idle` and `session.error` release the lease.
 
 An open dashboard, preview, SSE connection, or health poll does **not** create an execution lease. Passive tabs therefore cannot keep genuinely idle compute alive.
 
@@ -43,13 +43,13 @@ Only what the agent commits and pushes to the session branch. The sandbox filesy
 
 ```
 /workspace                       ← WORKDIR. The project repo is cloned here.
-/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + runtime config).
+/workspace/.kortix/              ← Repo-internal Kortix folder (Dockerfile + opencode config dir).
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
-/opt/kortix/home                 ← Runtime HOME/cache area, off the repo.
+/opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
 ```
 
-Runtime-owned stores live outside `/workspace`, so harness state never lands among your repo files unless the harness explicitly writes to the checkout.
+OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`, so its store never lands among your repo files.
 
 ## Injected environment
 
@@ -65,11 +65,8 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_BASE_REF` | The ref this session branched from. |
 | `KORTIX_SERVICE_PORT` | `8000` — the daemon's external port. |
 | `KORTIX_API_URL` | The platform API base (`…/v1`). |
-| `KORTIX_AGENT_NAME` | The logical Kortix agent the session was created with. |
-| `KORTIX_RUNTIME_HARNESS` | Selected ACP harness (`claude`, `codex`, `opencode`, or `pi`). |
-| `KORTIX_RUNTIME_CONFIG_DIR` | Repo-relative harness-native config directory compiled from `kortix.yaml`. |
-| `KORTIX_COMPILED_RUNTIME_PLAN` | `1` when the session booted from the v3 ACP runtime compiler plan. |
-| `KORTIX_OPENCODE_MODEL` | Legacy OpenCode-harness model override, when set. |
+| `KORTIX_AGENT_NAME` | The OpenCode agent the session was created with. |
+| `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
 | `KORTIX_INITIAL_PROMPT` | The first prompt, when the session was spawned by a trigger or created with one. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
@@ -77,10 +74,10 @@ Injected at boot, alongside your project's [secrets](/docs/reference/secrets) (w
 | `KORTIX_SANDBOX_TOKEN` | The sandbox **service key** — the daemon's own identity. It signs and validates its own control-surface requests with it (HMAC key for `X-Kortix-User-Context`) and is the bearer for the sandbox-identity routes (clone-credential / turn-stream, including execution leases / turn-question). It is *not* a project API token, and the `kortix` CLI does not read it — the project-scoped API routes reject it. `KORTIX_TOKEN` is injected with the same value as a back-compat alias for daemons baked before the rename to `KORTIX_SANDBOX_TOKEN`; a planned Phase 2 will drop the `KORTIX_TOKEN`/`KORTIX_EXECUTOR_TOKEN` aliases and repurpose `KORTIX_TOKEN` to mean the session token instead, so don't depend on `KORTIX_TOKEN` continuing to carry the sandbox identity long-term. |
 | `KORTIX_CLI_TOKEN` | The project-scoped PAT the in-sandbox `kortix` CLI authenticates with (same value as `KORTIX_EXECUTOR_TOKEN`). |
 | `KORTIX_EXECUTOR_TOKEN` | The same project-scoped PAT — acts as the launching user, scoped to the project. Also backs the `kortix-executor` MCP gateway. |
-| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | Legacy OpenCode-harness compatibility flag. ACP-first sessions use the compiled runtime plan instead of creating an OpenCode root as the platform protocol. |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. The sandbox daemon owns OpenCode root creation on every cold boot; this tells it to create/open the OpenCode root at boot, and the API adopts whatever root the daemon creates rather than racing to create its own. |
 | `KORTIX_LLM_API_KEY` · `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key + base URL, injected only on plans that use Kortix's bundled model access (operator availability + per-project opt-in + account entitlement all gate it). |
 
-Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). When a project brings its own model keys they travel as ordinary project secrets the selected harness can read at boot; the `KORTIX_LLM_*` pair above appears only on plans that use Kortix's managed model access.
+Not injected: `KORTIX_WORKSPACE` (`/workspace`) is baked into the image, not per session. No `KORTIX_GITHUB_TOKEN` — git credentials are fetched just-in-time by the daemon (below). When a project brings its own model keys they travel as ordinary project secrets OpenCode reads at boot; the `KORTIX_LLM_*` pair above appears only on plans that use Kortix's managed model access.
 
 The `KORTIX_*` prefix is reserved for platform variables; a user secret using it is rejected ([Secrets](/docs/reference/secrets)).
 
@@ -90,22 +87,19 @@ The daemon fetches a short-lived clone credential (`GET /v1/projects/:id/git/clo
 
 ## The agent runtime
 
-The platform protocol is **ACP**. `kortix.yaml` v3 compiles to a runtime launch plan: `runtimes:` select a harness (`claude`, `codex`, `opencode`, or `pi`) and config dir, and `agents:` bind logical Kortix agents to one of those runtime profiles plus optional governance grants.
-
-The daemon starts the selected ACP harness process and maps `KORTIX_RUNTIME_CONFIG_DIR` to the harness-native config variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, or `PI_CODING_AGENT_DIR`). OpenCode is therefore just one supported harness, reached through ACP like Claude Code and Codex.
+The agent is **OpenCode**, launched by the daemon as `opencode serve --port 4096 --hostname 127.0.0.1` with `OPENCODE_CONFIG_DIR` at the project's config dir (`[opencode] config_dir`, default `.kortix/opencode`), resolved from the cloned repo. See [Kortix vs OpenCode config](/docs/reference/config-boundary).
 
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child and fronts the session runtime on `KORTIX_SERVICE_PORT` (`8000`). Everything outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header (validated against `KORTIX_SANDBOX_TOKEN`).
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Everything outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header (validated against `KORTIX_SANDBOX_TOKEN`).
 
 | Path | Purpose |
 | --- | --- |
-| `GET /kortix/health` | Liveness (auth-bypassed). Reports daemon + runtime state, repo, branch, commit. |
-| `POST /kortix/refresh` | Re-pull the session branch and restart the runtime in place. |
+| `GET /kortix/health` | Liveness (auth-bypassed). Reports daemon + OpenCode state, repo, branch, commit. |
+| `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/proxy/{port}/*` | Reverse-proxy to a port inside the sandbox (its own port is blocked). |
-| `POST /acp/:serverId?agent=<harness>` | ACP JSON-RPC bridge to the selected harness. |
-| `*` | Compatibility catch-all reverse-proxy to the runtime daemon (`503` while it boots). |
+| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096` (`503` while it boots). |
 
 `/kortix/refresh` is how the dashboard applies an out-of-band change (e.g. a manifest edit committed from a parallel session) without re-provisioning the sandbox.

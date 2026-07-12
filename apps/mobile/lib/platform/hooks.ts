@@ -3,7 +3,7 @@
  *
  * These hooks provide:
  * 1. Sandbox initialization (ensures user has a sandbox)
- * 2. Session listing from the runtime server
+ * 2. Session listing from OpenCode server
  * 3. Session CRUD operations
  */
 
@@ -21,7 +21,7 @@ import {
   getProviders,
   type SandboxInfo,
 } from './client';
-import type { Session, SessionStatusMap } from './types';
+import type { Session, SessionMessage, SessionStatusMap } from './types';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -32,12 +32,13 @@ export const platformKeys = {
   providers: () => [...platformKeys.all, 'providers'] as const,
   sessions: () => [...platformKeys.all, 'sessions'] as const,
   session: (id: string) => [...platformKeys.sessions(), id] as const,
+  sessionMessages: (id: string) => [...platformKeys.session(id), 'messages'] as const,
   sessionStatus: () => [...platformKeys.all, 'session-status'] as const,
 };
 
-// ─── Helper: authenticated fetch to the runtime server ───────────────────────
+// ─── Helper: Authenticated fetch to OpenCode server ──────────────────────────
 
-async function runtimeFetch<T>(sandboxUrl: string, path: string, options?: RequestInit): Promise<T> {
+async function opencodeFetch<T>(sandboxUrl: string, path: string, options?: RequestInit): Promise<T> {
   const token = await getAuthToken();
 
   const res = await fetch(`${sandboxUrl}${path}`, {
@@ -51,7 +52,7 @@ async function runtimeFetch<T>(sandboxUrl: string, path: string, options?: Reque
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Runtime ${path} failed: ${res.status} - ${body}`);
+    throw new Error(`OpenCode ${path} failed: ${res.status} - ${body}`);
   }
 
   return res.json();
@@ -60,7 +61,7 @@ async function runtimeFetch<T>(sandboxUrl: string, path: string, options?: Reque
 // ─── Sandbox Hook ────────────────────────────────────────────────────────────
 
 /**
- * Ensures user has a sandbox. Returns sandbox info + derived runtime URL.
+ * Ensures user has a sandbox. Returns sandbox info + derived OpenCode URL.
  * This is the first thing that should run after auth.
  */
 export function useSandbox(enabled: boolean = true) {
@@ -121,7 +122,7 @@ export function useSandbox(enabled: boolean = true) {
 // ─── Session List Hook ───────────────────────────────────────────────────────
 
 /**
- * Lists all sessions from the runtime server.
+ * Lists all sessions from the OpenCode server.
  * GET {sandboxUrl}/session
  */
 export function useSessions(sandboxUrl: string | undefined) {
@@ -131,7 +132,7 @@ export function useSessions(sandboxUrl: string | undefined) {
       if (!sandboxUrl) throw new Error('No sandbox URL');
 
       log.log('📋 [useSessions] Fetching sessions from:', sandboxUrl);
-      const sessions = await runtimeFetch<Session[]>(sandboxUrl, '/session');
+      const sessions = await opencodeFetch<Session[]>(sandboxUrl, '/session');
 
       // Sort by updated time descending (most recent first)
       const sorted = [...sessions].sort((a, b) => b.time.updated - a.time.updated);
@@ -155,7 +156,25 @@ export function useSession(sandboxUrl: string | undefined, sessionId: string | u
     queryKey: platformKeys.session(sessionId || ''),
     queryFn: async () => {
       if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
-      return runtimeFetch<Session>(sandboxUrl, `/session/${sessionId}`);
+      return opencodeFetch<Session>(sandboxUrl, `/session/${sessionId}`);
+    },
+    enabled: !!sandboxUrl && !!sessionId,
+    staleTime: 5 * 1000,
+  });
+}
+
+// ─── Session Messages Hook ───────────────────────────────────────────────────
+
+/**
+ * Get messages for a session.
+ * GET {sandboxUrl}/session/{id}/message
+ */
+export function useSessionMessages(sandboxUrl: string | undefined, sessionId: string | undefined) {
+  return useQuery({
+    queryKey: platformKeys.sessionMessages(sessionId || ''),
+    queryFn: async () => {
+      if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
+      return opencodeFetch<SessionMessage[]>(sandboxUrl, `/session/${sessionId}/message`);
     },
     enabled: !!sandboxUrl && !!sessionId,
     staleTime: 5 * 1000,
@@ -173,7 +192,7 @@ export function useSessionStatuses(sandboxUrl: string | undefined) {
     queryKey: platformKeys.sessionStatus(),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<SessionStatusMap>(sandboxUrl, '/session/status');
+      return opencodeFetch<SessionStatusMap>(sandboxUrl, '/session/status');
     },
     enabled: !!sandboxUrl,
     staleTime: 2 * 1000,
@@ -195,7 +214,7 @@ export function useCreateSession(sandboxUrl: string | undefined) {
       if (!sandboxUrl) throw new Error('No sandbox URL');
 
       log.log('➕ [useCreateSession] Creating session:', params);
-      const session = await runtimeFetch<Session>(sandboxUrl, '/session', {
+      const session = await opencodeFetch<Session>(sandboxUrl, '/session', {
         method: 'POST',
         body: JSON.stringify({
           ...(params.title ? { title: params.title } : {}),
@@ -226,7 +245,7 @@ export function useDeleteSession(sandboxUrl: string | undefined) {
       if (!sandboxUrl) throw new Error('No sandbox URL');
 
       log.log('🗑️ [useDeleteSession] Deleting session:', sessionId);
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
+      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
         method: 'DELETE',
       });
     },
@@ -249,7 +268,7 @@ export function useArchiveSession(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (sessionId: string) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
+      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
         method: 'PATCH',
         body: JSON.stringify({ time: { archived: Date.now() } }),
       });
@@ -270,7 +289,7 @@ export function useUnarchiveSession(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (sessionId: string) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
+      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
         method: 'PATCH',
         body: JSON.stringify({ time: { archived: 0 } }),
       });
@@ -297,7 +316,7 @@ export function useRenameSession(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (params: { sessionId: string; title: string }) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${params.sessionId}`, {
+      await opencodeFetch<void>(sandboxUrl, `/session/${params.sessionId}`, {
         method: 'PATCH',
         body: JSON.stringify({ title: params.title }),
       });
@@ -338,6 +357,41 @@ export function useRenameSession(sandboxUrl: string | undefined) {
   });
 }
 
+// ─── Session Prompt Mutation ─────────────────────────────────────────────────
+
+/**
+ * Send a prompt to a session.
+ * POST {sandboxUrl}/session/{id}/prompt
+ */
+export function useSendPrompt(sandboxUrl: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      sessionId: string;
+      parts: Array<{ type: 'text'; text: string }>;
+    }) => {
+      if (!sandboxUrl) throw new Error('No sandbox URL');
+
+      log.log('💬 [useSendPrompt] Sending prompt to session:', params.sessionId);
+      await opencodeFetch<void>(sandboxUrl, `/session/${params.sessionId}/prompt`, {
+        method: 'POST',
+        body: JSON.stringify({
+          parts: params.parts,
+        }),
+      });
+
+      log.log('✅ [useSendPrompt] Prompt sent');
+    },
+    onSuccess: (_, params) => {
+      // Invalidate messages so they refetch
+      queryClient.invalidateQueries({
+        queryKey: platformKeys.sessionMessages(params.sessionId),
+      });
+    },
+  });
+}
+
 // ─── Session Abort Mutation ──────────────────────────────────────────────────
 
 /**
@@ -352,7 +406,7 @@ export function useAbortSession(sandboxUrl: string | undefined) {
       if (!sandboxUrl) throw new Error('No sandbox URL');
 
       log.log('⛔ [useAbortSession] Aborting session:', sessionId);
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}/abort`, {
+      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}/abort`, {
         method: 'POST',
       });
     },
@@ -374,7 +428,7 @@ export async function replyToQuestion(
   answers: string[][],
 ): Promise<void> {
   log.log('💬 [replyToQuestion] Replying to:', requestId);
-  await runtimeFetch<void>(sandboxUrl, `/question/${requestId}/reply`, {
+  await opencodeFetch<void>(sandboxUrl, `/question/${requestId}/reply`, {
     method: 'POST',
     body: JSON.stringify({ answers }),
   });
@@ -389,7 +443,7 @@ export async function rejectQuestion(
   requestId: string,
 ): Promise<void> {
   log.log('❌ [rejectQuestion] Rejecting:', requestId);
-  await runtimeFetch<void>(sandboxUrl, `/question/${requestId}/reject`, {
+  await opencodeFetch<void>(sandboxUrl, `/question/${requestId}/reject`, {
     method: 'POST',
   });
 }

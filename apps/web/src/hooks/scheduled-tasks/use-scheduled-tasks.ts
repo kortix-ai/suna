@@ -1,8 +1,8 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { stripTrailingSlashes } from '@kortix/sdk';
 import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
-import { triggersRequest } from '@kortix/sdk/runtime-client';
-import { getActiveRuntimeUrl } from '@/stores/server-store';
+import { getClientForUrl, triggersRequest } from '@kortix/sdk/opencode-client';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ interface ApiRunResponse {
 async function resolveSandboxBaseUrl(_instanceId?: string | null): Promise<string> {
   // The active session's runtime is the sandbox — the old per-instance registry
   // lookup is gone, so resolve straight from the current runtime.
-  const activeBaseUrl = getActiveRuntimeUrl();
+  const activeBaseUrl = getActiveOpenCodeUrl();
   if (activeBaseUrl) return stripTrailingSlashes(activeBaseUrl);
 
   const { sandbox } = await ensureSandbox();
@@ -383,18 +383,37 @@ async function getSandboxBaseUrl(instanceId?: string | null): Promise<string> {
   return resolveSandboxBaseUrl(instanceId);
 }
 
+function unwrapOpencode<T>(result: { data?: T; error?: unknown }): T {
+  if (result.error) {
+    const err = result.error as { data?: { message?: string }; message?: string };
+    throw new Error(err?.data?.message || err?.message || 'Request failed');
+  }
+  return result.data as T;
+}
+
 const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]> => {
-  void sandboxId;
-  // Models belong to the selected harness's native config in v3. Kortix does
-  // not introspect an Runtime provider catalog for ACP runtimes.
-  return [];
+  const baseUrl = await getSandboxBaseUrl(sandboxId);
+  const client = getClientForUrl(baseUrl);
+  const { providers } = unwrapOpencode(await client.config.providers());
+  return providers.map((provider) => ({
+    id: provider.id || '',
+    name: provider.name || provider.id || '',
+    models: Object.values(provider.models || {}).map((model) => ({
+      id: model.id || '',
+      name: model.name || model.id || '',
+    })),
+  }));
 };
 
 const fetchSandboxAgents = async (sandboxId: string): Promise<SandboxAgent[]> => {
-  void sandboxId;
-  // Logical agents come from kortix.yaml; native profiles stay in harness
-  // config. The legacy runtime-agent discovery endpoint is intentionally gone.
-  return [];
+  const baseUrl = await getSandboxBaseUrl(sandboxId);
+  const client = getClientForUrl(baseUrl);
+  const agents = unwrapOpencode(await client.app.agents());
+  return agents.map((agent) => ({
+    name: agent.name || '',
+    description: agent.description,
+    mode: agent.mode,
+  }));
 };
 
 export const useSandboxModels = (sandboxId?: string | null) => {

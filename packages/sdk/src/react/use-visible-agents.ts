@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { Agent } from '../runtime/wire-types';
-import { useRuntimeAgents } from './use-runtime-sessions';
+import type { Agent } from '@opencode-ai/sdk/v2/client';
+import { useOpenCodeAgents } from './use-opencode-sessions';
 import { featureFlags } from '../core/http/feature-flags';
 
 /**
@@ -38,7 +38,7 @@ export function useVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useRuntimeAgents(options);
+  const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && a.mode !== 'subagent' && !hideProjectOnly(a)),
     [agents]
@@ -53,7 +53,7 @@ export function useAllVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useRuntimeAgents(options);
+  const { data: agents = [] } = useOpenCodeAgents(options);
   return useMemo(
     () => agents.filter((a) => !a.hidden && !hideProjectOnly(a)),
     [agents]

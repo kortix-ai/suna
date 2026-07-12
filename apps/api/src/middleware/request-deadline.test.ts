@@ -32,7 +32,6 @@ describe('requestDeadline exemptions', () => {
   test.each([
     '/v1/projects/00000000-0000-4000-a000-000000000001/commit-push',
     '/v1/projects/00000000-0000-4000-a000-000000000001/provision',
-    '/v1/projects/00000000-0000-4000-a000-000000000001/sessions/session-id/acp',
   ])('leaves existing exemption %s unchanged', (path) => {
     expect(isExempt(ctx(path))).toBe(true);
   });

@@ -12,7 +12,7 @@ import { create } from 'zustand';
  * replaces the old copy-prompt-to-clipboard hack, which existed only because
  * the panel had no reliable way to reach the chat's sender from outside it.
  *
- * Keyed by the Runtime chat session id (the one `handleSend` posts to) — not
+ * Keyed by the OpenCode chat session id (the one `handleSend` posts to) — not
  * the route/git session id — so pre-mounted tab sessions never collide.
  */
 type ChatSender = (text: string) => Promise<unknown>;

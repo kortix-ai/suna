@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useServerStore } from '@/stores/server-store';
 import { Clipboard, FilePlus, FolderPlus, RefreshCw, ServerOff, Upload } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downloadFile } from '../api/runtime-files';
+import { downloadFile } from '../api/opencode-files';
 import {
   buildGitStatusMap,
   useFileEventInvalidation,

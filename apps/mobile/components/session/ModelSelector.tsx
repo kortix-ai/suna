@@ -9,7 +9,7 @@ import { View, TouchableOpacity, FlatList, TextInput, SectionList } from 'react-
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
-import type { FlatModel } from '@/lib/runtime/hooks/use-runtime-data';
+import type { FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 
 interface ModelSelectorProps {
   models: FlatModel[];

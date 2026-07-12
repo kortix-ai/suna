@@ -4,8 +4,8 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import { listProjectSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
-import { configKeys } from './use-runtime-config';
-import { clearProjectRuntimeProviderCache, runtimeKeys } from './use-runtime-sessions';
+import { configKeys } from './use-opencode-config';
+import { clearProjectProviderCache, opencodeKeys } from './use-opencode-sessions';
 
 type RefreshProjectProviderStateOptions = {
   removeProjectScopedCache?: boolean;
@@ -45,12 +45,12 @@ export function providerConnectedInSecrets(
 
 function invalidateProviderQueries(queryClient: QueryClient, projectId: string): void {
   const projectProviderKey = ['project-providers', projectId];
-  clearProjectRuntimeProviderCache(projectId);
+  clearProjectProviderCache(projectId);
   void queryClient.invalidateQueries({ queryKey: projectProviderKey });
   void queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
   void queryClient.refetchQueries({ queryKey: ['project-secrets', projectId], type: 'all' });
   void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' });
-  void queryClient.invalidateQueries({ queryKey: runtimeKeys.providers() });
+  void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
   void queryClient.invalidateQueries({ queryKey: configKeys.all });
 }
 
@@ -68,7 +68,7 @@ export function refreshProjectProviderState(
   if (typeof window === 'undefined') return;
 
   // Saving provider credentials hot-pushes env vars into active sandboxes and
-  // restarts Runtime; the secret write itself can also land after the save
+  // restarts OpenCode; the secret write itself can also land after the save
   // call returns. A refetch that races either one accepts the OLD state as
   // final — and with staleTime:Infinity on the provider list nothing ever asks
   // again, so the picker stays stale until a hard refresh. So: don't fire a

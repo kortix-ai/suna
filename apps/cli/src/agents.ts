@@ -10,21 +10,22 @@ export const DEFAULT_PRIMARY: CodingAgent = 'codex';
 /** Path of the canonical Kortix skill, relative to repo root. */
 export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
 
-/** Legacy OpenCode harness config dir used for local compatibility links. */
+/** The OpenCode runtime config dir every coding agent is pointed at. */
 const OPENCODE_DIR = '.kortix/opencode';
 
 /**
- * Native discovery directory each local coding agent reads. These compatibility
- * links let local tools reuse the starter's OpenCode-harness skills/agents:
+ * Native discovery directory each agent reads. We symlink it straight at the
+ * OpenCode config dir so the agent picks up its shared skills + agents:
  *
  *   .opencode → .kortix/opencode   (OpenCode native; recursive skill discovery)
  *   .claude   → .kortix/opencode   (Claude Code: .claude/skills, .claude/agents — flat, depth-1)
  *   .agents   → .kortix/opencode   (Codex + the cross-tool AGENTS standard: .agents/skills, recursive)
  *
- * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), so
- * the codex choice wires `.agents`. Each link targets `.kortix/opencode`
- * directly (not via `.opencode`) so any agent can be wired independently.
- * Cursor has no dir of its own — it reads the root `AGENTS.md` natively.
+ * Codex's documented project skills dir is `.agents/skills` (not `.codex/`), and
+ * `.agents/skills` is what OpenCode + other agent tools read too — so the codex
+ * choice wires `.agents`. Each link targets `.kortix/opencode` directly (not via
+ * `.opencode`) so any agent can be wired independently. Cursor has no dir of its
+ * own — it reads the root `AGENTS.md` natively.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
  * under a grouping folder (e.g. `<skill>/SKILL.md`) are
@@ -49,12 +50,11 @@ export interface WireAgentsResult {
 }
 
 /**
- * Wire each chosen local coding agent to the starter compatibility config.
- * opencode / claude / codex get a symlink from their native discovery dir to
- * `.kortix/opencode` (sharing the starter's skills + agents). codex and cursor
- * also get a root `AGENTS.md` pointer — the universal, always-loaded
- * instructions file they read natively (which is why Cursor needs no rule file
- * of its own).
+ * Wire each chosen coding agent to the project's OpenCode config. opencode /
+ * claude / codex get a symlink from their native discovery dir to
+ * `.kortix/opencode` (sharing its skills + agents). codex and cursor also get a
+ * root `AGENTS.md` pointer — the universal, always-loaded instructions file they
+ * read natively (which is why Cursor needs no rule file of its own).
  */
 export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
@@ -118,15 +118,14 @@ function agentsPointer(): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project — its agent runtime
-manifest is \`kortix.yaml\`. Kortix cloud sessions use the manifest's v3 runtime
-profiles and launch ACP harness adapters. This starter also symlinks the legacy
-OpenCode harness config into wired local coding-agent discovery dirs
-(\`.opencode\`, \`.claude\`, \`.agents\`) for local editing compatibility.
+config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The OpenCode
+config dir is symlinked into each wired coding agent's native location
+(\`.opencode\`, \`.claude\`, \`.agents\`), so its skills and agents are shared.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, deployable apps, runtime profiles, or how to configure
-an ACP harness — read \`${CANONICAL_SKILL}\` first. It is the canonical
-reference.
+sandbox image, sessions, deployable apps, or how to configure OpenCode
+(agents / skills / commands / tools / plugins / MCP servers / custom tools /
+ACP) — read \`${CANONICAL_SKILL}\` first. It is the canonical reference.
 
 For any other task, proceed normally.
 `;

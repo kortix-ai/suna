@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
-import { runtimeKeys } from '@/hooks/runtime/use-runtime-sessions';
+import { getClient } from '@/lib/opencode-sdk';
+import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 
 /**
  * Module-level cache of candidate prefixes.
@@ -31,7 +31,7 @@ function toRelative(absPath: string, prefixes: string[]): string {
  * Fetch all candidate worktree/directory prefixes.
  *
  * CONSOLIDATED: First checks the React Query cache (shared with
- * useRuntimeCurrentProject and useRuntimePathInfo). Only makes SDK calls
+ * useOpenCodeCurrentProject and useOpenCodePathInfo). Only makes SDK calls
  * as a fallback if the cache is empty. This prevents duplicate /project/current
  * and /path requests that were previously made on every tool-view mount.
  */
@@ -50,10 +50,10 @@ async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQ
 
   // 1) Try React Query cache first (shared with other hooks)
   if (queryClient) {
-    const cachedProject = queryClient.getQueryData<any>(runtimeKeys.currentProject());
+    const cachedProject = queryClient.getQueryData<any>(opencodeKeys.currentProject());
     if (cachedProject?.worktree) candidates.push(cachedProject.worktree);
 
-    const cachedPath = queryClient.getQueryData<any>(runtimeKeys.pathInfo());
+    const cachedPath = queryClient.getQueryData<any>(opencodeKeys.pathInfo());
     if (cachedPath?.directory) candidates.push(cachedPath.directory);
     if (cachedPath?.worktree) candidates.push(cachedPath.worktree);
   }

@@ -2,135 +2,130 @@
 
 Thin sandbox-side daemon that runs inside every Kortix project-session sandbox.
 
-## Scope
+**Scope:**
 
-1. ACP harness runtime for official Claude/Codex adapters, native `opencode acp`,
-   and `pi-acp` (spawn, raw JSON-RPC, SSE replay, drain).
-2. Small Kortix control surface: `/kortix/health`, `/kortix/refresh`,
-   `/kortix/env`, `/kortix/git`.
-3. Generic workspace routes: `/file`, `/find`, `/presentation`, `/proxy`,
-   `/web-proxy`.
-4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) for files the
-   agent writes to disk.
+1. Process supervisor for `opencode serve` (spawn, restart on crash, drain on
+   SIGTERM/SIGINT).
+2. Reverse proxy that fronts opencode's HTTP + SSE surface on
+   `KORTIX_SERVICE_PORT` (default `8000`).
+3. Small Kortix-namespaced control surface: `GET /kortix/health` and
+   `POST /kortix/refresh`.
+4. Static web server on `KORTIX_STATIC_PORT` (default `3211`) — serves any
+   HTML/asset the agent writes to disk, injecting a `<base>` tag so relative
+   assets resolve cleanly through the sandbox proxy. Ported from main's
+   always-on `core/services/static-web.js` s6 service; now runs in-process
+   (see `src/static-web.ts`). `apps/web` builds preview URLs against this exact
+   port via `/proxy/3211/*` and the `p3211-<sandboxId>` subdomain route.
 
-Everything else - triggers, channels, connectors, secrets, preferences, session
-lifecycle - lives in the cloud API. The daemon receives only the compiled
-runtime env and exposes ACP as the client protocol.
+Everything else — triggers, channels, connectors, secrets, preferences — is
+deliberately **not** the daemon's concern. Those live in the cloud API and
+either run there directly or are injected into the sandbox as plain
+environment variables at create-time. The daemon does not read them, expose
+them, or know they exist.
 
-## Boot Flow
+Replaces the legacy multi-script bootstrap and s6 service definitions with one
+in-process daemon.
+
+## Boot flow
 
 1. Read env vars (`src/config.ts`).
-2. Start the static web server.
-3. Configure git identity and managed credential helpers.
-4. Write the session agent environment file.
-5. Materialize the project repo when `KORTIX_PROJECT_AUTO_CLONE=1`.
-6. Spawn the compiled ACP harness process for `KORTIX_SESSION_ID` and
-   `KORTIX_RUNTIME_HARNESS`.
-7. Start the Hono daemon on `KORTIX_SERVICE_PORT`.
-8. Run optional `sandbox.on_boot` in the materialized workspace.
-9. Trap signals and drain the proxy, static server, and ACP child processes.
+2. Start the static web server on `0.0.0.0:KORTIX_STATIC_PORT` (in-process).
+   It only reads files off disk, so it comes up first and stays up regardless
+   of repo/opencode state — previews work while the agent is still booting.
+   Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
+3. If `KORTIX_PROJECT_AUTO_CLONE=1`, `git clone` the project repo to
+   `/workspace/.kortix` and check out the requested branch. Failures are
+   logged but non-fatal — the daemon still serves `/kortix/health`.
+4. Resolve `OPENCODE_CONFIG_DIR` (project overlay wins over the baked default).
+5. Start the opencode supervisor in the cloned project directory (`opencode serve --port <internal> --hostname 127.0.0.1`).
+   If the binary isn't found we keep going and report `opencode: 'starting'`.
+6. Start the Hono proxy on `0.0.0.0:KORTIX_SERVICE_PORT`.
+7. Trap signals; on shutdown, drain proxy + static web + kill child.
 
 ## Routes
 
-| Path | Purpose |
-| --- | --- |
-| `GET /kortix/health` | Daemon liveness, repo state, and ACP readiness. Public. |
-| `POST /kortix/refresh` | Signed-context protected repo fast-forward. |
-| `POST /kortix/env` | Sandbox-service bearer protected env hot-sync. |
-| `POST /kortix/git/*` | Git helper/control routes. |
-| `GET /acp` | List live ACP process instances. |
-| `POST /acp/:serverId?agent=<harness>` | Start/reuse a harness and send one raw ACP JSON-RPC envelope. |
-| `GET /acp/:serverId` | Stream agent-originated ACP envelopes as replayable SSE. |
-| `DELETE /acp/:serverId` | Stop an ACP process; idempotent. |
-| `/file`, `/find`, `/presentation`, `/proxy`, `/web-proxy` | Generic daemon-owned workspace and preview routes. |
+| Path             | Purpose                                                                  |
+| ---------------- | ------------------------------------------------------------------------ |
+| `GET /kortix/health` | Daemon liveness + opencode state + repo info (always 200 from daemon) |
+| `POST /kortix/refresh` | Signed-context protected repo fast-forward + opencode restart.     |
+| `/*`             | Reverse-proxied to opencode. 503 while `opencode !== 'ok'`.              |
 
-Unknown native runtime paths return `404`. There is no native OpenCode HTTP
-reverse proxy and no PTY websocket in this daemon.
-
-### `GET /kortix/health`
+### `GET /kortix/health` response shape
 
 ```json
 {
   "daemon": "ok",
-  "status": "ok",
-  "runtimeReady": true,
-  "runtime": "acp",
-  "acp_harness": "codex",
-  "acp_server_id": "session-id",
-  "acp_ready": true,
+  "opencode": "ok",
   "uptime_s": 123,
+  "opencode_pid": 4567,
   "static_web_port": 3211,
-  "repo_required": true,
-  "repo_ready": true,
   "repo": "https://github.com/owner/name.git",
   "branch": "main",
-  "commit_sha": "abc123...",
-  "boot_error": null,
-  "boot_timeline": [],
-  "auth": "configured"
+  "commit_sha": "abc123..."
 }
 ```
 
-`daemon` is `"ok"` if the route responds. `runtimeReady` means the repo branch
-gate passed and the compiled ACP harness process is ready.
+- `daemon` is always `"ok"` if the route responds.
+- `opencode` is `"ok" | "starting" | "down"`. `"starting"` covers both
+  pre-bind and between-restart states.
+- `repo`, `branch`, `commit_sha` come from `git` in `KORTIX_PROJECT_TARGET` and
+  are `null` when no repo has been materialized.
 
-## Env Vars
+### `POST /kortix/refresh`
 
-```sh
+Requires a valid `X-Kortix-User-Context` signed with `KORTIX_TOKEN`. On success,
+the daemon fetches origin, runs `git pull --ff-only` for the session branch, and
+restarts opencode so project config changes are picked up without recreating the
+sandbox. Missing/invalid context returns `401`; no materialized repo or a
+non-fast-forward conflict returns `409`.
+
+## What lives elsewhere
+
+- **Triggers** — cloud API (`apps/api/`). The cloud API fires triggers against
+  the sandbox from outside; the daemon does not host them.
+- **Channels / connectors** — cloud API.
+- **Secrets** — cloud API decides which secrets a sandbox needs and sets them
+  as plain environment variables at create-time (via Daytona env injection).
+  The daemon does not read them and has no `/kortix/secrets` route.
+- **User preferences** — deferred. The frontend talks directly to opencode's
+  own preference surface when it needs one.
+
+## Env vars
+
+```
 KORTIX_SERVICE_PORT=8000
+KORTIX_OPENCODE_INTERNAL_PORT=4096
 KORTIX_STATIC_PORT=3211
 KORTIX_WORKSPACE=/workspace
-KORTIX_PROJECT_TARGET=/workspace
+KORTIX_PROJECT_TARGET=/workspace/.kortix
 KORTIX_DEFAULT_BRANCH=main
 KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
+KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
-KORTIX_PROJECT_ID=
-KORTIX_API_URL=
 KORTIX_REPO_URL=
 KORTIX_BRANCH_NAME=
-KORTIX_SESSION_ID=
-KORTIX_RUNTIME_HARNESS=codex
-KORTIX_COMPILED_RUNTIME_PLAN=1
-KORTIX_RUNTIME_CONFIG_DIR=.kortix/runtimes/codex
-KORTIX_SANDBOX_TOKEN=
+KORTIX_GITHUB_TOKEN=
 KORTIX_TOKEN=
-KORTIX_ACP_CLAUDE_PATH=
-KORTIX_ACP_CLAUDE_ARGS='[...]'
-KORTIX_ACP_CODEX_PATH=
-KORTIX_ACP_CODEX_ARGS='[...]'
-KORTIX_ACP_OPENCODE_PATH=opencode
-KORTIX_ACP_OPENCODE_ARGS='["acp"]'
-KORTIX_ACP_PI_PATH=
-KORTIX_ACP_PI_ARGS='[...]'
 ```
-
-`KORTIX_RUNTIME_CONFIG_DIR` is mapped to the harness-native config variable:
-`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, or
-`PI_CODING_AGENT_DIR`.
-
-Each `KORTIX_ACP_<HARNESS>_ARGS` override is a JSON string array. ACP routes use
-the same `X-Kortix-User-Context` HMAC gate as the rest of the signed daemon
-surface.
 
 ## Build
 
-```sh
+```
 bun install
 bash scripts/build.sh
 ```
 
-Produces `dist/kortix-agent`, a single-file Bun binary. Set
+Produces `dist/kortix-agent` — a single-file Bun binary targeting the current
+host architecture by default (`bun-linux-x64` or `bun-linux-arm64`). Set
 `BUN_COMPILE_TARGET` when building for a specific Docker/runtime architecture.
-To smoke-test from source:
+The binary built on macOS will not execute locally; that's expected. To
+smoke-test the daemon on macOS, run from source:
 
-```sh
-KORTIX_PROJECT_AUTO_CLONE=0 \
-KORTIX_SERVICE_PORT=9999 \
-KORTIX_SESSION_ID=test-session \
-KORTIX_RUNTIME_HARNESS=codex \
-KORTIX_COMPILED_RUNTIME_PLAN=1 \
-bun run src/main.ts
-
+```
+KORTIX_PROJECT_AUTO_CLONE=0 KORTIX_SERVICE_PORT=9999 bun run src/main.ts
 curl -s http://localhost:9999/kortix/health
 ```
+
+The daemon should boot and report `opencode: "starting"` (or `"down"` if the
+binary is genuinely missing) without crashing.

@@ -64,9 +64,10 @@ describe('writeStartStash / readStartStash', () => {
 
 describe('readStartStash legacy compatibility', () => {
   // Several web "new session" producers (dashboard, workspace, legacy composer)
-  // wrote the pre-SDK shape directly: a bare prompt string plus an optional
-  // JSON options blob under runtime-specific raw keys. The SDK's read path
-  // must keep understanding that shape while writing the canonical stash.
+  // still write the pre-SDK shape directly: a bare prompt string under
+  // `opencode_pending_prompt:<id>` plus an optional JSON options blob under
+  // `opencode_pending_options:<id>`. Those call sites are out of scope for this
+  // migration, so the SDK's read path must understand both shapes.
   test('reads a legacy bare prompt with no options', () => {
     sessionStorage.setItem('opencode_pending_prompt:ses_2', 'do the thing');
     expect(readStartStash('ses_2')).toEqual({
@@ -174,7 +175,7 @@ describe('migrateLegacyStash', () => {
 
 describe('migrateStash', () => {
   // Producers that already write the canonical shape (writeStartStash) key it
-  // by a route/project id before the real Runtime session id exists; a later
+  // by a route/project id before the real OpenCode session id exists; a later
   // render resolves the real id and needs to hand the stash off. Unlike
   // `migrateLegacyStash` (which only understands a raw bare-prompt + options
   // pair at arbitrary keys), `migrateStash` reads the source via

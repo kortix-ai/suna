@@ -156,9 +156,9 @@ const AGENT_PICK_INTRO: Line[] = [
   [],
   [t('  Pick your local coding agent to configure this Kortix project.', 'dim')],
   [],
-  [t('  Local tools get compatibility files for editing the repo.', 'dim')],
-  [t('  Cloud sessions use kortix.yaml runtime profiles and ACP harnesses.', 'dim')],
-  [t('  The starter includes an OpenCode harness profile by default.', 'dim')],
+  [t('  It picks up the Kortix skill — ask it to scaffold triggers,', 'dim')],
+  [t('  custom agents, or edit kortix.yaml for you.', 'dim')],
+  [t('  (Kortix itself runs opencode inside every sandbox session.)', 'dim')],
   [],
 ];
 
@@ -174,8 +174,7 @@ const initTail = (name: string): Line[] => [
   [t('  + ', 'faded'), t('.kortix/opencode/opencode.jsonc')],
   [t('  + ', 'faded'), t('.kortix/opencode/agents/kortix.md')],
   [t('  + ', 'faded'), t('.kortix/opencode/skills/kortix-system/SKILL.md')],
-  [t('  + ', 'faded'), t('.agents → .kortix/opencode')],
-  [t('  + ', 'faded'), t('AGENTS.md')],
+  [t('  + ', 'faded'), t('.claude/skills/kortix/SKILL.md')],
   [t('Git: initialized (main)', 'dim')],
   [],
   [t('Next:')],

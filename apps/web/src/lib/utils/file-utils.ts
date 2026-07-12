@@ -120,7 +120,7 @@ export function getFileSize(filepath: string, type: FileType): string {
 /**
  * Get a normalized file path for content access.
  * Previously constructed sandbox API URLs — now just returns the normalized path.
- * Content is loaded via Runtime server's readFile() / useFileContent().
+ * Content is loaded via OpenCode server's readFile() / useFileContent().
  */
 export function getFileUrl(_sandboxId: string | undefined, path: string): string {
     // Handle paths that start with "workspace" (without leading /)

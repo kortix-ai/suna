@@ -40,7 +40,7 @@ import {
   Music,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toSandboxAbsolutePath } from '@/features/files/api/runtime-files';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
 import { CodeHighlight, UnifiedMarkdown } from '@/components/markdown/unified-markdown';

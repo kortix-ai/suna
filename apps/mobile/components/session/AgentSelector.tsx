@@ -7,7 +7,7 @@ import { View, TouchableOpacity, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
-import type { Agent } from '@/lib/runtime/hooks/use-runtime-data';
+import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
 
 interface AgentSelectorProps {
   agents: Agent[];

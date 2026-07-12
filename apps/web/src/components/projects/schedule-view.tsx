@@ -63,8 +63,8 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
-import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
-import { useRuntimeProviders, useVisibleAgents } from '@/hooks/runtime/use-runtime-sessions';
+import { type ModelKey, modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -703,7 +703,7 @@ function AgentModelSection({
   onMutated: () => void;
 }) {
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
 
@@ -1112,7 +1112,7 @@ function CreateTriggerModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
   useEffect(() => {

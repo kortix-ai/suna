@@ -16,15 +16,12 @@ const CONFIG = {
   manifest_raw: null,
   manifest: {},
   env: { required: [], optional: [] },
-  runtime_config_raw: null,
-  runtime_default_agent: null,
-  agent_source: 'native',
   open_code_raw: null,
   open_code_default_agent: null,
   agent_discovery: 'opencode',
   agents: [
-    { name: 'release-bot', path: '.opencode/agent/release-bot.md', description: null, mode: null, source: 'runtime' },
-    { name: 'free-bot', path: '.opencode/agent/free-bot.md', description: null, mode: null, source: 'runtime' },
+    { name: 'release-bot', path: '.opencode/agent/release-bot.md', description: null, mode: null, source: 'opencode' },
+    { name: 'free-bot', path: '.opencode/agent/free-bot.md', description: null, mode: null, source: 'opencode' },
     // A kortix.yaml (manifest-declared) agent has no separate file — never produces a deny path.
     { name: 'manifest-bot', path: '(manifest)', description: null, mode: null, source: 'kortix.yaml' },
   ],

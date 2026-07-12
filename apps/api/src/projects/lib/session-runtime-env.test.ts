@@ -11,78 +11,30 @@ const BASE_INPUT = {
 };
 
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
-  test('omits the key entirely for a v1 project — byte-for-byte unaffected', () => {
+  test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
     expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
   });
 
-  test('omits the key when compiledRuntimeConfig is explicitly null', () => {
-    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledRuntimeConfig: null });
+  test('omits the key when compiledAgentConfig is explicitly null', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: null });
     expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
   });
 
-  test('v2 is launched through the OpenCode ACP adapter', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledRuntimeConfig: {
-        kind: 'acp', version: 2, defaultAgent: 'default',
-        runtimes: { opencode: { name: 'opencode', harness: 'opencode', configDir: '.kortix/opencode' } },
-        agents: { default: { name: 'default', runtime: 'opencode', harness: 'opencode', nativeAgent: 'default', enabled: true, connectors: 'none', secrets: 'none', skills: 'none', kortixCli: 'none', workspace: 'runtime' } },
-      },
-    });
-    expect(env.KORTIX_RUNTIME_HARNESS).toBe('opencode');
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+  test('carries the compiled JSON through verbatim for a v2 project', () => {
+    const compiled = JSON.stringify({ agent: { support: { mode: 'primary' } } });
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 
-  test('does not leak the legacy model override into an ACP v2 launch', () => {
+  test('coexists with KORTIX_OPENCODE_MODEL — the per-session override key is unaffected', () => {
+    const compiled = JSON.stringify({ agent: {} });
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      compiledRuntimeConfig: {
-        kind: 'acp', version: 2, defaultAgent: 'default',
-        runtimes: { opencode: { name: 'opencode', harness: 'opencode', configDir: '.kortix/opencode' } },
-        agents: { default: { name: 'default', runtime: 'opencode', harness: 'opencode', nativeAgent: 'default', enabled: true, connectors: 'none', secrets: 'none', skills: 'none', kortixCli: 'none', workspace: 'runtime' } },
-      },
-      runtimeModel: 'anthropic/claude-opus-4-8',
+      compiledAgentConfig: compiled,
+      opencodeModel: 'anthropic/claude-opus-4-8',
     });
-    expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
-  });
-
-  test('v3 emits only the selected ACP runtime contract and no OpenCode bootstrap', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      agentName: 'reviewer',
-      runtimeModel: 'must/not-leak',
-      compiledRuntimeConfig: {
-        kind: 'acp',
-        version: 3,
-        defaultAgent: 'reviewer',
-        runtimes: {
-          codex: { name: 'codex', harness: 'codex', configDir: '.codex' },
-        },
-        agents: {
-          reviewer: {
-            name: 'reviewer',
-            runtime: 'codex',
-            harness: 'codex',
-            nativeAgent: 'strict',
-            enabled: true,
-            connectors: 'none',
-            secrets: 'none',
-            skills: 'none',
-            kortixCli: 'none',
-            workspace: 'runtime',
-          },
-        },
-      },
-    });
-
-    expect(JSON.parse(env.KORTIX_COMPILED_RUNTIME_PLAN).kind).toBe('acp');
-    expect(env.KORTIX_RUNTIME_NAME).toBe('codex');
-    expect(env.KORTIX_RUNTIME_HARNESS).toBe('codex');
-    expect(env.KORTIX_RUNTIME_CONFIG_DIR).toBe('.codex');
-    expect(env.KORTIX_NATIVE_AGENT).toBe('strict');
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
-    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined();
-    expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 });

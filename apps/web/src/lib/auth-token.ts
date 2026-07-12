@@ -213,7 +213,7 @@ export async function getAuthTokenWithRetry(options?: {
 /**
  * Execute fetch with auth headers, properly handling Request objects.
  *
- * When `input` is a Request (e.g. from the Runtime SDK), we construct a new
+ * When `input` is a Request (e.g. from the OpenCode SDK), we construct a new
  * Request with the auth headers merged in, rather than passing headers via the
  * second `init` argument. This avoids a production-only issue where
  * `fetch(Request, { headers })` silently drops the init headers.
@@ -260,7 +260,7 @@ function buildAuthHeaders(
 /**
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
  *
- * Centralizes the pattern duplicated across runtime callers and
+ * Centralizes the pattern duplicated across opencode-sdk and
  * use-sandbox-connection. These auth injection points now go through this.
  *
  * Behavior:
@@ -283,7 +283,7 @@ export async function authenticatedFetch(
   const token = await getAuthTokenWithRetry();
 
   // Still no token — return a synthetic 401 response instead of sending a
-  // naked request. Safe for all callers including the Runtime SDK which
+  // naked request. Safe for all callers including the OpenCode SDK which
   // expects fetch() semantics (returns Response, never throws).
   if (!token) {
     return new Response(JSON.stringify({ error: 'Not authenticated' }), {
@@ -294,7 +294,7 @@ export async function authenticatedFetch(
 
   const headers = buildAuthHeaders(input, init, token);
 
-  // When the Runtime SDK passes a Request object (single arg, no init),
+  // When the OpenCode SDK passes a Request object (single arg, no init),
   // we must construct a new Request with the auth headers baked in.
   // Relying on fetch(Request, { headers }) to override headers is unreliable
   // in production builds — Next.js's patched fetch and certain browser

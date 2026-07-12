@@ -7,7 +7,7 @@
  * main SSE stream (`/global/event`).
  *
  * File events (file.edited, file.watcher.updated) are now handled by the
- * main event stream in `use-runtime-events.ts`. This hook is kept as a
+ * main event stream in `use-opencode-events.ts`. This hook is kept as a
  * no-op so existing imports don't break.
  */
 export function useFileEventInvalidation() {

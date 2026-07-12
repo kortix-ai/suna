@@ -301,8 +301,7 @@ export const SessionCreateInputSchema = z
     agent_name: z.string().min(1).optional(),
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
-    model: z.string().min(1).optional(),
-    runtime_model: z.string().min(1).optional(),
+    opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     session_id: z
       .string()
@@ -322,6 +321,7 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
+    opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
       .regex(
@@ -344,10 +344,7 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  runtime_session_id: z.string().nullable(),
-  runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
-  runtime_id: z.string().nullable().optional(),
-  acp_session_id: z.string().nullable().optional(),
+  opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
@@ -356,7 +353,7 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
-  runtime_sessions: z.array(z.unknown()),
+  opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   visibility: SessionVisibilitySchema,
@@ -419,14 +416,10 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical runtime transport. ACP is the v3 path; opencode is v1/v2 compatibility. */
-  runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
-  /** Runtime process/server identity, independent of the ACP conversation. */
-  runtime_id: z.string().nullable().optional(),
-  /** Runtime-owned conversation id. For ACP this is assigned by session/new. */
-  runtime_session_id: z.string().nullable().optional(),
+  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
+  opencode_session_id: z.string().nullable(),
   /**
-   * Relative proxy path for this session's runtime (port 8000),
+   * Relative proxy path for this session's OpenCode runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */

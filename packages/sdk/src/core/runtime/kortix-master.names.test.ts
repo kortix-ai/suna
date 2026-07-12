@@ -15,7 +15,7 @@ test('the daemon project is exported as KortixMasterProject', () => {
 });
 
 test('the deprecated KortixProject alias still resolves to the daemon shape', () => {
-  // Back-compat: legacy daemon-project consumers keep compiling.
+  // Back-compat: `@kortix/sdk/opencode-client` consumers keep compiling.
   const legacy: master.KortixProject = {
     id: 'p1',
     name: 'demo',

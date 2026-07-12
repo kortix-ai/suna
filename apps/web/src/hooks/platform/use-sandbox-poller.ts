@@ -47,7 +47,7 @@ const STAGE_PROGRESS: Record<string, number> = {
   cloud_init_done:       60,
   services_starting:     80,
   services_ready:        95,
-  verifying_runtime:     98,
+  verifying_opencode:    98,
   connecting:            99,
 };
 
@@ -59,7 +59,7 @@ const STAGE_DURATION_MS: Record<string, number> = {
   cloud_init_done:    30_000,
   services_starting:   20_000,
   services_ready:     180_000, // Services can take several minutes to start on cold boot
-  verifying_runtime:  180_000,
+  verifying_opencode: 180_000,
   connecting:         15_000,
 };
 
@@ -67,11 +67,6 @@ const STAGE_DURATION_MS: Record<string, number> = {
 
 function initial(): SandboxPollerState {
   return { status: 'idle', progress: 0, stages: null, currentStage: null, machineInfo: null, error: null, stageEnteredAt: null };
-}
-
-function normalizeProvisioningStage(stage: string | null): string | null {
-  if (stage === 'verifying_opencode') return 'verifying_runtime';
-  return stage;
 }
 
 /** Interpolate progress within a stage based on elapsed time */
@@ -101,18 +96,18 @@ function getSandboxUrl(sandboxId: string): string {
   return `${getPlatformUrl()}/p/${sandboxId}/8000`;
 }
 
-// ─── Shared Runtime `/global/health` probe ─────────────────────────────────
+// ─── Shared OpenCode `/global/health` probe ─────────────────────────────────
 //
-// This is Runtime's OWN liveness endpoint — NOT the sandbox daemon's
+// This is OpenCode's OWN liveness endpoint — NOT the sandbox daemon's
 // `/kortix/health` that `@kortix/sdk/session`'s `getSessionHealth` probes (see
 // that module's header comment). The two report different things:
 // `/kortix/health` is the daemon wrapper's always-200 liveness probe with a
 // computed `runtimeReady` (folds in repo/branch materialization state);
-// `/global/health` requires the Runtime process itself to answer and is the
-// only place an Runtime `version` comes from (see
+// `/global/health` requires the OpenCode process itself to answer and is the
+// only place an OpenCode `version` comes from (see
 // packages/sdk/src/state/sandbox-connection-store.ts, which tracks both
 // versions separately). Callers here (this poller's cold-boot wait, and
-// `update-dialog`'s post-update reconnect probe) want Runtime's own signal,
+// `update-dialog`'s post-update reconnect probe) want OpenCode's own signal,
 // so they deliberately do NOT route through `getSessionHealth` — but they
 // used to each hand-roll the `{healthy: data?.healthy === true}` parsing
 // independently. This helper standardizes just that contract; callers still
@@ -143,7 +138,7 @@ export async function fetchSandboxGlobalHealth(
   }
 }
 
-async function waitForRuntimeHealthy(
+async function waitForOpenCodeHealthy(
   sandboxId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -282,20 +277,20 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         } else if (d.status === 'active') {
           update({
             status: 'polling',
-            currentStage: 'verifying_runtime',
-            progress: STAGE_PROGRESS.verifying_runtime,
+            currentStage: 'verifying_opencode',
+            progress: STAGE_PROGRESS.verifying_opencode,
             stageEnteredAt: Date.now(),
           });
           healthAbortRef.current?.abort();
           const ac = new AbortController();
           healthAbortRef.current = ac;
           if (!sandboxId) return;
-          waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
+          waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
             if (stoppedRef.current) return;
             if (healthy) {
               set({ ...initial(), status: 'ready', progress: 100 });
             } else {
-              set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
+              set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
             }
             pollingRef.current = false;
             cleanup();
@@ -365,23 +360,23 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         try {
           const data = JSON.parse(e.data);
           if (data.status === 'active') {
-            if (stateRef.current.currentStage === 'verifying_runtime') return;
+            if (stateRef.current.currentStage === 'verifying_opencode') return;
             update({
               status: 'polling',
-              currentStage: 'verifying_runtime',
-              progress: STAGE_PROGRESS.verifying_runtime,
+              currentStage: 'verifying_opencode',
+              progress: STAGE_PROGRESS.verifying_opencode,
               stageEnteredAt: Date.now(),
             });
             healthAbortRef.current?.abort();
             const ac = new AbortController();
             healthAbortRef.current = ac;
             if (!sandboxId) return;
-            waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
+            waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
               if (stoppedRef.current) return;
               if (healthy) {
                 set({ ...initial(), status: 'ready', progress: 100 });
               } else {
-                set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
+                set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
               }
               pollingRef.current = false;
               cleanup();
@@ -391,13 +386,12 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
             pollingRef.current = false;
             cleanup();
           } else if (data.provisioning_stage) {
-            if (stateRef.current.currentStage === 'verifying_runtime') return;
-            const stage = normalizeProvisioningStage(data.provisioning_stage);
-            const progress = stage ? STAGE_PROGRESS[stage] ?? stateRef.current.progress : stateRef.current.progress;
-            const isNewStage = stage !== stateRef.current.currentStage;
+            if (stateRef.current.currentStage === 'verifying_opencode') return;
+            const progress = STAGE_PROGRESS[data.provisioning_stage] ?? stateRef.current.progress;
+            const isNewStage = data.provisioning_stage !== stateRef.current.currentStage;
             update({
               progress: Math.max(stateRef.current.progress, progress),
-              currentStage: stage,
+              currentStage: data.provisioning_stage,
               stageEnteredAt: isNewStage ? Date.now() : stateRef.current.stageEnteredAt,
             });
           }
@@ -412,20 +406,20 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           if (data.status === 'ready' || data.stage === 'services_ready') {
             update({
               status: 'polling',
-              currentStage: 'verifying_runtime',
-              progress: STAGE_PROGRESS.verifying_runtime,
+              currentStage: 'verifying_opencode',
+              progress: STAGE_PROGRESS.verifying_opencode,
               stageEnteredAt: Date.now(),
             });
             healthAbortRef.current?.abort();
             const ac = new AbortController();
             healthAbortRef.current = ac;
             if (!sandboxId) return;
-            waitForRuntimeHealthy(sandboxId, ac.signal).then((healthy) => {
+            waitForOpenCodeHealthy(sandboxId, ac.signal).then((healthy) => {
               if (stoppedRef.current) return;
               if (healthy) {
                 set({ ...initial(), status: 'ready', progress: 100 });
               } else {
-                set({ ...stateRef.current, status: 'error', error: 'Runtime services failed to start.' });
+                set({ ...stateRef.current, status: 'error', error: 'OpenCode services failed to start.' });
               }
               pollingRef.current = false;
               cleanup();
@@ -441,14 +435,13 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           }
 
           if (data.stage) {
-            // Once in runtime verification, don't accept stage changes until health passes
-            if (stateRef.current.currentStage === 'verifying_runtime') return;
-            const stage = normalizeProvisioningStage(data.stage);
-            const progress = stage ? STAGE_PROGRESS[stage] ?? stateRef.current.progress : stateRef.current.progress;
-            const isNewStage = stage !== stateRef.current.currentStage;
+            // Once in verifying_opencode, don't accept stage changes until health passes
+            if (stateRef.current.currentStage === 'verifying_opencode') return;
+            const progress = STAGE_PROGRESS[data.stage] ?? stateRef.current.progress;
+            const isNewStage = data.stage !== stateRef.current.currentStage;
             update({
               progress: Math.max(stateRef.current.progress, progress),
-              currentStage: stage,
+              currentStage: data.stage,
               stageEnteredAt: isNewStage ? Date.now() : stateRef.current.stageEnteredAt,
             });
           }

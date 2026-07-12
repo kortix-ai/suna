@@ -31,7 +31,7 @@ interface SandboxImageProps {
  * SandboxImage — renders an image that may reference a sandbox filesystem path.
  *
  * If `src` is a local sandbox path (e.g. /workspace/uploads/...), fetches the
- * file content via the Runtime SDK (useFileContent), converts base64 to a blob
+ * file content via the OpenCode SDK (useFileContent), converts base64 to a blob
  * URL, and renders that. If `src` is already a valid HTTP/data/blob URL, renders
  * it directly.
  *

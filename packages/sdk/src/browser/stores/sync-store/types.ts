@@ -3,10 +3,10 @@ import type {
 	Message,
 	Part,
 	SnapshotFileDiff,
-} from "../../runtime/wire-types";
+} from "@opencode-ai/sdk/v2/client";
 
 // Inlined from web's `@/ui/types` (FileDiff is a derived type, not exported by
-// the Runtime SDK). Type-only — zero runtime impact, byte-identical behavior.
+// the OpenCode SDK). Type-only — zero runtime impact, byte-identical behavior.
 export type FileDiff = Omit<SnapshotFileDiff, "patch"> & {
 	patch?: string;
 	before?: string;
@@ -15,7 +15,7 @@ export type FileDiff = Omit<SnapshotFileDiff, "patch"> & {
 
 /**
  * A locally-synthesized "operation aborted" marker — distinct from (and not
- * present in) the runtime wire `AssistantMessage['error']` union. The React
+ * present in) the opencode SDK's `AssistantMessage['error']` union. The React
  * layer fabricates this shape when a runtime disposes mid-stream (there's no
  * real SSE event for that case); consumers duck-type on `.name`/`.data.message`
  * exactly like the real wire errors, so it only needs to match that access

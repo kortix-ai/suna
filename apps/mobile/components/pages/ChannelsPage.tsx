@@ -69,7 +69,7 @@ import {
   useSlackGenerateManifest,
   useSlackConnect,
 } from '@/hooks/useChannelWizards';
-import { useRuntimeAgents, useRuntimeProviders, flattenModels, filterToLatestModels } from '@/lib/runtime/hooks/use-runtime-data';
+import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
 import { SlackIcon } from '@/components/icons/slack-icon';
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
@@ -460,8 +460,8 @@ function ChannelDetailSheet({
   const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
 
   // Load agents & models
-  const { data: agents = [] } = useRuntimeAgents(sandboxUrl);
-  const { data: providers } = useRuntimeProviders(sandboxUrl);
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
   const models = useMemo(() => (providers ? flattenModels(providers) : []), [providers]);
   const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
 
@@ -917,8 +917,8 @@ function TelegramWizard({
   const connectMutation = useTelegramConnect();
 
   // Load agents & models
-  const { data: agents = [] } = useRuntimeAgents(sandboxUrl);
-  const { data: providers } = useRuntimeProviders(sandboxUrl);
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
   const models = useMemo(() => (providers ? flattenModels(providers) : []), [providers]);
   const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
 
@@ -1157,8 +1157,8 @@ function SlackWizard({
   const connectMutation = useSlackConnect();
 
   // Load agents & models
-  const { data: agents = [] } = useRuntimeAgents(sandboxUrl);
-  const { data: providers } = useRuntimeProviders(sandboxUrl);
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
   const models = useMemo(() => (providers ? flattenModels(providers) : []), [providers]);
   const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
 

@@ -6,7 +6,7 @@ import { searchWorkspaceFilePaths } from '../search/workspace-search-service';
 
 export const fileSearchKeys = {
   files: (serverUrl: string, query: string, type?: 'file' | 'directory', limit?: number) =>
-    ['runtime-files', 'search', 'files', serverUrl, query, type ?? 'all', limit ?? 50] as const,
+    ['opencode-files', 'search', 'files', serverUrl, query, type ?? 'all', limit ?? 50] as const,
 };
 
 /**

@@ -3,8 +3,8 @@
 Lumen is the **golden reference** for building on `@kortix/sdk`. Two things must
 stay true at all times:
 
-1. **Every Kortix call goes through the SDK.** No raw `fetch`, no native harness
-   SDK imports, no transport/runtime code in the app. The single
+1. **Every Kortix call goes through the SDK.** No raw `fetch`, no
+   `@opencode-ai/sdk` imports, no transport/runtime code in the app. The single
    client lives in `src/lib/kortix.ts`; data flows through `@kortix/sdk` +
    `@kortix/sdk/react` (notably `useSession`).
 2. **Every pixel is shadcn.** This app is the shadcn showcase. The UI must look

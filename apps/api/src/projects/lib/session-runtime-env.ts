@@ -1,5 +1,3 @@
-import type { CompiledRuntimeConfig } from './compile-runtime-config';
-
 export interface SessionRuntimeEnvInput {
   projectId: string;
   sessionId: string;
@@ -10,18 +8,14 @@ export interface SessionRuntimeEnvInput {
   /** Frontend base URL (no /v1) the sandbox surfaces as user-facing links. */
   frontendUrl?: string;
   initialPrompt?: string | null;
-  runtimeModel?: string | null;
-  /** Discriminated v2 compatibility config or v3 ACP launch plan. */
-  compiledRuntimeConfig?: CompiledRuntimeConfig | null;
+  opencodeModel?: string | null;
+  /** Server-compiled OpenCode agent config (JSON string) for a `kortix_version:
+   *  2` project — see `compile-agent-config.ts`. `null`/omitted for a v1
+   *  project: no key is emitted, so v1 sandbox env is byte-for-byte unchanged. */
+  compiledAgentConfig?: string | null;
 }
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
-  const compiled = input.compiledRuntimeConfig;
-  const acpAgent = compiled?.kind === 'acp' ? compiled.agents[input.agentName] : null;
-  if (compiled?.kind === 'acp' && (!acpAgent || !acpAgent.enabled)) {
-    throw new Error(`ACP agent "${input.agentName}" is not declared and enabled in kortix.yaml`);
-  }
-
   return {
     KORTIX_REPO_URL: input.repoUrl,
     KORTIX_DEFAULT_BRANCH: input.baseRef,
@@ -35,27 +29,19 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
-    // V1/v2 compatibility keeps the old root bootstrap. V3 is ACP-native and
-    // must never create a parallel OpenCode HTTP session.
-    ...(!compiled ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
+    // The sandbox daemon owns OpenCode root creation for every cold session.
+    // The API adopts/persists that root; it must not create a competing one.
+    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(input.runtimeModel && !compiled
-      ? { KORTIX_OPENCODE_MODEL: input.runtimeModel }
-      : {}),
+    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
     // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
     // prompt request) still win over whatever default model this bakes in —
     // this only sets the manifest agent's/DEFAULT agent's fallback.
-    ...(compiled?.kind === 'acp'
-      ? {
-          KORTIX_COMPILED_RUNTIME_PLAN: JSON.stringify(compiled),
-          KORTIX_RUNTIME_NAME: acpAgent!.runtime,
-          KORTIX_RUNTIME_HARNESS: acpAgent!.harness,
-          KORTIX_RUNTIME_CONFIG_DIR: compiled.runtimes[acpAgent!.runtime].configDir,
-          ...(acpAgent!.nativeAgent ? { KORTIX_NATIVE_AGENT: acpAgent!.nativeAgent } : {}),
-        }
+    ...(input.compiledAgentConfig
+      ? { KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig }
       : {}),
   };
 }

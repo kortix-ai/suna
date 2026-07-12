@@ -1,5 +1,5 @@
 /**
- * Files feature hooks — all backed by the Runtime server API.
+ * Files feature hooks — all backed by the OpenCode server API.
  */
 
 // Directory listing

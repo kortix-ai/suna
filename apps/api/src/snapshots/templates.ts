@@ -13,14 +13,7 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
-import {
-  AGENT_BROWSER_VERSION,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
-  OPENCODE_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
-} from '@kortix/shared';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
@@ -118,7 +111,7 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // starter tool files against it) can't actually be bundled by Bun — a
 // bundle-breaking axios override once shipped silently baked into every
 // sandbox image (bun install succeeded; the runtime bundle did not).
-const RUNTIME_LAYER_VERSION = 'acp-redacted-adapters-v32';
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
@@ -821,15 +814,8 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
-const harnessVersionKey = () => [
-  `oc:${OPENCODE_VERSION}`,
-  `claude-acp:${CLAUDE_AGENT_ACP_VERSION}`,
-  `codex-acp:${CODEX_ACP_VERSION}`,
-  `pi-acp:${PI_ACP_VERSION}`,
-  `pi:${PI_CODING_AGENT_VERSION}`,
-].join(':');
-const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${harnessVersionKey()}:${AGENT_BROWSER_VERSION}`;
-const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:harnesses:${harnessVersionKey()}:ab:${AGENT_BROWSER_VERSION}`;
+const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
 
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;

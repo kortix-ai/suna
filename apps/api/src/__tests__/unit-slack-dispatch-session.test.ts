@@ -252,7 +252,7 @@ describe('Slack authorization matrix — project access and session visibility',
       [project], // createOrJoinThreadSession project lookup
       [{ eventId: 'claim' }], // claimThreadCreate won
       [], // re-check chat_threads -> none
-      [{ projectId: 'proj-1', agentName: null, model: null, conversationPolicy: 'owner_approval' }],
+      [{ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: 'owner_approval' }],
       [], // remember owner participant
     ];
 

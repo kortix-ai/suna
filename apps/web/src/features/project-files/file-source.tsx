@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import type { FileSource } from '@/features/file-viewer';
 import { useFileContent } from './hooks';
 import { useBinaryBlob } from './hooks/use-binary-blob';
-import { downloadFile, uploadFile } from './api/runtime-files';
+import { downloadFile, uploadFile } from './api/opencode-files';
 import { useProjectContext } from './context';
 import { FilePathBreadcrumbs } from './components/file-breadcrumbs';
 

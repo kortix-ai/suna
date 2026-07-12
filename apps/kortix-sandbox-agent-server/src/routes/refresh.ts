@@ -7,8 +7,9 @@ import {
   verifyKortixUserContext,
 } from '../kortix-user-context'
 import { logger } from '../logger'
+import type { Opencode } from '../opencode'
 
-export function createRefreshRouter(cfg: Config): Hono {
+export function createRefreshRouter(cfg: Config, opencode: Opencode): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
 
@@ -27,18 +28,24 @@ export function createRefreshRouter(cfg: Config): Hono {
       return c.json({ error: 'refresh already running' }, 409)
     }
 
-    // `?base=1` syncs a restored warm-snapshot workspace to the latest base tip.
+    // `?base=1` syncs a restored warm-snapshot workspace to the latest base tip;
+    // `?restart=0` skips the opencode restart (the file watcher picks up changes
+    // and keeps warm-snapshot restore fast). Default behaviour is refresh+restart.
     const syncBase = c.req.query('base') === '1'
+    const skipRestart = c.req.query('restart') === '0'
 
     refreshInFlight = (async () => {
       try {
         const repo = syncBase ? await syncWorkspaceToBase(cfg) : await refreshRepo(cfg)
+        if (!skipRestart) await opencode.restart()
         return c.json({
           ok: true,
           repo: {
             before: repo.before,
             after: repo.after,
           },
+          opencode: opencode.getState(),
+          opencode_pid: opencode.getPid(),
         })
       } catch (err) {
         const message = (err as Error).message || 'refresh failed'

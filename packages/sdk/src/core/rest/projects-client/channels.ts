@@ -326,7 +326,7 @@ export interface ChannelBinding {
   channelName: string | null;
   channelType: string | null;
   agentName: string | null;
-  model: string | null;
+  opencodeModel: string | null;
   conversationPolicy: ChannelConversationPolicy;
   installedAt: string;
   effectiveAgent: ChannelBindingEffectiveAgent;
@@ -352,7 +352,7 @@ export interface UpdateChannelBindingInput {
   /** null resets the agent override to the project default. */
   agentName?: string | null;
   /** null resets the model override to the project/account/platform default. */
-  model?: string | null;
+  opencodeModel?: string | null;
   conversationPolicy?: ChannelConversationPolicy;
 }
 

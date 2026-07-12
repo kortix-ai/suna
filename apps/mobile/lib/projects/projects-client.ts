@@ -159,7 +159,7 @@ export type { ProjectSessionSandbox } from '@kortix/sdk/projects-client';
 // ── Project config detail (agents / skills / commands) ───────────────────────
 // Web parity: GET /projects/:id/detail. The SDK's `ProjectConfigSummary` is a
 // strict superset of mobile's old hand-rolled one (adds `signals`,
-// `manifest_raw`, `runtime_config_raw`, `agent_source`, richer `agents[].scope`)
+// `manifest_raw`, `open_code_raw`, `agent_discovery`, richer `agents[].scope`)
 // — re-exported wholesale; existing consumers only read the fields they
 // already used, extra fields are ignored.
 export type { ProjectConfigSummary, ProjectDetail, ProjectLlmCatalogResponse } from '@kortix/sdk/projects-client';

@@ -1,6 +1,6 @@
 /**
  * Session runtime registry — a process-wide map from a Kortix `sessionId` to
- * its last-resolved runtime (runtime session id + runtime URL + sandbox id).
+ * its last-resolved runtime (opencode session id + runtime URL + sandbox id).
  *
  * Why this exists: `kortix.session(pid, sid)` hands out a FRESH handle on
  * every call, with its own `_ready` cache that starts `null`. That is correct
@@ -26,12 +26,8 @@
  */
 
 export interface SessionRuntimeEntry {
-  /** Canonical transport selected by the project manifest/runtime daemon. */
-  runtimeProtocol: 'acp';
-  /** Runtime process/server id used to address the ACP HTTP bridge. */
-  runtimeId?: string;
-  /** Runtime conversation id. Null until ACP session/new succeeds. */
-  runtimeSessionId?: string | null;
+  /** OpenCode's own session id for this Kortix session (resolved at /start). */
+  opencodeSessionId: string;
   /** This session's resolved runtime proxy URL (`${backendUrl}/p/{externalId}/8000`). */
   runtimeUrl: string;
   /** The sandbox's provider external id (Daytona id). */

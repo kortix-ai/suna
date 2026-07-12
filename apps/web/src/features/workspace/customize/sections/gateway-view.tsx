@@ -26,8 +26,8 @@ import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gat
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
-import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -61,7 +61,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // Account default model — the gateway resolves `auto` against this. The picker
   // lives in the tab bar so it's the obvious place to set "my default model",
   // regardless of which sub-tab is open.
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const modelDefaults = useModelDefaults(projectId);
   const effectiveDefault = modelDefaults.accountDefault ?? modelDefaults.platformDefault ?? null;

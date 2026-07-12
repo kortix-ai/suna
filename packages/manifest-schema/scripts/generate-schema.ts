@@ -18,7 +18,6 @@ import {
   KORTIX_JSON_SCHEMA,
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
-  KORTIX_V3_JSON_SCHEMA,
 } from '../src/json-schema';
 
 const MANIFEST_SCHEMA_ROOT = join(import.meta.dir, '..');
@@ -28,7 +27,6 @@ export const SCHEMA_FILES: Record<string, unknown> = {
   'kortix.schema.json': KORTIX_JSON_SCHEMA,
   'kortix.v1.schema.json': KORTIX_V1_JSON_SCHEMA,
   'kortix.v2.schema.json': KORTIX_V2_JSON_SCHEMA,
-  'kortix.v3.schema.json': KORTIX_V3_JSON_SCHEMA,
 };
 
 export function renderSchemaFile(schema: unknown): string {

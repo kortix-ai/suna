@@ -275,34 +275,9 @@ sandbox:
 The spec is baked into the project's snapshot at build time — sandboxes inherit their resources from the snapshot, so there's no per-session override. Changing any spec field is part of the snapshot's content hash, so it triggers one rebuild; the new size takes effect on the **next** session, the same way a Dockerfile edit does. Projects that don't declare a spec are unaffected — their snapshot hash is unchanged.
 </Callout>
 
-## Runtime config
+## `opencode:` / `[opencode]`
 
-In v3, runtime routing lives under `runtimes:`. Each runtime profile selects an ACP harness and optional harness-native config directory.
-
-```yaml
-kortix_version: 3
-runtimes:
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  open:
-    harness: opencode
-    config_dir: .kortix/opencode
-```
-
-| Field        | Type   | Default by harness | Notes                                                  |
-| ------------ | ------ | ------------------ | ------------------------------------------------------ |
-| `harness`    | string | —                  | `claude`, `codex`, `opencode`, or `pi`. |
-| `config_dir` | string | Harness default    | Repo-relative dir mapped to the harness-native config env var. |
-
-The selected harness owns its runtime semantics; Kortix compiles routing and governance into an ACP launch plan. See [Kortix vs runtime config](/docs/reference/config-boundary).
-
-### Legacy `opencode:` / `[opencode]`
-
-v2 projects may still declare where OpenCode's config dir lives. Optional, with a default. The agent daemon launches the OpenCode harness with `OPENCODE_CONFIG_DIR` pointed here.
+Where OpenCode's config dir lives. Optional, with a default. The agent daemon launches opencode with `OPENCODE_CONFIG_DIR` pointed here.
 
 ```yaml
 opencode:
@@ -313,7 +288,7 @@ opencode:
 | ------------ | ------ | ------------------ | ------------------------------------------------------ |
 | `config_dir` | string | `.kortix/opencode` | Repo-relative dir. Same silent-fallback behavior as `sandbox.templates` paths. |
 
-That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout the OpenCode harness reads by convention. OpenCode owns those harness-native semantics; Kortix may inspect metadata to build server-side agent/model UI surfaces. See [Kortix vs runtime config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
+That directory holds agents, skills, slash commands, tools, plugins, and `opencode.jsonc` — the layout opencode reads by convention. OpenCode owns the runtime semantics; Kortix may inspect metadata to build server-side agent/model UI surfaces. See [Kortix vs OpenCode config](/docs/reference/config-boundary) and [opencode.ai/docs](https://opencode.ai/docs/).
 
 `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers,
 providers, model/provider settings, permissions, and default runtime behavior.
@@ -324,11 +299,11 @@ tools, permission, the prompt itself) lives in the agent's own `.md` frontmatter
 instead, never in the manifest.
 
 Legacy v1 projects with no `[[agents]]` keep OpenCode-native discovery for
-backward compatibility. Projects on `agents:` (v2/v3) or `[[agents]]` (v1) opt into
+backward compatibility. Projects on `agents:` (v2) or `[[agents]]` (v1) opt into
 declarative, server-side agent discovery: product UI should use the API's
 registered agents, while unregistered OpenCode files may still exist for local
 experiments or runtime internals. Model pickers should similarly come from the
-server / LLM-gateway catalog rather than a sandbox-local harness provider list.
+server / LLM-gateway catalog rather than a sandbox-local OpenCode provider list.
 
 ## `triggers:` / `[[triggers]]`
 

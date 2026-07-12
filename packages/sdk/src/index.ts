@@ -5,7 +5,7 @@
  * session, turns, files, event stream, errors, REST clients) is exported
  * here. Configure once at startup, then use one import. Every host — web,
  * mobile, demo — shares this single implementation; nothing talks to the raw
- * API or native harness SDKs directly.
+ * API or OpenCode directly.
  *
  * Only three subpaths exist beyond the root, each for a reason that fits in
  * one sentence:
@@ -18,8 +18,9 @@
  * major.
  *
  * The explicit re-export blocks below double as TS2308 ambiguity pins: a name
- * declared once but reachable through two `export *` paths is pinned to its
- * canonical module here, without renaming anything.
+ * declared once but reachable through two `export *` paths (ours vs the
+ * vendor type star inside core/runtime/client) is pinned to its canonical
+ * module here, without renaming anything.
  */
 export {
   configureKortix,
@@ -32,7 +33,7 @@ export {
 /**
  * The opinionated single entry point. `createKortix({ getToken })` wires the
  * platform seam and returns one client whose methods cover the whole REST +
- * ACP/runtime surface — so a host app imports ONLY from `@kortix/sdk`.
+ * opencode surface — so a host app imports ONLY from `@kortix/sdk`.
  */
 export {
   createKortix,
@@ -49,39 +50,6 @@ export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
-
-/** Canonical Agent Client Protocol transport and transcript projections. */
-export {
-  AcpClient,
-  AcpRpcError,
-  createAcpClient,
-  acpTranscriptHtml,
-  acpTranscriptJsonl,
-  acpTranscriptMarkdown,
-  projectAcpChatItems,
-  projectAcpPendingPrompts,
-  projectAcpTranscript,
-  projectAcpEndpoint,
-  promptProjectAcpSession,
-  type AcpClientOptions,
-  type AcpContentBlock,
-  type AcpEnvelope,
-  type AcpJsonRpcId,
-  type AcpNotification,
-  type AcpRequest,
-  type AcpResponse,
-  type AcpStreamEvent,
-  type AcpStreamHandle,
-  type AcpChatItem,
-  type AcpToolCall,
-  type AcpPlan,
-  type AcpPendingPermission,
-  type AcpPendingPrompts,
-  type AcpPendingQuestion,
-  type AcpPendingQuestionItem,
-  type AcpStoredEnvelope,
-  type AcpTranscriptMessage,
-} from './acp';
 
 /**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
@@ -107,8 +75,8 @@ export {
 export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
 
 /**
- * A session's resolved runtime (ACP runtime id + runtime URL + sandbox id) —
- * the shape `ensureReady()` resolves to and the shared session-runtime
+ * A session's resolved runtime (opencode session id + runtime URL + sandbox
+ * id) — the shape `ensureReady()` resolves to and the shared session-runtime
  * registry stores. Re-exported so it's nameable from the package's public
  * surface (TS's declaration emit needs this to describe `SessionHandle`'s
  * `ensureReady()` return type without reaching into an internal module path).
@@ -118,7 +86,7 @@ export type { SessionRuntimeEntry } from './core/session/session-runtime-registr
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
  * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s session hooks are thin wrappers
+ * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
  * around this for the React host; any other host (worker, CLI, non-React UI)
  * can call it directly.
  */
@@ -127,7 +95,7 @@ export {
   type EventStreamClient,
   type EventStreamHandle,
   type EventStreamTimers,
-  type RuntimeEvent,
+  type OpenCodeEvent,
   type OpenEventStreamOptions,
 } from './core/stream/event-stream';
 
@@ -154,7 +122,7 @@ export {
 
 /**
  * Exhaustive part/turn classification for building chat UIs — framework-free.
- * `classifyPart` normalizes every runtime `Part` variant (text, reasoning,
+ * `classifyPart` normalizes every opencode `Part` variant (text, reasoning,
  * tool, file, subtask, patch, snapshot, agent, retry, compaction, step) into
  * a `ClassifiedPart`, with a compile-time exhaustiveness check plus a runtime
  * 'unknown' fallback for forward-compat. `classifyTurn` classifies every part
@@ -191,7 +159,7 @@ export {
 } from './core/turns';
 
 /**
- * The curated chat-event union — narrows the full `RuntimeEvent` wire union
+ * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
@@ -254,7 +222,7 @@ export type {
   ConnectorConfig,
   // Sessions
   ProjectSession,
-  ProjectRuntimeSession,
+  ProjectOpenCodeSession,
   SessionPublicShare,
   SessionAudit,
   SessionTranscript,
@@ -360,8 +328,9 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// structural runtime wire types. Each is declared ONCE in this package; naming
-// it here picks the canonical module and silences ambiguity without renaming.
+// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// core/runtime/client). Each is declared ONCE in this package; naming it here
+// picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
 export {
   type PermissionAction,
@@ -376,7 +345,7 @@ export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
 export * from './core/http/instance-routes';
-export * from './core/http/runtime-errors';
+export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/runtime/client';

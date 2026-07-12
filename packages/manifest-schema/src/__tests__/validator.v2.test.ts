@@ -820,9 +820,9 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 4 is rejected as unsupported', () => {
+  test('kortix_version 3 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 4
+kortix_version: 3
 default_agent: w
 agents:
   w: {}

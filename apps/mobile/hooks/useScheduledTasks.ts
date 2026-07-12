@@ -139,7 +139,7 @@ interface ApiRunResponse {
   };
 }
 
-/** Authenticated fetch against the sandbox — same pattern as runtimeFetch in platform/hooks */
+/** Authenticated fetch against the sandbox — same pattern as opencodeFetch in platform/hooks */
 async function sandboxFetch<T>(sandboxUrl: string, path: string, options?: RequestInit): Promise<T> {
   const token = await getAuthToken();
   const res = await fetch(`${sandboxUrl}${path}`, {

@@ -83,7 +83,8 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
-  // `connect` is the harness-neutral ACP interactive-chat alias.
+  // `connect` owns its own flag parsing and forwards remaining args to
+  // `opencode attach`, so route it before we consume flags below.
   if (sub === 'connect' || sub === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
@@ -238,7 +239,7 @@ async function sessionsNew(
   }
 
   // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before the runtime is ready.
+  // polls. Row status alone can say "running" before OpenCode is actually ready.
   if (wait) {
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);

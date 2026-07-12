@@ -61,7 +61,7 @@ export interface PublicSessionTranscriptMessage {
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
-  runtime_session_id: string | null;
+  opencode_session_id: string | null;
   message_count: number;
   messages: PublicSessionTranscriptMessage[];
 }

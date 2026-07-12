@@ -42,7 +42,7 @@ Subcommands:
 Add options:
   --type <cron|webhook>    Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
-  --agent <name>           Agent to run (default: the project default agent).
+  --agent <name>           Agent to run (default: the opencode default).
   --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
   --timezone <tz>          Timezone for cron (default UTC).
   --secret-env <NAME>      HMAC secret env var (webhook type).

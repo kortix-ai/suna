@@ -1,6 +1,6 @@
 'use client';
 
-/** The Runtime permission-tree editor — a default action plus per-key rules
+/** The OpenCode permission-tree editor — a default action plus per-key rules
  *  (bare action or glob-pattern → action maps). */
 
 import { Button } from '@/components/ui/button';

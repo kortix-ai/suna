@@ -64,8 +64,9 @@ export const KNOWN_SCHEMA_VERSION = 1;
 /**
  * Highest schema version this reader (the one the session/trigger/grant
  * pipeline actually reads through — `readManifest`/`parseManifestString`)
- * accepts without throwing. `kortix_version: 2` and the ACP-first v3
- * `runtimes` + logical-agent map are validated at write time by
+ * accepts without throwing. `kortix_version: 2` (the `agents:` map + full
+ * OpenCode `AgentConfig` parity + deny-by-default grants — see
+ * `@kortix/manifest-schema`'s `ManifestV2`) is validated at write time by
  * `kortix validate` / the CR-merge gate; THIS reader must not also reject it,
  * or every v2 project's session grant resolution would fail closed/open
  * instead of reading the agent's declared grant (the runtime-wiring gap
@@ -73,7 +74,7 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and still refused.
  */
-export const MAX_SCHEMA_VERSION = 3;
+export const MAX_SCHEMA_VERSION = 2;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 

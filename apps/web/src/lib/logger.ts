@@ -1,5 +1,5 @@
 /**
- * Structured logger that ships log entries to the Runtime server
+ * Structured logger that ships log entries to the OpenCode server
  * via `client.app.log()` while also writing to the browser console
  * for local development visibility.
  *
@@ -8,7 +8,7 @@
  *   logger.error('Stream disconnected', { runId, attempt: 3 });
  */
 
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
+import { getClient } from '@/lib/opencode-sdk';
 
 const SERVICE_NAME = 'frontend';
 

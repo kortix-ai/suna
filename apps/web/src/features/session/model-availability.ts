@@ -1,4 +1,4 @@
-import type { ModelKey } from '@/hooks/runtime/use-runtime-local';
+import type { ModelKey } from '@/hooks/opencode/use-opencode-local';
 
 export const NO_MODEL_AVAILABLE_MESSAGE = 'No models available for this session yet.';
 export const NO_MODEL_AVAILABLE_ACTION_MESSAGE =

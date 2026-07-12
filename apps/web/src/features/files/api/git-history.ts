@@ -6,12 +6,8 @@
  * it, and return structured data.
  */
 
-import {
-  createKortixPty,
-  removeKortixPty,
-  getKortixPtyWebSocketUrl,
-} from '@kortix/sdk/runtime-client';
-import { getActiveRuntimeUrl } from '@/stores/server-store';
+import { createKortixPty, removeKortixPty, getKortixPtyWebSocketUrl } from '@/lib/opencode-sdk';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
@@ -35,7 +31,7 @@ const WS_TIMEOUT = 15_000;
  * Returns the combined stdout as a string.
  */
 async function runGitCommand(command: string): Promise<string> {
-  const baseUrl = getActiveRuntimeUrl();
+  const baseUrl = getActiveOpenCodeUrl();
 
   // Create a PTY that runs the git command
   const pty = await createKortixPty(baseUrl, {

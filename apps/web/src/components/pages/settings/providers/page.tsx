@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ProviderList } from '@/features/providers/provider-list';
 import { GlobalProviderModal } from '@/features/providers/provider-modal';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { Plus } from 'lucide-react';
 import { useMemo } from 'react';
@@ -14,7 +14,7 @@ import { useMemo } from 'react';
 export default function ProvidersPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const { data: providersData, isLoading, refetch } = useRuntimeProviders();
+  const { data: providersData, isLoading, refetch } = useOpenCodeProviders();
 
   const connectedProviders = useMemo(() => {
     if (!providersData) return [];

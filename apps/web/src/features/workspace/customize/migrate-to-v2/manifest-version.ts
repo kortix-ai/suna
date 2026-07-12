@@ -14,7 +14,7 @@
 import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 
-export type ManifestVersion = 1 | 2 | 3;
+export type ManifestVersion = 1 | 2;
 
 const VERSION_RE = /kortix_version\s*[:=]\s*"?(\d+)"?/;
 
@@ -23,7 +23,7 @@ export function detectManifestVersion(manifestRaw: string | null | undefined): M
   const match = manifestRaw.match(VERSION_RE);
   if (!match) return 1;
   const parsed = Number(match[1]);
-  return parsed === 3 ? 3 : parsed === 2 ? 2 : 1;
+  return parsed >= 2 ? 2 : 1;
 }
 
 export interface ProjectManifestVersionState {

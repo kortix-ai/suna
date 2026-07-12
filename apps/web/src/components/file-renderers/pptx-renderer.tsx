@@ -8,7 +8,7 @@ import { AlertTriangle, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { downloadFile } from '@/features/files/api/runtime-files';
+import { downloadFile } from '@/features/files/api/opencode-files';
 
 import { getPptxI18n } from './pptx-i18n';
 import './pptx-viewer.css';

@@ -1,4 +1,4 @@
-import { SANDBOX_FS_ROOTS } from '@/features/files/api/runtime-files';
+import { SANDBOX_FS_ROOTS } from '@/features/files/api/opencode-files';
 
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 

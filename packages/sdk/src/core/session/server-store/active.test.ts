@@ -6,7 +6,7 @@ import { setCurrentRuntime } from '../current-runtime';
 // files make for this exact module (`state/server-store/active`) — Bun's
 // `mock.module` is process-wide and permanent for the whole `bun test` sweep,
 // and (confirmed empirically) it collides bidirectionally through the
-// `export { getActiveRuntimeUrl, ... } from './server-store/active'`
+// `export { getActiveOpenCodeUrl, ... } from './server-store/active'`
 // re-export chain in `../server-store.ts`: mocking EITHER the barrel
 // (`../server-store`, as `files/client.test.ts` used to) OR this submodule
 // directly (as `opencode/client.test.ts` used to) replaced this module's real
@@ -21,7 +21,7 @@ import { setCurrentRuntime } from '../current-runtime';
 const {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
-  getActiveRuntimeUrl,
+  getActiveOpenCodeUrl,
   getActiveSandboxId,
   getBackendPort,
 } = await import('./active');
@@ -37,14 +37,14 @@ afterEach(() => {
   setCurrentRuntime(null);
 });
 
-test('getActiveRuntimeUrl prefers the current-runtime url when a session is active', () => {
+test('getActiveOpenCodeUrl prefers the current-runtime url when a session is active', () => {
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', billingEnabled: false });
   setCurrentRuntime('http://backend.local/v1/p/sb-1/8000', 'sb-1');
 
-  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/sb-1/8000');
+  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sb-1/8000');
 });
 
-test('getActiveRuntimeUrl falls back to the default sandbox url in self-hosted local dev (no billing, no active session)', () => {
+test('getActiveOpenCodeUrl falls back to the default sandbox url in self-hosted local dev (no billing, no active session)', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
     getToken: async () => 'tok',
@@ -52,10 +52,10 @@ test('getActiveRuntimeUrl falls back to the default sandbox url in self-hosted l
     sandboxId: 'local-sbx',
   });
 
-  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
+  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/local-sbx/8000');
 });
 
-test('getActiveRuntimeUrl returns empty string in a billing-enabled deployment with no active session', () => {
+test('getActiveOpenCodeUrl returns empty string in a billing-enabled deployment with no active session', () => {
   configureKortix({
     backendUrl: 'http://backend.local/v1',
     getToken: async () => 'tok',
@@ -63,13 +63,13 @@ test('getActiveRuntimeUrl returns empty string in a billing-enabled deployment w
     sandboxId: 'should-be-ignored',
   });
 
-  expect(getActiveRuntimeUrl()).toBe('');
+  expect(getActiveOpenCodeUrl()).toBe('');
 });
 
-test('getActiveRuntimeUrl treats an unset billingEnabled as false (defaults to the self-hosted fallback)', () => {
+test('getActiveOpenCodeUrl treats an unset billingEnabled as false (defaults to the self-hosted fallback)', () => {
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => 'tok', sandboxId: 'sbx-1' });
 
-  expect(getActiveRuntimeUrl()).toBe('http://backend.local/v1/p/sbx-1/8000');
+  expect(getActiveOpenCodeUrl()).toBe('http://backend.local/v1/p/sbx-1/8000');
 });
 
 test('getActiveSandboxId prefers the current-runtime sandbox id over the configured default', () => {

@@ -28,18 +28,15 @@ export interface ProjectSession {
   sandbox_provider: string | null;
   sandbox_id: string;
   sandbox_url: string | null;
-  runtime_session_id: string | null;
-  runtime_protocol?: 'acp' | null;
-  runtime_id?: string | null;
-  acp_session_id?: string | null;
+  opencode_session_id: string | null;
   /**
    * Resolved display name: the user-set `custom_name` if present, otherwise the
-   * auto title mirrored from Runtime server-side during project session reads.
+   * auto title mirrored from OpenCode server-side during project session reads.
    */
   name: string | null;
   /**
    * The user-set name override (metadata.custom_name). Authoritative — when
-   * present it always wins over the server-mirrored Runtime title. null = no
+   * present it always wins over the server-mirrored OpenCode title. null = no
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
@@ -47,7 +44,7 @@ export interface ProjectSession {
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
-  runtime_sessions: ProjectRuntimeSession[];
+  opencode_sessions: ProjectOpenCodeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   owner_email?: string | null;
@@ -73,8 +70,7 @@ export interface CreateProjectSessionInput {
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
-  model?: string;
-  runtime_model?: string;
+  opencode_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
@@ -87,7 +83,7 @@ export interface CreateProjectSessionInput {
   connector_bindings?: SessionConnectorBindings;
 }
 
-export interface ProjectRuntimeSession {
+export interface ProjectOpenCodeSession {
   id: string;
   title: string | null;
   parent_id: string | null;
@@ -308,7 +304,7 @@ export interface SessionTranscriptMessage {
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
-  runtime_session_id: string | null;
+  opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
 }

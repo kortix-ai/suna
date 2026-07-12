@@ -18,10 +18,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   applyAgentBlockV2,
-  applyAgentBlockV3,
   applyDefaultAgentV2,
   readAgentBlockV2,
-  readAgentBlockV3,
 } from '../projects/lib/agent-config-v2';
 import { parseManifestString } from '../projects/triggers';
 
@@ -44,24 +42,6 @@ name = "acme"
 [[agents]]
 name = "kortix"
 connectors = "all"
-`;
-
-const V3 = `
-kortix_version: 3
-default_agent: reviewer
-runtimes:
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-agents:
-  reviewer:
-    runtime: codex
-    agent: strict
-    connectors: [github]
-  helper:
-    runtime: claude
 `;
 
 function v2Manifest(body = V2) {
@@ -223,56 +203,6 @@ agents:
     );
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
-    expect(applied.error).toContain('kortix.yaml');
-  });
-});
-
-describe('v3 ACP logical agent routing', () => {
-  test('reads runtime profiles and the native agent id without behavior translation', () => {
-    const read = readAgentBlockV3(parseManifestString(V3, 'yaml', 'kortix.yaml'), 'reviewer');
-    expect(read.ok).toBe(true);
-    if (!read.ok) return;
-    expect(read.block).toEqual({ runtime: 'codex', agent: 'strict', connectors: ['github'] });
-    expect(read.runtimes).toMatchObject({
-      claude: { harness: 'claude', config_dir: '.claude' },
-      codex: { harness: 'codex' },
-    });
-  });
-
-  test('switches a logical agent between native runtimes and preserves governance', () => {
-    const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
-    const applied = applyAgentBlockV3(manifest, 'reviewer', {
-      runtime: 'claude',
-      agent: 'security-reviewer',
-      connectors: ['github'],
-      secrets: 'none',
-    });
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) return;
-    expect((applied.raw.agents as any).reviewer).toEqual({
-      runtime: 'claude',
-      agent: 'security-reviewer',
-      connectors: ['github'],
-      secrets: 'none',
-    });
-  });
-
-  test('rejects an undeclared runtime profile', () => {
-    const applied = applyAgentBlockV3(
-      parseManifestString(V3, 'yaml', 'kortix.yaml'),
-      'reviewer',
-      { runtime: 'missing' },
-    );
-    expect(applied.ok).toBe(false);
-    if (applied.ok) return;
-    expect(applied.error).toContain('does not match a declared runtime profile');
-  });
-
-  test('allows v3 to update the declared default agent', () => {
-    const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
-    const applied = applyDefaultAgentV2(manifest, 'helper');
-    expect(applied.ok).toBe(true);
-    if (!applied.ok) expect.unreachable();
-    else expect(applied.raw.default_agent).toBe('helper');
+    expect(applied.error).toContain('kortix_version 2');
   });
 });

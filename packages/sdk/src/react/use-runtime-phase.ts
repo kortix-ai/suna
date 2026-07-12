@@ -15,6 +15,6 @@ export function useRuntimePhase(): RuntimePhase {
   const healthy = useSandboxConnectionStore((s) => s.healthy);
   if (status === 'unreachable') return 'unreachable';
   if (healthy === true) return 'ready';
-  if (status === 'connected') return 'booting'; // reachable, Runtime still warming
+  if (status === 'connected') return 'booting'; // reachable, OpenCode still warming
   return 'connecting';
 }

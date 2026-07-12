@@ -48,7 +48,7 @@ import {
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useTabStore } from '@/stores/tab-store';
 
-// The session's panel is keyed by the Runtime chatSessionId (registered by the
+// The session's panel is keyed by the OpenCode chatSessionId (registered by the
 // active SessionLayout), NOT the Kortix session id in the URL — those differ,
 // so the URL id would write to a key nothing reads (panel opens but the Browser
 // tab never selects). Null off-session → fall back to opening externally.

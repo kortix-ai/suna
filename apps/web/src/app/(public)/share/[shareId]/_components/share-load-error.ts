@@ -51,7 +51,7 @@ export function describeShareError(error: ShareLoadError | null): { title: strin
 }
 
 /** Copy for a transient in-band transcript failure (still a 200 — see
- *  `PublicSessionTranscript.available`), e.g. Runtime not ready yet. */
+ *  `PublicSessionTranscript.available`), e.g. OpenCode not ready yet. */
 export function transcriptUnavailableMessage(reason: string | null): string {
   return reason ? `Conversation temporarily unavailable — ${reason}.` : 'Conversation temporarily unavailable.';
 }

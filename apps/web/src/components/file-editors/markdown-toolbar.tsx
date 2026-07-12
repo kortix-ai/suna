@@ -362,7 +362,7 @@ export function MarkdownToolbar({
 
   const uploadImageToServer = useCallback(async (file: File): Promise<string | null> => {
     try {
-      // Step 1: Upload the file via Runtime
+      // Step 1: Upload the file via OpenCode
       const results = await uploadFile(file, '/workspace/uploads');
       const actualPath = results?.[0]?.path || `/workspace/uploads/${file.name}`;
 
@@ -394,7 +394,7 @@ export function MarkdownToolbar({
   }, []);
 
   const insertImage = useCallback(async () => {
-    // If user selected a file, upload it to Runtime server
+    // If user selected a file, upload it to OpenCode server
     if (selectedFile) {
       setIsUploading(true);
       try {

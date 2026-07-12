@@ -1,9 +1,11 @@
 import { shredAgentEnvFile } from './agent-env-file'
 import { logger } from './logger'
+import type { Opencode } from './opencode'
 import type { ProxyServer } from './proxy'
 import type { StaticWebServer } from './static-web'
 
 export function installShutdownHandlers(
+  opencode: Opencode,
   proxy: ProxyServer,
   staticWeb?: StaticWebServer,
 ) {
@@ -27,6 +29,11 @@ export function installShutdownHandlers(
         } catch (err) {
           logger.warn('[shutdown] static-web stop failed', err)
         }
+      }
+      try {
+        await opencode.stop(signal)
+      } catch (err) {
+        logger.warn('[shutdown] opencode stop failed', err)
       }
       logger.info('[shutdown] done')
       process.exit(0)

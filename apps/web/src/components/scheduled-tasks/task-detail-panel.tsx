@@ -17,7 +17,7 @@ import {
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { AgentSelector } from '@/features/session/session-chat-input';
-import { useVisibleAgents } from '@/hooks/runtime/use-runtime-sessions';
+import { useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 import {
   useDeleteTrigger,
   useRunTrigger,

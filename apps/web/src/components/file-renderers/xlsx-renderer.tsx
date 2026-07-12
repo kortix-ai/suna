@@ -34,7 +34,7 @@ export function XlsxRenderer({ filePath, fileName, className }: XlsxRendererProp
         if (!resp.ok) throw new Error(`Failed to fetch workbook (${resp.status})`);
         workbookBlob = await resp.blob();
       } else {
-        const { readFileAsBlob } = await import('@/features/files/api/runtime-files');
+        const { readFileAsBlob } = await import('@/features/files/api/opencode-files');
         workbookBlob = await readFileAsBlob(filePath);
       }
       if (cancelled) return;

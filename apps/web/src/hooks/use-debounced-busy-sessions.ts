@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSyncStore } from '@/stores/runtime-sync-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 
 /**
  * Debounced busy state — prevents green dot from flickering off between

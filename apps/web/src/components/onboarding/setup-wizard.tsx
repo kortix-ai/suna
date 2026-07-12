@@ -21,11 +21,11 @@ import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { modelKeyToWire, useModelStore } from '@/hooks/runtime/use-model-store';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
 import { setModelDefault } from '@kortix/sdk/projects-client';
-import { setEnv } from '@kortix/sdk/runtime-client';
+import { setEnv } from '@kortix/sdk/opencode-client';
 import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
@@ -368,7 +368,7 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 
 function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: providersData, isLoading } = useRuntimeProviders();
+  const { data: providersData, isLoading } = useOpenCodeProviders();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
 
   const connectedProviders = useMemo(() => {
@@ -479,7 +479,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 
 function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: providersData, isLoading } = useRuntimeProviders();
+  const { data: providersData, isLoading } = useOpenCodeProviders();
   const allModels = useMemo(() => flattenModels(providersData), [providersData]);
   const modelStore = useModelStore(allModels);
 

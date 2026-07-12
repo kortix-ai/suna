@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 
 import { buildModelsDevPricingMap, createModelPricingLookup } from './model-pricing';
 

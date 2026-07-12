@@ -265,7 +265,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. |
 | `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session, optionally with an initial prompt. `--wait` blocks until it's running; `--json` prints the session object. |
 | `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
-| `kortix sessions connect [<id>] [-- <runtime attach args>]` | Attach to the session runtime when the selected harness supports a local attach flow. |
+| `kortix sessions connect [<id>] [-- <opencode attach args>]` | Attach your local OpenCode TUI to the OpenCode server already running inside the session sandbox. |
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print a session's recent messages, read-only — peek at what an agent is doing without sending it anything. Alias: `messages`. |
 | `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review for reflection: metadata + compressed transcript snippets with tool outputs stripped. Aliases: `review`, `summary`. |
 | `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable, root-served preview URL for a port in the session's sandbox (default `3000`). |
@@ -580,4 +580,4 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 - **Not a separate runtime.** Use `kortix self-host start` to run your own local Kortix Cloud stack, then switch between Cloud and local APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
-- **Not the runtime.** The selected ACP harness executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs runtime config](/docs/reference/config-boundary).
+- **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

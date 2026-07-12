@@ -12,8 +12,8 @@ const built = existsSync(ESM) && existsSync(IIFE);
 test.skipIf(!built)('no browser bundle contains node:child_process', () => {
   for (const file of [ESM, IIFE]) {
     const source = readFileSync(file, 'utf8');
-    // Native harness SDKs commonly pull Node-only modules. If they land here,
-    // the browser bundle crossed the runtime-client boundary.
+    // @opencode-ai/sdk's dist/process.js imports node:child_process and is reached
+    // only from v2/server.js. If it lands here, tsup resolved the wrong entry.
     expect(source.includes('node:child_process') ? `${file} pulls node:child_process` : null).toBeNull();
     expect(source.includes('async_hooks') ? `${file} pulls async_hooks` : null).toBeNull();
   }

@@ -33,10 +33,10 @@ import {
 } from '@/features/providers/provider-branding';
 import { ProviderRowContent } from '@/features/providers/provider-card';
 import type { FlatModel } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/runtime/use-model-store';
-import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
-import { runtimeKeys, useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
+import { useModelStore } from '@/hooks/opencode/use-model-store';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { getClient } from '@/lib/opencode-sdk';
 import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
@@ -98,7 +98,7 @@ function ConnectedTabBody({
           }
         }
         await client.global.dispose();
-        await queryClient.refetchQueries({ queryKey: runtimeKeys.providers() });
+        await queryClient.refetchQueries({ queryKey: opencodeKeys.providers() });
         successToast(`${PROVIDER_LABELS[providerID] || providerID} disconnected`);
         onDisconnected?.();
       } catch {
@@ -407,7 +407,7 @@ export function ProviderModal({
   onProviderConnected,
 }: ProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: fetchedProviders } = useRuntimeProviders();
+  const { data: fetchedProviders } = useOpenCodeProviders();
   const providers = providersProp ?? fetchedProviders;
 
   const connectedProviders = useMemo(() => {
@@ -572,7 +572,7 @@ export function ProviderModal({
 
 export function GlobalProviderModal() {
   const { isOpen, defaultTab, closeProviderModal } = useProviderModalStore();
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
 
   const models = useMemo(() => {
     if (!providers) return [];

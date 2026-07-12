@@ -35,20 +35,12 @@ export function applyDetailCapabilityFilter<C extends object, F>(
 ): { config: C; files: F[]; file_count: number } {
   const gatedConfig = {
     ...config,
-    ...(caps.canAgents ? {} : { agents: [], agent_source: null, agent_discovery: null }),
+    ...(caps.canAgents ? {} : { agents: [], agent_discovery: null }),
     ...(caps.canSkills ? {} : { skills: [] }),
     ...(caps.canCommands ? {} : { commands: [] }),
     ...(caps.canCustomize
       ? {}
-      : {
-          manifest_raw: null,
-          manifest: {},
-          env: [],
-          runtime_config_raw: null,
-          runtime_default_agent: null,
-          open_code_raw: null,
-          open_code_default_agent: null,
-        }),
+      : { manifest_raw: null, manifest: {}, env: [], open_code_raw: null, open_code_default_agent: null }),
   } as C;
   return {
     config: gatedConfig,

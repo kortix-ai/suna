@@ -19,18 +19,13 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type {
-  AssistantMessage,
-  Message,
-  MessageWithParts,
-  Part,
-  Session,
-} from '@/ui/types';
+import type { MessageWithParts } from '@/ui/types';
 import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '@kortix/sdk/turns';
 import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { useModelPricingLookup } from '@/lib/model-pricing';
-import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
-import { useSyncStore } from '@/stores/runtime-sync-store';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk/opencode-client';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 
 // ============================================================================
 // Context metrics — ported 1:1 from SolidJS session-context-metrics.ts
@@ -74,9 +69,8 @@ function getSessionContextMetrics(
   for (let i = rawMessages.length - 1; i >= 0; i--) {
     const msg = rawMessages[i];
     if (msg.role !== 'assistant') continue;
-    const assistant = msg as AssistantMessage;
-    if (tokenTotal(assistant) <= 0) continue;
-    last = assistant;
+    if (tokenTotal(msg) <= 0) continue;
+    last = msg;
     break;
   }
   if (!last) return { totalCost, context: undefined };

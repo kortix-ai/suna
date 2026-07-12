@@ -5,14 +5,14 @@ description: 'Zero to a streaming agent reply in one framework-free file: list p
 
 This is the whole SDK in one runnable file — no framework, no build step beyond
 TypeScript. It exercises every core concept in order: the client, the platform
-REST surface, the readiness handshake, live streaming, sending through ACP, and
-server-side transcript reads. Each numbered section below maps to a concept
-page.
+REST surface, the readiness handshake, live streaming, sending with overrides,
+and turn classification. Each numbered section below maps to a concept page.
 
 ## The complete script
 
 ```ts
-import { ApiError, createKortix, narrowChatEvent } from '@kortix/sdk';
+import { ApiError, classifyTurn, createKortix, narrowChatEvent } from '@kortix/sdk';
+import type { MessageWithParts } from '@kortix/sdk';
 
 async function main() {
   // 1. One client, one auth seam. getToken returns your API key
@@ -37,7 +37,7 @@ async function main() {
   //    sandbox. Each ensureReady() call is ONE bounded long-poll — on a
   //    cold boot it throws a typed RUNTIME_UNAVAILABLE ApiError while the
   //    sandbox is still coming up, so retry until it resolves.
-  const { runtimeSessionId } = await retryUntilReady(() => session.ensureReady());
+  const { opencodeSessionId } = await retryUntilReady(() => session.ensureReady());
 
   // 5. Connect the event stream BEFORE sending, so no early events are
   //    missed. narrowChatEvent() collapses the wire events into a small
@@ -51,24 +51,33 @@ async function main() {
       if (!e) return;
       if (e.type === 'message.part.updated') process.stdout.write('.');
       if (e.type === 'session.error') console.error('\nerror:', e.error);
-      if (e.type === 'session.idle' && e.sessionID === runtimeSessionId) {
+      if (e.type === 'session.idle' && e.sessionID === opencodeSessionId) {
         resolveIdle(); // the turn is finished
       }
     },
   });
 
-  // 6. Send through ACP. Model and agent selection come from the selected
-  //    runtime profile and its native config.
-  await session.send('What files are in this repo?');
+  // 6. Send. Per-send overrides let you pick the model and the agent for
+  //    just this prompt (ids come from projects.llmCatalog() and
+  //    projects.detail().config.agents).
+  await session.send('What files are in this repo?', {
+    model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },
+  });
 
   // 7. Wait for the turn to finish — the session.idle event, not a sleep.
   await idle;
   stream.close();
 
-  // 8. Render the compact server-side transcript.
-  const transcript = await session.transcript();
-  for (const message of transcript.messages ?? []) {
-    if (message.text) console.log(`\n[${message.role}] ${message.text}`);
+  // 8. Render the transcript. classifyTurn() collapses ~50 wire part
+  //    variants into a compile-time-exhaustive union, so a renderer can
+  //    switch (part.kind) and TypeScript proves no case is missed.
+  const result = await session.runtime.session.messages({
+    sessionID: opencodeSessionId,
+  });
+  for (const message of (result.data ?? []) as MessageWithParts[]) {
+    for (const part of classifyTurn(message).parts) {
+      if (part.kind === 'text') console.log(`\n[${message.info.role}] ${part.text}`);
+    }
   }
 }
 
@@ -111,8 +120,8 @@ KORTIX_API_KEY=kortix_pat_... npx tsx full-example.ts
 | 2–3  | The platform REST surface: projects and sessions            | [The client](/docs/sdk/the-client) |
 | 4    | Session readiness — the bridge between platform and runtime | [Sessions](/docs/sdk/sessions)     |
 | 5, 7 | Live SSE events, `narrowChatEvent`, `session.idle`          | [Streaming](/docs/sdk/streaming)   |
-| 6    | ACP prompt delivery to the selected runtime                 | [Sessions](/docs/sdk/sessions)     |
-| 8    | Compact server-side transcript export                      | [Sessions](/docs/sdk/sessions)     |
+| 6    | Per-send `{ model, agent }` overrides                       | [Sessions](/docs/sdk/sessions)     |
+| 8    | `classifyTurn` and the exhaustive `ClassifiedPart` union    | [Turns](/docs/sdk/turns)           |
 
 ## Going further from here
 

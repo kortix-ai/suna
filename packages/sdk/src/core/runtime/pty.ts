@@ -1,10 +1,10 @@
 /**
  * Kortix-native PTY client — the daemon `/kortix/pty` endpoints
  * (routes/pty.ts in kortix-sandbox-agent-server), owned by the SDK.
- * Independent of whatever agent runtime (Runtime today) is running in the
+ * Independent of whatever agent runtime (OpenCode today) is running in the
  * sandbox — a raw terminal shouldn't go down with the agent.
  *
- * Response shape matches Runtime's own `Pty` entity 1:1 (id/title/command/
+ * Response shape matches OpenCode's own `Pty` entity 1:1 (id/title/command/
  * args/cwd/status/pid/exitCode), so this is a drop-in swap for callers
  * already built against that contract.
  *
@@ -87,8 +87,8 @@ export async function removeKortixPty(baseUrl: string, ptyId: string): Promise<v
 /**
  * WebSocket URL for a terminal's live stream — same http→ws conversion,
  * mixed-content upgrade, and `?token=` query auth (WebSocket can't set
- * custom headers) the Runtime-backed terminal used, just pointed at
- * `/kortix/pty` instead of Runtime's `/pty`.
+ * custom headers) the OpenCode-backed terminal used, just pointed at
+ * `/kortix/pty` instead of OpenCode's `/pty`.
  */
 export async function getKortixPtyWebSocketUrl(ptyId: string, baseUrl: string): Promise<string> {
   const base = requireBaseUrl(baseUrl);

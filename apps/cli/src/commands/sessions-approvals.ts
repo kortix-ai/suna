@@ -1,10 +1,7 @@
-import {
-  projectAcpPendingPrompts,
-  type AcpPendingPermission,
-  type AcpPendingQuestion,
-  type AcpStoredEnvelope,
-} from '@kortix/sdk/acp/transcript';
-import type { AcpJsonRpcId } from '@kortix/sdk/acp';
+import type {
+  OpencodePermissionRequest,
+  OpencodeQuestionRequest,
+} from '../api/sandbox-proxy.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat, type ResolvedSession } from './sessions-chat.ts';
@@ -49,8 +46,8 @@ Options:
   --text "<answer>"  Free-text answer (for questions that accept custom
                      input; combinable with --option).
   --reject           Dismiss the question without answering.
-  --answers <json>   Raw answer JSON. string[][] maps to legacy question
-                     answers; an object is sent as ACP elicitation content.
+  --answers <json>   Raw answers payload (string[][]) for requests carrying
+                     several questions — overrides --option/--text.
   --project <id>     Operate on this project id (default: linked/default).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
@@ -83,123 +80,19 @@ function parseTarget(argv: string[], help: string): ParsedTarget | null {
 }
 
 async function pendingFor(resolved: ResolvedSession): Promise<{
-  permissions: AcpPendingPermission[];
-  questions: AcpPendingQuestion[];
+  permissions: OpencodePermissionRequest[];
+  questions: OpencodeQuestionRequest[];
 } | null> {
   try {
-    const transcript = await resolved.ctx.client.get<{
-      runtime_id: string;
-      envelopes: AcpStoredEnvelope[];
-    }>(`/projects/${resolved.ctx.projectId}/sessions/${resolved.session.session_id}/acp/transcript`);
-    return projectAcpPendingPrompts(transcript.envelopes ?? []);
+    const [permissions, questions] = await Promise.all([
+      resolved.oc.listPermissions(),
+      resolved.oc.listQuestions(),
+    ]);
+    return { permissions: permissions ?? [], questions: questions ?? [] };
   } catch (err) {
     surfaceApiError(err);
     return null;
   }
-}
-
-async function respondAcp(
-  resolved: ResolvedSession,
-  id: AcpJsonRpcId,
-  result?: unknown,
-  error?: { code: number; message: string; data?: unknown },
-): Promise<void> {
-  await resolved.ctx.client.post(
-    `/projects/${resolved.ctx.projectId}/sessions/${resolved.session.session_id}/acp`,
-    {
-      jsonrpc: '2.0',
-      id,
-      ...(error ? { error } : { result: result ?? null }),
-    },
-  );
-}
-
-function optionField(option: AcpPendingPermission['options'][number]): string {
-  return [
-    option.kind,
-    option.optionId,
-    option.id,
-    option.value,
-    option.label,
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function selectPermissionOption(
-  request: AcpPendingPermission | undefined,
-  reply: 'once' | 'always' | 'reject',
-): string | null {
-  const options = request?.options ?? [];
-  const choose = (match: (text: string) => boolean) => {
-    const option = options.find((candidate) => match(optionField(candidate)));
-    return option?.optionId ?? option?.id ?? option?.value ?? null;
-  };
-  if (reply === 'once') {
-    return choose((text) => text.includes('allow_once') || text.includes('allow-once') || text.includes('once'))
-      ?? choose((text) => text.includes('allow') || text.includes('approve'))
-      ?? options[0]?.optionId
-      ?? options[0]?.id
-      ?? options[0]?.value
-      ?? 'allow_once';
-  }
-  if (reply === 'always') {
-    return choose((text) => text.includes('allow_always') || text.includes('allow-always') || text.includes('always'))
-      ?? 'allow_always';
-  }
-  return choose((text) => text.includes('reject') || text.includes('deny') || text.includes('cancel'));
-}
-
-function permissionResult(
-  request: AcpPendingPermission | undefined,
-  reply: 'once' | 'always' | 'reject',
-  message?: string,
-): unknown {
-  const optionId = selectPermissionOption(request, reply);
-  const base = optionId
-    ? { outcome: { outcome: 'selected', optionId } }
-    : { outcome: { outcome: 'cancelled' } };
-  return message ? { ...base, _meta: { kortixMessage: message } } : base;
-}
-
-function isElicitation(request: AcpPendingQuestion | undefined): boolean {
-  return typeof request?.method === 'string' && request.method.includes('elicitation');
-}
-
-function answerContentFromMatrix(
-  request: AcpPendingQuestion | undefined,
-  answers: string[][],
-): Record<string, unknown> {
-  const questions = request?.questions ?? [];
-  const content: Record<string, unknown> = {};
-  questions.forEach((question, index) => {
-    const values = answers[index] ?? [];
-    const value = values.length > 1 ? values : (values[0] ?? '');
-    content[question.key ?? `answer_${index + 1}`] = value;
-  });
-  if (Object.keys(content).length === 0) {
-    const values = answers[0] ?? [];
-    content.answer = values.length > 1 ? values : (values[0] ?? '');
-  }
-  return content;
-}
-
-function questionResult(
-  request: AcpPendingQuestion | undefined,
-  answers: string[][],
-  rawContent?: unknown,
-): unknown {
-  if (isElicitation(request)) {
-    return {
-      action: 'accept',
-      content: rawContent && !Array.isArray(rawContent)
-        ? rawContent
-        : answerContentFromMatrix(request, answers),
-    };
-  }
-  return { answers: rawContent ?? answers };
-}
-
-function questionRejectResult(request: AcpPendingQuestion | undefined): unknown {
-  return isElicitation(request) ? { action: 'decline' } : {};
 }
 
 export async function runSessionsPending(argv: string[]): Promise<number> {
@@ -282,11 +175,10 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions approve');
   if (!resolved) return 1;
 
-  let requestId: AcpJsonRpcId | undefined = target.requestId;
-  let request: AcpPendingPermission | undefined;
-  const pending = await pendingFor(resolved);
-  if (!pending) return 1;
+  let requestId = target.requestId;
   if (!requestId) {
+    const pending = await pendingFor(resolved);
+    if (!pending) return 1;
     if (pending.permissions.length === 0) {
       process.stderr.write(`${status.err('No pending permission on this session.')}\n`);
       return 1;
@@ -299,14 +191,11 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
       return 1;
     }
     requestId = pending.permissions[0].id;
-    request = pending.permissions[0];
-  } else {
-    request = pending.permissions.find((p) => String(p.id) === requestId);
   }
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
   try {
-    await respondAcp(resolved, requestId, permissionResult(request, reply, message));
+    await resolved.oc.replyPermission(requestId, reply, message);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -351,11 +240,11 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions answer');
   if (!resolved) return 1;
 
-  let request: AcpPendingQuestion | undefined;
+  let request: OpencodeQuestionRequest | undefined;
   if (target.requestId) {
     const pending = await pendingFor(resolved);
     if (!pending) return 1;
-    request = pending.questions.find((q) => String(q.id) === target.requestId);
+    request = pending.questions.find((q) => q.id === target.requestId);
     if (!request && !reject) {
       process.stderr.write(`${status.err(`No pending question ${target.requestId}.`)}\n`);
       return 1;
@@ -386,19 +275,13 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 
   try {
     if (reject) {
-      await respondAcp(resolved, requestId, questionRejectResult(request));
+      await resolved.oc.rejectQuestion(requestId);
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
     let answers: string[][];
-    let rawContent: unknown;
     if (answersJson) {
-      const parsed = JSON.parse(answersJson);
-      if (Array.isArray(parsed)) answers = parsed as string[][];
-      else {
-        answers = [];
-        rawContent = parsed;
-      }
+      answers = JSON.parse(answersJson);
     } else {
       if (request && request.questions.length > 1) {
         process.stderr.write(
@@ -409,27 +292,14 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       // Map option labels to canonical values where the question defines them.
       const info = request?.questions[0];
       const mapped = options.map((o) => {
-        const wanted = o.toLowerCase();
         const match = info?.options.find(
-          (opt) =>
-            opt.label === o ||
-            opt.value === o ||
-            opt.optionId === o ||
-            opt.id === o ||
-            opt.label.toLowerCase() === wanted ||
-            opt.value?.toLowerCase() === wanted ||
-            opt.optionId?.toLowerCase() === wanted ||
-            opt.id?.toLowerCase() === wanted,
+          (opt) => opt.label === o || opt.value === o,
         );
-        return match?.value ?? match?.optionId ?? match?.id ?? match?.label ?? o;
+        return match?.value ?? match?.label ?? o;
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
-    await respondAcp(
-      resolved,
-      requestId,
-      questionResult(request, answers, rawContent),
-    );
+    await resolved.oc.replyQuestion(requestId, answers);
   } catch (err) {
     return surfaceApiError(err);
   }

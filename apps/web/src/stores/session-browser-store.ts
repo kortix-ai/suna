@@ -45,7 +45,7 @@ export interface SessionFileOpenRequest {
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
   viewBySession: Record<string, SessionPanelView>;
-  /** Dedicated side-panel terminal PTY per Runtime chat session. */
+  /** Dedicated side-panel terminal PTY per OpenCode chat session. */
   terminalPtyBySession: Record<string, string>;
 
   setView: (sessionId: string, view: SessionPanelView) => void;
@@ -62,7 +62,7 @@ interface SessionBrowserState {
 
   /**
    * The panel-store key of the session whose layout is currently visible —
-   * i.e. the Runtime `chatSessionId` the {@link SessionLayout} keys its panel
+   * i.e. the OpenCode `chatSessionId` the {@link SessionLayout} keys its panel
    * by. NOT the Kortix session id in the URL (those differ). Registered by the
    * active SessionLayout; read by chat click handlers so a localhost-link or
    * file-path click routes into the right session's panel. Transient.
@@ -127,7 +127,7 @@ export function sessionPreviewTabId(sessionId: string): string {
 }
 
 /**
- * The panel-store key (Runtime `chatSessionId`) of the active session layout,
+ * The panel-store key (OpenCode `chatSessionId`) of the active session layout,
  * or null when no session is visible. Use THIS — not the URL's Kortix session
  * id — as the key for `setView` / `requestFileOpen` / `sessionPreviewTabId`,
  * since {@link SessionLayout} keys its panel by `chatSessionId`, which differs

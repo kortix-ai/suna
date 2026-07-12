@@ -46,15 +46,10 @@ router.route('/image-search', imageSearch);
 // LLM routes (apiKeyAuth)
 router.use('/chat/*', apiKeyAuth);
 router.use('/messages', apiKeyAuth);
-// Anthropic SDKs treat ANTHROPIC_BASE_URL as an origin/prefix and append
-// `/v1/messages`. Keep the direct legacy-compatible route as well, but expose
-// the SDK-native spelling so Claude Code can use the scoped Kortix gateway.
-router.use('/v1/messages', apiKeyAuth);
 router.use('/models', apiKeyAuth);
 router.use('/models/*', apiKeyAuth);
 router.route('/', llm);
 router.route('/', anthropic);
-router.route('/v1', anthropic);
 
 // Proxy routes (auth handled internally — dual mode)
 router.route('/', proxy);

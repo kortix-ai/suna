@@ -23,10 +23,6 @@
 
 import {
   AGENT_BROWSER_VERSION as DEFAULT_AGENT_BROWSER_VERSION,
-  CLAUDE_AGENT_ACP_VERSION,
-  CODEX_ACP_VERSION,
-  PI_ACP_VERSION,
-  PI_CODING_AGENT_VERSION,
   PLAYWRIGHT_VERSION,
 } from '@kortix/shared';
 
@@ -266,29 +262,9 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // equivalent (still fails the layer if any module is missing) and portable.
     '    && python3 -c \'import importlib; [importlib.import_module(m) for m in ["bs4", "lxml", "markitdown", "matplotlib", "numpy", "openpyxl", "pandas", "pdf2docx", "pdf2image", "pdfplumber", "PIL", "playwright", "plotly", "fitz", "pypdf", "pypdfium2", "pytesseract", "docx", "pptx", "reportlab", "requests", "sklearn", "scipy", "seaborn", "youtube_transcript_api"]]; print("starter Python package floor OK")\'',
     '',
-    // Ubuntu 24.04 ships Node 18, while the official Claude ACP adapter
-    // requires Node >=22 and Pi requires >=20. Upgrade Node before installing
-    // any harness package; otherwise npm's engine check aborts the image build.
-    'RUN npm install -g --no-audit --no-fund "n@10.2.0" \\',
-    '    && n 22.23.1 \\',
-    '    && node --version | grep -Fx "v22.23.1"',
-    '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version',
-    '',
-    // ACP adapters are image-baked and exactly pinned. Never install arbitrary
-    // packages on the first user request: cold-start behavior and the code that
-    // executes inside the sandbox must be reproducible and auditable.
-    `RUN npm install -g --no-audit --no-fund "@agentclientprotocol/claude-agent-acp@${CLAUDE_AGENT_ACP_VERSION}" "@agentclientprotocol/codex-acp@${CODEX_ACP_VERSION}" "pi-acp@${PI_ACP_VERSION}" "@earendil-works/pi-coding-agent@${PI_CODING_AGENT_VERSION}" \\`,
-    '    && command -v claude-agent-acp \\',
-    '    && command -v codex-acp \\',
-    '    && command -v pi-acp \\',
-    '    && command -v pi \\',
-    '    && claude-agent-acp --version \\',
-    '    && codex-acp --version \\',
-    '    && pi-acp --help >/dev/null \\',
-    '    && pi --version',
     '',
     // Bake OpenCode's "one time database migration" at BUILD time. The first time
     // opencode serves, it migrates its sqlite schema — logged as "Performing one
@@ -425,9 +401,26 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
           '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
           '    mkdir -p /workspace/.kortix; \\',
-          // Agent processes are session-selected from kortix.yaml v3. Do not
-          // start or prime a specific harness while capturing the shared image;
-          // all four pinned ACP adapters were verified in the runtime layer.
+          // Stage the canonical starter opencode config so the instance warm-up
+          // has the pty plugin + tools to load. For a per-project warm the baked
+          // repo may already ship its own .kortix/opencode — keep it (its config
+          // is what the session actually resolves at runtime) and only fall back
+          // to the staged starter when the repo has none.
+          '    [ -d /workspace/.kortix/opencode ] || cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
+          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
+          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
+          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+          '    cd /workspace; \\',
+          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
+          '    ready=0; \\',
+          '    for i in $(seq 1 300); do \\',
+          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
+          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
+          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+          '        sleep 1; \\',
+          '    done; \\',
+          '    echo "=== instance-warm: ready=$ready ==="; \\',
+          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
           // Shared default: wipe /workspace (the session clones into it at boot).
           // Per-project COLD warm (warmRepo): KEEP the baked repo checkout so the
           // daemon boots off it with no clone.
@@ -435,7 +428,8 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
             ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
             : '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
           '    rm -rf /opt/kortix/warm-config; \\',
-          '    echo "=== instance-warm: ACP runtime layer ready ==="; true',
+          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
+          '    rm -f /tmp/oc-warm.log; true',
           '',
         ]
       : []),

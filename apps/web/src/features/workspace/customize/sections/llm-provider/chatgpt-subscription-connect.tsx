@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,

@@ -1,8 +1,8 @@
 /**
- * Files feature — Runtime server filesystem browsing.
+ * Files feature — OpenCode server filesystem browsing.
  *
  * This module replaces the entire legacy sandbox-based file system.
- * All file operations go directly to the active Runtime server.
+ * All file operations go directly to the active OpenCode server.
  */
 
 // Types
@@ -14,7 +14,7 @@ export type {
   FindMatch,
   LssHit,
   LssSearchResult,
-  RuntimeProjectInfo,
+  OpenCodeProjectInfo,
   ServerHealth,
   GitCommit,
   FileHistoryResult,
@@ -41,7 +41,7 @@ export {
   createFile,
   copyFile,
   type UploadResult,
-} from './api/runtime-files';
+} from './api/opencode-files';
 
 // Pure path heuristics
 export { hasFileExtension } from './path-utils';

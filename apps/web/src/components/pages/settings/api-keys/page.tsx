@@ -46,7 +46,7 @@ import {
   APIKeyCreateResponse,
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
-import { getActiveSandboxId, getActiveDbSandboxId, getActiveRuntimeUrl } from '@/stores/server-store';
+import { getActiveSandboxId, getActiveDbSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { createSandboxShare, listSandboxShares, revokeSandboxShare } from '@kortix/sdk/projects-client';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ export default function APIKeysPage() {
     label: '',
   });
   const queryClient = useQueryClient();
-  const activeInstanceUrl = stripTrailingSlashes(getActiveRuntimeUrl() ?? '') || undefined;
+  const activeInstanceUrl = stripTrailingSlashes(getActiveOpenCodeUrl() ?? '') || undefined;
 
   // ── Queries & mutations ────────────────────────────────────────────────
 
@@ -340,7 +340,7 @@ export default function APIKeysPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              const base = stripTrailingSlashes(getActiveRuntimeUrl());
+              const base = getActiveOpenCodeUrl().replace(/\/+$/, '');
               const docsUrl = `${base}/docs`;
               window.open(docsUrl, '_blank', 'noopener,noreferrer');
             }}

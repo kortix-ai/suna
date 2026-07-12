@@ -63,9 +63,6 @@ interface PlatinumTemplate {
   id: string;
   name?: string;
   state?: string;
-  error?: string | null;
-  build_error?: string | null;
-  status_message?: string | null;
 }
 
 /** Platinum template state → the adapter's ProviderState vocabulary. */
@@ -231,12 +228,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const state = (tpl?.state ?? 'missing').toLowerCase();
       if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
       if (state === 'ready') return;
-      if (state === 'failed') {
-        const detail = tpl?.build_error ?? tpl?.error ?? tpl?.status_message;
-        throw new Error(
-          `Platinum template ${name} build failed${detail ? `: ${detail}` : ''}`,
-        );
-      }
+      if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
     throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);

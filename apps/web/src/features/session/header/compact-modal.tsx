@@ -11,7 +11,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { loadingToast } from '@/components/ui/toast';
-import { useSummarizeRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
+import { useSummarizeOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
 import { Layers } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
@@ -27,7 +27,7 @@ interface CompactDialogProps {
 
 export function CompactModal({ sessionId, open, onOpenChange, onCompactStart }: CompactDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const summarize = useSummarizeRuntimeSession();
+  const summarize = useSummarizeOpenCodeSession();
 
   const handleCompact = useCallback(() => {
     onCompactStart?.();

@@ -199,20 +199,18 @@ beforeEach(() => {
 });
 
 test('channel agent + model override flow into the session body', async () => {
-  selection = { projectId: 'proj-1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8' };
+  selection = { projectId: 'proj-1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('reviewer');
-  expect(lastBody?.model).toBe('anthropic/claude-opus-4-8');
-  expect('opencode_model' in (lastBody ?? {})).toBe(false);
+  expect(lastBody?.opencode_model).toBe('anthropic/claude-opus-4-8');
 });
 
-test('no overrides → agent "default" and NO model key', async () => {
-  selection = { projectId: 'proj-1', agentName: null, model: null };
+test('no overrides → agent "default" and NO opencode_model key', async () => {
+  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   newThreadFifo();
   await spawnAgentTurn('proj-1', envelope, event);
   expect(lastBody?.agent_name).toBe('default');
-  expect('model' in (lastBody ?? {})).toBe(false);
   expect('opencode_model' in (lastBody ?? {})).toBe(false);
 });
 
@@ -249,7 +247,7 @@ test('no channel override, but project has a configured default_agent → that a
 // collapses into the dead-end "try again" copy — it renders an inline picker of
 // the project's live agents so the user re-points the channel in one click.
 test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not the generic error', async () => {
-  selection = { projectId: 'proj-1', agentName: 'ghost', model: null };
+  selection = { projectId: 'proj-1', agentName: 'ghost', opencodeModel: null };
   scopedAgents = [
     { name: 'reviewer', description: null },
     { name: 'shipper', description: 'Ships things.' },
@@ -278,7 +276,7 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
 
 // A non-agent failure still renders honest, specific copy (not the picker).
 test('out-of-credits (402) → credit copy, no picker blocks', async () => {
-  selection = { projectId: 'proj-1', agentName: null, model: null };
+  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
   setSlackSessionLifecycleForTest({
     continueSession: async () => 'delivered',
     createSession: async () => ({

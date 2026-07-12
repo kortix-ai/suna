@@ -19,14 +19,13 @@ const nativeAgents = [
 ];
 
 describe('project config agent discovery', () => {
-  test('no agents: keeps native runtime discovery', () => {
+  test('no agents: keeps legacy OpenCode discovery', () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
 
-    expect(result.agent_source).toBe('native');
     expect(result.agent_discovery).toBe('opencode');
     expect(result.agents).toEqual([
-      { ...nativeAgents[0], source: 'runtime', enabled: true },
-      { ...nativeAgents[1], source: 'runtime', enabled: true },
+      { ...nativeAgents[0], source: 'opencode', enabled: true },
+      { ...nativeAgents[1], source: 'opencode', enabled: true },
     ]);
   });
 
@@ -70,7 +69,6 @@ describe('project config agent discovery', () => {
     const result = resolveConfigAgents(nativeAgents, loaded);
 
     expect(result.agent_discovery).toBe('declarative');
-    expect(result.agent_source).toBe('declarative');
     expect(result.agents).toEqual([
       {
         name: 'kortix',
@@ -120,7 +118,7 @@ describe('project config agent discovery', () => {
     });
   });
 
-  test('native runtime-discovered agents carry no agents: scope', () => {
+  test('OpenCode-discovered agents carry no agents: scope', () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
     expect(result.agents.every((a) => a.scope === undefined)).toBe(true);
   });
@@ -136,7 +134,6 @@ describe('project config agent discovery', () => {
     });
 
     expect(result.agent_discovery).toBe('declarative');
-    expect(result.agent_source).toBe('declarative');
     expect(result.agents).toEqual([]);
   });
 });

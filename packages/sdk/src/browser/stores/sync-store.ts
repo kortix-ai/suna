@@ -2,13 +2,13 @@
 
 import type {
 	Message,
-	Event as RuntimeEvent,
+	Event as OpenCodeEvent,
 	Part,
 	ReasoningPart,
 	SessionStatus,
 	TextPart,
 	Todo,
-} from "../runtime/wire-types";
+} from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
 
 import { ascendingId } from "./sync-store/ascending-id";
@@ -44,7 +44,7 @@ interface SyncState {
 	todos: Record<string, Todo[]>;
 
 	// ---- Actions ----
-	applyEvent: (event: RuntimeEvent) => void;
+	applyEvent: (event: OpenCodeEvent) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
 	upsertPart: (messageID: string, part: Part) => void;
@@ -561,8 +561,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
 				if (info.role === "user" && !optimisticIds.has(info.id)) {
-					const sessionID = info.sessionID;
-					const msgs = get().messages[sessionID];
+					const msgs = get().messages[info.sessionID];
 					if (msgs) {
 						const optIds = msgs
 							.filter((m) => m.role === "user" && optimisticIds.has(m.id))
@@ -572,7 +571,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 							for (const id of optIds) optimisticIds.delete(id);
 							// Atomic: remove optimistic + insert real in one set()
 							set((s) => {
-									const list = s.messages[sessionID] ?? [];
+								const list = s.messages[info.sessionID] ?? [];
 								// Remove all optimistic user messages
 								const without = list.filter((m) => !optIds.includes(m.id));
 								// Insert the real message at sorted position
@@ -598,10 +597,10 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 									newParts[info.id] = bridge;
 									bridgedPartIds.add(info.id);
 								}
-									return {
-										messages: { ...s.messages, [sessionID]: next },
-										parts: newParts,
-									};
+								return {
+									messages: { ...s.messages, [info.sessionID]: next },
+									parts: newParts,
+								};
 							});
 							return;
 						}
@@ -781,7 +780,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Patch the error onto the last assistant message in the sync store.
 			// If no assistant message exists yet, create a temporary one so the
 			// error is visible immediately. The event handler in
-			// use-runtime-events.ts will also fetch real messages from the
+			// use-opencode-events.ts will also fetch real messages from the
 			// server which will bring in the authoritative data via hydrate().
 			set((s) => {
 				const msgs = s.messages[sid] ?? [];

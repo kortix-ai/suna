@@ -50,10 +50,10 @@ import {
   normalizeCustomProviderForm,
   validateCustomProviderForm,
 } from '@/features/providers/custom-provider-config';
-import { configKeys } from '@/hooks/runtime/use-runtime-config';
-import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
-import { runtimeKeys } from '@/hooks/runtime/use-runtime-sessions';
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
+import { configKeys } from '@/hooks/opencode/use-opencode-config';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
+import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
 
 const FALLBACK_PROVIDER_CARDS: Array<{ id: string; name: string }> = [];
@@ -82,7 +82,7 @@ function methodLabel(method: { type: string; label: string }) {
 /**
  * Coerce any thrown value into a user-readable string.
  *
- * The Runtime SDK rejects with plain error-shaped objects (not `Error`
+ * The OpenCode SDK rejects with plain error-shaped objects (not `Error`
  * instances), so `String(err)` used to render the useless `[object Object]`.
  * This drills into common error shapes before falling back to JSON.stringify.
  */
@@ -271,7 +271,7 @@ export function ConnectProviderContent({
       } catch {
         /* ignore */
       }
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.providers() });
+      queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
       onProviderConnected?.();
       const label = PROVIDER_LABELS[providerID] || providerID;
       successToast(`${label} connected`, {
@@ -482,7 +482,7 @@ export function ConnectProviderContent({
 
         await client.global.dispose();
         queryClient.invalidateQueries({ queryKey: configKeys.all });
-        queryClient.invalidateQueries({ queryKey: runtimeKeys.providers() });
+        queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
         onProviderConnected?.();
         const label = normalizedForm.name || normalizedForm.providerID;
         successToast(`${label} connected`, {

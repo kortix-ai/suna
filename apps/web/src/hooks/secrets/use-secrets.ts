@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/features/providers/auth-provider';
-import { deleteEnv, listEnv, setEnv } from '@kortix/sdk/runtime-client';
+import { deleteEnv, listEnv, setEnv } from '@kortix/sdk/opencode-client';
 import { useServerStore } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

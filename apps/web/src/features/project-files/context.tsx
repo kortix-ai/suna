@@ -6,7 +6,7 @@
  * (see `apps/web/src/app/projects/[id]/files/page.tsx`).
  *
  * Hooks read context, then pass `projectId` / `ref` into the plain API
- * functions in `./api/runtime-files.ts`. The API functions themselves
+ * functions in `./api/opencode-files.ts`. The API functions themselves
  * stay pure — no React, no implicit ambient state.
  */
 

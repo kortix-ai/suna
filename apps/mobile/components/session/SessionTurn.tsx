@@ -67,8 +67,8 @@ import type {
   ReasoningPart,
   QuestionRequest,
   Part,
-} from '@/lib/runtime/types';
-import type { Command } from '@/lib/runtime/hooks/use-runtime-data';
+} from '@/lib/opencode/types';
+import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
 import {
   collectTurnParts,
   findLastTextPart,
@@ -788,7 +788,7 @@ function ShellExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolea
 }
 
 // LCS-based diff utilities — shared with ViewChangesSheet
-import { generateLineDiff, getDiffStats, type DiffLine } from '@/lib/runtime/diff-utils';
+import { generateLineDiff, getDiffStats, type DiffLine } from '@/lib/opencode/diff-utils';
 
 /** Syntax-highlighted diff line with inline +/- prefix */
 function DiffCodeLine({ text, lineType, ext, isDark, fs, lh }: {

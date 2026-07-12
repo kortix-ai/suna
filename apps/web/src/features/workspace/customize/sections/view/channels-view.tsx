@@ -57,8 +57,12 @@ import {
   type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { useRuntimeProviders, useVisibleAgents, type Agent } from '@/hooks/runtime/use-runtime-sessions';
-import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
+import {
+  useOpenCodeProviders,
+  useVisibleAgents,
+  type Agent,
+} from '@/hooks/opencode/use-opencode-sessions';
+import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -280,7 +284,7 @@ function agentDefaultLabel(projectDefaultAgent: string | null): string {
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
-function stripRuntimeNamespace(model: string): string {
+function stripOpencodeNamespace(model: string): string {
   return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
 }
 
@@ -291,12 +295,12 @@ function stripRuntimeNamespace(model: string): string {
  * `effectiveModel.source` surfaces as something other than `'explicit'`.
  */
 function describeEffectiveModel(binding: ChannelBinding): string {
-  if (binding.model) {
-    const label = stripRuntimeNamespace(binding.model);
+  if (binding.opencodeModel) {
+    const label = stripOpencodeNamespace(binding.opencodeModel);
     return binding.effectiveModel.source === 'explicit' ? label : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripRuntimeNamespace(resolved)})` : 'Project default';
+  return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
 }
 
 function ChannelBindingTableRow({
@@ -344,9 +348,9 @@ function ChannelBindingTableRow({
   }, [visibleAgents, projectDefaultAgent, binding.agentName]);
   const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = binding.model ? wireToModelKey(stripRuntimeNamespace(binding.model)) : null;
+  const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
 
   const update = useUpdateChannelBinding();
 
@@ -394,7 +398,7 @@ function ChannelBindingTableRow({
                     {
                       projectId,
                       bindingId: binding.bindingId,
-                      model: m ? modelKeyToWire(m) : null,
+                      opencodeModel: m ? modelKeyToWire(m) : null,
                     },
                     {
                       onSuccess: () => successToast('Channel model updated'),
@@ -404,7 +408,7 @@ function ChannelBindingTableRow({
                 }
               />
             </div>
-            {!binding.model ? (
+            {!binding.opencodeModel ? (
               <p className="text-muted-foreground/70 text-xs">{describeEffectiveModel(binding)}</p>
             ) : null}
           </div>

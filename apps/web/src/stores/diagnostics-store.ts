@@ -199,7 +199,7 @@ export function getRelativePath(absPath: string): string {
 // ============================================================================
 
 /**
- * Parse diagnostics from Runtime tool output text.
+ * Parse diagnostics from OpenCode tool output text.
  *
  * The Go backend embeds diagnostics as plain text in `<file_diagnostics>`
  * and `<project_diagnostics>` XML tags within the tool result. Each line

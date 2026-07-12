@@ -71,9 +71,9 @@ import { cn } from '@/lib/utils';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 
 import {
-  useCreateRuntimeSession,
-  useRuntimeSessions,
-} from '@/hooks/runtime/use-runtime-sessions';
+  useCreateOpenCodeSession,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { authenticatedFetch } from '@/lib/auth-token';
 import {
   buildInstancePath,
@@ -89,7 +89,7 @@ import {
 } from '@kortix/sdk/platform-client';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
-import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { getActiveSandboxId } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -171,9 +171,9 @@ function buildSidebarConfigFixPrompt(
   sandbox: SandboxInfo,
   status: SidebarSandboxConfigStatus,
 ): string {
-  const header = `Inspect and repair the ignored Runtime config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
+  const header = `Inspect and repair the ignored OpenCode config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
   const explanation =
-    'Runtime is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
+    'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
   const problems = status.problems
     .map((problem, index) => {
       const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
@@ -362,9 +362,9 @@ function CollapsedIconButton({
 function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = normalizeAppPathname(usePathname());
-  const { data: sessions } = useRuntimeSessions();
-  const permissions = useRuntimePendingStore((s) => s.permissions);
-  const questions = useRuntimePendingStore((s) => s.questions);
+  const { data: sessions } = useOpenCodeSessions();
+  const permissions = useOpenCodePendingStore((s) => s.permissions);
+  const questions = useOpenCodePendingStore((s) => s.questions);
 
   const rootSessions = React.useMemo(() => {
     if (!sessions) return [];
@@ -949,7 +949,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
     setIsMac(/Mac/.test(navigator.userAgent));
   }, []);
 
-  const createSession = useCreateRuntimeSession();
+  const createSession = useCreateOpenCodeSession();
 
   const handleNewSession = useCallback(async () => {
     posthog.capture('new_task_clicked', { source: 'new_session_button' });

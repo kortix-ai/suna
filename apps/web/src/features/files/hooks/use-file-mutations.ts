@@ -9,7 +9,7 @@ import {
   createFile,
   copyFile,
   type UploadResult,
-} from '../api/runtime-files';
+} from '../api/opencode-files';
 import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
 import { gitStatusKeys } from './use-git-status';

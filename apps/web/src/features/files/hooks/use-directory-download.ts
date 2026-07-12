@@ -2,7 +2,7 @@
 
 import { errorToast, progressToast, successToast } from '@/components/ui/toast';
 import { useCallback, useRef, useState } from 'react';
-import { downloadDirectory } from '../api/runtime-files';
+import { downloadDirectory } from '../api/opencode-files';
 
 /**
  * Hook that manages downloading directories as zips with visible progress.

@@ -4,7 +4,7 @@
  * Measures the wall-clock a user actually feels: from clicking "New session"
  * to the chat being usable. The session-create flow spans a route push and
  * several independent readiness gates (sandbox row → active → server switch →
- * runtime healthy → ACP session → chat mounted), each on its own poll —
+ * runtime healthy → opencode session → chat mounted), each on its own poll —
  * so dead time hides between them. This records a monotonic mark at every gate
  * and prints a grouped breakdown, alongside the backend (host) timeline that
  * rides in the sandbox row metadata.

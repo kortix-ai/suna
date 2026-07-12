@@ -1,5 +1,5 @@
 /**
- * Structured logger that ships log entries to the Runtime server
+ * Structured logger that ships log entries to the OpenCode server
  * via `client.app.log()` while also writing to the browser console
  * for local development visibility.
  *

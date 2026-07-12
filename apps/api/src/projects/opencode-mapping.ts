@@ -46,14 +46,6 @@ const WORKSPACE = '/workspace';
 /** Daemon (kortix-sandbox-agent-server) port; it reverse-proxies to OpenCode. */
 const DAEMON_PORT = 8000;
 
-export type SandboxRuntimeHealth = {
-  runtime: 'acp' | 'opencode-legacy';
-  runtimeReady: boolean;
-  acpServerId: string | null;
-  acpHarness: 'claude' | 'codex' | 'opencode' | 'pi' | null;
-  bootError: string | null;
-};
-
 // ── Server-side reachability into the sandbox's OpenCode runtime ────────────
 
 export async function sandboxOpencodeEndpoint(
@@ -73,37 +65,6 @@ export async function sandboxOpencodeEndpoint(
   const payload = await resolvePreviewUserContext(externalId, userId);
   if (payload) headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
   return { url: url.replace(/\/$/, ''), headers };
-}
-
-/** Inspect the daemon-owned canonical runtime without assuming OpenCode. */
-export async function inspectSandboxRuntime(
-  externalId: string,
-  userId: string | undefined,
-): Promise<SandboxRuntimeHealth | null> {
-  try {
-    const ep = await sandboxOpencodeEndpoint(externalId, userId);
-    if (!ep) return null;
-    const res = await fetch(`${ep.url}/kortix/health`, {
-      method: 'GET',
-      headers: ep.headers,
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as Record<string, unknown>;
-    const runtime = body.runtime === 'acp' ? 'acp' : 'opencode-legacy';
-    const harness = ['claude', 'codex', 'opencode', 'pi'].includes(String(body.acp_harness))
-      ? (body.acp_harness as SandboxRuntimeHealth['acpHarness'])
-      : null;
-    return {
-      runtime,
-      runtimeReady: body.runtimeReady === true,
-      acpServerId: typeof body.acp_server_id === 'string' ? body.acp_server_id : null,
-      acpHarness: harness,
-      bootError: typeof body.boot_error === 'string' ? body.boot_error : null,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export type ListResult =

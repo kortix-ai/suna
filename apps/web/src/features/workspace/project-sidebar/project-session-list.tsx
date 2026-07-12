@@ -102,7 +102,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeRuntimeSessionId = searchParams.get('oc');
+  const activeOpenCodeSessionId = searchParams.get('oc');
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
@@ -215,7 +215,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
               <ProjectSessionRow
                 session={session}
                 href={href}
-                isActive={!!isActive && !activeRuntimeSessionId}
+                isActive={!!isActive && !activeOpenCodeSessionId}
                 displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
                 reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
@@ -236,7 +236,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
                 <div className="border-border ml-3.5 border-l-2 pl-2">
                   {children.map((child) => {
                     const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-                    const activeChild = !!isActive && activeRuntimeSessionId === child.id;
+                    const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
                     return (
                       <ProjectSubsessionRow
                         key={child.id}

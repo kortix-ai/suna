@@ -37,10 +37,10 @@ import { motion, AnimatePresence } from 'motion/react';
 // (sandbox not provisioned yet) semantics.
 //
 // Before this, this page had no way to reach a session's conversation at
-// all for a logged-out visitor: it read whatever `getActiveRuntimeUrl()`
+// all for a logged-out visitor: it read whatever `getActiveOpenCodeUrl()`
 // resolved to on the CLIENT (a self-hosted, single-runtime concept with no
 // access control), and the platform's own public-share proxy deliberately
-// blocks the Runtime API port (`PUBLIC_SHARE_BLOCKED_PORTS` in
+// blocks the OpenCode API port (`PUBLIC_SHARE_BLOCKED_PORTS` in
 // `shared/session-public-shares.ts`) — this route never carried a share
 // token in the first place. The API now does the sandbox round-trip
 // server-side and returns a sanitized, text-only transcript digest — no

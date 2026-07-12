@@ -31,7 +31,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import { useRuntimeFileContent, useRuntimeFileBlob, blobToDataURL, useRuntimeWriteFile } from '@/lib/files/hooks';
+import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCodeWriteFile } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -74,7 +74,7 @@ export function FileViewer({
   // In-place text editing
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const writeMutation = useRuntimeWriteFile();
+  const writeMutation = useOpenCodeWriteFile();
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
@@ -91,22 +91,22 @@ export function FileViewer({
   const canShowRaw =
     file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
 
-  // Fetch file content for text-based files via the runtime API
+  // Fetch file content for text-based files (via OpenCode API)
   const {
     data: textContent,
     isLoading: isLoadingText,
     error: textError,
-  } = useRuntimeFileContent(
+  } = useOpenCodeFileContent(
     shouldFetchText ? sandboxUrl : undefined,
     shouldFetchText ? file?.path : undefined
   );
 
-  // Fetch blob for binary files via the runtime API
+  // Fetch blob for binary files (via OpenCode API)
   const {
     data: imageBlob,
     isLoading: isLoadingImage,
     error: imageError,
-  } = useRuntimeFileBlob(
+  } = useOpenCodeFileBlob(
     shouldFetchBlob ? sandboxUrl : undefined,
     shouldFetchBlob ? file?.path : undefined
   );

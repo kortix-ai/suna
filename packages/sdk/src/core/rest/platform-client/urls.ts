@@ -6,7 +6,7 @@ import { SANDBOX_PORTS, type SandboxInfo } from './types';
 import { getPlatformUrl } from './shared';
 
 /**
- * Build the Runtime server URL for a sandbox.
+ * Build the OpenCode server URL for a sandbox.
  * Provider-agnostic: {BACKEND_URL}/p/{externalId}/8000
  *
  * The external_id is the sandbox's Daytona ID, used for proxy routing.

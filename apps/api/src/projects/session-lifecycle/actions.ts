@@ -17,7 +17,6 @@ import {
   RUNTIME_IDENTITY_ERROR,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
-import { inspectSandboxRuntime } from '../runtime-inspection';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -121,6 +120,7 @@ export async function restartSession(input: {
     sandboxProvider: string;
     baseRef: string | null;
     agentName: string | null;
+    opencodeSessionId: string | null;
     metadata?: Record<string, unknown> | null;
   };
   projectId: string;
@@ -150,18 +150,15 @@ export async function restartSession(input: {
     .limit(1);
 
   const provisionReplacementRuntime = async () => {
-    const hasRuntimeConversation = typeof session.metadata?.acp_session_id === 'string';
-    const initialPrompt = hasRuntimeConversation
+    const initialPrompt = session.opencodeSessionId
       ? null
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
         : null;
-    const runtimeModel =
-      typeof session.metadata?.model === 'string'
-        ? (session.metadata.model as string)
-        : typeof session.metadata?.opencode_model === 'string'
-          ? (session.metadata.opencode_model as string)
-          : null;
+    const opencodeModel =
+      typeof session.metadata?.opencode_model === 'string'
+        ? (session.metadata.opencode_model as string)
+        : null;
 
     await db
       .update(projectSessions)
@@ -195,7 +192,7 @@ export async function restartSession(input: {
           baseRef: session.baseRef ?? loaded.row.defaultBranch,
           agentName: session.agentName ?? 'default',
           initialPrompt,
-          runtimeModel,
+          opencodeModel,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
@@ -262,26 +259,6 @@ export async function restartSession(input: {
           session_id: sessionId,
           external_id: externalId,
           reason: RUNTIME_IDENTITY_UNAVAILABLE,
-        },
-      };
-    }
-
-    // A daemon boot error is commonly caused by immutable sandbox process env
-    // (for example a missing/old compiled ACP plan). Preserve the established
-    // runtime identity instead of silently replacing a sandbox that may contain
-    // uncommitted user data; provider recovery or explicit deletion remains the
-    // safe path out of this state.
-    const runtimeHealth = await inspectSandboxRuntime(externalId, loaded.userId);
-    if (runtimeHealth?.bootError) {
-      await preserveEstablishedRuntime(existingSandbox, 'restart_boot_error');
-      return {
-        status: 409,
-        body: {
-          error: RUNTIME_IDENTITY_ERROR,
-          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
-          session_id: sessionId,
-          external_id: externalId,
-          reason: 'restart_boot_error',
         },
       };
     }

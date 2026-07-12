@@ -31,7 +31,6 @@
     "@kortix/llm-catalog": "workspace:*",
     "@kortix/registry": "workspace:*",
     "@kortix/shared": "workspace:*",
-    "@kortix/sdk": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",
     "@scalar/hono-api-reference": "^0.10.20",

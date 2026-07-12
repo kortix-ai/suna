@@ -36,14 +36,17 @@ afterEach(() => {
 });
 
 describe('classifySessionStatusBody', () => {
-  test('an in-flight ACP request marks the box busy', () => {
-    expect(classifySessionStatusBody({ acp_busy: true })).toBe('busy');
+  test('any busy session marks the box busy', () => {
+    expect(classifySessionStatusBody({ a: { type: 'idle' }, b: { type: 'busy' } })).toBe('busy');
+  });
+  test('a retrying turn counts as busy', () => {
+    expect(classifySessionStatusBody({ a: { type: 'retry', attempt: 2 } })).toBe('busy');
   });
   test('all idle → idle', () => {
-    expect(classifySessionStatusBody({ acp_busy: false })).toBe('idle');
+    expect(classifySessionStatusBody({ a: { type: 'idle' }, b: { type: 'idle' } })).toBe('idle');
   });
-  test('missing ACP state → unknown', () => {
-    expect(classifySessionStatusBody({})).toBe('unknown');
+  test('no sessions → idle', () => {
+    expect(classifySessionStatusBody({})).toBe('idle');
   });
   test('non-object bodies → unknown', () => {
     expect(classifySessionStatusBody(null)).toBe('unknown');
@@ -56,20 +59,20 @@ describe('probeSandboxBusy', () => {
   const row = { sandboxId: 'sb-1', externalId: 'ext-1' };
 
   test('busy body → busy, with auth + preview headers sent', async () => {
-    fetchResponse = () => new Response(JSON.stringify({ acp_busy: true }), { status: 200 });
+    fetchResponse = () => new Response(JSON.stringify({ s1: { type: 'busy' } }), { status: 200 });
     expect(await probeSandboxBusy(row)).toBe('busy');
-    expect(lastRequest?.url).toBe('https://box.example/kortix/health');
+    expect(lastRequest?.url).toBe('https://box.example/session/status');
     expect(lastRequest?.headers['Authorization']).toBe('Bearer svc-key');
     expect(lastRequest?.headers['X-Daytona-Preview-Token']).toBe('ptoken');
     expect(lastRequest?.headers['X-Kortix-User-Context']).toContain('.');
   });
 
   test('all-idle body → idle', async () => {
-    fetchResponse = () => new Response(JSON.stringify({ acp_busy: false }), { status: 200 });
+    fetchResponse = () => new Response(JSON.stringify({ s1: { type: 'idle' } }), { status: 200 });
     expect(await probeSandboxBusy(row)).toBe('idle');
   });
 
-  test('non-200 daemon response → unknown', async () => {
+  test('non-200 (legacy opencode without the endpoint) → unknown', async () => {
     fetchResponse = () => new Response('nope', { status: 404 });
     expect(await probeSandboxBusy(row)).toBe('unknown');
   });

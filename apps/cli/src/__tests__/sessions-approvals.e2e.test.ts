@@ -22,8 +22,10 @@ const ENV_KEYS = [
 
 let dir = '';
 let server: ReturnType<typeof Bun.serve> | null = null;
-let acpReplies: unknown[] = [];
-let pendingEnvelopes: unknown[] = [];
+let permissionReplies: Array<{ id: string; body: unknown }> = [];
+let questionReplies: Array<{ id: string; body: unknown; kind: 'reply' | 'reject' }> = [];
+let pendingPermissions: unknown[] = [];
+let pendingQuestions: unknown[] = [];
 let stdoutChunks: string[] = [];
 let stderrChunks: string[] = [];
 const savedEnv: Record<string, string | undefined> = {};
@@ -56,8 +58,10 @@ describe('sessions pending/approve/answer', () => {
     for (const k of ENV_KEYS) delete process.env[k];
     process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
     dir = mkdtempSync(join(tmpdir(), 'kortix-approvals-'));
-    acpReplies = [];
-    pendingEnvelopes = [];
+    permissionReplies = [];
+    questionReplies = [];
+    pendingPermissions = [];
+    pendingQuestions = [];
     stdoutChunks = [];
     stderrChunks = [];
 
@@ -68,12 +72,29 @@ describe('sessions pending/approve/answer', () => {
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`) {
           return Response.json(sessionRow());
         }
-        if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/acp/transcript`) {
-          return Response.json({ runtime_id: SESSION_ID, envelopes: pendingEnvelopes });
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/permission`) {
+          return Response.json(pendingPermissions);
         }
-        if (req.method === 'POST' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/acp`) {
-          acpReplies.push(await req.json());
-          return new Response(null, { status: 202 });
+        if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/4096/question`) {
+          return Response.json(pendingQuestions);
+        }
+        const permReply = url.pathname.match(
+          new RegExp(`^/v1/p/${PROXY_ID}/4096/permission/([^/]+)/reply$`),
+        );
+        if (req.method === 'POST' && permReply) {
+          permissionReplies.push({ id: permReply[1], body: await req.json() });
+          return Response.json(true);
+        }
+        const qReply = url.pathname.match(
+          new RegExp(`^/v1/p/${PROXY_ID}/4096/question/([^/]+)/(reply|reject)$`),
+        );
+        if (req.method === 'POST' && qReply) {
+          questionReplies.push({
+            id: qReply[1],
+            body: await req.json().catch(() => null),
+            kind: qReply[2] as 'reply' | 'reject',
+          });
+          return Response.json(true);
         }
         return Response.json({ error: `not found ${url.pathname}` }, { status: 404 });
       },
@@ -122,55 +143,37 @@ describe('sessions pending/approve/answer', () => {
 
   function permission(id: string) {
     return {
-      ordinal: pendingEnvelopes.length + 1,
-      direction: 'agent_to_client',
-      streamEventId: pendingEnvelopes.length + 1,
-      envelope: {
-        jsonrpc: '2.0',
-        id,
-        method: 'session/request_permission',
-        params: {
-          sessionId: 'acp-session',
-          permission: 'bash',
-          patterns: ['rm -rf *'],
-          options: [
-            { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
-            { optionId: 'allow_always', kind: 'allow_always', name: 'Always allow' },
-            { optionId: 'reject', kind: 'reject', name: 'Reject' },
-          ],
-        },
-      },
+      id,
+      sessionID: 'ses_oc',
+      permission: 'bash',
+      patterns: ['rm -rf *'],
+      metadata: {},
+      always: [],
+      tool: { messageID: 'msg_1', callID: 'call_1' },
     };
   }
 
   function question(id: string) {
     return {
-      ordinal: pendingEnvelopes.length + 1,
-      direction: 'agent_to_client',
-      streamEventId: pendingEnvelopes.length + 1,
-      envelope: {
-        jsonrpc: '2.0',
-        id,
-        method: 'elicitation/create',
-        params: {
-          sessionId: 'acp-session',
-          message: 'Which environment should I deploy to?',
-          requestedSchema: {
-            type: 'object',
-            properties: {
-              environment: {
-                title: 'Environment',
-                enum: ['staging', 'production'],
-              },
-            },
-          },
+      id,
+      sessionID: 'ses_oc',
+      questions: [
+        {
+          question: 'Which environment should I deploy to?',
+          header: 'Environment',
+          options: [
+            { label: 'Staging', value: 'staging' },
+            { label: 'Production', value: 'production' },
+          ],
         },
-      },
+      ],
+      tool: { messageID: 'msg_2', callID: 'call_2' },
     };
   }
 
   test('pending --json emits permissions and questions', async () => {
-    pendingEnvelopes = [permission('perm_1'), question('q_1')];
+    pendingPermissions = [permission('perm_1')];
+    pendingQuestions = [question('q_1')];
 
     const code = await runSessions(['pending', SESSION_ID, '--project', PROJECT_ID, '--json']);
 
@@ -181,7 +184,7 @@ describe('sessions pending/approve/answer', () => {
   });
 
   test('pending human output lists the ask and the command to answer it', async () => {
-    pendingEnvelopes = [permission('perm_1')];
+    pendingPermissions = [permission('perm_1')];
 
     const code = await runSessions(['pending', SESSION_ID, '--project', PROJECT_ID]);
 
@@ -196,32 +199,19 @@ describe('sessions pending/approve/answer', () => {
     const code = await runSessions(['approve', SESSION_ID, 'perm_1', '--project', PROJECT_ID]);
 
     expect(code).toBe(0);
-    expect(acpReplies).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'perm_1',
-        result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
-      },
-    ]);
+    expect(permissionReplies).toEqual([{ id: 'perm_1', body: { reply: 'once' } }]);
   });
 
   test('approve --always and --message pass through; bare approve resolves the single pending ask', async () => {
-    pendingEnvelopes = [permission('perm_solo')];
+    pendingPermissions = [permission('perm_solo')];
 
     const code = await runSessions([
       'approve', SESSION_ID, '--always', '--message', 'go ahead', '--project', PROJECT_ID,
     ]);
 
     expect(code).toBe(0);
-    expect(acpReplies).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'perm_solo',
-        result: {
-          outcome: { outcome: 'selected', optionId: 'allow_always' },
-          _meta: { kortixMessage: 'go ahead' },
-        },
-      },
+    expect(permissionReplies).toEqual([
+      { id: 'perm_solo', body: { reply: 'always', message: 'go ahead' } },
     ]);
   });
 
@@ -229,67 +219,49 @@ describe('sessions pending/approve/answer', () => {
     const code = await runSessions(['approve', SESSION_ID, 'perm_x', '--reject', '--project', PROJECT_ID]);
 
     expect(code).toBe(0);
-    expect(acpReplies).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'perm_x',
-        result: { outcome: { outcome: 'cancelled' } },
-      },
-    ]);
+    expect(permissionReplies).toEqual([{ id: 'perm_x', body: { reply: 'reject' } }]);
   });
 
   test('bare approve with several pending permissions errors and lists ids', async () => {
-    pendingEnvelopes = [permission('perm_a'), permission('perm_b')];
+    pendingPermissions = [permission('perm_a'), permission('perm_b')];
 
     const code = await runSessions(['approve', SESSION_ID, '--project', PROJECT_ID]);
 
     expect(code).toBe(1);
-    expect(acpReplies).toEqual([]);
+    expect(permissionReplies).toEqual([]);
     const err = stderrChunks.join('');
     expect(err).toContain('perm_a');
     expect(err).toContain('perm_b');
   });
 
   test('answer maps option labels to canonical values', async () => {
-    pendingEnvelopes = [question('q_1')];
+    pendingQuestions = [question('q_1')];
 
     const code = await runSessions([
       'answer', SESSION_ID, 'q_1', '--option', 'Staging', '--project', PROJECT_ID,
     ]);
 
     expect(code).toBe(0);
-    expect(acpReplies).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'q_1',
-        result: { action: 'accept', content: { environment: 'staging' } },
-      },
+    expect(questionReplies).toEqual([
+      { id: 'q_1', body: { answers: [['staging']] }, kind: 'reply' },
     ]);
   });
 
   test('answer --text sends free text; --reject dismisses', async () => {
-    pendingEnvelopes = [question('q_1')];
+    pendingQuestions = [question('q_1')];
 
     let code = await runSessions([
       'answer', SESSION_ID, 'q_1', '--text', 'use the blue one', '--project', PROJECT_ID,
     ]);
     expect(code).toBe(0);
 
-    pendingEnvelopes = [question('q_2')];
+    pendingQuestions = [question('q_2')];
     code = await runSessions(['answer', SESSION_ID, 'q_2', '--reject', '--project', PROJECT_ID]);
     expect(code).toBe(0);
 
-    expect(acpReplies).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 'q_1',
-        result: { action: 'accept', content: { environment: 'use the blue one' } },
-      },
-      {
-        jsonrpc: '2.0',
-        id: 'q_2',
-        result: { action: 'decline' },
-      },
+    expect(questionReplies).toEqual([
+      { id: 'q_1', body: { answers: [['use the blue one']] }, kind: 'reply' },
+      { id: 'q_2', body: {}, kind: 'reject' },
     ]);
   });
 
@@ -297,6 +269,6 @@ describe('sessions pending/approve/answer', () => {
     const code = await runSessions(['answer', SESSION_ID, 'q_1', '--project', PROJECT_ID]);
 
     expect(code).toBe(2);
-    expect(acpReplies).toEqual([]);
+    expect(questionReplies).toEqual([]);
   });
 });

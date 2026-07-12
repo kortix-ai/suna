@@ -1,7 +1,7 @@
 /**
  * Framework-free SSE event-stream machine, extracted verbatim (same constants,
  * same branch order, same semantics) from the connect/reconnect loop that used
- * to live inline inside `react/use-runtime-events/index.ts`'s `useEffect`.
+ * to live inline inside `react/use-opencode-events/index.ts`'s `useEffect`.
  *
  * Zero imports of `react`, `react-query`, or any `react/*` module — this file
  * can run in any JS host (a worker, a CLI, a non-React UI). Everything that
@@ -9,7 +9,7 @@
  * lookups) stays in the React wrapper and reaches this module only through the
  * injected `onEvent` / `onGapRehydrate` callbacks.
  *
- * Owns: connecting to the runtime SSE endpoint (with a connect timeout), the
+ * Owns: connecting to the opencode SSE endpoint (with a connect timeout), the
  * idle heartbeat watchdog, event coalescing + 16ms flush batching, gap
  * detection on reconnect, the exponential-backoff reconnect loop (fast 250ms
  * resume after an eventful stream, capped exponential backoff otherwise), and
@@ -17,24 +17,24 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as RuntimeSdkEvent } from '../runtime/wire-types';
+import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
 
 /**
  * The event union this stream dispatches. Re-exported (unchanged shape) from
- * `react/use-runtime-events/types.ts` so existing importers keep working —
+ * `react/use-opencode-events/types.ts` so existing importers keep working —
  * this module is now the canonical definition.
  */
-export type RuntimeEvent =
-  | RuntimeSdkEvent
+export type OpenCodeEvent =
+  | OpenCodeSdkEvent
   | {
       id: string;
       type: 'lsp.client.diagnostics';
       properties: { serverID: string; path: string };
     };
 
-/** The minimal slice of `RuntimeClient` this machine actually calls. */
+/** The minimal slice of `OpencodeClient` this machine actually calls. */
 export interface EventStreamClient {
   global: {
     event: (opts: {
@@ -64,13 +64,13 @@ const realTimers: EventStreamTimers = {
 };
 
 export interface OpenEventStreamOptions {
-  /** The runtime client to stream events from (same client the rest of the
+  /** The opencode client to stream events from (same client the rest of the
    *  SDK obtains via `getClient()`). */
   client: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
-  onEvent: (event: RuntimeEvent) => void;
+  onEvent: (event: OpenCodeEvent) => void;
   /** Called when a reconnect follows a stream gap > 5s, with the gap size in
    *  ms. Lets the host re-hydrate anything it fears went stale (e.g. replay
    *  messages for busy sessions) — the machine itself holds no host state to
@@ -178,7 +178,7 @@ const MAX_CONSECUTIVE_HARD_FAILURES = 8;
  * efficiently rejects stale snapshots with a no-op return, so processing every
  * snapshot has minimal cost.
  */
-function getCoalesceKey(event: RuntimeEvent): string | undefined {
+function getCoalesceKey(event: OpenCodeEvent): string | undefined {
   if (event.type === 'session.status') {
     return `session.status:${(event.properties as any).sessionID}`;
   }
@@ -205,7 +205,7 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
 }
 
 /**
- * Connects to the runtime SSE event stream and keeps it alive: heartbeat
+ * Connects to the opencode SSE event stream and keeps it alive: heartbeat
  * watchdog, event coalescing + batched flush, gap-triggered rehydrate signal,
  * and exponential-backoff reconnect. Framework-free — safe to call from any
  * host (the React wrapper calls this once per effect run; a non-React host can
@@ -232,7 +232,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   let lastStreamActivityTime = t.now();
 
   // Event coalescing queue (like the SolidJS reference)
-  let queue: ({ type: string; event: RuntimeEvent } | undefined)[] = [];
+  let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
   let flushTimer: EventStreamTimerHandle | undefined;
   let lastFlush = 0;
 
@@ -260,7 +260,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         // pinned (during a session switch) — that throw used to escape to the
         // route error boundary. Swallow + log; the next events + retries
         // recover.
-        console.warn('[runtime-events] event handler threw, skipping', e);
+        console.warn('[opencode-events] event handler threw, skipping', e);
       }
     }
   };
@@ -382,7 +382,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-          ) as RuntimeEvent;
+          ) as OpenCodeEvent;
           if (!e?.type) continue;
 
           const ck = getCoalesceKey(e);
@@ -467,8 +467,9 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
       // retries FOREVER: the proxy 503s every `/global/event` connect, and
       // prod showed continuous 503 loops from several dead sandboxes at once.
       // Classify this attempt: a HARD failure delivered zero events AND
-      // either carried an HTTP-level status (the runtime client wraps non-2xx
-      // as `Error` with `cause: { status }`) or died within HARD_FAILURE_WINDOW_MS (edge 503s
+      // either carried an HTTP-level status (the vendor client wraps non-2xx
+      // as `Error` with `cause: { status }` — see @opencode-ai/sdk's
+      // error-interceptor) or died within HARD_FAILURE_WINDOW_MS (edge 503s
       // surface as opaque network/CORS errors with no status attached).
       // Slow failures without a status (a black-holed connect that hit the
       // 20s connect timeout) and anything that streamed a real event reset
@@ -491,7 +492,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
         } catch (parkedHandlerErr) {
           // A host's park handler must never crash the (already-terminal)
           // stream machine.
-          console.warn('[runtime-events] onParked handler threw', parkedHandlerErr);
+          console.warn('[opencode-events] onParked handler threw', parkedHandlerErr);
         }
         break;
       }
@@ -541,7 +542,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   };
 }
 
-// The curated chat-event union built on top of this stream's `RuntimeEvent` —
+// The curated chat-event union built on top of this stream's `OpenCodeEvent` —
 // re-exported here (additive only) so a host that imports the SSE primitive
 // from this subpath (`@kortix/sdk/event-stream`) can reach the chat-narrowing
 // helpers from the same import without a second subpath. Canonical definition

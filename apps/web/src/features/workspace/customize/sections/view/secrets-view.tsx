@@ -48,7 +48,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import { useCustomizeStore } from '@/stores/customize-store';

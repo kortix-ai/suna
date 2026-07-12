@@ -5,7 +5,7 @@ import type {
 	Part,
 	TextPart,
 	UserMessage,
-} from "../runtime/wire-types";
+} from "@opencode-ai/sdk/v2/client";
 import { ascendingId, Binary, useSyncStore } from "./sync-store";
 
 // ============================================================================
@@ -367,7 +367,7 @@ describe("stream-cache (via applyEvent message.part.updated / message.part.delta
 	});
 
 	function readCache(sessionID: string): { messageID: string; partID: string; text: string } | null {
-		const raw = sessionStorage.getItem(`runtime_stream_cache:${sessionID}`);
+		const raw = sessionStorage.getItem(`opencode_stream_cache:${sessionID}`);
 		return raw ? JSON.parse(raw) : null;
 	}
 

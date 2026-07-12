@@ -8,7 +8,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { LLM_PROVIDER_BY_ID, type LlmProviderEntry } from '@/lib/llm-providers';
 import { deleteProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
-import type { AcpRuntime } from '../acp/runtime'
+import type { Opencode } from '../opencode'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -45,11 +45,12 @@ export type SandboxBootState = {
   repoMaterializationError: string | null
   /** In-container boot timeline (ms since process start) for latency benchmarking. */
   timeline: BootMark[]
-  /** Selected v3 ACP harness and process identity. */
-  acpHarness?: 'claude' | 'codex' | 'opencode' | 'pi' | null
-  acpServerId?: string | null
-  acpRuntimeReady?: boolean
-  acpRuntimeError?: string | null
+  /** True when boot must create a first OpenCode conversation before the UI is usable. */
+  initialOpenCodeSessionRequired?: boolean
+  /** OpenCode session id created during boot, if one was requested. */
+  initialOpenCodeSessionId?: string | null
+  /** Boot-time OpenCode session creation failure. */
+  initialOpenCodeSessionError?: string | null
 }
 
 /**
@@ -60,26 +61,30 @@ export type SandboxBootState = {
  *     daemon: 'ok',
  *     status: 'ok' | 'starting' | 'down' | 'error',
  *     runtimeReady: boolean,
+ *     opencode: 'ok' | 'starting' | 'down',
  *     uptime_s: number,
+ *     opencode_pid: number | null,
  *     static_web_port: number | null,  // bound static-web port, null if down
  *     repo: string | null,    // remote URL of the materialized repo, if any
  *     branch: string | null,
  *     commit_sha: string | null
  *   }
  *
- * Always returns 200 because this is the daemon's own liveness probe.
+ * Always returns 200 even when opencode is down — this is the daemon's own
+ * liveness probe, not opencode's.
  */
 export function createHealthRouter(
   cfg: Config,
+  opencode: Opencode,
   bootTime: number,
   bootState: SandboxBootState,
   staticWebPort: number | null = null,
-  acpRuntime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
   router.get('/', async (c) => {
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
+    const opencodeState = opencode.getState()
     const repoRequired = sessionWantsRepo(cfg.autoClone)
     // A repo on disk isn't ready until it's on the SESSION branch: the clone
     // path renames the repo into place BEFORE the branch checkout (which can
@@ -91,24 +96,28 @@ export function createHealthRouter(
     const wantBranch = repoRequired ? wantedSessionBranch() : ''
     const repoReady =
       !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
-    const runtimeError = bootState.acpRuntimeError ?? null
-    const runtimeReady = repoReady && !bootState.repoMaterializationError && !runtimeError && !!bootState.acpRuntimeReady
+    const initialSessionReady =
+      !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
+    const initialSessionError = bootState.initialOpenCodeSessionError ?? null
+    const runtimeReady =
+      repoReady &&
+      !bootState.repoMaterializationError &&
+      !initialSessionError &&
+      opencodeState === 'ok' &&
+      initialSessionReady
     const status = runtimeReady
       ? 'ok'
-      : bootState.repoMaterializationError || runtimeError
+      : bootState.repoMaterializationError || initialSessionError
         ? 'error'
-        : 'starting'
+        : opencodeState
 
     return c.json({
       daemon: 'ok',
       status,
       runtimeReady,
-      runtime: 'acp',
-      acp_harness: bootState.acpHarness ?? null,
-      acp_server_id: bootState.acpServerId ?? null,
-      acp_ready: !!bootState.acpRuntimeReady,
-      acp_busy: acpRuntime?.get(bootState.acpServerId ?? '')?.busy ?? false,
+      opencode: opencodeState,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
+      opencode_pid: opencode.getPid(),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".
       static_web_port: staticWebPort,
@@ -117,7 +126,9 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
-      boot_error: bootState.repoMaterializationError ?? runtimeError,
+      boot_error: bootState.repoMaterializationError ?? initialSessionError,
+      opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
+      opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
       // In-container boot timeline (ms since process start) so the dashboard can
       // attribute the post-create boot latency (clone vs opencode vs proxy).
       boot_timeline: bootState.timeline,

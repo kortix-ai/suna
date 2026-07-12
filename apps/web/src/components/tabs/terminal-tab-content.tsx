@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { useCreatePty, useRuntimePtyList, useRemovePty } from '@/hooks/runtime/use-runtime-pty';
+import { useCreatePty, useOpenCodePtyList, useRemovePty } from '@/hooks/opencode/use-opencode-pty';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
@@ -33,7 +33,7 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
   const tHardcodedUi = useTranslations('hardcodedUi');
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
-  const { data: ptys, isLoading, refetch } = useRuntimePtyList();
+  const { data: ptys, isLoading, refetch } = useOpenCodePtyList();
   const removePty = useRemovePty();
   const createPty = useCreatePty();
 

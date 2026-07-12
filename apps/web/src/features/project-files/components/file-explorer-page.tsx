@@ -19,7 +19,7 @@ import { FolderOpen } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downloadFile } from '../api/runtime-files';
+import { downloadFile } from '../api/opencode-files';
 import { useProjectContext } from '../context';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';

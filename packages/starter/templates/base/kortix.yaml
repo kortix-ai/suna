@@ -1,13 +1,18 @@
-# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v2.schema.json
 #
 # Kortix project manifest. Source of truth for project-wide config that
 # lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v3 is ACP-first: `runtimes` selects an
-# official ACP harness and its native config directory; `agents` registers
-# logical Kortix identities, routes each one to a runtime, and owns only
-# platform governance. Prompts, models, providers, hooks, modes, and runtime
-# permissions stay in `.claude`, `.codex`, `.kortix/opencode`, or `.pi`.
-kortix_version: 3
+# the platform can evolve safely. v2 manifests are YAML-only, with one
+# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
+# kortix_cli/skills/workspace/enabled). OpenCode BEHAVIOR (description,
+# model, mode, temperature, permission, the prompt itself, …) lives
+# entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
+# frontmatter + body — a stock OpenCode agent file, no Kortix-specific
+# split. The agent's NAME is the join between this map's keys and that
+# `.md`'s filename. See
+# docs/specs/2026-07-05-agent-first-config-unification.md (decision
+# 2026-07-05: "one home per concern").
+kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the
 # "default" sentinel). Must always resolve to a declared agent below.
@@ -59,44 +64,34 @@ env:
 # sandbox:
 #   default: python
 
-# ─── ACP runtime profiles ────────────────────────────────────────────────
-# These are launch profiles, not translated configuration. The selected
-# official ACP adapter reads the harness's own native files directly.
-runtimes:
-  opencode:
-    harness: opencode
-    config_dir: .kortix/opencode
-  claude:
-    harness: claude
-    config_dir: .claude
-  codex:
-    harness: codex
-    config_dir: .codex
-  pi:
-    harness: pi
-    config_dir: .pi
+# OpenCode runtime config dir. The agent daemon launches opencode with
+# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
+# under this folder. `opencode.jsonc` remains OpenCode's native registry
+# for plugins, MCP servers, providers, models, and runtime defaults.
+# Defaults to `.kortix/opencode` — relocate if you want to share a
+# single opencode config across multiple Kortix repos.
+opencode:
+  config_dir: .kortix/opencode
 
 # ─── Agents ──────────────────────────────────────────────────────────────
-# One map per project, GOVERNANCE + ROUTING ONLY. `runtime` references a
-# profile above; optional `agent` is that harness's native agent/profile id.
-# Everything else lives in the selected harness's config directory. v3 is
-# deny-by-default: an omitted connectors/
+# One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_cli/
+# skills grants the runtime itself can't express, plus workspace (the git
+# boundary) and enabled. Everything else (description, mode, permission,
+# temperature, the prompt itself, …) lives in the matching
+# `.kortix/opencode/agents/<name>.md` — open those files to see/change what
+# each agent actually does. v2 is deny-by-default: an omitted connectors/
 # secrets/kortix_cli/skills grant resolves to "none", so a scoped specialist
 # starts locked down. The starter's own `kortix` agent is deliberately
 # granted "all" across the board so a fresh project is capable out of the
 # box — narrow it once you know what this project actually needs.
 agents:
   kortix:
-    runtime: opencode
-    agent: kortix
     connectors: all
     secrets: all
     kortix_cli: all
     skills: all
 
   memory-reflector:
-    runtime: opencode
-    agent: memory-reflector
     # Scoped specialist: only what its job needs (open — never merge — a
     # memory CR). No connectors, no project secrets.
     kortix_cli: [project.cr.open]

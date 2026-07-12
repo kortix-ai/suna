@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
+import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';

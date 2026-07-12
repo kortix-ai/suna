@@ -22,7 +22,7 @@ export type StepCliMenuState = { selected: number; chosen: number | null };
 export type RuntimeOption = { id: string; label: string; hint: string };
 
 export const RUNTIMES: RuntimeOption[] = [
-  { id: 'opencode', label: 'Runtime', hint: 'open-source · default' },
+  { id: 'opencode', label: 'OpenCode', hint: 'open-source · default' },
   { id: 'claude-code', label: 'Claude Code', hint: 'Anthropic' },
   { id: 'codex', label: 'Codex', hint: 'OpenAI' },
   { id: 'cursor', label: 'Cursor', hint: 'Cursor CLI' },

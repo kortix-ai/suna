@@ -67,7 +67,7 @@ import {
 import { FileItem } from '@/components/files/FileItem';
 import { FileViewer } from '@/components/files/FileViewer';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { useRuntimeFiles, useRuntimeFileContent, useRuntimeUploadFile, fileKeys } from '@/lib/files/hooks';
+import { useOpenCodeFiles, useOpenCodeFileContent, useOpenCodeUploadFile, fileKeys } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -93,7 +93,7 @@ import { formatCost, formatTokens } from '@kortix/sdk/turns';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
-} from '@/lib/runtime/hooks/use-project-session-stats';
+} from '@/lib/opencode/hooks/use-project-session-stats';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,7 +197,7 @@ export function ProjectDetailPage({
   const [newTaskFiles, setNewTaskFiles] = useState<TaskAttachment[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
-  const uploadMutForTasks = useRuntimeUploadFile();
+  const uploadMutForTasks = useOpenCodeUploadFile();
 
   const resetNewTaskForm = useCallback(() => {
     setNewTaskTitle('');
@@ -429,7 +429,7 @@ export function ProjectDetailPage({
     data: files,
     isLoading: filesLoading,
     refetch: refetchFiles,
-  } = useRuntimeFiles(hasFiles && tab === 'files' ? sandboxUrl : undefined, filePath);
+  } = useOpenCodeFiles(hasFiles && tab === 'files' ? sandboxUrl : undefined, filePath);
   const [viewerFile, setViewerFile] = useState<SandboxFile | null>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
 
@@ -448,14 +448,14 @@ export function ProjectDetailPage({
     data: contextContent,
     isLoading: contextLoading,
     error: contextError,
-  } = useRuntimeFileContent(
+  } = useOpenCodeFileContent(
     tab === 'about' ? sandboxUrl : undefined,
     tab === 'about' ? contextPath : undefined,
     { staleTime: 30_000, retry: 1 },
   );
 
   const qc = useQueryClient();
-  const uploadMutation = useRuntimeUploadFile();
+  const uploadMutation = useOpenCodeUploadFile();
   const [contextEditing, setContextEditing] = useState(false);
   const [contextDraft, setContextDraft] = useState('');
   const [contextSaving, setContextSaving] = useState(false);
@@ -484,7 +484,7 @@ export function ProjectDetailPage({
         targetPath: dirPath,
       });
       // Invalidate the specific file-content query so the preview updates.
-      qc.invalidateQueries({ queryKey: fileKeys.runtimeFile(sandboxUrl, contextPath) });
+      qc.invalidateQueries({ queryKey: fileKeys.opencodeFile(sandboxUrl, contextPath) });
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Could not save CONTEXT.md');
     } finally {

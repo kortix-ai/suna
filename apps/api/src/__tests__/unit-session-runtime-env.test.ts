@@ -25,7 +25,7 @@ describe('buildSessionRuntimeEnv', () => {
     const env = buildSessionRuntimeEnv({
       ...base,
       initialPrompt: 'answer this Slack thread',
-      runtimeModel: 'anthropic/claude-sonnet-4-6',
+      opencodeModel: 'anthropic/claude-sonnet-4-6',
     });
 
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');

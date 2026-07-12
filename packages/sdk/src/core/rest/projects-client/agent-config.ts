@@ -5,11 +5,11 @@ import { unwrap } from './shared';
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
 // connectors/secrets/skills/kortix_cli/workspace/enabled, written to
-// kortix.yaml) and `block.behavior` (legacy v2 runtime BEHAVIOR — mode/model/
+// kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
-// the runtime-native agent markdown frontmatter + body). The backend route
-// is what merges the two files into this one response/request shape — see
-// apps/api/src/projects/routes/agent-config.ts.
+// the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
+// body). The backend route is what merges the two files into this one
+// response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
 // secrets/connectors grant subset into a v1 `[[agents]]` entry. Manager-gated
 // server-side (project.customize.write). v2-only: `editable:false` on the GET
@@ -18,19 +18,18 @@ import { unwrap } from './shared';
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
 
-/** A single Runtime permission action. */
+/** A single OpenCode permission action. */
 export type PermissionAction = 'ask' | 'allow' | 'deny';
 
 /** A permission rule: a bare action, or a glob-pattern → action map. */
 export type PermissionRule = PermissionAction | Record<string, PermissionAction>;
 
-/** The Runtime `permission` tree — a bare action, or a per-capability object. */
+/** The OpenCode `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The runtime BEHAVIOR half — everything that lives in the harness-native
- *  agent config (+ `prompt`, the file's BODY text, not a path, for the legacy
- *  v2 runtime editor). */
-export interface RuntimeAgentBehaviorConfig {
+/** The OpenCode BEHAVIOR half — everything that lives in the agent's own
+ *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
+export interface OpencodeAgentConfig {
   description?: string;
   mode?: 'primary' | 'subagent' | 'all';
   model?: string;
@@ -47,26 +46,18 @@ export interface RuntimeAgentBehaviorConfig {
   permission?: PermissionConfig;
 }
 
-/** @deprecated Use RuntimeAgentBehaviorConfig. Retained for compatibility with
- * older callers that still name the behavior key `opencode`. */
-export type OpencodeAgentConfig = RuntimeAgentBehaviorConfig;
-
 /** The full agent block on the wire — mirrors `AgentBlockV2` in
- *  @kortix/manifest-schema PLUS the merged legacy behavior half under
- *  `behavior`. `opencode` is an accepted compatibility alias only. */
+ *  @kortix/manifest-schema PLUS the merged `opencode` behavior half (a wire-
+ *  only convenience; kortix.yaml itself never nests `opencode` — see the
+ *  module doc above). */
 export interface AgentConfigBlock {
-  /** v3 logical routing fields. Runtime behavior remains in native config. */
-  runtime?: string;
-  agent?: string;
   enabled?: boolean;
   connectors?: AgentGrantSetV2;
   secrets?: AgentGrantSetV2;
   skills?: AgentGrantSetV2;
   kortix_cli?: AgentGrantSetV2;
   workspace?: 'runtime' | 'read' | 'branch';
-  behavior?: RuntimeAgentBehaviorConfig;
-  /** @deprecated Use `behavior`. */
-  opencode?: RuntimeAgentBehaviorConfig;
+  opencode?: OpencodeAgentConfig;
 }
 
 export interface AgentConfigResponse {
@@ -79,24 +70,6 @@ export interface AgentConfigResponse {
   default_agent: string | null;
   /** The declared block, or null for a v1 manifest / an agent not declared yet. */
   block: AgentConfigBlock | null;
-  /** v3 named runtime profiles available to this project. */
-  runtimes?: Record<string, { harness: 'claude' | 'codex' | 'opencode' | 'pi'; config_dir?: string }>;
-}
-
-export type AcpHarness = 'claude' | 'codex' | 'opencode' | 'pi';
-export type RuntimeProfile = { harness: AcpHarness; config_dir?: string };
-export interface RuntimeProfilesResponse {
-  schema_version: number;
-  editable: boolean;
-  runtimes: Record<string, RuntimeProfile>;
-}
-
-export async function getRuntimeProfiles(projectId: string) {
-  return unwrap(await backendApi.get<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles`));
-}
-
-export async function updateRuntimeProfiles(projectId: string, runtimes: Record<string, RuntimeProfile>) {
-  return unwrap(await backendApi.put<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles`, { runtimes }));
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {

@@ -33,6 +33,7 @@ test('facade exposes the core namespaces', () => {
   expect(typeof kortix.accounts.list).toBe('function');
   expect(typeof kortix.project).toBe('function');
   expect(typeof kortix.session).toBe('function');
+  expect(typeof kortix.runtime).toBe('function');
 });
 
 test('project(id) handle binds the id and hits the right endpoint', async () => {
@@ -639,15 +640,13 @@ test('kortix.validateToken hits /accounts/me and never throws', async () => {
 // ensureReady() silently redirected the first handle's send/health/preview
 // calls to the wrong sandbox) ──────────────────────────────────────────────
 
-function sessionStartPayload(externalId: string, acpSessionId: string) {
+function sessionStartPayload(externalId: string, opencodeSessionId: string) {
   return {
     stage: 'ready',
     agent_name: 'agent',
     retriable: false,
     sandbox: { external_id: externalId },
-    runtime_protocol: 'acp',
-    runtime_id: externalId,
-    runtime_session_id: acpSessionId,
+    opencode_session_id: opencodeSessionId,
   };
 }
 
@@ -676,7 +675,7 @@ function mockTwoSessionRuntimes() {
   }) as unknown as typeof fetch;
 }
 
-test('two session handles resolve independent ACP runtimes without crossing preview state', async () => {
+test('two session handles resolve independent runtimes: A.send never crosses to B (or back)', async () => {
   globalThis.fetch = mockTwoSessionRuntimes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
@@ -686,8 +685,22 @@ test('two session handles resolve independent ACP runtimes without crossing prev
   await a.ensureReady();
   await b.ensureReady(); // resolves AFTER a — used to clobber the shared global runtime
 
-  expect(a.previewUrl(3000)).toContain('/p/sb-A/3000/');
-  expect(b.previewUrl(3000)).toContain('/p/sb-B/3000/');
+  await a.send('hello from A');
+  const aPromptCall = calls.find((c) => c.url.includes('/message'));
+  expect(aPromptCall?.url).toContain('/p/sb-A/8000');
+  expect(aPromptCall?.url).not.toContain('sb-B');
+
+  calls.length = 0;
+  await b.send('hello from B');
+  const bPromptCall = calls.find((c) => c.url.includes('/message'));
+  expect(bPromptCall?.url).toContain('/p/sb-B/8000');
+  expect(bPromptCall?.url).not.toContain('sb-A');
+
+  calls.length = 0;
+  await a.abort();
+  const aAbortCall = calls.find((c) => c.url.includes('/abort'));
+  expect(aAbortCall?.url).toContain('/p/sb-A/8000');
+  expect(aAbortCall?.url).not.toContain('sb-B');
 });
 
 test('previewUrl uses the handle\'s own sandbox id, not whichever session resolved last', async () => {
@@ -704,12 +717,13 @@ test('previewUrl uses the handle\'s own sandbox id, not whichever session resolv
   expect(b.previewUrl(3000, '/docs')).toBe('http://test.local/p/sb-B/3000/docs');
 });
 
-test('previewUrl()/proxyUrl() throw SessionNotReadyError before ensureReady()', () => {
+test('previewUrl()/proxyUrl()/runtime throw SessionNotReadyError before ensureReady()', () => {
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const s = k.session('PROJ', 'SESS-NEW');
 
   expect(() => s.previewUrl(3000)).toThrow(SessionNotReadyError);
   expect(() => s.proxyUrl('http://localhost:3000')).toThrow(SessionNotReadyError);
+  expect(() => s.runtime).toThrow(SessionNotReadyError);
 });
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
@@ -769,7 +783,7 @@ test('a second fresh handle for the same session adopts the registry entry — n
   expect(calls.some((c) => c.url.includes('/p/sb-reg1/8000/kortix/health'))).toBe(true);
 });
 
-test('restart clears the registry entry so ensureReady re-resolves the ACP runtime', async () => {
+test('restart clears the registry entry so a subsequent send re-resolves the runtime', async () => {
   let startCount = 0;
   globalThis.fetch = mock(async (input: unknown) => {
     const url = requestUrl(input);
@@ -791,8 +805,9 @@ test('restart clears the registry entry so ensureReady re-resolves the ACP runti
   await handle.restart();
 
   calls.length = 0;
-  await handle.ensureReady();
-  expect(handle.previewUrl(3000)).toContain('/p/sb-reg2-new/3000/');
+  await handle.send('hello again');
+  const promptCall = calls.find((c) => c.url.includes('/message'));
+  expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
   expect(startCount).toBe(2);
 });
 
@@ -875,7 +890,7 @@ test('ensureReady() clears the in-flight entry on failure, so a retry issues a f
     if (url.includes('/sessions/SESS-DEDUP-FAIL/start')) {
       startCalls += 1;
       // First attempt: a failure shape (no sandbox / not ready).
-      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, runtime_session_id: null, agent_name: 'agent' });
+      if (startCalls === 1) return jsonResponse({ stage: 'failed', retriable: true, sandbox: null, opencode_session_id: null, agent_name: 'agent' });
       return jsonResponse(sessionStartPayload('sb-retry', 'ocs-retry'));
     }
     return jsonResponse({ ok: true });

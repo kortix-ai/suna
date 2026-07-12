@@ -239,7 +239,7 @@ const KORTIX_YAML_EXAMPLE = `kortix_version: 2
 project:
   name: acme
 
-# the Runtime runtime config dir
+# the OpenCode runtime config dir
 opencode:
   config_dir: .kortix/opencode
 

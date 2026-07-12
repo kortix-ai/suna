@@ -24,9 +24,10 @@ import {
 } from './preview';
 
 describe('session/health', () => {
-  it('isRuntimeReady reads runtimeReady and status', () => {
+  it('isRuntimeReady reads runtimeReady / opencode / status', () => {
     expect(isRuntimeReady({ runtimeReady: true })).toBe(true);
     expect(isRuntimeReady({ runtimeReady: false })).toBe(false);
+    expect(isRuntimeReady({ opencode: 'ok' })).toBe(true);
     expect(isRuntimeReady({ status: 'starting' })).toBe(false);
     expect(isRuntimeReady({ status: 'ready' })).toBe(true);
     expect(isRuntimeReady(null)).toBe(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { getClient } from '../core/runtime/client';
-import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
 
 /** A tool stuck in `running` this long with nothing pending is suspicious —
@@ -96,8 +96,8 @@ export function usePermissionSelfHeal(
   options: UsePermissionSelfHealOptions = {},
 ): void {
   const { enabled = true } = options;
-  const addPermission = useRuntimePendingStore((s) => s.addPermission);
-  const pendingCount = useRuntimePendingStore(
+  const addPermission = useOpenCodePendingStore((s) => s.addPermission);
+  const pendingCount = useOpenCodePendingStore(
     (s) => Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length,
   );
   const active = useMemo(() => hasActiveNonQuestionTool(messages), [messages]);

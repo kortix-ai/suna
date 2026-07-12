@@ -4,11 +4,11 @@ import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
-// Triggers — defined in `kortix.yaml#triggers`. The cloud API parses the
-// project manifest on every read; CRUD endpoints commit manifest edits through
-// the GitHub Contents API. The repo is the source of truth; runtime state
-// (last_fired_at) lives in `project_trigger_runtime` so a fire doesn't amplify
-// into a git commit.
+// Triggers — file-defined in the project repo at `.opencode/triggers/<slug>.md`
+// (YAML frontmatter + markdown prompt body). The cloud API parses these on
+// every read; CRUD endpoints commit/delete the files via the GitHub Contents
+// API. The repo is the source of truth; runtime state (last_fired_at) lives
+// in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
 // ---------------------------------------------------------------------------
 
 export type ProjectTriggerType = 'cron' | 'webhook';
