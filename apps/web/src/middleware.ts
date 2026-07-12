@@ -1,5 +1,6 @@
 import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -127,10 +128,18 @@ export async function middleware(request: NextRequest) {
     try {
       const config = await getMaintenanceConfig();
       if (config.level === 'blocking') {
-        return NextResponse.redirect(new URL('/maintenance', request.url));
+        // Platform admins can mint a signed bypass token from the maintenance
+        // page (POST /api/maintenance/bypass) to keep working during a full
+        // lockdown. Honor a valid, unexpired token instead of redirecting.
+        const adminBypass = await verifyBypassToken(
+          request.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value,
+        );
+        if (!adminBypass) {
+          return NextResponse.redirect(new URL('/maintenance', request.url));
+        }
       }
     } catch {
-      // If Edge Config is unreachable, don't block traffic
+      // If the maintenance config is unreachable, don't block traffic
     }
   }
 
