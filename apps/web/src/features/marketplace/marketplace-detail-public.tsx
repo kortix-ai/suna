@@ -39,8 +39,16 @@ export function MarketplaceDetailPublic({
       data={data}
       company={company}
       otherProjects={otherProjects}
-      onPrev={prevId ? () => router.push(marketplaceItemHref(prevId)) : undefined}
-      onNext={nextId ? () => router.push(marketplaceItemHref(nextId)) : undefined}
+      nav={
+        ids.length && idx >= 0
+          ? {
+              index: idx + 1,
+              total: ids.length,
+              onPrev: prevId ? () => router.push(marketplaceItemHref(prevId)) : undefined,
+              onNext: nextId ? () => router.push(marketplaceItemHref(nextId)) : undefined,
+            }
+          : undefined
+      }
     />
   );
 }

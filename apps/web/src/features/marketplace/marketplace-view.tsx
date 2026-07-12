@@ -151,8 +151,16 @@ function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
     <MarketplaceDetail
       data={query.data}
       onBack={onBack}
-      onPrev={prevId ? () => openItem(prevId) : undefined}
-      onNext={nextId ? () => openItem(nextId) : undefined}
+      nav={
+        ids.length && idx >= 0
+          ? {
+              index: idx + 1,
+              total: ids.length,
+              onPrev: prevId ? () => openItem(prevId) : undefined,
+              onNext: nextId ? () => openItem(nextId) : undefined,
+            }
+          : undefined
+      }
     />
   );
 }

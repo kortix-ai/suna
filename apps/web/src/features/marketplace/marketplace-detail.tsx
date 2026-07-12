@@ -387,6 +387,47 @@ function ItemSidebar({
   );
 }
 
+export interface DetailNav {
+  /** 1-based position in the surrounding list. */
+  index: number;
+  total: number;
+  onPrev?: () => void;
+  onNext?: () => void;
+}
+
+/**
+ * A floating pager over the item list — prev/next + "position / total",
+ * hovering at the bottom-center of the screen like a lightbox control (so it
+ * isn't tucked into the sidebar). ← / → drive the same actions.
+ */
+function DetailPager({ nav }: { nav: DetailNav }) {
+  return (
+    <div className="bg-background/85 fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-full border p-1 shadow-lg backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={nav.onPrev}
+        disabled={!nav.onPrev}
+        aria-label="Previous item"
+        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ChevronLeft className="size-4" />
+      </button>
+      <span className="text-foreground min-w-[3.75rem] px-1 text-center text-xs font-medium tabular-nums">
+        {nav.index} <span className="text-muted-foreground/50">/</span> {nav.total}
+      </span>
+      <button
+        type="button"
+        onClick={nav.onNext}
+        disabled={!nav.onNext}
+        aria-label="Next item"
+        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ChevronRight className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 /**
  * The one marketplace item detail — used both as the public SSR page and as
  * the in-project Customize overlay. Variant + navigation come from
@@ -398,8 +439,7 @@ export function MarketplaceDetail({
   company,
   otherProjects = [],
   onBack,
-  onPrev,
-  onNext,
+  nav,
 }: {
   data: MarketplaceItemDetail;
   company?: MarketplaceSummary;
@@ -407,10 +447,11 @@ export function MarketplaceDetail({
   otherProjects?: MarketplaceItem[];
   /** In-project overlay: renders an embedded shell + a back-button crumb. */
   onBack?: () => void;
-  /** Step to the previous/next sibling item (← / →); absent → disabled. */
-  onPrev?: () => void;
-  onNext?: () => void;
+  /** Floating pager over the surrounding item list (← / → + position). */
+  nav?: DetailNav;
 }) {
+  const onPrev = nav?.onPrev;
+  const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
   useEffect(() => {
     if (!onPrev && !onNext) return;
@@ -454,40 +495,13 @@ export function MarketplaceDetail({
       ];
 
   return (
-    <MarketplaceShell
-      embedded={!!onBack}
-      crumbs={crumbs}
-      sidebar={
-        <>
-          {onPrev || onNext ? (
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={onPrev}
-                disabled={!onPrev}
-                aria-label="Previous item"
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={onNext}
-                disabled={!onNext}
-                aria-label="Next item"
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-              <span className="text-muted-foreground/70 ml-1 text-xs">
-                Use ← → to browse
-              </span>
-            </div>
-          ) : null}
-          <ItemSidebar data={data} company={company} itemTitle={itemTitle} />
-        </>
-      }
-    >
+    <>
+      {nav ? <DetailPager nav={nav} /> : null}
+      <MarketplaceShell
+        embedded={!!onBack}
+        crumbs={crumbs}
+        sidebar={<ItemSidebar data={data} company={company} itemTitle={itemTitle} />}
+      >
       <div className="space-y-8">
         <section className="space-y-3">
           {readme ? (
@@ -554,6 +568,7 @@ export function MarketplaceDetail({
           </section>
         ) : null}
       </div>
-    </MarketplaceShell>
+      </MarketplaceShell>
+    </>
   );
 }
