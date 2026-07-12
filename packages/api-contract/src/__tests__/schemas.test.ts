@@ -8,6 +8,8 @@ import {
   ProjectSessionSchema,
   SecretSchema,
   SessionCreateAcceptedSchema,
+  SessionCreateInputSchema,
+  SessionRuntimeContextSchema,
   SessionStartResultSchema,
   SharingIntentSchema,
   TriggerListSchema,
@@ -355,5 +357,78 @@ describe('envelopes', () => {
   test('sharing intent normalizes readonly member lists', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
+  });
+});
+
+describe('SessionCreateInputSchema runtime_context', () => {
+  test('accepts a bounded scalar map and the complete public create shape', () => {
+    const parsed = SessionCreateInputSchema.parse({
+      session_id: '11111111-1111-4111-a111-111111111111',
+      agent_name: 'veyris',
+      provider: 'daytona',
+      branch_already_created: true,
+      runtime_context: {
+        workspace_id: 'org_123',
+        'wrapper.locale': 'de',
+        licensed: true,
+        risk_score: 0.25,
+        optional: null,
+      },
+    });
+    expect(parsed.runtime_context?.workspace_id).toBe('org_123');
+  });
+
+  test('rejects nested values, arrays and non-finite numbers', () => {
+    for (const value of [
+      { nested: { nope: true } },
+      { list: ['nope'] },
+      { score: Number.POSITIVE_INFINITY },
+    ]) {
+      expect(SessionRuntimeContextSchema.safeParse(value).success).toBe(false);
+    }
+  });
+
+  test('makes reserved environment names impossible as context keys', () => {
+    for (const key of ['PATH', 'NODE_OPTIONS', 'KORTIX_TOKEN', 'OPENCODE_CONFIG_CONTENT']) {
+      expect(SessionRuntimeContextSchema.safeParse({ [key]: 'shadow' }).success).toBe(false);
+    }
+  });
+
+  test('rejects credential-like keys from the non-secret context envelope', () => {
+    for (const key of [
+      'access_token',
+      'wrapper.secret',
+      'api_key',
+      'db-password',
+      'authorization',
+      'session.cookie',
+    ]) {
+      expect(SessionRuntimeContextSchema.safeParse({ [key]: 'must-not-land-here' }).success).toBe(false);
+    }
+  });
+
+  test('enforces key-count and UTF-8 byte bounds', () => {
+    const tooMany = Object.fromEntries(
+      Array.from({ length: 65 }, (_, index) => [`key_${index}`, index]),
+    );
+    expect(SessionRuntimeContextSchema.safeParse(tooMany).success).toBe(false);
+    expect(SessionRuntimeContextSchema.safeParse({ payload: 'é'.repeat(9_000) }).success).toBe(false);
+  });
+
+  test('rejects unknown create fields instead of accepting raw env or MCP config', () => {
+    expect(SessionCreateInputSchema.safeParse({ runtime_env: { VEYRIS_TOKEN: 'secret' } }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ mcp: { url: 'https://attacker.test' } }).success).toBe(false);
+  });
+
+  test('retains deprecated camelCase inputs already accepted by the route', () => {
+    expect(SessionCreateInputSchema.safeParse({
+      baseRef: 'main',
+      agentName: 'veyris',
+      sandboxSlug: 'default',
+      initialPrompt: 'hello',
+      opencodeModel: 'kortix/auto',
+      sessionId: '11111111-1111-4111-a111-111111111111',
+      branchAlreadyCreated: true,
+    }).success).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import { db } from '../../shared/db';
 import type { SandboxProviderName } from '../../config';
 import type { ProjectRow } from './serializers';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
+import { mergeSessionSandboxEnv } from './session-runtime-context';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -51,10 +52,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return envVars;
     });
 
-    const extraEnvVars = {
-      ...(await envPromise),
-      ...(input.extraEnvVars ?? {}),
-    };
+    const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
 
     await provisionSessionSandbox({
       sandboxId: input.sessionId,

@@ -157,6 +157,18 @@ const projects = await listProjects();
 const detail = await getProjectDetail(projectId);
 ```
 
+`createProjectSession` accepts bounded non-secret scalar `runtime_context` for
+wrapper metadata. Kortix persists it across replacement runtimes and injects
+one JSON envelope (`KORTIX_SESSION_CONTEXT`), never one env var per key:
+
+```ts
+await createProjectSession(projectId, {
+  runtime_context: { workspace_id: 'org_123', locale: 'fr' },
+});
+```
+
+Credentials and dynamic MCP configuration are intentionally not accepted here.
+
 **When to use:** you want a single REST call without holding a facade instance —
 e.g. in a server action or a script. In app code, prefer the facade so ids are
 bound and the surface stays discoverable.

@@ -67,6 +67,20 @@ pass-through / re-billing, and session files + project secrets. Each file's
 header comment states the env vars and the exact `bun run examples/….ts`
 invocation.
 
+Wrapper backends can attach bounded, non-secret scalar context when creating a
+session. It is persisted across cold recovery/replacement restart and exposed
+to the agent only as one `KORTIX_SESSION_CONTEXT` JSON envelope:
+
+```ts
+await kortix.project(projectId).sessions.create({
+  runtime_context: { workspace_id: 'org_123', locale: 'de' },
+});
+```
+
+Do not put credentials in this map. Session-specific connector credentials are
+resolved server-side through connector profiles; raw env and MCP config are not
+session-create inputs.
+
 `session.stream()` is a thin facade over the framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
 themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
