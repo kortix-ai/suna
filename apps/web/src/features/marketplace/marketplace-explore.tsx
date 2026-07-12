@@ -31,8 +31,6 @@ import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
 // bundles are hidden from browse — see MARKETPLACE_VISIBLE_TYPES on the API).
 const TYPE_ORDER = ['registry:skill'];
 
-const SEARCH_GRID_COLUMNS = 2;
-
 const ALL_SOURCES = 'all';
 
 function sectionId(type: string): string {
@@ -302,8 +300,8 @@ export function MarketplaceExplore({
               source={isAll ? undefined : source}
               publicOnly={publicOnly}
               scrollContainerRef={scrollContainerRef}
-              columns={SEARCH_GRID_COLUMNS}
-              gridClassName="sm:grid-cols-2"
+              columns={MARKETPLACE_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-3"
               showSource={isAll}
               emptyTitle="No matches"
               emptyDescription={`No items match "${debounced}".`}
@@ -356,8 +354,8 @@ export function MarketplaceExplore({
               source={source}
               publicOnly={publicOnly}
               scrollContainerRef={scrollContainerRef}
-              columns={SEARCH_GRID_COLUMNS}
-              gridClassName="sm:grid-cols-2"
+              columns={MARKETPLACE_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-3"
               showSource={false}
               emptyTitle="Nothing here yet"
               emptyDescription="This source has no browseable items right now."

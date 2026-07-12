@@ -1,6 +1,6 @@
 'use client';
 
-import { Boxes, FileText, Trash2 } from 'lucide-react';
+import { Boxes, ChevronLeft, ChevronRight, FileText, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -398,6 +398,8 @@ export function MarketplaceDetail({
   company,
   otherProjects = [],
   onBack,
+  onPrev,
+  onNext,
 }: {
   data: MarketplaceItemDetail;
   company?: MarketplaceSummary;
@@ -405,7 +407,29 @@ export function MarketplaceDetail({
   otherProjects?: MarketplaceItem[];
   /** In-project overlay: renders an embedded shell + a back-button crumb. */
   onBack?: () => void;
+  /** Step to the previous/next sibling item (← / →); absent → disabled. */
+  onPrev?: () => void;
+  onNext?: () => void;
 }) {
+  // ← / → step through the surrounding item list (ignored while typing).
+  useEffect(() => {
+    if (!onPrev && !onNext) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key === 'ArrowLeft' && onPrev) {
+        e.preventDefault();
+        onPrev();
+      } else if (e.key === 'ArrowRight' && onNext) {
+        e.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onPrev, onNext]);
+
   const capGroups = groupCapabilities(data.capabilities);
   const capCount = totalCapabilityCount(data.capabilities);
   const isProject = data.type === 'registry:project';
@@ -433,7 +457,36 @@ export function MarketplaceDetail({
     <MarketplaceShell
       embedded={!!onBack}
       crumbs={crumbs}
-      sidebar={<ItemSidebar data={data} company={company} itemTitle={itemTitle} />}
+      sidebar={
+        <>
+          {onPrev || onNext ? (
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={onPrev}
+                disabled={!onPrev}
+                aria-label="Previous item"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={onNext}
+                disabled={!onNext}
+                aria-label="Next item"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+              <span className="text-muted-foreground/70 ml-1 text-xs">
+                Use ← → to browse
+              </span>
+            </div>
+          ) : null}
+          <ItemSidebar data={data} company={company} itemTitle={itemTitle} />
+        </>
+      }
     >
       <div className="space-y-8">
         <section className="space-y-3">

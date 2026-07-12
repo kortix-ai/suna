@@ -119,7 +119,16 @@ function MarketplaceExploreTab({
  *  overlay (the project surface makes its actions install into this project). */
 function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
   const openId = useMarketplaceDetailStore((s) => s.openId);
+  const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const query = useMarketplaceItem(openId);
+
+  // Sibling order for ← / → browsing — the same catalog list the explore grid
+  // renders. Clamped at the ends.
+  const itemsQuery = useMarketplaceItems({ publicOnly: false });
+  const ids = useMemo(() => (itemsQuery.data?.items ?? []).map((i) => i.id), [itemsQuery.data]);
+  const idx = openId ? ids.indexOf(openId) : -1;
+  const prevId = idx > 0 ? ids[idx - 1] : undefined;
+  const nextId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : undefined;
 
   if (query.isLoading) {
     return (
@@ -138,5 +147,12 @@ function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
       </div>
     );
   }
-  return <MarketplaceDetail data={query.data} onBack={onBack} />;
+  return (
+    <MarketplaceDetail
+      data={query.data}
+      onBack={onBack}
+      onPrev={prevId ? () => openItem(prevId) : undefined}
+      onNext={nextId ? () => openItem(nextId) : undefined}
+    />
+  );
 }
