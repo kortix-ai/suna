@@ -68,7 +68,7 @@ export function buildAcpApp(
 ): Hono {
   const app = new Hono()
   const control = new Hono()
-  const health = createHealthRouter(cfg, bootTime, bootState, staticWebPort)
+  const health = createHealthRouter(cfg, bootTime, bootState, staticWebPort, acpRuntime)
   const pty = createPtyRouter(cfg, ptyRegistry)
   control.route('/health', health)
   control.route('/health/', health)

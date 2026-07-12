@@ -83,8 +83,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'chat' || sub === 'talk') {
     return runSessionsChat(argv.slice(1));
   }
-  // `connect` owns its own flag parsing and forwards remaining args to
-  // `opencode attach`, so route it before we consume flags below.
+  // `connect` is the harness-neutral ACP interactive-chat alias.
   if (sub === 'connect' || sub === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }

@@ -23,6 +23,7 @@ export type AcpRuntimeInstanceInfo = {
   harness: AcpHarnessId
   pid: number | null
   createdAt: string
+  busy: boolean
 }
 
 type PendingRequest = {
@@ -154,6 +155,10 @@ class AcpProcess {
 
   get pid(): number | null {
     return this.child.pid ?? null
+  }
+
+  get busy(): boolean {
+    return this.pending.size > 0
   }
 
   async post(envelope: JsonRpcEnvelope): Promise<JsonRpcEnvelope | null> {
@@ -310,6 +315,7 @@ export class AcpRuntime {
         harness: instance.descriptor.id,
         pid: instance.pid,
         createdAt: instance.createdAt.toISOString(),
+        busy: instance.busy,
       }))
       .sort((a, b) => a.serverId.localeCompare(b.serverId))
   }

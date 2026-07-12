@@ -19,7 +19,7 @@ import {
   buildSessionSandboxEnvVars,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
-import { inspectSandboxRuntime } from '../opencode-mapping';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 import {
   preserveEstablishedRuntime,
   retireConfirmedMissingRuntime,

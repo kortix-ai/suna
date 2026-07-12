@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
+import type { AcpRuntime } from '../acp/runtime'
 
 /**
  * The branch this VM's session is supposed to be on, read from the host-
@@ -73,6 +74,7 @@ export function createHealthRouter(
   bootTime: number,
   bootState: SandboxBootState,
   staticWebPort: number | null = null,
+  acpRuntime?: AcpRuntime,
 ): Hono {
   const router = new Hono()
 
@@ -105,6 +107,7 @@ export function createHealthRouter(
       acp_harness: bootState.acpHarness ?? null,
       acp_server_id: bootState.acpServerId ?? null,
       acp_ready: !!bootState.acpRuntimeReady,
+      acp_busy: acpRuntime?.get(bootState.acpServerId ?? '')?.busy ?? false,
       uptime_s: Math.floor((Date.now() - bootTime) / 1000),
       // Static web server (preview/static files). The bound port when up, else
       // null — surfaces "preview won't load because static-web never bound".

@@ -78,6 +78,22 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
   const native = nativeConfigEnv(id, env)
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
+  if (id === 'opencode') {
+    const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
+    if (!nativeAgent) return Object.keys(native).length ? native : undefined
+    let existing: Record<string, unknown> = {}
+    try {
+      const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT || '{}')
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) existing = parsed
+    } catch {
+      // A malformed inherited override must not make logical agent routing
+      // disappear. OpenCode receives the manifest-selected default below.
+    }
+    return {
+      ...native,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...existing, default_agent: nativeAgent }),
+    }
+  }
   if (id === 'codex') {
     if (env.CODEX_API_KEY || env.OPENAI_API_KEY || env.CODEX_AUTH_JSON) return Object.keys(native).length ? native : undefined
     if (!apiUrl || !token) return Object.keys(native).length ? native : undefined

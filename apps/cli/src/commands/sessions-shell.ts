@@ -1,10 +1,11 @@
-import { kortixPtyWsUrl, type OpencodePty } from '../api/sandbox-proxy.ts';
+import { kortixPtyWsUrl, sandboxRuntimeClient, type KortixPty } from '../api/sandbox-proxy.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import {
-  loadOpenCodeSession,
+  loadSessionForChat,
+  proxyIdFromSession,
   resolveRunningSessionId,
-  type ResolvedOpenCodeSession,
+  type ResolvedSession,
 } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
@@ -34,7 +35,7 @@ const SHELL_HELP = help`Usage: kortix sessions shell [<session-id>] [options]
 
 Open a raw interactive terminal (PTY) inside a running session's sandbox —
 the same shell you'd get from the "Terminal" panel in the dashboard. Unlike
-\`sessions connect\` (which attaches to the OpenCode agent), this is a plain
+\`sessions connect\` (which opens the ACP agent chat), this is a plain
 shell: no agent, no chat, just a prompt.
 
 Reattaches to the session's existing terminal if one is already running
@@ -84,10 +85,20 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to open a shell in');
   if (!sessionId) return 1;
 
-  const resolved = await loadOpenCodeSession(sessionId, opts, 'sessions shell');
-  if (!resolved) return 1;
+  const base = await loadSessionForChat(sessionId, opts, 'sessions shell');
+  if (!base) return 1;
+  const proxyId = proxyIdFromSession(base.session);
+  if (!proxyId) {
+    process.stderr.write(`${status.err('Session has no reachable runtime yet.')}\n`);
+    return 1;
+  }
+  const resolved: ResolvedRuntimeSession = {
+    ...base,
+    proxyId,
+    runtime: sandboxRuntimeClient({ auth: base.auth, sandboxId: proxyId }),
+  };
 
-  let pty: OpencodePty;
+  let pty: KortixPty;
   try {
     pty = wantNew ? await createPty(resolved) : await ensurePty(resolved);
   } catch (err) {
@@ -106,19 +117,24 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
 /** Reuse the session's existing terminal if one's already running (matches
  *  the dashboard's "ambient shell" — one persistent terminal per session,
  *  never killed on disconnect), else spawn one. */
-async function ensurePty(resolved: ResolvedOpenCodeSession): Promise<OpencodePty> {
-  const existing = await resolved.oc.listPty();
+type ResolvedRuntimeSession = ResolvedSession & {
+  proxyId: string;
+  runtime: ReturnType<typeof sandboxRuntimeClient>;
+};
+
+async function ensurePty(resolved: ResolvedRuntimeSession): Promise<KortixPty> {
+  const existing = await resolved.runtime.listPty();
   if (existing.length > 0) return existing[0]!;
   return createPty(resolved);
 }
 
-function createPty(resolved: ResolvedOpenCodeSession): Promise<OpencodePty> {
-  return resolved.oc.createPty({ title: 'Session terminal', env: { ...PTY_ENV } });
+function createPty(resolved: ResolvedRuntimeSession): Promise<KortixPty> {
+  return resolved.runtime.createPty({ title: 'Session terminal', env: { ...PTY_ENV } });
 }
 
 /** Put the local terminal in raw mode, pipe bytes to/from the remote PTY's
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
-function runPtySession(resolved: ResolvedOpenCodeSession, pty: OpencodePty): Promise<number> {
+function runPtySession(resolved: ResolvedRuntimeSession, pty: KortixPty): Promise<number> {
   const wsUrl = kortixPtyWsUrl(resolved.auth, resolved.proxyId, pty.id);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
@@ -127,7 +143,7 @@ function runPtySession(resolved: ResolvedOpenCodeSession, pty: OpencodePty): Pro
   const sendResize = () => {
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      resolved.oc
+      resolved.runtime
         .updatePty(pty.id, { size: { rows: process.stdout.rows, cols: process.stdout.columns } })
         .catch(() => {});
     }, 100);

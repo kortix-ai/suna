@@ -215,7 +215,11 @@ function AgentEditorModal({
               <section className="space-y-4">
                 <SectionHeader icon={Cpu} title="Routing" />
                 <FieldRow label="Runtime profile">
-                  <Select value={draft.runtime} onValueChange={(value) => set('runtime', value)}>
+                  <Select value={draft.runtime} onValueChange={(value) => setDraft((current) => {
+                    const next = { ...current, runtime: value };
+                    if (runtimes[value]?.harness !== 'opencode') delete next.agent;
+                    return next;
+                  })}>
                     <SelectTrigger variant="popover" className="w-full">
                       <SelectValue placeholder="Choose a runtime" />
                     </SelectTrigger>
@@ -228,14 +232,16 @@ function AgentEditorModal({
                     </SelectContent>
                   </Select>
                 </FieldRow>
-                <FieldRow label="Native agent / profile" hint="optional">
-                  <Input
-                    variant="popover"
-                    value={draft.agent ?? ''}
-                    placeholder="Use the harness default"
-                    onChange={(event) => set('agent', event.target.value || undefined)}
-                  />
-                </FieldRow>
+                {draft.runtime && runtimes[draft.runtime]?.harness === 'opencode' ? (
+                  <FieldRow label="OpenCode agent" hint="optional">
+                    <Input
+                      variant="popover"
+                      value={draft.agent ?? ''}
+                      placeholder="Use OpenCode's default_agent"
+                      onChange={(event) => set('agent', event.target.value || undefined)}
+                    />
+                  </FieldRow>
+                ) : null}
                 {draft.runtime && runtimes[draft.runtime] ? (
                   <InfoBanner tone="info" title={`${runtimes[draft.runtime].harness} owns behavior`}>
                     Edit prompts, models, providers, hooks, modes, and permissions in{' '}

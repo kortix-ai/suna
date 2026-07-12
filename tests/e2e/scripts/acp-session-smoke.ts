@@ -93,6 +93,10 @@ async function main() {
         {
           ...current.json.block,
           runtime: HARNESS,
+          // `agent` is an OpenCode-native entrypoint selector. The other
+          // official adapters select behavior through their runtime profile's
+          // native config and ACP-discovered config options.
+          agent: undefined,
         },
       );
       if (!updated.response.ok)

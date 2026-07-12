@@ -28,9 +28,11 @@ agents:
     secrets: all
   reviewer:
     runtime: codex
-    agent: reviewer
     skills: [code-review]
     connectors: [github]
+  opencode-reviewer:
+    runtime: opencode
+    agent: reviewer
 `;
 
 function errors(input: string): string[] {
@@ -80,6 +82,10 @@ agents:
     runtime: missing
 `);
     expect(paths).toContain('agents.x.runtime');
+  });
+
+  test('only accepts a native agent selector for the OpenCode ACP entrypoint', () => {
+    expect(errors(VALID.replace('runtime: codex\n    skills:', 'runtime: codex\n    agent: reviewer\n    skills:'))).toContain('agents.reviewer.agent');
   });
 
   test('rejects OpenCode-specific behavior and the v2 singular runtime', () => {

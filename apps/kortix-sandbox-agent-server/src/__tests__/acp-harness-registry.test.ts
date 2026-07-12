@@ -71,6 +71,17 @@ describe('ACP harness registry', () => {
     expect(registry.get('codex')?.launch.env).toBeUndefined();
   });
 
+  test('routes a logical Kortix agent to OpenCode through its native default agent', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_NATIVE_AGENT: 'reviewer',
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: 'allow' }),
+    });
+    expect(JSON.parse(registry.get('opencode')?.launch.env?.OPENCODE_CONFIG_CONTENT ?? '{}')).toEqual({
+      permission: 'allow',
+      default_agent: 'reviewer',
+    });
+  });
+
   test('maps the compiled runtime config directory to each harness native environment', () => {
     const registry = createAcpHarnessRegistry({
       KORTIX_RUNTIME_CONFIG_DIR: '.config/agent',

@@ -425,26 +425,9 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
           '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
           '    mkdir -p /workspace/.kortix; \\',
-          // Stage the canonical starter opencode config so the instance warm-up
-          // has the pty plugin + tools to load. For a per-project warm the baked
-          // repo may already ship its own .kortix/opencode — keep it (its config
-          // is what the session actually resolves at runtime) and only fall back
-          // to the staged starter when the repo has none.
-          '    [ -d /workspace/.kortix/opencode ] || cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
-          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
-          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
-          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
-          '    cd /workspace; \\',
-          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
-          '    ready=0; \\',
-          '    for i in $(seq 1 300); do \\',
-          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
-          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
-          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
-          '        sleep 1; \\',
-          '    done; \\',
-          '    echo "=== instance-warm: ready=$ready ==="; \\',
-          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+          // Agent processes are session-selected from kortix.yaml v3. Do not
+          // start or prime a specific harness while capturing the shared image;
+          // all four pinned ACP adapters were verified in the runtime layer.
           // Shared default: wipe /workspace (the session clones into it at boot).
           // Per-project COLD warm (warmRepo): KEEP the baked repo checkout so the
           // daemon boots off it with no clone.
@@ -452,8 +435,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
             ? '    echo "warm-repo: keeping baked /workspace checkout"; \\'
             : '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
           '    rm -rf /opt/kortix/warm-config; \\',
-          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
-          '    rm -f /tmp/oc-warm.log; true',
+          '    echo "=== instance-warm: ACP runtime layer ready ==="; true',
           '',
         ]
       : []),

@@ -321,6 +321,11 @@ mock.module('../projects/opencode-mapping', () => ({
   }),
 }));
 
+mock.module('../projects/runtime-inspection', () => ({
+  sandboxRuntimeEndpoint: async () => null,
+  inspectSandboxRuntime: async () => inspectedRuntime,
+}));
+
 mock.module('../billing/services/compute-metering', () => ({
   reopenComputeForSandbox: async () => undefined,
   endComputeSession: async () => undefined,

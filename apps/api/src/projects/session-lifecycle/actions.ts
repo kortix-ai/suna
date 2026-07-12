@@ -18,7 +18,7 @@ import {
   retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
 } from '../runtime-identity';
-import { inspectSandboxRuntime } from '../opencode-mapping';
+import { inspectSandboxRuntime } from '../runtime-inspection';
 
 export async function deleteSession(input: {
   projectId: string;

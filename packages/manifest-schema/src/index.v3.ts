@@ -53,7 +53,7 @@ export interface RuntimesV3Scan {
 export interface AgentsV3Scan {
   names: string[];
   disabledNames: string[];
-  runtimeRefs: Array<{ agentName: string; runtimeName: string }>;
+  runtimeRefs: Array<{ agentName: string; runtimeName: string; hasNativeAgent: boolean }>;
 }
 
 function validateRelativePath(value: unknown, path: string, issues: ManifestIssue[]): void {
@@ -130,7 +130,7 @@ export function validateAgentsV3(
 ): AgentsV3Scan {
   const names: string[] = [];
   const disabledNames: string[] = [];
-  const runtimeRefs: Array<{ agentName: string; runtimeName: string }> = [];
+  const runtimeRefs: Array<{ agentName: string; runtimeName: string; hasNativeAgent: boolean }> = [];
   if (!isTable(node) || Object.keys(node).length === 0) {
     issues.push({
       path,
@@ -160,7 +160,7 @@ export function validateAgentsV3(
     if (!runtimeName) {
       issues.push({ path: `${where}.runtime`, message: 'runtime is required.', severity: 'error' });
     } else {
-      runtimeRefs.push({ agentName: name, runtimeName });
+      runtimeRefs.push({ agentName: name, runtimeName, hasNativeAgent: typeof raw.agent === 'string' && raw.agent.trim() !== '' });
     }
     if (raw.agent !== undefined && (typeof raw.agent !== 'string' || raw.agent.trim() === '')) {
       issues.push({
@@ -235,6 +235,12 @@ export function validateManifestCrossRefsV3(
       issues.push({
         path: `agents.${ref.agentName}.runtime`,
         message: `runtime "${ref.runtimeName}" does not match a declared runtime profile.`,
+        severity: 'error',
+      });
+    } else if (ref.hasNativeAgent && runtimes.harnessByName[ref.runtimeName] !== 'opencode') {
+      issues.push({
+        path: `agents.${ref.agentName}.agent`,
+        message: 'agent is only supported by the OpenCode ACP entrypoint; Claude, Codex, and Pi behavior is selected by the runtime profile native config.',
         severity: 'error',
       });
     }

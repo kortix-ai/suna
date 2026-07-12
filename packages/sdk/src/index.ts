@@ -78,6 +78,7 @@ export {
   type AcpPendingPermission,
   type AcpPendingPrompts,
   type AcpPendingQuestion,
+  type AcpPendingQuestionItem,
   type AcpStoredEnvelope,
   type AcpTranscriptMessage,
 } from './acp';

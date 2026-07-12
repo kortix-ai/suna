@@ -5,7 +5,7 @@ import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { decodedResponseHeaders } from '../lib/proxy-headers';
-import { inspectSandboxRuntime, sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { inspectSandboxRuntime, sandboxRuntimeEndpoint } from '../runtime-inspection';
 import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
 
 type Envelope = Record<string, unknown>;
@@ -26,7 +26,7 @@ async function resolveAcpTarget(c: any) {
     ))
     .limit(1);
   if (!sandbox?.externalId) return null;
-  const endpoint = await sandboxOpencodeEndpoint(sandbox.externalId, loaded.userId);
+  const endpoint = await sandboxRuntimeEndpoint(sandbox.externalId, loaded.userId);
   if (!endpoint) return null;
   const health = await inspectSandboxRuntime(sandbox.externalId, loaded.userId);
   return {
