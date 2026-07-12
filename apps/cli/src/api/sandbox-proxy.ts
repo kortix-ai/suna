@@ -2,11 +2,17 @@ import type { Auth } from './auth.ts';
 import { ApiError } from './client.ts';
 
 /**
- * The OpenCode HTTP API listens on this port inside every sandbox.
- * The Kortix API exposes it at /v1/p/{sandboxId}/4096/* with the same
- * Bearer-token auth the rest of the CLI uses.
+ * The sandbox daemon exposes OpenCode and PTY helpers on this port. Older CLI
+ * builds talked to OpenCode's internal 4096 port directly, but live sessions are
+ * proxied through the daemon URL returned by the API:
+ *
+ *   https://<host>/v1/p/<external-id>/8000
+ *
+ * Keep this as a fallback only; when a session has `sandbox_url`, callers
+ * should parse the external id and runtime port from that URL.
  */
-export const OPENCODE_PORT = 4096;
+export const DEFAULT_SANDBOX_RUNTIME_PORT = 8000;
+export const OPENCODE_PORT = DEFAULT_SANDBOX_RUNTIME_PORT;
 
 interface RequestOpts {
   apiBase: string;
@@ -39,7 +45,7 @@ function joinProxyUrl(opts: RequestOpts): string {
 
 /**
  * Make an HTTP call against a sandbox service through the Kortix proxy.
- * Used for talking to OpenCode (port 4096) from the CLI.
+ * Used for talking to OpenCode through the sandbox daemon from the CLI.
  */
 export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   const url = joinProxyUrl(opts);
@@ -99,8 +105,17 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
  *  daemon port, same proxy, same auth as everything else, just a different
  *  path than OpenCode's own (now-unused-by-the-CLI) `/pty`. */
 export function kortixPtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
+  return kortixPtyWsUrlForPort(auth, sandboxId, DEFAULT_SANDBOX_RUNTIME_PORT, ptyId);
+}
+
+export function kortixPtyWsUrlForPort(
+  auth: Auth,
+  sandboxId: string,
+  port: number,
+  ptyId: string,
+): string {
   const base = auth.api_base.replace(/\/+$/, '').replace(/\/v1$/, '');
-  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
+  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${port}`;
   const wsBase = httpBase.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
   return `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
 }
@@ -108,6 +123,7 @@ export function kortixPtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): st
 export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
+  port?: number;
 }
 
 /**
@@ -120,7 +136,7 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
     apiBase: auth.api_base,
     token: auth.token,
     sandboxId,
-    port: OPENCODE_PORT,
+    port: opts.port ?? DEFAULT_SANDBOX_RUNTIME_PORT,
   };
   return {
     listSessions: () =>
