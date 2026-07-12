@@ -125,6 +125,14 @@ export interface ModelSelectorProps {
   onSelect: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
   defaultControls?: ModelDefaultControls;
+  /**
+   * Trigger label shown when `selectedModel` is null. Defaults to "No model"
+   * (the chat-input/schedule meaning: falls back to the agent/account/platform
+   * chain). Pass e.g. "Project default" where null specifically means "inherit
+   * the project's configured default" so the pill never implies nothing was
+   * chosen when something concrete will actually run.
+   */
+  unsetLabel?: string;
 }
 
 export function ModelSelector({
@@ -132,6 +140,7 @@ export function ModelSelector({
   selectedModel,
   onSelect,
   defaultControls,
+  unsetLabel = 'No model',
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -200,7 +209,7 @@ export function ModelSelector({
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || 'No model';
+  const displayName = current?.modelName || unsetLabel;
 
   // Reset transient picker state when closing.
   useEffect(() => {
