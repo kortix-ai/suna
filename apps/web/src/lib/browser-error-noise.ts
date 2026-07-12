@@ -117,6 +117,23 @@ function isWebpackRuntimeChunkFilename(filename: unknown): boolean {
   );
 }
 
+// Old WebKit (Safari < 16.4, iOS < 16.4) cannot parse lookbehind assertions
+// `(?<=…)` / `(?<!…)`. JavaScriptCore reads the `(?<` as a named-capture-group
+// opener, sees the following `=` / `!`, and throws
+// `SyntaxError: Invalid regular expression: invalid group specifier name` at
+// chunk PARSE time — so the entire JS chunk fails to load for that visitor.
+// The lookbehind literals live in bundled THIRD-PARTY deps we ship on the
+// marketing site (the GFM email-autolink regex in `mdast-util-gfm-autolink-
+// literal@2.0.1` and `SPLIT_WITH_NEWLINES = /(?<=\n)/` in `@pierre/diffs`),
+// not in first-party source, and the wording is WebKit-specific — V8/Node
+// never produce it (they say "Invalid group"). Only very old Safari/iOS
+// visitors hit it. Suppress this distinctive message so it stops paging
+// Better Stack; a genuine first-party regex regression surfaces with a
+// different message on modern browsers (which all support lookbehind).
+const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
+  'invalid group specifier name',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -300,6 +317,21 @@ export function isClientRequestTimeoutMessage(message: unknown): boolean {
   return CLIENT_REQUEST_TIMEOUT_WRAPPERS.some((re) => re.test(normalized));
 }
 
+/**
+ * Whether a message is the old-WebKit (< 16.4) lookbehind parse failure
+ * `SyntaxError: Invalid regular expression: invalid group specifier name`.
+ * The lookbehind lives in bundled third-party deps
+ * (`mdast-util-gfm-autolink-literal`, `@pierre/diffs`), the wording is
+ * WebKit-specific (V8/Node say "Invalid group"), and only very old Safari/iOS
+ * visitors hit it — never page Better Stack for it.
+ */
+export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).toLowerCase();
+  return OLD_WEBKIT_REGEX_NOISE_PATTERNS.some((pattern) =>
+    normalized.includes(pattern.toLowerCase()),
+  );
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -348,6 +380,12 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // SDK's `ApiError` reaches window.onerror / unhandledrejection before
   // `handleApiError` can gate it.
   if (isExpectedBillingGateMessage(message)) {
+    return true;
+  }
+
+  // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
+  // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
+  if (isOldWebkitRegexNoiseMessage(message)) {
     return true;
   }
 
@@ -423,6 +461,14 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // pages Better Stack. Real `ApiError`s are never matched — only the exact
   // strings the billing gate emits are.
   if (isExpectedBillingGateMessage(message)) {
+    return true;
+  }
+
+  // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
+  // deps on the marketing site — WebKit-specific wording, only old Safari/iOS
+  // visitors hit it. The de-minified frame points at our own chunk, so this
+  // is matched by message, not by source.
+  if (isOldWebkitRegexNoiseMessage(message)) {
     return true;
   }
 

@@ -7,6 +7,7 @@ import {
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
+  isOldWebkitRegexNoiseMessage,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -794,4 +795,82 @@ test('does NOT suppress a real 5xx server ApiError', () => {
       `expected real server error "${value}" to keep reporting`,
     )
   }
+})
+
+// Reproduces Better Stack error 6d987ab4...34e7ed (1 occurrence, 0 users),
+// Kortix Frontend (prod), application_id 2346967: a Safari 15.6.1 visitor on
+// the marketing homepage (`https://kortix.com/`) hit a chunk parse-time
+// `SyntaxError: Invalid regular expression: invalid group specifier name`.
+// Old WebKit (< 16.4) cannot parse lookbehind assertions — JSC reads `(?<` as
+// a named-capture-group opener, sees the following `=` / `!`, and throws this
+// message, failing the whole chunk. The lookbehind literals live in bundled
+// THIRD-PARTY deps (`mdast-util-gfm-autolink-literal@2.0.1`'s GFM email
+// autolink regex `/(?<=^|\s|\p{P}|\p{S})…/gu` and `@pierre/diffs`'s
+// `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is WebKit-specific (V8/Node
+// say "Invalid group"), and only very old Safari/iOS visitors hit it. The
+// de-minified frame points at our own chunk, so it is matched by message, not
+// by source.
+const OLD_WEBKIT_REGEX_EVENTS = [
+  // The exact raw event value from Better Stack (Safari 15.6.1, macOS 10.15.7).
+  'Invalid regular expression: invalid group specifier name',
+  // window.onerror can prefix the message with the exception type.
+  'SyntaxError: Invalid regular expression: invalid group specifier name',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: Invalid regular expression: invalid group specifier name',
+]
+
+test('classifies every old-WebKit lookbehind parse variant as noise', () => {
+  for (const message of OLD_WEBKIT_REGEX_EVENTS) {
+    assert.equal(
+      isOldWebkitRegexNoiseMessage(message),
+      true,
+      `expected ${message} to be classified as old-WebKit regex noise`,
+    )
+  }
+})
+
+test('suppresses an old-WebKit lookbehind Sentry event from the marketing site', () => {
+  for (const value of OLD_WEBKIT_REGEX_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/76904-c52ab52c4900447c.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an old-WebKit lookbehind unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: Invalid regular expression: invalid group specifier name',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real V8/Node regex error with different wording', () => {
+  // Modern V8/Node say "Invalid group" / "Invalid regular expression: \(\?<=\)",
+  // never "invalid group specifier name" — those keep reporting.
+  assert.equal(isOldWebkitRegexNoiseMessage('Invalid regular expression: /(?!<=)/: Invalid group'), false)
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: { values: [{ value: 'TypeError: Cannot read properties of undefined (reading id)' }] },
+    }),
+    false,
+  )
 })

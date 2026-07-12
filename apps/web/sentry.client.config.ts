@@ -75,6 +75,17 @@ if (SENTRY_DSN) {
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
+      // Old WebKit (Safari/iOS < 16.4) cannot parse lookbehind assertions
+      // (`(?<=…)` / `(?<!…)`): JSC reads `(?<` as a named-capture-group opener,
+      // sees `=` / `!`, and throws `SyntaxError: Invalid regular expression:
+      // invalid group specifier name` at chunk PARSE time, failing the whole
+      // chunk. The lookbehind literals live in bundled third-party deps
+      // (`mdast-util-gfm-autolink-literal` GFM email-autolink regex +
+      // `@pierre/diffs` `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is
+      // WebKit-specific (V8/Node say "Invalid group"), and only very old
+      // Safari/iOS visitors hit it. `browser-error-noise.ts` drops it from
+      // `beforeSend` too; this string gate covers frameless onerror captures.
+      'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
       // Third-party injected scripts / wallet extensions
