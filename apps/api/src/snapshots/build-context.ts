@@ -49,6 +49,14 @@ const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
 const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
+const agentSrcDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+const agentPackageDir = () => resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server');
+
+// Snapshot requests can race after a daemon source edit while the local API is
+// running under `bun --hot`. Collapse every stale/missing-artifact repair onto
+// one compile so simultaneous default + per-project-warm builds cannot run two
+// `bun build --compile` processes against the same output file.
+const inflightAgentBuilds = new Map<string, Promise<void>>();
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -105,31 +113,11 @@ export async function stageBuildContext(
   const SLACK_CLI_SRC_PATH = slackCliSrcPath();
   const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
   const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await ensureCanonicalAgentBinaryFresh(AGENT_BIN_PATH);
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
-  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
-  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
-  // dist binary — an edited src/ with a stale dist/ ships old code under a
-  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
-  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
-  // binary). Refuse to stage a context whose binary predates the source.
-  // Env-overridden binary paths skip this — the caller is pinning on purpose.
-  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const binMtime = (await stat(AGENT_BIN_PATH)).mtimeMs;
-    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    const newestSrc = await newestMtimeMs(srcDir);
-    if (newestSrc > binMtime) {
-      throw new Error(
-        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
-        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
-        `or the image will bake stale code under a fresh content hash`,
-      );
-    }
-  }
-
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
@@ -246,6 +234,82 @@ async function newestMtimeMs(dir: string): Promise<number> {
   return newest;
 }
 
+async function artifactNeedsBuild(binaryPath: string, sourceDir: string): Promise<boolean> {
+  const binary = await stat(binaryPath).catch(() => null);
+  if (!binary?.isFile()) return true;
+  return (await newestMtimeMs(sourceDir)) > binary.mtimeMs;
+}
+
+/**
+ * Keep the checkout-owned daemon artifact synchronized with its source.
+ *
+ * The worktree/dev launchers build once at startup, but the API itself hot
+ * reloads. A later source edit therefore used to make every default and warm
+ * snapshot retry fail until a human manually rebuilt or restarted the stack.
+ * Repair at the staging boundary instead: this is the last point before bytes
+ * are hashed/gzipped and sent to either provider.
+ *
+ * An explicit KORTIX_SNAPSHOT_AGENT_BIN_PATH is an immutable deployment pin;
+ * it is validated but never rebuilt or compared to checkout source.
+ */
+export async function ensureAgentArtifactFresh(opts: {
+  binaryPath: string;
+  sourceDir: string;
+  build: () => Promise<void>;
+}): Promise<void> {
+  if (!(await artifactNeedsBuild(opts.binaryPath, opts.sourceDir))) return;
+
+  let buildPromise = inflightAgentBuilds.get(opts.binaryPath);
+  if (!buildPromise) {
+    buildPromise = (async () => {
+      await opts.build();
+    })().finally(() => {
+      inflightAgentBuilds.delete(opts.binaryPath);
+    });
+    inflightAgentBuilds.set(opts.binaryPath, buildPromise);
+  }
+  await buildPromise;
+
+  await assertExists(opts.binaryPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  if (await artifactNeedsBuild(opts.binaryPath, opts.sourceDir)) {
+    throw new Error(
+      `kortix-agent automatic rebuild completed but ${opts.binaryPath} is still older than ${opts.sourceDir}; ` +
+      `refusing to bake stale code`,
+    );
+  }
+}
+
+async function ensureCanonicalAgentBinaryFresh(binaryPath: string): Promise<void> {
+  if (process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
+    await assertExists(binaryPath, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+    return;
+  }
+
+  const packageDir = agentPackageDir();
+  await ensureAgentArtifactFresh({
+    binaryPath,
+    sourceDir: agentSrcDir(),
+    build: async () => {
+      console.warn(
+        `[snapshots] kortix-agent artifact is missing or stale; rebuilding it before staging`,
+      );
+      try {
+        await execFileAsyncBC('bun', ['run', 'build'], {
+          cwd: packageDir,
+          timeout: 10 * 60_000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `kortix-agent automatic rebuild failed in ${packageDir}: ${detail}`,
+          { cause: err },
+        );
+      }
+    },
+  });
+}
+
 async function assertExists(path: string, envVarHint: string): Promise<void> {
   if (!isAbsolute(path)) {
     throw new Error(`${envVarHint} must be an absolute path (got "${path}")`);
@@ -299,7 +363,7 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
  */
 export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
   const AGENT_BIN_PATH = agentBinPath();
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await ensureCanonicalAgentBinaryFresh(AGENT_BIN_PATH);
   // Refuse an empty/truncated dist (e.g. an interrupted `bun build`) at the source.
   // The host re-validates (ELF/size + post-swap size match), but failing here keeps
   // a dead agent from ever being uploaded + swapped into a template.
