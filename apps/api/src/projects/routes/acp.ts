@@ -4,19 +4,10 @@ import { and, asc, eq, gt } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
+import { decodedResponseHeaders } from '../lib/proxy-headers';
 import { inspectSandboxRuntime, sandboxOpencodeEndpoint } from '../opencode-mapping';
 
 type Envelope = Record<string, unknown>;
-
-function decodedResponseHeaders(upstream: Response): Headers {
-  const headers = new Headers(upstream.headers);
-  // fetch transparently decodes gzip/br/zstd. Re-emitting the original encoding
-  // or compressed content length makes downstream clients decode plain bytes a
-  // second time (Bun surfaces this as ZstdDecompressionError).
-  headers.delete('content-encoding');
-  headers.delete('content-length');
-  return headers;
-}
 
 async function resolveAcpTarget(c: any) {
   const projectId = c.req.param('projectId');
