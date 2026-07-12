@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../executor/sync';
-import { saveTeamsInstall, setTeamsOrgInstalled } from './install-store';
+import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -77,8 +77,12 @@ teamsOauthApp.get('/callback', async (c: any) => {
   );
   const published = await publishTeamsAppToCatalog({ tenantId, baseUrl: state.baseUrl, appId }).catch(() => ({
     ok: false,
+    teamsAppId: undefined as string | undefined,
   }));
-  if (published.ok) await setTeamsOrgInstalled(state.projectId, true).catch(() => {});
+  if (published.ok) {
+    await setTeamsOrgInstalled(state.projectId, true).catch(() => {});
+    if (published.teamsAppId) await setTeamsCatalogAppId(state.projectId, published.teamsAppId).catch(() => {});
+  }
   void reconcileChannelConnectors(state.projectId);
 
   return c.redirect(dest(published.ok ? 'connected' : 'consented'), 302);

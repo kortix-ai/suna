@@ -26,7 +26,11 @@ export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId
     appId,
     messagingEndpoint,
     adminConsentUrl: `https://login.microsoftonline.com/organizations/adminconsent?client_id=${encodeURIComponent(appId)}`,
-    deepLinkUrl: `https://teams.microsoft.com/l/app/${encodeURIComponent(appId)}`,
+    deepLinkUrl: null,
     byo,
   };
+}
+
+export function teamsDeepLink(catalogAppId: string): string {
+  return `https://teams.microsoft.com/l/app/${encodeURIComponent(catalogAppId)}`;
 }

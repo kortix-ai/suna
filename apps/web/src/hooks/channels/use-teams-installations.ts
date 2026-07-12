@@ -10,6 +10,8 @@ export interface TeamsInstallation {
   botId: string | null;
   serviceUrl: string | null;
   byo: boolean;
+  orgInstalled: boolean;
+  catalogAppId: string | null;
   installedAt: string;
 }
 

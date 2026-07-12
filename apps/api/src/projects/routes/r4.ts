@@ -54,7 +54,7 @@ import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { type QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
-import { teamsMode } from '../../channels/teams-mode';
+import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
@@ -917,6 +917,7 @@ projectsApp.openapi(
       ...teamsMode(baseUrl, { projectId, byoAppId }),
       orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
       orgInstalled: install?.orgInstalled ?? false,
+      deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
   },
 );

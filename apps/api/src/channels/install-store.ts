@@ -582,6 +582,7 @@ export const MS_TEAMS_BOT_ID = 'MS_TEAMS_BOT_ID';
 export const MS_TEAMS_APP_ID = 'MS_TEAMS_APP_ID';
 export const MS_TEAMS_APP_PASSWORD = 'MS_TEAMS_APP_PASSWORD';
 export const MS_TEAMS_ORG_INSTALLED = 'MS_TEAMS_ORG_INSTALLED';
+export const MS_TEAMS_CATALOG_APP_ID = 'MS_TEAMS_CATALOG_APP_ID';
 
 const TEAMS_KEYS = [
   MS_TEAMS_TENANT_ID,
@@ -592,6 +593,7 @@ const TEAMS_KEYS = [
   MS_TEAMS_APP_ID,
   MS_TEAMS_APP_PASSWORD,
   MS_TEAMS_ORG_INSTALLED,
+  MS_TEAMS_CATALOG_APP_ID,
 ] as const;
 
 export interface TeamsInstallSummary {
@@ -602,6 +604,7 @@ export interface TeamsInstallSummary {
   serviceUrl: string | null;
   byo: boolean;
   orgInstalled: boolean;
+  catalogAppId: string | null;
   installedAt: string;
 }
 
@@ -644,12 +647,17 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
     serviceUrl: input.serviceUrl ?? null,
     byo: Boolean(input.appId),
     orgInstalled: false,
+    catalogAppId: null,
     installedAt: new Date().toISOString(),
   };
 }
 
 export async function setTeamsOrgInstalled(projectId: string, installed: boolean): Promise<void> {
   await upsertSecret(projectId, MS_TEAMS_ORG_INSTALLED, installed ? '1' : '');
+}
+
+export async function setTeamsCatalogAppId(projectId: string, catalogAppId: string): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
 }
 
 export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
@@ -687,6 +695,7 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
     serviceUrl: secrets[MS_TEAMS_SERVICE_URL] || null,
     byo: Boolean(secrets[MS_TEAMS_APP_ID]),
     orgInstalled: Boolean(secrets[MS_TEAMS_ORG_INSTALLED]),
+    catalogAppId: secrets[MS_TEAMS_CATALOG_APP_ID] || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
 }
