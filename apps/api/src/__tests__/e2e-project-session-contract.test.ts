@@ -2119,6 +2119,27 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 
+  test('rejects removed OpenCode model aliases on session create', async () => {
+    const app = createApp();
+
+    for (const body of [{ opencode_model: 'anthropic/claude-opus-4-8' }, { opencodeModel: 'anthropic/claude-opus-4-8' }]) {
+      sessionRow = null;
+      sandboxProvisionCalls = 0;
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      expect(res.status).toBe(400);
+      const payload = await res.json();
+      expect(payload).toMatchObject({ message: 'Validation failed' });
+      expect(JSON.stringify(payload)).toContain(Object.keys(body)[0]!);
+      expect(sessionRow).toBeNull();
+      expect(sandboxProvisionCalls).toBe(0);
+    }
+  });
+
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {
     const app = createApp();
     const runtimeContext = {

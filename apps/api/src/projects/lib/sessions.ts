@@ -648,12 +648,18 @@ export async function createProjectSession(input: {
   if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
+  if ('opencode_model' in body || 'opencodeModel' in body) {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'Use model or runtime_model for session model overrides', code: 'invalid_body' },
+      },
+    };
+  }
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(
-    body.model ?? body.runtime_model ?? body.opencode_model ?? body.opencodeModel,
-  );
+  const opencodeModel = normalizeString(body.model ?? body.runtime_model);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
