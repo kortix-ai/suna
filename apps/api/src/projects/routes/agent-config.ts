@@ -46,6 +46,7 @@ import {
   applyAgentBlockV2,
   applyAgentBlockV3,
   applyDefaultAgentV2,
+  applyRuntimeProfilesV3,
   readAgentBlockV2,
   readAgentBlockV3,
 } from '../lib/agent-config-v2';
@@ -89,6 +90,13 @@ const AgentBlockSchema = z
   .strict();
 
 const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
+const RuntimeProfileSchema = z.object({
+  harness: z.enum(['claude', 'codex', 'opencode', 'pi']),
+  config_dir: z.string().min(1).max(500).optional(),
+}).strict();
+const RuntimeProfilesBodySchema = z.object({
+  runtimes: z.record(z.string(), RuntimeProfileSchema),
+});
 const DefaultAgentResponseSchema = z.object({
   ok: z.boolean(),
   default_agent: z.string(),
@@ -144,6 +152,73 @@ function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string
 // behavior from the agent's `.md` frontmatter+body. schemaVersion tells the
 // UI whether the full editor applies (2) or it should degrade to the limited
 // scope editor (1).
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/runtime-profiles',
+    tags: ['projects'],
+    summary: 'Get ACP runtime profiles from kortix.yaml v3',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Runtime profiles'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const manifest = await loadManifestForEdit(loaded.row).catch((error) => null);
+    if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
+    if (manifest.schemaVersion !== 3) {
+      return c.json({ schema_version: manifest.schemaVersion, editable: false, runtimes: {} });
+    }
+    const runtimes = manifest.raw.runtimes;
+    if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) {
+      return c.json({ error: '`runtimes` is malformed', code: 'manifest_malformed' }, 400);
+    }
+    return c.json({ schema_version: 3, editable: true, runtimes });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/runtime-profiles',
+    tags: ['projects'],
+    summary: 'Replace ACP runtime profiles in kortix.yaml v3',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: RuntimeProfilesBodySchema } } },
+    },
+    responses: { 200: json(z.any(), 'Updated runtime profiles'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const parsed = RuntimeProfilesBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+    const manifest = await loadManifestForEdit(loaded.row).catch(() => null);
+    if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
+    const applied = applyRuntimeProfilesV3(manifest, parsed.data.runtimes);
+    if (!applied.ok) return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+    manifest.raw = applied.raw;
+    const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      await commitMultipleFilesToBranch(gitProject, {
+        files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+        message: 'chore: update ACP runtime profiles',
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (error) {
+      return c.json({ error: `Failed to commit runtime profiles: ${(error as Error).message || String(error)}` }, 502);
+    }
+    return c.json({ schema_version: 3, editable: true, runtimes: parsed.data.runtimes });
+  },
+);
+
 projectsApp.openapi(
   createRoute({
     method: 'get',

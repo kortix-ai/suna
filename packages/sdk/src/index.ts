@@ -59,6 +59,7 @@ export {
   acpTranscriptJsonl,
   acpTranscriptMarkdown,
   projectAcpChatItems,
+  projectAcpPendingPrompts,
   projectAcpTranscript,
   projectAcpEndpoint,
   promptProjectAcpSession,
@@ -74,6 +75,9 @@ export {
   type AcpChatItem,
   type AcpToolCall,
   type AcpPlan,
+  type AcpPendingPermission,
+  type AcpPendingPrompts,
+  type AcpPendingQuestion,
   type AcpStoredEnvelope,
   type AcpTranscriptMessage,
 } from './acp';

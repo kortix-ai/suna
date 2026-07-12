@@ -1,12 +1,14 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { useSession } from '@kortix/sdk/react';
-import { projectAcpChatItems } from '@kortix/sdk';
+import { projectAcpChatItems, projectAcpPendingPrompts } from '@kortix/sdk';
 import { Bot, Brain, ShieldCheck, Terminal, User } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
 import { SessionSiteHeader } from './header/session-site-header';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -38,6 +40,9 @@ export function AcpSessionChat({
     setConfigOption,
   } = acp;
   const items = useMemo(() => projectAcpChatItems(envelopes), [envelopes]);
+  const pendingPrompts = useMemo(() => projectAcpPendingPrompts(envelopes), [envelopes]);
+  const pendingPermissionIds = useMemo(() => new Set(pendingPrompts.permissions.map((request) => JSON.stringify(request.id))), [pendingPrompts.permissions]);
+  const pendingQuestionIds = useMemo(() => new Set(pendingPrompts.questions.map((request) => JSON.stringify(request.id))), [pendingPrompts.questions]);
   const isSidePanelOpen = useKortixComputerStore((state) => state.isSidePanelOpen);
   const setIsSidePanelOpen = useKortixComputerStore((state) => state.setIsSidePanelOpen);
   useEffect(() => { if (ready) onReady?.(); }, [onReady, ready]);
@@ -91,26 +96,32 @@ export function AcpSessionChat({
               return (
                 <div key={item.id} className="bg-popover rounded-md border px-4 py-3">
                   <div className="mb-2 flex items-center gap-2 text-xs font-medium capitalize"><Icon className="size-3.5" />{item.role}</div>
-                  <div className="text-sm whitespace-pre-wrap text-pretty">{item.text}</div>
+                  {item.role === 'user'
+                    ? <div className="text-sm whitespace-pre-wrap text-pretty">{item.text}</div>
+                    : <UnifiedMarkdown content={item.text} isStreaming={busy && index === items.length - 1} />}
                 </div>
               );
             }
-            if (item.kind === 'tool') return <AcpToolCallCard key={item.id} tool={item} />;
+            if (item.kind === 'tool') return <AcpToolCallCard key={item.id} tool={item} sessionId={sessionId} />;
             if (item.kind === 'plan') return <AcpPlanCard key={`plan-${index}`} plan={item} />;
             if (item.kind === 'permission') {
-              const options = Array.isArray(item.params.options) ? item.params.options as Array<any> : [];
+              if (!pendingPermissionIds.has(JSON.stringify(item.id))) return null;
+              const request = pendingPrompts.permissions.find((candidate) => JSON.stringify(candidate.id) === JSON.stringify(item.id));
+              const options = request?.options ?? [];
               return (
                 <div key={index} className="bg-popover rounded-md border px-4 py-3">
-                  <div className="mb-3 flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" />Permission requested</div>
-                  <pre className="text-muted-foreground mb-3 overflow-x-auto text-xs">{JSON.stringify(item.params, null, 2)}</pre>
+                  <div className="mb-1 flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" />Permission requested</div>
+                  <div className="text-muted-foreground mb-3 text-sm">{request?.permission ?? 'The agent needs approval to continue.'}</div>
+                  {request?.patterns.length ? <div className="mb-3 space-y-1">{request.patterns.map((pattern) => <code key={pattern} className="bg-muted block rounded px-2 py-1 text-xs">{pattern}</code>)}</div> : null}
                   <div className="flex flex-wrap gap-2">
-                    {options.map((option) => <Button key={String(option.optionId ?? option.id)} size="sm" onClick={() => respondPermission(item.id, String(option.optionId ?? option.id))}>{String(option.name ?? option.title ?? option.optionId ?? option.id)}</Button>)}
+                    {options.map((option) => <Button key={String(option.optionId ?? option.id ?? option.value)} size="sm" onClick={() => respondPermission(item.id, String(option.optionId ?? option.id ?? option.value))}>{option.label}</Button>)}
                     <Button size="sm" variant="outline" onClick={() => respondPermission(item.id)}>Reject</Button>
                   </div>
                 </div>
               );
             }
             if (item.kind === 'question') {
+              if (!pendingQuestionIds.has(JSON.stringify(item.id))) return null;
               return (
                 <div key={index} className="bg-popover rounded-md border px-4 py-3">
                   <div className="mb-3 flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" />Input requested</div>
@@ -137,7 +148,7 @@ export function AcpSessionChat({
                               })}
                             </div>
                           ) : (
-                            <pre className="text-muted-foreground overflow-x-auto text-xs">{JSON.stringify(item.params, null, 2)}</pre>
+                            <AcpTextAnswer onSubmit={(value) => respondQuestion(item.id, { [key]: value })} />
                           )}
                         </div>
                       );
@@ -181,4 +192,21 @@ function bytesToBase64(bytes: Uint8Array): string {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
   }
   return btoa(binary);
+}
+
+function AcpTextAnswer({ onSubmit }: { onSubmit: (value: string) => void }) {
+  const [value, setValue] = useState('');
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const answer = value.trim();
+        if (answer) onSubmit(answer);
+      }}
+    >
+      <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder="Type your answer" />
+      <Button type="submit" size="sm" disabled={!value.trim()}>Submit</Button>
+    </form>
+  );
 }

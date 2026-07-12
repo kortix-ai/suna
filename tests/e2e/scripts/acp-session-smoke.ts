@@ -11,6 +11,7 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const HARNESS = process.env.E2E_ACP_HARNESS || "opencode";
 const PROVIDER = process.env.E2E_ACP_PROVIDER || "daytona";
+const KEEP_PROJECT = process.env.E2E_ACP_KEEP_PROJECT === "1";
 if (!["opencode", "claude", "codex", "pi"].includes(HARNESS))
   throw new Error(`Unsupported E2E_ACP_HARNESS=${HARNESS}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -145,6 +146,8 @@ async function main() {
     const endpoint = `${API}/projects/${projectId}/sessions/${sessionId}/acp`;
     const client = createAcpClient({ endpoint });
     let assistant = "";
+    const toolCalls = new Set<string>();
+    const completedTools = new Set<string>();
     const stream = client.connect({
       onEvent(event) {
         const envelope = event.envelope as any;
@@ -153,6 +156,14 @@ async function main() {
           envelope.params?.update?.sessionUpdate === "agent_message_chunk"
         )
           assistant += envelope.params.update.content?.text ?? "";
+        if (envelope.method === "session/update") {
+          const update = envelope.params?.update;
+          if (update?.sessionUpdate === "tool_call" || update?.sessionUpdate === "tool_call_update") {
+            const id = String(update.toolCallId ?? update.id ?? "");
+            if (id) toolCalls.add(id);
+            if (id && (update.status === "completed" || update.status === "failed")) completedTools.add(id);
+          }
+        }
         if (
           envelope.method === "session/request_permission" &&
           "id" in envelope
@@ -175,24 +186,31 @@ async function main() {
       clientCapabilities: { auth: { _meta: { gateway: true } } },
       clientInfo: { name: "kortix-e2e", version: "1" },
     });
-    const conversationId =
-      start.runtime_session_id ??
-      (await client.newSession({ cwd: "/workspace", mcpServers: [] }))
-        .sessionId;
-    if (start.runtime_session_id)
-      await client.loadSession({
-        sessionId: conversationId,
+    const sessionResult = start.runtime_session_id
+      ? await client.loadSession({
+        sessionId: start.runtime_session_id,
         cwd: "/workspace",
         mcpServers: [],
-      });
+      })
+      : await client.newSession({ cwd: "/workspace", mcpServers: [] });
+    const conversationId = start.runtime_session_id ?? ('sessionId' in sessionResult ? sessionResult.sessionId : null);
+    if (!conversationId) throw new Error('ACP session/new returned no sessionId');
+    const configurable = sessionResult.configOptions?.find(
+      (option: any) => option.id && option.currentValue !== undefined,
+    );
+    if (configurable) {
+      await client.setSessionConfigOption(conversationId, configurable.id, configurable.currentValue);
+    }
     const completed = await client.prompt(conversationId, [
-      { type: "text", text: "Reply with exactly: ACP_PONG" },
+      { type: "text", text: "Use your shell tool to run pwd, then reply with exactly: ACP_PONG" },
     ]);
     if (!completed.stopReason) throw new Error("prompt returned no stopReason");
     await sleep(500);
     stream.close();
     if (!assistant.includes("ACP_PONG"))
       throw new Error(`assistant output missing ACP_PONG: ${assistant}`);
+    if (toolCalls.size === 0 || completedTools.size === 0)
+      throw new Error(`ACP turn did not stream a completed tool call (calls=${toolCalls.size}, completed=${completedTools.size})`);
 
     const transcript = await client.transcript();
     const methods = transcript.envelopes
@@ -209,10 +227,13 @@ async function main() {
       mcpServers: [],
     });
     console.log(
-      `[acp-smoke] PASS harness=${HARNESS} runtime=${start.runtime_id} conversation=${conversationId} stop=${completed.stopReason}`,
+      `[acp-smoke] PASS harness=${HARNESS} runtime=${start.runtime_id} conversation=${conversationId} tools=${toolCalls.size} config=${configurable?.id ?? 'none'} stop=${completed.stopReason}`,
     );
+    if (KEEP_PROJECT) {
+      console.log(`[acp-smoke] KEEP email=${email} password=${password} project=${projectId} session=${sessionId}`);
+    }
   } finally {
-    await api("DELETE", `/projects/${projectId}`);
+    if (!KEEP_PROJECT) await api("DELETE", `/projects/${projectId}`);
   }
 }
 

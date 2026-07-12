@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   activeServerKey,
-  canQueryRuntimeSession,
   CACHE_SCOPE_GLOBAL,
   clearProjectRuntimeProviderCache,
   getLSCache,
@@ -55,31 +54,6 @@ describe('unwrap', () => {
     expect(() => unwrap({ error: 42, response: new Response(null, { status: 503 }) })).toThrow(
       'Server returned 503',
     );
-  });
-});
-
-// ============================================================================
-// canQueryRuntimeSession — rejects Kortix's own project-session UUIDs (which
-// aren't real runtime session ids and would 404 the opencode API).
-// ============================================================================
-
-describe('canQueryRuntimeSession', () => {
-  test('rejects null/undefined/empty', () => {
-    expect(canQueryRuntimeSession(null)).toBe(false);
-    expect(canQueryRuntimeSession(undefined)).toBe(false);
-    expect(canQueryRuntimeSession('')).toBe(false);
-  });
-
-  test('rejects a v4 UUID (the Kortix project-session id shape)', () => {
-    expect(canQueryRuntimeSession('550e8400-e29b-41d4-a716-446655440000')).toBe(false);
-  });
-
-  test('accepts a real runtime session id (ses_<...> shape)', () => {
-    expect(canQueryRuntimeSession('ses_01hzxk3n8g8g8g8g8g8g8g8g')).toBe(true);
-  });
-
-  test('accepts an arbitrary non-UUID string', () => {
-    expect(canQueryRuntimeSession('not-a-uuid-at-all')).toBe(true);
   });
 });
 

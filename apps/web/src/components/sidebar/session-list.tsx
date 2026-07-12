@@ -41,7 +41,6 @@ import {
   useRuntimeSessions,
   useUpdateRuntimeSession,
 } from '@/hooks/runtime/use-runtime-sessions';
-import { useBackgroundSessionPrefetch } from '@/hooks/runtime/use-session-prefetch';
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
 import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
@@ -453,7 +452,6 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const [displayLimit, setDisplayLimit] = useState(SESSION_PAGE_SIZE);
 
   const { data: sessions, isLoading, error, refetch } = useRuntimeSessions();
-  const { prefetchOnHover } = useBackgroundSessionPrefetch(sessions);
   const { mutate: deleteSession, isPending: isDeleting } = useDeleteRuntimeSession();
   const { mutate: updateSession } = useUpdateRuntimeSession();
 
@@ -846,7 +844,6 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     onRename: handleRenameSession,
     onArchive: handleArchiveSession,
     onCompact: handleCompactSession,
-    onPrefetch: prefetchOnHover,
   };
 
   return (

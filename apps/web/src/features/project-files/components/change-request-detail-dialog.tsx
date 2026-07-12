@@ -205,7 +205,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
   const router = useRouter();
   const projectId = useProjectContext()?.projectId ?? '';
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
-  const manifestFilename = manifestVersion === 2 ? 'kortix.yaml' : 'kortix.toml';
+  const manifestFilename = manifestVersion && manifestVersion >= 2 ? 'kortix.yaml' : 'kortix.toml';
 
   const mergeMutation = useMergeChangeRequest();
   const closeMutation = useCloseChangeRequest();

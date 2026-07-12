@@ -9,7 +9,6 @@ import { useProjectConfig } from '@kortix/sdk/react';
 import {
   type Command,
   useRuntimeAgents,
-  useRuntimeCommands,
   useRuntimeProviders,
 } from '@/hooks/runtime/use-runtime-sessions';
 
@@ -76,9 +75,12 @@ export function ComposerChatInput({
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
-  const { data: commands } = useRuntimeCommands();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
+  const commands: Command[] = (projectConfig?.commands ?? []).map((command) => ({
+    ...command,
+    id: command.name,
+  }));
   const local = useRuntimeLocal({
     agents,
     providers,
@@ -131,7 +133,7 @@ export function ComposerChatInput({
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
-      commands={commands || []}
+      commands={commands}
     />
   );
 }

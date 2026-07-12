@@ -22,6 +22,8 @@ export interface CurrentRuntimeState {
    *  scoped APIs like per-sandbox API keys that key on the DB row, not the
    *  external id (which the backend would mistake for the primary key). */
   dbSandboxId: string | null;
+  projectId: string | null;
+  sessionId: string | null;
   version: number;
 }
 
@@ -29,6 +31,8 @@ let state: CurrentRuntimeState = {
   url: null,
   sandboxId: null,
   dbSandboxId: null,
+  projectId: null,
+  sessionId: null,
   version: 0,
 };
 
@@ -56,10 +60,12 @@ export function setCurrentRuntime(
   url: string | null,
   sandboxId: string | null = null,
   dbSandboxId: string | null = null,
+  projectId: string | null = null,
+  sessionId: string | null = null,
 ): void {
-  if (state.url === url && state.sandboxId === sandboxId && state.dbSandboxId === dbSandboxId)
+  if (state.url === url && state.sandboxId === sandboxId && state.dbSandboxId === dbSandboxId && state.projectId === projectId && state.sessionId === sessionId)
     return;
-  state = { url, sandboxId, dbSandboxId, version: state.version + 1 };
+  state = { url, sandboxId, dbSandboxId, projectId, sessionId, version: state.version + 1 };
   for (const listener of listeners) listener();
 }
 
@@ -76,4 +82,12 @@ export function getCurrentRuntimeSandboxId(): string | null {
 /** Read the current runtime DB sandbox id (platform `sandbox_id`) outside React. */
 export function getCurrentRuntimeDbSandboxId(): string | null {
   return state.dbSandboxId;
+}
+
+export function getCurrentRuntimeProjectId(): string | null {
+  return state.projectId;
+}
+
+export function getCurrentRuntimeSessionId(): string | null {
+  return state.sessionId;
 }

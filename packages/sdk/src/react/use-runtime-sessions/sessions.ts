@@ -1,14 +1,21 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
-import { useRuntimeCompactionStore } from '../../browser/stores/runtime-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '../../runtime/wire-types';
+import {
+  createProjectSession,
+  deleteProjectSession,
+  getProjectSession,
+  listProjectSessions,
+  updateProjectSession,
+  type ProjectSession,
+} from '../../core/rest/projects-client';
+import { getFileStatus } from '../../core/files/client';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
+import { getLSCache, setLSCache, LS_SESSIONS } from './shared';
 
 // ============================================================================
 // Session Hooks
@@ -20,18 +27,18 @@ export function useRuntimeSessions(enabled = true) {
   // instant the sandbox switches — returning to a warm session hits its cached
   // list rather than refetching from scratch.
   const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
+  const projectId = useCurrentRuntime((s) => s.projectId) ?? undefined;
   return useQuery<Session[]>({
     queryKey: runtimeKeys.sessions(serverId),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.list({ limit: 10000 });
-      const sessions = unwrap(result);
+      if (!projectId) return [];
+      const sessions = (await listProjectSessions(projectId)).map(projectSessionToLegacyView);
       const sorted = sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
       setLSCache(LS_SESSIONS, sorted);
       return sorted;
     },
     placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
-    enabled: enabled && runtimeReady,
+    enabled: enabled && runtimeReady && !!projectId,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -53,15 +60,14 @@ export function useRuntimeSessions(enabled = true) {
 export function useRuntimeSession(sessionId: string) {
   const queryClient = useQueryClient();
   const runtimeReady = useRuntimeReady();
-  const canQuerySession = canQueryRuntimeSession(sessionId);
+  const projectId = useCurrentRuntime((s) => s.projectId);
   return useQuery<Session>({
     queryKey: runtimeKeys.session(sessionId),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.get({ sessionID: sessionId });
-      return unwrap(result);
+      if (!projectId) throw new Error('No active Kortix project');
+      return projectSessionToLegacyView(await getProjectSession(projectId, sessionId));
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && !!sessionId && !!projectId,
     staleTime: Infinity,
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
@@ -78,31 +84,13 @@ export function useRuntimeSession(sessionId: string) {
 
 export function useCreateRuntimeSession() {
   const queryClient = useQueryClient();
+  const projectId = useCurrentRuntime((s) => s.projectId);
 
   return useMutation({
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
+      if (!projectId) throw new Error('Create a session from a Kortix project');
       const opts = options || {};
-      // The runtime can still be booting when this fires (auto-create on
-      // session page mount). Legacy sandbox images can still surface 503
-      // "opencode not ready" until the runtime process binds its port. Retry that
-      // specific transient inline — anything else propagates immediately.
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const client = getClient();
-          const result = await client.session.create({
-            directory: opts.directory,
-            title: opts.title,
-          });
-          return unwrap(result);
-        } catch (e) {
-          const msg = (e as { message?: string })?.message ?? '';
-          if (attempt < 6 && /opencode not ready/i.test(msg)) {
-            await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 4_000)));
-            continue;
-          }
-          throw e;
-        }
-      }
+      return projectSessionToLegacyView(await createProjectSession(projectId, { name: opts.title }));
     },
     onSuccess: (newSession) => {
       // Surgically insert into cache — SSE session.created will also fire
@@ -130,12 +118,12 @@ export function useCreateRuntimeSession() {
 
 export function useDeleteRuntimeSession() {
   const queryClient = useQueryClient();
+  const projectId = useCurrentRuntime((s) => s.projectId);
 
   return useMutation({
     mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.delete({ sessionID: sessionId });
-      unwrap(result);
+      if (!projectId) throw new Error('No active Kortix project');
+      await deleteProjectSession(projectId, sessionId);
       return sessionId;
     },
     onSuccess: (sessionId) => {
@@ -151,6 +139,7 @@ export function useDeleteRuntimeSession() {
 
 export function useUpdateRuntimeSession() {
   const queryClient = useQueryClient();
+  const projectId = useCurrentRuntime((s) => s.projectId);
 
   return useMutation({
     mutationFn: async ({
@@ -162,12 +151,15 @@ export function useUpdateRuntimeSession() {
       title?: string;
       archived?: boolean;
     }) => {
-      const client = getClient();
-      const body: { title?: string; time?: { archived?: number } } = {};
-      if (title !== undefined) body.title = title;
-      if (archived !== undefined) body.time = { archived: archived ? Date.now() : 0 };
-      const result = await client.session.update({ sessionID: sessionId, ...body });
-      return unwrap(result);
+      if (!projectId) throw new Error('No active Kortix project');
+      const current = await getProjectSession(projectId, sessionId);
+      const metadata = archived === undefined
+        ? current.metadata
+        : { ...current.metadata, archived_at: archived ? new Date().toISOString() : null };
+      return projectSessionToLegacyView(await updateProjectSession(projectId, sessionId, {
+        ...(title !== undefined ? { name: title } : {}),
+        metadata,
+      }));
     },
     onSuccess: (updatedSession) => {
       // Surgically update cache — SSE session.updated will also fire
@@ -187,31 +179,24 @@ export function useUpdateRuntimeSession() {
 
 export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
-  const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
     queryKey: ['runtime', 'session-diff', sessionId],
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.diff({ sessionID: sessionId });
-      return unwrap(result);
+      return getFileStatus();
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
   });
 }
 
 export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();
-  const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
     queryKey: ['runtime', 'session-todo', sessionId],
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.session.todo({ sessionID: sessionId });
-      const data = unwrap(result);
-      return Array.isArray(data) ? data : [];
+      return [];
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
   });
 }
@@ -221,84 +206,9 @@ export function useRuntimeSessionTodo(sessionId: string) {
 // ============================================================================
 
 export function useSummarizeRuntimeSession() {
-  const queryClient = useQueryClient();
-  const startCompaction = useRuntimeCompactionStore((s) => s.startCompaction);
-  const stopCompaction = useRuntimeCompactionStore((s) => s.stopCompaction);
   return useMutation({
-    mutationFn: async (params: { sessionId: string; providerID?: string; modelID?: string }) => {
-      const client = getClient();
-
-      let { providerID, modelID } = params;
-
-      // 1. Try config default model
-      if (!providerID || !modelID) {
-        try {
-          const configResult = await client.global.config.get();
-          const config = configResult.data;
-          if (config?.model) {
-            const parts = config.model.split('/');
-            if (parts.length >= 2) {
-              providerID = providerID || parts[0];
-              modelID = modelID || parts.slice(1).join('/');
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // 2. Try first available provider/model from provider list
-      if (!providerID || !modelID) {
-        try {
-          // The provider list's typed shape is `{ all, default, connected }`,
-          // but this fallback has historically walked it as a plain
-          // `{ [providerID]: { models } }` map — keep that exact (best-effort,
-          // try/catch-guarded) duck-typed read via `unknown` rather than
-          // assert a shape that may not match what's actually on the wire.
-          const providerResult = await client.provider.list();
-          const providers: unknown = providerResult.data;
-          if (providers && typeof providers === 'object') {
-            for (const [pid, providerInfo] of Object.entries(providers as Record<string, unknown>)) {
-              const models =
-                providerInfo && typeof providerInfo === 'object'
-                  ? (providerInfo as Record<string, unknown>).models
-                  : undefined;
-              if (models && typeof models === 'object') {
-                const firstModelId = Object.keys(models)[0];
-                if (firstModelId) {
-                  providerID = pid;
-                  modelID = firstModelId;
-                  break;
-                }
-              }
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      if (!providerID || !modelID) {
-        throw new Error('No model available for compaction. Please configure a model in settings.');
-      }
-
-      const result = await client.session.summarize({
-        sessionID: params.sessionId,
-        providerID,
-        modelID,
-      });
-      unwrap(result);
-      return params.sessionId;
-    },
-    onMutate: ({ sessionId }) => {
-      startCompaction(sessionId);
-    },
-    onError: (_err, { sessionId }) => {
-      stopCompaction(sessionId);
-    },
-    onSuccess: (_sessionId) => {
-      // ACP sessions do not use legacy message compaction; callers that still
-      // invoke this adapter manage their own follow-up refresh.
+    mutationFn: async (_params: { sessionId: string; providerID?: string; modelID?: string }) => {
+      throw new Error('Session compaction is not part of the ACP protocol');
     },
   });
 }
@@ -308,31 +218,8 @@ export function useSummarizeRuntimeSession() {
 // ============================================================================
 
 export function useInitSession() {
-  const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command: 'init',
-        arguments: '',
-      });
-      if (result.error) {
-        // The error union here (`BadRequest | InvalidRequestError |
-        // NotFoundError`) doesn't share a `.message`/`.data.message` shape
-        // across all members — duck-type defensively rather than assume one.
-        const err = result.error;
-        const errRec = err && typeof err === 'object' ? (err as Record<string, unknown>) : undefined;
-        const dataRec =
-          errRec?.data && typeof errRec.data === 'object'
-            ? (errRec.data as Record<string, unknown>)
-            : undefined;
-        const message = dataRec?.message ?? errRec?.message;
-        throw new Error(typeof message === 'string' ? message : 'Failed to initialize project');
-      }
-      return sessionId;
-    },
+    mutationFn: async (_params: { sessionId: string }) => { throw new Error('Use an ACP prompt to initialize the project'); },
     onSuccess: () => {},
     // Suppress global error handler — caller handles errors via onError callback
     onError: () => {},
@@ -340,4 +227,19 @@ export function useInitSession() {
     // retrying on timeout would duplicate execution.
     retry: false,
   });
+}
+
+function projectSessionToLegacyView(session: ProjectSession): Session {
+  const created = Date.parse(session.created_at) || Date.now();
+  const updated = Date.parse(session.updated_at) || created;
+  const archivedRaw = session.metadata?.archived_at;
+  const archived = typeof archivedRaw === 'string' ? Date.parse(archivedRaw) || undefined : undefined;
+  return {
+    id: session.session_id,
+    title: session.name || session.branch_name || 'Session',
+    time: { created, updated, ...(archived ? { archived } : {}) },
+    projectID: session.project_id,
+    agent: session.agent_name,
+    status: session.status,
+  };
 }

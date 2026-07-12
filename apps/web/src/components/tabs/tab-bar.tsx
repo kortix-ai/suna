@@ -4,7 +4,6 @@ import { useTranslations } from 'next-intl';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   X,
   MessageCircle,
@@ -33,13 +32,8 @@ import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useRuntimePendingStore } from '@/stores/runtime-pending-store';
 import { useSyncStore } from '@/stores/runtime-sync-store';
-import {
-  canQueryRuntimeSession,
-  runtimeKeys,
-  useRuntimeSessions,
-} from '@/hooks/runtime/use-runtime-sessions';
+import { useRuntimeSessions } from '@/hooks/runtime/use-runtime-sessions';
 import { childMapByParent } from '@/ui';
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
@@ -570,7 +564,6 @@ export function TabBar() {
   const pathname = normalizeAppPathname(rawPathname);
   const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
 
@@ -651,27 +644,6 @@ export function TabBar() {
       useTabStore.getState().closeTab(id);
     }
   }, [sessions, sessionsLoading]);
-
-  // Prefetch session metadata for all open tabs so switching is instant.
-  // NOTE: Legacy message prefetching was removed — the active session surface
-  // now owns its own transcript stream/fetch path.
-  useEffect(() => {
-    for (const id of tabOrder) {
-      const tab = tabs[id];
-      if (tab?.type !== 'session' || id === activeTabId) continue;
-      if (!canQueryRuntimeSession(id)) continue;
-      queryClient.prefetchQuery({
-        queryKey: runtimeKeys.session(id),
-        queryFn: async () => {
-          const client = getClient();
-          const result = await client.session.get({ sessionID: id });
-          if (result.error) throw new Error('prefetch failed');
-          return result.data;
-        },
-        staleTime: 30 * 1000,
-      });
-    }
-  }, [tabOrder, tabs, activeTabId, queryClient]);
 
   const orderedTabs = useMemo(
     () => tabOrder.map((id) => tabs[id]).filter(Boolean),

@@ -13,7 +13,7 @@ import {
   useClearFocusedToolCall,
 } from '@/stores/kortix-computer-store';
 import type { AcpChatItem } from '@kortix/sdk';
-import { AcpToolCallCard } from './acp-tool-call-card';
+import { acpToolCallToPart } from './acp-tool-call-card';
 
 /**
  * Flatten a session's messages into the ordered list of tool calls worth
@@ -61,7 +61,12 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
 }) {
   const acpTools = useMemo(() => acpItems?.filter((item): item is Extract<AcpChatItem, { kind: 'tool' }> => item.kind === 'tool') ?? [], [acpItems]);
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const parts = useMemo(() => collectToolParts(messages), [messages]);
+  const parts = useMemo(
+    () => acpItems
+      ? acpTools.map((tool) => acpToolCallToPart(tool, sessionId))
+      : collectToolParts(messages),
+    [acpItems, acpTools, messages, sessionId],
+  );
   const count = parts.length;
 
   const [index, setIndex] = useState(0);
@@ -153,14 +158,6 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [goPrev, goNext]);
-
-  if (acpItems) {
-    return (
-      <div className="h-full overflow-y-auto p-3">
-        {acpTools.length ? <div className="space-y-2">{acpTools.map((tool) => <AcpToolCallCard key={tool.id} tool={tool} compact />)}</div> : <div className="text-muted-foreground flex h-full items-center justify-center text-sm">No actions yet</div>}
-      </div>
-    );
-  }
 
   if (count === 0) {
     return (

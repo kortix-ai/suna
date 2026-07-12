@@ -2,6 +2,10 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
+import { createAcpClient } from '../../acp/client';
+import { platformConfig } from '../../core/http/config';
+import { getSessionRuntime } from '../../core/session/session-runtime-registry';
+import { useCurrentRuntime } from '../use-current-runtime';
 import type { Command } from '../../core/runtime/wire-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_COMMANDS } from './shared';
@@ -29,6 +33,7 @@ export function useRuntimeCommands() {
 }
 
 export function useExecuteRuntimeCommand() {
+  const projectId = useCurrentRuntime((state) => state.projectId);
   return useMutation({
     mutationFn: async ({
       sessionId,
@@ -39,13 +44,14 @@ export function useExecuteRuntimeCommand() {
       command: string;
       args?: string;
     }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command,
-        arguments: args || '',
-      });
-      unwrap(result);
+      if (!projectId) throw new Error('No active Kortix project');
+      const runtime = getSessionRuntime(projectId, sessionId);
+      if (!runtime?.runtimeSessionId) throw new Error('ACP session is not ready');
+      const endpoint = `${platformConfig().backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`;
+      const client = createAcpClient({ endpoint });
+      await client.prompt(runtime.runtimeSessionId, [
+        { type: 'text', text: `/${command}${args ? ` ${args}` : ''}` },
+      ]);
     },
     // CRITICAL: Disable retry for commands. The /command endpoint blocks until
     // the agent finishes, which can take minutes (e.g. onboarding). If a proxy

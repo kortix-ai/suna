@@ -76,6 +76,32 @@ export type ApplyAgentBlockResult =
   | { ok: true; raw: Record<string, unknown> }
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
+export type RuntimeProfileV3 = {
+  harness: 'claude' | 'codex' | 'opencode' | 'pi';
+  config_dir?: string;
+};
+
+/** Replace the complete v3 runtime-profile map and validate every agent
+ * reference against it before the caller commits the manifest. */
+export function applyRuntimeProfilesV3(
+  manifest: ParsedManifest,
+  runtimes: Record<string, RuntimeProfileV3>,
+): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 3) {
+    return { ok: false, error: 'Runtime profiles require a kortix_version 3 manifest.' };
+  }
+  const nextRaw = { ...manifest.raw, runtimes };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? {
+        ok: false,
+        error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+        issues: errorIssues,
+      }
+    : { ok: true, raw: nextRaw };
+}
+
 export type ReadAgentBlockV3Result =
   | {
       ok: true;

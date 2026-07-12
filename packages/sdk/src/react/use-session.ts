@@ -88,7 +88,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
   useEffect(() => {
     if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
-    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id);
+    setCurrentRuntime(getSandboxUrlForExternalId(sandbox.external_id), sandbox.external_id, sandbox.sandbox_id, projectId, sessionId);
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [sandbox, startReady, switchedSandboxId]);
   useEffect(() => () => setCurrentRuntime(null), []);

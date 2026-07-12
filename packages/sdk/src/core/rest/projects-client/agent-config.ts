@@ -83,6 +83,22 @@ export interface AgentConfigResponse {
   runtimes?: Record<string, { harness: 'claude' | 'codex' | 'opencode' | 'pi'; config_dir?: string }>;
 }
 
+export type AcpHarness = 'claude' | 'codex' | 'opencode' | 'pi';
+export type RuntimeProfile = { harness: AcpHarness; config_dir?: string };
+export interface RuntimeProfilesResponse {
+  schema_version: number;
+  editable: boolean;
+  runtimes: Record<string, RuntimeProfile>;
+}
+
+export async function getRuntimeProfiles(projectId: string) {
+  return unwrap(await backendApi.get<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles`));
+}
+
+export async function updateRuntimeProfiles(projectId: string, runtimes: Record<string, RuntimeProfile>) {
+  return unwrap(await backendApi.put<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles`, { runtimes }));
+}
+
 export async function getAgentConfig(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.get<AgentConfigResponse>(

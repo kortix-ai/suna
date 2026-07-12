@@ -11,10 +11,8 @@ export * from './projects';
 export * from './commands';
 export * from './providers';
 export * from './mcp';
-export * from './sharing';
 export * from './parts';
 export * from './files';
-export * from './permissions';
 
 // Public session/cache helpers that live in ./shared (otherwise internal).
-export { canQueryRuntimeSession, clearProjectRuntimeProviderCache } from './shared';
+export { clearProjectRuntimeProviderCache } from './shared';
