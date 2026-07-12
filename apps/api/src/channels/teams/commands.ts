@@ -26,44 +26,10 @@ import {
 } from './binding';
 import { lookupTeamsIdentity, revokeTeamsIdentity, teamsUserId } from './identity';
 import { buildTeamsLoginUrl } from './login';
-import { stripTeamsMentions } from './util';
+import { type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
-const COMMAND_VERBS = new Set([
-  'login',
-  'connect',
-  'logout',
-  'disconnect',
-  'whoami',
-  'who',
-  'help',
-  'status',
-  'config',
-  'settings',
-  'models',
-  'model',
-  'agents',
-  'agent',
-  'projects',
-  'use',
-  'switch',
-]);
-
-export interface TeamsCommand {
-  verb: string;
-  arg: string;
-}
-
-export function parseTeamsCommand(text: string | undefined): TeamsCommand | null {
-  const stripped = stripTeamsMentions(text ?? '').trim();
-  if (!stripped.startsWith('/')) return null;
-  const body = stripped.slice(1).trim();
-  if (!body) return null;
-  const [first, ...rest] = body.split(/\s+/);
-  const verb = first.toLowerCase();
-  if (!COMMAND_VERBS.has(verb)) return null;
-  return { verb, arg: rest.join(' ').trim() };
-}
+export { parseTeamsCommand } from './util';
 
 function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConversationRef | null {
   if (!activity.serviceUrl || !activity.conversation?.id) return null;
