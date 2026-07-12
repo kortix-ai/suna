@@ -5,6 +5,7 @@ import {
   sseErrorFrame,
   sseHasContent,
 } from '../usage';
+import { gatewayErrorBody } from './error-response';
 
 export interface StreamRelayOptions {
   /** Fresh upstream body — mutually exclusive with `primed`. */
@@ -19,6 +20,12 @@ export interface StreamRelayOptions {
     response: unknown,
     streamError?: SseErrorFrame | null,
   ) => Promise<void>;
+  errorContext?: {
+    provider: string;
+    requestedModel: string;
+    resolvedModel: string;
+    requestId: string;
+  };
   /** Keep-alive interval in ms (overridable for tests). */
   heartbeatMs?: number;
 }
@@ -49,6 +56,7 @@ export interface StreamProbeResult {
   // "empty stop" hiccup that same-candidate retries target. The caller surfaces
   // this real error instead of retrying into a generic empty-completion.
   errorFrame?: SseErrorFrame | null;
+  readError?: SseErrorFrame | null;
   reader: ReadableStreamDefaultReader<Uint8Array>;
   chunks: Uint8Array[];
 }
@@ -73,12 +81,12 @@ export async function probeStream(body: ReadableStream<Uint8Array>): Promise<Str
     let value: Uint8Array | undefined;
     try {
       ({ done, value } = await reader.read());
-    } catch {
-      // A read error mid-probe is not this function's concern to report — whatever
-      // content/error (if any) arrived before it is all there is to judge on.
+    } catch (err) {
+      const message = boundedErrorMessage(err);
       return {
         hasContent: sseHasContent(buffer),
         errorFrame: sseErrorFrame(buffer),
+        readError: { message, code: 'upstream_stream_error' },
         reader,
         chunks,
       };
@@ -100,6 +108,11 @@ export async function probeStream(body: ReadableStream<Uint8Array>): Promise<Str
     const errorFrame = sseErrorFrame(buffer);
     if (errorFrame) return { hasContent: false, errorFrame, reader, chunks };
   }
+}
+
+function boundedErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return (message || 'Upstream stream failed').slice(0, 2_000);
 }
 
 export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array> {
@@ -185,12 +198,27 @@ export function relayStream(opts: StreamRelayOptions): ReadableStream<Uint8Array
         await writeChunk(value);
       }
     } catch (err) {
+      const message = boundedErrorMessage(err);
       logger.warn(`[llm-gateway] stream read error ${requestId}:`, err);
       debug('stream_error', {
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
         bytes,
         chunks,
       });
+      // Once headers are committed, SSE is the only remaining error channel.
+      // Emit the standard shape opencode understands instead of silently closing.
+      if (downstreamAlive) {
+        const frame = `data: ${JSON.stringify(gatewayErrorBody({
+          message,
+          code: 'upstream_stream_error',
+          provider: opts.errorContext?.provider ?? '',
+          requestedModel: opts.errorContext?.requestedModel ?? '',
+          resolvedModel: opts.errorContext?.resolvedModel ?? '',
+          requestId: opts.errorContext?.requestId ?? requestId,
+          suggestion: 'Retry the request. If the error continues, switch to another model.',
+        }))}\n\n`;
+        await writeChunk(new TextEncoder().encode(frame));
+      }
     } finally {
       try {
         await writer.close();

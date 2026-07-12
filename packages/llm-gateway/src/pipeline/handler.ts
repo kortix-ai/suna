@@ -17,7 +17,7 @@ import {
   extractUsageFromJson,
   jsonHasContent,
 } from '../usage';
-import { gatewayErrorBody } from './error-response';
+import { gatewayErrorBody, gatewayErrorResponse } from './error-response';
 import { runFailover } from './failover';
 import { type StreamProbeResult, probeStream, relayStream } from './streaming';
 import { createTraceEmitter } from './trace';
@@ -173,7 +173,11 @@ export async function handleChatCompletions(
   if (!token) {
     step('reject_no_token');
     emit({ status: 401, ok: false, errorCode: 'missing_token' });
-    return json({ error: 'Missing bearer token' }, 401);
+    return gatewayErrorResponse(401, {
+      message: 'Missing bearer token', code: 'missing_token', provider: '',
+      requestedModel: '', resolvedModel: '', requestId,
+      suggestion: 'Sign in again or provide a valid API token, then retry.',
+    });
   }
 
   // Pre-dispatch gate: authenticate + billing + budget. When the host provides a
@@ -192,7 +196,12 @@ export async function handleChatCompletions(
       errorMessage: gate.message,
     });
     const message = gate.message ?? 'Unauthorized';
-    return json({ error: message, message, code: gate.errorCode }, gate.status);
+    return gatewayErrorResponse(gate.status, {
+      message, code: gate.errorCode, provider: '', requestedModel: '', resolvedModel: '', requestId,
+      suggestion: gate.status === 401
+        ? 'Sign in again or provide a valid API token, then retry.'
+        : 'Check account billing and budget settings, or use another available model.',
+    });
   }
   const principal = gate.principal;
   step('authenticated', {
@@ -218,13 +227,11 @@ export async function handleChatCompletions(
       errorCode: 'request_too_large',
       errorMessage: `Request body ${req.rawBody.length} bytes exceeds limit ${config.maxRequestBytes}`,
     });
-    return json(
-      {
-        error: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
-        code: 'request_too_large',
-      },
-      413,
-    );
+    return gatewayErrorResponse(413, {
+      message: `Request body of ${req.rawBody.length} bytes exceeds the ${config.maxRequestBytes}-byte limit`,
+      code: 'request_too_large', provider: '', requestedModel: '', resolvedModel: '', requestId,
+      suggestion: 'Start a new session or reduce the conversation and attachment size, then retry.',
+    });
   }
 
   let body: Record<string, unknown>;
@@ -233,7 +240,11 @@ export async function handleChatCompletions(
   } catch {
     step('invalid_json');
     emit({ ...id, status: 400, ok: false, errorCode: 'invalid_json' });
-    return json({ error: 'Invalid JSON body' }, 400);
+    return gatewayErrorResponse(400, {
+      message: 'Invalid JSON body', code: 'invalid_json', provider: '',
+      requestedModel: '', resolvedModel: '', requestId,
+      suggestion: 'Correct the request body and retry.',
+    });
   }
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
@@ -282,10 +293,11 @@ export async function handleChatCompletions(
       request: capture(body),
       metadata,
     });
-    return json(
-      { error: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable' },
-      400,
-    );
+    return gatewayErrorResponse(400, {
+      message: `No upstream configured for model "${routedModel}"`, code: 'model_unavailable',
+      provider: '', requestedModel, resolvedModel: routedModel, requestId,
+      suggestion: 'Choose another model or connect the required provider, then retry.',
+    });
   }
 
   const streaming = body.stream === true;
@@ -460,6 +472,18 @@ export async function handleChatCompletions(
       emptyProviders.add(chosen.provider);
       continue;
     }
+    if (probe.readError) {
+      lastErrorFrame = probe.readError;
+      logger.warn(
+        `[llm-gateway] upstream stream read failed during probe from ${chosen.provider} ${requestId}: "${probe.readError.message}"`,
+      );
+      step('upstream_stream_error', {
+        provider: chosen.provider,
+        message: probe.readError.message,
+      });
+      emptyProviders.add(chosen.provider);
+      continue;
+    }
     await registerEmptyCompletion(chosen.provider, { streaming: true });
   }
 
@@ -591,6 +615,12 @@ export async function handleChatCompletions(
     requestId,
     logger,
     settle,
+    errorContext: {
+      provider: finalDescriptor.provider,
+      requestedModel,
+      resolvedModel: finalDescriptor.resolvedModel ?? requestedModel,
+      requestId,
+    },
   });
 
   return new Response(readable, {

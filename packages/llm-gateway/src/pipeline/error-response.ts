@@ -39,3 +39,10 @@ export function gatewayErrorBody(context: GatewayErrorContext): Record<string, u
     suggestion: context.suggestion,
   };
 }
+
+export function gatewayErrorResponse(status: number, context: GatewayErrorContext): Response {
+  return new Response(JSON.stringify(gatewayErrorBody(context)), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
