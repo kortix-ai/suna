@@ -22,7 +22,13 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
 import { AuthLegalFooter } from '@/features/auth/auth-card-shell';
-import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import {
+  AuthMobileLogo,
+  CodeInput,
+  FieldLabel,
+  InfoStrip,
+  StepHeader,
+} from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -565,7 +571,7 @@ function AuthCardForm({
       <motion.div {...rise(0)}>
         <StepHeader
           title={mode === 'signup' ? 'Create your account' : 'Welcome to Kortix'}
-          tagline="Your AI Computer"
+          tagline="Your AI workforce"
         />
       </motion.div>
 
@@ -634,8 +640,9 @@ function AuthFrame({
   footerVariant: 'default' | 'signup';
 }) {
   return (
-    <div className="bg-background flex min-h-svh flex-col">
-      <main className="flex flex-1 flex-col items-center justify-center px-4 py-24">
+    <div className="bg-background relative flex min-h-svh flex-col">
+      <AuthMobileLogo />
+      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
         <div className="w-full max-w-[380px]">{children}</div>
       </main>
       <AuthLegalFooter variant={footerVariant} />
@@ -690,7 +697,7 @@ function AuthContent() {
   if (user) {
     return (
       <AuthFrame footerVariant="default">
-        <StepHeader title="Welcome to Kortix" tagline="Your AI Computer" />
+        <StepHeader title="Welcome to Kortix" tagline="Your AI workforce" />
       </AuthFrame>
     );
   }
