@@ -93,12 +93,16 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
 
 /** Build the WebSocket URL for a raw terminal (PTY) session, mirroring what
  *  the web app's browser client connects to — same host, same `?token=`
- *  query auth (WebSocket can't set custom headers). */
-export function opencodePtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
+ *  query auth (WebSocket can't set custom headers). Reaches Kortix's own
+ *  `/kortix/pty` implementation in the sandbox daemon (routes/pty.ts),
+ *  independent of whatever agent runtime (OpenCode today) is running — same
+ *  daemon port, same proxy, same auth as everything else, just a different
+ *  path than OpenCode's own (now-unused-by-the-CLI) `/pty`. */
+export function kortixPtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
   const base = auth.api_base.replace(/\/+$/, '').replace(/\/v1$/, '');
   const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
   const wsBase = httpBase.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-  return `${wsBase}/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
+  return `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
 }
 
 export interface SandboxOpencodeOpts {
@@ -191,7 +195,7 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
         method: 'POST',
         body: {},
       }),
-    listPty: () => sandboxRequest<OpencodePty[]>({ ...base, path: '/pty' }),
+    listPty: () => sandboxRequest<OpencodePty[]>({ ...base, path: '/kortix/pty' }),
     createPty: (body?: {
       command?: string;
       args?: string[];
@@ -201,21 +205,21 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
     }) =>
       sandboxRequest<OpencodePty>({
         ...base,
-        path: '/pty',
+        path: '/kortix/pty',
         method: 'POST',
         body: body ?? {},
       }),
     updatePty: (ptyId: string, body: { title?: string; size?: { rows: number; cols: number } }) =>
       sandboxRequest<OpencodePty>({
         ...base,
-        path: `/pty/${ptyId}`,
+        path: `/kortix/pty/${ptyId}`,
         method: 'PATCH',
         body,
       }),
     removePty: (ptyId: string) =>
       sandboxRequest<boolean>({
         ...base,
-        path: `/pty/${ptyId}`,
+        path: `/kortix/pty/${ptyId}`,
         method: 'DELETE',
       }),
   };
@@ -300,14 +304,17 @@ export interface OpencodeQuestionRequest {
   tool?: { messageID: string; callID: string };
 }
 
-/** A raw terminal (PTY) running inside the sandbox — same shape the web
- *  app's xterm-based terminal panel binds to. */
+/** A raw terminal (PTY) running inside the sandbox — Kortix's own
+ *  implementation (routes/pty.ts in the sandbox daemon), independent of
+ *  whatever agent runtime is running. Same shape the web app's terminal
+ *  panel binds to. */
 export interface OpencodePty {
   id: string;
-  title?: string;
-  command?: string;
-  args?: string[];
-  cwd?: string;
-  size?: { rows: number; cols: number };
-  time?: { created?: number };
+  title: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  status: 'running' | 'exited';
+  pid: number;
+  exitCode?: number;
 }

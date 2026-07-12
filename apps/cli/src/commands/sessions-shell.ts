@@ -1,4 +1,4 @@
-import { opencodePtyWsUrl, type OpencodePty } from '../api/sandbox-proxy.ts';
+import { kortixPtyWsUrl, type OpencodePty } from '../api/sandbox-proxy.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
@@ -115,7 +115,7 @@ function createPty(resolved: ResolvedSession): Promise<OpencodePty> {
 /** Put the local terminal in raw mode, pipe bytes to/from the remote PTY's
  *  WebSocket, and forward local resizes. Returns once the connection ends. */
 function runPtySession(resolved: ResolvedSession, pty: OpencodePty): Promise<number> {
-  const wsUrl = opencodePtyWsUrl(resolved.auth, resolved.proxyId, pty.id);
+  const wsUrl = kortixPtyWsUrl(resolved.auth, resolved.proxyId, pty.id);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
