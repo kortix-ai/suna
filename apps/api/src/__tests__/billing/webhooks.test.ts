@@ -463,6 +463,30 @@ describe('RevenueCat', () => {
     expect(result.event_type).toBe('INITIAL_PURCHASE');
   });
 
+  test('duplicate RevenueCat event IDs are idempotent and do not grant twice', async () => {
+    const seen = new Set<string>();
+    mockRegistry.recordWebhookEvent = async (...args: any[]) => {
+      const key = String(args[0]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    };
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      id: 'rc_evt_duplicate_1',
+      event_id: 'rc_evt_duplicate_1',
+      product_id: 'kortix_plus_monthly',
+    });
+
+    const first = await processRevenueCatWebhook(body);
+    const second = await processRevenueCatWebhook(body);
+
+    expect((first as any).skipped).toBeUndefined();
+    expect((second as any).deduped).toBe(true);
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(grantCreditsCalls.length).toBe(2);
+  });
+
   test('RENEWAL: resets expiring credits', async () => {
     // Default mock has tier from getCreditAccount, which has tier_6_50
     const body = createMockRevenueCatEvent('RENEWAL');

@@ -25,8 +25,9 @@ import { CUSTOMIZE_SECTION_GATE_ACTIONS, isCustomizeSectionVisible } from '@/lib
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { getProjectDetail, listReviewItems } from '@kortix/sdk/projects-client';
+import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { AlarmClock, ArrowLeft, ChatMessages, Command, Sparkles } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -204,19 +205,12 @@ export function CustomizPanel({ projectId }: { projectId: string }) {
     ? detectManifestVersion(detail.data.config.manifest_raw) === 1
     : false;
 
-  // "Needs you" count for the Review rail badge. Shares the review inbox's query
-  // key so the badge and the section stay in sync; only fetched when the panel is
-  // open and the flag is on.
-  const reviewItemsQuery = useQuery({
-    queryKey: ['review-center', projectId, 'list'],
-    queryFn: () => listReviewItems(projectId),
-    enabled: open && reviewEnabled && !!projectId,
-    staleTime: 5_000,
-    refetchInterval: open && reviewEnabled ? 15_000 : false,
-  });
-  const reviewNeedsYou = (reviewItemsQuery.data?.review_items ?? []).filter(
-    (i) => i.status === 'needs_you',
-  ).length;
+  // "Needs you" count for the Review rail badge — the SAME shared inbox summary the
+  // sidebar "Review" pill and the per-session row dots read (one query key, one
+  // derivation), so the badge, the pill, and the dots can never drift apart.
+  const reviewNeedsYou = useReviewSessionSummary(projectId, {
+    enabled: reviewEnabled,
+  }).totalNeedsYou;
 
   const groups = useMemo(
     // Compose flag-gating with IAM visibility: an item shows only if it passes

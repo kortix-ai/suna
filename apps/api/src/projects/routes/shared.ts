@@ -1,7 +1,4 @@
-import {
-  endComputeSession,
-  reopenComputeForSandbox,
-} from '../../billing/services/compute-metering';
+import { reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import type { ProjectSessionSandbox, SessionStartResult } from '@kortix/api-contract';
 import { auth, json } from '../../openapi';
@@ -23,6 +20,12 @@ import {
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
+import {
+  preserveEstablishedRuntime,
+  retireConfirmedMissingRuntime,
+  retireUnmaterializedRuntime,
+  RUNTIME_IDENTITY_UNAVAILABLE,
+} from '../runtime-identity';
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
@@ -48,6 +51,7 @@ export async function resumeStoppedSandbox(row: {
   accountId: string;
   provider: string;
   externalId: string | null;
+  metadata?: Record<string, unknown> | null;
 }): Promise<boolean> {
   if (!row.externalId) return false;
   if (
@@ -59,6 +63,26 @@ export async function resumeStoppedSandbox(row: {
 
   const externalId = row.externalId;
   const now = new Date();
+  const runtimeWakeId = crypto.randomUUID();
+  const wakeMetadata = { ...(row.metadata ?? {}) };
+  for (const key of [
+    'idleQuiesced',
+    'idleQuiescedAt',
+    'idleObservedAt',
+    'runtimeIdentityState',
+    'runtimeUnavailableReason',
+    'runtimeUnavailableAt',
+    'preservedExternalId',
+    'needsReprovision',
+    'runtimeWakeError',
+    'runtimeWakeFailedAt',
+  ]) delete wakeMetadata[key];
+  Object.assign(wakeMetadata, {
+    lastTurnAt: now.toISOString(),
+    runtimeWakeStartedAt: now.toISOString(),
+    runtimeWakeId,
+    runtimeWakeProviderStatus: 'starting',
+  });
   // Conditional update = the lock: only the request that flips stopped→active
   // proceeds to start the VM. Concurrent polls see `active` and just return it.
   const [won] = await db
@@ -70,7 +94,7 @@ export async function resumeStoppedSandbox(row: {
       // countdown (idleObservedAt — a stale pre-stop stamp would shut the box
       // down on the very next pass), and stamps lastTurnAt so the resume opens
       // a FRESH idle window for the unreachable-box fallback clock too.
-      metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'idleQuiesced' - 'idleQuiescedAt' - 'idleObservedAt') || ${JSON.stringify({ lastTurnAt: now.toISOString() })}::jsonb`,
+      metadata: wakeMetadata,
     })
     .where(
       and(
@@ -101,29 +125,53 @@ export async function resumeStoppedSandbox(row: {
   );
 
   const provider = getProvider(row.provider as SandboxProviderName);
-  void provider.start(externalId).catch(async (err) => {
-    console.warn(
-      `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
-      err,
-    );
-    if (isMissingRuntimeError(err)) {
-      await retireSessionSandboxRow(
-        { sandboxId: row.sandboxId, externalId },
-        'resume_missing_runtime',
-      ).catch(() => {});
-      return;
-    }
-    // Revert so a later open retries the resume instead of spinning the health
-    // poll against a VM that never came up.
+  void provider.start(externalId).then(async () => {
     await db
       .update(sessionSandboxes)
-      .set({ status: 'stopped', updatedAt: new Date() })
+      .set({
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'runtimeWakeStartedAt' - 'runtimeWakeId' - 'runtimeWakeProviderStatus' - 'runtimeWakeError' - 'runtimeWakeFailedAt'`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(sessionSandboxes.sandboxId, row.sandboxId),
           eq(sessionSandboxes.externalId, externalId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
         ),
       )
+      .catch((err) =>
+        console.warn(
+          `[runtime-identity] failed to clear wake fence for ${row.sessionId}:`,
+          err,
+        ),
+      );
+  }).catch(async (err) => {
+    console.warn(
+      `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
+      err,
+    );
+    // Never retire or replace an established identity based on a provider
+    // start error. Revert this exact fenced wake so a later explicit open can
+    // retry the original sandbox in place.
+    await db
+      .update(sessionSandboxes)
+      .set({
+        status: 'stopped',
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ runtimeWakeError: isMissingRuntimeError(err) ? 'missing' : 'start_failed', runtimeWakeFailedAt: new Date().toISOString() })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          eq(sessionSandboxes.externalId, externalId),
+          sql`${sessionSandboxes.metadata}->>'runtimeWakeId' = ${runtimeWakeId}`,
+        ),
+      )
+      .catch(() => {});
+    await db
+      .update(projectSessions)
+      .set({ status: 'stopped', updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, row.sessionId))
       .catch(() => {});
   });
   return true;
@@ -157,7 +205,7 @@ export async function selectPreResumeTargets(
   projectId: string,
   userId: string,
   limit: number,
-): Promise<Array<{ sandboxId: string; sessionId: string; accountId: string; provider: string; externalId: string | null }>> {
+): Promise<Array<{ sandboxId: string; sessionId: string; accountId: string; provider: string; externalId: string | null; metadata: Record<string, unknown> | null }>> {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -165,6 +213,7 @@ export async function selectPreResumeTargets(
       accountId: sessionSandboxes.accountId,
       provider: sessionSandboxes.provider,
       externalId: sessionSandboxes.externalId,
+      metadata: sessionSandboxes.metadata,
     })
     .from(sessionSandboxes)
     .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
@@ -361,7 +410,7 @@ function staleRuntimeWakeReason(
 
   // Existing bad rows predate runtimeWakeStartedAt. If the provider status is
   // unknown long after provider create succeeded, stop returning retriable
-  // "starting" forever and replace the runtime on this open.
+  // "starting" forever and surface the preserved identity as unavailable.
   const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
   if (
     !wakeStartedAtMs &&
@@ -499,35 +548,6 @@ export function isMissingRuntimeError(error: unknown): boolean {
   );
 }
 
-export async function retireSessionSandboxRow(
-  row: Pick<typeof sessionSandboxes.$inferSelect, 'sandboxId' | 'externalId'>,
-  reason: string,
-): Promise<void> {
-  await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(
-      `[projects] failed to close compute session while retiring sandbox ${row.sandboxId} (${reason}):`,
-      err,
-    ),
-  );
-  if (row.externalId) {
-    await db
-      .delete(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, row.sandboxId),
-          eq(sessionSandboxes.externalId, row.externalId),
-        ),
-      );
-    return;
-  }
-  console.warn(
-    `[projects] retiring session sandbox ${row.sandboxId} without external_id (${reason})`,
-  );
-  await db
-    .delete(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-}
-
 export function serializeSandboxRow(
   row: typeof sessionSandboxes.$inferSelect,
 ): ProjectSessionSandbox {
@@ -548,7 +568,7 @@ export function serializeSandboxRow(
   };
 }
 
-async function replaceStaleRuntimeOnOpen(
+async function preserveEstablishedRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
   visible: {
     row: {
@@ -563,20 +583,54 @@ async function replaceStaleRuntimeOnOpen(
   row: typeof sessionSandboxes.$inferSelect,
   reason: string,
 ): Promise<SessionStartResult> {
-  await retireSessionSandboxRow(row, reason).catch((err) =>
-    console.warn(
-      `[projects] failed to retire stale runtime ${row.externalId} for session ${sessionId}:`,
-      err,
-    ),
-  );
-  await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+  if (!row.externalId) {
+    await retireUnmaterializedRuntime(row, reason);
+    await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason,
+    };
+  }
+  const preserved = await preserveEstablishedRuntime(row, reason);
+  return {
+    stage: 'failed',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: false,
+    sandbox: preserved ? serializeSandboxRow(preserved) : serializeSandboxRow(row),
+    opencode_session_id: null,
+    runtime_url: sessionRuntimeUrlPath(row.externalId),
+    reason: RUNTIME_IDENTITY_UNAVAILABLE,
+  };
+}
+
+async function recoverConfirmedMissingRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  visible: {
+    row: {
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      metadata?: Record<string, unknown> | null;
+    };
+  },
+  projectId: string,
+  sessionId: string,
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+): Promise<SessionStartResult> {
+  const retired = await retireConfirmedMissingRuntime(row, reason);
+  if (retired) await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
   return {
     stage: 'provisioning',
     agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
     opencode_session_id: null,
-    reason,
+    reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
   };
 }
 
@@ -626,19 +680,13 @@ export async function openSession(args: {
       row.provider,
     )
   ) {
-    // A box the reaper idle-stopped with `needsReprovision` cannot be safely
-    // resumed in place (Platinum's stop→resume wedges the guest — the CH
-    // resume-freeze). Replace it with a fresh box on open instead. This is an
-    // EXPLICIT open, so it clears the idle state by re-provisioning.
-    if ((row.metadata as Record<string, unknown> | null)?.needsReprovision) {
-      return replaceStaleRuntimeOnOpen(loaded, visible, projectId, sessionId, row, 'reprovision_on_open');
-    }
     await resumeStoppedSandbox({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
       accountId: row.accountId,
       provider: row.provider,
       externalId: row.externalId,
+      metadata: row.metadata as Record<string, unknown> | null,
     });
     const [resumed] = await db
       .select()
@@ -662,11 +710,17 @@ export async function openSession(args: {
       };
     }
     if (visible.row.status !== 'provisioning') {
-      if (row)
-        await db
-          .delete(sessionSandboxes)
-          .where(eq(sessionSandboxes.sandboxId, sessionId))
-          .catch(() => {});
+      if (row?.externalId) {
+        return preserveEstablishedRuntimeOnOpen(
+          loaded,
+          visible,
+          projectId,
+          sessionId,
+          row,
+          'non_usable_established_runtime',
+        );
+      }
+      if (row) await retireUnmaterializedRuntime(row, 'non_usable_unmaterialized_runtime');
       await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
     }
     return {
@@ -680,7 +734,7 @@ export async function openSession(args: {
 
   const staleProvisioning = row ? staleProvisioningReason(row) : null;
   if (row && staleProvisioning) {
-    return replaceStaleRuntimeOnOpen(
+    return preserveEstablishedRuntimeOnOpen(
       loaded,
       visible,
       projectId,
@@ -729,7 +783,7 @@ export async function openSession(args: {
         reason: 'runtime_removed_checking',
       };
     }
-    return replaceStaleRuntimeOnOpen(
+    return recoverConfirmedMissingRuntimeOnOpen(
       loaded,
       visible,
       projectId,
@@ -742,7 +796,7 @@ export async function openSession(args: {
   if (providerStatus !== 'running') {
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
-      return replaceStaleRuntimeOnOpen(
+      return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,
@@ -759,20 +813,7 @@ export async function openSession(args: {
         err,
       );
       if (isMissingRuntimeError(err)) {
-        await retireSessionSandboxRow(row, 'wake_missing_runtime').catch(
-          () => {},
-        );
-        await allocateRuntimeOnOpen(
-          loaded,
-          visible.row,
-          projectId,
-          sessionId,
-        ).catch((allocErr) =>
-          console.warn(
-            `[start] failed to reallocate missing runtime for session ${sessionId}:`,
-            allocErr,
-          ),
-        );
+        await preserveEstablishedRuntime(row, 'wake_missing_runtime').catch(() => {});
       }
     });
     return {
@@ -807,7 +848,7 @@ export async function openSession(args: {
   if (booting) {
     const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
     if (staleBoot) {
-      return replaceStaleRuntimeOnOpen(
+      return preserveEstablishedRuntimeOnOpen(
         loaded,
         visible,
         projectId,

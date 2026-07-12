@@ -1,4 +1,11 @@
-import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../channels/install-store';
+import { projects } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import {
+  listAgentMailInstalls,
+  loadMeetInstall,
+  loadSlackInstall,
+} from '../channels/install-store';
+import { resolveExperimentalFeature } from '../experimental/features';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -13,13 +20,14 @@ import { listAgentMailInstalls, loadMeetInstall, loadSlackInstall } from '../cha
  */
 import type { ChannelPlatform, ConnectorSpec } from '../projects/connectors';
 import { MANIFEST_FILENAME } from '../projects/triggers';
-import { channelDefaultSlug, channelLabel } from './channels';
 import { db } from '../shared/db';
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { channelDefaultSlug, channelLabel } from './channels';
 
-function channelSpec(platform: ChannelPlatform, slug: string, name = channelLabel(platform)): ConnectorSpec {
+function channelSpec(
+  platform: ChannelPlatform,
+  slug: string,
+  name = channelLabel(platform),
+): ConnectorSpec {
   return {
     slug,
     path: `${MANIFEST_FILENAME}#connectors.${slug} (auto: ${platform} install)`,
@@ -99,10 +107,17 @@ export async function synthesizeChannelConnectors(
   }
 
   const emailInstalls = await listAgentMailInstalls(projectId).catch(() => []);
+  const canonicalEmailSlug = channelDefaultSlug('email');
+  if (emailInstalls.length > 0 && !channelAlreadyDeclared(declared, 'email', canonicalEmailSlug)) {
+    specs.push(channelSpec('email', canonicalEmailSlug, channelLabel('email')));
+  }
   for (const install of emailInstalls) {
     const slug = install.profileSlug || channelDefaultSlug('email');
+    if (slug === canonicalEmailSlug) continue;
     if (!channelAlreadyDeclared(declared, 'email', slug)) {
-      specs.push(channelSpec('email', slug, install.displayName || install.email || channelLabel('email')));
+      specs.push(
+        channelSpec('email', slug, install.displayName || install.email || channelLabel('email')),
+      );
     }
   }
 

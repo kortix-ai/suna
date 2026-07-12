@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
-import { recordWebhookEvent, withAccountLock } from './webhook-concurrency';
+import { forgetWebhookEvent, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
 import {
@@ -49,38 +49,45 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
 
-  switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
-      break;
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        break;
 
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated':
-      await handleSubscriptionChange(event.data.object as Stripe.Subscription);
-      break;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await handleSubscriptionChange(event.data.object as Stripe.Subscription);
+        break;
 
-    case 'customer.subscription.deleted':
-      await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
-      break;
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        break;
 
-    case 'invoice.paid':
-      await handleInvoicePaid(event.data.object as Stripe.Invoice);
-      break;
+      case 'invoice.paid':
+        await handleInvoicePaid(event.data.object as Stripe.Invoice);
+        break;
 
-    case 'invoice.payment_failed':
-      await handleInvoiceFailed(event.data.object as Stripe.Invoice);
-      break;
+      case 'invoice.payment_failed':
+        await handleInvoiceFailed(event.data.object as Stripe.Invoice);
+        break;
 
-    case 'subscription_schedule.completed':
-      await handleScheduleCompleted(event.data.object as any);
-      break;
+      case 'subscription_schedule.completed':
+        await handleScheduleCompleted(event.data.object as any);
+        break;
 
-    case 'subscription_schedule.released':
-      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
-      break;
+      case 'subscription_schedule.released':
+        console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
+        break;
 
-    default:
-      console.log(`[Webhook] Unhandled event type: ${event.type}`);
+      default:
+        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+    }
+  } catch (err) {
+    await forgetWebhookEvent(event.id).catch((cleanupErr) => {
+      console.error(`[Webhook] Failed to clear failed event marker ${event.id}:`, cleanupErr);
+    });
+    throw err;
   }
 
   return { received: true, event_type: event.type };
@@ -626,8 +633,16 @@ export async function processRevenueCatWebhook(body: any) {
   if (!event) throw new WebhookError('Missing event in RevenueCat webhook');
 
   const eventType = event.type;
+  const eventId = event.id ?? event.event_id;
+  if (!eventId) throw new WebhookError('Missing event id');
   const appUserId = event.app_user_id;
   if (!appUserId) throw new WebhookError('Missing app_user_id');
+
+  const dedupeKey = `revenuecat:${eventId}`;
+  if (!(await recordWebhookEvent(dedupeKey, eventType))) {
+    console.log(`[RevenueCat] Skipping duplicate ${eventType} (${eventId})`);
+    return { received: true, event_type: eventType, deduped: true };
+  }
 
   if (isRevenueCatAnonymous(appUserId)) {
     console.log(`[RevenueCat] Skipping anonymous user: ${appUserId}`);

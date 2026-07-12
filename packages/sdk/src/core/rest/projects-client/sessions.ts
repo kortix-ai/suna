@@ -56,6 +56,33 @@ export interface ProjectSession {
   updated_at: string;
 }
 
+export type SessionRuntimeContextScalar = string | number | boolean | null;
+export type SessionRuntimeContext = Record<string, SessionRuntimeContextScalar>;
+export interface SessionConnectorBinding {
+  profile_id: string;
+}
+export type SessionConnectorBindings = Record<string, SessionConnectorBinding>;
+
+/** Public body for POST /projects/:projectId/sessions. */
+export interface CreateProjectSessionInput {
+  base_ref?: string;
+  agent_name?: string;
+  /** Slug of the sandbox template to boot from. Defaults to "default". */
+  sandbox_slug?: string;
+  initial_prompt?: string;
+  opencode_model?: string;
+  name?: string;
+  /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
+  session_id?: string;
+  provider?: 'daytona' | 'managed' | 'local_docker' | 'justavps' | 'platinum';
+  branch_already_created?: boolean;
+  metadata?: Record<string, unknown>;
+  /** Persisted and injected as one non-secret KORTIX_SESSION_CONTEXT JSON envelope. */
+  runtime_context?: SessionRuntimeContext;
+  /** Manager-authorized logical connector alias -> concrete connection profile. */
+  connector_bindings?: SessionConnectorBindings;
+}
+
 export interface ProjectOpenCodeSession {
   id: string;
   title: string | null;
@@ -67,9 +94,7 @@ export interface ProjectOpenCodeSession {
 }
 
 export async function listProjectSessions(projectId: string) {
-  return unwrap(
-    await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`),
-  );
+  return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions`));
 }
 
 /**
@@ -177,28 +202,9 @@ export async function revokeSessionPublicShare(
   );
 }
 
-export async function createProjectSession(
-  projectId: string,
-  input?: {
-    base_ref?: string;
-    agent_name?: string;
-    /** Slug of the sandbox template to boot from. Defaults to "default". */
-    sandbox_slug?: string;
-    initial_prompt?: string;
-    name?: string;
-    /**
-     * Client-generated session id. The API accepts any RFC 4122 v4 UUID;
-     * we use this so the FE can navigate optimistically the moment the user
-     * clicks "send" — the page renders before the POST has even returned.
-     */
-    session_id?: string;
-  },
-) {
+export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(
-      `/projects/${projectId}/sessions`,
-      input ?? {},
-    ),
+    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -218,10 +224,9 @@ export async function getProjectSession(
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
-    await backendApi.get<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}`,
-      { showErrors: options?.showErrors },
-    ),
+    await backendApi.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, {
+      showErrors: options?.showErrors,
+    }),
   );
 }
 
@@ -329,28 +334,17 @@ export async function updateProjectSession(
   },
 ) {
   return unwrap(
-    await backendApi.patch<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}`,
-      input,
-    ),
+    await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
   );
 }
 
-export async function deleteProjectSession(
-  projectId: string,
-  sessionId: string,
-) {
+export async function deleteProjectSession(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/sessions/${sessionId}`,
-    ),
+    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
   );
 }
 
-export async function restartProjectSession(
-  projectId: string,
-  sessionId: string,
-) {
+export async function restartProjectSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
@@ -360,10 +354,7 @@ export async function restartProjectSession(
 }
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
-export async function stopProjectSession(
-  projectId: string,
-  sessionId: string,
-) {
+export async function stopProjectSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,

@@ -5,6 +5,14 @@ import {
   resolveRootSessionId,
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
+import { sandboxRuntimeRequestHeaders } from './sandbox-fetch';
+
+test('sandbox runtime reads force a portable response encoding', () => {
+  expect(sandboxRuntimeRequestHeaders({ Authorization: 'Bearer service-key' })).toEqual({
+    Authorization: 'Bearer service-key',
+    'Accept-Encoding': 'identity',
+  });
+});
 
 function sess(
   id: string,

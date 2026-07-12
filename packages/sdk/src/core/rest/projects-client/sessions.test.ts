@@ -102,6 +102,28 @@ test('createProjectSession POSTs the input and marks the new session fresh', asy
   expect(isSessionFresh('NEW-1')).toBe(true);
 });
 
+test('createProjectSession serializes non-secret runtime_context unchanged', async () => {
+  nextResponse = { status: 200, body: { session_id: 'NEW-CONTEXT', name: null } };
+  await createProjectSession('P1', {
+    runtime_context: {
+      workspace_id: 'org_123',
+      locale: 'fr',
+      licensed: true,
+      risk_score: 0.5,
+      optional: null,
+    },
+  });
+  expect(last().body).toEqual({
+    runtime_context: {
+      workspace_id: 'org_123',
+      locale: 'fr',
+      licensed: true,
+      risk_score: 0.5,
+      optional: null,
+    },
+  });
+});
+
 test('createProjectSession does NOT mark the session fresh when an initial_prompt is set', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-2', name: null } };
   await createProjectSession('P1', { initial_prompt: 'hello' });

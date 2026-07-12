@@ -76,6 +76,42 @@ export type ApplyAgentBlockResult =
   | { ok: false; error: string; issues?: ManifestIssue[] };
 
 /**
+ * Change the project-wide default agent without touching any agent block.
+ * The manifest validator is the authority: the target must be a declared,
+ * enabled v2 agent before the caller is allowed to commit the file.
+ */
+export function applyDefaultAgentV2(
+  manifest: ParsedManifest,
+  agentName: string,
+): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 2) {
+    return {
+      ok: false,
+      error:
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to set a project default agent.',
+    };
+  }
+  if (!isValidAgentName(agentName)) {
+    return {
+      ok: false,
+      error: `"${agentName}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
+    };
+  }
+
+  const nextRaw = { ...manifest.raw, default_agent: agentName };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  if (errorIssues.length > 0) {
+    return {
+      ok: false,
+      error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+      issues: errorIssues,
+    };
+  }
+  return { ok: true, raw: nextRaw };
+}
+
+/**
  * Write one agent's full v2 block into the manifest's raw object (full
  * replace, upsert-by-name — same "read whole file, mutate one entry,
  * validate, commit" shape as `applyAgentScope`), and shape-validate the

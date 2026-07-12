@@ -1,0 +1,153 @@
+---
+title: "How we screen inbound applicants"
+description: An agent connected to our applications inbox, the role's written rubric, and Google Calendar that scores each resume against the rubric with evidence and proposes interview slots for strong matches.
+date: "2026-03-19"
+author: team
+tags:
+  - People
+  - Case Study
+  - Team
+---
+
+Every open role brings in more applications than anyone can read carefully, so
+screening gets rushed: a few seconds per resume, inconsistent from one reviewer to
+the next, and easy to drift from the criteria the role was actually written
+against. Good candidates get skimmed past and the standard moves depending on who
+is reading.
+
+We run an agent on Kortix that does the first read consistently. Each application
+triggers a session that scores the resume against the role's written rubric, writes
+a structured screen with evidence, and proposes interview slots for strong matches.
+A person makes every advance-or-reject call; the agent never rejects anyone. This
+is how we screen our own inbound applicants.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every inbound application</Fact>
+  <Fact label="Connected systems">Applications inbox / ATS · Role rubric · Google Calendar</Fact>
+  <Fact label="Mode">Trigger-driven · a person makes every decision</Fact>
+</KeyFacts>
+
+## The problem
+
+The first read of a resume is where screening gets inconsistent. Volume forces it
+to be fast, and fast reads drift: the same resume gets a different verdict from a
+different reviewer, or against a criterion the role never listed. Strong
+candidates get missed and the bar moves with whoever is reading.
+
+The usual fixes trade one problem for another. Keyword filters reject on the wrong
+signal and quietly drop good people. A rushed human pass is inconsistent by the
+afternoon. An AI screener that scores against its own idea of "good" is a fairness
+problem: opaque, unaccountable, and impossible to check.
+
+## What we built
+
+On Kortix, each inbound application triggers an agent. The application spawns an
+isolated session (a cloud sandbox) with the role's written rubric and scoped access
+to Google Calendar. The agent reads the resume against the rubric, writes a
+structured screen — strengths, gaps, a score, and supporting quotes as evidence —
+and for strong matches proposes interview slots on the hiring manager's calendar. A
+person decides every case.
+
+<Figure
+  caption="A structured screen scored against the rubric, with supporting quotes as evidence"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the applications inbox as the trigger">
+
+The applications inbox, or the ATS, is connected so a new application is the
+trigger. Each one fires a fresh **session** in its own sandbox, seeded with that
+resume. One application maps to one session on one disposable machine, so screens
+are independent and the pipeline processes in parallel.
+
+</Step>
+<Step title="Give the agent the role's rubric">
+
+The role's written rubric lives as **skills** and **memory** that travel with the
+agent: the required and preferred criteria, what strong evidence looks like for
+each, and how to score. The agent scores against this rubric and nothing else.
+When the rubric changes, we update the file and the agent screens against the new
+version.
+
+</Step>
+<Step title="Connect the calendar">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the resume** — the full application, so the screen quotes what the
+  candidate actually wrote.
+- **Score against the rubric** — strengths, gaps, and a score, each tied to
+  supporting quotes as evidence.
+- **Propose interview slots** — for strong matches, open times on the hiring
+  manager's Google Calendar, offered for a person to confirm.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent scores only against the written rubric and always surfaces the evidence
+behind every strength, gap, and score, so a decision can be checked. It never
+auto-rejects: a person makes every advance-or-reject decision. The agent produces
+the screen and the proposed slots; the hiring manager decides. Credentials are
+encrypted in the Secrets Manager and injected at runtime, never shown to the model
+or written to logs.
+
+</Step>
+<Step title="Let each application arrive pre-screened">
+
+With that in place, an inbound application arrives already read against the rubric:
+a structured screen with a score and the quotes behind it, and for strong matches a
+set of proposed interview times. The hiring manager reviews the evidence, decides,
+and confirms a slot. The first read is consistent, and the decision stays with a
+person.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **trigger** on every application spawns a session with the role's rubric as
+  **skills** and **memory** and a scoped **connector** into Google Calendar. The
+  agent scores only against the written rubric and surfaces the evidence; it never
+  auto-rejects, and a person makes every decision.
+</Callout>
+
+## Guardrails
+
+The agent reads candidate applications and its output shapes hiring, so fairness
+and human judgment are built into the controls:
+
+- **Isolation.** Every application runs in its own microVM sandbox. The session
+  reads only the resume it's seeded with and reaches only the calendar; only the
+  screen and proposed slots leave the sandbox.
+- **Scoped secrets.** The inbox, ATS, and calendar credentials are encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Human approval gate.** The agent never auto-rejects. It scores only against the
+  written rubric and always surfaces the evidence behind every score, and a person
+  makes every advance-or-reject decision.
+- **Everything is code.** The rubric, the agent's configuration, and its
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="Proposed interview slots on the hiring manager's calendar, offered for a person to confirm"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every application" label="Read against the same written rubric, with evidence" />
+  <Stat value="A person decides" label="No candidate is ever auto-rejected by the agent" />
+  <Stat value="3 systems" label="Applications inbox, rubric, and calendar in one agent" />
+</StatGrid>
+
+The first read is now consistent and checkable: every application is scored against
+the same written rubric with the quotes that support each score, and strong matches
+arrive with interview times already proposed. The hiring manager spends their time
+deciding on evidence rather than skimming resumes, and every advance-or-reject call
+stays with a person.

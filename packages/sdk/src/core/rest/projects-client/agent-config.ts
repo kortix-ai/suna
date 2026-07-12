@@ -94,3 +94,18 @@ export async function updateAgentConfig(
     }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, block),
   );
 }
+
+export interface UpdateProjectDefaultAgentResponse {
+  ok: boolean;
+  default_agent: string;
+}
+
+/** Set the declared project default in `kortix.yaml` (v2 projects). */
+export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
+  return unwrap(
+    await backendApi.put<UpdateProjectDefaultAgentResponse>(
+      `/projects/${projectId}/default-agent`,
+      { agent: agentName },
+    ),
+  );
+}

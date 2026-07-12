@@ -163,6 +163,33 @@ const projects = await listProjects();
 const detail = await getProjectDetail(projectId);
 ```
 
+`createProjectSession` accepts bounded non-secret scalar `runtime_context` for
+wrapper metadata. Kortix persists it across replacement runtimes and injects
+one JSON envelope (`KORTIX_SESSION_CONTEXT`), never one env var per key:
+
+```ts
+await createProjectSession(projectId, {
+  runtime_context: { workspace_id: 'org_123', locale: 'fr' },
+});
+```
+
+Credentials and dynamic MCP configuration are intentionally not accepted here.
+Session-specific identities use server-side connection profiles. A manager
+reconciles the profile through `kortix.project(projectId).connectors.profiles`,
+stores/rotates its credential there, then supplies only the profile id:
+
+```ts
+await createProjectSession(projectId, {
+  connector_bindings: {
+    'customer-data': { profile_id: profile.profile_id },
+  },
+});
+```
+
+The profile must belong to the same project and logical connector, be active,
+and remain within the agent's manifest connector grant. Revoking it denies the
+next Executor catalog/call request without exposing the credential to runtime.
+
 **When to use:** you want a single REST call without holding a facade instance —
 e.g. in a server action or a script. In app code, prefer the facade so ids are
 bound and the surface stays discoverable.

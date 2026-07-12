@@ -17,7 +17,7 @@ import { listProjectSecrets } from '../core/rest/projects-client';
 import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useKortixRouteProjectId } from './route-project';
 import {
   connectedGatewayProviderIdsFromSecretNames,
@@ -43,6 +43,11 @@ export interface UseOpenCodeLocalOptions {
    * sessions never accidentally prompt with a different agent.
    */
   boundAgentName?: string | null;
+  /**
+   * Project-declared default agent. Seeds a new composer before the user's
+   * cross-project last-used agent, but remains overridable for this mount.
+   */
+  defaultAgentName?: string | null;
   /**
    * Free-tier gate for model visibility, threaded straight into `useModelStore`.
    * A host that doesn't have a billing/account concept can omit it (default
@@ -215,7 +220,9 @@ export function scopedModelSelectionKey(
  *   2. The server-bound agent for a project session (`boundAgentName`) — so an
  *      existing project session never accidentally re-prompts with a different
  *      agent than the one it was created with.
- *   3. The global last-used agent — only when there's no session at all (e.g.
+ *   3. The project's declared default (`defaultAgentName`) — the starting pick
+ *      for a new project chat.
+ *   4. The global last-used agent — only when there's no session at all (e.g.
  *      the dashboard composer), so a fresh session inherits the user's most
  *      recent pick.
  */
@@ -223,12 +230,17 @@ export function resolveCurrentAgentName(input: {
   sessionId?: string;
   sessionAgentName?: string;
   boundAgentName?: string | null;
+  defaultAgentName?: string | null;
+  explicitAgentName?: string;
   lastAgentName?: string;
 }): string | undefined {
   const boundAgentName = input.boundAgentName?.trim() || undefined;
+  const defaultAgentName = input.defaultAgentName?.trim() || undefined;
   return (
+    input.explicitAgentName ??
     input.sessionAgentName ??
     boundAgentName ??
+    defaultAgentName ??
     (input.sessionId ? undefined : input.lastAgentName)
   );
 }
@@ -243,6 +255,7 @@ export function useOpenCodeLocal({
   config,
   sessionId,
   boundAgentName,
+  defaultAgentName,
   freeTier,
   resolveServerDefault,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
@@ -320,12 +333,23 @@ export function useOpenCodeLocal({
   }, [rawAgents]);
 
   // Resolve the current agent name (see `resolveCurrentAgentName`): per-session
-  // slot -> server-bound project agent -> global last-used (dashboard/new chats).
+  // slot -> server-bound project agent -> project default -> global last-used.
   const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
+  const agentSelectionScope = `${sessionId ?? ''}\u0000${boundAgentName ?? ''}\u0000${defaultAgentName ?? ''}`;
+  const [explicitAgentSelection, setExplicitAgentSelection] = useState<{
+    scope: string;
+    name: string | undefined;
+  }>({ scope: '', name: undefined });
+  const explicitAgentName =
+    explicitAgentSelection.scope === agentSelectionScope
+      ? explicitAgentSelection.name
+      : undefined;
   const currentAgentName = resolveCurrentAgentName({
     sessionId,
     sessionAgentName,
     boundAgentName,
+    defaultAgentName,
+    explicitAgentName,
     lastAgentName: modelStore.lastAgentName,
   });
   const scopedSessionModelKey = useMemo(
@@ -337,6 +361,11 @@ export function useOpenCodeLocal({
     (name: string | undefined) => {
       if (sessionId) {
         modelStore.setSessionAgentName(sessionId, name);
+      } else {
+        // A project default is an initial preference, not a hard lock. Keep an
+        // in-memory override so the user can switch this composer without
+        // rewriting the project's durable default.
+        setExplicitAgentSelection({ scope: agentSelectionScope, name });
       }
       // Always update the global "last used" slot so the dashboard and any
       // future sessions pick up the user's most recent choice. Skipped only
@@ -347,7 +376,12 @@ export function useOpenCodeLocal({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, modelStore.setSessionAgentName, modelStore.setLastAgentName],
+    [
+      sessionId,
+      agentSelectionScope,
+      modelStore.setSessionAgentName,
+      modelStore.setLastAgentName,
+    ],
   );
 
   // Resolve current agent (matching SolidJS: find by name or fall back to first)

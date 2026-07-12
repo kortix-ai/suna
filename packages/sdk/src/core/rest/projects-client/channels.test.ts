@@ -88,7 +88,9 @@ test('disconnectSlack deletes the installation and throws on failure', async () 
 test('getEmailInstallation forwards an optional connector_slug query param', async () => {
   nextResponse = { status: 200, body: null };
   await getEmailInstallation('P1', 'custom_inbox');
-  expect(last().url).toContain('/projects/P1/channels/email/installation?connector_slug=custom_inbox');
+  expect(last().url).toContain(
+    '/projects/P1/channels/email/installation?connector_slug=custom_inbox',
+  );
 });
 
 test('getEmailMode falls back to a safe default on failure', async () => {
@@ -101,18 +103,25 @@ test('connectEmail posts the connect payload', async () => {
   nextResponse = {
     status: 200,
     body: {
+      profile_id: 'profile-email-1',
       profileSlug: 'inbox-1',
       inboxId: 'i1',
       email: 'a@b.com',
       displayName: null,
       webhookId: null,
-      senderPolicy: { mode: 'allow_all', allowedEmails: [], allowedDomains: [], allowedRegex: null },
+      senderPolicy: {
+        mode: 'allow_all',
+        allowedEmails: [],
+        allowedDomains: [],
+        allowedRegex: null,
+      },
       installedAt: '2026-01-01',
     },
   };
-  await connectEmail('P1', { email: 'a@b.com' });
+  const installation = await connectEmail('P1', { email: 'a@b.com' });
   expect(last().url).toContain('/projects/P1/channels/email/connect');
   expect(last().body).toEqual({ email: 'a@b.com' });
+  expect(installation.profileId).toBe('profile-email-1');
 });
 
 test('disconnectEmail throws with the server error message on failure', async () => {
@@ -173,7 +182,12 @@ test('uploadSlackChannelFile posts channel/filename/content_base64 to the upload
   });
   expect(last().url).toContain('/projects/P1/channels/slack/file/upload');
   expect(last().method).toBe('POST');
-  expect(last().body).toMatchObject({ channel: 'C1', filename: 'report.pdf', content_base64: 'YWJj', comment: 'here you go' });
+  expect(last().body).toMatchObject({
+    channel: 'C1',
+    filename: 'report.pdf',
+    content_base64: 'YWJj',
+    comment: 'here you go',
+  });
   expect(result.ok).toBe(true);
 });
 
@@ -195,7 +209,12 @@ test('updateEmailPolicy defaults connector_slug to kortix_email', async () => {
       email: 'a@b.com',
       displayName: null,
       webhookId: null,
-      senderPolicy: { mode: 'restricted', allowedEmails: [], allowedDomains: [], allowedRegex: null },
+      senderPolicy: {
+        mode: 'restricted',
+        allowedEmails: [],
+        allowedDomains: [],
+        allowedRegex: null,
+      },
       installedAt: '2026-01-01',
     },
   };
@@ -255,12 +274,17 @@ test('updateChannelBinding PATCHes the binding by id', async () => {
       effectiveAgent: { agent: 'billing', source: 'explicit' },
     },
   };
-  const result = await updateChannelBinding('P1', 'b1', { agentName: 'billing', conversationPolicy: 'owner_only' });
+  const result = await updateChannelBinding('P1', 'b1', {
+    agentName: 'billing',
+    conversationPolicy: 'owner_only',
+  });
   expect(last().url).toContain('/projects/P1/channels/bindings/b1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ agentName: 'billing', conversationPolicy: 'owner_only' });
   expect(result.agentName).toBe('billing');
 
   nextResponse = { status: 404, body: { message: 'not found' } };
-  await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow('not found');
+  await expect(updateChannelBinding('P1', 'unknown', { agentName: null })).rejects.toThrow(
+    'not found',
+  );
 });

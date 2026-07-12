@@ -115,4 +115,23 @@ describe('OpenCode local model selection scoping', () => {
   test('dashboard composer can still seed from global last-used agent', () => {
     expect(resolveCurrentAgentName({ lastAgentName: 'reviewer' })).toBe('reviewer');
   });
+
+  test('project composer prefers its declared default over a cross-project last-used agent', () => {
+    expect(
+      resolveCurrentAgentName({
+        defaultAgentName: 'kortix',
+        lastAgentName: 'reviewer',
+      }),
+    ).toBe('kortix');
+  });
+
+  test('an explicit picker choice can override the project default for the current composer', () => {
+    expect(
+      resolveCurrentAgentName({
+        explicitAgentName: 'reviewer',
+        defaultAgentName: 'kortix',
+        lastAgentName: 'builder',
+      }),
+    ).toBe('reviewer');
+  });
 });

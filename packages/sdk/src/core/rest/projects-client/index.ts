@@ -32,6 +32,7 @@ export * from './marketplace';
 export * from './audit';
 export * from './setup-links';
 export * from './marketplace-catalog';
+export * from './templates';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

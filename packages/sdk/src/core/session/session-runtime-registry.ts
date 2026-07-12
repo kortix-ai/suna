@@ -96,9 +96,9 @@ export function setSessionRuntime(
 }
 
 /**
- * Drop a session's registry entry (restart/delete). A restart may re-provision
- * a different sandbox, so a stale entry would route subsequent calls at a dead
- * box — every handle must re-resolve via `ensureReady()`/`startProjectSession`.
+ * Drop a session's registry entry (restart/delete). Restart preserves the
+ * established sandbox identity, but every handle must still re-resolve
+ * readiness via `ensureReady()`/`startProjectSession` after the reboot.
  */
 export function clearSessionRuntime(projectId: string, sessionId: string): void {
   registry.delete(registryKey(projectId, sessionId));

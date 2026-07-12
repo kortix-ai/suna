@@ -1,0 +1,154 @@
+---
+title: "How we draft incident postmortems"
+description: When an incident resolves, an agent pulls the timeline from the incident channel, correlates deploys and log spikes, and drafts a structured postmortem as a doc PR for the team to review and edit.
+date: "2026-06-24"
+author: team
+tags:
+  - SRE
+  - Case Study
+  - Enterprise
+---
+
+A postmortem is worth writing and easy to skip. Once an incident is resolved and
+the pressure is off, someone has to reconstruct the timeline from a scrolling
+channel, line it up against the deploys and log spikes, work out the root cause,
+and write it all up. It's an hour of careful work at the moment everyone most
+wants to move on, so it often gets a thin summary or nothing.
+
+We run an agent on Kortix that drafts the first version. When an incident
+resolves, it reads the incident channel, correlates the deploys and log spikes,
+and opens a structured postmortem as a doc PR. It drafts; humans review and
+finalize. This is how we write our own postmortems.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Incident resolved, the agent drafts</Fact>
+  <Fact label="Connected systems">Incident channel · Logs · GitHub</Fact>
+  <Fact label="Mode">Drafts a doc PR, humans finalize</Fact>
+</KeyFacts>
+
+## The problem
+
+The facts of an incident are scattered across places that don't line up on their
+own: the back-and-forth in the incident channel, the deploy history, and the log
+spikes. Turning them into a timeline means reading the channel top to bottom,
+matching each moment against what shipped and what the logs did, and inferring
+where the root cause sits.
+
+The common workarounds are thin. A blank template gets filled in from memory, so
+the timeline drifts and details get rounded off. A resolved incident with no
+writeup means the same failure mode can recur with nothing to point back to. The
+information to do it properly exists; assembling it by hand is exactly the work
+no one wants right after an incident.
+
+## What we built
+
+On Kortix, resolving an incident triggers an agent. It reads the incident channel
+for the timeline, pulls the deploy history and log spikes for the same window,
+correlates them, and drafts a structured postmortem, timeline, root cause, and
+action items, as a doc PR against the repo. The team reviews and edits the draft
+the way they'd review any change. The agent drafts; it never publishes a final
+postmortem on its own.
+
+<Figure
+  caption="The drafted postmortem opened as a doc PR for review"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Trigger on the resolved incident">
+
+The incident channel is connected as a **channel**, so marking an incident
+resolved is the trigger. That fires a fresh **session** in its own isolated
+sandbox, seeded with the incident. One incident maps to one session on one
+disposable machine, and the draft starts while the details are fresh.
+
+</Step>
+<Step title="Give the agent the postmortem format">
+
+What a good postmortem contains and how we structure it lives as **skills** and
+**memory** that travel with the agent: the section layout (timeline, root cause,
+impact, action items), the house style, and patterns from past incidents worth
+checking against. When we change how we write postmortems, we update the file and
+the next draft follows it.
+
+</Step>
+<Step title="Connect the channel, the logs, and GitHub">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent reads:
+
+- **The incident channel** — the message timeline, who did what, and when the
+  incident opened and resolved.
+- **The logs** — error-rate and latency spikes over the incident window, to line
+  up against the timeline.
+- **GitHub** — the deploys and merges in the same window, to correlate what
+  shipped with when things broke.
+
+The agent reads these to reconstruct the sequence; its one write is the doc PR.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent produces a **draft, not a decision**. Its output is a doc PR that a
+human reviews, edits, and merges: root cause and action items are proposed, never
+finalized by the agent. It doesn't publish a postmortem or assign owners on its
+own. Credentials are encrypted in the Secrets Manager and injected at runtime,
+never shown to the model or written to logs.
+
+</Step>
+<Step title="Open the draft for review">
+
+With that in place, a resolved incident produces a first draft on its own: a
+timeline built from the channel and lined up against the deploys and log spikes, a
+proposed root cause with the evidence behind it, and a list of candidate action
+items. The team opens the PR, corrects what the agent inferred, adds the context
+only they have, and merges the version they stand behind.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A resolved incident on the **channel** trigger spawns a session with read-only
+  **connectors** into the channel, the logs, and GitHub. The format lives as
+  **skills** and **memory**. The agent correlates the timeline and opens a doc
+  PR; humans finalize.
+</Callout>
+
+## Guardrails
+
+The agent reads an incident channel, logs, and deploy history and writes a
+document others will act on, so the access is scoped and contained:
+
+- **Isolation.** Every incident runs in its own microVM sandbox. The session
+  reads the timeline, correlates the deploys and logs, and only the drafted doc
+  PR leaves the sandbox.
+- **Scoped secrets.** The channel, logs, and GitHub credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **PR-gated.** The postmortem lands as a doc PR, not a published document. A
+  human reviews the timeline, edits the root cause and action items, and owns the
+  merge.
+- **Everything is code.** The postmortem format and the per-tool permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A correlated timeline lining up channel messages against deploys and log spikes"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every incident" label="A first draft the moment it resolves" />
+  <Stat value="PR-gated" label="The agent drafts, the team reviews and finalizes" />
+  <Stat value="3 systems" label="Incident channel, logs, and GitHub in one agent" />
+</StatGrid>
+
+Resolved incidents now come with a drafted postmortem waiting as a doc PR, its
+timeline already correlated against the deploys and log spikes. The team spends
+its time judging the root cause and deciding the action items rather than
+reconstructing what happened, and fewer incidents close with no writeup at all.

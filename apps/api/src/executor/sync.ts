@@ -1,3 +1,13 @@
+import {
+  executorConnectionProfiles,
+  executorConnectorActions,
+  executorConnectorPolicies,
+  executorConnectors,
+  executorProjectPolicies,
+  executorProjectSettings,
+  projectSessionConnectorBindings,
+  projects,
+} from '@kortix/db';
 /**
  * Connector materialization sweep — read `connectors:` from kortix.yaml,
  * fetch + normalize each connector's catalog, and upsert into the DB
@@ -7,22 +17,29 @@
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep. See docs/specs/executor.md §3, §7.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
+import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { resolveExperimentalFeature } from '../experimental/features';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import {
-  executorConnectorActions,
-  executorConnectorPolicies,
-  executorConnectors,
-  executorProjectPolicies,
-  executorProjectSettings,
-  projects,
-} from '@kortix/db';
-import { db } from '../shared/db';
+  type ConnectorSpec,
+  extractConnectors,
+  manifestHashForConnector,
+} from '../projects/connectors';
+import { type GitBackedProject, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
-import { readManifest } from '../projects/triggers';
-import { readRepoFile, type GitBackedProject } from '../projects/git';
-import { extractConnectors, manifestHashForConnector, type ConnectorSpec } from '../projects/connectors';
 import { extractProjectPolicies } from '../projects/policies';
+import { readManifest } from '../projects/triggers';
+import { db } from '../shared/db';
+import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
+import { synthesizeChannelConnectors } from './channel-materialize';
+import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
+import { synthesizeComputerConnectors } from './computer-materialize';
+import { computerCatalog } from './computers';
+import { ensureDefaultProfile } from './credentials';
+import { parseResponseBody } from './execute';
+import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeGraphql,
   normalizeHttp,
@@ -30,19 +47,9 @@ import {
   normalizeOpenApi,
   normalizePipedream,
 } from './normalize';
-import { channelApiBase, channelCatalog } from './channels';
-import { synthesizeChannelConnectors } from './channel-materialize';
-import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
-import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
-import { computerCatalog } from './computers';
-import { synthesizeComputerConnectors } from './computer-materialize';
-import { parseSpecDocument } from './spec-doc';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
-import type { NormalizedAction, HttpRouteSpec } from './types';
-import { parseResponseBody } from './execute';
-import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
-import { resolveExperimentalFeature } from '../experimental/features';
+import { parseSpecDocument } from './spec-doc';
+import type { HttpRouteSpec, NormalizedAction } from './types';
 
 export interface SyncResult {
   synced: number;
@@ -91,7 +98,10 @@ export async function reconcileChannelConnectors(
     }
     await syncProjectConnectors(projectId, row.accountId);
   } catch (e) {
-    console.warn('[executor] channel connector reconcile failed', { projectId, err: (e as Error).message });
+    console.warn('[executor] channel connector reconcile failed', {
+      projectId,
+      err: (e as Error).message,
+    });
   }
 }
 
@@ -115,7 +125,10 @@ export async function reconcileComputerConnectors(accountId: string): Promise<vo
       await syncProjectConnectors(r.projectId, accountId);
     }
   } catch (e) {
-    console.warn('[executor] computer connector reconcile failed', { accountId, err: (e as Error).message });
+    console.warn('[executor] computer connector reconcile failed', {
+      accountId,
+      err: (e as Error).message,
+    });
   }
 }
 
@@ -141,9 +154,14 @@ interface ResolvedCatalog {
  * Materialize a project's connectors from its manifest. Loads the project +
  * git auth (so private repos resolve), reads kortix.yaml, then upserts.
  */
-export async function syncProjectConnectors(projectId: string, accountId: string, opts: SyncOptions = {}): Promise<SyncResult> {
+export async function syncProjectConnectors(
+  projectId: string,
+  _accountId: string,
+  opts: SyncOptions = {},
+): Promise<SyncResult> {
   const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
   if (!row) return { synced: 0, errors: [{ slug: '(project)', error: 'project not found' }] };
+  const accountId = row.accountId;
 
   const gitProject = await withProjectGitAuth(row);
   const manifest = await readManifest(gitProject).catch(() => null);
@@ -182,11 +200,20 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
   if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
-    return { synced: 0, errors: [{ slug: '(manifest)', error: 'kortix.yaml not found or unreadable' }] };
+    return {
+      synced: 0,
+      errors: [{ slug: '(manifest)', error: 'kortix.yaml not found or unreadable' }],
+    };
   }
 
   const existing = await db
-    .select({ slug: executorConnectors.slug, connectorId: executorConnectors.connectorId, manifestHash: executorConnectors.manifestHash, status: executorConnectors.status, providerType: executorConnectors.providerType })
+    .select({
+      slug: executorConnectors.slug,
+      connectorId: executorConnectors.connectorId,
+      manifestHash: executorConnectors.manifestHash,
+      status: executorConnectors.status,
+      providerType: executorConnectors.providerType,
+    })
     .from(executorConnectors)
     .where(eq(executorConnectors.projectId, projectId));
   const existingBySlug = new Map(existing.map((e) => [e.slug, e]));
@@ -202,7 +229,10 @@ export async function syncProjectConnectors(projectId: string, accountId: string
       // policies) are still reconciled inside upsertConnector. `force` (manual
       // sync) always re-fetches; error rows always retry.
       const catalogUnchanged =
-        !opts.force && !!ex && ex.status !== 'error' && ex.manifestHash === manifestHashForConnector(spec);
+        !opts.force &&
+        !!ex &&
+        ex.status !== 'error' &&
+        ex.manifestHash === manifestHashForConnector(spec);
       const catalog = catalogUnchanged ? null : await resolveCatalog(gitProject, spec);
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
@@ -212,6 +242,8 @@ export async function syncProjectConnectors(projectId: string, accountId: string
     }
   }
 
+  await reconcileEmailConnectionProfiles(projectId, accountId);
+
   // Reconcile deletions. When the manifest is readable it's the source of truth
   // for declared connectors — drop any it no longer lists (channel specs are in
   // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
@@ -220,11 +252,105 @@ export async function syncProjectConnectors(projectId: string, accountId: string
   for (const e of existing) {
     if (desiredSlugs.has(e.slug)) continue;
     if (manifest || e.providerType === 'channel' || e.providerType === 'computer') {
-      await db.delete(executorConnectors).where(eq(executorConnectors.connectorId, e.connectorId));
+      const [bound] = await db
+        .select({ sessionId: projectSessionConnectorBindings.sessionId })
+        .from(projectSessionConnectorBindings)
+        .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
+        .limit(1);
+      if (bound) {
+        await db
+          .update(executorConnectors)
+          .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+          .where(eq(executorConnectors.connectorId, e.connectorId));
+      } else {
+        await db
+          .delete(executorConnectors)
+          .where(eq(executorConnectors.connectorId, e.connectorId));
+      }
     }
   }
 
   return { synced, errors };
+}
+
+export async function reconcileEmailConnectionProfiles(
+  projectId: string,
+  accountId: string,
+): Promise<void> {
+  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const canonicalSlug = channelDefaultSlug('email');
+  const [connector] = await db
+    .select({ connectorId: executorConnectors.connectorId })
+    .from(executorConnectors)
+    .where(
+      and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, canonicalSlug)),
+    )
+    .limit(1);
+  if (!connector) return;
+  await ensureDefaultProfile({ projectId, connectorId: connector.connectorId });
+  const activeOwnerIds = new Set(installs.map((install) => `agentmail:${install.inboxId}`));
+  const existingEmailProfiles = await db
+    .select({
+      profileId: executorConnectionProfiles.profileId,
+      ownerId: executorConnectionProfiles.ownerId,
+    })
+    .from(executorConnectionProfiles)
+    .where(
+      and(
+        eq(executorConnectionProfiles.connectorId, connector.connectorId),
+        eq(executorConnectionProfiles.ownerType, 'external'),
+      ),
+    );
+  for (const existing of existingEmailProfiles) {
+    if (existing.ownerId?.startsWith('agentmail:') && !activeOwnerIds.has(existing.ownerId)) {
+      await db
+        .update(executorConnectionProfiles)
+        .set({ status: 'revoked', updatedAt: new Date() })
+        .where(eq(executorConnectionProfiles.profileId, existing.profileId));
+    }
+  }
+
+  for (const install of installs) {
+    const ownerId = `agentmail:${install.inboxId}`;
+    const [existing] = await db
+      .select({ profileId: executorConnectionProfiles.profileId })
+      .from(executorConnectionProfiles)
+      .where(
+        and(
+          eq(executorConnectionProfiles.connectorId, connector.connectorId),
+          eq(executorConnectionProfiles.ownerType, 'external'),
+          eq(executorConnectionProfiles.ownerId, ownerId),
+        ),
+      )
+      .limit(1);
+    const values = {
+      label: install.displayName || install.email,
+      status: 'active' as const,
+      metadata: {
+        connector_slug: install.profileSlug,
+        inbox_id: install.inboxId,
+        email: install.email,
+        channel_profile: true,
+      },
+      updatedAt: new Date(),
+    };
+    if (existing) {
+      await db
+        .update(executorConnectionProfiles)
+        .set(values)
+        .where(eq(executorConnectionProfiles.profileId, existing.profileId));
+    } else {
+      await db.insert(executorConnectionProfiles).values({
+        accountId,
+        projectId,
+        connectorId: connector.connectorId,
+        ownerType: 'external',
+        ownerId,
+        isDefault: false,
+        ...values,
+      });
+    }
+  }
 }
 
 /**
@@ -297,10 +423,14 @@ async function upsertConnector(
     connectorId = created!.connectorId;
   }
 
+  await ensureDefaultProfile({ projectId, connectorId });
+
   // Actions only change when the catalog was re-resolved — leave them in place
   // on a cheap reconcile.
   if (catalog) {
-    await db.delete(executorConnectorActions).where(eq(executorConnectorActions.connectorId, connectorId));
+    await db
+      .delete(executorConnectorActions)
+      .where(eq(executorConnectorActions.connectorId, connectorId));
     if (catalog.actions.length > 0) {
       await db.insert(executorConnectorActions).values(
         catalog.actions.map((a) => ({
@@ -318,26 +448,41 @@ async function upsertConnector(
   }
 
   // Policies gate calls (not part of the catalog hash) — always reconcile; cheap.
-  await db.delete(executorConnectorPolicies).where(eq(executorConnectorPolicies.connectorId, connectorId));
+  await db
+    .delete(executorConnectorPolicies)
+    .where(eq(executorConnectorPolicies.connectorId, connectorId));
   const policyRows = toPolicyRows(spec);
   if (policyRows.length > 0) {
     await db.insert(executorConnectorPolicies).values(
-      policyRows.map((p) => ({ connectorId: connectorId!, match: p.match, action: p.action, position: p.position })),
+      policyRows.map((p) => ({
+        connectorId: connectorId!,
+        match: p.match,
+        action: p.action,
+        position: p.position,
+      })),
     );
   }
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
-export async function resolveCatalog(project: GitBackedProject, spec: ConnectorSpec): Promise<ResolvedCatalog> {
+export async function resolveCatalog(
+  project: GitBackedProject,
+  spec: ConnectorSpec,
+): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
       case 'openapi': {
         const doc = await loadSpecDoc(project, spec.spec!);
-        let server = Array.isArray(doc?.servers) && doc.servers[0]?.url ? String(doc.servers[0].url) : null;
+        let server =
+          Array.isArray(doc?.servers) && doc.servers[0]?.url ? String(doc.servers[0].url) : null;
         // Specs often use a relative server (e.g. Petstore's "/api/v3"); resolve
         // it against the spec URL's origin so the gateway has an absolute base.
         if (server && server.startsWith('/') && /^https?:\/\//i.test(spec.spec!)) {
-          try { server = new URL(server, spec.spec!).href.replace(/\/$/, ''); } catch { /* keep */ }
+          try {
+            server = new URL(server, spec.spec!).href.replace(/\/$/, '');
+          } catch {
+            /* keep */
+          }
         }
         return { actions: normalizeOpenApi(doc), server };
       }
@@ -360,7 +505,10 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
       }
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.
-        return { actions: channelCatalog(spec.platform ?? ''), server: channelApiBase(spec.platform ?? '') };
+        return {
+          actions: channelCatalog(spec.platform ?? ''),
+          server: channelApiBase(spec.platform ?? ''),
+        };
       }
       case 'computer': {
         // Fixed, local catalog (the tunnel RPC method set) — no network, no
@@ -394,7 +542,10 @@ async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any
   return parseSpecDocument(raw, spec);
 }
 
-async function loadHttpRoutes(project: GitBackedProject, spec: string | null): Promise<HttpRouteSpec[]> {
+async function loadHttpRoutes(
+  project: GitBackedProject,
+  spec: string | null,
+): Promise<HttpRouteSpec[]> {
   if (!spec) return [];
   if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
   const raw = /^https?:\/\//i.test(spec)
@@ -424,12 +575,17 @@ async function introspectGraphql(endpoint: string): Promise<any> {
  */
 async function reconcileProjectPolicies(
   projectId: string,
-  parsed: { policies: { match: string; action: 'always_run' | 'require_approval' | 'block' }[]; settings: { defaultMode: 'risk' | 'allow_all' } },
+  parsed: {
+    policies: { match: string; action: 'always_run' | 'require_approval' | 'block' }[];
+    settings: { defaultMode: 'risk' | 'allow_all' };
+  },
 ): Promise<void> {
   await db.delete(executorProjectPolicies).where(eq(executorProjectPolicies.projectId, projectId));
   const rows = toProjectPolicyRows(parsed.policies);
   if (rows.length > 0) {
-    await db.insert(executorProjectPolicies).values(
+    await db
+      .insert(executorProjectPolicies)
+      .values(
       rows.map((p) => ({ projectId, match: p.match, action: p.action, position: p.position })),
     );
   }

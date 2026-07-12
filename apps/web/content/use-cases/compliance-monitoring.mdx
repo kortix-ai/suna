@@ -1,0 +1,142 @@
+---
+title: "How we monitor for compliance drift"
+description: A daily sweep checks resources against policy for public buckets, untagged resources, and over-broad roles, files findings, and proposes remediation as a reviewed change rather than applying it.
+date: "2026-06-03"
+author: team
+tags:
+  - Security
+  - Case Study
+  - Enterprise
+---
+
+Infrastructure drifts out of compliance quietly. A bucket gets made public for a
+one-off, a resource ships without its tags, a role picks up a permission it no
+longer needs. Each change is small and reasonable in the moment, but they
+accumulate, and nobody notices until an audit or an incident surfaces them all at
+once. By then reconstructing when each drift happened is hard.
+
+We handle this by checking the infrastructure against policy every day, so drift
+surfaces the day it appears. This writes up how we run that on Kortix — the
+connections, the steps, and the guardrails — so you can set up the same sweep.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Trigger">A daily scheduled sweep</Fact>
+  <Fact label="Connected systems">AWS · Audit logs · Slack</Fact>
+  <Fact label="Mode">Cron-driven · Review-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+The common approaches each have limits. A quarterly manual audit finds drift late
+and in bulk, when the context is hardest to recover. A fixed rules engine catches
+the checks it was configured for and nothing beyond them. And auto-remediation
+that fixes drift on its own can break a service that depended on the very
+configuration it "corrected."
+
+We wanted the infrastructure checked against policy daily, with findings filed
+where the team already works and fixes proposed as reviewed changes rather than
+applied silently.
+
+## What we built
+
+On Kortix, a daily schedule triggers an agent. Each sweep runs in its own
+isolated session — a cloud sandbox — with scoped, read access to AWS and the
+audit logs. The agent checks resources against policy — public buckets, untagged
+resources, over-broad roles — and files what it finds to Slack. Remediation is
+proposed as a reviewed change, never applied automatically.
+
+<Figure
+  caption="The daily sweep filing compliance findings and proposing remediation as a reviewed change"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the schedule as the trigger">
+
+A **cron** trigger runs the sweep once a day. Each run spawns a fresh **session**
+in its own sandbox. One sweep, one session, one disposable machine. Nothing
+carries over between runs, so each day's check starts clean.
+
+</Step>
+<Step title="Give the agent the compliance policy">
+
+What counts as a violation — which buckets may be public, which tags are
+required, what a role should and shouldn't hold — is stored as **skills** and
+**memory** that load into every session. The agent checks against that policy
+rather than a fixed rule set, and it updates as the policy changes.
+
+</Step>
+<Step title="Connect what the sweep can read">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read AWS resource state** — bucket policies, resource tags, and IAM roles.
+- **Read the audit logs** — when a configuration changed and what changed it.
+- **Post to Slack** — findings filed to the channel the team watches.
+
+</Step>
+<Step title="Set the guardrails">
+
+The sweep's access to AWS is **read-only** — it inspects state, it doesn't change
+it. Remediation is proposed as a reviewed **change request** and stops at a
+**human approval gate**; nothing is applied automatically. Credentials are
+encrypted in the secrets manager and injected at runtime, never shown to the
+model or written to logs.
+
+</Step>
+<Step title="Let each day surface the drift">
+
+With that in place, the daily sweep checks the infrastructure against policy,
+files what drifted to Slack, and attaches a proposed fix for a person to review.
+A newly public bucket becomes a finding and a draft policy change. An untagged
+resource becomes a flag and a proposed tag set. An over-broad role becomes a
+narrower policy held for review.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Run the sweep on a **cron** trigger, give the agent scoped read **connectors**
+  into AWS and the audit logs, encode the compliance policy as **skills** and
+  **memory**, and propose every fix as a reviewed **change request** rather than
+  applying it.
+</Callout>
+
+## Guardrails
+
+Giving an agent a standing view of the infrastructure is a trust question. The
+relevant controls on Kortix:
+
+- **Isolation.** Every sweep runs in its own microVM sandbox on its own branch.
+  The session can reach only what it's scoped to read, and only the findings it
+  files leave the sandbox.
+- **Scoped secrets.** Each credential is encrypted in the secrets manager,
+  injected into the sandbox at runtime, and never exposed to the model or the
+  logs.
+- **Human approval gate.** Remediation is proposed, never auto-applied; a person
+  reviews and applies each change.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not
+  a dashboard setting.
+
+<Figure
+  caption="A proposed remediation held as a reviewed change before anything is applied"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Daily" label="Infrastructure re-checked against policy every day" />
+  <Stat value="Same-day" label="Drift caught before it accumulates for an audit" />
+  <Stat value="Review-gated" label="Every fix proposed as a change, never auto-applied" />
+</StatGrid>
+
+The drift that used to surface in bulk at audit time now arrives as small daily
+findings in Slack, each with a proposed fix a person reviews before it's applied.
+The team reviews a change instead of reconstructing months of drift, and the
+infrastructure stays close to policy.

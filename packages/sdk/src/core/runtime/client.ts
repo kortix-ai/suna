@@ -33,12 +33,23 @@ import { getActiveOpenCodeUrl } from "../session/server-store/active";
 import { ApiError } from "../http/api/errors";
 
 // Sandbox env/secrets client (`GET/PUT/DELETE /env`), the `/kortix/triggers`
-// wrapper, and the kortix-master project-management client (`/kortix/tasks`,
-// `/kortix/tickets`, `/kortix/projects`, `/kortix/services`, ...) all live in
-// sibling modules, re-exported here so hosts only ever import daemon
-// operations from this one subpath.
+// wrapper, the Kortix-native PTY client (`/kortix/pty`, independent of
+// whatever agent runtime is running), and the kortix-master
+// project-management client (`/kortix/tasks`, `/kortix/tickets`,
+// `/kortix/projects`, `/kortix/services`, ...) all live in sibling modules,
+// re-exported here so hosts only ever import daemon operations from this one
+// subpath.
 export { listEnv, setEnv, deleteEnv, env } from "./env";
 export { triggersRequest } from "./triggers";
+export {
+	listKortixPty,
+	createKortixPty,
+	updateKortixPty,
+	removeKortixPty,
+	getKortixPtyWebSocketUrl,
+	kortixPty,
+	type KortixPty,
+} from "./pty";
 export * from "./kortix-master";
 
 

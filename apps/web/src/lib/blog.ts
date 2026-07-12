@@ -46,6 +46,8 @@ export interface PostFrontmatter {
   coverLogos?: CoverLogo[];
   coverKortix?: boolean;
   draft: boolean;
+  /** Catalog id of an installable template this post maps to (use cases only). */
+  template?: string;
 }
 
 export interface Post {
