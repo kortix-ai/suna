@@ -50,7 +50,7 @@ import {
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
-import { ModelConnectionGate } from './model-connection-gate';
+import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
@@ -1676,17 +1676,26 @@ export function SessionChatInput({
     selectedModel,
     lockForQuestion,
   });
-  // Stricter than modelUnavailable: true only once we're confident NOTHING is
-  // usable (not mid-fetch) — this is when the whole input gets replaced with
-  // the "connect a model" teaching moment, not just the send button being
-  // disabled. Deliberately NOT `models.length === 0` — the gateway bakes its
-  // whole catalog into every project regardless of plan or connected keys, so
-  // the raw list is basically never empty even for a brand-new, unpaid,
-  // no-BYOK account. `hasSelectableModels` accounts for free-tier gating and
-  // which providers are actually connected.
-  const { hasSelectableModels } = useModelConnectionGate(models);
+  // Drives the "connect a model" bar under the input. Two distinct dead-end
+  // states both surface it — either way the composer cannot send and needs to
+  // say why:
+  //  1. Nothing SELECTED (`!selectedModel`, i.e. `modelUnavailable`) — the
+  //     send button is hard-disabled with only a tooltip explaining it.
+  //  2. Nothing USABLE (`!hasSelectableModels`) — entitlement check: NOT
+  //     `models.length === 0`, because the gateway bakes its whole catalog
+  //     into every project regardless of plan or connected keys; this accounts
+  //     for free-tier gating and which providers are actually connected.
+  // Both are only consulted after every input settles (`modelsLoading` for the
+  // provider catalog, `entitlementsPending` for account/secrets/project), so
+  // the bar renders exactly once with the final answer instead of flashing in
+  // on half-loaded data and vanishing when the account state arrives.
+  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
   const noModelsConnected =
-    modelRequired && !lockForQuestion && !modelsLoading && !hasSelectableModels;
+    modelRequired &&
+    !lockForQuestion &&
+    !modelsLoading &&
+    !entitlementsPending &&
+    (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -2170,283 +2179,270 @@ export function SessionChatInput({
             </div>
           )}
 
-          {noModelsConnected ? (
-            <div className="px-3.5 pt-3 pb-4">
-              <ModelConnectionGate size="sm" />
-            </div>
-          ) : (
-            <>
-              <div className="flex max-h-[320px] translate-y-0 flex-col gap-1 px-3.5 opacity-100">
-                <div className="relative w-full">
-                  {/* Sending while the agent is busy already works — Enter (or the
+          <div className="flex max-h-[320px] translate-y-0 flex-col gap-1 px-3.5 opacity-100">
+            <div className="relative w-full">
+              {/* Sending while the agent is busy already works — Enter (or the
                   send button) posts straight to the server, which queues it
                   per-session. No separate "Add to queue" affordance needed. */}
-                  {text.trim().length === 0 && !stagedCommand && (
-                    <div
-                      aria-hidden
-                      className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
-                    >
-                      {lockForApproval ? (
-                        <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
-                          Approve or deny the action above to continue…
-                        </div>
-                      ) : lockForQuestion ? (
-                        <div className="absolute inset-0">
-                          {questionButtonLabel
-                            ? 'Or type your own answer...'
-                            : 'Type your answer...'}
-                        </div>
-                      ) : (
-                        <AnimatePresence mode="wait" initial={false}>
-                          <motion.div
-                            key={`${placeholderIndex}:${placeholderVariants[placeholderIndex]}`}
-                            className="absolute inset-0"
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{
-                              opacity: 1,
-                              y: 0,
-                              transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
-                            }}
-                            exit={{
-                              opacity: 0,
-                              y: -8,
-                              transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] },
-                            }}
-                          >
-                            {placeholderVariants[placeholderIndex]}
-                          </motion.div>
-                        </AnimatePresence>
-                      )}
+              {text.trim().length === 0 && !stagedCommand && (
+                <div
+                  aria-hidden
+                  className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
+                >
+                  {lockForApproval ? (
+                    <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
+                      Approve or deny the action above to continue…
                     </div>
-                  )}
-                  {text.trim().length === 0 && stagedCommand && (
-                    <div
-                      aria-hidden
-                      className="text-muted-foreground/50 pointer-events-none absolute top-4 left-0.5 text-base sm:text-sm"
-                    >
-                      {tHardcodedUi.raw(
-                        'componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc',
-                      )}
+                  ) : lockForQuestion ? (
+                    <div className="absolute inset-0">
+                      {questionButtonLabel ? 'Or type your own answer...' : 'Type your answer...'}
                     </div>
+                  ) : (
+                    <AnimatePresence mode="wait" initial={false}>
+                      <motion.div
+                        key={`${placeholderIndex}:${placeholderVariants[placeholderIndex]}`}
+                        className="absolute inset-0"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
+                        }}
+                        exit={{
+                          opacity: 0,
+                          y: -8,
+                          transition: { duration: 0.48, ease: [0.2, 0, 0.1, 1] },
+                        }}
+                      >
+                        {placeholderVariants[placeholderIndex]}
+                      </motion.div>
+                    </AnimatePresence>
                   )}
-                  {/* Highlight overlay — mirrors textarea text with colored mention spans */}
-                  {highlightSegments && (
-                    <div
-                      ref={highlightRef}
-                      aria-hidden
-                      className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
-                    >
-                      {highlightSegments.map((seg, i) => (
-                        <span
-                          key={i}
-                          className={cn(
-                            (seg.kind === 'file' ||
-                              seg.kind === 'agent' ||
-                              seg.kind === 'session') &&
-                              'border-foreground/40 text-foreground/80 border-b font-medium',
-                          )}
-                        >
-                          {seg.text}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <textarea
-                    ref={textareaRef}
-                    value={text}
-                    onChange={handleInput}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    onScroll={() => {
-                      if (highlightRef.current && textareaRef.current) {
-                        highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-                      }
-                    }}
-                    placeholder=""
-                    rows={1}
-                    disabled={disabled || lockForApproval}
-                    className={cn(
-                      'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
-                      highlightSegments && 'caret-foreground text-transparent',
-                    )}
-                    autoFocus={shouldAutoFocus}
-                  />
                 </div>
-              </div>
+              )}
+              {text.trim().length === 0 && stagedCommand && (
+                <div
+                  aria-hidden
+                  className="text-muted-foreground/50 pointer-events-none absolute top-4 left-0.5 text-base sm:text-sm"
+                >
+                  {tHardcodedUi.raw(
+                    'componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc',
+                  )}
+                </div>
+              )}
+              {/* Highlight overlay — mirrors textarea text with colored mention spans */}
+              {highlightSegments && (
+                <div
+                  ref={highlightRef}
+                  aria-hidden
+                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
+                >
+                  {highlightSegments.map((seg, i) => (
+                    <span
+                      key={i}
+                      className={cn(
+                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session') &&
+                          'border-foreground/40 text-foreground/80 border-b font-medium',
+                      )}
+                    >
+                      {seg.text}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={handleInput}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                onScroll={() => {
+                  if (highlightRef.current && textareaRef.current) {
+                    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+                  }
+                }}
+                placeholder=""
+                rows={1}
+                disabled={disabled || lockForApproval}
+                className={cn(
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  highlightSegments && 'caret-foreground text-transparent',
+                )}
+                autoFocus={shouldAutoFocus}
+              />
+            </div>
+          </div>
 
-              {/* Bottom toolbar */}
-              <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
-                {/* LEFT: Attach + Agent + Model + Variant */}
-                <div className="flex min-w-0 items-center gap-0 overflow-visible">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept={tHardcodedUi.raw(
-                      'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+          {/* Bottom toolbar */}
+          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
+            {/* LEFT: Attach + Agent + Model + Variant */}
+            <div className="flex min-w-0 items-center gap-0 overflow-visible">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={tHardcodedUi.raw(
+                  'componentsSessionSessionChatInput.line2237JsxAttrAcceptImagePdfTxtMdJsonCsvXmlYaml',
+                )}
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                  >
+                    <Paperclip className="h-4 w-4" strokeWidth={2} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionChatInput.line2252JsxTextAttachFiles',
                     )}
-                    multiple
-                    className="hidden"
-                    onChange={handleFileSelect}
-                  />
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+
+              {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
+                <AgentSelector
+                  agents={primaryAgents}
+                  selectedAgent={selectedAgent}
+                  onSelect={onAgentChange ?? (() => {})}
+                  disabled={agentSelectorLocked}
+                />
+              )}
+              {(models.length > 0 || modelRequired) && onModelChange && (
+                <ModelSelector
+                  models={models}
+                  selectedModel={selectedModel}
+                  onSelect={onModelChange}
+                  providers={providers}
+                  defaultControls={modelDefaultControls}
+                />
+              )}
+              {variants.length > 0 && onVariantChange && (
+                <VariantSelector
+                  variants={variants}
+                  selectedVariant={selectedVariant}
+                  onSelect={onVariantChange}
+                />
+              )}
+            </div>
+
+            {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
+            <div className="flex shrink-0 items-center gap-0">
+              <TokenProgress
+                messages={messages}
+                models={models}
+                selectedModel={selectedModel}
+                onContextClick={onContextClick}
+              />
+
+              {toolbarSlot}
+
+              <VoiceRecorder
+                onTranscription={handleTranscription}
+                disabled={submitDisabled || isBusy}
+              />
+
+              {isSending && !lockForQuestion && (
+                <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
+                  <Loader2 className="size-4 animate-spin" />
+                </Button>
+              )}
+              {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
+                <div className="relative flex items-center">
+                  {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
+                  {escCount > 0 && (
+                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
+                        <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
+                          ESC
+                        </kbd>
+                        <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
+                      </div>
+                      {/* Arrow matching TooltipContent */}
+                      <div className="-mt-px flex justify-center">
+                        <div className="bg-primary size-2.5 -translate-y-[calc(50%_-_2px)] rotate-45 rounded-[2px]" />
+                      </div>
+                    </div>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
+                      <Button
+                        size="sm"
+                        onClick={onStop}
+                        disabled={stopDisabled || !onStop}
+                        className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                       >
-                        <Paperclip className="h-4 w-4" strokeWidth={2} />
-                      </button>
+                        <div className="h-3 w-3 rounded-[3px] bg-current" />
+                      </Button>
                     </TooltipTrigger>
                     <TooltipContent side="top">
                       <p>
-                        {tHardcodedUi.raw(
-                          'componentsSessionSessionChatInput.line2252JsxTextAttachFiles',
-                        )}
+                        Stop{' '}
+                        <kbd className="bg-background/20 text-primary-foreground ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
+                          ESC
+                        </kbd>{' '}
+                        ×3
                       </p>
                     </TooltipContent>
                   </Tooltip>
-
-                  {primaryAgents.length > 0 && (onAgentChange || agentSelectorLocked) && (
-                    <AgentSelector
-                      agents={primaryAgents}
-                      selectedAgent={selectedAgent}
-                      onSelect={onAgentChange ?? (() => {})}
-                      disabled={agentSelectorLocked}
-                    />
-                  )}
-                  {(models.length > 0 || modelRequired) && onModelChange && (
-                    <ModelSelector
-                      models={models}
-                      selectedModel={selectedModel}
-                      onSelect={onModelChange}
-                      providers={providers}
-                      defaultControls={modelDefaultControls}
-                    />
-                  )}
-                  {variants.length > 0 && onVariantChange && (
-                    <VariantSelector
-                      variants={variants}
-                      selectedVariant={selectedVariant}
-                      onSelect={onVariantChange}
-                    />
-                  )}
                 </div>
-
-                {/* RIGHT: TokenProgress + Voice + Submit/Stop */}
-                <div className="flex shrink-0 items-center gap-0">
-                  <TokenProgress
-                    messages={messages}
-                    models={models}
-                    selectedModel={selectedModel}
-                    onContextClick={onContextClick}
-                  />
-
-                  {toolbarSlot}
-
-                  <VoiceRecorder
-                    onTranscription={handleTranscription}
-                    disabled={submitDisabled || isBusy}
-                  />
-
-                  {isSending && !lockForQuestion && (
-                    <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-                      <Loader2 className="size-4 animate-spin" />
+              )}
+              {!isSending && (!isBusy || lockForQuestion) && (
+                <div className="opacity-100">
+                  {lockForQuestion && questionButtonLabel && !text.trim() ? (
+                    <Button
+                      size="sm"
+                      disabled={!questionCanAct || disabled}
+                      onClick={handleSubmit}
+                      className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
+                    >
+                      {questionButtonLabel}
                     </Button>
-                  )}
-                  {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
-                    <div className="relative flex items-center">
-                      {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
-                      {escCount > 0 && (
-                        <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-                          <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
-                            <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
-                              ESC
-                            </kbd>
-                            <span>{escCount === 1 ? '×2 to stop' : '×1 to stop'}</span>
-                          </div>
-                          {/* Arrow matching TooltipContent */}
-                          <div className="-mt-px flex justify-center">
-                            <div className="bg-primary size-2.5 -translate-y-[calc(50%_-_2px)] rotate-45 rounded-[2px]" />
-                          </div>
-                        </div>
-                      )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex rounded-full">
                           <Button
                             size="sm"
-                            onClick={onStop}
-                            disabled={stopDisabled || !onStop}
+                            disabled={
+                              lockForQuestion
+                                ? (!canSubmit && !questionCanAct) || disabled
+                                : !canSubmit || submitDisabled
+                            }
+                            onClick={handleSubmit}
+                            aria-label={
+                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
+                            }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >
-                            <div className="h-3 w-3 rounded-[3px] bg-current" />
+                            {disabled ? (
+                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            ) : (
+                              <ArrowUp className="size-4" />
+                            )}
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          <p>
-                            Stop{' '}
-                            <kbd className="bg-background/20 text-primary-foreground ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
-                              ESC
-                            </kbd>{' '}
-                            ×3
-                          </p>
+                        </span>
+                      </TooltipTrigger>
+                      {modelUnavailable && (
+                        <TooltipContent side="top" className="max-w-[260px] text-xs">
+                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
                         </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  )}
-                  {!isSending && (!isBusy || lockForQuestion) && (
-                    <div className="opacity-100">
-                      {lockForQuestion && questionButtonLabel && !text.trim() ? (
-                        <Button
-                          size="sm"
-                          disabled={!questionCanAct || disabled}
-                          onClick={handleSubmit}
-                          className="h-8 flex-shrink-0 rounded-full px-3.5 text-xs font-medium"
-                        >
-                          {questionButtonLabel}
-                        </Button>
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex rounded-full">
-                              <Button
-                                size="sm"
-                                disabled={
-                                  lockForQuestion
-                                    ? (!canSubmit && !questionCanAct) || disabled
-                                    : !canSubmit || submitDisabled
-                                }
-                                onClick={handleSubmit}
-                                aria-label={
-                                  modelUnavailable
-                                    ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
-                                    : 'Send message'
-                                }
-                                className="h-8 w-8 flex-shrink-0 rounded-full p-0"
-                              >
-                                {disabled ? (
-                                  <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                ) : (
-                                  <ArrowUp className="size-4" />
-                                )}
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          {modelUnavailable && (
-                            <TooltipContent side="top" className="max-w-[260px] text-xs">
-                              <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
                       )}
-                    </div>
+                    </Tooltip>
                   )}
                 </div>
-              </div>
-            </>
-          )}
+              )}
+            </div>
+          </div>
         </div>
       </div>
+      <ModelConnectionBar show={noModelsConnected} />
     </div>
   );
 }

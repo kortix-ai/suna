@@ -1,14 +1,13 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useTranslations } from "next-intl";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Phone } from "lucide-react";
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { PhoneInput as PhoneInputComponent } from "@/components/ui/phone-input";
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+
+import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { PhoneInput as PhoneInputComponent } from '@/components/ui/phone-input';
+import { errorToast } from '@/components/ui/toast';
+import { FieldLabel } from '@/features/auth/auth-primitives';
 
 function getUserCountryCode(): string {
   if (typeof window === 'undefined') return 'US';
@@ -96,9 +95,14 @@ interface PhoneInputFormProps {
 
 export function PhoneInput({ onSubmit, isLoading = false, error = null }: PhoneInputFormProps) {
   const t = useTranslations('auth.phoneVerification');
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [defaultCountry] = useState<string>(() => getUserCountryCode());
+
+  const failWith = (msg: string) => {
+    setLocalError(msg);
+    errorToast(msg);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,13 +110,13 @@ export function PhoneInput({ onSubmit, isLoading = false, error = null }: PhoneI
 
     // Basic validation
     if (!phoneNumber.trim()) {
-      setLocalError(t('pleaseEnterPhoneNumber'));
+      failWith(t('pleaseEnterPhoneNumber'));
       return;
     }
 
     const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-    if (!phoneRegex.test(phoneNumber.replace(/\s/g, ""))) {
-      setLocalError(t('pleaseEnterValidPhoneNumber'));
+    if (!phoneRegex.test(phoneNumber.replace(/\s/g, ''))) {
+      failWith(t('pleaseEnterValidPhoneNumber'));
       return;
     }
 
@@ -120,52 +124,32 @@ export function PhoneInput({ onSubmit, isLoading = false, error = null }: PhoneI
   };
 
   return (
-    <Card className="w-full border">
-      <CardContent className="pt-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-3">
-            <Label htmlFor="phone" className="text-sm font-medium">
-              {t('phoneNumber')}
-            </Label>
-            <PhoneInputComponent
-              value={phoneNumber}
-              onChange={(value) => setPhoneNumber(value || "")}
-              defaultCountry={defaultCountry as any}
-              placeholder={t('phoneNumberPlaceholder')}
-              disabled={isLoading}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t('sixDigitCodeHint')}
-            </p>
-          </div>
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="space-y-3">
+        <FieldLabel htmlFor="phone">{t('phoneNumber')}</FieldLabel>
+        <PhoneInputComponent
+          value={phoneNumber}
+          onChange={(value) => {
+            if (localError) setLocalError(null);
+            setPhoneNumber(value || '');
+          }}
+          defaultCountry={defaultCountry as any}
+          placeholder={t('phoneNumberPlaceholder')}
+          disabled={isLoading}
+          aria-invalid={!!(localError || error) || undefined}
+        />
+        <p className="text-muted-foreground text-xs">{t('sixDigitCodeHint')}</p>
+      </div>
 
-          {(error || localError) && (
-            <Alert variant="destructive" className="py-2">
-              <AlertDescription className="text-sm">
-                {error || localError}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <Button
-            type="submit"
-            className="w-full h-11"
-            disabled={isLoading || !phoneNumber.trim()}
-          >
-            {isLoading ? (
-              <>
-                <KortixLoader size="small" className="mr-2" />
-                {t('sendingCode')}
-              </>
-            ) : (
-              <>
-                <Phone className="mr-2 h-4 w-4" />
-                {t('sendVerificationCode')}
-              </>
-            )}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+      <Button
+        type="submit"
+        size="lg"
+        className="w-full"
+        disabled={isLoading || !phoneNumber.trim()}
+      >
+        {isLoading ? <Loading className="size-4 shrink-0" /> : null}
+        {isLoading ? t('sendingCode') : t('sendVerificationCode')}
+      </Button>
+    </form>
   );
 }

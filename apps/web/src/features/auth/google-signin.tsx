@@ -1,35 +1,13 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import Loading from '@/components/ui/loading';
 import { authRedirectUrl } from '@/lib/desktop';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
-
-function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
-      <path
-        d="M21.8 12.23c0-.68-.06-1.33-.17-1.95H12v3.69h5.5a4.7 4.7 0 0 1-2.04 3.08v2.56h3.3c1.93-1.78 3.04-4.4 3.04-7.38Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 22c2.76 0 5.07-.91 6.76-2.47l-3.3-2.56c-.91.61-2.07.98-3.46.98-2.66 0-4.92-1.8-5.72-4.21H2.87v2.64A10 10 0 0 0 12 22Z"
-        fill="#34A853"
-      />
-      <path
-        d="M6.28 13.74A5.99 5.99 0 0 1 6 12c0-.6.1-1.18.28-1.74V7.62H2.87A10 10 0 0 0 2 12c0 1.61.39 3.13 1.08 4.38l3.2-2.64Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 6.05c1.5 0 2.84.52 3.9 1.53l2.92-2.92C17.06 2.98 14.75 2 12 2a10 10 0 0 0-9.13 5.62l3.41 2.64c.8-2.41 3.06-4.21 5.72-4.21Z"
-        fill="#EA4335"
-      />
-    </svg>
-  );
-}
+import { Icon } from '../icon/icon';
 
 interface GoogleSignInProps {
   returnUrl?: string;
@@ -86,12 +64,12 @@ export default function GoogleSignIn({
     <Button
       onClick={handleGoogleSignIn}
       disabled={isLoading}
-      variant="outline"
+      variant="secondary"
       size="lg"
-      className="h-11 w-full rounded-xl"
+      className="w-full"
       type="button"
     >
-      {isLoading ? <KortixLoader size="small" /> : <GoogleIcon className="h-4 w-4" />}
+      {isLoading ? <Loading /> : <Icon.NewGoogle className="h-4 w-4" />}
       <span>{isLoading ? t('signingIn') : t('continueWithGoogle')}</span>
     </Button>
   );

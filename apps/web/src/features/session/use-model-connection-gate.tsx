@@ -77,7 +77,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretsQuery.data]);
-  const { data: accountState } = useAccountState();
+  const { data: accountState, isPending: accountStatePending } = useAccountState();
   const freeTier = useMemo(() => {
     const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
     const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
@@ -88,6 +88,16 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
       hasUsableModel(baseModels, { connectedProviderIds, freeTier: llmGatewayEnabled && freeTier }),
     [baseModels, connectedProviderIds, llmGatewayEnabled, freeTier],
   );
+  // `hasSelectableModels` is only trustworthy once every entitlement input has
+  // loaded — before that, a subscribed account with zero BYOK keys computes as
+  // "nothing usable" (accountState undefined → freeTier, secrets undefined →
+  // no connected providers) and any gate keyed on it flashes, then vanishes.
+  // Disabled queries stay `isPending` forever, so each is guarded by its
+  // `enabled` condition.
+  const entitlementsPending =
+    (!!projectId && projectDetailQuery.isPending) ||
+    (!!projectId && llmGatewayEnabled && secretsQuery.isPending) ||
+    accountStatePending;
 
   const openConnectProvider = useCallback(
     (tab: ProviderModalTab = 'providers') => {
@@ -126,5 +136,5 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     />
   ) : null;
 
-  return { openConnectProvider, openUpgrade, modal, hasSelectableModels };
+  return { openConnectProvider, openUpgrade, modal, hasSelectableModels, entitlementsPending };
 }
