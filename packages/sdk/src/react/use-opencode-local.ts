@@ -12,8 +12,8 @@
  */
 
 import { flattenModels, type FlatModel } from './model-flatten';
-import { featureFlags } from '../platform/feature-flags';
-import { listProjectSecrets } from '../platform/projects-client';
+import { featureFlags } from '../core/http/feature-flags';
+import { listProjectSecrets } from '../core/rest/projects-client';
 import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useQuery } from '@tanstack/react-query';

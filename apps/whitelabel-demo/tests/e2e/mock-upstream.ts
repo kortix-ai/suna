@@ -63,6 +63,10 @@ export interface MockUpstream {
   seedGatewaySessions(projectId: string, rows: GatewaySessionRow[]): void;
   /** Make GET /v1/projects/:id/gateway/sessions fail (500) for this project id. */
   failGatewayFor(projectId: string): void;
+  /** Make POST /v1/projects/:id/cli-token return HTTP 200 with a body MISSING
+   *  `secret_key` — a malformed success the wrapper must surface as an error,
+   *  never as a 200 carrying an undefined token. */
+  malformCliTokenFor(projectId: string): void;
   stop(): void;
 }
 
@@ -74,6 +78,7 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
   const secrets = new Map<string, Array<{ name: string; value?: string }>>();
   const gatewaySessions = new Map<string, GatewaySessionRow[]>();
   const failingGatewayProjects = new Set<string>();
+  const malformedCliTokenProjects = new Set<string>();
   const activeIntervals = new Set<ReturnType<typeof setInterval>>();
 
   let requests: RecordedRequest[] = [];
@@ -179,6 +184,11 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
       if (cliTokenMatch && method === 'POST') {
         const [, id] = cliTokenMatch;
         tokenCounter += 1;
+        if (malformedCliTokenProjects.has(id)) {
+          // HTTP 200 but no `secret_key` — the route must NOT pass this
+          // through as a success.
+          return Response.json({ token_id: `tok_${tokenCounter}` });
+        }
         return Response.json({
           secret_key: `kortix_pat_test_${id}_${tokenCounter}`,
           token_id: `tok_${tokenCounter}`,
@@ -294,6 +304,9 @@ export function createMockUpstream(expectedAuthToken: string): MockUpstream {
     },
     failGatewayFor(projectId) {
       failingGatewayProjects.add(projectId);
+    },
+    malformCliTokenFor(projectId) {
+      malformedCliTokenProjects.add(projectId);
     },
     stop() {
       for (const interval of activeIntervals) clearInterval(interval);

@@ -9,16 +9,15 @@ takes one via `getToken`, which it sends as `Authorization: Bearer <token>`.
 
 ## API key — the one programmatic credential
 
-Create one in **Settings → API keys → Create key**. Name it, choose its scope, copy
+Create one in **User settings → API keys → Create API key**. Name it, choose its scope, copy
 it once (shown only at creation), and store it as a secret. An API key **acts as
 you**, so it can reach every project your account can.
 
 <Callout type="warn">
-Don't use a **Service account** here. Service accounts (`kortix_sa_…`) are a
-separate, advanced IAM principal with **no project access until it's explicitly
-granted** — point the SDK at one and every call returns `403 "You do not have
-access to this project"`. For the SDK, the CLI, and the white-label demo, you
-want an **API key** from **Settings → API keys**.
+  Don't use a **Service account** here. Service accounts (`kortix_sa_…`) are a separate, advanced
+  IAM principal with **no project access until it's explicitly granted** — point the SDK at one and
+  every call returns `403 "You do not have access to this project"`. For the SDK, the CLI, and the
+  white-label demo, you want an **API key** from **Settings → API keys**.
 </Callout>
 
 ```ts
@@ -32,18 +31,17 @@ const kortix = createKortix({
 
 Scope is a property of the key, picked at creation:
 
-| scope | the key can touch | use it for |
-|---|---|---|
-| **Account** (default) | every project in your account | a backend managing your workspace |
-| **Project** | exactly one project — `403` everywhere else | CI/CD bound to one repo (least privilege) |
+| scope                 | the key can touch                           | use it for                                |
+| --------------------- | ------------------------------------------- | ----------------------------------------- |
+| **Account** (default) | every project in your account               | a backend managing your workspace         |
+| **Project**           | exactly one project — `403` everywhere else | CI/CD bound to one repo (least privilege) |
 
 Pick the narrowest scope that does the job. Rotate by creating a new key and
 revoking the old one.
 
 <Callout>
-The **CLI** mints an API key for you — `kortix login` runs the browser authorize
-flow and stores the key locally. Same credential, nothing special — there's no
-separate "CLI token."
+  The **CLI** mints an API key for you — `kortix login` runs the browser authorize flow and stores
+  the key locally. Same credential, nothing special — there's no separate "CLI token."
 </Callout>
 
 ## Supabase JWT — web apps on Kortix login
@@ -58,14 +56,14 @@ getToken: async () =>
 
 ## Which one?
 
-| you're building | use |
-|---|---|
-| a backend, script, or CI | an **API key** (account-wide, or project-scoped for CI) |
-| the Kortix CLI | `kortix login` (mints an API key for you) |
-| a web app on Kortix login | a **Supabase JWT** |
+| you're building           | use                                                     |
+| ------------------------- | ------------------------------------------------------- |
+| a backend, script, or CI  | an **API key** (account-wide, or project-scoped for CI) |
+| the Kortix CLI            | `kortix login` (mints an API key for you)               |
+| a web app on Kortix login | a **Supabase JWT**                                      |
 
 <Callout>
-API keys are bearer credentials — treat them like passwords. Keep them in a secret
-manager, never in client-side code or a committed file. `getToken` is called on
-demand, so the host owns storage, caching, and rotation.
+  API keys are bearer credentials — treat them like passwords. Keep them in a secret manager, never
+  in client-side code or a committed file. `getToken` is called on demand, so the host owns storage,
+  caching, and rotation.
 </Callout>

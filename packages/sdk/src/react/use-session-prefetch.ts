@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { getClient } from "../opencode/client";
-import { useSyncStore } from "../state/sync-store";
-import { useSandboxConnectionStore } from "../state/sandbox-connection-store";
+import { getClient } from "../core/runtime/client";
+import { useSyncStore } from "../browser/stores/sync-store";
+import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
 import {
   saveSessionToIDB,
   loadSessionFromIDB,
   pruneIDBCache,
-} from "../state/idb-sync-cache";
+} from "../browser/cache/idb-sync-cache";
 import { canQueryOpenCodeSession, type Session } from "./use-opencode-sessions";
 
 const prefetchedSessions = new Set<string>();

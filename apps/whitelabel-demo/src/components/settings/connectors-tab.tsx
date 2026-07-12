@@ -24,7 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { kortix } from '@/lib/kortix';
 import { cn } from '@/lib/utils';
-import type { AdminConnector } from '@kortix/sdk/projects-client';
+import type { AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plug, RefreshCw, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';

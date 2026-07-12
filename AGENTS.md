@@ -61,6 +61,17 @@ OpenCode runtime, SSE streaming, model state, and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
+> **Editing `packages/sdk` itself? Read `packages/sdk/PROGRESS.md` (current state,
+> claim your task) and `packages/sdk/AGENTS.md` (the rules) first.** It is a
+> **published npm package** with its own hard rules that have no analogue
+> elsewhere in this repo: **TDD is mandatory** (failing test first — invoke the
+> `tdd` skill — and every turn ends with the gates run, the real output pasted,
+> and an explicit shippable YES/NO/NOT YET); exported names (including *types*)
+> are a public API contract and renaming one is a breaking change; the `version`
+> field is inert and must never be bumped by hand; adding an export requires
+> three synchronized edits; and the framework-free core is enforced by a static
+> import-graph tripwire.
+
 - **Logic lives in the SDK, never in a host.** No raw `fetch` to the Kortix API,
   no `@opencode-ai/sdk` imports, no transport / runtime / data-state code written
   in app code. New data or runtime behavior is added to the SDK and exposed

@@ -3,11 +3,11 @@
 import { type QueryClient } from '@tanstack/react-query';
 import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { useRef } from 'react';
-import { authenticatedFetch } from '../../platform/auth';
-import { useDiagnosticsStore, type RawDiagnostic } from '../../state/diagnostics-store';
-import { getActiveOpenCodeUrl } from '../../state/server-store';
-import { useSyncStore } from '../../state/sync-store';
-import type { SyntheticAbortError } from '../../state/sync-store/types';
+import { authenticatedFetch } from '../../core/http/auth';
+import { useDiagnosticsStore, type RawDiagnostic } from '../../browser/stores/diagnostics-store';
+import { getActiveOpenCodeUrl } from '../../browser/stores/server-store';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import type { SyntheticAbortError } from '../../browser/stores/sync-store/types';
 import { type Project, type PathInfo, type SessionStatus, opencodeKeys } from '../use-opencode-sessions';
 import type { NormalizeDiagnosticPaths } from './types';
 

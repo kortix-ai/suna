@@ -69,11 +69,11 @@ export * from './use-runtime-reconnect';
 // and PERMISSION requests here (keyed by request id, each carrying sessionID);
 // `useSessionSync` does NOT surface them, so a host that renders interactive
 // prompts must read them from this store.
-export { useOpenCodePendingStore } from '../state/opencode-pending-store';
+export { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-} from '../state/sandbox-connection-store';
+} from '../browser/stores/sandbox-connection-store';
 export * from './use-session-prefetch';
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
@@ -90,7 +90,7 @@ export { flattenModels, type FlatModel } from './model-flatten';
 export { projectLlmCatalogToProviderList } from './provider-selection';
 export { useProjectModels } from './use-project-models';
 export { useProjectConfig } from './use-project-config';
-export type { ProjectConfigSummary } from '../platform/projects-client';
+export type { ProjectConfigSummary } from '../core/rest/projects-client';
 
 // ── The one-hook session surface ─────────────────────────────────────────────
 // `useSession(projectId, sessionId)` collapses the entire runtime dance (start →

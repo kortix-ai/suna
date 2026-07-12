@@ -22,23 +22,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { RuntimeNotReadyError } from '../opencode/client';
-import { useOpenCodePendingStore } from '../state/opencode-pending-store';
+import { RuntimeNotReadyError } from '../core/runtime/client';
+import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   setOpenCodeHealth,
   setSandboxStatus,
-} from '../state/sandbox-connection-store';
-import { getSandboxUrlForExternalId } from '../state/server-store';
-import { setCurrentRuntime } from '../state/current-runtime';
+} from '../browser/stores/sandbox-connection-store';
+import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { setCurrentRuntime } from '../core/session/current-runtime';
 import {
   isSessionStartError,
   type SessionStartResult,
   sessionStartKey,
   startProjectSession,
-} from '../platform/projects-client';
-import { isSessionFresh } from '../platform/fresh-sessions';
-import { BillingError, parseBillingError } from '../platform/api/errors';
-import { formatOpenCodeRuntimeError } from '../platform/opencode-errors';
+} from '../core/rest/projects-client';
+import { isSessionFresh } from '../core/http/fresh-sessions';
+import { BillingError, parseBillingError } from '../core/http/api/errors';
+import { formatOpenCodeRuntimeError } from '../core/http/opencode-errors';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
