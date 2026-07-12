@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
-import { LocalDockerProvider } from './local-docker';
 import { PlatinumProvider } from './platinum';
 
 /**
@@ -10,16 +9,19 @@ import { PlatinumProvider } from './platinum';
  * interface, not the concrete class, so they stay untouched.
  *
  *   - daytona — managed cloud (Daytona)
- *   - local_docker — self-hosted/local Docker runtime
+ *   - platinum — managed cloud (Platinum)
  */
-export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
+// 'daytona' is the managed cloud backend's identity. 'managed' is kept only as a
+// defensive read alias so any row written during the daytona→managed rename window
+// still resolves to the Daytona adapter; new writes use 'daytona'.
+export type ProviderName = 'daytona' | 'managed' | 'platinum';
 
 /**
  * Thrown by the Daytona warm path when the experimental memory-snapshot restore
  * comes up WITHOUT the baked runtime (its filesystem layer is dropped ~half the
  * time — a Daytona experimental-region bug). Non-retryable at the provision
  * layer: the caller falls back to the normal Dockerfile-snapshot path instead of
- * spinning up more flaky warm boxes.
+ * creating more flaky memory-snapshot restores.
  */
 export class WarmRuntimeUnavailableError extends Error {
   constructor(message: string) {
@@ -44,19 +46,10 @@ export interface CreateSandboxOpts {
   snapshot?: string;
   /**
    * Provider auto-stop idle timeout in minutes. Defaults to the provider's own
-   * value (15). Pass 0 to disable auto-stop — used for warm-pool sandboxes,
-   * which must stay running until claimed (our own idle sweep hibernates them
-   * once claimed). See docs/specs/warm-pool.md.
+   * value (15). Providers clamp session sandboxes so normal runtime creation
+   * cannot create persistent boxes.
    */
   autoStopInterval?: number;
-  /**
-   * Daytona experimental warm-snapshot path. When set, the sandbox is created
-   * from this memory-state warm base on the WARM target (~1.3s) and the session
-   * daemon is started post-restore with `envVars` written to an env file — since
-   * memory-restore freezes baked env and the entrypoint doesn't re-run. See
-   * snapshots/warm-bake.ts. Daytona-only; other providers ignore it.
-   */
-  warmBaseSnapshot?: string;
 }
 
 export interface ProvisionResult {
@@ -66,6 +59,7 @@ export interface ProvisionResult {
 }
 
 export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
+export type InPlaceRecoveryStatus = 'running' | 'recovering' | 'unavailable';
 
 export interface ResolvedEndpoint {
   url: string;
@@ -101,6 +95,13 @@ export interface SandboxProvider {
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;
   getStatus(externalId: string): Promise<SandboxStatus>;
+  /**
+   * Recover the SAME provider object when provider state looks terminal.
+   * Implementations may restore a provider-native disk backup, but must never
+   * create or return a different external identity. Callers fail closed when
+   * this capability is absent or returns unavailable.
+   */
+  recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
   /**
    * Resolve a reachable upstream URL for an arbitrary port — the data path the
@@ -125,6 +126,21 @@ export interface SandboxProvider {
   listManagedRunningSandboxes?(): Promise<Array<{ externalId: string; createdAt: Date | null }>>;
 }
 
+/**
+ * Provider-native auto-stop is a BACKSTOP, not the primary stop mechanism.
+ * The reaper (projects/sandbox-reaper.ts) is the primary: it asks the box's
+ * own opencode whether a turn is running before stopping, so it never kills
+ * mid-work. The provider's native timer only sees inbound traffic — blind to
+ * local tool runs — so at the reaper's TTL it WOULD kill working boxes (the
+ * 2026-06-24 "stopped too quickly mid-session" class). Its sole job is to
+ * stop boxes when this API is dead or the box has no DB row, so it sits well
+ * above the reaper's window.
+ */
+export function providerAutoStopBackstopMinutes(): number {
+  const ttl = Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15);
+  return Math.max(60, ttl * 2);
+}
+
 const providers = new Map<ProviderName, SandboxProvider>();
 
 export function getProvider(name: ProviderName): SandboxProvider {
@@ -135,16 +151,11 @@ export function getProvider(name: ProviderName): SandboxProvider {
 
   switch (name) {
     case 'daytona':
+    case 'managed':
       if (!config.DAYTONA_API_KEY) {
         throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
-      break;
-    case 'local_docker':
-      if (!config.DOCKER_HOST) {
-        throw new Error('Local Docker provider requires DOCKER_HOST to be set.');
-      }
-      provider = new LocalDockerProvider();
       break;
     case 'platinum':
       if (!config.PLATINUM_API_KEY) {

@@ -11,8 +11,11 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, Loader2, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from '@/lib/toast';
+import { getEnv } from '@/lib/env-config';
+import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,17 +91,33 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   });
 
   const tokens = tokensQuery.data ?? [];
-  // SCIM base URL is documented per-account. We can't know the full host
-  // from this component (the API may sit on a different domain) so we show
-  // a relative path and let the admin prepend their API origin.
-  const scimBaseUrl = `/scim/v2/accounts/${accountId}`;
+  // The SCIM base URL is what the admin pastes into their IdP (Okta/Azure),
+  // which calls it directly — so show the absolute API origin when we know it.
+  // Falls back to a relative path (+ the "prepend your origin" hint below) when
+  // the backend is configured as a same-origin proxy path.
+  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
+  const scimBaseIsAbsolute = isAbsoluteHttpUrl(scimBaseUrl);
 
   return (
     <section className="rounded-xl border border-border/70 bg-card">
       <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">{tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <RefreshCw className="text-muted-foreground h-4 w-4" />
+              {tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
+          </div>
+          {canManage && (
+            // Step-by-step Directory Sync setup per IdP (mirrors the SSO
+            // wizard) — mints the token and hands over the Tenant URL inline.
+            <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Link href={`/accounts/${accountId}/scim-setup`}>Guided setup</Link>
+            </Button>
+          )}
+        </div>
       </header>
 
       <div className="space-y-4 px-6 py-5">
@@ -106,7 +125,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         <div className="space-y-1.5">
           <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line107JsxTextSCIMBaseURL')}</Label>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+            <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
               {scimBaseUrl}
             </code>
             <Button
@@ -119,8 +138,37 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamScimCard.line122JsxTextPrependYourAPIOriginEG')}<code>https://api.kortix.com</code>{tHardcodedUi.raw('componentsIamScimCard.line122JsxTextTheIdPAppends')}<code>/Users</code> and <code>/Groups</code>.
+            {scimBaseIsAbsolute ? (
+              <>
+                Your IdP appends <code>/Users</code> and <code>/Groups</code>.
+              </>
+            ) : (
+              <>
+                {tHardcodedUi.raw('componentsIamScimCard.line122JsxTextPrependYourAPIOriginEG')}<code>https://api.kortix.com</code>{tHardcodedUi.raw('componentsIamScimCard.line122JsxTextTheIdPAppends')}<code>/Users</code> and <code>/Groups</code>.
+              </>
+            )}
           </p>
+        </div>
+
+        {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
+            don't have to guess the identifier + auth from docs. */}
+        <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-lg border px-3 py-2.5 text-[11px] text-muted-foreground">
+          <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Identifier</span>
+            <span className="text-foreground">
+              <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> — the user's
+              email
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Auth</span>
+            <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="w-24 shrink-0">Actions</span>
+            <span className="text-foreground">Push users &amp; groups; deactivation deprovisions</span>
+          </div>
         </div>
 
         {/* Tokens header */}
@@ -161,12 +209,19 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     <span className="truncate text-sm font-medium text-foreground">
                       {t.name}
                     </span>
-                    <Badge
-                      variant={t.status === 'active' ? 'outline' : 'destructive'}
-                      className="h-4 rounded-md px-1 text-[9px] font-normal capitalize"
-                    >
-                      {t.status}
-                    </Badge>
+                    {t.status === 'active' ? (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    ) : (
+                      <Badge
+                        variant="destructive"
+                        className="h-4 rounded-md px-1 text-[9px] font-normal capitalize"
+                      >
+                        {t.status}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground">
                     <code className="font-mono">{t.public_prefix}</code>
@@ -236,6 +291,9 @@ function CreateScimTokenDialog({
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedScimToken | null>(null);
+  // Same absolute-when-known base URL the card shows, so the post-mint view
+  // matches (the API returns a relative path in created.scim_base_url).
+  const scimBaseUrl = buildScimBaseUrl(accountId, getEnv().BACKEND_URL);
 
   const mutation = useMutation({
     mutationFn: () => createScimToken(accountId, { name: name.trim() }),
@@ -276,11 +334,11 @@ function CreateScimTokenDialog({
         </DialogHeader>
 
         {created ? (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             <div>
               <Label className="text-xs">Token</Label>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
                   {created.secret}
                 </code>
                 <Button
@@ -295,15 +353,15 @@ function CreateScimTokenDialog({
             </div>
             <div>
               <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line301JsxTextSCIMBaseURL')}</Label>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
-                  {created.scim_base_url}
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
+                  {scimBaseUrl}
                 </code>
                 <Button
                   variant="outline"
                   size="icon"
                   aria-label={tHardcodedUi.raw('componentsIamScimCard.line309JsxAttrAriaLabelCopyURL')}
-                  onClick={() => copyToClipboard(created.scim_base_url, 'URL copied')}
+                  onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
@@ -317,7 +375,7 @@ function CreateScimTokenDialog({
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="scim-token-name">Name</Label>
               <Input

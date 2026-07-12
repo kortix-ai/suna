@@ -1,5 +1,7 @@
 export { createGateway } from './create-gateway';
 export type { ChatCompletionRequest, GatewayDeps } from './pipeline';
+export { gatewayErrorBody, gatewayErrorResponse } from './pipeline/error-response';
+export type { GatewayErrorContext } from './pipeline/error-response';
 
 export { callUpstream } from './http';
 export type { CallUpstreamOptions, FetchImpl } from './http';
@@ -25,6 +27,7 @@ export {
   TimeoutError,
   UpstreamHttpError,
   defaultIsRetryable,
+  indicatesUpstreamDown,
 } from './errors';
 export type { UpstreamErrorKind } from './errors';
 
@@ -42,9 +45,11 @@ export type { CatalogUpstream } from './catalog';
 
 export type {
   AuthedPrincipal,
+  AuthorizeResult,
   BillingMode,
   GatewayConfig,
   GatewayHooks,
+  GatewayLogger,
   GatewayTrace,
   ModelCatalog,
   ModelInfo,

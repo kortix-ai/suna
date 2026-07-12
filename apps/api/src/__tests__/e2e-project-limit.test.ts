@@ -79,11 +79,18 @@ mock.module('../projects/git-backends', () => ({
 // The limit *number* is controlled here; the plan→number policy lives in the
 // real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
 mock.module('../shared/account-limits', () => ({
+  FREE_TIER_PROJECT_LIMIT: 3,
   maxProjectsForAccount: async () => projectLimit,
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
+  resolveAccountSessionLimit: async () => ({
+    tier: 'free',
+    limit: Number.MAX_SAFE_INTEGER,
+    source: 'tier',
+  }),
   resolveAccountTier: async () => 'free',
   accountEntitledToLlmGateway: async () => true,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  clearAccountLimitCache: () => {},
 }));
 
 mock.module('../deployments/providers/freestyle', () => ({
@@ -98,7 +105,9 @@ mock.module('../deployments/providers/freestyle', () => ({
   },
 }));
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -118,6 +127,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -170,6 +180,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
@@ -253,28 +264,28 @@ describe('project limit — POST /v1/projects/provision', () => {
   beforeEach(() => {
     setTestAuth();
     backendCalls.length = 0;
-    projectLimit = 1;
+    projectLimit = 3;
     projectCount = 0;
   });
 
-  test('free account creates its first project (count 0 < limit 1) → 201', async () => {
-    projectLimit = 1;
-    projectCount = 0;
+  test('free account under its limit (count 2 < limit 3) → 201', async () => {
+    projectLimit = 3;
+    projectCount = 2;
     const res = await provision();
     expect(res.status).toBe(201);
     expect(backendCalls).toEqual(['createRepo']);
   });
 
-  test('free account at its limit (count 1 ≥ limit 1) → 403, no repo created', async () => {
-    projectLimit = 1;
-    projectCount = 1;
+  test('free account at its limit (count 3 ≥ limit 3) → 403, no repo created', async () => {
+    projectLimit = 3;
+    projectCount = 3;
     const res = await provision();
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.code).toBe('project_limit_reached');
-    expect(body.limit).toBe(1);
-    expect(body.count).toBe(1);
-    expect(body.error).toContain('Free accounts are limited to 1 project');
+    expect(body.limit).toBe(3);
+    expect(body.count).toBe(3);
+    expect(body.error).toContain('Free accounts are limited to 3 projects');
     // Blocked BEFORE the managed repo is provisioned — no orphaned upstream repo.
     expect(backendCalls).toHaveLength(0);
   });

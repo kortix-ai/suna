@@ -1,6 +1,6 @@
 /**
  * SandboxPage — the project's runtime image (web parity: customize/sections/
- * sandbox-view = SandboxSnapshotCard + WarmPoolCard).
+ * sandbox-view = SandboxSnapshotCard).
  *
  * Sessions boot from a sandbox template. This surface owns:
  *   • Sandbox templates list (platform default + repo/UI templates) — edit,
@@ -8,8 +8,6 @@
  *   • Latest-failure banner with "Retry build" + "Fix with agent" (spins up a
  *     session to diagnose the failed build).
  *   • Recent build history (last 10) with status + source + error.
- *   • Warm pool card (gated on warm_pool_available) — keep N sandboxes pre-booted
- *     so new sessions open instantly; live ready/warming counts.
  *
  * Mobile branding: PageHeader + PageContent chrome, bottom sheets, design tokens.
  */
@@ -21,7 +19,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Switch,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,8 +41,6 @@ import {
   Trash2,
   RefreshCw,
   Plus,
-  Minus,
-  Zap,
   X,
   TriangleAlert,
   type LucideIcon,
@@ -63,11 +58,8 @@ import {
   useDeleteSandboxTemplate,
   useRebuildSnapshot,
   useFixSandboxWithAgent,
-  useWarmPoolStatus,
-  useUpdateWarmPool,
 } from '@/lib/projects/hooks';
 import type {
-  KortixProject,
   SandboxTemplate,
   ProjectSnapshotBuild,
   ProjectSnapshotStatus,
@@ -76,7 +68,6 @@ import type {
 import { haptics } from '@/lib/haptics';
 
 const MONO = 'Menlo';
-const MAX_WARM = 25;
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 interface PageTabLike {
@@ -214,7 +205,7 @@ function TemplateRow({
     : template.has_image
       ? `Image: ${template.image}`
       : `Dockerfile: ${template.dockerfile_path}`;
-  const sourceTag = template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.toml';
+  const sourceTag = template.source === 'platform' ? 'platform' : template.source === 'ui' ? 'UI' : 'kortix.yaml';
   const editable = canManage && !!template.template_id && !template.is_default;
   const buildable = canManage && !!template.template_id;
 
@@ -493,104 +484,6 @@ function SandboxTemplateSheet({
   );
 }
 
-// ─── warm pool card ───────────────────────────────────────────────────────────
-
-function WarmPoolCard({ project, projectId, canManage, isDark }: { project: KortixProject | undefined; projectId: string; canManage: boolean; isDark: boolean }) {
-  const { colorScheme } = useColorScheme();
-  const serverEnabled = project?.warm_pool?.enabled ?? true;
-  const serverSize = project?.warm_pool?.size ?? 1;
-  const [enabled, setEnabled] = useState(serverEnabled);
-  const [size, setSize] = useState(serverSize);
-  const save = useUpdateWarmPool(projectId);
-  const status = useWarmPoolStatus(projectId, !!project?.warm_pool_available && enabled);
-
-  useEffect(() => { setEnabled(serverEnabled); }, [serverEnabled]);
-  useEffect(() => { setSize(serverSize); }, [serverSize]);
-
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-
-  if (!project?.warm_pool_available) return null;
-
-  const commit = (next: { enabled?: boolean; size?: number }) => {
-    if (!canManage) return;
-    save.mutate(next, {
-      onError: (e: any) => {
-        Alert.alert('Failed', e?.message || 'Could not update warm pool.');
-        setEnabled(serverEnabled);
-        setSize(serverSize);
-      },
-    });
-  };
-  const setSizeClamped = (n: number) => {
-    const clamped = Math.max(0, Math.min(MAX_WARM, n));
-    setSize(clamped);
-    commit({ size: clamped });
-  };
-
-  return (
-    <View style={{ marginTop: 24 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Zap size={15} color={muted} />
-        <SectionLabel color={muted}>Warm pool</SectionLabel>
-      </View>
-      <View style={{ borderRadius: 14, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Keep sandboxes warm</Text>
-            <Text style={{ fontSize: 12, color: muted, marginTop: 3 }}>
-              Pre-boot sandboxes while you're in the project so new sessions open instantly. Released automatically when you leave.
-            </Text>
-          </View>
-          <Switch
-            value={enabled}
-            disabled={!canManage || save.isPending}
-            onValueChange={(v) => { haptics.tap(); setEnabled(v); commit({ enabled: v }); }}
-            trackColor={{ false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7', true: '#34C759' }}
-            thumbColor="#FFFFFF"
-            ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
-          />
-        </View>
-
-        {enabled && (
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14, borderTopWidth: 1, borderTopColor: border }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Ready sandboxes</Text>
-              <Text style={{ fontSize: 12, color: muted, marginTop: 3 }}>
-                How many to keep warm and ready to claim (0–{MAX_WARM}). They use compute while running — the trade for instant sessions.
-              </Text>
-              {status.data && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22c55e' }} />
-                    <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#16a34a' }}>{status.data.ready} ready</Text>
-                  </View>
-                  {status.data.warming > 0 && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#f59e0b' }} />
-                      <Text style={{ fontSize: 12, color: muted }}>{status.data.warming} warming…</Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size - 1); }} disabled={!canManage || save.isPending || size <= 0} style={{ width: 36, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size <= 0 ? 0.4 : 1 }}>
-                <Minus size={16} color={fg} />
-              </TouchableOpacity>
-              <Text style={{ width: 26, textAlign: 'center', fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>{size}</Text>
-              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size + 1); }} disabled={!canManage || save.isPending || size >= MAX_WARM} style={{ width: 36, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size >= MAX_WARM ? 0.4 : 1 }}>
-                <Plus size={16} color={fg} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
-
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export function SandboxPage({
@@ -608,7 +501,7 @@ export function SandboxPage({
   const insets = useSafeAreaInsets();
 
   const projectQuery = useProject(projectId);
-  const canManage = projectQuery.data?.effective_project_role === 'manager';
+  const canManage = projectQuery.data?.effective_project_role === 'editor';
   const { data, isLoading, isError, error, refetch } = useProjectSnapshots(projectId);
 
   const buildMut = useBuildSandboxTemplate(projectId);
@@ -704,7 +597,7 @@ export function SandboxPage({
             )}
           </View>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
-            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.toml.
+            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.yaml.
           </Text>
 
           {isLoading ? (
@@ -821,8 +714,6 @@ export function SandboxPage({
                 )}
               </View>
 
-              {/* Warm pool */}
-              <WarmPoolCard project={projectQuery.data} projectId={projectId} canManage={canManage} isDark={isDark} />
             </>
           )}
         </ScrollView>

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 383,
+  "count": 464,
   "routes": [
     {
       "method": "GET",
@@ -9,6 +9,42 @@
     {
       "method": "GET",
       "path": "/health/live"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/authenticate"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/billing"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/budget-check"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/resolve-upstream"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/trace"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/usage"
+    },
+    {
+      "method": "GET",
+      "path": "/metrics"
     },
     {
       "method": "GET",
@@ -136,6 +172,22 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/actions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/agent-identities"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/enterprise-demo"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/iam/enterprise-demo"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/groups"
     },
     {
@@ -212,6 +264,58 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/policies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/policies:bulk-import"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/policies/:policyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/roles"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/permissions"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/permissions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/roles/:roleId/usage"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/iam/scim/tokens"
     },
     {
@@ -279,6 +383,10 @@
       "path": "/v1/accounts/:accountId/iam/sso/provider"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/provider/from-metadata"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/invites"
     },
@@ -343,6 +451,10 @@
       "path": "/v1/admin/api/accounts/:id/ledger"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/projects"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/accounts/:id/tier"
     },
@@ -377,14 +489,6 @@
     {
       "method": "POST",
       "path": "/v1/admin/api/sandboxes/:sessionId/migrate"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/admin/api/warm-pool-config"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/admin/api/warm-pool-config"
     },
     {
       "method": "POST",
@@ -476,6 +580,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/billing/cron/free-tier-rotation"
+    },
+    {
+      "method": "POST",
       "path": "/v1/billing/cron/yearly-rotation"
     },
     {
@@ -543,6 +651,14 @@
       "path": "/v1/billing/webhooks/stripe"
     },
     {
+      "method": "POST",
+      "path": "/v1/channels/slack/identity/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/channels/slack/identity/login/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/docs"
     },
@@ -552,7 +668,19 @@
     },
     {
       "method": "GET",
+      "path": "/v1/executor/connect-status"
+    },
+    {
+      "method": "GET",
       "path": "/v1/executor/connectors"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/call"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/catalog"
     },
     {
       "method": "GET",
@@ -604,7 +732,7 @@
     },
     {
       "method": "PUT",
-      "path": "/v1/executor/projects/:projectId/connectors/:slug/sharing"
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/sensitive"
     },
     {
       "method": "POST",
@@ -740,26 +868,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/platform/api-keys/:keyId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/platform/api-keys/:keyId/regenerate"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/platform/api-keys/:keyId/revoke"
-    },
-    {
-      "method": "GET",
       "path": "/v1/platform/sandbox/version"
     },
     {
@@ -844,6 +952,30 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/config"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/agents/:agentName/scope"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/approvals/:executionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/approvals/needs-input"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps"
     },
     {
@@ -916,7 +1048,67 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/request-changes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/bindings"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/bindings/:bindingId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/email/connect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/channels/email/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/email/mode"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/meet/name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/meet/speak"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/channels/meet/voice"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/meet/voices"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/meet/voices/:voiceId/preview"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/slack/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/file/upload"
     },
     {
       "method": "DELETE",
@@ -987,6 +1179,62 @@
       "path": "/v1/projects/:projectId/files/search"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/breakdown"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/budgets"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/gateway/budgets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/budgets/:budgetId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/errors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/keys/:keyId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/logs/:logId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/overview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/playground"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/series"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/sessions"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/git-credential"
     },
@@ -1019,8 +1267,48 @@
       "path": "/v1/projects/:projectId/group-grants/:groupId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/llm-catalog"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/marketplace/:name"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/install"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/update-all"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/marketplace/updates"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/model-defaults"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/model-defaults"
     },
     {
       "method": "GET",
@@ -1043,14 +1331,6 @@
       "path": "/v1/projects/:projectId/onboarding"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/presence/leave"
-    },
-    {
       "method": "GET",
       "path": "/v1/projects/:projectId/registry"
     },
@@ -1067,12 +1347,52 @@
       "path": "/v1/projects/:projectId/registry/update"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/registry/update-all"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/registry/updates"
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/resource-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/resource-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/resource-grants/:grantId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/bulk"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/review/items"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/items"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/review/items/:reviewItemId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/review/items/:reviewItemId/act"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sandbox-health"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sandbox-provider"
     },
     {
       "method": "GET",
@@ -1143,6 +1463,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/audit"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
     },
@@ -1173,6 +1497,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/transcript"
     },
     {
       "method": "GET",
@@ -1207,6 +1539,10 @@
       "path": "/v1/projects/:projectId/triggers/:slug/fire"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/activation"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/turn-question"
     },
@@ -1217,14 +1553,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/version-diff"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/warm-pool"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/warm-pool"
     },
     {
       "method": "POST",
@@ -1287,6 +1615,14 @@
       "path": "/v1/projects/suna-migration/status"
     },
     {
+      "method": "GET",
+      "path": "/v1/public/session-shares/:shareId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/session-shares/:shareId/messages"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -1297,14 +1633,6 @@
     {
       "method": "POST",
       "path": "/v1/router/image-search"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/router/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/router/llm/models"
     },
     {
       "method": "POST",
@@ -1321,30 +1649,6 @@
     {
       "method": "POST",
       "path": "/v1/router/web-search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/servers"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/:id"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/servers/sync"
     },
     {
       "method": "GET",
@@ -1496,7 +1800,27 @@
     },
     {
       "method": "POST",
+      "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/meet/realtime"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/meet/status"
+    },
+    {
+      "method": "POST",
       "path": "/v1/webhooks/projects/:projectId/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/sandbox/daytona"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/sandbox/platinum"
     },
     {
       "method": "POST",

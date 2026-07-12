@@ -30,7 +30,7 @@ import {
   createSandboxTemplate,
   updateSandboxTemplate,
   type SandboxTemplate,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -76,7 +76,7 @@ export function SandboxTemplateForm({
   const [dockerfilePath, setDockerfilePath] = useState('');
   const [entrypoint, setEntrypoint] = useState('');
   const [cpu, setCpu] = useState<string>('2');
-  const [memoryGb, setMemoryGb] = useState<string>('6');
+  const [memoryGb, setMemoryGb] = useState<string>('4');
   const [diskGb, setDiskGb] = useState<string>('20');
 
   // Reset / hydrate when opening

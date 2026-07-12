@@ -12,7 +12,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { resolveOpencodeConfigDir, type Config } from '../config'
+import { resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from '../config'
 
 let workspace: string
 const DEFAULT_DIR = '/ephemeral/kortix-master/opencode'
@@ -69,17 +69,58 @@ describe('resolveOpencodeConfigDir', () => {
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, '.kortix/opencode'))
   })
 
-  test('honors a custom [opencode] config_dir from kortix.toml', async () => {
+  test('honors a custom opencode.config_dir from kortix.yaml', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: config/oc\n')
+    mkdirSync(join(workspace, 'config/oc'), { recursive: true })
+    writeFileSync(join(workspace, 'config/oc/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'config/oc'))
+  })
+
+  test('honors a custom [opencode] config_dir from legacy kortix.toml', async () => {
     writeFileSync(join(workspace, 'kortix.toml'), '[opencode]\nconfig_dir = "config/oc"\n')
     mkdirSync(join(workspace, 'config/oc'), { recursive: true })
     writeFileSync(join(workspace, 'config/oc/opencode.jsonc'), '{}')
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'config/oc'))
   })
 
+  test('prefers kortix.yaml over a legacy kortix.toml when both exist', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: yaml/oc\n')
+    writeFileSync(join(workspace, 'kortix.toml'), '[opencode]\nconfig_dir = "toml/oc"\n')
+    mkdirSync(join(workspace, 'yaml/oc'), { recursive: true })
+    writeFileSync(join(workspace, 'yaml/oc/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'yaml/oc'))
+  })
+
   test('falls back when the manifest points at a dir lacking an opencode config file', async () => {
-    writeFileSync(join(workspace, 'kortix.toml'), '[opencode]\nconfig_dir = ".kortix/opencode"\n')
+    writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: .kortix/opencode\n')
     mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })
     // dir exists but has no opencode.jsonc/json — still fall back.
     expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
+  })
+})
+
+describe('resolveSandboxOnBoot', () => {
+  test('returns null when no manifest exists', async () => {
+    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
+  })
+
+  test('reads sandbox.on_boot from kortix.yaml', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: "pnpm dev"\n')
+    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
+  })
+
+  test('reads an unquoted sandbox.on_boot from kortix.yaml', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  on_boot: pnpm dev\n')
+    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
+  })
+
+  test('reads [sandbox] on_boot from legacy kortix.toml', async () => {
+    writeFileSync(join(workspace, 'kortix.toml'), '[sandbox]\non_boot = "pnpm dev"\n')
+    expect(await resolveSandboxOnBoot(cfg())).toBe('pnpm dev')
+  })
+
+  test('returns null when sandbox.on_boot is unset', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'sandbox:\n  cpu: 4\n')
+    expect(await resolveSandboxOnBoot(cfg())).toBeNull()
   })
 })

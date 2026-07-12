@@ -2,7 +2,15 @@ export {
   saveSlackInstall,
   deleteSlackInstall,
   loadSlackInstall,
+  saveAgentMailInstall,
+  deleteAgentMailInstall,
+  listAgentMailInstalls,
+  loadAgentMailInstall,
   loadSlackTokenForProject,
+  loadAgentMailApiKeyForProject,
+  loadAgentMailWebhookSecretForProject,
+  loadAgentMailSenderPolicyForInbox,
+  updateAgentMailSenderPolicy,
   loadSlackSigningSecretForProject,
   loadSlackBotUserIdForProject,
   loadSlackTeamNameForProject,
@@ -11,9 +19,19 @@ export {
   SLACK_TEAM_ID,
   SLACK_BOT_USER_ID,
   SLACK_TEAM_NAME,
+  AGENTMAIL_API_KEY,
+  AGENTMAIL_INBOX_ID,
+  AGENTMAIL_INBOX_EMAIL,
+  AGENTMAIL_INBOX_DISPLAY_NAME,
+  AGENTMAIL_WEBHOOK_ID,
+  AGENTMAIL_WEBHOOK_SECRET,
+  AGENTMAIL_SENDER_POLICY,
   type SlackInstallSummary,
   type SlackInstallInput,
-} from './install-store';
+  type AgentMailInstallSummary,
+  type AgentMailInstallInput,
+  type AgentMailSenderPolicy,
+} from "./install-store";
 export {
   buildSlackManifest,
   generateSlackManifest,
@@ -24,9 +42,14 @@ export {
   type SlackManifest,
   type GenerateManifestInput,
   type BuildManifestConfig,
-} from './slack-manifest';
-export { slackWebhookApp, relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack-webhook';
-export { teamsWebhookApp } from './teams-webhook';
+} from "./slack-manifest";
+export {
+  slackWebhookApp,
+  relayTurnStep,
+  relayTurnAnswer,
+  relayTurnEnd,
+} from "./slack-webhook";
+export { teamsWebhookApp } from "./teams-webhook";
 export {
   saveTeamsInstall,
   deleteTeamsInstall,
@@ -36,7 +59,10 @@ export {
   MS_TEAMS_TENANT_ID,
   type TeamsInstallSummary,
   type TeamsInstallInput,
-} from './install-store';
-export { telegramWebhookApp } from './telegram-webhook';
-export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
-export { slackOauthMode } from './slack-oauth-mode';
+} from "./install-store";
+export { emailWebhookApp } from "./email-webhook";
+export { telegramWebhookApp } from "./telegram-webhook";
+export { slackOauthApp, buildSlackInstallUrl } from "./slack-oauth";
+export { slackIdentityApp } from "./slack/identity-routes";
+export { slackOauthMode } from "./slack-oauth-mode";
+export { meetWebhookApp } from "./meet-webhook";

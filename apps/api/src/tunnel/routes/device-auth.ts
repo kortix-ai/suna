@@ -26,8 +26,38 @@ import { reconcileComputerConnectors } from '../../executor/sync';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 
+const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
+  filesystem: [
+    { scope: 'files:read', operations: ['read', 'list'] },
+    { scope: 'files:write', operations: ['write'] },
+    { scope: 'files:delete', operations: ['delete'] },
+  ],
+  shell: [
+    { scope: 'shell:exec' },
+  ],
+  desktop: [
+    { scope: 'desktop:computer_use', features: ['computer_use'] },
+    { scope: 'desktop:apps', features: ['apps', 'windows'] },
+    { scope: 'desktop:observe', features: ['screenshot', 'windows', 'accessibility'] },
+    { scope: 'desktop:input', features: ['mouse', 'keyboard', 'accessibility'] },
+  ],
+};
+
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
+
+function clientRateLimitKey(c: any): string {
+  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+  const realIp = c.req.header('x-real-ip')?.trim();
+  const cfIp = c.req.header('cf-connecting-ip')?.trim();
+  return forwarded || realIp || cfIp || 'unknown';
+}
+
+function checkDeviceAuthResolutionRateLimit(c: any, endpoint: string) {
+  const userId = (c.get('userId') as string | undefined) ?? 'anonymous';
+  const key = `${userId}:${clientRateLimitKey(c)}`;
+  return tunnelRateLimiter.check(endpoint, key);
+}
 
 /**
  * Public router — mounted BEFORE auth middleware.
@@ -68,7 +98,7 @@ export function createDeviceAuthPublicRouter() {
       },
     }),
     async (c: any) => {
-      const ip = 'public-device-auth-create';
+      const ip = clientRateLimitKey(c);
       const globalRl = tunnelRateLimiter.check('deviceAuthCreateGlobal', 'global');
       if (!globalRl.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: globalRl.retryAfterMs }, 429);
@@ -213,6 +243,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthInfo');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const code = c.req.param('code');
 
       const [row] = await db
@@ -270,6 +304,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthApprove');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const userId = c.get('userId') as string;
       const accountId = await resolveAccountId(userId);
       const code = c.req.param('code');
@@ -308,17 +346,20 @@ export function createDeviceAuthRouter() {
         })
         .returning();
 
-      // Grant permissions for each selected capability
+      // Grant the same granular scopes shown in the Computers UI so approval
+      // state and the permission toggles start in sync.
       if (capabilities.length > 0) {
-        await db.insert(tunnelPermissions).values(
-          capabilities.map((cap: string) => ({
+        const grants = capabilities.flatMap((cap: string) => {
+          const scopes = DEFAULT_PERMISSION_SCOPES[cap] ?? [{}];
+          return scopes.map((scope) => ({
             tunnelId: connection.tunnelId,
             accountId,
             capability: cap as any,
-            scope: {},
+            scope,
             status: 'active' as const,
-          })),
-        );
+          }));
+        });
+        await db.insert(tunnelPermissions).values(grants);
       }
 
       // Update device auth row with approval + token
@@ -356,6 +397,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthDeny');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const code = c.req.param('code');
 
       const [updated] = await db

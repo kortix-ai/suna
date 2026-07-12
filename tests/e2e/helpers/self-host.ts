@@ -81,7 +81,7 @@ insert into kortix.projects (
   '${escapeSql(name)}',
   '${escapeSql(projectRepoUrl)}',
   'main',
-  'kortix.toml',
+  'kortix.yaml',
   'active',
   '{"self_host_e2e":true}'::jsonb
 );
@@ -96,7 +96,7 @@ insert into kortix.project_members (
   '${escapeSql(accountId)}'::uuid,
   '${projectId}'::uuid,
   '${escapeSql(userId)}'::uuid,
-  'manager',
+  'editor',
   '${escapeSql(userId)}'::uuid
 );
 `;

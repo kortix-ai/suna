@@ -40,12 +40,13 @@ export const KORTIX_ITEM_TYPES = [
   'registry:agent', // an agent persona .md
   'registry:command', // an OpenCode slash command .md
   'registry:tool', // a custom OpenCode tool (.ts) or plugin
-  'registry:trigger', // a kortix.toml [[triggers]] block (declarative)
+  'registry:trigger', // a kortix.yaml triggers: block (declarative)
   'registry:connector', // an integration definition (Pipedream/MCP/HTTP)
   'registry:rules', // AGENTS.md / rules files
   'registry:memory', // seed memory files
   'registry:project', // a whole Kortix project (full repo scaffold)
   'registry:bundle', // a curated set of other items (a "starter"/use-case)
+  'registry:template', // an installable use-case: a bundle + declared inputs
 ] as const;
 
 export const ALL_ITEM_TYPES = [...SHADCN_ITEM_TYPES, ...KORTIX_ITEM_TYPES] as const;
@@ -67,7 +68,7 @@ export const KORTIX_PRIMITIVE_TYPES: readonly KortixItemType[] = [
 /**
  * Target placeholders. A file's `target` may start with one of these aliases;
  * the installer expands it against the consuming project's resolved layout
- * (the OpenCode config dir comes from `[opencode] config_dir` in kortix.toml,
+ * (the OpenCode config dir comes from `opencode.config_dir` in kortix.yaml,
  * defaulting to `.kortix/opencode`).
  *
  *   ~/<path>            → repo root, relative                (shadcn-compatible)
@@ -109,6 +110,26 @@ export interface RegistryItemFile {
   content?: string;
 }
 
+/**
+ * A parameter a `registry:template` collects at install time and substitutes
+ * (Mustache `{{key}}`) into the files/manifest blocks it commits — e.g. a cron
+ * cadence or the Slack channel to post to. Rendered by the install builder, not
+ * the registry engine, which carries `inputs` through untouched.
+ */
+export interface TemplateInput {
+  key: string;
+  label: string;
+  type: 'text' | 'select' | 'cron' | 'channel';
+  /** Default value (pre-rendered into `{{key}}` when the user skips it). */
+  default?: string;
+  /** Choices for `type: 'select'`. */
+  options?: Array<{ value: string; label: string }>;
+  /** Help text shown under the field in the install wizard. */
+  help?: string;
+  /** Whether the field must be filled before install proceeds (default true). */
+  required?: boolean;
+}
+
 export interface RegistryItem {
   $schema?: string;
   /** Unique slug within the registry. */
@@ -131,6 +152,11 @@ export interface RegistryItem {
   registryDependencies?: string[];
   /** Files to materialize. */
   files?: RegistryItemFile[];
+  /**
+   * Inputs a `registry:template` collects at install time and substitutes into
+   * its committed files/manifest blocks. Ignored for non-template items.
+   */
+  inputs?: TemplateInput[];
   /** Env vars the item needs (surfaced as required secrets on install). */
   envVars?: Record<string, string>;
   /** Free-form categorization for the gallery. */

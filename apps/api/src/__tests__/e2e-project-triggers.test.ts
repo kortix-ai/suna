@@ -17,7 +17,7 @@ import {
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
-const MANIFEST_PATH = 'kortix.toml';
+const MANIFEST_PATH = 'kortix.yaml';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 // ─── In-memory git mock ─────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Trigger Project',
   repoUrl: 'https://github.com/kortix-ai/trigger-project.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -85,7 +85,9 @@ mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -112,6 +114,13 @@ mock.module('../projects/git', () => ({
     const content = repoFiles.get(path);
     if (content === undefined) throw new Error(`Not found: ${path}`);
     return content;
+  },
+  readManifestFromRepo: async (_p: any, candidatePaths: string[]) => {
+    for (const path of candidatePaths) {
+      const content = repoFiles.get(path);
+      if (content !== undefined) return { path, content };
+    }
+    return null;
   },
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
@@ -214,7 +223,7 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/services/provider-balancer', () => ({
-  selectProvider: async () => 'local_docker',
+  selectProvider: async () => 'daytona',
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -232,6 +241,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'pro' }),
   // Trigger fire spawns a real session, which runs the billing gate. Return a
   // billing-active account (live sub + ample balance) so the gate passes.
@@ -249,7 +259,9 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
 // Tests can read/override `secretValues` to drive specific behaviors.
 const secretValues = new Map<string, string>();
+const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
+  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => `enc:${v}`,
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
@@ -276,9 +288,20 @@ mock.module('../shared/db', () => ({
                 ? lifecycleCommandRows
                 : table === projectSessions
                   ? sessionRows
-                  : [];
+                  : table === projects
+                    ? [projectRow]
+                    : [];
             const ordered = {
-              limit: async (limit: number) => rows.slice(0, limit),
+              // `selectActiveProjects` chains `.orderBy(...).limit(n).offset(m)` —
+              // `limit()` must return a chainable (and still awaitable) object so
+              // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
+              limit: (limit: number) => {
+                const limited = rows.slice(0, limit);
+                return {
+                  offset: async (offset: number) => limited.slice(offset),
+                  then: (resolve: (rows: any[]) => unknown) => resolve(limited),
+                };
+              },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
             return ordered as any;
@@ -297,6 +320,15 @@ mock.module('../shared/db', () => ({
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
             if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
+            // `getGitTriggerRuntime` does a bare `.select().from(projectTriggerRuntime)
+            // .where(...).limit(1)` (no `orderBy`, no field projection) — without this
+            // branch it always fell through to `[]`, so the sweep never saw a prior
+            // fire's `lastFiredAt` and recomputed the same due-slot idempotency key on
+            // every retry (masking backpressure clearing). Mirrors the `.then()`
+            // fallback below.
+            if (table === projectTriggerRuntime) {
+              return runtimeRows.filter((r) => r.projectId === PROJECT_ID).slice(0, 1);
+            }
             return [];
           };
           // Some callers `await` directly without orderBy/limit (e.g. select
@@ -477,40 +509,45 @@ function createApp() {
 }
 
 // ─── Manifest seeding helpers ──────────────────────────────────────────────
-// All trigger config lives in `kortix.toml` now. Tests seed manifest content
+// All trigger config lives in `kortix.yaml` now. Tests seed manifest content
 // directly into the in-memory repo — same shape the CRUD handlers read/write.
+// Fixtures are hand-written v2 YAML; every string value goes through
+// `JSON.stringify` so cron expressions (leading `*`), mustache prompts
+// (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version = 1\n[project]\nname = "Trigger Project"\n`;
+const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0
     ? MANIFEST_PREAMBLE
-    : `${MANIFEST_PREAMBLE}\n${triggerBlocks.join('\n\n')}\n`;
+    : `${MANIFEST_PREAMBLE}triggers:\n${triggerBlocks.join('\n')}\n`;
   repoFiles.set(MANIFEST_PATH, body);
 }
 
-/** Build a `[[triggers]]` block for a cron trigger. */
+/** Build a `triggers:` list-item block for a cron trigger. */
 function cronEntry(opts: {
   slug: string;
   name?: string;
   cron: string;
   timezone?: string;
   agent?: string;
+  model?: string;
   enabled?: boolean;
   prompt: string;
 }): string {
-  const lines = ['[[triggers]]', `slug = "${opts.slug}"`];
-  if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
-  lines.push('type = "cron"');
-  if (opts.agent !== undefined) lines.push(`agent = "${opts.agent}"`);
-  if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
-  lines.push(`cron = "${opts.cron}"`);
-  if (opts.timezone !== undefined) lines.push(`timezone = "${opts.timezone}"`);
-  lines.push(`prompt = ${JSON.stringify(opts.prompt)}`);
+  const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
+  if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
+  lines.push('    type: cron');
+  if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
+  if (opts.model !== undefined) lines.push(`    model: ${JSON.stringify(opts.model)}`);
+  if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
+  lines.push(`    cron: ${JSON.stringify(opts.cron)}`);
+  if (opts.timezone !== undefined) lines.push(`    timezone: ${JSON.stringify(opts.timezone)}`);
+  lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
   return lines.join('\n');
 }
 
-/** Build a `[[triggers]]` block for a webhook trigger. */
+/** Build a `triggers:` list-item block for a webhook trigger. */
 function webhookEntry(opts: {
   slug: string;
   name?: string;
@@ -519,20 +556,20 @@ function webhookEntry(opts: {
   enabled?: boolean;
   prompt: string;
 }): string {
-  const lines = ['[[triggers]]', `slug = "${opts.slug}"`];
-  if (opts.name !== undefined) lines.push(`name = "${opts.name}"`);
-  lines.push('type = "webhook"');
-  if (opts.agent !== undefined) lines.push(`agent = "${opts.agent}"`);
-  if (opts.enabled !== undefined) lines.push(`enabled = ${opts.enabled}`);
-  lines.push(`secret_env = "${opts.secretEnv}"`);
-  lines.push(`prompt = ${JSON.stringify(opts.prompt)}`);
+  const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
+  if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
+  lines.push('    type: webhook');
+  if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
+  if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
+  lines.push(`    secret_env: ${JSON.stringify(opts.secretEnv)}`);
+  lines.push(`    prompt: ${JSON.stringify(opts.prompt)}`);
   return lines.join('\n');
 }
 
 describe('git-backed triggers — CRUD', () => {
   beforeEach(() => resetState());
 
-  test('POST /triggers commits a new cron trigger into kortix.toml and returns the listing', async () => {
+  test('POST /triggers commits a new cron trigger into kortix.yaml and returns the listing', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
       method: 'POST',
@@ -551,14 +588,14 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls[0]!.path).toBe(MANIFEST_PATH);
     expect(commitCalls[0]!.message).toBe('chore: add trigger daily-digest');
 
-    // Manifest content reflects the new trigger as a [[triggers]] entry.
+    // Manifest content reflects the new trigger as a `triggers:` entry.
     const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).toContain('kortix_version = 1');
-    expect(written).toContain('[[triggers]]');
-    expect(written).toContain('slug = "daily-digest"');
-    expect(written).toContain('name = "Daily Digest"');
-    expect(written).toContain('type = "cron"');
-    expect(written).toContain('cron = "0 0 9 * * 1-5"');
+    expect(written).toContain('kortix_version: 1');
+    expect(written).toContain('triggers:');
+    expect(written).toContain('slug: daily-digest');
+    expect(written).toContain('name: Daily Digest');
+    expect(written).toContain('type: cron');
+    expect(written).toContain('cron: 0 0 9 * * 1-5');
     expect(written).toContain('Pull the deploy logs.');
 
     const body = await res.json();
@@ -666,7 +703,7 @@ describe('git-backed triggers — CRUD', () => {
     // "broken" entry is missing the required cron expression.
     seedManifest(
       cronEntry({ slug: 'good', name: 'Good', cron: '* * * * * *', prompt: 'body' }),
-      ['[[triggers]]', 'slug = "broken"', 'type = "cron"', 'prompt = "no cron field here"'].join('\n'),
+      ['  - slug: broken', '    type: cron', '    prompt: "no cron field here"'].join('\n'),
     );
 
     const app = createApp();
@@ -702,11 +739,63 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls[0]!.message).toBe('chore: update trigger one');
 
     const updated = repoFiles.get(MANIFEST_PATH)!;
-    expect(updated).toContain('name = "New name"');
-    expect(updated).toContain('enabled = false');
+    expect(updated).toContain('name: New name');
+    expect(updated).toContain('enabled: false');
     // Unchanged fields preserved from the existing spec.
-    expect(updated).toContain('cron = "0 */15 * * * *"');
+    expect(updated).toContain('cron: 0 */15 * * * *');
     expect(updated).toContain('old prompt');
+  });
+
+  test('POST /triggers accepts and returns a pinned model', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Pinned Model',
+        type: 'cron',
+        cron: '0 0 9 * * *',
+        timezone: 'UTC',
+        prompt_template: 'x',
+        model: 'anthropic/claude-sonnet-4-6',
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.triggers[0]).toMatchObject({
+      slug: 'pinned-model',
+      model: 'anthropic/claude-sonnet-4-6',
+    });
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model: anthropic/claude-sonnet-4-6');
+  });
+
+  // Regression: a PATCH body containing ONLY `model` must still commit the
+  // manifest. TRIGGER_MANIFEST_KEYS previously omitted "model", so
+  // `touchesManifest` was false and the change was silently dropped (200 OK,
+  // nothing persisted, listing kept returning the stale model).
+  test('PATCH /triggers/:slug with only `model` persists it to the manifest', async () => {
+    seedManifest(cronEntry({
+      slug: 'one',
+      name: 'One',
+      agent: 'default',
+      cron: '0 0 9 * * *',
+      prompt: 'body',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/one`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'openai/gpt-5' }),
+    });
+    expect(res.status).toBe(200);
+    expect(commitCalls).toHaveLength(1);
+    expect(commitCalls[0]!.message).toBe('chore: update trigger one');
+    expect(repoFiles.get(MANIFEST_PATH)).toContain('model: openai/gpt-5');
+
+    const listing = await app.request(`/v1/projects/${PROJECT_ID}/triggers`);
+    const body = await listing.json();
+    expect(body.triggers[0].model).toBe('openai/gpt-5');
   });
 
   test('PATCH /triggers/:slug returns 404 when the slug is not in the manifest', async () => {
@@ -738,8 +827,8 @@ describe('git-backed triggers — CRUD', () => {
 
     // The manifest still exists, just without the deleted entry.
     const updated = repoFiles.get(MANIFEST_PATH)!;
-    expect(updated).not.toContain('slug = "one"');
-    expect(updated).toContain('slug = "two"');
+    expect(updated).not.toContain('slug: one');
+    expect(updated).toContain('slug: two');
   });
 
   test('DELETE /triggers/:slug returns 404 when the entry is already gone', async () => {
@@ -783,6 +872,50 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+  });
+
+  test('manual fire applies the trigger-level model override to the session', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      model: 'anthropic/claude-sonnet-4-6',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(202);
+    expect((await res.json()).status).toBe('fired');
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  test('manual fire without a model leaves the default resolution chain untouched', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(202);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
   });
 
   test('manual fire queues durably under backpressure', async () => {

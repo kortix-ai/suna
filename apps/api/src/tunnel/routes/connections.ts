@@ -19,9 +19,41 @@ import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { reconcileComputerConnectors } from '../../executor/sync';
+import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
+
+/**
+ * Explicit column selection for reads/returns — deliberately EXCLUDES
+ * setupTokenHash (a scrypt hash of the one-time setup token) so it never
+ * leaks into list/get/update responses.
+ */
+const SAFE_CONNECTION_COLUMNS = {
+  tunnelId: tunnelConnections.tunnelId,
+  accountId: tunnelConnections.accountId,
+  sandboxId: tunnelConnections.sandboxId,
+  name: tunnelConnections.name,
+  status: tunnelConnections.status,
+  capabilities: tunnelConnections.capabilities,
+  machineInfo: tunnelConnections.machineInfo,
+  relayOwnerId: tunnelConnections.relayOwnerId,
+  relayOwnerInstance: tunnelConnections.relayOwnerInstance,
+  relayOwnerStartedAt: tunnelConnections.relayOwnerStartedAt,
+  relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+  lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+  createdAt: tunnelConnections.createdAt,
+  updatedAt: tunnelConnections.updatedAt,
+};
+
+function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, 'setupTokenHash'>) {
+  const isLive = isTunnelConnectionLive(conn);
+  return {
+    ...conn,
+    status: isLive ? 'online' : 'offline',
+    isLive,
+  };
+}
 
 export function createConnectionsRouter() {
   const router = makeOpenApiApp<AppEnv>();
@@ -44,19 +76,12 @@ export function createConnectionsRouter() {
       const { ownerClause } = await getTunnelReadContext(c);
 
       const connections = await db
-        .select()
+        .select(SAFE_CONNECTION_COLUMNS)
         .from(tunnelConnections)
         .where(ownerClause)
         .orderBy(desc(tunnelConnections.createdAt));
 
-      const enriched = connections.map((conn) => {
-        const isLive = tunnelRelay.isConnected(conn.tunnelId);
-        return {
-          ...conn,
-          status: isLive ? 'online' : conn.status,
-          isLive,
-        };
-      });
+      const enriched = connections.map(serializeConnection);
 
       return c.json(enriched);
     },
@@ -110,7 +135,7 @@ export function createConnectionsRouter() {
           status: 'offline',
           setupTokenHash,
         })
-        .returning();
+        .returning(SAFE_CONNECTION_COLUMNS);
 
       // Materialize the account's `computer` Executor connector (first machine).
       void reconcileComputerConnectors(accountId);
@@ -137,7 +162,7 @@ export function createConnectionsRouter() {
       const tunnelId = c.req.param('tunnelId');
 
       const [connection] = await db
-        .select()
+        .select(SAFE_CONNECTION_COLUMNS)
         .from(tunnelConnections)
         .where(
           and(
@@ -150,10 +175,7 @@ export function createConnectionsRouter() {
         return c.json({ error: 'Tunnel connection not found' }, 404);
       }
 
-      return c.json({
-        ...connection,
-        isLive: tunnelRelay.isConnected(connection.tunnelId),
-      });
+      return c.json(serializeConnection(connection));
     },
   );
 
@@ -202,7 +224,7 @@ export function createConnectionsRouter() {
             ownerClause,
           ),
         )
-        .returning();
+        .returning(SAFE_CONNECTION_COLUMNS);
 
       if (!updated) {
         return c.json({ error: 'Tunnel connection not found' }, 404);

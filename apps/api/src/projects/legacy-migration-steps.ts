@@ -16,7 +16,7 @@
  *            store, upload the bundle to object storage, record session ids.
  *   repo:    create the managed repo (via the configured git backend — GitHub)
  *            that becomes the project's durable file home.
- *   push:    materialize the extracted files, synthesize kortix.toml/Dockerfile/
+ *   push:    materialize the extracted files, synthesize kortix.yaml/Dockerfile/
  *            .gitignore if absent, push to the repo's default branch.
  *   db:      one transaction — create project + project_members + one
  *            project_session per preserved OpenCode session, archive the legacy
@@ -350,7 +350,9 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       name: plan.project_name,
       repoUrl: gitUrl,
       defaultBranch,
-      manifestPath: 'kortix.toml',
+      // shipStarterToVm (buildStarterTarB64, above) seeds this repo with
+      // @kortix/starter, which ships kortix.yaml (kortix_version 2).
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {

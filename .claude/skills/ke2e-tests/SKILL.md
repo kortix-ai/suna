@@ -6,8 +6,8 @@ description: "How Kortix end-to-end API tests work and the mandatory test-as-sou
 # ke2e — test as source of truth
 
 Kortix has **one** end-to-end test suite at `suna/tests/` (the `ke2e` runner). It is
-black-box: it hits a **real, deployed API over HTTP** (`dev-api.kortix.com`, local
-`localhost:8008/v1`, or prod) with **live services** (real Daytona, Freestyle, Stripe
+black-box: it hits a **real, deployed API over HTTP** (`staging-api.kortix.com`,
+`dev-api.kortix.com`, local `localhost:8008/v1`, or prod) with **live services** (real Daytona, Freestyle, Stripe
 test-mode, LLM) — no mocking, no in-process app. Every test maps **1:1** to a stable
 flow ID in `tests/spec/end-to-end.md`. A coverage gate makes that mapping enforceable,
 so the spec + tests stay the source of truth for what the API does.
@@ -34,7 +34,7 @@ the goal is, in the same change:
 4. **`cd tests && bun bin/ke2e.ts coverage`** must pass (no orphan flow, no unknown
    route, uncovered count within baseline).
 5. **Run the touched flow live** before opening the change request:
-   `cd tests && KE2E_API_URL=https://dev-api.kortix.com/v1 KE2E_OWNER_EMAIL=… KE2E_OWNER_PASSWORD=… KE2E_LIVE_CONFIRM=1 bun bin/ke2e.ts run --id PROJ-12` and confirm green.
+   `cd tests && KE2E_API_URL=https://staging-api.kortix.com/v1 KE2E_OWNER_EMAIL=… KE2E_OWNER_PASSWORD=… KE2E_LIVE_CONFIRM=1 bun bin/ke2e.ts run --id PROJ-12` and confirm green before production promotion.
 
 **Never weaken an assertion to make a test pass.** If a test goes red, the code or the
 spec is wrong — fix that. If a route is genuinely impossible to test (truly un-automatable),
@@ -95,9 +95,10 @@ report doubles as living API docs). Secrets are redacted at capture; never un-re
 
 ## CI
 
-- **Pre-promote gate** (`promote.yml`): the full suite runs against `dev-api.kortix.com`
-  (which is the commit being promoted) and must be GREEN before prod gets the tag.
+- **Pre-promote gate** (`promote.yml` / release PR): the full suite runs against
+  `staging-api.kortix.com` (the release-candidate commit) and must be GREEN
+  before prod gets the release.
 - **Post-deploy smoke** (`deploy-prod.yml`): `--smoke` subset against prod.
 - **On PRs**: the suite's typecheck + `ke2e coverage` are required checks; the suite also
-  runs against dev-api as an advisory health check.
+  runs against staging-api as an advisory health check for the release candidate.
 - The coverage gate is the enforcement of this skill. If it fails, you skipped a step above.

@@ -1,18 +1,20 @@
 # Runbook: Deployment Procedure
 
-How a code change reaches **dev** (`kortix-dev-eks`, us-west-2) and **prod**
-(`kortix-prod-eks`, eu-west-2). Both clusters deploy by **GitOps**: a commit
+How a code change reaches **dev** (`kortix-dev-eks`, us-west-2), **staging**
+(`kortix-staging` on the dev EKS control plane), and **prod**
+(`kortix-prod-eks`, eu-west-2). All Kubernetes runtimes deploy by **GitOps**: a commit
 bumps `image.tag` in `infra/k8s/envs/<env>/values.yaml`, and Argo CD reconciles
 the change onto the cluster. There is no `kubectl apply` / `helm upgrade` in the
 hot path — the git commit *is* the deploy.
 
-- **`main`** = DEV. Every push auto-deploys to dev.
-- **`prod`** = PROD. Advanced only by the **Promote** workflow + a reviewed PR.
+- **`main`** = DEV. Every push auto-deploys to dev; direct pushes are allowed.
+- **`staging`** = release candidate. Advanced by PR into `staging`; only production-ready code should land here.
+- **`prod`** = PROD. Advanced only by **Promote to Production** from `staging` + a reviewed PR.
 - **`VERSION`** (repo root) = one number for the whole platform.
-- **Retag, never rebuild** — prod ships the exact image bytes tested on dev.
+- **Retag, never rebuild** — prod ships the exact image bytes built and tested on staging.
 
 Ground truth: `infra/GITOPS.md`, `infra/CICD.md`, `infra/EKS.md`,
-`infra/k8s/argocd/applications/{dev,prod}.yaml`.
+`infra/k8s/argocd/applications/{dev,staging,prod}.yaml`.
 
 ---
 
@@ -34,8 +36,9 @@ Steps:
 1. Open a PR into `main`. `ci.yml`, `codeql.yml`, `secret-scan.yml` run.
 2. Merge. The `deploy-dev.yml` workflow (`.github/workflows/deploy-dev.yml`)
    triggers on the push to `main`. Only surfaces whose paths changed rebuild
-   (path-filtered: `apps/api`, `packages`, `supabase/migrations`, lockfiles,
-   `VERSION`, etc.).
+   (path-filtered: `apps/api`, `packages`, `packages/db/migrations`, lockfiles,
+   `VERSION`, etc.). If the API surface changed, the `migrate-db` job applies
+   pending node-pg-migrate migrations against dev before the GitOps rollout.
 3. The `deploy-api` job (name: **Deploy API to dev (EKS / GitOps)**) builds and
    pushes `kortix/kortix-api:dev-<sha8>`, then bumps
    `infra/k8s/envs/dev/values.yaml` `image.tag` to that immutable tag and commits
@@ -61,21 +64,53 @@ curl -fsS https://dev-api-eks.kortix.com/v1/health | jq .version
 
 ---
 
-## 2. Deploy to PROD (Promote → review → merge to `prod`)
+## 2. Stage a release candidate (`main`/branch -> `staging`)
 
-Prod moves **only** when someone runs **Promote** and the resulting PR is
-reviewed and merged into `prod`. Nothing on `main` can touch prod — the
-`kortix-prod` Argo Application tracks `targetRevision: prod`.
+Staging moves only by PR. Open `main` -> `staging` when the whole dev trunk is
+ready to be a release candidate, or open a targeted branch -> `staging` when only
+specific commits should be staged. A green dev deploy is useful evidence, but it
+is not a production gate until the same commit is deployed and verified in
+staging.
+
+```
+PR main→staging or targeted branch→staging
+  merge to `staging`
+    └─► build-staging.yml builds staging-<sha8> images
+    └─► deploy-staging.yml syncs the staging secret bundle, deploys EKS staging,
+        wires Cloudflare, deploys staging.kortix.com, and verifies runtime config
+    └─► qa-staging.yml runs browser/a11y/migration QA against staging URLs
+```
+
+Deploy-staging may add bot-authored `[skip ci]` GitOps pin commits to `staging`
+after the merge. Those commits record the deployed image tags; they are not a
+human code-promotion path.
+
+Verify staging:
+
+```bash
+curl -fsS https://staging-api.kortix.com/v1/health | jq '{environment,version,commit}'
+curl -fsS https://staging.kortix.com/api/runtime-config | grep staging-api.kortix.com
+gh run list --repo kortix-ai/suna --branch staging --limit 10
+```
+
+---
+
+## 3. Deploy to PROD (Promote from `staging` → review → merge to `prod`)
+
+Prod moves **only** when someone runs **Promote to Production** from the staging
+release candidate and the resulting PR is reviewed and merged into `prod`.
+Nothing on `main` can touch prod — the `kortix-prod` Argo Application tracks
+`targetRevision: prod`.
 
 ```
 Actions → "Promote to Production" (promote.yml, workflow_dispatch)
   computes next vX.Y.Z from VERSION on prod
-  opens reviewed PR  release/vX.Y.Z → prod  (stamps VERSION + RELEASE_NOTES.md
+  opens reviewed PR  release/vX.Y.Z → prod from staging  (stamps VERSION + RELEASE_NOTES.md
     AND bumps infra/k8s/envs/prod/values.yaml image.tag + kortixVersion)
         │ review + merge to prod
         ▼
 deploy-prod.yml  (push → prod)
-  retag dev image  kortix/kortix-api:dev-<sha8> → :X.Y.Z + :latest   (NO rebuild)
+  retag staging image  kortix/kortix-api:staging-<sha8> → :X.Y.Z + :latest   (NO rebuild)
   build prod CLI → cut GitHub Release vX.Y.Z
   deploy-api job: WATCHES Argo CD roll kortix-prod-eks to :X.Y.Z, then Slack
         └─► Argo CD app `kortix-prod` (tracks prod) syncs → rolling Deployment
@@ -95,10 +130,13 @@ Steps:
    `prod` branch is protection-gated; the promote PR carries the values bump.
 4. **Merge to `prod`.** The push triggers `deploy-prod.yml`
    (`.github/workflows/deploy-prod.yml`, name **Deploy Prod**):
-   - `retag-images`: retags the tested dev image `dev-<sha8>` → `:X.Y.Z` +
-     `:latest` (no rebuild — what was tested on dev is what ships).
+   - `retag-images`: retags the tested staging image `staging-<sha8>` →
+     `:X.Y.Z` + `:latest` (no rebuild — what was tested on staging is what ships).
    - `version` / CLI / desktop jobs: cut the GitHub Release `vX.Y.Z` (desktop is
      best-effort, never blocks).
+   - `migrate-db` job: applies pending `packages/db/migrations` with
+     node-pg-migrate (`pnpm --filter @kortix/db migrate`) against prod before any
+     new API pods serve.
    - `deploy-api` job (name: **Deploy API to prod (EKS / GitOps)**): assumes
      `arn:aws:iam::935064898258:role/kortix-gha-eks-deploy`, runs `aws eks
      update-kubeconfig --name kortix-prod-eks --region eu-west-2`, and **watches**
@@ -137,11 +175,11 @@ curl -fsS https://api-eks.kortix.com/v1/health | jq .version       # → "X.Y.Z"
 
 ## Notes & gotchas
 
-- **Migrations**: the Drizzle migrate PreSync hook
-  (`templates/migrate-job.yaml`) is **`migrate.enabled: false` on prod** until
-  the prod Drizzle ledger is baselined (prod schema was built out-of-band). Do
-  not flip it without the gated baseline — see `infra/k8s/envs/prod/values.yaml`
-  and the `migration` skill.
+- **Migrations**: live dev/prod deploys use the GitHub Actions `migrate-db` jobs
+  and node-pg-migrate (`packages/db/MIGRATIONS.md`), before the EKS GitOps roll.
+  The chart-level PreSync hook is disabled and still reflects the old Drizzle
+  path; do **not** enable `migrate.enabled` until the hook is ported or removed
+  (https://github.com/kortix-ai/suna/issues/3628).
 - **Preview envs**: per-PR ephemeral APIs deploy via the Argo CD ApplicationSet
   (`infra/k8s/argocd/applicationsets/preview.yaml`) into `kortix-pr-<n>`
   namespaces on dev-eks when a PR is labelled `preview`. See `docs/ONBOARDING.md`.

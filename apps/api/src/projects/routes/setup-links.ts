@@ -1,9 +1,10 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its KORTIX_TOKEN is a project-scoped PAT, accepted by
- * supabaseAuth) calls these to mint a short-lived link it can hand to a human
- * to (a) enter a project secret value, or (b) 1-click connect a Pipedream app.
+ * The in-sandbox agent (its KORTIX_EXECUTOR_TOKEN / KORTIX_CLI_TOKEN is a
+ * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
+ * short-lived link it can hand to a human to (a) enter a project secret value,
+ * or (b) 1-click connect a Pipedream app.
  * The link itself is resolved/submitted by the PUBLIC app at /v1/setup-links/*.
  *
  * See ../../setup-links/token.ts for the stateless token model and
@@ -17,8 +18,9 @@ import { loadPipedreamConnector } from '../../executor/db-deps';
 import { pipedreamConfigured } from '../../executor/pipedream';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
-import { loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
+import { PROJECT_ACTIONS } from '../../iam';
 import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString, readBody } from '../lib/serializers';
 
 function frontendBase(): string {
@@ -48,8 +50,12 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.secret.write is the real gate — the same leaf as
+    // POST /secrets. Was 'manage' → project.write, so unchecking secret.write
+    // did nothing here.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
     // Accept `names: [...]` or a single `name`.
     const rawNames: unknown[] = Array.isArray(body.names)
@@ -127,8 +133,11 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    // Floor 'read'; project.connector.write is the real gate (minting a Pipedream
+    // Quick Connect link is a connector operation). Was 'manage' → project.write.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
     if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
 
@@ -138,14 +147,14 @@ projectsApp.openapi(
     const conn = await loadPipedreamConnector(projectId, slug);
     if (!conn) {
       return c.json(
-        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.toml first.` },
+        { error: `"${slug}" is not a connected-via-Pipedream connector on this project. Add it to kortix.yaml first.` },
         404,
       );
     }
 
     const { token, expiresAt } = mintSetupLink(
       projectId,
-      { kind: 'connector', slug, app: conn.app, mode: conn.mode, uid: loaded.userId },
+      { kind: 'connector', slug, app: conn.app, uid: loaded.userId },
       { expiresInMinutes: typeof body.expires_in_minutes === 'number' ? body.expires_in_minutes : undefined },
     );
 

@@ -221,6 +221,30 @@ describe('checkout.session.completed', () => {
     expect(diffDays).toBeGreaterThan(25);
     expect(diffDays).toBeLessThan(35);
   });
+
+  test('subscription.created then checkout.completed share one activation idempotency key', async () => {
+    mockRegistry.getCreditAccount = async () => null;
+
+    const subscription = createMockStripeSubscription({ id: 'sub_race_123' });
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => subscription;
+
+    const subscriptionEvent = createMockStripeEvent('customer.subscription.created', subscription);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => subscriptionEvent;
+    await processStripeWebhook(JSON.stringify(subscriptionEvent), 'sig');
+
+    const checkout = createMockStripeCheckoutSession({
+      id: 'cs_race_123',
+      subscription: 'sub_race_123',
+    });
+    const checkoutEvent = createMockStripeEvent('checkout.session.completed', checkout);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => checkoutEvent;
+    await processStripeWebhook(JSON.stringify(checkoutEvent), 'sig');
+
+    expect(resetExpiringCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(resetExpiringCreditsCalls[0][3]).toBe('subscription_activation:sub_race_123');
+    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_race_123');
+  });
 });
 
 describe('subscription changes', () => {
@@ -273,7 +297,7 @@ describe('subscription changes', () => {
     const sub = createMockStripeSubscription({
       metadata: { account_id: 'acc_test_123' },
       items: {
-        data: [{ id: 'si_123', price: { id: 'price_1T7yiuG6CaZppiKc7VsgnlKI' } }],
+        data: [{ id: 'si_123', price: { id: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' } }],
       },
     });
     const event = createMockStripeEvent('customer.subscription.updated', sub);
@@ -461,6 +485,30 @@ describe('RevenueCat', () => {
     expect(grantCreditsCalls[0][1]).toBe(20); // tier_2_20 = $20 monthly credits
     expect(grantCreditsCalls[1][1]).toBe(5);  // $5 machine bonus
     expect(result.event_type).toBe('INITIAL_PURCHASE');
+  });
+
+  test('duplicate RevenueCat event IDs are idempotent and do not grant twice', async () => {
+    const seen = new Set<string>();
+    mockRegistry.recordWebhookEvent = async (...args: any[]) => {
+      const key = String(args[0]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    };
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      id: 'rc_evt_duplicate_1',
+      event_id: 'rc_evt_duplicate_1',
+      product_id: 'kortix_plus_monthly',
+    });
+
+    const first = await processRevenueCatWebhook(body);
+    const second = await processRevenueCatWebhook(body);
+
+    expect((first as any).skipped).toBeUndefined();
+    expect((second as any).deduped).toBe(true);
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(grantCreditsCalls.length).toBe(2);
   });
 
   test('RENEWAL: resets expiring credits', async () => {

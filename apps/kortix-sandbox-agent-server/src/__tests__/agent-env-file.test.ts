@@ -100,6 +100,46 @@ describe('writeAgentEnvFile', () => {
     expect(body).toContain('unset OLD')
   })
 
+  test('emits the per-session cred allowlist (no-restart hot-swap fix) but NOT daemon-internal KORTIX_*', () => {
+    // The no-restart hot-swap reuses the seed opencode, so its env never gets the
+    // per-session creds; this file (BASH_ENV) must carry them to the agent's shells.
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'secret',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, {
+      sh,
+      bootEnv: {
+        KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+        // session identity/context — MUST be emitted for git/CLI/CR-merge
+        KORTIX_TOKEN: 'sk_tok',
+        KORTIX_CLI_TOKEN: 'sk_cli',
+        KORTIX_PROJECT_ID: 'proj_1',
+        KORTIX_API_URL: 'https://dev-api.kortix.com/v1',
+        // daemon-internal — MUST NOT leak into the agent shell
+        KORTIX_WARM_SEED: '1',
+        KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
+        KORTIX_LLM_HOTSWAP: '1',
+        KORTIX_LLM_API_KEY: 'internal-llm-key',
+      } as NodeJS.ProcessEnv,
+    })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain("export API_KEY='secret'") // user secret unchanged
+    expect(body).toContain("export KORTIX_TOKEN='sk_tok'")
+    expect(body).toContain("export KORTIX_CLI_TOKEN='sk_cli'")
+    expect(body).toContain("export KORTIX_PROJECT_ID='proj_1'")
+    expect(body).toContain("export KORTIX_API_URL='https://dev-api.kortix.com/v1'")
+    // daemon-internal stays filtered (not the agent's business)
+    expect(body).not.toContain('KORTIX_WARM_SEED')
+    expect(body).not.toContain('KORTIX_LLM_PROXY_URL')
+    expect(body).not.toContain('KORTIX_LLM_HOTSWAP')
+    expect(body).not.toContain('KORTIX_LLM_API_KEY')
+    expect(body).not.toContain('internal-llm-key')
+  })
+
   test('shredAgentEnvFile removes the file', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',

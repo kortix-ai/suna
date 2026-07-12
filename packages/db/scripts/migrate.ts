@@ -108,20 +108,21 @@ async function autoBaselineIfNeeded(base: Record<string, unknown>, databaseUrl: 
 }
 
 /**
- * Self-host only: install the NON-kortix prerequisites (the basejump account
- * framework + public credit RPCs + the auth.users signup triggers) on a FRESH
- * database, BEFORE the kortix baseline migration runs. The baseline's RLS
- * policies and functions reference `basejump.account_user`, so without this the
- * very first `up` fails with `relation "basejump.account_user" does not exist`.
+ * Self-host only: install the NON-kortix prerequisites (public credit RPCs,
+ * the welcome-email webhook trigger, storage buckets, and a minimal
+ * basejump.account_user STUB the baseline's RLS policies still reference —
+ * see 0000_bootstrap.sql) on a FRESH database, BEFORE the kortix baseline
+ * migration runs. Without the stub the very first `up` fails with
+ * `relation "basejump.account_user" does not exist`.
  *
  * Deployed cloud/dev databases already have these objects (provided by the
  * platform / historical migrations now archived), so this is gated on basejump
  * being ABSENT — it is a no-op on every provisioned DB and idempotent on re-run.
  *
- * Sequencing: the basejump bootstrap installs triggers ON auth.users, so it must
- * run AFTER Supabase Auth (GoTrue) has created the auth schema. We poll for
- * auth.users rather than rely on compose ordering, which can't express "GoTrue
- * has finished its own migrations".
+ * Sequencing: the bootstrap installs a trigger ON auth.users (welcome email),
+ * so it must run AFTER Supabase Auth (GoTrue) has created the auth schema. We
+ * poll for auth.users rather than rely on compose ordering, which can't
+ * express "GoTrue has finished its own migrations".
  */
 async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
   const client = new pg.Client({ connectionString: databaseUrl });
@@ -150,7 +151,7 @@ async function selfHostBootstrapIfFresh(databaseUrl: string): Promise<void> {
     if (!existsSync(BOOTSTRAP_SQL)) {
       throw new Error(`bootstrap SQL missing at ${BOOTSTRAP_SQL} (is packages/db/drizzle bundled in the image?)`);
     }
-    console.log('[migrate] fresh database — installing non-kortix prerequisites (basejump + credit RPCs + signup triggers)…');
+    console.log('[migrate] fresh database — installing non-kortix prerequisites (credit RPCs + welcome webhook + storage buckets)…');
     const text = readFileSync(BOOTSTRAP_SQL, 'utf-8');
     let applied = 0;
     let skippedStorage = 0;
@@ -210,7 +211,7 @@ async function main() {
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });
       return;
     case 'bootstrap':
-      // Fresh-DB convenience for self-host: prereqs (basejump etc.) → then `up`.
+      // Fresh-DB convenience for self-host: prereqs → then `up`.
       await selfHostBootstrapIfFresh(databaseUrl);
       await autoBaselineIfNeeded(base, databaseUrl);
       await runner({ ...base, direction: 'up', count: Number.POSITIVE_INFINITY });

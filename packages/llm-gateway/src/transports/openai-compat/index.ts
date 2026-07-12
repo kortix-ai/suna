@@ -18,15 +18,19 @@ export function buildUpstreamRequest(
 ): UpstreamRequest {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
-    authorization: `Bearer ${descriptor.apiKey}`,
   };
+  if (!descriptor.omitAuthorization) headers.authorization = `Bearer ${descriptor.apiKey}`;
   if (descriptor.appName) headers['x-title'] = descriptor.appName;
   if (descriptor.appReferer) headers['http-referer'] = descriptor.appReferer;
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
 
+  let payload = body;
+  if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
+  if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
+
   return {
     url: `${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`,
     headers,
-    payload: descriptor.resolvedModel ? { ...body, model: descriptor.resolvedModel } : body,
+    payload,
   };
 }

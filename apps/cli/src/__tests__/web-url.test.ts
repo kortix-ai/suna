@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { projectWebUrl, sessionWebUrl, webDashboardUrl } from '../web-url';
 
@@ -7,6 +10,8 @@ const SAVED = { ...process.env };
 beforeEach(() => {
   delete process.env.KORTIX_FRONTEND_URL;
   delete process.env.KORTIX_DASHBOARD_URL;
+  delete process.env.BASH_ENV;
+  process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
 });
 
 afterEach(() => {
@@ -49,6 +54,20 @@ describe('webDashboardUrl — authoritative env wins over derivation', () => {
   test('KORTIX_DASHBOARD_URL is honored as a legacy override', () => {
     process.env.KORTIX_DASHBOARD_URL = 'http://localhost:3001';
     expect(webDashboardUrl('http://localhost:8008')).toBe('http://localhost:3001');
+  });
+
+  test('KORTIX_FRONTEND_URL from agent-env.sh beats API host when shell did not source it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-agent-env-'));
+    try {
+      const envFile = join(dir, 'agent-env.sh');
+      writeFileSync(envFile, "export KORTIX_FRONTEND_URL='https://dev.kortix.com/'\n");
+      process.env.BASH_ENV = envFile;
+      delete process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE;
+
+      expect(webDashboardUrl('https://dev-api.kortix.com/v1')).toBe('https://dev.kortix.com');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

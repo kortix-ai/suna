@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { cn } from '@/lib/utils';
+import type * as React from 'react';
 
 /**
  * Kortix status palette — the SINGLE source of truth for "this means
@@ -18,12 +18,7 @@ import { cn } from '@/lib/utils';
  * and dots all read as the same green/amber/red/blue.
  */
 
-export type StatusTone =
-  | 'success'
-  | 'warning'
-  | 'destructive'
-  | 'info'
-  | 'neutral';
+export type StatusTone = 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
 
 /** Foreground (text / icon) color per tone. */
 export const STATUS_TEXT: Record<StatusTone, string> = {
@@ -40,7 +35,7 @@ export const STATUS_BG: Record<StatusTone, string> = {
   warning: 'bg-amber-500/10',
   destructive: 'bg-destructive/10',
   info: 'bg-blue-500/10',
-  neutral: 'bg-muted/50',
+  neutral: 'bg-popover',
 };
 
 /** Hairline border per tone (matches InfoBanner edges). */
@@ -49,7 +44,7 @@ export const STATUS_BORDER: Record<StatusTone, string> = {
   warning: 'border-amber-500/30',
   destructive: 'border-destructive/30',
   info: 'border-blue-500/25',
-  neutral: 'border-border/60',
+  neutral: 'border-border',
 };
 
 /** Solid dot fill per tone (for the live activity indicator). */
@@ -58,7 +53,7 @@ export const STATUS_DOT: Record<StatusTone, string> = {
   warning: 'bg-amber-500',
   destructive: 'bg-destructive',
   info: 'bg-blue-500',
-  neutral: 'bg-muted-foreground/40',
+  neutral: 'bg-muted-foreground',
 };
 
 export function statusText(tone: StatusTone) {
@@ -86,7 +81,7 @@ export function StatusBadge({
     <span
       data-slot="status-badge"
       className={cn(
-        'inline-flex w-fit items-center gap-1 whitespace-nowrap rounded-2xl px-2 py-0.5 text-xs font-medium',
+        'inline-flex w-fit items-center gap-1 rounded-2xl px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         STATUS_BG[tone],
         STATUS_TEXT[tone],
         className,
@@ -141,17 +136,10 @@ export function DiffStat({
   return (
     <span
       data-slot="diff-stat"
-      className={cn(
-        'inline-flex items-center gap-1.5 font-mono tabular-nums',
-        className,
-      )}
+      className={cn('inline-flex items-center gap-1.5 font-mono tabular-nums', className)}
     >
-      {additions ? (
-        <span className={STATUS_TEXT.success}>+{additions}</span>
-      ) : null}
-      {deletions ? (
-        <span className={STATUS_TEXT.destructive}>{`−${deletions}`}</span>
-      ) : null}
+      {additions ? <span className={STATUS_TEXT.success}>+{additions}</span> : null}
+      {deletions ? <span className={STATUS_TEXT.destructive}>{`−${deletions}`}</span> : null}
     </span>
   );
 }

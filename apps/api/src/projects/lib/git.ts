@@ -12,7 +12,8 @@ import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, clampProjectName, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request, and prod pays a cross-region roundtrip per DB statement. A revoked
@@ -31,6 +32,8 @@ const loadAccountMembership = ttlMemo({
   },
   shouldCache: (membership) => membership !== null,
 });
+// Key is `${userId}|${accountId}` → bust per principal on account-member changes.
+registerPrincipalScopedMemo(loadAccountMembership);
 
 export async function getAccountMembership(userId: string, accountId: string) {
   return loadAccountMembership(userId, accountId);
@@ -709,7 +712,7 @@ export async function registerGitHubLinkedProject(input: {
   defaultBranch: string;
   manifestPath: string;
 }): Promise<ProjectRow> {
-  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
   const now = new Date();
   const metadata = {
     git: {
@@ -842,7 +845,7 @@ export async function registerPatLinkedProject(input: {
   defaultBranch: string;
   manifestPath: string;
 }): Promise<ProjectRow> {
-  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
   const now = new Date();
   const metadata = {
     git: {
@@ -978,9 +981,9 @@ export async function resolveProjectGitAuthTokenById(projectId: string): Promise
 }
 
 // GET /v1/projects/:projectId/sandboxes
-// Available templates for this project: platform default + any `[[sandbox.templates]]`
-// entries from kortix.toml. Each row includes its live Daytona state so the
-// picker can show "ready" / "building" / "missing" at a glance.
+// Available templates for this project: platform default + any `sandbox:`
+// `templates:` entries from kortix.yaml. Each row includes its live Daytona
+// state so the picker can show "ready" / "building" / "missing" at a glance.
 
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
   // Accept https://github.com/owner/repo(.git) and git@github.com:owner/repo(.git).

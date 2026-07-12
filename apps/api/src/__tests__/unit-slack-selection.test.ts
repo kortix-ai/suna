@@ -25,23 +25,26 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 // selection.ts pulls these in at import; stub so the import is cheap + side-effect-free.
+// `projectConfig` is mutable so governance tests can flip a project between
+// legacy (no fixed catalog) and declarative (`[[agents]]` adopted).
+let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_discovery?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
 mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
-  loadProjectConfig: async () => ({ agents: [] }),
+  loadProjectConfig: async () => projectConfig,
+  readManifestFromRepo: async () => null,
 }));
 
 const {
-  RECOMMENDED_MODELS,
   currentChannelSelection,
   isValidModelId,
-  modelLabel,
   setChannelAgent,
   setChannelModel,
 } = await import('../channels/slack/selection');
 
 beforeEach(() => {
   dbResults = [];
+  projectConfig = { agents: [] };
 });
 
 describe('isValidModelId — provider/model shape only (no stale-catalog gate)', () => {
@@ -59,36 +62,16 @@ describe('isValidModelId — provider/model shape only (no stale-catalog gate)',
   });
 });
 
-describe('modelLabel', () => {
-  test('uses the friendly label for a recommended model', () => {
-    expect(modelLabel('anthropic/claude-opus-4-8')).toBe('Claude Opus 4.8');
-  });
-  test('falls back to the raw id for an unknown model', () => {
-    expect(modelLabel('exotic/model-x')).toBe('exotic/model-x');
-  });
-});
-
-describe('RECOMMENDED_MODELS', () => {
-  test('every entry is a valid id with a label + hint', () => {
-    expect(RECOMMENDED_MODELS.length).toBeGreaterThan(0);
-    for (const m of RECOMMENDED_MODELS) {
-      expect(isValidModelId(m.id)).toBe(true);
-      expect(m.label.length).toBeGreaterThan(0);
-      expect(m.hint.length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe('currentChannelSelection', () => {
   test('returns the binding + its agent/model overrides', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' }]];
+    dbResults = [[{ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' });
+    expect(sel).toEqual({ projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8', conversationPolicy: 'owner_approval' });
   });
   test('null agent/model overrides surface as null', async () => {
-    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null }]];
+    dbResults = [[{ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null }]];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('unbound channel → null', async () => {
     dbResults = [[]];
@@ -100,7 +83,7 @@ describe('currentChannelSelection', () => {
       [{ projectId: 'p1' }],
     ];
     const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
-    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null });
   });
   test('no channel id → null (no query)', async () => {
     expect(await currentChannelSelection({ teamId: 'T1', channelId: '' })).toBeNull();
@@ -108,19 +91,52 @@ describe('currentChannelSelection', () => {
 });
 
 describe('setChannelAgent / setChannelModel', () => {
-  test('returns true when a binding row was updated', async () => {
-    dbResults = [[{ id: 'b1' }]];
-    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'reviewer')).toBe(true);
+  test('returns { ok: true } when a binding row was updated (ungoverned project)', async () => {
+    // 1st shift: setChannelAgent's own projectId lookup (no bound project found
+    // — treated as ungoverned, same as a legacy project). 2nd shift: the write.
+    dbResults = [[], [{ id: 'b1' }]];
+    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'reviewer')).toEqual({ ok: true });
   });
   test('returns false when no binding exists to update', async () => {
     dbResults = [[]];
     expect(await setChannelModel({ teamId: 'T1', channelId: 'C1' }, 'anthropic/claude-opus-4-8')).toBe(false);
   });
-  test('no channel id → false (no write)', async () => {
-    expect(await setChannelAgent({ teamId: 'T1', channelId: '' }, null)).toBe(false);
+  test('no channel id → no_binding (no write, no project lookup)', async () => {
+    expect(await setChannelAgent({ teamId: 'T1', channelId: '' }, null)).toEqual({ ok: false, reason: 'no_binding' });
+  });
+  test('resetting to null skips the governance lookup entirely', async () => {
+    // Only one dbResults entry queued — if setChannelAgent looked up the
+    // project id for a null (reset) agentName, this would starve the FIFO
+    // and the update would see [] instead of the row.
+    dbResults = [[{ id: 'b1' }]];
+    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, null)).toEqual({ ok: true });
   });
   test('missing optional override columns returns false instead of crashing', async () => {
     dbResults = [new Error('PostgresError: column "opencode_model" does not exist')];
     expect(await setChannelModel({ teamId: 'T1', channelId: 'C1' }, 'anthropic/claude-opus-4-8')).toBe(false);
+  });
+});
+
+describe('setChannelAgent — governance validation (declared [[agents]] projects)', () => {
+  test('governed project rejects a name that is not a declared agent', async () => {
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
+    // 1st shift: projectId lookup. 2nd shift: loadProjectAgentGovernance's own
+    // project row lookup. No 3rd shift — the write must never happen.
+    dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }]];
+    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'ghost')).toEqual({
+      ok: false,
+      reason: 'unknown_agent',
+    });
+    expect(dbResults.length).toBe(0);
+  });
+  test('governed project accepts a declared agent name', async () => {
+    projectConfig = { agents: [{ name: 'reviewer' }], agent_discovery: 'declarative' };
+    dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }], [{ id: 'b1' }]];
+    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'reviewer')).toEqual({ ok: true });
+  });
+  test('legacy (undeclared) project accepts any name — no fixed catalog to check', async () => {
+    projectConfig = { agents: [] };
+    dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }], [{ id: 'b1' }]];
+    expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'anything-goes')).toEqual({ ok: true });
   });
 });

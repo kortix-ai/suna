@@ -1,5 +1,5 @@
-import { eq, and, or, isNull, lte, ne } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
+import { and, eq, isNull, lte, ne, or } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export async function getCreditAccount(accountId: string) {
@@ -10,6 +10,31 @@ export async function getCreditAccount(accountId: string) {
     .limit(1);
 
   return row ?? null;
+}
+
+/** Whether the account has the self-serve enterprise demo toggled on. */
+export async function isDemoEnterprise(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ demoEnterprise: creditAccounts.demoEnterprise })
+    .from(creditAccounts)
+    .where(eq(creditAccounts.accountId, accountId))
+    .limit(1);
+  return row?.demoEnterprise ?? false;
+}
+
+/**
+ * Flip the enterprise-demo flag. Upserts the credit row so a brand-new account
+ * (no billing row yet) can still preview the enterprise surface — all other
+ * columns fall back to their schema defaults (tier 'free', legacy billing, …).
+ */
+export async function setDemoEnterprise(accountId: string, enabled: boolean): Promise<void> {
+  await db
+    .insert(creditAccounts)
+    .values({ accountId, demoEnterprise: enabled })
+    .onConflictDoUpdate({
+      target: creditAccounts.accountId,
+      set: { demoEnterprise: enabled, updatedAt: new Date().toISOString() },
+    });
 }
 
 export async function getCreditBalance(accountId: string) {
@@ -60,6 +85,8 @@ export async function getSubscriptionInfo(accountId: string) {
       seatCount: creditAccounts.seatCount,
       seatSubscriptionItemId: creditAccounts.seatSubscriptionItemId,
       autoTopupCustomized: creditAccounts.autoTopupCustomized,
+      // Operator-set per-account concurrent-session override (NULL = use tier).
+      maxConcurrentSessions: creditAccounts.maxConcurrentSessions,
     })
     .from(creditAccounts)
     .where(eq(creditAccounts.accountId, accountId))
@@ -105,10 +132,23 @@ export async function getYearlyAccountsDueForRotation() {
         ne(creditAccounts.tier, 'free'),
         eq(creditAccounts.stripeSubscriptionStatus, 'active'),
         ne(creditAccounts.paymentStatus, 'past_due'),
-        or(
-          isNull(creditAccounts.nextCreditGrant),
-          lte(creditAccounts.nextCreditGrant, now),
-        ),
+        or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
+      ),
+    );
+
+  return rows;
+}
+
+export async function getFreeAccountsDueForRotation() {
+  const now = new Date().toISOString();
+
+  const rows = await db
+    .select()
+    .from(creditAccounts)
+    .where(
+      and(
+        eq(creditAccounts.tier, 'free'),
+        or(isNull(creditAccounts.nextCreditGrant), lte(creditAccounts.nextCreditGrant, now)),
       ),
     );
 

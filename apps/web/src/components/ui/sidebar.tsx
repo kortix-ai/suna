@@ -15,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { createPeekController } from '@/components/ui/sidebar-peek';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -35,6 +36,16 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  /** Collapsed-only hover flyout: the sidebar floats over the content while
+   *  the pointer is near the left edge or on the panel itself. `open` stays
+   *  false the whole time, so a toggle click while peeking docks it open. */
+  peek: boolean;
+  peekEnter: () => void;
+  peekLeave: () => void;
+  /** Pin the flyout open while a menu/popover anchored in the panel is open —
+   *  its content portals outside the panel, so hovering it would otherwise
+   *  collapse the flyout. Balanced: `holdPeek(true)` on open, `false` on close. */
+  holdPeek: (held: boolean) => void;
 };
 
 export const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -88,6 +99,31 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   }, [isMobile, setOpen, setOpenMobile]);
 
+  // Edge-peek flyout state — hover intent lives in a plain controller so the
+  // open/close delays are testable without React or wall-clock timers.
+  const [peek, setPeek] = React.useState(false);
+  const peekController = React.useMemo(() => createPeekController(setPeek), []);
+  React.useEffect(() => () => peekController.cancel(), [peekController]);
+  React.useEffect(() => {
+    if (open || isMobile) peekController.cancel();
+  }, [open, isMobile, peekController]);
+
+  // Tracks whether the pointer is currently over the panel/edge zone so a
+  // menu closing can decide whether to re-arm the flyout's close timer.
+  const pointerOverRef = React.useRef(false);
+  const peekEnter = React.useCallback(() => {
+    pointerOverRef.current = true;
+    peekController.enter();
+  }, [peekController]);
+  const peekLeave = React.useCallback(() => {
+    pointerOverRef.current = false;
+    peekController.leave();
+  }, [peekController]);
+  const holdPeek = React.useCallback(
+    (held: boolean) => peekController.hold(held, () => pointerOverRef.current),
+    [peekController],
+  );
+
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -114,8 +150,24 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      peek,
+      peekEnter,
+      peekLeave,
+      holdPeek,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
+    [
+      state,
+      open,
+      setOpen,
+      isMobile,
+      openMobile,
+      setOpenMobile,
+      toggleSidebar,
+      peek,
+      peekEnter,
+      peekLeave,
+      holdPeek,
+    ],
   );
 
   return (
@@ -155,7 +207,9 @@ function Sidebar({
   variant?: 'sidebar' | 'floating' | 'inset';
   collapsible?: 'offcanvas' | 'icon' | 'none';
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { isMobile, state, openMobile, setOpenMobile, peek, peekEnter, peekLeave } = useSidebar();
+  const peekable = collapsible === 'offcanvas' && side === 'left' && state === 'collapsed';
+  const peeking = peekable && peek;
 
   if (collapsible === 'none') {
     return (
@@ -204,6 +258,7 @@ function Sidebar({
       data-collapsible={state === 'collapsed' ? collapsible : ''}
       data-variant={variant}
       data-side={side}
+      data-peek={peeking ? '' : undefined}
       data-slot="sidebar"
     >
       {/* This is what handles the sidebar gap on desktop */}
@@ -220,11 +275,30 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        onPointerEnter={peekable ? peekEnter : undefined}
+        onPointerLeave={peekable ? peekLeave : undefined}
         className={cn(
-          'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex',
-          side === 'left'
-            ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
-            : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
+          'fixed z-10 hidden w-(--sidebar-width) transition-[left,right,top,bottom,width,translate] duration-200 ease-linear motion-reduce:transition-none md:flex',
+          // Peek-capable: the panel keeps one static position (flyout
+          // geometry, below the shell's top-left toggle) and hides by
+          // translating off-screen — hidden ↔ flyout is a compositor-only
+          // transform slide, perfectly horizontal. The extra 2rem keeps the
+          // shadow off-screen while parked. z-40 for the whole collapsed
+          // lifecycle so the exit slide stays above the content headers.
+          // Timing is asymmetric per CSS rules — the destination state's
+          // duration governs, so enter runs 280ms and exit 220ms (~80%),
+          // both on the iOS drawer curve. Docking keeps the base linear
+          // timing to stay in sync with the sidebar-gap width.
+          peekable
+            ? cn(
+                'top-13 bottom-2 left-2 z-40 h-auto ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
+                peeking
+                  ? 'translate-x-0 duration-[280ms]'
+                  : '-translate-x-[calc(100%+2rem)] duration-[220ms]',
+              )
+            : side === 'left'
+              ? 'inset-y-0 left-0 h-svh group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
+              : 'inset-y-0 right-0 h-svh group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
           // Adjust the padding for floating and inset variants.
           variant === 'floating' || variant === 'inset'
             ? 'p-00 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
@@ -236,7 +310,17 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
+          className={cn(
+            'bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
+            // 200ms so the radius/shadow fade lands together with the 200ms
+            // dock morph when pinning — no trailing style change.
+            'transition-[border-radius,box-shadow] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none',
+            // Gated on peekable (not peeking) so hidden ↔ flyout swaps no
+            // styles at all — the panel slides in and out as a rigid card.
+            // border-border, not border-sidebar-border: the sidebar token is
+            // pure white in dark mode and reads as a glowing edge.
+            peekable && 'border-border overflow-hidden rounded-lg border shadow-xl',
+          )}
         >
           {children}
         </div>
@@ -264,6 +348,28 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       <PanelLeftIcon className="cn-rtl-flip" />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
+  );
+}
+
+/**
+ * Invisible strip along the viewport's left edge that summons the collapsed
+ * sidebar as a hover flyout. Renders nothing while the sidebar is docked
+ * open or on mobile — the mobile sidebar is a sheet.
+ */
+function SidebarEdgePeek({ className, ...props }: React.ComponentProps<'div'>) {
+  const { state, isMobile, peekEnter, peekLeave } = useSidebar();
+
+  if (state !== 'collapsed' || isMobile) return null;
+
+  return (
+    <div
+      aria-hidden
+      data-slot="sidebar-edge-peek"
+      onPointerEnter={peekEnter}
+      onPointerLeave={peekLeave}
+      className={cn('fixed inset-y-0 left-0 z-30 hidden w-2 md:block', className)}
+      {...props}
+    />
   );
 }
 
@@ -677,6 +783,7 @@ function SidebarMenuSubButton({
 export {
   Sidebar,
   SidebarContent,
+  SidebarEdgePeek,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupAction,

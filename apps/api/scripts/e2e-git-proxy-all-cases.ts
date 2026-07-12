@@ -57,7 +57,7 @@ async function mkProject(name: string, meta: Record<string, unknown>, conn: Reco
   const uniqueRepoUrl = `kortix-proxy://e2e/${randomUUID()}`;
   const pr: any = await db.execute(sql`
     insert into kortix.projects (account_id, name, repo_url, default_branch, manifest_path, status, metadata)
-    values (${accountId}, ${name}, ${uniqueRepoUrl}, 'main', 'kortix.toml', 'active', ${JSON.stringify(meta)}::jsonb)
+    values (${accountId}, ${name}, ${uniqueRepoUrl}, 'main', 'kortix.yaml', 'active', ${JSON.stringify(meta)}::jsonb)
     returning project_id`);
   const projectId = (pr.rows ?? pr)[0].project_id;
   created.projects.push(projectId);

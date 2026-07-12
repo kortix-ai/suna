@@ -1,7 +1,7 @@
 /**
  * `kortix validate` — standalone manifest validator.
  *
- * Reads ./kortix.toml (or --file <path>), runs the canonical
+ * Reads ./kortix.yaml (or --file <path>), runs the canonical
  * `@kortix/manifest-schema` validator, and prints a colored report.
  *
  *   exit 0   — no errors (warnings may be present)
@@ -13,16 +13,22 @@
  * in three places.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { validateManifest, formatIssues, GRANTABLE_KORTIX_CLI_ACTIONS } from '@kortix/manifest-schema';
-import { C, status } from '../style.ts';
+import { basename, resolve } from 'node:path';
+import {
+  GRANTABLE_KORTIX_CLI_ACTIONS,
+  formatIssues,
+  manifestFormatForPath,
+  validateManifest,
+} from '@kortix/manifest-schema';
+import { resolveLocalManifest } from '../manifest.ts';
+import { C, help, status } from '../style.ts';
 
-const HELP = `Usage: kortix validate [options]
+const HELP = help`Usage: kortix validate [options]
 
-Statically validate the project's kortix.toml against the canonical schema.
+Statically validate the project's kortix.yaml against the canonical schema.
 
 Options:
-  --file <path>   Validate this file instead of ./kortix.toml.
+  --file <path>   Validate this file instead of ./kortix.yaml.
   --json          Emit a machine-readable JSON report (no color).
   --scopes        Print the full grantable kortix_cli action enum and exit.
   -h, --help      Show this help.
@@ -52,12 +58,15 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!Array.isArray(agents) || agents.length === 0) return '';
   const show = (v: unknown): string =>
-    v === 'all' ? 'all' : Array.isArray(v) ? (v.join(', ') || 'none') : 'none (default-deny)';
+    v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
   const lines = agents.map((a: any) => {
     const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
-    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]`;
+    // `env` omitted == 'all' (the parser's default), so render it that way rather
+    // than as default-deny — otherwise the summary misreports an unscoped agent.
+    const env = a?.env === undefined || a?.env === null ? 'all' : a?.env;
+    return `  ${C.cyan}${name}${C.reset}  connectors=[${show(a?.connectors)}]  kortix_cli=[${show(a?.kortix_cli)}]  env=[${show(env)}]`;
   });
-  return `\n${C.dim}Per-agent scope (kortix.toml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
+  return `\n${C.dim}Per-agent scope (kortix.yaml [[agents]]):${C.reset}\n${lines.join('\n')}\n`;
 }
 
 export function runValidate(argv: string[]): number {
@@ -74,10 +83,16 @@ export function runValidate(argv: string[]): number {
     return 0;
   }
 
-  const filePath = resolve(process.cwd(), flags.file ?? 'kortix.toml');
+  // Explicit --file wins; otherwise resolve the project's manifest, preferring
+  // kortix.yaml over kortix.toml (falls back to kortix.yaml for the not-found msg).
+  const filePath = flags.file
+    ? resolve(process.cwd(), flags.file)
+    : (resolveLocalManifest(process.cwd())?.path ?? resolve(process.cwd(), 'kortix.yaml'));
   if (!existsSync(filePath)) {
     if (flags.json) {
-      process.stdout.write(JSON.stringify({ valid: false, error: 'file_not_found', path: filePath }) + '\n');
+      process.stdout.write(
+        JSON.stringify({ valid: false, error: 'file_not_found', path: filePath }) + '\n',
+      );
     } else {
       process.stderr.write(
         `${status.err('Manifest not found')}\n` +
@@ -101,14 +116,16 @@ export function runValidate(argv: string[]): number {
     return 2;
   }
 
-  const result = validateManifest(raw);
+  const result = validateManifest(raw, manifestFormatForPath(filePath));
 
   if (flags.json) {
-    process.stdout.write(JSON.stringify({
-      valid: result.valid,
-      path: filePath,
-      issues: result.issues,
-    }) + '\n');
+    process.stdout.write(
+      JSON.stringify({
+        valid: result.valid,
+        path: filePath,
+        issues: result.issues,
+      }) + '\n',
+    );
     return result.valid ? 0 : 1;
   }
 
@@ -116,17 +133,21 @@ export function runValidate(argv: string[]): number {
   const warnings = result.issues.filter((i) => i.severity === 'warning');
 
   if (result.valid && warnings.length === 0) {
-    process.stdout.write(`${status.ok('kortix.toml is valid')}\n`);
+    process.stdout.write(`${status.ok(`${basename(filePath)} is valid`)}\n`);
     process.stdout.write(describeAgents(result.parsed));
     return 0;
   }
 
   if (warnings.length > 0) {
-    process.stdout.write(`${C.yellow}${warnings.length} warning${warnings.length === 1 ? '' : 's'}:${C.reset}\n`);
+    process.stdout.write(
+      `${C.yellow}${warnings.length} warning${warnings.length === 1 ? '' : 's'}:${C.reset}\n`,
+    );
     process.stdout.write(formatIssues(warnings) + '\n');
   }
   if (errors.length > 0) {
-    process.stderr.write(`\n${C.red}${errors.length} error${errors.length === 1 ? '' : 's'}:${C.reset}\n`);
+    process.stderr.write(
+      `\n${C.red}${errors.length} error${errors.length === 1 ? '' : 's'}:${C.reset}\n`,
+    );
     process.stderr.write(formatIssues(errors) + '\n');
     return 1;
   }

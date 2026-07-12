@@ -5,13 +5,21 @@ export interface AccountMembership {
   account_id: string;
   slug: string;
   name: string;
-  personal_account: boolean;
   role: string;
 }
 
 export interface MeResponse {
   user_id: string;
   email: string;
+  token_context?: {
+    auth_type: string | null;
+    project_id: string | null;
+    session_id: string | null;
+    agent: string | null;
+    connectors: string[] | 'all' | null;
+    kortix_cli: string[] | 'all' | null;
+    env?: string[] | 'all' | null;
+  };
   accounts: AccountMembership[];
 }
 
@@ -36,8 +44,11 @@ export interface ProjectSummary {
 // ── Secrets ───────────────────────────────────────────────────────────────
 
 export interface ProjectSecret {
+  /** Unique per project — the handle an agent's `secrets` grant references. */
+  identifier: string;
   secret_id: string;
   project_id: string;
+  /** The env var KEY injected into the sandbox. Not unique — see `identifier`. */
   name: string;
   created_by: string;
   created_at: string;

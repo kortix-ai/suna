@@ -1,13 +1,22 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
+import { filterAccessibleProjectResources } from '../../iam';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { normalizeString } from '../../projects/lib/serializers';
+import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './commands';
 import { currentChannelSelection } from './selection';
+import { startErrorMessage } from './start-error';
+import {
+  normalizeConversationPolicy,
+  rememberSlackThreadOwner,
+} from './participants';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 
@@ -56,8 +65,13 @@ export async function createOrJoinThreadSession(input: {
   envelope: SlackEnvelope;
   event: SlackEvent;
   revived: boolean;
+  // The Kortix user this Slack sender linked via `/login`, already verified by
+  // the gate in spawnAgentTurn to be a member of the project's account. The
+  // session runs AS this user, so their credentials/secrets/connectors apply —
+  // never the account owner's.
+  actorUserId: string;
 }): Promise<void> {
-  const { projectId, teamId, threadId, envelope, event, revived } = input;
+  const { projectId, teamId, threadId, envelope, event, revived, actorUserId } = input;
 
   const [project] = await db
     .select()
@@ -66,18 +80,14 @@ export async function createOrJoinThreadSession(input: {
     .limit(1);
   if (!project) return;
 
-  const userId = await slackSessionLifecycle.resolveProjectAutomationActor(project.accountId);
-  if (!userId) {
-    console.warn('[slack-webhook] no actor for project', projectId);
-    return;
-  }
+  const userId = actorUserId;
 
   // Claim the thread-create. Loser → wait for the winner's mapping and follow up.
   const claimKey = teamId && threadId ? `slack:threadcreate:${teamId}:${threadId}` : null;
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
     } else {
       console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
         teamId,
@@ -103,7 +113,7 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event), userId: actorUserId });
       return;
     }
   }
@@ -115,6 +125,43 @@ export async function createOrJoinThreadSession(input: {
   const selection = event.channel
     ? await currentChannelSelection({ teamId, channelId: event.channel })
     : null;
+  const conversationPolicy = normalizeConversationPolicy(selection?.conversationPolicy);
+
+  // Per-resource scoping: a member scoped OUT of this agent can't launch it from
+  // Slack either — mirrors the dashboard POST /:projectId/sessions gate so the
+  // channel-agent picker can't be used to bypass department scoping. No-op when
+  // the agent is unscoped (returns it) or the user is an owner/admin/SA.
+  //
+  // Resolve via the SAME shared precedence function the settings page uses to
+  // compute the "Project default (agentX)" label (chooseEffectiveAgent), instead
+  // of always passing the literal 'default' sentinel downstream. Previously this
+  // always sent 'default', so `body.agent_name ?? projectDefaultAgent` in
+  // sessions.ts never fell through to the project's configured default agent —
+  // Slack sessions silently ignored project.metadata.default_agent and launched
+  // whatever OpenCode's own internal default happened to be, diverging from what
+  // the settings page showed as the effective default.
+  const projectDefaultAgent = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
+  );
+  const launchAgent = chooseEffectiveAgent({
+    explicit: selection?.agentName ?? null,
+    projectDefault: projectDefaultAgent,
+  }).agent;
+  const allowedAgents = await filterAccessibleProjectResources(
+    userId,
+    project.accountId,
+    projectId,
+    'agent',
+    [launchAgent],
+  );
+  if (allowedAgents.length === 0) {
+    if (handle) {
+      await finalizeTurn(handle, {
+        error: `You don't have access to the \`${launchAgent}\` agent in this project. Ask a project manager to grant it, or switch the agent with \`/kortix agents\`.`,
+      });
+    }
+    return;
+  }
 
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
@@ -122,7 +169,7 @@ export async function createOrJoinThreadSession(input: {
     userId,
     body: {
       base_ref: project.defaultBranch,
-      agent_name: selection?.agentName ?? 'default',
+      agent_name: launchAgent,
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },
@@ -132,9 +179,7 @@ export async function createOrJoinThreadSession(input: {
     postCreate: teamId && threadId
       ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
       : undefined,
-    // Slack threads are team-facing — project-visible, not private to the
-    // stand-in owner the session is attributed to.
-    visibility: 'project',
+    visibility: conversationPolicy === 'project_open' ? 'project' : 'restricted',
     metadata: {
       source: 'slack',
       slack: {
@@ -143,6 +188,7 @@ export async function createOrJoinThreadSession(input: {
         user: event.user,
         thread_ts: threadId,
         event_type: event.type,
+        conversation_policy: conversationPolicy,
       },
     },
     // Sandbox-side env the slack skill references. The agent uses these to
@@ -153,7 +199,28 @@ export async function createOrJoinThreadSession(input: {
   if (result.error) {
     console.error('[slack-webhook] createProjectSession failed', { status: result.error.status, body: result.error.body });
     if (handle) {
-      await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body?.error) });
+      // A deleted/renamed/disabled agent — the channel's own agent override, or
+      // the project default the `default` sentinel resolves to — is rejected up
+      // front as 400 AGENT_NOT_DECLARED. The generic "give it a moment and try
+      // again" copy is actively wrong here: retrying hits the same dead agent
+      // forever. Name the problem and drop an inline agent picker so the user
+      // re-points the channel to a live agent in one click, then re-sends.
+      if (result.error.body?.code === 'AGENT_NOT_DECLARED' && event.channel) {
+        const agents = await loadScopedChannelAgents({ teamId, projectId, slackUserId: event.user ?? undefined });
+        await finalizeTurn(handle, {
+          title: "Couldn't start — pick an agent",
+          // Fallback/notification text only (the picker blocks render in-thread);
+          // `error` keeps this off the ✅ path without inventing a second section.
+          error: "I couldn't start a session — the agent set for this channel no longer exists. Pick a current agent, then send your message again.",
+          blocks: buildAgentUnavailablePickerBlocks({
+            channelId: event.channel,
+            badAgent: selection?.agentName ?? null,
+            agents,
+          }),
+        });
+      } else {
+        await finalizeTurn(handle, { error: startErrorMessage(result.error.status, result.error.body) });
+      }
     }
     return;
   }
@@ -169,24 +236,15 @@ export async function createOrJoinThreadSession(input: {
     handle.sessionId = result.sessionId;
     await saveTurn(handle);
   }
-}
-
-// Honest, actionable copy for the two non-success outcomes of starting a Slack
-// session — surfaced in-thread instead of a generic "try again" so a real
-// blocker (out of credits, at the session cap) tells the user what to do.
-function startErrorMessage(status: number | undefined, detail: unknown): string {
-  if (status === 402) {
-    return "This workspace is out of credits, so I can't start a session. Top up in the Kortix dashboard and send your message again.";
+  if (result.sessionId && teamId && threadId && event.user) {
+    await rememberSlackThreadOwner({
+      teamId,
+      threadId,
+      sessionId: result.sessionId,
+      slackUserId: event.user,
+      userId,
+    });
   }
-  if (status === 429) {
-    return "This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.";
-  }
-  if (status === 404) {
-    return "I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this channel and try again.";
-  }
-  const text = typeof detail === 'string' ? detail.trim() : '';
-  const tail = text && text.length <= 140 ? ` (${text})` : '';
-  return `I couldn't start a session just now${tail}. Give it a moment and send your message again — I'll reply right here.`;
 }
 
 function queuedMessage(reason?: string): string {

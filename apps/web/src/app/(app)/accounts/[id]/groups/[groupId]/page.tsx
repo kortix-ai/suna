@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -62,7 +62,7 @@ import {
   listAccountMembers,
   listProjectsForAccount,
   type ProjectRole,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
@@ -852,12 +852,9 @@ function GroupProjectGrantsCard({
         description={
           detachTarget ? (
             <span>
-              <strong>{groupName}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextWilldd678991')}{' '}
-              <strong>{detachTarget.project_name}</strong>
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEvery76958122')}
-              <strong>{detachTarget.role}</strong>{' '}
-              {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextAccessf385fd87')}
+              <strong>{groupName}</strong> will no longer be attached to{' '}
+              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
+              inherited <strong className="capitalize">{detachTarget.role}</strong> access.
             </span>
           ) : null
         }
@@ -904,7 +901,7 @@ function AttachToProjectDialog({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
-  const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
+  const [selectedRole, setSelectedRole] = useState<ProjectRole>('member');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
   // Stored as the raw <input type="datetime-local"> value; we convert
   // to ISO on submit so the server can parse it.
@@ -1027,9 +1024,7 @@ function AttachToProjectDialog({
                 <SelectItem value="editor">
                   {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextEditor415a1a4b')}
                 </SelectItem>
-                <SelectItem value="viewer">
-                  {tI18nHardcoded.raw('autoAppAppAccountsIdGroupsGroupIdPageJsxTextViewer8a17707f')}
-                </SelectItem>
+                <SelectItem value="member">Member</SelectItem>
               </SelectContent>
             </Select>
           </div>

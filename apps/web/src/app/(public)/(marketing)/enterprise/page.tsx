@@ -122,7 +122,10 @@ const EnterprisePage = () => {
           </div>
           <div className="mx-auto max-w-6xl">
             <Reveal>
-              <h1 className="text-foreground mt-5 max-w-4xl text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
+              <Badge variant="kortix" className="rounded">
+                {t('heroEyebrow')}
+              </Badge>
+              <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
                 {t('heroTitle')}
               </h1>
               <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">

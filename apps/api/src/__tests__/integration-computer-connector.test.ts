@@ -21,6 +21,7 @@ import {
 import { synthesizeComputerConnectors } from '../executor/computer-materialize';
 import { syncProjectConnectors } from '../executor/sync';
 import { executeComputerCall, listAccountComputers } from '../tunnel/core/rpc-core';
+import { dbExecutorRouterDeps } from '../executor/db-deps';
 
 let projectId = '';
 let accountId = '';
@@ -30,6 +31,13 @@ let seeded = false;
 
 beforeAll(async () => {
   await db.execute(sql`alter type kortix.executor_connector_provider add value if not exists 'computer'`);
+  await db.execute(sql`
+    alter table kortix.tunnel_connections
+      add column if not exists relay_owner_id varchar(255),
+      add column if not exists relay_owner_instance varchar(255),
+      add column if not exists relay_owner_started_at timestamp with time zone,
+      add column if not exists relay_owner_heartbeat_at timestamp with time zone
+  `);
 
   const rows = (await db.execute(
     sql`select project_id, account_id, metadata from kortix.projects limit 1`,
@@ -75,7 +83,7 @@ afterAll(async () => {
 });
 
 describe('computer connector — real DB e2e', () => {
-  test('synth produces ONE computer spec when the account has a machine + the flag', async () => {
+  test('synth produces ONE computer spec when the account has a connected machine', async () => {
     if (!seeded) return;
     const specs = await synthesizeComputerConnectors(projectId, []);
     expect(specs).toHaveLength(1);
@@ -84,14 +92,15 @@ describe('computer connector — real DB e2e', () => {
     expect(specs[0]!.auth.type).toBe('none');
   });
 
-  test('synth gates off the agent_tunnel flag', async () => {
+  test('synth is a REGULAR connector — a connected machine alone materializes it, no agent_tunnel flag', async () => {
     if (!seeded) return;
-    // Temporarily clear the flag → no synth.
+    // Clear the experimental flag entirely: the connector no longer depends on
+    // it (it's machine-driven like the Slack channel connector). Previously this
+    // returned []; now the connected machine alone is enough.
     await db.update(projects).set({ metadata: {} as any }).where(eq(projects.projectId, projectId));
-    const none = await synthesizeComputerConnectors(projectId, []);
-    expect(none).toHaveLength(0);
-    // Restore the flag for the rest of the suite.
-    await db.update(projects).set({ metadata: { experimental: { agent_tunnel: true } } as any }).where(eq(projects.projectId, projectId));
+    const specs = await synthesizeComputerConnectors(projectId, []);
+    expect(specs).toHaveLength(1);
+    expect(specs[0]!.slug).toBe('computer');
   });
 
   test('full sync materializes the computer connector + the tunnel catalog', async () => {
@@ -123,16 +132,68 @@ describe('computer connector — real DB e2e', () => {
     for (const a of actions) expect((a.binding as { kind: string }).kind).toBe('tunnel');
   });
 
-  test('list_computers returns the connected machine', async () => {
+  test('settings reads (policies/config) resolve the SYNTHETIC connector instead of 404ing', async () => {
     if (!seeded) return;
-    const out = await executeComputerCall({ accountId, selector: null, method: 'list_computers', args: {} });
-    expect(out.ok).toBe(true);
-    const machines = (out as { ok: true; data: { computers: Array<{ id: string; name: string }> } }).data.computers;
-    expect(machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine')).toBe(true);
+    // Reproduces the dashboard bug: a synthetic connector (channel/computer) is
+    // never declared in kortix.yaml, so the manifest-only read returned null →
+    // the route 404'd ("connector not found") on a connector that exists + works.
+    // The fix falls back to the materialized DB row.
+    const [conn] = await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, 'computer')));
+    if (!conn) return; // sync skipped (git backend unreachable) — nothing materialized to read.
 
-    // direct helper sanity
-    const direct = await listAccountComputers(accountId);
-    expect(direct.some((m) => m.id === tunnelId)).toBe(true);
+    const policies = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'computer');
+    expect(policies).not.toBeNull(); // would have been null → 404 before the fix
+    expect(Array.isArray(policies!.policies)).toBe(true);
+
+    const config = await dbExecutorRouterDeps.getConnectorConfig!(projectId, 'computer');
+    expect(config).not.toBeNull();
+    expect(config!.provider).toBe('computer');
+    expect(config!.slug).toBe('computer');
+
+    // A genuinely unknown slug must still be null → a true 404 (fallback doesn't mask it).
+    const missing = await dbExecutorRouterDeps.getConnectorPolicies!(projectId, 'no-such-connector-xyz');
+    expect(missing).toBeNull();
+  });
+
+  test('list_computers returns the connected machine and DB-backed online status', async () => {
+    if (!seeded) return;
+    await db
+      .update(tunnelConnections)
+      .set({
+        status: 'online',
+        relayOwnerId: 'api-owner-for-test',
+        relayOwnerInstance: 'api-owner-for-test',
+        relayOwnerStartedAt: new Date(),
+        relayOwnerHeartbeatAt: new Date(),
+        lastHeartbeatAt: new Date(),
+      })
+      .where(eq(tunnelConnections.tunnelId, tunnelId));
+
+    try {
+      const out = await executeComputerCall({ accountId, selector: null, method: 'list_computers', args: {} });
+      expect(out.ok).toBe(true);
+      const machines = (out as { ok: true; data: { computers: Array<{ id: string; name: string; online: boolean }> } }).data.computers;
+      expect(machines.some((m) => m.id === tunnelId && m.name === 'E2E Test Machine' && m.online)).toBe(true);
+
+      // direct helper sanity
+      const direct = await listAccountComputers(accountId);
+      expect(direct.some((m) => m.id === tunnelId && m.online)).toBe(true);
+    } finally {
+      await db
+        .update(tunnelConnections)
+        .set({
+          status: 'offline',
+          relayOwnerId: null,
+          relayOwnerInstance: null,
+          relayOwnerStartedAt: null,
+          relayOwnerHeartbeatAt: null,
+          lastHeartbeatAt: null,
+        })
+        .where(eq(tunnelConnections.tunnelId, tunnelId));
+    }
   });
 
   test('fs.read with no grant → permission_required (pending approval)', async () => {

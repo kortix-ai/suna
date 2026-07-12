@@ -1,14 +1,30 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { resolve, dirname } from "path";
 
 const S6_ENV_DIR =
   process.env.S6_ENV_DIR || "/run/s6/container_environment";
+const LIVE_ENV_FILES = [
+  process.env.KORTIX_AGENT_ENV_FILE,
+  "/dev/shm/kortix/agent-env.sh",
+  "/tmp/pt-env",
+  "/etc/pt-env",
+].filter((path): path is string => !!path);
 
 /**
  * Parsed .env file cache.
  * Loaded once on first miss, never re-read (process lifetime).
  */
 let dotenvCache: Record<string, string> | null = null;
+
+/**
+ * Parsed live env file cache.
+ * Invalidated by mtime so live session env swaps become visible without
+ * restarting the OpenCode process that runs these tools.
+ */
+let liveEnvCache: Record<
+  string,
+  { mtimeMs: number; env: Record<string, string> }
+> = {};
 
 /**
  * Walk up from multiple starting points to find the nearest .env file.
@@ -66,6 +82,65 @@ function parseDotenv(path: string): Record<string, string> {
   return result;
 }
 
+function unquoteEnvValue(value: string): string {
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replace(/'\\''/g, "'");
+  }
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value
+      .slice(1, -1)
+      .replace(/\\(["\\$`])/g, "$1")
+      .replace(/\\n/g, "\n");
+  }
+  return value;
+}
+
+/**
+ * Parse a sourced shell env file (`export KEY='value'`) or plain KEY=VALUE file.
+ */
+function parseLiveEnvFile(path: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  try {
+    const content = readFileSync(path, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("unset ")) {
+        continue;
+      }
+      const body = trimmed.startsWith("export ")
+        ? trimmed.slice("export ".length).trim()
+        : trimmed;
+      const eqIdx = body.indexOf("=");
+      if (eqIdx <= 0) continue;
+      const key = body.slice(0, eqIdx).trim();
+      const value = unquoteEnvValue(body.slice(eqIdx + 1).trim());
+      if (key && value) result[key] = value;
+    }
+  } catch {
+    // File unreadable — return empty
+  }
+  return result;
+}
+
+function getLiveEnvValue(key: string): string | undefined {
+  for (const path of LIVE_ENV_FILES) {
+    try {
+      const stat = existsSync(path) ? statSync(path) : null;
+      if (!stat) continue;
+      const cached = liveEnvCache[path];
+      const env =
+        cached && cached.mtimeMs === stat.mtimeMs
+          ? cached.env
+          : parseLiveEnvFile(path);
+      liveEnvCache[path] = { mtimeMs: stat.mtimeMs, env };
+      if (env[key]) return env[key];
+    } catch {
+      // Try the next live env file.
+    }
+  }
+  return undefined;
+}
+
 /**
  * Load the .env cache (once per process).
  */
@@ -83,7 +158,8 @@ function getDotenv(): Record<string, string> {
  *
  * 1. s6 env dir file     — `/run/s6/container_environment/{key}` (always fresh, ~1μs tmpfs read)
  * 2. `process.env[key]`  — Docker env, manually exported (native dev without s6)
- * 3. `.env` file          — nearest `.env` walking up from the OpenCode config dir (native dev fallback)
+ * 3. live agent env file — `/dev/shm/kortix/agent-env.sh` or warm-claim env files
+ * 4. `.env` file          — nearest `.env` walking up from the OpenCode config dir (native dev fallback)
  *
  * s6 is checked first so that env var updates from the secrets manager
  * (kortix-master /env API) take effect immediately — no service restart needed.
@@ -104,7 +180,12 @@ export function getEnv(key: string): string | undefined {
   const fromEnv = process.env[key];
   if (fromEnv) return fromEnv;
 
-  // 3. .env file fallback (native dev on macOS — no Docker, no s6)
+  // 3. Live agent env file — warm/hot-swapped OpenCode may keep an old process
+  //    env while shells already receive the current session env through BASH_ENV.
+  const liveVal = getLiveEnvValue(key);
+  if (liveVal) return liveVal;
+
+  // 4. .env file fallback (native dev on macOS — no Docker, no s6)
   const dotenv = getDotenv();
   const envVal = dotenv[key];
   if (envVal) return envVal;

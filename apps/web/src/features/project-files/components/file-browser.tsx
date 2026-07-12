@@ -48,11 +48,12 @@ import {
   useFileRename,
   useFileUpload,
 } from '../hooks/use-file-mutations';
-import { useFilesStore } from '../store/files-store';
-import type { FileNode } from '../types';
+import { useFilesStore } from '@/features/file-browser/store/files-store';
+import type { FileNode } from '@/features/file-browser/types';
 import { FileBreadcrumbs } from './file-breadcrumbs';
 import { FileSearch } from './file-search';
-import { DRAG_MIME, FileTreeItem } from './file-tree-item';
+import { DRAG_MIME, FileTreeItem } from '@/features/file-browser/components/file-tree-item';
+import { getFileIcon } from './file-icon';
 
 /** Drop target for the ".." (parent directory) row */
 function ParentDropTarget({
@@ -845,6 +846,7 @@ export function FileBrowser() {
                   <FileTreeItem
                     key={node.path}
                     node={node}
+                    getIcon={getFileIcon}
                     onClick={() => handleFileClick(node)}
                     onDownload={handleDownloadDirectory}
                     isDownloadingItem={isDirDownloading(node.path)}
@@ -865,6 +867,8 @@ export function FileBrowser() {
                   <FileTreeItem
                     key={node.path}
                     node={node}
+                    getIcon={getFileIcon}
+                    historyLabel={tHardcodedUi.raw('featuresProjectFilesComponentsFileTreeItem.line322JsxTextCheckpointHistory')}
                     onClick={() => handleFileClick(node)}
                     onDownload={handleDownload}
                     onRename={handleRename}

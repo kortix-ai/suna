@@ -1,19 +1,47 @@
 ---
 title: Agents
-description: The agent runtime is OpenCode, configured from the repo's .kortix/opencode directory.
+description: The agent runtime is OpenCode; the manifest's agents map is governance-only, agent behavior lives in .kortix/opencode.
 ---
 
 The agent in every [session](/docs/concepts/sessions) is
 **[OpenCode](https://opencode.ai/docs/)**. The `kortix-agent` daemon runs it as
 `opencode serve` with its config dir pointed at the project's `.kortix/opencode/`.
 
-Everything about agent behavior lives there, in OpenCode's standard layout (the
-platform never reads it):
+OpenCode-native behavior lives there, in OpenCode's standard layout:
 
-- **Agents** — personas in `agents/`
+- **Agents** — a `.md` file per agent (frontmatter + prompt body) in `agents/`
 - **Skills** — on-demand `SKILL.md` know-how in `skills/`
 - **Commands, tools, plugins**
 - **Models, providers, MCP servers** — in `opencode.jsonc`
+
+`opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers,
+providers, model/provider settings, permissions, and default runtime behavior.
+Kortix does not duplicate those settings in the manifest.
+
+## The manifest is governance, not behavior
+
+`kortix.yaml`'s `agents:` is a **map keyed by agent name** — one entry per agent,
+joined to that agent's `.kortix/opencode/agents/<name>.md` by name. Each entry is
+governance only: `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`,
+`enabled`. Nothing about prompt, mode, tools, or permissions lives here — that's
+entirely the `.md` file's job. `default_agent` is required at the top level and
+must name a declared, enabled agent.
+
+v2 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
+`skills` key gets none of that access. Give it `all` explicitly to grant full
+access (the starter's default `kortix` agent does this). Chat inputs, trigger
+pickers, and channel pickers list registered agents from the API, not from a
+sandbox-local OpenCode query — this doesn't mean every native file under
+`.kortix/opencode/agents/` must be registered; unregistered files can still
+exist for local experiments or runtime internals.
+
+<Callout type="info" title="Legacy kortix.toml">
+v1 projects declare the same grants as an array, `[[agents]]`, with the secrets
+field named `env` instead of `secrets`, and per-field defaults instead of
+deny-all. A v1 project with no `[[agents]]` at all runs in legacy unrestricted
+mode — an agent inherits the launching user's full role. Once `[[agents]]`
+exists, an unlisted agent is default-denied, same as v2.
+</Callout>
 
 Every project ships a default agent + the kortix-system skill, so it runs with no
 setup. Beyond reading/writing repo files, an agent can use external tools through

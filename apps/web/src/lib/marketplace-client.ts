@@ -1,5 +1,14 @@
 import { backendApi } from '@/lib/api-client';
 
+// Server-safe public reads live in a separate module (no api-client import) so
+// Server Components can call them. Re-exported here for existing client imports.
+export {
+  getPublicMarketplaceItem,
+  getPublicMarketplaceItemFile,
+  listPublicMarketplaceItems,
+  listPublicMarketplaces,
+} from '@/lib/marketplace-public';
+
 export interface ItemCapabilities {
   secrets: string[];
   connectors: string[];
@@ -27,6 +36,8 @@ export interface MarketplaceItem {
   marketplaceLabel: string;
   owner?: string;
   sourceId?: string;
+  defaultProjectInstall?: boolean;
+  defaultProjectInstallOrder?: number;
 }
 
 export interface DependencyItem {
@@ -81,6 +92,12 @@ export interface PendingSource {
  *  in (cold first-load) so the UI can show per-source spinners + poll. */
 export interface ItemsPage {
   items: MarketplaceItem[];
+  /** Total items matching the filter (server-computed; `items.length` when the
+   *  call isn't paged). */
+  total: number;
+  /** True when more items exist beyond this page (always `false` for an
+   *  unpaged call, which already returns everything). */
+  hasMore: boolean;
   loading: boolean;
   pending: number;
   sources: PendingSource[];
@@ -90,21 +107,55 @@ export async function listMarketplaceItems(params?: {
   query?: string;
   type?: string;
   source?: string;
+  /** Opt-in server-side pagination. Omit for the full filtered list. */
+  limit?: number;
+  offset?: number;
 }): Promise<ItemsPage> {
   const qs = new URLSearchParams();
   if (params?.query) qs.set('query', params.query);
   if (params?.type && params.type !== 'all') qs.set('type', params.type);
   if (params?.source && params.source !== 'all') qs.set('source', params.source);
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
   const suffix = qs.toString() ? `?${qs.toString()}` : '';
   const res = unwrap(
     await backendApi.get<{
       items: MarketplaceItem[];
+      total?: number;
+      hasMore?: boolean;
       loading?: boolean;
       pending?: number;
       sources?: PendingSource[];
     }>(`/marketplace/items${suffix}`),
   );
-  return { items: res.items ?? [], loading: !!res.loading, pending: res.pending ?? 0, sources: res.sources ?? [] };
+  const items = res.items ?? [];
+  return {
+    items,
+    // Servers/callers predating pagination won't send these — fall back to a
+    // valid single-page shape so `ItemsPage` is never partially populated.
+    total: res.total ?? items.length,
+    hasMore: res.hasMore ?? false,
+    loading: !!res.loading,
+    pending: res.pending ?? 0,
+    sources: res.sources ?? [],
+  };
+}
+
+export function defaultProjectMarketplaceItems(
+  items: MarketplaceItem[] | undefined,
+): MarketplaceItem[] {
+  return (items ?? [])
+    .filter((item) => item.defaultProjectInstall)
+    .sort(
+      (a, b) =>
+        (a.defaultProjectInstallOrder ?? 999) - (b.defaultProjectInstallOrder ?? 999) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+export async function listDefaultProjectMarketplaceItems(): Promise<MarketplaceItem[]> {
+  const page = await listMarketplaceItems({ source: 'kortix', type: 'skill' });
+  return defaultProjectMarketplaceItems(page.items);
 }
 
 export interface MarketplaceSummary {
@@ -153,12 +204,16 @@ export interface FeaturedMarketplace {
 }
 
 export async function listFeaturedMarketplaces(): Promise<FeaturedMarketplace[]> {
-  const res = unwrap(await backendApi.get<{ featured: FeaturedMarketplace[] }>(`/marketplace/marketplaces/featured`));
+  const res = unwrap(
+    await backendApi.get<{ featured: FeaturedMarketplace[] }>(`/marketplace/marketplaces/featured`),
+  );
   return res.featured ?? [];
 }
 
 export async function getMarketplaceItem(id: string): Promise<MarketplaceItemDetail> {
-  return unwrap(await backendApi.get<MarketplaceItemDetail>(`/marketplace/items/${encodeURIComponent(id)}`));
+  return unwrap(
+    await backendApi.get<MarketplaceItemDetail>(`/marketplace/items/${encodeURIComponent(id)}`),
+  );
 }
 
 export interface MarketplaceItemFile {
@@ -167,7 +222,10 @@ export interface MarketplaceItemFile {
 }
 
 /** One file's raw content (addressed by its install target) for the detail viewer. */
-export async function getMarketplaceItemFile(id: string, target: string): Promise<MarketplaceItemFile> {
+export async function getMarketplaceItemFile(
+  id: string,
+  target: string,
+): Promise<MarketplaceItemFile> {
   return unwrap(
     await backendApi.get<MarketplaceItemFile>(
       `/marketplace/items/${encodeURIComponent(id)}/file?path=${encodeURIComponent(target)}`,
@@ -175,12 +233,19 @@ export async function getMarketplaceItemFile(id: string, target: string): Promis
   );
 }
 
-export async function installMarketplaceItem(projectId: string, id: string): Promise<InstallResult> {
-  return unwrap(await backendApi.post<InstallResult>(`/projects/${projectId}/registry/install`, { id }));
+export async function installMarketplaceItem(
+  projectId: string,
+  id: string,
+): Promise<InstallResult> {
+  return unwrap(
+    await backendApi.post<InstallResult>(`/projects/${projectId}/registry/install`, { id }),
+  );
 }
 
 export async function listInstalledItems(projectId: string): Promise<InstalledItem[]> {
-  const res = unwrap(await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`));
+  const res = unwrap(
+    await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
+  );
   return res.installed ?? [];
 }
 
@@ -216,14 +281,30 @@ export async function updateMarketplaceItem(
   );
 }
 
+export async function updateAllMarketplaceItems(
+  projectId: string,
+): Promise<{ ok: boolean; updated: string[]; commit_sha: string | null; file_count: number }> {
+  return unwrap(
+    await backendApi.post<{
+      ok: boolean;
+      updated: string[];
+      commit_sha: string | null;
+      file_count: number;
+    }>(`/projects/${projectId}/marketplace/update-all`),
+  );
+}
+
 export async function uninstallMarketplaceItem(
   projectId: string,
   name: string,
 ): Promise<{ ok: boolean; removed: string; commit_sha: string; file_count: number }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean; removed: string; commit_sha: string; file_count: number }>(
-      `/projects/${projectId}/registry/${encodeURIComponent(name)}`,
-    ),
+    await backendApi.delete<{
+      ok: boolean;
+      removed: string;
+      commit_sha: string;
+      file_count: number;
+    }>(`/projects/${projectId}/registry/${encodeURIComponent(name)}`),
   );
 }
 
@@ -246,15 +327,21 @@ export interface AddSourceInput {
 }
 
 export async function listMarketplaceSources(): Promise<MarketplaceSource[]> {
-  const res = unwrap(await backendApi.get<{ sources: MarketplaceSource[] }>(`/marketplace/sources`));
+  const res = unwrap(
+    await backendApi.get<{ sources: MarketplaceSource[] }>(`/marketplace/sources`),
+  );
   return res.sources ?? [];
 }
 
 export async function addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource> {
-  const res = unwrap(await backendApi.post<{ source: MarketplaceSource }>(`/marketplace/sources`, input));
+  const res = unwrap(
+    await backendApi.post<{ source: MarketplaceSource }>(`/marketplace/sources`, input),
+  );
   return res.source;
 }
 
 export async function removeMarketplaceSource(id: string): Promise<void> {
-  unwrap(await backendApi.delete<{ ok: boolean }>(`/marketplace/sources/${encodeURIComponent(id)}`));
+  unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/marketplace/sources/${encodeURIComponent(id)}`),
+  );
 }

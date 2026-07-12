@@ -9,23 +9,52 @@
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
+/* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
+   automatically and color has a single source of truth. `--color-fd-card`
+   deliberately maps to --popover: fumadocs cards and code-block chrome sit on
+   the flat elevated surface, not the washed-gray --card token. The `.dark`
+   selector is required so these win over the `.dark` block that ships in
+   fumadocs-ui/css/neutral.css. */
+:root,
+.dark {
+  --color-fd-background: var(--background);
+  --color-fd-foreground: var(--foreground);
+  --color-fd-muted: var(--muted);
+  --color-fd-muted-foreground: var(--muted-foreground);
+  --color-fd-popover: var(--popover);
+  --color-fd-popover-foreground: var(--popover-foreground);
+  --color-fd-card: var(--popover);
+  --color-fd-card-foreground: var(--popover-foreground);
+  --color-fd-border: var(--border);
+  --color-fd-primary: var(--primary);
+  --color-fd-primary-foreground: var(--primary-foreground);
+  --color-fd-secondary: var(--secondary);
+  --color-fd-secondary-foreground: var(--secondary-foreground);
+  --color-fd-accent: var(--accent);
+  --color-fd-accent-foreground: var(--accent-foreground);
+  --color-fd-ring: var(--ring);
+}
+
+/* Docs borders run a step darker than the app's hairline --border — the
+   default reads too faint on docs surfaces (callouts, tables, code chrome).
+   Scoped to the fumadocs layout root so the rest of the app keeps the lighter
+   token. --color-fd-border must be re-declared here: the :root mapping above
+   already resolved var(--border) at the root, so it would not pick up this
+   scoped override on its own. */
+#nd-docs-layout {
+  --border: oklch(0.86 0 0);
+  --color-fd-border: var(--border);
+}
+.dark #nd-docs-layout {
+  /* In dark theme a literally darker border would vanish into the background —
+     step lighter instead for the same contrast boost. */
+  --border: oklch(0.34 0.006 286.033);
+}
+
+/* Legacy --sidebar-* values used by the app's own sidebar components. The
+   canonical app token blocks further down redeclare these; kept here verbatim
+   from the original override block. */
 :root {
-  --color-fd-background: oklch(0.985 0 0);
-  --color-fd-foreground: oklch(0.145 0 0);
-  --color-fd-muted: oklch(0.955 0 0);
-  --color-fd-muted-foreground: oklch(0.45 0 0);
-  --color-fd-popover: oklch(1 0 0);
-  --color-fd-popover-foreground: oklch(0.145 0 0);
-  --color-fd-card: oklch(0.97 0 0);
-  --color-fd-card-foreground: oklch(0.145 0 0);
-  --color-fd-border: oklch(0.885 0 0 / 0.6);
-  --color-fd-primary: oklch(0.205 0 0);
-  --color-fd-primary-foreground: oklch(0.985 0 0);
-  --color-fd-secondary: oklch(0.955 0 0);
-  --color-fd-secondary-foreground: oklch(0.205 0 0);
-  --color-fd-accent: oklch(0.92 0 0 / 0.5);
-  --color-fd-accent-foreground: oklch(0.205 0 0);
-  --color-fd-ring: oklch(0.708 0 0);
   --sidebar: hsl(0 0% 98%);
   --sidebar-foreground: hsl(240 5.3% 26.1%);
   --sidebar-primary: hsl(240 5.9% 10%);
@@ -36,22 +65,6 @@
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 .dark {
-  --color-fd-background: oklch(0.18 0 0);
-  --color-fd-foreground: oklch(0.94 0 0);
-  --color-fd-muted: oklch(0.27 0 0);
-  --color-fd-muted-foreground: oklch(0.6 0 0);
-  --color-fd-popover: oklch(0.24 0 0);
-  --color-fd-popover-foreground: oklch(0.94 0 0);
-  --color-fd-card: oklch(0.21 0 0);
-  --color-fd-card-foreground: oklch(0.94 0 0);
-  --color-fd-border: oklch(0.3 0 0 / 0.5);
-  --color-fd-primary: oklch(0.94 0 0);
-  --color-fd-primary-foreground: oklch(0.18 0 0);
-  --color-fd-secondary: oklch(0.27 0 0);
-  --color-fd-secondary-foreground: oklch(0.94 0 0);
-  --color-fd-accent: oklch(0.35 0 0 / 0.5);
-  --color-fd-accent-foreground: oklch(0.94 0 0);
-  --color-fd-ring: oklch(0.5 0 0);
   --sidebar: hsl(240 5.9% 10%);
   --sidebar-foreground: hsl(240 4.8% 95.9%);
   --sidebar-primary: hsl(224.3 76.3% 48%);
@@ -61,34 +74,101 @@
   --sidebar-border: hsl(240 3.7% 15.9%);
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
-.dark #nd-sidebar {
-  --color-fd-muted: oklch(0.22 0 0);
-  --color-fd-secondary: oklch(0.25 0 0);
-  --color-fd-muted-foreground: oklch(0.6 0 0);
+
+/* ─── Docs polish layer ─── */
+/* Everything below is scoped to the fumadocs layout ids (#nd-*) so the rest
+   of the app is untouched. Quiet, flat, better-auth-grade surfaces. */
+
+/* Sidebar: one flat surface with the page, split by a hairline. */
+#nd-sidebar {
+  background-color: var(--background);
+  border-color: var(--border);
 }
 
-/* Fumadocs docs layout — fumadocs-ui builds these via cn() in layouts/docs,
-   so Tailwind's scanner never emits the md/lg arbitrary property utilities. */
-#nd-docs-layout {
-  --fd-sidebar-width: 0px;
+/* Nav rows: compact (~30px), quiet, rounded-md. Covers page links and folder
+   triggers — both carry the shared ps-(--sidebar-item-offset) item class.
+   padding-inline-start is left alone: it drives nested indentation. */
+#nd-sidebar a[data-active],
+#nd-sidebar button[class*='ps-(--sidebar-item-offset)'] {
+  border-radius: 6px;
+  padding-block: 5px;
+  color: var(--muted-foreground);
+}
+#nd-sidebar a[data-active]:hover,
+#nd-sidebar button[class*='ps-(--sidebar-item-offset)']:hover {
+  background-color: var(--accent);
+  color: var(--foreground);
+}
+/* Active page: foreground + primary tint (Kortix law: active = primary 5-8%). */
+#nd-sidebar a[data-active='true'] {
+  background-color: color-mix(in oklab, var(--primary) 6%, transparent);
+  color: var(--foreground);
+  font-weight: 500;
+}
+#nd-sidebar a[data-active='true']:hover {
+  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
 }
 
-@media (min-width: 768px) {
-  /* Desktop: navbar is md:hidden, so zero the nav-height offset that drives
-     pt-(--fd-nav-height) on #nd-docs-layout and --fd-sidebar-top on #nd-sidebar. */
-  :root:has(#nd-docs-layout) {
-    --fd-nav-height: 0px;
-  }
-
-  #nd-docs-layout {
-    --fd-sidebar-width: 268px;
-  }
+/* Section separator labels (Learn / Reference / SDK / Contribute): quiet.
+   Size is owned by DocsSidebarSeparator (docs-controls.tsx) — its text-sm
+   reaches both this desktop aside and the mobile drawer, so no font-size
+   here or the id specificity would override it on desktop only. */
+#nd-sidebar p[class*='ps-(--sidebar-item-offset)'] {
+  margin-top: 1.5rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
 }
 
-@media (min-width: 1024px) {
-  #nd-docs-layout {
-    --fd-sidebar-width: 286px;
-  }
+/* Prose rhythm: tighten the page title only; body sizes stay stock. */
+#nd-page h1 {
+  letter-spacing: -0.02em;
+}
+
+/* TOC-less pages (e.g. /docs): the article otherwise stretches past 1100px.
+   Cap it at a readable column; `md:mx-auto` on the article keeps it centered.
+   Pages with a TOC already sit under ~868px, so this is a no-op there.
+   padding-bottom: the stock article has none (pt-8 only) and our custom
+   prev/next footer replaces the built-in one that used to provide end space,
+   so without this the cards sit flush against the viewport bottom. */
+#nd-page article {
+  max-width: 56rem;
+  padding-bottom: 2rem;
+}
+
+/* Sidebar search shortcut: collapse the two bordered ⌘ / K chips into one
+   quiet "⌘K" hint. Scoped to the sidebar search toggle (data-search-full)
+   so prose <kbd> styling is untouched. */
+#nd-sidebar button[data-search-full] div:has(> kbd) {
+  gap: 0;
+}
+#nd-sidebar button[data-search-full] kbd {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* TOC rail ("On this page"): keep fumadocs' stock code chips but slim them —
+   the prose default pads 3px on every side, which makes each chip tall and
+   opens the rows up. Only the vertical padding drops; horizontal padding,
+   border, background and mono size stay stock. Covers the desktop rail
+   (#nd-toc) and the mobile popover (#nd-tocnav). */
+#nd-toc a code,
+#nd-tocnav a code {
+  padding-block: 1px;
+}
+
+/* Fumadocs cards + tab/code containers: rounded-md family, never rounded-xl. */
+#nd-page a[class*='bg-fd-card'],
+#nd-page div[class*='bg-fd-card'] {
+  border-radius: 8px;
+  border-color: var(--border);
+}
+/* Linked cards: colors-only hover onto the flat accent surface. */
+#nd-page a[class*='bg-fd-card']:hover {
+  background-color: var(--accent);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -137,8 +217,8 @@
   --color-kortix-red: var(--kortix-red);
   /* App typography scale. Keep html at 100% so browser and OS zoom
      preferences remain intact; adjust readable UI sizes through tokens. */
-  --text-xs: 0.75rem;
-  --text-xs--line-height: calc(1 / 0.75);
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1 / 0.8125);
   --text-sm: 0.875rem;
   --text-sm--line-height: calc(1.25 / 0.875);
   --text-base: 1rem;
@@ -202,6 +282,30 @@
   --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
   --animate-shiny-text: shiny-text 8s infinite;
   --animate-kortix-bullet-flow: kortix-bullet-flow 4s ease-in-out infinite;
+  /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
+  --animate-shake: shake 400ms var(--ease-in-out) both;
+
+  @keyframes shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    10% {
+      transform: translateX(-6px);
+    }
+    30% {
+      transform: translateX(5px);
+    }
+    50% {
+      transform: translateX(-3px);
+    }
+    70% {
+      transform: translateX(2px);
+    }
+    90% {
+      transform: translateX(-1px);
+    }
+  }
 
   @keyframes kortix-bullet-flow {
     0%,
@@ -440,15 +544,15 @@
   --popover-foreground: oklch(0.1448 0 0);
   --primary: oklch(0.2046 0 0);
   --primary-foreground: oklch(0.9851 0 0);
-  --secondary: oklch(0.9302 0 0);
+  --secondary: oklch(0.9502 0 0);
   --secondary-foreground: oklch(0.2046 0 0);
-  --muted: oklch(0.9702 0 0);
+  --muted: oklch(0.9502 0 0);
   --muted-foreground: oklch(0.5555 0 0);
   --accent: oklch(0.9702 0 0);
   --accent-foreground: oklch(0.2046 0 0);
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.9219 0 0);
+  --border: oklch(0.8819 0 0);
   --input: oklch(0.9612 0 0);
   --ring: oklch(0.709 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
@@ -522,7 +626,7 @@
   --accent-foreground: oklch(0.9851 0 0);
   --destructive: oklch(0.7022 0.1892 22.2279);
   --destructive-foreground: oklch(0.9851 0 0);
-  --border: oklch(0.274 0.006 286.033);
+  --border: oklch(0.2629 0 0);
   --input: oklch(0.2686 0 0);
   --ring: oklch(0.5555 0 0);
   --chart-1: oklch(0.8781 0.1688 91.8567);
@@ -730,6 +834,59 @@
   animation: stream-char-reveal 150ms ease-out forwards;
 }
 
+/* Page-enter motion: soft fade-up for standalone pages (/projects). `both`
+   keeps delayed elements hidden until their turn. Stagger delays are capped
+   so long lists never feel slow — everything past the sixth child enters
+   together. */
+@keyframes kx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kx-fade-up,
+.kx-stagger > * {
+  animation: kx-fade-up 300ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.kx-stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.kx-stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.kx-stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.kx-stagger > :nth-child(5) {
+  animation-delay: 160ms;
+}
+.kx-stagger > :nth-child(n + 6) {
+  animation-delay: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-fade-up,
+  .kx-stagger > * {
+    animation-name: kx-fade;
+    animation-delay: 0ms;
+  }
+}
+
+@keyframes kx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes blur-fade-in {
   from {
     opacity: 0;
@@ -754,8 +911,19 @@
 
 .kortix-markdown.streaming-active p:last-child,
 .kortix-markdown.streaming-active li:last-child,
-.kortix-markdown.streaming-active div:last-child:not(:has(table)) {
+.kortix-markdown.streaming-active div:last-child:not(:has(table)):not(:has(.katex)):not(.katex-math-block) {
   display: inline;
+}
+
+/* KaTeX — block/display math scrolls horizontally; keep inline math in flow */
+.kortix-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+
+.kortix-markdown .katex {
+  font-size: 1.05em;
 }
 
 .kortix-markdown[data-streaming='true'] > *:last-child {
@@ -790,6 +958,14 @@
 
 .animate-pulse-heartbeat {
   animation: pulse-heartbeat 1.2s ease-in-out infinite;
+}
+
+/* Shake is pure positional motion; the error state is already conveyed by
+   color/message, so drop it entirely under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake {
+    animation: none;
+  }
 }
 
 /* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
@@ -1018,13 +1194,10 @@ html[data-desktop='true'] [data-side='right'] [data-sidebar='header'] {
 html[data-desktop-platform='macos'] [data-side='right'] [data-sidebar='header'] {
   height: 40px !important;
 }
-/* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
-   4.5rem (72px) on desktop only, so it's wide enough to fully contain
-   the macOS traffic lights (~70px wide) without them spilling onto the
-   inset. Expanded sidebar width is unchanged (web parity). */
-html[data-desktop='true'] [data-slot='sidebar-wrapper'] {
-  --sidebar-width-icon: 4.5rem;
-}
+/* Desktop has no collapsed icon rail: the project sidebar switches to
+   `collapsible="offcanvas"` in the shell (project-sidebar.tsx), so a
+   collapsed sidebar is fully hidden and reopened from the shell toggle
+   next to the window controls. Web keeps the icon rail. */
 /* The inset's title-bar row is the tab bar (`role="tablist"`). The React
    class is h-[38px] for web. On desktop we bump to 52px to give the
    window-drag region room; macOS overrides that to 40px to line up with
@@ -1103,13 +1276,39 @@ html[data-desktop-platform='macos'] {
 }
 
 /* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
-   clear the OS window controls on desktop by reserving space ABOVE the header
-   (a blank strip that holds the macOS traffic lights / Win-Linux control
-   cluster), instead of indenting the header sideways. Keeps the breadcrumb
-   left-aligned and the page content at full width. `py-4` (1rem) is preserved
-   on top of the title-bar inset. */
+   Win/Linux shells clear the OS window controls by reserving space ABOVE the
+   header (a blank strip that holds the control cluster). */
 html[data-desktop='true'] .kx-app-header {
   padding-top: calc(var(--kx-titlebar-inset) + 1rem);
+}
+/* macOS: no reserved strip — the header row shares the title-bar band with
+   the traffic lights (same Linear-style approach as the workspace tab bar).
+   The band is a fixed 52px with content flex-centered, so the row sits on
+   the exact same line as the traffic lights (center y=26 — the app draws
+   its own lights there; see DesktopChrome → MacTrafficLights). The left
+   indent clears the ~80px light gutter only while the centered max-w-6xl
+   container would underlap it; on wide windows it falls back to the web's
+   px-mobile values (1.5rem below xl, 0 at xl+) so the header stays aligned
+   with the page. */
+html[data-desktop-platform='macos'] .kx-app-header {
+  min-height: 52px;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: max(1.5rem, calc(84px - max(0px, (100vw - 72rem) / 2)));
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+@media (min-width: 1280px) {
+  html[data-desktop-platform='macos'] .kx-app-header {
+    padding-left: max(0px, calc(84px - (100vw - 72rem) / 2));
+  }
+}
+html[data-desktop-platform='macos'] .kx-app-header button,
+html[data-desktop-platform='macos'] .kx-app-header a,
+html[data-desktop-platform='macos'] .kx-app-header input,
+html[data-desktop-platform='macos'] .kx-app-header [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 /* Reusable title-bar spacer: a blank, draggable strip the height of the OS
@@ -1134,6 +1333,30 @@ html[data-desktop-platform='macos'] .kx-customize-header {
 }
 html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-header {
   padding-right: 124px;
+}
+
+/* Files page header (/projects/[id]/files) — the one page header that reaches
+   the top of the window with nothing above it, so it shares the title-bar row
+   with the OS window controls. Same no-extra-vertical-space approach as
+   .kx-customize-header, but the left indent also has to clear the shell's
+   floating sidebar toggle, which the Customize overlay doesn't have.
+
+   Below md the header already drops the title under the chrome (`pt-14`), so
+   both indents are scoped to md+ where the title shares the traffic-light row.
+   Raw px on purpose: the lights and the toggle are positioned in window px,
+   while rem drifts with the desktop zoom level. */
+@media (min-width: 768px) {
+  /* macOS: lights end at x=66, the shell's open-sidebar toggle spans 72→100.
+     Indent past both, leaving the same optical gap the web has at `pl-14`.
+     Only while collapsed — an expanded sidebar covers the lights itself. */
+  html[data-desktop-platform='macos'] .kx-files-header[data-sidebar-collapsed] {
+    padding-left: 112px;
+  }
+  /* Win/Linux: window controls live top-right, where the history / proposed-
+     changes / view-mode controls sit. Left stays at the web's `pl-14`. */
+  html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-files-header {
+    padding-right: 124px;
+  }
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start
@@ -1437,6 +1660,81 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   }
   100% {
     opacity: 1;
+  }
+}
+
+/* Google/Material circular spinner. Two INDEPENDENTLY-SEAMLESS animations
+   compose into the signature "arc sweeps forward, growing then shrinking":
+     • the <svg> rotates the whole thing at a CONSTANT rate (linear) — base spin.
+     • the arc <circle> rotates a further 360° per cycle (ease-in-out, so it
+       speeds up then slows down) while its length grows then shrinks via
+       stroke-dashoffset.
+   Both loops return to their EXACT start state at 100% (offset 58→58, rotate
+   360°≡0°) AND meet at matching velocity (ease-in-out is ~0 at both ends, linear
+   is constant), so the loop boundary is invisible — no stop/restart glitch.
+   The old version jumped: its dash ended long (dasharray 37) and restarted as a
+   dot (dasharray 1) at a different offset, collapsing visibly every cycle. */
+@keyframes spinner-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* r=10 → circumference ≈ 62.83. Visible arc = 62.83 − dashoffset, so it breathes
+   between ~28° (offset 58) and ~280° (offset 14). Rotate advances monotonically,
+   so the arc's head and tail only ever move forward — they never rewind. */
+@keyframes spinner-dash {
+  0% {
+    stroke-dashoffset: 58;
+    transform: rotate(0deg);
+  }
+  50% {
+    stroke-dashoffset: 14;
+    transform: rotate(180deg);
+  }
+  100% {
+    stroke-dashoffset: 58;
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spinner-orbit {
+  transform-origin: center;
+  animation: spinner-orbit 1.4s linear infinite;
+}
+
+/* Refresh icon etc. — constant rotation, so linear. (ease-in-out on an infinite
+   full turn visibly stutters at every seam: ends fast, restarts slow.) */
+.animate-spinner-spin {
+  transform-origin: center;
+  animation: spinner-spin 1s linear infinite;
+}
+
+.animate-spinner-dash {
+  transform-origin: center;
+  transform-box: fill-box;
+  stroke-dasharray: 62.83;
+  animation: spinner-dash 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+/* Reduced motion: keep a calm, constant-speed spin (a loader still needs to
+   signal activity) but drop the arc's grow/shrink and speed modulation. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spinner-orbit,
+  .animate-spinner-spin {
+    animation: spinner-orbit 1.4s linear infinite;
+  }
+
+  .animate-spinner-dash {
+    animation: none;
+    stroke-dashoffset: 34;
+    transform: none;
   }
 }
 

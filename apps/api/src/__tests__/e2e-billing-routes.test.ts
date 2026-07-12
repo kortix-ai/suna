@@ -38,6 +38,7 @@ let mockDeletionRequestResult: any = null;
 let mockDeletionCancelResult: any = null;
 let mockDeletionDeleteResult: any = null;
 let mockDeletionError: Error | null = null;
+let mockAccountDeleteAllowed = true;
 
 // ─── Register mocks ──────────────────────────────────────────────────────────
 
@@ -55,6 +56,17 @@ mock.module('../middleware/auth', () => ({
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => TEST_USER_ID,
   resolveScopedAccountId: async () => TEST_USER_ID,
+}));
+
+mock.module('../iam', () => ({
+  ACCOUNT_ACTIONS: {
+    ACCOUNT_DELETE: 'account.delete',
+  },
+  assertAuthorized: async (_userId: string, _accountId: string, action: string) => {
+    if (action === 'account.delete' && !mockAccountDeleteAllowed) {
+      throw new HTTPException(403, { message: "You don't have permission to delete accounts." });
+    }
+  },
 }));
 
 // Credits service mock
@@ -162,10 +174,9 @@ mock.module('../config', () => ({
     DATABASE_URL: '',
     FRONTEND_URL: 'http://localhost:3000',
     KORTIX_BILLING_INTERNAL_ENABLED: true,
-    ALLOWED_SANDBOX_PROVIDERS: ['local_docker'],
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
     isDaytonaEnabled: () => false,
-    isLocalDockerEnabled: () => false,
-    getDefaultProvider: () => 'local_docker',
+    getDefaultProvider: () => 'daytona',
   },
 }));
 
@@ -237,6 +248,7 @@ beforeEach(() => {
   mockDeletionCancelResult = null;
   mockDeletionDeleteResult = null;
   mockDeletionError = null;
+  mockAccountDeleteAllowed = true;
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -447,6 +459,18 @@ describe('Billing: account deletion', () => {
     expect(body.has_pending_deletion).toBe(false);
   });
 
+  test('GET /v1/billing/account/deletion-status requires account delete permission', async () => {
+    mockAccountDeleteAllowed = false;
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/account/deletion-status', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.message).toContain("don't have permission");
+  });
+
   test('GET /v1/billing/account/deletion-status returns pending deletion', async () => {
     mockDeletionStatus = {
       has_pending_deletion: true,
@@ -482,6 +506,17 @@ describe('Billing: account deletion', () => {
     expect(body.grace_period_days).toBe(14);
   });
 
+  test('POST /v1/billing/account/request-deletion requires account delete permission', async () => {
+    mockAccountDeleteAllowed = false;
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/account/request-deletion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ reason: 'not owner' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   test('POST /v1/billing/account/request-deletion works without reason', async () => {
     const app = createBillingTestApp();
     const res = await app.request('/v1/billing/account/request-deletion', {
@@ -514,6 +549,16 @@ describe('Billing: account deletion', () => {
     expect(body.success).toBe(true);
   });
 
+  test('POST /v1/billing/account/cancel-deletion requires account delete permission', async () => {
+    mockAccountDeleteAllowed = false;
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/account/cancel-deletion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+    });
+    expect(res.status).toBe(403);
+  });
+
   test('POST /v1/billing/account/cancel-deletion returns error when nothing to cancel', async () => {
     mockDeletionError = new BillingError('No active deletion request found', 400);
     const app = createBillingTestApp();
@@ -534,5 +579,15 @@ describe('Billing: account deletion', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.message).toBe('Account deleted');
+  });
+
+  test('DELETE /v1/billing/account/delete-immediately requires account delete permission', async () => {
+    mockAccountDeleteAllowed = false;
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/account/delete-immediately', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+    expect(res.status).toBe(403);
   });
 });

@@ -11,6 +11,7 @@ import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-rea
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
+import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -27,14 +28,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { List } from '@/components/ui/list';
+import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
+
+// Same wording the backend's requireEntitlement('rbac') 402 uses — keep it in
+// sync with apps/api/src/accounts/iam/helpers.ts ENTITLEMENT_LABEL.rbac.
+const RBAC_UPSELL_MESSAGE =
+  'Custom roles, policies, and groups are available on the Enterprise plan. Contact sales to enable it.';
 
 interface GroupsTabProps {
   accountId: string;
@@ -42,9 +51,14 @@ interface GroupsTabProps {
    * delete option. Sourced from a usePermission(group.create) probe at
    * the page level so plain admins with explicit policies see it too. */
   canCreate: boolean;
+  /** Whether the account's tier carries the `rbac` entitlement. Creating a
+   * group is gated on it server-side (deleting is not — cleanup is always
+   * allowed), so the create action is disabled here rather than left to
+   * fail with a 402 on submit. */
+  rbacEnabled: boolean;
 }
 
-export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
+export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
@@ -79,22 +93,55 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
     );
   }, [groupsQuery.data, search]);
 
+  const gated = canCreate && !rbacEnabled;
+  const createAction = canCreate ? (
+    rbacEnabled ? (
+      <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+        <Plus className="h-4 w-4" />
+        {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+      </Button>
+    ) : (
+      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
+        <span className="inline-flex items-center gap-1.5">
+          <Button size="sm" className="gap-1.5" disabled>
+            <Plus className="h-4 w-4" />
+            {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
+          </Button>
+          <Badge variant="outline" size="sm">
+            Enterprise
+          </Badge>
+        </span>
+      </Hint>
+    )
+  ) : null;
+
   return (
     <SectionCard
       title="Groups"
       description={tI18nHardcoded.raw(
         'autoComponentsIamGroupsTabJsxAttrDescriptionBundleMembersTogether2839aadc',
       )}
-      action={
-        canCreate && (
-          <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('componentsIamGroupsTab.line92JsxTextCreateAGroup')}
-          </Button>
-        )
-      }
+      action={createAction}
       flush
     >
+      {gated && (
+        <div className="border-border/60 border-b px-6 py-4">
+          <InfoBanner
+            tone="info"
+            title="Enterprise feature"
+            action={
+              <Button asChild variant="outline" size="sm">
+                <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
+                  Contact sales
+                </a>
+              </Button>
+            }
+          >
+            {RBAC_UPSELL_MESSAGE}
+          </InfoBanner>
+        </div>
+      )}
+
       <div className="border-border/60 border-b px-6 py-3">
         <div className="relative max-w-sm">
           <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
@@ -129,9 +176,10 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         <List>
           {Array.from({ length: 2 }).map((_, i) => (
             <li key={i} className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="size-8 rounded-md" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-40" />
-                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-3 w-56" />
               </div>
             </li>
           ))}
@@ -143,49 +191,41 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
           icon={Users}
           title={search ? 'No groups match your search' : 'No groups yet'}
           description={
-            !search && canCreate ? 'Create a group to bulk-add members to projects.' : undefined
+            !search && canCreate
+              ? rbacEnabled
+                ? 'Create a group to bulk-add members to projects.'
+                : RBAC_UPSELL_MESSAGE
+              : undefined
           }
         />
       )}
 
       {!groupsQuery.isLoading && filtered.length > 0 && (
-        <div className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-border/60 bg-muted/20 text-muted-foreground border-b text-left text-xs font-medium tracking-wider uppercase">
-                <th className="px-6 py-2.5 font-medium">Name</th>
-                <th className="px-3 py-2.5 font-medium">Source</th>
-                <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">Projects</th>
-                <th className="w-12 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-border/60 divide-y">
-              {filtered.map((g) => (
-                <tr
-                  key={g.group_id}
-                  className="hover:bg-muted/30 cursor-pointer transition-colors"
-                  onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-                >
-                  <td className="text-foreground px-6 py-3 font-medium">
-                    <div className="flex flex-col gap-0.5">
-                      <span>{g.name}</span>
-                      {g.description && (
-                        <span className="text-muted-foreground text-xs font-normal">
-                          {g.description}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="text-muted-foreground px-3 py-3">
-                    <Badge variant="outline" size="sm" className="font-normal capitalize">
-                      {g.source}
-                    </Badge>
-                  </td>
-                  <td className="text-muted-foreground px-3 py-3">{g.member_count ?? 0}</td>
-                  <td className="text-muted-foreground px-3 py-3">{g.project_count ?? 0}</td>
-                  <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    {canCreate && (
+        <List>
+          {filtered.map((g) => {
+            const memberCount = g.member_count ?? 0;
+            const projectCount = g.project_count ?? 0;
+            return (
+              <ListRow
+                key={g.group_id}
+                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+                leading={<EntityAvatar icon={Users} />}
+                title={g.name}
+                badges={
+                  <Badge variant="outline" size="sm" className="capitalize">
+                    {g.source}
+                  </Badge>
+                }
+                subtitle={
+                  <InlineMeta>
+                    {g.description || null}
+                    {`${memberCount} member${memberCount === 1 ? '' : 's'}`}
+                    {`${projectCount} project${projectCount === 1 ? '' : 's'}`}
+                  </InlineMeta>
+                }
+                trailing={
+                  canCreate ? (
+                    <div onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -204,13 +244,13 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  ) : undefined
+                }
+              />
+            );
+          })}
+        </List>
       )}
 
       <CreateGroupDialog open={createOpen} onOpenChange={setCreateOpen} accountId={accountId} />

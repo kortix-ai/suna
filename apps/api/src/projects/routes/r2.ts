@@ -1,37 +1,21 @@
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds } from '../../snapshots/builder';
+import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { getSandboxProvider } from '../../snapshots/providers';
 import { withTimeout } from '../../shared/with-timeout';
-import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from '../../snapshots/templates';
+import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
-import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
-import { getWarmCountsBySlug, resolveTemplateWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
-
-/**
- * Build a `slug → warm status` resolver for a project's templates: the per-template
- * opt-in config merged with live ready/warming counts. Returns a function that
- * yields null for every slug when the operator gate is off (feature unavailable).
- */
-async function buildTemplateWarmResolver(
-  projectId: string,
-  metadata: unknown,
-): Promise<(slug: string) => { enabled: boolean; size: number; ready: number; warming: number } | null> {
-  if (!warmPoolEnabled()) return () => null;
-  const counts = await getWarmCountsBySlug(projectId).catch(() => new Map());
-  return (slug: string) => {
-    const cfg = resolveTemplateWarmConfig(metadata, slug);
-    const c = counts.get(slug) ?? { ready: 0, warming: 0 };
-    return { enabled: cfg.enabled, size: cfg.size, ready: c.ready, warming: c.warming };
-  };
-}
+import { resolveManifestValidateFormat } from '../lib/manifest-format';
 
 projectsApp.openapi(
   createRoute({
@@ -60,7 +44,7 @@ projectsApp.openapi(
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
-  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   // PAT path: link an existing repo with a caller-supplied token — no GitHub
   // App install needed. This is the seamless `kortix ship` flow for a repo you
@@ -95,7 +79,7 @@ projectsApp.openapi(
       { accountId: scope.accountId, source: 'project-create' },
     );
     return c.json({
-      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
       git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
     }, 201);
   }
@@ -143,7 +127,7 @@ projectsApp.openapi(
   );
 
   return c.json({
-    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+    project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
   }, 201);
 },
@@ -282,7 +266,9 @@ projectsApp.openapi(
     installation: githubAuth.installation,
     name: projectName,
     defaultBranch,
-    manifestPath: 'kortix.toml',
+    // The starter just committed above (buildStarterFiles) ships kortix.yaml
+    // (kortix_version 2) — record that path so it's never stale from birth.
+    manifestPath: 'kortix.yaml',
   });
 
   kickProjectTemplatePrebuilds(
@@ -297,7 +283,7 @@ projectsApp.openapi(
   );
 
 
-  return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+  return c.json(serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }), 201);
 },
 );
 
@@ -306,10 +292,14 @@ projectsApp.openapi(
 // `kortix validate`), this server-side endpoint (lets dashboards / tooling
 // ask the server "is this valid?"), and the CR-merge gate.
 //
-// Body: { raw: string } (TOML text). Always returns 200 — the verdict is in
-// the body so the caller can show issues without having to handle HTTP error
-// codes. CLI use: `kortix validate` runs locally, this is for surfaces that
-// don't have the file on disk.
+// Body: { raw: string, format?: 'toml' | 'yaml' }. Always returns 200 — the
+// verdict is in the body so the caller can show issues without having to
+// handle HTTP error codes. CLI use: `kortix validate` runs locally, this is
+// for surfaces that don't have the file on disk.
+//
+// DUAL-FORMAT: `raw` may be TOML or YAML text — see
+// `resolveManifestValidateFormat` (lib/manifest-format.ts) for the resolution
+// order (project manifestPath > body `format` > `toml` default).
 
 // POST /v1/projects/:projectId/manifest/validate
 
@@ -334,15 +324,16 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  let body: { raw?: unknown } = {};
+  let body: { raw?: unknown; format?: unknown } = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
   const raw = typeof body.raw === 'string' ? body.raw : null;
   if (!raw) {
-    return c.json({ error: 'Missing `raw` (TOML string) in body.' }, 400);
+    return c.json({ error: 'Missing `raw` (manifest string) in body.' }, 400);
   }
 
+  const format = resolveManifestValidateFormat(loaded.row.manifestPath, body.format);
   const { validateManifest } = await import('@kortix/manifest-schema');
-  const verdict = validateManifest(raw);
+  const verdict = validateManifest(raw, format);
   return c.json({
     valid: verdict.valid,
     issues: verdict.issues,
@@ -351,8 +342,8 @@ projectsApp.openapi(
 );
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
-// One platform-default image, optionally extended by `[[sandbox.templates]]` entries
-// in kortix.toml. Session boot is stateless: it computes the expected snapshot
+// One platform-default image, optionally extended by `sandbox: templates:` entries
+// in kortix.yaml. Session boot is stateless: it computes the expected snapshot
 // name from the resolved template, asks Daytona if it exists, builds if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
 // consulted by the boot path.
@@ -381,11 +372,9 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
-    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+      items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
-      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -429,19 +418,17 @@ projectsApp.openapi(
   // before reading them, so the dashboard never shows a permanent "Building".
   await reconcileStaleBuilds({ projectId }).catch(() => {});
   const builds = await listSnapshotBuilds(projectId, { limit: 25 }).catch(() => []);
-  const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
   return c.json({
-    templates: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+    templates: templates.map((t) => serializeTemplate(t)),
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
-    warm_pool_available: warmPoolEnabled(),
   });
 },
 );
 
 // GET /v1/projects/:projectId/sandbox-health
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
-// template's live state + the most recent failed build (across any template).
+// template's live state + the current failed build, if the newest attempt failed.
 //
 // Whole-handler wall-clock budget, kept comfortably under the frontend's 30s
 // request timeout (apps/web/src/lib/api-client.ts → "Request timed out after
@@ -492,7 +479,7 @@ async function buildSandboxHealth(
   const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
   const latest = builds[0] ?? null;
-  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const latestFailure = currentFailedSnapshotBuild(builds);
   const isBuilding =
     (latest && latest.status === 'building') ||
     (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
@@ -572,6 +559,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: { slug?: unknown; sandbox_slug?: unknown } = {};
   try {
@@ -602,6 +593,13 @@ projectsApp.openapi(
       202,
     );
   } catch (err) {
+    // A slug that names no template is the caller's mistake, not a provider
+    // outage — folding it into 502 hid the real bug (a build slug like
+    // `default-warm` being sent where a template slug was required) behind a
+    // status that reads as "Daytona is down".
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: err.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
+    }
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 502);
   }
@@ -632,12 +630,36 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
-  const failed = builds.find((b) => b.status === 'failed');
+  const failed = currentFailedSnapshotBuild(builds);
   if (!failed) {
-    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
+    return c.json({ error: 'No current failed snapshot build to fix.' }, 409);
+  }
+
+  const errorText = failed.error ?? 'Snapshot build failed';
+  const category = failed.errorCategory ?? classifySnapshotError(errorText);
+  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
+
+  // Infra failures (quota, provider blip, timeout) are not repo-editable. Spinning up
+  // a fix session for one is worse than useless: the session must boot a sandbox from
+  // a snapshot, which is exactly what the failure prevented — so it fails to start the
+  // very session meant to diagnose it. Refuse loudly rather than 400 from deep inside
+  // session creation.
+  if (!info.fixableByAgent) {
+    return c.json(
+      {
+        error: `${info.title}: ${info.hint}`,
+        code: 'NOT_AGENT_FIXABLE',
+        category,
+      },
+      409,
+    );
   }
 
   const hostBuild = builds.find((b) => b.status === 'ready');
@@ -652,10 +674,6 @@ projectsApp.openapi(
     );
   }
 
-  const errorText = failed.error ?? 'Snapshot build failed';
-  const category = failed.errorCategory ?? classifySnapshotError(errorText);
-  const info = describeSnapshotError(category as ReturnType<typeof classifySnapshotError>);
-
   const prompt = [
     `The sandbox image build for the "${failed.slug}" template is failing, so new sessions on it can't boot. Diagnose and fix the root cause, then open a change request.`,
     ``,
@@ -668,7 +686,7 @@ projectsApp.openapi(
     errorText.slice(0, 4000),
     '```',
     ``,
-    `The sandbox image is built from the template definition (see [[sandbox.templates]] in kortix.toml).`,
+    `The sandbox image is built from the template definition (see sandbox.templates in kortix.yaml).`,
     ``,
     `Steps:`,
     `1. Inspect the relevant Dockerfile and the build error above.`,
@@ -683,7 +701,9 @@ projectsApp.openapi(
       initial_prompt: prompt,
       name: 'Fix sandbox build',
       metadata: { kind: 'sandbox-build-fix', failed_slug: failed.slug },
-      sandbox_slug: hostBuild.slug,
+      // hostBuild.slug is a BUILD slug — for a warm bake it reads `default-warm`,
+      // which names no template, so session creation rejected it with a 400.
+      sandbox_slug: templateSlugFromBuildSlug(hostBuild.slug),
     },
     request: requestAuditContext(c),
   });
@@ -722,11 +742,9 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   try {
     const templates = await listSandboxTemplates(project);
-    const warmFor = await buildTemplateWarmResolver(projectId, loaded.row.metadata);
     return c.json({
-      items: templates.map((t) => serializeTemplate(t, warmFor(t.slug))),
+      items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
-      warm_pool_available: warmPoolEnabled(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -757,6 +775,10 @@ projectsApp.openapi(
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
@@ -835,6 +857,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   let body: Record<string, unknown> = {};
   try { body = (await c.req.json()) ?? {}; } catch { /* empty */ }
@@ -853,8 +879,17 @@ projectsApp.openapi(
     diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
   };
 
+  // Ownership check BEFORE the write. updateTemplate keys the UPDATE on
+  // templateId alone, so without this a manager of their own project could
+  // mutate any other tenant's template by id (the post-write projectId check
+  // below only masks the response — the write had already committed). Mirrors
+  // the sibling DELETE handler.
+  const existing = await getTemplateById(templateId);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+  if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+
   try {
-    const updated = await updateTemplate(templateId, patch);
+    const updated = await updateTemplate(templateId, patch, projectId);
     if (!updated) return c.json({ error: 'Not found' }, 404);
     if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     return c.json({ template_id: updated.templateId, slug: updated.slug });
@@ -887,6 +922,10 @@ projectsApp.openapi(
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
+  // project.customize.write so a custom role can withhold it (humans) AND the
+  // agent-grant fold applies (agent sessions). Editors hold it by default.
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
 
   const row = await getTemplateById(templateId);
   if (!row) return c.json({ error: 'Not found' }, 404);

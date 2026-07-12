@@ -18,7 +18,6 @@ import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { AgentSelector } from '@/features/session/session-chat-input';
 import { useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
 import {
   useDeleteTrigger,
   useRunTrigger,
@@ -30,7 +29,7 @@ import {
   type SessionMode,
   type Trigger,
 } from '@/hooks/scheduled-tasks';
-import { getSandboxUrl } from '@/lib/platform-client';
+import { getSandboxUrl } from '@kortix/sdk/platform-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
@@ -153,13 +152,7 @@ interface TaskDetailPanelProps {
 export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const { sandbox } = useSandbox();
-  const webhookBaseUrl = useMemo(() => {
-    try {
-      if (sandbox) return getSandboxUrl(sandbox);
-    } catch {}
-    return 'https://<sandbox-url>';
-  }, [sandbox]);
+  const webhookBaseUrl = 'https://<sandbox-url>';
   const [tab, setTab] = useState<'settings' | 'executions'>('settings');
   const [name, setName] = useState(trigger.name);
   const [cronExpr, setCronExpr] = useState(trigger.cronExpr || '');

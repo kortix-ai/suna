@@ -20,7 +20,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { isBillingEnabled } from '@/lib/config';
-import { listAccounts, type KortixAccount } from '@/lib/projects-client';
+import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
@@ -134,11 +134,10 @@ export function AccountSwitcher({
     );
 
   if (accountsQuery.isLoading && !activeAccount) {
-    return variant === 'header' ? (
-      <Skeleton className={cn('h-8 w-36 rounded-md', className)} />
-    ) : (
-      <Skeleton className="h-9 w-full rounded-lg" />
-    );
+    // Header: render nothing while accounts load. The breadcrumb logo + page
+    // label carry the header on their own, so a skeleton chip between them just
+    // reads as noise — collapse it so it's simply `[logo] [label]`.
+    return variant === 'header' ? null : <Skeleton className="h-9 w-full rounded-lg" />;
   }
 
   const dropdown = (

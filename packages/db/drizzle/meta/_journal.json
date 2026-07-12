@@ -127,6 +127,34 @@
       "when": 1782142254765,
       "tag": "20260622153054_executor_computer_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782237363343,
+      "tag": "20260623175603_iam_roles_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782300621188,
+      "tag": "20260624113021_template_swap_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782389866805,
+      "tag": "20260625121746_d2_agent_service_account_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782412998383,
+      "tag": "20260625184318_slack_user_identity",
+      "breakpoints": true
     }
   ]
 }

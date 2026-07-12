@@ -1,16 +1,18 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
-import { supabaseAuth } from '../middleware/auth';
+import { timingSafeEqual } from 'node:crypto';
+import type { Context } from 'hono';
 import { config } from '../config';
+import { supabaseAuth } from '../middleware/auth';
+import { errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
-import { makeOpenApiApp, json } from '../openapi';
 
-import { accountStateRouter } from './routes/account-state';
-import { subscriptionsRouter } from './routes/subscriptions';
-import { paymentsRouter } from './routes/payments';
-import { creditsRouter } from './routes/credits';
-import { webhooksRouter } from './routes/webhooks';
 import { accountDeletionRouter } from './routes/account-deletion';
+import { accountStateRouter } from './routes/account-state';
+import { creditsRouter } from './routes/credits';
+import { paymentsRouter } from './routes/payments';
+import { subscriptionsRouter } from './routes/subscriptions';
+import { webhooksRouter } from './routes/webhooks';
 
 const billingApp = makeOpenApiApp<AppEnv>();
 const accountDeletionApp = makeOpenApiApp<AppEnv>();
@@ -25,6 +27,9 @@ billingApp.use('*', async (c, next) => {
   if (c.req.path.includes('/webhook')) {
     return next();
   }
+  if (c.req.path.includes('/cron/')) {
+    return next();
+  }
   return supabaseAuth(c, next);
 });
 
@@ -36,7 +41,7 @@ billingApp.route('/account-state', accountStateRouter);
 // never hit Stripe, never get blocked by credits, never see subscription UI.
 // Account-state (above) already returns the "Local (Unlimited)" mock.
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks')) {
+  if (c.req.path.includes('/account-state') || c.req.path.includes('/webhooks') || c.req.path.includes('/cron/')) {
     return next();
   }
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -63,6 +68,27 @@ accountDeletionApp.use('*', async (c, next) => {
 });
 accountDeletionApp.route('/', accountDeletionRouter);
 
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return aa.length === bb.length && timingSafeEqual(aa, bb);
+}
+
+function requireInternalCronAuth(c: Context<AppEnv>): Response | null {
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
+  const expected = config.INTERNAL_SERVICE_KEY;
+  const ok =
+    (bearer && timingSafeStringEqual(bearer, expected)) ||
+    (header && timingSafeStringEqual(header, expected));
+
+  if (!ok) {
+    return c.json({ error: 'Internal cron authentication required' }, 401);
+  }
+  return null;
+}
+
 // Yearly credit rotation cron endpoint
 billingApp.openapi(
   createRoute({
@@ -72,14 +98,41 @@ billingApp.openapi(
     summary: 'Run the yearly credit rotation (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
+      ...errors(401),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
+    const authError = requireInternalCronAuth(c);
+    if (authError) return authError as any;
     if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
       return c.json({ skipped: true, reason: 'billing disabled' });
     }
     const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
     const result = await processYearlyCreditRotation();
+    return c.json(result);
+  },
+);
+
+// Free-tier monthly credit rotation cron endpoint
+billingApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/cron/free-tier-rotation',
+    tags: ['billing'],
+    summary: 'Run the free-tier monthly credit rotation (cron)',
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Rotation result'),
+      ...errors(401),
+    },
+  }),
+  async (c: Context<AppEnv>) => {
+    const authError = requireInternalCronAuth(c);
+    if (authError) return authError as any;
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return c.json({ skipped: true, reason: 'billing disabled' });
+    }
+    const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+    const result = await processFreeTierCreditRotation();
     return c.json(result);
   },
 );
@@ -94,6 +147,16 @@ if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       console.error('[BillingApp] Yearly rotation interval error:', err);
     }
   }, YEARLY_ROTATION_INTERVAL_MS);
+
+  const FREE_TIER_ROTATION_INTERVAL_MS = 60 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
+      await processFreeTierCreditRotation();
+    } catch (err) {
+      console.error('[BillingApp] Free-tier rotation interval error:', err);
+    }
+  }, FREE_TIER_ROTATION_INTERVAL_MS);
 }
 
 export { billingApp, accountDeletionApp };

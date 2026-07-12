@@ -6,14 +6,17 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../lib/git';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { isMissingRuntimeError } from '../routes/shared';
 import {
-  buildSessionSandboxEnvVars,
-  sandboxCallbackUnreachableReason,
-} from '../lib/sessions';
-import {
-  isMissingRuntimeError,
-  retireSessionSandboxRow,
-} from '../routes/shared';
+  claimInPlaceRuntimeRecovery,
+  markInPlaceRuntimeRecoveryAccepted,
+  preserveEstablishedRuntime,
+  retireUnmaterializedRuntime,
+  RUNTIME_IDENTITY_ERROR,
+  RUNTIME_IDENTITY_UNAVAILABLE,
+} from '../runtime-identity';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -69,7 +72,9 @@ export async function deleteSession(input: {
           initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
           ...(sandbox.status === 'active'
             ? {}
-            : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
+            : {
+                lastInitError: 'Session was stopped before sandbox initialization completed',
+              }),
         },
         updatedAt: new Date(),
       })
@@ -124,12 +129,18 @@ export async function restartSession(input: {
   const { loaded, session, projectId, sessionId } = input;
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-    return { status: 400, body: { error: `Restart is not supported for provider ${providerName}` } };
+    return {
+      status: 400,
+      body: { error: `Restart is not supported for provider ${providerName}` },
+    };
   }
 
   const restartUnreachable = sandboxCallbackUnreachableReason();
   if (restartUnreachable) {
-    return { status: 503, body: { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' } };
+    return {
+      status: 503,
+      body: { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
+    };
   }
 
   const [existingSandbox] = await db
@@ -182,6 +193,9 @@ export async function restartSession(input: {
           agentName: session.agentName ?? 'default',
           initialPrompt,
           opencodeModel,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         }),
       resolveGitAuthToken: async () =>
         (await withProjectGitAuth(loaded.row as any)).gitAuthToken ?? null,
@@ -196,16 +210,56 @@ export async function restartSession(input: {
     const provider = getProvider(existingSandbox.provider as SandboxProviderName);
     const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
     if (providerStatus === 'removed') {
-      await retireSessionSandboxRow(existingSandbox, 'restart_removed_runtime').catch((err) =>
-        console.warn(
-          `[projects] failed to retire removed runtime ${externalId} for session ${sessionId}:`,
-          err,
-        ),
-      );
-      await provisionReplacementRuntime();
+      const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+      if (!claim) {
+        return {
+          status: 202,
+          body: {
+            ok: true,
+            session_id: sessionId,
+            status: 'provisioning',
+            reason: 'runtime_recovery_in_progress',
+          },
+        };
+      }
+      const recovery = await provider
+        .recoverInPlace?.(externalId)
+        .catch(() => 'unavailable' as const);
+      if (recovery === 'running' || recovery === 'recovering') {
+        const accepted = await markInPlaceRuntimeRecoveryAccepted(claim, recovery);
+        if (!accepted) {
+          return {
+            status: 409,
+            body: {
+              error: RUNTIME_IDENTITY_ERROR,
+              code: 'SESSION_RUNTIME_RECOVERY_CANCELLED',
+              session_id: sessionId,
+              external_id: externalId,
+              reason: 'runtime_recovery_cancelled',
+            },
+          };
+        }
       return {
         status: 202,
-        body: { ok: true, session_id: sessionId, status: 'provisioning', reason: 'runtime_removed' },
+        body: {
+          ok: true,
+          session_id: sessionId,
+          status: 'provisioning',
+            reason:
+              recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
+          },
+        };
+      }
+      await preserveEstablishedRuntime(claim.row, 'restart_removed_runtime');
+      return {
+        status: 409,
+        body: {
+          error: RUNTIME_IDENTITY_ERROR,
+          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          session_id: sessionId,
+          external_id: externalId,
+          reason: RUNTIME_IDENTITY_UNAVAILABLE,
+        },
       };
     }
 
@@ -227,6 +281,39 @@ export async function restartSession(input: {
       try {
         await provider.stop(externalId).catch(() => {});
         await provider.start(externalId);
+        // A provider may acknowledge start before discovering that the backing
+        // runtime is gone (observed live with Platinum: POST start succeeded,
+        // the next GET returned removed). Never mark the DB running from command
+        // acceptance alone; verify provider truth first.
+        let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        for (
+          let attempt = 1;
+          verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15;
+          attempt += 1
+        ) {
+          await Bun.sleep(1_000);
+          verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        }
+        if (verifiedStatus === 'removed') {
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(claim.row, 'restart_post_start_removed').catch(
+              () => null,
+            );
+          }
+          return;
+        }
+        if (verifiedStatus !== 'running') {
+          throw new Error(
+            `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
+          );
+        }
         await db
           .update(sessionSandboxes)
           .set({ status: 'active', updatedAt: new Date() })
@@ -238,13 +325,18 @@ export async function restartSession(input: {
       } catch (err) {
         console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
         if (isMissingRuntimeError(err)) {
-          await retireSessionSandboxRow(existingSandbox, 'restart_missing_runtime').catch(() => {});
-          await provisionReplacementRuntime().catch((allocErr) =>
-            console.warn(
-              `[projects] failed to reallocate missing runtime for session ${sessionId}:`,
-              allocErr,
-            ),
-          );
+          const claim = await claimInPlaceRuntimeRecovery(existingSandbox);
+          if (!claim) return;
+          const recovery = await provider
+            .recoverInPlace?.(externalId)
+            .catch(() => 'unavailable' as const);
+          if (recovery === 'running' || recovery === 'recovering') {
+            await markInPlaceRuntimeRecoveryAccepted(claim, recovery).catch(() => null);
+          } else {
+            await preserveEstablishedRuntime(claim.row, 'restart_missing_runtime').catch(
+              () => null,
+            );
+          }
           return;
         }
         await db
@@ -265,9 +357,28 @@ export async function restartSession(input: {
       }
     })();
 
-    return { status: 202, body: { ok: true, session_id: sessionId, status: 'provisioning' } };
+    return {
+      status: 202,
+      body: { ok: true, session_id: sessionId, status: 'provisioning' },
+    };
+  }
+
+  if (existingSandbox) {
+    // Row exists but never reached a real provider sandbox (e.g. the original
+    // provision failed before an externalId was assigned) — there's nothing to
+    // stop/start, and leaving it in place would collide with the fresh insert
+    // provisionReplacementRuntime() is about to do on the same sandboxId PK.
+    await retireUnmaterializedRuntime(existingSandbox, 'restart_never_provisioned').catch((err) =>
+      console.warn(
+        `[projects] failed to retire never-provisioned sandbox row for session ${sessionId}:`,
+        err,
+      ),
+    );
   }
 
   await provisionReplacementRuntime();
-  return { status: 202, body: { ok: true, session_id: sessionId, status: 'provisioning' } };
+  return {
+    status: 202,
+    body: { ok: true, session_id: sessionId, status: 'provisioning' },
+  };
 }

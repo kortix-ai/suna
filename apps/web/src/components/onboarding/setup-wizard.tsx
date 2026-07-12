@@ -21,15 +21,16 @@ import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { modelKeyToWire, useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';
-import { authenticatedFetch } from '@/lib/auth-token';
+import { setModelDefault } from '@kortix/sdk/projects-client';
+import { setEnv } from '@kortix/sdk/opencode-client';
+import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import {
   ArrowLeft,
   BookOpen,
@@ -52,7 +53,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { saveToolKeys } from './save-tool-keys';
 
@@ -510,29 +511,29 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
     });
   }, [allModels, modelStore]);
 
+  const params = useParams();
+  const wizardProjectId = typeof params?.id === 'string' ? params.id : null;
   const handleSelect = useCallback(
     (model: FlatModel) => {
       const key = { providerID: model.providerID, modelID: model.modelID };
       setSelected(key);
 
-      // Set as global default — checked in useOpenCodeLocal BEFORE agent.model,
-      // so it wins over server-configured agent defaults. Persisted in localStorage.
+      // Local default cache for instant display; the server account default
+      // (below) is the source of truth the gateway resolves.
       modelStore.setGlobalDefault(key);
-      // Also push to recent as a secondary signal
       modelStore.pushRecent(key);
 
-      // Fire-and-forget: persist the default model on the server so it
-      // survives across devices / reinstalls and is written to opencode.jsonc.
-      const base = getActiveOpenCodeUrl();
-      if (base) {
-        authenticatedFetch(`${base}/kortix/preferences/model`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: `${model.providerID}/${model.modelID}` }),
+      // Persist the account default server-side so it follows the user across
+      // devices and the gateway resolves `auto` to it. Best-effort: the wizard
+      // runs within a project context; the local default covers display meanwhile.
+      if (wizardProjectId) {
+        setModelDefault(wizardProjectId, {
+          scope: 'account',
+          model: modelKeyToWire(key),
         }).catch(() => {});
       }
     },
-    [modelStore],
+    [modelStore, wizardProjectId],
   );
 
   const handleContinue = useCallback(() => {
@@ -680,6 +681,7 @@ const TOOL_SECRETS = [
 function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const isCloud = isBillingEnabled();
+  const instanceUrl = useServerStore((s) => s.getActiveServerUrl());
   const [modalOpen, setModalOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -693,16 +695,19 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       setModalOpen(false);
       return;
     }
+    if (!instanceUrl) {
+      toast.error("Couldn't save tool keys: no active instance");
+      return;
+    }
 
     setSaving(true);
-    const base = getActiveOpenCodeUrl();
     const { succeeded, failed } = await saveToolKeys(toSave, async (key, value) => {
-      const res = await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: value.trim() }),
-      });
-      return { ok: res.ok };
+      try {
+        await setEnv(instanceUrl, key, value.trim());
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
     });
     setSaving(false);
     setSavedCount(succeeded.length);
@@ -717,7 +722,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       return;
     }
     setModalOpen(false);
-  }, [values]);
+  }, [values, instanceUrl]);
 
   return (
     <>

@@ -12,14 +12,16 @@
  * path in sandbox-cloud.ts.
  */
 
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
+import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
+import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
   getProvider,
-  WarmRuntimeUnavailableError,
   type CreateSandboxOpts,
   type ProviderName,
 } from '../providers';
@@ -37,7 +39,6 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
-import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
@@ -48,10 +49,12 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 
-// Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
-// Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
-const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
+// Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
+// Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 
 async function openComputeSessionForSandbox(
   sandboxId: string,
@@ -111,10 +114,25 @@ async function mintExecutorToken(opts: {
   agentName: string;
   gitProject: GitBackedProject;
 }): Promise<string | null> {
-  const agentGrant = await resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-    console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
-    return null;
-  });
+  // Resolve the per-session grant AND the agent's standing-identity service
+  // account in parallel. The SA resolution is FAIL-SAFE: on error we mint
+  // without a service_account_id, which is the legacy behavior (authorize as the
+  // user ∩ grant) — it never WIDENS, so a provisioning hiccup degrades to the
+  // previous secure model rather than breaking session start.
+  const [agentGrant, serviceAccountId] = await Promise.all([
+    resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
+      console.warn(`[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`, err);
+      return null;
+    }),
+    ensureAgentServiceAccount({
+      accountId: opts.accountId,
+      projectId: opts.projectId,
+      agentName: opts.agentName,
+    }).catch((err) => {
+      console.warn(`[session-sandbox] failed to ensure agent service account for ${opts.projectId}:`, err);
+      return null;
+    }),
+  ]);
   try {
     const tok = await createAccountToken({
       accountId: opts.accountId,
@@ -125,6 +143,7 @@ async function mintExecutorToken(opts: {
       sessionId: opts.sandboxId,
       name: `Executor Session ${opts.sandboxId.slice(0, 8)}`,
       agentGrant,
+      serviceAccountId,
     });
     return tok.secretKey;
   } catch (err) {
@@ -146,6 +165,8 @@ export async function provisionSessionSandbox(opts: {
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
+  /** Project metadata, used for per-project experimental gates. */
+  projectMetadata?: unknown;
   /**
    * Extra env vars injected into the sandbox at provider create-time. These
    * land in the Daytona snapshot's environment so its boot script can read
@@ -167,13 +188,6 @@ export async function provisionSessionSandbox(opts: {
    */
   sandboxSlug?: string;
   /**
-   * The project's per-project warm snapshot (projects.metadata.warm_snapshot
-   * .name — repo baked at tip + warm opencode caches). Preferred over the
-   * generic warm base when usable; verified against the provider before use,
-   * so a stale pointer just falls back. See snapshots/warm-project.ts.
-   */
-  projectWarmSnapshot?: string | null;
-  /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
    * into the sandbox before the frontend's `ensure-opencode` pin runs (which
@@ -181,13 +195,6 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
-  /**
-   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
-   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
-   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
-   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
-   */
-  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
@@ -216,59 +223,20 @@ export async function provisionSessionSandbox(opts: {
   // already exists. On the warm path this overlaps the ~200ms token round-trip
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
   type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
-  // Experimental warm path. Preference order:
-  //   1. The PROJECT's warm snapshot (repo already cloned at tip + opencode
-  //      caches warm — skips the clone entirely; commits since bake are
-  //      fast-forwarded post-boot via /kortix/refresh).
-  //   2. The generic warm runtime base (skips the cold create; clone still runs).
-  //   3. null → the normal Dockerfile-snapshot path.
-  // Fully inert unless KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET are
-  // set. Restricted to the platform-default slug: warm snapshots carry only the
-  // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
-  // must still boot its own per-project image.
-  let warmBase: string | null = null;
-  let warmIsProjectSnapshot = false;
-  // Skip ALL warm routes while the warm path is in post-failure cooldown — a
-  // degraded warm region (experimental "internal error" streaks) must not make
-  // every session pay a doomed warm attempt before falling back to cold. The
-  // generic base path already honors this; the per-project branch must too.
-  if (
-    providerName === 'daytona' &&
-    slug === DEFAULT_SANDBOX_SLUG &&
-    !warmPathPaused()
-  ) {
-    if (opts.projectWarmSnapshot) {
-      try {
-        const { warmSnapshotsEnabled } = await import('../../shared/daytona');
-        if (warmSnapshotsEnabled()) {
-          // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
-          // is a pure in-process check, and a degraded region times out in 4s AND
-          // pauses the warm path — so the generic-base lookup below short-circuits
-          // instead of paying a SECOND serial probe on the request-blocking path.
-          const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
-          if (await warmSnapshotUsableCached(opts.projectWarmSnapshot)) {
-            warmBase = opts.projectWarmSnapshot;
-            warmIsProjectSnapshot = true;
-          }
-        }
-      } catch {
-        // pointer is stale / lookup slow → fall through to the generic base
-      }
-    }
-    if (!warmBase) warmBase = await ensureWarmBaseReady();
-  }
-  let firstImagePromise: Promise<FirstImage> | null = warmBase
-    ? null
-    : (async () => {
-        const gitProject = await resolveGitProject();
-        const image = await ensureSandboxImage(gitProject, {
-          slug,
-          accountId,
-          source: 'session-start',
-          provider: providerName,
-        });
-        return { ...image, gitProject };
-      })();
+  // Cold-only: every session boots from its Dockerfile snapshot (the shared
+  // default or a per-project template), resolved by ensureSandboxImage. No warm
+  // / stateful-snapshot fast path — Platinum and Daytona take the identical cold
+  // path.
+  let firstImagePromise: Promise<FirstImage> | null = (async () => {
+    const gitProject = await resolveGitProject();
+    const image = await ensureSandboxImage(gitProject, {
+      slug,
+      accountId,
+      source: 'session-start',
+      provider: providerName,
+    });
+    return { ...image, gitProject };
+  })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
   // when it awaits the promise.
   firstImagePromise?.catch(() => {});
@@ -278,8 +246,9 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
-    db
+  const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
+  const createOrClaimSandboxRow = async () => {
+    const inserted = await db
       .insert(sessionSandboxes)
       .values({
         sandboxId,
@@ -299,14 +268,48 @@ export async function provisionSessionSandbox(opts: {
           healthStatus: 'unknown',
         },
       })
-      .returning(),
+      .onConflictDoNothing({ target: sessionSandboxes.sessionId })
+      .returning();
+    if (inserted.length > 0) return inserted;
+
+    // Provider-confirmed loss keeps the durable logical row because DB-level
+    // identity guards and child records intentionally forbid deleting it. The
+    // recovery transaction resets external_id to NULL and stamps an explicit
+    // authorization marker; only that exact placeholder may be claimed here.
+    return db
+      .update(sessionSandboxes)
+      .set({
+        provider: providerName,
+        status: 'provisioning',
+        baseUrl: null,
+        config: {},
+        // Legacy recovery placeholders may still exist while this release rolls
+        // out. Consume their authorization marker atomically so at most one
+        // allocator can claim the row and call provider.create(). New code never
+        // creates this marker because established identities are fail-closed.
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, sandboxId),
+          isNull(sessionSandboxes.externalId),
+          eq(sessionSandboxes.status, 'provisioning'),
+          sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
+        ),
+      )
+      .returning();
+  };
+
+  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
+    createOrClaimSandboxRow(),
     createApiKey({
       sandboxId,
       accountId,
       title: 'Sandbox Token',
       type: 'sandbox',
     }),
-    // Resolve the per-agent grant from kortix.toml's [[agents]] overlay and mint
+    // Resolve the per-agent grant from kortix.yaml's `agents:` overlay and mint
     // the executor/CLI account token carrying it (best-effort — see helper).
     mintExecutorToken({
       accountId,
@@ -316,15 +319,18 @@ export async function provisionSessionSandbox(opts: {
       agentName: opts.agentName ?? 'default',
       gitProject: opts.gitProject,
     }),
-    accountEntitledToLlmGateway(accountId).catch((err) => {
-      console.warn(
-        `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-      return false;
-    }),
+    llmGatewayEnabled
+      ? accountEntitledToLlmGateway(accountId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+          return false;
+        })
+      : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
+  if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
@@ -343,15 +349,14 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement: any account whose tier grants all models — per-seat teams AND
-  // every legacy paid tier (pro, tier_*) — on billing-on deploys, plus everyone
-  // on billing-off (local / self-hosted; the gateway records-but-never-debits
-  // there). See accountEntitledToLlmGateway: it gates on the resolved TIER, not
-  // billing_model, so legacy paying customers are no longer wrongly stripped to
-  // the Zen-only catalog. Per-request affordability stays in the gateway's own
-  // billing gate (assertBillingActive + deductForLlmUsage).
+  // Enablement is a three-part gate: operator availability, per-project
+  // experimental opt-in, and account entitlement. If any part is off we inject
+  // no KORTIX_LLM_* env, so OpenCode stays on its native provider behavior.
+  // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
+  // so legacy paying customers are no longer wrongly stripped to the Zen-only
+  // catalog. Per-request affordability stays in the gateway's own billing gate.
   const gatewayLlmKey: string | null =
-    config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
+    llmGatewayEnabled && gatewayEntitled ? executorToken : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -387,22 +392,18 @@ export async function provisionSessionSandbox(opts: {
         ? {
             KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: gatewayLlmKey,
-            KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
     },
-    // Idle lifecycle is owned by the provider-agnostic reaper (projects/
-    // sandbox-reaper.ts), keyed off MEANINGFUL activity (real turns), with each
-    // provider's native auto-stop as a secondary backstop. We pass NO explicit
-    // autoStopInterval for a normal session so each provider applies its own
-    // policy via daytonaLifecycle(): Daytona → KORTIX_SANDBOX_AUTOSTOP_MINUTES
-    // (default 15); Platinum → persistent (autoStop=0) because its stop→resume
-    // is broken (CH resume-freeze) — the reaper stops idle Platinum boxes and
-    // flags reprovision-on-open instead. (The old divergent KORTIX_SANDBOX_AUTO_
-    // STOP_MIN env, default 30, also wrongly made Platinum ephemeral — removed.)
-    // Warm-pool spares (legacy; pool disabled) stay persistent until claimed.
-    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
+    // Idle lifecycle: each provider's NATIVE auto-stop is the primary stop
+    // mechanism. We pass NO explicit autoStopInterval for a normal session so the
+    // provider applies its own policy: Daytona → daytonaLifecycle()
+    // (KORTIX_SANDBOX_AUTOSTOP_MINUTES); Platinum → the same idle timeout (see
+    // platinum.ts). Platinum NO LONGER forces persistent — the CH resume-freeze
+    // that required autoStop=0 is FIXED (verified ~2.3s stop→resume), so it
+    // idle-stops + CoW-resumes natively rather than depending on the maintenance
+    // reaper (whose outage let Platinum boxes run 24/7 and flood the host). The
+    // reaper stays as a secondary backstop only.
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -428,11 +429,7 @@ export async function provisionSessionSandbox(opts: {
       // kicked off in parallel with the token round-trip; heal-retries re-resolve
       // from scratch (the prior snapshot was just deleted).
       let image: EnsureSandboxImageResult;
-      if (warmBase) {
-        // Warm path: no per-project Dockerfile snapshot — boot the shared
-        // memory-state warm base; the provider starts the daemon post-restore.
-        image = { snapshotName: warmBase, slug, contentHash: 'warm', built: false, isDefault: true };
-      } else if (firstImagePromise) {
+      if (firstImagePromise) {
         image = await firstImagePromise;
         firstImagePromise = null;
       } else {
@@ -450,16 +447,12 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
       };
-      tl.mark(warmBase ? 'warm-base' : image.built ? 'image-built' : 'image-cached');
-      if (warmBase) {
-        providerCreateInput.warmBaseSnapshot = warmBase;
-      } else {
-        providerCreateInput.snapshot = image.snapshotName;
-      }
+      tl.mark(image.built ? 'image-built' : 'image-cached');
+      providerCreateInput.snapshot = image.snapshotName;
       console.log(
         `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
-        `(${warmBase ? 'warm base' : `template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}`}, ` +
-        `branch ${branch}, ${warmBase ? 'memory-restore' : image.built ? 'fresh build' : 'cache hit'})`,
+        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+        `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
       );
 
       const firstStage = provider.provisioning.stages[0];
@@ -500,13 +493,15 @@ export async function provisionSessionSandbox(opts: {
       const timeline = tl.summary();
 
       const [currentSession] = await db
-        .select({ status: projectSessions.status })
+        .select({ status: projectSessions.status, metadata: projectSessions.metadata })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .limit(1);
-      if (currentSession?.status === 'stopped') {
-        // The session was explicitly deleted while this box was still being
-        // created — deletion is the one case where we remove the provider box.
+      const currentSessionMetadata =
+        (currentSession?.metadata as Record<string, unknown> | null) ?? {};
+      if (typeof currentSessionMetadata.deletedAt === 'string') {
+        // Only an explicit deletion authorizes provider removal. A normal stop
+        // uses the same status and must never be mistaken for deletion.
         await provider.remove(result.externalId).catch((err) => {
           console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
@@ -540,6 +535,48 @@ export async function provisionSessionSandbox(opts: {
         return;
       }
 
+      if (currentSession?.status === 'stopped') {
+        // A manual stop or idle reconciliation won while provider.create was
+        // in flight. Preserve the disk/identity and power it down.
+        await provider.stop(result.externalId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to stop concurrently-paused sandbox ${result.externalId}:`,
+            err,
+          );
+        });
+        await db
+          .update(sessionSandboxes)
+          .set({
+            externalId: result.externalId,
+            baseUrl: result.baseUrl || null,
+            status: 'stopped',
+            metadata: {
+              ...buildSandboxInitSuccessMetadata(
+                sandbox.metadata as Record<string, unknown> | null,
+                {
+                  ...result.metadata,
+                  provisionTimeline: timeline,
+                  daytonaSandboxId: result.externalId,
+                },
+                attempts,
+              ),
+              stoppedDuringProvisioning: true,
+              stoppedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        tl.mark('row-stopped-during-provision');
+        tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
+        const stoppedTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stoppedTl.totalMs, marks: stoppedTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
+
       // Pre-active hook (legacy migration chat restore). Runs while the row is
       // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
       // Best-effort: never block the session opening on it.
@@ -566,7 +603,7 @@ export async function provisionSessionSandbox(opts: {
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
             runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+              artifactType: (providerName === 'daytona' || providerName === 'managed') ? 'daytona_snapshot' : 'unknown',
               providerArtifactRef: imageInfo!.snapshotName,
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
@@ -577,7 +614,7 @@ export async function provisionSessionSandbox(opts: {
           },
           attempts,
         ),
-        config: { serviceKey: sandboxKey.secretKey },
+        config: { serviceKey: sandboxKey.secretKey, llmGatewayEnabled: !!gatewayLlmKey },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };
@@ -590,14 +627,52 @@ export async function provisionSessionSandbox(opts: {
         finishUpdate.status = 'active';
       }
 
-      await db
+      // Conditional finish: `deleteSession()` is the ONLY place that sets a
+      // session_sandboxes row to 'archived', and it does so as soon as the
+      // user deletes the session — even while this provisioning IIFE is still
+      // in flight. Guard the write so a late-finishing provision can never
+      // resurrect a tombstoned row. If no row comes back, the session was
+      // deleted mid-provision: remove the box we just created and stop —
+      // no 'running' flip, no compute metering.
+      const [finished] = await db
         .update(sessionSandboxes)
         .set(finishUpdate)
-        .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, sandbox.sandboxId),
+            ne(sessionSandboxes.status, 'archived'),
+          ),
+        )
+        .returning();
+
+      if (!finished) {
+        console.warn(
+          `[session-sandbox] session ${sandbox.sandboxId} was deleted mid-provision — removing box ${result.externalId} instead of finishing provisioning`,
+        );
+        await provider.remove(result.externalId).catch((err) =>
+          console.warn(
+            `[session-sandbox] cleanup of ${result.externalId} after mid-provision delete failed:`,
+            err,
+          ),
+        );
+        tl.mark('row-deleted-mid-provision');
+        tl.log({ provider: providerName, attempts, deletedMidProvision: true });
+        const delTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: delTl.totalMs, marks: delTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
 
       // Mirror sandbox readiness onto the project_sessions row so the
       // sidebar's status dot stops spinning. session_id == sandbox_id by
-      // construction, so the lookup is direct.
+      // construction, so the lookup is direct. Only flip sessions that are
+      // still genuinely mid-provision (queued/branching/provisioning) —
+      // 'stopped' (deleted, or an explicit stop) and 'running' (won by the
+      // separate stopped→running resume path in routes/shared.ts) must not be
+      // clobbered back to 'running' by a provisioning attempt finishing late.
       await db
         .update(projectSessions)
         .set({
@@ -605,17 +680,13 @@ export async function provisionSessionSandbox(opts: {
           sandboxUrl: result.baseUrl || null,
           updatedAt: new Date(),
         })
-        .where(eq(projectSessions.sessionId, sandbox.sandboxId))
+        .where(
+          and(
+            eq(projectSessions.sessionId, sandbox.sandboxId),
+            inArray(projectSessions.status, [...PROVISIONING_SESSION_STATUSES]),
+          ),
+        )
         .catch(() => {});
-
-      // Project warm snapshot: the baked workspace is at BAKE-time tip. Fast-
-      // forward it to the CURRENT base tip in the background so commits merged
-      // since the bake are present.
-      if (warmIsProjectSnapshot && result.externalId) {
-        void import('../../snapshots/warm-project')
-          .then(({ refreshRestoredWorkspace }) => refreshRestoredWorkspace(result.externalId, userId))
-          .catch(() => {});
-      }
 
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
@@ -638,37 +709,10 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Warm restore kept coming up without the baked runtime (Daytona's
-      // experimental snapshot drops the filesystem layer ~half the time, and
-      // createWarm exhausted its in-provider retries). Drop the warm path and
-      // re-provision from the normal Dockerfile snapshot so the session still
-      // starts — warm is a best-effort speedup, never a hard dependency.
-      if (warmBase && bgErr instanceof WarmRuntimeUnavailableError) {
-        console.warn(
-          `[session-sandbox] warm runtime unavailable for ${sandbox.sandboxId} — falling back to the normal snapshot path:`,
-          bgErr.message,
-        );
-        // Pause the warm path fleet-wide for a few minutes so subsequent
-        // sessions skip the doomed warm attempt (e.g. region revoked).
-        const { noteWarmPathFailure } = await import('../../snapshots/warm-bake');
-        noteWarmPathFailure();
-        warmBase = null;
-        warmIsProjectSnapshot = false;
-        providerCreateInput.warmBaseSnapshot = undefined;
-        if (bgExternalId) {
-          await provider.remove(bgExternalId).catch(() => {});
-          bgExternalId = null;
-        }
-        imageInfo = null;
-        tl.mark('warm-fallback');
-        continue provisioning;
-      }
-
       // Daytona dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
-      // and retry once. Capped at one heal per session start. Never on the warm
-      // path — there's no per-project Dockerfile snapshot to rebuild.
-      if (!warmBase && isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
+      // and retry once. Capped at one heal per session start.
+      if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
         await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
           console.warn(
@@ -718,10 +762,7 @@ export async function provisionSessionSandbox(opts: {
           }
           providerName = next;
           provider = getProvider(next);
-          warmBase = null;
-          warmIsProjectSnapshot = false;
           providerCreateInput.snapshot = undefined;
-          providerCreateInput.warmBaseSnapshot = undefined;
           firstImagePromise = null;
           imageInfo = null;
           healedStaleSnapshot = false;
@@ -808,6 +849,10 @@ export async function provisionSessionSandbox(opts: {
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }
+      // Tell the originating channel (Slack) so the live thread shows the friendly
+      // reason now instead of a stranded ⏳ until the 30-min GC. Fire-and-forget;
+      // a no-op for non-channel sessions.
+      notifySessionProvisioningFailed(sandbox.sandboxId, userMessage);
       const errTl = tl.summary();
       recordProviderEvent({
         provider: providerName, kind: 'provision', outcome: 'error',

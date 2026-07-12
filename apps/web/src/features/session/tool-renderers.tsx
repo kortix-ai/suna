@@ -10,9 +10,22 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { DiffStat, STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { toSandboxAbsolutePath } from '@/features/files/api/opencode-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
+import { parseImageOutput } from '@/features/session/image-output-path';
 import { QuestionPrompt } from '@/features/session/question-prompt';
+import { prefersPreviewLink } from '@/features/session/preview-url-fallback';
+import { isShowContentUnavailable, type ShowLoadStatus } from './show-availability';
+import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
+import {
+  cleanResultSnippet,
+  type EmbeddedFailure,
+  formatRawOutput,
+  looksLikeJsonPayload,
+  parseEmbeddedFailure,
+  recoverLinkResults,
+} from '@/features/session/tool-output-format';
 import {
   extractReadableHtml,
   stripMarkupForToolOutput,
@@ -35,9 +48,9 @@ import {
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
 import { type LspDiagnostic, parseDiagnosticsFromToolOutput } from '@/stores/diagnostics-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useServerStore } from '@/stores/server-store';
 import {
   getActivePanelSessionId,
   sessionPreviewTabId,
@@ -108,12 +121,16 @@ import React, {
 
 import {
   type Diagnostic,
+  getChildSessionError,
   getChildSessionId,
   getChildSessionToolParts,
   getDiagnostics,
   getDirectory,
   getFilename,
+  getRetryInfo,
+  getRetryMessage,
   getToolInfo,
+  type MessageWithParts,
   PERMISSION_LABELS,
   type PermissionRequest,
   type QuestionRequest,
@@ -174,26 +191,10 @@ function useProxyUrl(localhostUrl: string): { proxyUrl: string; port: number } |
   }, [localhostUrl, proxyUrl]);
 }
 
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
-
-function normalizeWorkspacePath(path: string): string {
-  const trimmed = path.trim();
-  if (trimmed.startsWith('/workspace/')) return trimmed;
-  if (trimmed === 'workspace') return '/workspace';
-  if (trimmed.startsWith('workspace/')) return `/${trimmed}`;
-  return trimmed;
-}
-
 function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
   return value.startsWith('/');
-}
-
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
 /**
@@ -219,10 +220,13 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading) return;
-    const t = setTimeout(() => setIsLoading(false), 5000);
+    if (!isLoading || !previewUrl) return;
+    const t = setTimeout(() => {
+      setIsLoading(false);
+      setHasError(true);
+    }, 8000);
     return () => clearTimeout(t);
-  }, [isLoading, refreshKey]);
+  }, [isLoading, previewUrl, refreshKey]);
 
   const displayLabel = label || (proxy ? 'App preview' : url);
 
@@ -270,7 +274,10 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     openExternal(previewUrl ?? undefined);
   }, [openExternal, previewUrl]);
 
-  const onLoad = useCallback(() => setIsLoading(false), []);
+  const onLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
+  }, []);
   const onError = useCallback(() => {
     setIsLoading(false);
     setHasError(true);
@@ -294,21 +301,44 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
 
 type ServicePreviewState = ReturnType<typeof useServicePreview>;
 
+function ServicePreviewUrlFallback({ preview }: { preview: ServicePreviewState }) {
+  const { previewUrl, displayLabel, handleRefresh, openInBrowser } = preview;
+  const label = previewUrl || displayLabel;
+
+  return (
+    <div className="bg-background absolute inset-0 z-10 flex items-center justify-center p-6">
+      <div className="flex max-w-2xl flex-col items-center gap-3 text-center">
+        <button
+          type="button"
+          onClick={openInBrowser}
+          disabled={!previewUrl}
+          className={cn(
+            'text-foreground inline-flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium shadow-2xs transition-colors',
+            previewUrl ? 'hover:bg-muted' : 'cursor-not-allowed opacity-60',
+          )}
+        >
+          <ExternalLink className="size-4 shrink-0 text-muted-foreground" />
+          <span className="break-all font-mono">{label}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+        >
+          Retry preview
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 16:9 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // In the side panel, fill the available height; inline in chat keep 16:9.
   const fill = useContext(ToolSurfaceContext) === 'panel';
-  const {
-    previewUrl,
-    displayLabel,
-    isLoading,
-    hasError,
-    refreshKey,
-    handleRefresh,
-    onLoad,
-    onError,
-  } = preview;
+  const { previewUrl, displayLabel, isLoading, hasError, refreshKey, onLoad, onError } = preview;
+  const linkOnlyPreview = prefersPreviewLink(previewUrl);
 
   // Render the iframe at its container's real size (16:9) with NO CSS transform.
   // Cross-origin iframes (OOPIFs) under `transform: scale()` hit a Chromium
@@ -320,7 +350,7 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
     <div
       className={cn('relative w-full overflow-hidden bg-white', fill ? 'h-full' : 'aspect-video')}
     >
-      {(isLoading || !previewUrl) && (
+      {(isLoading || !previewUrl) && !linkOnlyPreview && (
         <div className="bg-background/60 absolute inset-0 z-10 flex items-center justify-center">
           <div className="text-muted-foreground flex items-center gap-2">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -330,23 +360,8 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
           </div>
         </div>
       )}
-      {hasError && (
-        <div className="bg-background absolute inset-0 z-10 flex items-center justify-center">
-          <div className="text-muted-foreground text-center">
-            <p className="text-xs">
-              {tHardcodedUi.raw('componentsSessionToolRenderers.line387JsxTextFailedToLoad')}
-            </p>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="text-primary mt-1 text-xs hover:underline"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-      {previewUrl && (
+      {(hasError || linkOnlyPreview) && <ServicePreviewUrlFallback preview={preview} />}
+      {previewUrl && !linkOnlyPreview && (
         <iframe
           key={refreshKey}
           src={previewUrl}
@@ -463,7 +478,10 @@ interface ToolProps {
   forceOpen?: boolean;
   locked?: boolean;
   hasActiveQuestion?: boolean;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
 }
 
 type ToolComponent = ComponentType<ToolProps>;
@@ -909,9 +927,40 @@ function ToolOutputFallback({
     );
   }
 
+  // Structured/oversized payloads (JSON dumps, very long blobs) render as a
+  // tidy, length-capped monospace block. Feeding raw JSON to the markdown
+  // renderer produces a garbled wall of text — the "looks weird" complaint.
+  if (looksLikeJsonPayload(output) || output.length > 4000) {
+    return <RawOutputBlock output={output} />;
+  }
+
   return (
     <div data-scrollable className={cn('max-h-72 overflow-auto p-2', MD_FLUSH_CLASSES)}>
       <UnifiedMarkdown content={output} isStreaming={isStreaming} />
+    </div>
+  );
+}
+
+/**
+ * Tidy, length-capped raw-output view: pretty-prints JSON when parseable, caps
+ * the rendered text, and notes how much was dropped. The shared safety net for
+ * any tool whose output isn't worth a bespoke renderer.
+ */
+function RawOutputBlock({ output, maxChars = 2000 }: { output: string; maxChars?: number }) {
+  const { text, truncatedChars } = useMemo(
+    () => formatRawOutput(output, maxChars),
+    [output, maxChars],
+  );
+  return (
+    <div data-scrollable className="max-h-72 overflow-auto p-2">
+      <pre className="text-muted-foreground/80 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+        {text}
+      </pre>
+      {truncatedChars > 0 && (
+        <div className="text-muted-foreground/40 mt-1.5 px-1 text-xs">
+          +{truncatedChars.toLocaleString()} more characters
+        </div>
+      )}
     </div>
   );
 }
@@ -2282,7 +2331,6 @@ function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
               title: s.title || 'Session',
               type: 'session',
               href: `/sessions/${s.id}`,
-              serverId: useServerStore.getState().activeServerId,
             })
           }
           className={cn(
@@ -3771,6 +3819,13 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
   }
 
   if (parsed) {
+    // Embedded failure: { query, success:false, error } — the tool call
+    // itself completed, but the underlying search request failed (e.g. a 402
+    // from the provider). This is NOT a valid (if empty) result set — treat
+    // it as "no results" so the caller falls through to the failure UI
+    // instead of silently rendering a blank, success-looking query.
+    if (parsed.success === false) return [];
+
     // Batch mode: { results: [{ query, answer, results: [...] }] }
     if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
       const firstItem = parsed.results[0];
@@ -3890,6 +3945,21 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
     }
     if (sources.length > 0) return [{ query: '', sources }];
   }
+
+  // Last resort: the output was JSON we couldn't strictly parse (oversized /
+  // truncated mid-stream). Recover whatever title/url/snippet records we can so
+  // the user still sees clean result cards instead of a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return [
+        {
+          query: '',
+          sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
+        },
+      ];
+    }
+  }
   return [];
 }
 
@@ -3909,6 +3979,51 @@ function wsFavicon(url: string): string | null {
   }
 }
 
+/**
+ * Small destructive "Failed" chip for a tool row's trigger — the inline
+ * equivalent of the `isError` badge used elsewhere in this file (e.g. the
+ * agent-task row), reused for tools whose output embeds a `success:false`
+ * failure even though the part status itself reports `completed`.
+ */
+function EmbeddedFailureBadge() {
+  return (
+    <span className="text-destructive bg-destructive/10 flex-shrink-0 rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap">
+      Failed
+    </span>
+  );
+}
+
+/**
+ * Clear failure body for a tool whose call `completed` but whose parsed
+ * output embeds `{success:false, error}` — used so a provider-side failure
+ * (e.g. "402 Insufficient credits") never renders as blank, success-looking
+ * output. `heading` should name the action that failed ("Web search failed").
+ */
+function ToolFailureCard({ heading, failure }: { heading: string; failure: EmbeddedFailure }) {
+  return (
+    <div
+      className={cn(
+        'mx-3 mb-2.5 flex items-start gap-2 rounded-2xl border px-3 py-2.5',
+        STATUS_BORDER.destructive,
+        STATUS_BG.destructive,
+      )}
+    >
+      <CircleAlert className={cn('mt-0.5 size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <div
+          className={cn('flex items-center gap-1.5 text-xs font-medium', STATUS_TEXT.destructive)}
+        >
+          <span>{heading}</span>
+          {typeof failure.status === 'number' && (
+            <span className="font-mono text-xs opacity-70">HTTP {failure.status}</span>
+          )}
+        </div>
+        <p className="text-foreground/80 text-xs leading-relaxed break-words">{failure.message}</p>
+      </div>
+    </div>
+  );
+}
+
 function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
@@ -3918,6 +4033,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   // Access raw state output to handle both string and object types
   const rawOutput = part.state.status === 'completed' ? (part.state as any).output : undefined;
+  const rawOutputStr = typeof rawOutput === 'string' ? rawOutput : output;
   const queryResults = useMemo(
     () => parseWebSearchOutput(rawOutput ?? output),
     [rawOutput, output],
@@ -3926,11 +4042,19 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     () => queryResults.reduce((n, q) => n + q.sources.length, 0),
     [queryResults],
   );
+  // The tool call itself completed, but the parsed output may still embed a
+  // provider-side failure (`{success:false, error}`, e.g. a 402 from the
+  // search API) — parseWebSearchOutput already returns no results for that
+  // shape, so surface it explicitly instead of rendering a blank success.
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(rawOutputStr) : null),
+    [status, rawOutputStr],
+  );
   const [expandedQuery, setExpandedQuery] = useState<number | null>(null);
 
   // Compact trigger badge
   const triggerBadge =
-    status === 'completed' && queryResults.length > 0
+    status === 'completed' && !failure && queryResults.length > 0
       ? queryResults.length > 1
         ? `${queryResults.length} queries`
         : totalSources > 0
@@ -3940,17 +4064,29 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Search className="size-3.5 flex-shrink-0" />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <Search className="size-3.5 flex-shrink-0" />
+        )
+      }
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line3806JsxTextWebSearch')}
           </span>
           <span className="text-muted-foreground truncate font-mono text-xs">{query}</span>
-          {triggerBadge && (
-            <span className="text-primary/70 ml-auto flex-shrink-0 text-xs font-medium whitespace-nowrap">
-              {triggerBadge}
-            </span>
+          {failure ? (
+            <div className="ml-auto flex-shrink-0">
+              <EmbeddedFailureBadge />
+            </div>
+          ) : (
+            triggerBadge && (
+              <span className="text-primary/70 ml-auto flex-shrink-0 text-xs font-medium whitespace-nowrap">
+                {triggerBadge}
+              </span>
+            )
           )}
         </div>
       }
@@ -4054,7 +4190,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                                 </div>
                                 {src.snippet && (
                                   <p className="text-muted-foreground/60 mt-1 line-clamp-2 text-xs leading-relaxed">
-                                    {src.snippet.slice(0, 200)}
+                                    {cleanResultSnippet(src.snippet, 200)}
                                   </p>
                                 )}
                               </div>
@@ -4070,6 +4206,8 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             );
           })}
         </div>
+      ) : failure ? (
+        <ToolFailureCard heading="Web search failed" failure={failure} />
       ) : output ? (
         <ToolOutputFallback
           output={output}
@@ -4139,6 +4277,25 @@ function parseScrapeOutput(output: string | any): ParsedScrapeOutput | null {
       })),
     };
   }
+
+  // Last resort: oversized / truncated JSON that failed strict parsing — recover
+  // the page records so we still render result cards, never a raw JSON dump.
+  if (typeof output === 'string') {
+    const recovered = recoverLinkResults(output);
+    if (recovered.length > 0) {
+      return {
+        total: recovered.length,
+        successful: recovered.length,
+        failed: 0,
+        results: recovered.map((r) => ({
+          url: r.url,
+          success: true,
+          title: r.title || undefined,
+          content: r.snippet || undefined,
+        })),
+      };
+    }
+  }
   return null;
 }
 
@@ -4188,9 +4345,7 @@ function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
               if (!resultUrl) return null;
               const favicon = wsFavicon(resultUrl);
               const resultDomain = wsDomain(resultUrl);
-              const snippet = result.content
-                ? result.content.replace(/\\n/g, ' ').replace(/\s+/g, ' ').slice(0, 200)
-                : undefined;
+              const snippet = result.content ? cleanResultSnippet(result.content, 200) : undefined;
 
               return (
                 <a
@@ -4341,20 +4496,39 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     };
   }, [output, query]);
 
+  // Same embedded-failure shape as web_search: a completed call whose parsed
+  // output is `{success:false, error}` (e.g. a 402 from the search provider).
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(output) : null),
+    [status, output],
+  );
+
   return (
     <BasicTool
-      icon={<ImageIcon className="size-3.5 flex-shrink-0" />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <ImageIcon className="size-3.5 flex-shrink-0" />
+        )
+      }
       trigger={
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground text-xs font-medium whitespace-nowrap">
             {tHardcodedUi.raw('componentsSessionToolRenderers.line4240JsxTextImageSearch')}
           </span>
           <span className="text-muted-foreground truncate font-mono text-xs">{displayQuery}</span>
-          {imageResults.length > 0 && (
-            <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
-              {isBatch ? `${batchCount}q, ` : ''}
-              {imageResults.length} images
-            </span>
+          {failure ? (
+            <div className="ml-auto flex-shrink-0">
+              <EmbeddedFailureBadge />
+            </div>
+          ) : (
+            imageResults.length > 0 && (
+              <span className="text-muted-foreground/60 ml-auto flex-shrink-0 font-mono text-xs whitespace-nowrap">
+                {isBatch ? `${batchCount}q, ` : ''}
+                {imageResults.length} images
+              </span>
+            )
           )}
         </div>
       }
@@ -4395,6 +4569,8 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             })}
           </div>
         </div>
+      ) : failure ? (
+        <ToolFailureCard heading="Image search failed" failure={failure} />
       ) : output ? (
         <ToolOutputFallback
           output={output.slice(0, 3000)}
@@ -4416,44 +4592,8 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 
-  // Extract image info from output
-  const { imagePath, directUrl } = useMemo(() => {
-    if (!output) return { imagePath: null, directUrl: null };
-    const trimmed = output.trim();
-
-    // 1. Try JSON parse
-    try {
-      const parsed = JSON.parse(trimmed);
-      const p = parsed.path || parsed.image_path || parsed.output_path || null;
-      const url = parsed.replicate_url || parsed.url || parsed.image_url || null;
-      return {
-        imagePath: p ? String(p).trim() : null,
-        directUrl: url ? String(url).trim() : null,
-      };
-    } catch {
-      // not JSON
-    }
-
-    // 2. Check if output itself is a file path
-    const cleaned = trimmed.replace(/^["']+|["']+$/g, '').trim();
-    if (IMAGE_EXT_RE.test(cleaned)) {
-      const normalized =
-        cleaned.startsWith('/workspace/') || cleaned.startsWith('workspace/')
-          ? normalizeWorkspacePath(cleaned)
-          : cleaned;
-      return { imagePath: normalized, directUrl: null };
-    }
-
-    // 3. Extract path from surrounding text
-    const extractedPath = trimmed.match(
-      /\/workspace\/[^\s"']+\.(?:png|jpe?g|gif|webp|svg|bmp|ico)/i,
-    );
-    if (extractedPath?.[0]) {
-      return { imagePath: extractedPath[0], directUrl: null };
-    }
-
-    return { imagePath: null, directUrl: null };
-  }, [output]);
+  // Extract image info from output — recognizes every sandbox root, not just /workspace
+  const { imagePath, directUrl } = useMemo(() => parseImageOutput(output), [output]);
 
   // If we have a direct HTTPS URL (e.g. replicate_url), use it directly — no need to fetch via sandbox
   // If we have a local sandbox path, use useFileContent to get base64 (same as ImagePreview.tsx)
@@ -4799,7 +4939,7 @@ import {
   ShowContentRenderer,
   showDomain,
 } from '@/components/file-renderers/show-content-renderer';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {
   default: STATUS_BORDER.neutral,
@@ -4851,7 +4991,7 @@ function useShowOpenInTab(props: { type: string; url: string; path: string; titl
     !!path && SHOW_HTML_EXT_RE.test(path) && (type === 'file' || type === 'html');
   const staticFilePort = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
   const htmlStaticUrl = isHtmlFilePath
-    ? `http://localhost:${staticFilePort}/open?path=${encodeURIComponent(ensureWorkspacePath(path))}`
+    ? `http://localhost:${staticFilePort}/open?path=${encodeURIComponent(toSandboxAbsolutePath(path))}`
     : '';
   const htmlStaticProxy = useProxyUrl(htmlStaticUrl);
 
@@ -4912,7 +5052,7 @@ function useShowOpenInTab(props: { type: string; url: string; path: string; titl
 /** Build the static-file-server localhost URL for an HTML file path (for iframe preview). */
 function buildHtmlStaticUrl(filePath: string): string {
   const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-  const normalized = ensureWorkspacePath(filePath);
+  const normalized = toSandboxAbsolutePath(filePath);
   const encoded = normalized.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   return `http://localhost:${port}/open?path=/${encoded}`;
 }
@@ -4955,6 +5095,10 @@ function ShowTool({ part, sessionId }: ToolProps) {
   // ── Track current carousel item so we can open it ──
   const [carouselIndex, setCarouselIndex] = useState(0);
   const currentItem = isCarousel ? items![carouselIndex] || items![0] : null;
+
+  // Load status of a single-item show's content — drives whether we hide a dead
+  // reference (renamed/deleted file → 404) instead of rendering a broken card.
+  const [contentStatus, setContentStatus] = useState<ShowLoadStatus>('loading');
 
   // Derive the "active" item props — either the single item or the current carousel item
   const activeType = isCarousel ? currentItem?.type || '' : type;
@@ -5027,6 +5171,23 @@ function ShowTool({ part, sessionId }: ToolProps) {
     : title || (type === 'error' ? 'Error' : type === 'url' ? showDomain(url) || 'Link' : 'Output');
 
   const headerIcon = isCarousel ? currentItem?.type || 'image' : isWebsitePreview ? 'url' : type;
+
+  // Hide a settled single-item show whose artifact failed to load — a renamed/
+  // deleted file (404) or an unhealthy iframe preview. Artifacts are updated
+  // throughout a run, so stale `show` references are expected; we surface only
+  // the ones that actually loaded rather than a broken "File not found" card.
+  if (
+    isShowContentUnavailable({
+      running,
+      isCarousel,
+      contentStatus,
+      isWebsitePreview,
+      previewHasError: preview.hasError,
+      previewIsLinkOnly: prefersPreviewLink(preview.previewUrl),
+    })
+  ) {
+    return null;
+  }
 
   return (
     <div
@@ -5156,6 +5317,7 @@ function ShowTool({ part, sessionId }: ToolProps) {
                 aspectRatio={aspectRatio}
                 LocalhostPreview={InlineServicePreview}
                 fill={fill}
+                onStatusChange={setContentStatus}
               />
             </div>
             {description && !title && (
@@ -5389,6 +5551,67 @@ function SubAgentActivity({
   );
 }
 
+/**
+ * Surfaces a sub-agent's failure/retry state up into the parent thread.
+ *
+ * A child (sub-agent) session runs its own LLM turn and streams its own
+ * `session.status` (retry) and `session.error` events. Those reach the browser
+ * on the shared per-server SSE stream and are stored keyed by the CHILD session
+ * id — but the parent's spawn card only ever rendered child *tool activity*. So
+ * when a sub-agent died mid-LLM-call (e.g. "Free usage exceeded, subscribe to
+ * Go") before running any tool, the parent card showed nothing and the thread
+ * looked stuck/collapsed. This banner reads the child's live retry status and
+ * persisted error and renders them inline so the failure is always visible.
+ */
+function SubAgentStatusBanner({
+  childSessionId,
+  childMessages,
+}: {
+  childSessionId?: string;
+  childMessages?: MessageWithParts[];
+}) {
+  // Live status for the child session (retry / busy / idle), keyed by child id.
+  const childStatus = useSyncStore((s) =>
+    childSessionId ? s.sessionStatus[childSessionId] : undefined,
+  );
+  const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
+  const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
+  const childError = useMemo(() => getChildSessionError(childMessages), [childMessages]);
+
+  // Live countdown for the retry banner (mirrors session-chat's per-second tick).
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  useEffect(() => {
+    if (!retryInfo) {
+      setSecondsLeft(0);
+      return;
+    }
+    const tick = () =>
+      setSecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [retryInfo]);
+
+  // A live retry takes precedence — it's the actionable "still trying" signal.
+  if (retryInfo && retryMessage) {
+    return (
+      <SessionRetryDisplay
+        message={retryMessage}
+        attempt={retryInfo.attempt}
+        secondsLeft={secondsLeft}
+        className="mt-2"
+      />
+    );
+  }
+
+  // Otherwise surface the terminal error so it stays visible after the child idles.
+  if (childError) {
+    return <TurnErrorDisplay errorText={childError} className="mt-2" />;
+  }
+
+  return null;
+}
+
 function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
@@ -5408,7 +5631,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
   // Collect tool parts from child session for inline activity list
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -5444,6 +5667,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5479,7 +5703,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -5518,6 +5742,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
         ) : undefined}
       </BasicTool>
+      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -6253,7 +6478,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   const { data: childMessages } = useOpenCodeMessages(childSessionId ?? '');
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
-    return getChildSessionToolParts(childMessages as any);
+    return getChildSessionToolParts(childMessages as MessageWithParts[]);
   }, [childMessages]);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -6441,6 +6666,12 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
             <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
           </div>
         )}
+
+        {/* Sub-agent retry/error — always visible so a failed worker never
+            looks like a silently-stuck/empty card. */}
+        <div className="px-3 pb-3 empty:hidden">
+          <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+        </div>
       </div>
 
       {hasSession && (
@@ -8446,7 +8677,18 @@ function parseToolName(tool: string): {
 export function GenericTool({ part }: ToolProps) {
   const output = partOutput(part);
   const input = partInput(part);
+  const status = partStatus(part);
   const { server, display } = useMemo(() => parseToolName(part.tool), [part.tool]);
+
+  // Generic hardening: a tool call can report `state.status: "completed"`
+  // while its own output embeds `{success:false, error}` (e.g. an
+  // integration proxy returning a 402/500 body as a "successful" tool
+  // result). Conservative on purpose — only this well-known shape flips the
+  // row from a completed look to a failed one.
+  const failure = useMemo(
+    () => (status === 'completed' ? parseEmbeddedFailure(output) : null),
+    [status, output],
+  );
 
   // Primary arg: first meaningful input value (matches reference's label() helper)
   const subtitle = useMemo(() => {
@@ -8493,12 +8735,19 @@ export function GenericTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Cpu />}
+      icon={
+        failure ? (
+          <CircleAlert className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        ) : (
+          <Cpu />
+        )
+      }
       trigger={{
         title: display,
         subtitle,
         args: server ? [server, ...args] : args.length > 0 ? args : undefined,
       }}
+      badge={failure ? <EmbeddedFailureBadge /> : undefined}
     >
       {output ? <ToolOutputFallback output={output} toolName={part.tool} /> : null}
     </BasicTool>
@@ -8511,11 +8760,10 @@ export function GenericTool({ part }: ToolProps) {
 
 interface PermissionPromptInlineProps {
   permission: PermissionRequest;
-  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void | Promise<void>;
 }
 
 function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [visible, setVisible] = useState(false);
   const [replying, setReplying] = useState(false);
 
@@ -8525,12 +8773,20 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   }, []);
 
   const label = PERMISSION_LABELS[permission.permission] || permission.permission;
+  const detail = permission.patterns?.length ? permission.patterns.join('  ') : null;
 
   const handleReply = useCallback(
     (reply: 'once' | 'always' | 'reject') => {
       if (replying) return;
       setReplying(true);
-      onReply?.(permission.id, reply);
+      // A failed reply must leave the card answerable — on success the card
+      // unmounts (the permission leaves the pending store), so re-enabling
+      // only ever matters on failure. The full scope options (allow all this
+      // session / persist to config) live in the pinned prompt above the
+      // composer; this inline row keeps the quick decisions in context.
+      void Promise.resolve(onReply?.(permission.id, reply))
+        .catch(() => {})
+        .finally(() => setReplying(false));
     },
     [replying, permission.id, onReply],
   );
@@ -8539,8 +8795,13 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
 
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
-      <span className="text-foreground flex-1 text-xs">
+      <span className="text-foreground min-w-0 flex-1 text-xs">
         Permission: <span className="font-medium">{label}</span>
+        {detail ? (
+          <code title={detail} className="text-muted-foreground ml-1.5 font-mono text-[11px]">
+            {detail.length > 60 ? `${detail.slice(0, 57)}…` : detail}
+          </code>
+        ) : null}
       </span>
       <div className="flex items-center gap-1.5">
         <Button
@@ -8557,11 +8818,12 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
           onClick={() => handleReply('always')}
           variant="outline"
           size="xs"
+          title="Allow this action for the rest of this session — the agent won't ask again for it"
         >
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8026JsxTextAllowAlways')}
+          Allow for session
         </Button>
         <Button disabled={replying} onClick={() => handleReply('once')} variant="default" size="xs">
-          {tHardcodedUi.raw('componentsSessionToolRenderers.line8034JsxTextAllowOnce')}
+          Allow once
         </Button>
       </div>
     </div>
@@ -8576,7 +8838,10 @@ interface ToolPartRendererProps {
   part: ToolPart;
   permission?: PermissionRequest;
   question?: QuestionRequest;
-  onPermissionReply?: (requestId: string, reply: 'once' | 'always' | 'reject') => void;
+  onPermissionReply?: (
+    requestId: string,
+    reply: 'once' | 'always' | 'reject',
+  ) => void | Promise<void>;
   onQuestionReply?: (requestId: string, answers: string[][]) => void;
   onQuestionReject?: (requestId: string) => void;
   defaultOpen?: boolean;

@@ -20,7 +20,7 @@ function manifestWith(triggersBlock: string): string {
   ].join('\n');
 }
 
-describe('kortix.toml — schema versioning', () => {
+describe('kortix manifest — schema versioning', () => {
   test('missing kortix_version is treated as v1 (back-compat)', () => {
     const parsed = parseManifestString(MIN_PROJECT);
     expect(parsed.schemaVersion).toBe(1);
@@ -33,6 +33,26 @@ describe('kortix.toml — schema versioning', () => {
 
   test('a future major version is rejected with a clear error', () => {
     expect(() => parseManifestString(`kortix_version = 99\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 99/);
+  });
+
+  // kortix_version 2 (the `agents:` map manifest — spec §2.1/§2.2) must NOT
+  // throw here: this reader (readManifest → parseManifestString) is what the
+  // whole session/trigger grant pipeline reads through (extractAgents in
+  // ../projects/agents.ts is the v2-aware consumer). Rejecting v2 at THIS
+  // layer was the runtime-wiring bug the fix closes — every v2 project would
+  // otherwise resolve to either fully-unrestricted (a swallowed read error) or
+  // every-session-rejected, instead of the agent's declared grant.
+  test('kortix_version 2 no longer throws — the reader every consumer (agents/triggers) reads through', () => {
+    const parsed = parseManifestString(
+      'kortix_version: 2\ndefault_agent: support\nproject:\n  name: test\nagents:\n  support:\n    description: x\n',
+      'yaml',
+      'kortix.yaml',
+    );
+    expect(parsed.schemaVersion).toBe(2);
+  });
+
+  test('a version above the v2 ceiling is still rejected', () => {
+    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 3/);
   });
 
   test('serialize always emits kortix_version as the first key', () => {
@@ -428,6 +448,55 @@ prompt = "x"
   });
 });
 
+describe('[[triggers]] — model', () => {
+  test('absent model parses to null (the "Default" path)', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "no-model"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+`)));
+    expect(specs[0]!.model).toBeNull();
+  });
+
+  test('an explicit model round-trips through serialize', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "with-model"
+type = "cron"
+cron = "0 0 9 * * *"
+model = "anthropic/claude-sonnet-4-6"
+prompt = "x"
+`));
+    const out = serializeManifest(parsed);
+    expect(out).toContain('anthropic/claude-sonnet-4-6');
+    const reparsed = extractTriggers(parseManifestString(out)).specs;
+    expect(reparsed[0]!.model).toBe('anthropic/claude-sonnet-4-6');
+  });
+
+  test('triggerSpecToTomlEntry omits a null model but writes a set one', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(`
+[[triggers]]
+slug = "plain"
+type = "cron"
+cron = "* * * * * *"
+prompt = "x"
+
+[[triggers]]
+slug = "pinned"
+type = "cron"
+cron = "* * * * * *"
+model = "openai/gpt-5"
+prompt = "x"
+`)));
+    const plain = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'plain')!);
+    const pinned = triggerSpecToTomlEntry(specs.find((s) => s.slug === 'pinned')!);
+    expect(plain.model).toBeUndefined();
+    expect(pinned.model).toBe('openai/gpt-5');
+  });
+});
+
 describe('serializeManifest — round-trip', () => {
   test('a parsed-then-serialized manifest re-parses to the same shape', () => {
     const input = manifestWith(`
@@ -447,5 +516,79 @@ prompt = "Hello"
     const a = extractTriggers(parsed).specs;
     const b = extractTriggers(reparsed).specs;
     expect(b).toEqual(a);
+  });
+});
+
+/**
+ * Drift guard: the runtime trigger parser (extractTriggers) and the canonical
+ * schema gate (@kortix/manifest-schema, run on CR-merge) must agree on which
+ * `[[triggers]]` shapes are valid. The runtime accepts several alias keys
+ * (prompt_template, schedule/runAt, secretEnv, sessionMode) and coerces enabled
+ * / lowercases session_mode; the gate must accept the same, or it falsely blocks
+ * a manifest that materializes fine — the bug class behind the missing `channel`
+ * connector provider. Keep them locked together.
+ */
+describe('[[triggers]] — runtime parser ⇄ schema gate agreement', () => {
+  const { validateManifest } = require('@kortix/manifest-schema') as typeof import('@kortix/manifest-schema');
+
+  function schemaTriggerErrors(block: string): string[] {
+    return validateManifest(manifestWith(block))
+      .issues.filter((i) => i.severity === 'error' && i.path.startsWith('triggers['))
+      .map((i) => i.path);
+  }
+
+  const cases: Array<{ name: string; block: string; accept: boolean }> = [
+    { name: 'prompt_template alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt_template = "go"` },
+    { name: 'schedule alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\nschedule = "0 9 * * *"\nprompt = "go"` },
+    { name: 'runAt alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\nrunAt = "2099-01-01T09:00:00Z"\nprompt = "go"` },
+    { name: 'secretEnv alias', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "webhook"\nsecretEnv = "WEBHOOK_SECRET"\nprompt = "go"` },
+    { name: 'session_mode case-insensitive', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "Reuse"` },
+    { name: 'enabled coercible', accept: true, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = 1` },
+    { name: 'missing prompt', accept: false, block: `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"` },
+    { name: 'unknown type', accept: false, block: `[[triggers]]\nslug = "t"\ntype = "made-up"\nprompt = "go"` },
+  ];
+
+  for (const { name, block, accept } of cases) {
+    test(`${name}: parser and schema agree (accept=${accept})`, () => {
+      const runtimeOk = extractTriggers(parseManifestString(manifestWith(block))).errors.length === 0;
+      const schemaOk = schemaTriggerErrors(block).length === 0;
+      expect(runtimeOk).toBe(accept);
+      expect(schemaOk).toBe(accept);
+    });
+  }
+});
+
+// Regression guard: trigger `path` / error `path` breadcrumbs used to
+// hard-code `kortix.toml` regardless of which file the manifest actually came
+// from. They now derive the filename from the parsed manifest's own `path`
+// (set by `parseManifestString`), so a `kortix.yaml` project's spec/error
+// paths say `kortix.yaml`, not a lie about a file that doesn't exist there.
+describe('[[triggers]] — spec/error `path` derives from the manifest\'s own filename', () => {
+  test('a yaml manifest\'s trigger spec path says kortix.yaml', () => {
+    const manifest = parseManifestString(
+      `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: test\ntriggers:\n  - slug: nightly\n    type: cron\n    cron: "0 9 * * *"\n    prompt: go\n`,
+      'yaml',
+      'kortix.yaml',
+    );
+    const { specs, errors } = extractTriggers(manifest);
+    expect(errors).toEqual([]);
+    expect(specs[0]?.path).toBe('kortix.yaml#triggers.nightly');
+  });
+
+  test('a yaml manifest\'s `[triggers]` (non-array) error path says kortix.yaml', () => {
+    const manifest = parseManifestString(
+      `kortix_version: ${KNOWN_SCHEMA_VERSION}\nproject:\n  name: test\ntriggers:\n  slug: nightly\n`,
+      'yaml',
+      'kortix.yaml',
+    );
+    const { errors } = extractTriggers(manifest);
+    expect(errors[0]?.path).toBe('kortix.yaml');
+  });
+
+  test('a toml manifest still says kortix.toml (default, unchanged)', () => {
+    const { specs } = extractTriggers(parseManifestString(manifestWith(
+      `[[triggers]]\nslug = "nightly"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"`,
+    )));
+    expect(specs[0]?.path).toBe('kortix.toml#triggers.nightly');
   });
 });

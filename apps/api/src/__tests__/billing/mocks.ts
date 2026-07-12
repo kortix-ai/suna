@@ -17,6 +17,7 @@ export const mockRegistry = {
   updateCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   upsertCreditAccount: null as ((id: string, data: any) => Promise<void>) | null,
   getYearlyAccountsDueForRotation: null as (() => Promise<any[]>) | null,
+  getFreeAccountsDueForRotation: null as (() => Promise<any[]>) | null,
 
   insertLedgerEntry: null as ((data: any) => Promise<any>) | null,
   getPurchaseByPaymentIntent: null as ((id: string) => Promise<any>) | null,
@@ -97,6 +98,8 @@ export function registerGlobalMocks() {
     getSubscriptionInfo: async () => null,
     getYearlyAccountsDueForRotation: async () =>
       mockRegistry.getYearlyAccountsDueForRotation ? mockRegistry.getYearlyAccountsDueForRotation() : [],
+    getFreeAccountsDueForRotation: async () =>
+      mockRegistry.getFreeAccountsDueForRotation ? mockRegistry.getFreeAccountsDueForRotation() : [],
   }));
 
   mock.module('../../billing/repositories/transactions', () => ({
@@ -132,6 +135,7 @@ export function registerGlobalMocks() {
   mock.module('../../billing/services/webhook-concurrency', () => ({
     recordWebhookEvent: async () =>
       mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
+    forgetWebhookEvent: async () => undefined,
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
@@ -417,6 +421,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
 export function createMockRevenueCatEvent(type: string, overrides: Record<string, any> = {}) {
   return {
     event: {
+      id: overrides.id ?? `evt_rc_${type.toLowerCase()}`,
       type,
       app_user_id: overrides.app_user_id ?? 'acc_test_123',
       product_id: overrides.product_id ?? 'kortix_pro_monthly',

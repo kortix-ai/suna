@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
+  PanelLeft,
   PanelRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -32,12 +33,15 @@ import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
-import { useOpenCodeSessions, opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { useServerStore } from '@/stores/server-store';
+import {
+  canQueryOpenCodeSession,
+  opencodeKeys,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { childMapByParent } from '@/ui';
 import { getClient } from '@/lib/opencode-sdk';
 import { getFileIcon } from '@/features/files/components/file-icon';
-import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@/lib/instance-routes';
+import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {
   Tooltip,
   TooltipContent,
@@ -56,7 +60,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
-import { isDesktop, desktopPlatform } from '@/lib/desktop';
+import { isDesktop, desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -109,7 +113,6 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     '/admin/analytics': { title: 'Analytics', type: 'page' },
     '/admin/feedback': { title: 'Feedback', type: 'page' },
     '/admin/notifications': { title: 'Notifications', type: 'page' },
-    '/admin/sandbox-pool': { title: 'Sandbox Pool', type: 'page' },
     '/admin/stress-test': { title: 'Stress Test', type: 'page' },
     '/changelog': { title: 'Changelog', type: 'page' },
   };
@@ -571,15 +574,16 @@ export function TabBar() {
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
 
-  // On macOS Tauri with the sidebar collapsed to its icon rail, the inset
-  // begins right where the OS traffic lights end — push the back/forward
-  // chevrons right so they're not flush against the lights. SSR-safe via
-  // useEffect (window only exists client-side under Tauri).
-  const [isMacDesktop, setIsMacDesktop] = useState(false);
+  // Desktop has no icon rail — a collapsed sidebar is fully hidden (offcanvas),
+  // so the tab bar reaches the window's left edge and the macOS traffic lights
+  // sit on top of it. Indent past the lights and show the sidebar toggle there.
+  // SSR-safe via useEffect (window only exists client-side under the shell).
+  const [desktopShell, setDesktopShell] = useState<DesktopShellPlatform | null>(null);
   useEffect(() => {
-    setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
+    setDesktopShell(desktopShellPlatform());
   }, []);
-  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
+  const sidebarHidden = desktopShell !== null && sidebar.state === 'collapsed';
+  const needsTrafficLightSpace = desktopShell === 'macos' && sidebar.state === 'collapsed';
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -620,7 +624,6 @@ export function TabBar() {
   // Sessions data
   const { data: sessions, isLoading: sessionsLoading } = useOpenCodeSessions();
   const updateTabTitle = useTabStore((s) => s.updateTabTitle);
-  const activeServerId = useServerStore((s) => s.activeServerId);
 
   // Sync session titles to tab titles
   useEffect(() => {
@@ -633,41 +636,21 @@ export function TabBar() {
     }
   }, [sessions, tabs, updateTabTitle]);
 
-  // Track which server the sessions data was last fetched for.
-  // After a server switch, sessions briefly contains stale data from the OLD server.
-  // We must not prune until sessions data is confirmed fresh for the current server.
-  const lastPrunedServerRef = useRef(activeServerId);
-  const sessionsReadyForServer = useRef(false);
-
-  // When activeServerId changes, mark sessions as not-yet-ready for the new server.
-  // When sessions subsequently reloads (goes through loading → loaded), mark as ready.
+  // Prune tabs for sessions that no longer exist on the runtime.
+  // Gate on a fully-loaded session list so we never prune against stale/empty data.
   useEffect(() => {
-    if (lastPrunedServerRef.current !== activeServerId) {
-      // Server just switched — sessions data is stale, don't prune yet
-      sessionsReadyForServer.current = false;
-      lastPrunedServerRef.current = activeServerId;
-    } else if (!sessionsLoading && sessions) {
-      // Same server, sessions finished loading — safe to prune
-      sessionsReadyForServer.current = true;
-    }
-  }, [activeServerId, sessions, sessionsLoading]);
-
-  // Prune tabs for sessions that no longer exist on the server.
-  // Only runs once sessions data is confirmed fresh for the current server.
-  useEffect(() => {
-    if (!sessions || sessionsLoading || !sessionsReadyForServer.current) return;
+    if (!sessions || sessionsLoading) return;
     const sessionIds = new Set(sessions.map(s => s.id));
     const { tabs: currentTabs, tabOrder: currentOrder } = useTabStore.getState();
     const staleTabIds = currentOrder.filter(id => {
       const tab = currentTabs[id];
       if (tab?.type !== 'session') return false;
-      if (tab.serverId && tab.serverId !== activeServerId) return false;
       return !sessionIds.has(id);
     });
     for (const id of staleTabIds) {
       useTabStore.getState().closeTab(id);
     }
-  }, [sessions, sessionsLoading, activeServerId]);
+  }, [sessions, sessionsLoading]);
 
   // Prefetch session metadata for all open tabs so switching is instant.
   // NOTE: Message prefetching was removed — messages are now served from
@@ -678,6 +661,7 @@ export function TabBar() {
     for (const id of tabOrder) {
       const tab = tabs[id];
       if (tab?.type !== 'session' || id === activeTabId) continue;
+      if (!canQueryOpenCodeSession(id)) continue;
       queryClient.prefetchQuery({
         queryKey: opencodeKeys.session(id),
         queryFn: async () => {
@@ -735,7 +719,6 @@ export function TabBar() {
           type: 'session',
           href: `/sessions/${sessionId}`,
           parentSessionId: session?.parentID,
-          serverId: activeServerId,
         });
       } else {
         setActiveTab(sessionId);
@@ -748,7 +731,7 @@ export function TabBar() {
     if (routeTab && !isTabRecentlyClosed(routeTab.id)) {
       openTab(routeTab);
     }
-  }, [pathname, openTab, setActiveTab, sessions, activeServerId]);
+  }, [pathname, openTab, setActiveTab, sessions]);
 
   // Build child map for permission aggregation across sub-sessions
   const childMap = useMemo(
@@ -1118,12 +1101,28 @@ export function TabBar() {
         <div
           className={cn(
             'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
-            // Traffic lights now sit centered inside the 72px collapsed rail, so
-            // they no longer spill into the inset — only a small breathing inset
-            // is needed for the back/forward chevrons.
-            needsTrafficLightSpace ? 'pl-3' : 'pl-2',
+            // Sidebar hidden on macOS → the traffic lights (x 10–62) overlay
+            // this leading group; start past them with the same 10px breathing
+            // room the lights keep from the window edge.
+            needsTrafficLightSpace ? 'pl-[4.5rem]' : 'pl-2',
           )}
         >
+          {/* Sidebar hidden on desktop → reopen control lives here, next to
+              the window controls. Opens the full sidebar (no icon rail). */}
+          {sidebarHidden && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={sidebar.toggleSidebar}
+                  className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/50 hover:text-muted-foreground transition-[color,transform] duration-150 ease-out active:scale-[0.96] cursor-pointer"
+                  aria-label="Open sidebar"
+                >
+                  <PanelLeft className="cn-rtl-flip h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Open sidebar</TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <button

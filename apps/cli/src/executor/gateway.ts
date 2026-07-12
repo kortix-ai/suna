@@ -15,7 +15,11 @@
  *      through the same sandbox env-token host the rest of the CLI uses
  *      (KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN + KORTIX_PROJECT_ID).
  */
-import { createExecutorClient, type ExecutorClient } from '@kortix/executor-sdk';
+import {
+  createExecutorClient,
+  type ExecutorCallResult,
+  type ExecutorClient,
+} from '@kortix/executor-sdk';
 import { loadAuth } from '../api/auth.ts';
 import { clientFromAuth, type ApiClient } from '../api/client.ts';
 import { resolveProjectId } from '../project-link.ts';
@@ -33,7 +37,7 @@ import { CliError } from './io.ts';
  * When a project is known we hit the project-explicit gateway routes (which
  * accept a plain user token), so `kortix executor` is the SAME locally and in
  * the cloud. Without a project we fall back to the legacy flat routes, which
- * need a project-scoped session token (the in-sandbox case).
+ * need a scoped session token (the in-sandbox case).
  */
 export function executorClient(projectOverride?: string): ExecutorClient {
   const auth = loadAuth();
@@ -68,6 +72,36 @@ export function executorProjectContext(projectOverride?: string): { client: ApiC
   const projectId = resolveProjectId(projectOverride);
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
   return { client: clientFromAuth(auth), projectId };
+}
+
+/** Bound so a forgotten approval can't wedge the agent forever:
+ *  ~40 × ~45s gateway holds ≈ 30 min of pause. */
+const APPROVAL_POLL_MAX = 40;
+
+/**
+ * Run a tool call, PAUSING for human approval — shared by BOTH faces
+ * (`kortix executor call` and the MCP server) so the agent's turn behaves the
+ * same everywhere. A `require_approval` call blocks: the gateway holds each
+ * request briefly, then — while still pending — returns `retryable` + the
+ * execution id; we re-issue the call with that id so the wait is effectively
+ * INDEFINITE (like a question) without any single long-held request. On
+ * approve, the SAME held request falls through and runs the action, so the
+ * turn resumes in place — the human never has to type "continue".
+ */
+export async function callPausingForApproval<T = unknown>(
+  executor: ExecutorClient,
+  connector: string,
+  action: string,
+  args: Record<string, unknown>,
+): Promise<ExecutorCallResult<T>> {
+  let result = await executor.call<T>(connector, action, args);
+  for (let i = 0; i < APPROVAL_POLL_MAX; i++) {
+    if (!(result.status === 'pending_approval' && result.retryable && result.execution_id)) break;
+    result = await executor.call<T>(connector, action, args, {
+      approvalExecutionId: result.execution_id,
+    });
+  }
+  return result;
 }
 
 export interface ConnectLinkResult {
@@ -121,7 +155,7 @@ export async function mintSecretLink(opts: {
 }
 
 /**
- * Add (or update) a connector on the project NOW — committed to kortix.toml on
+ * Add (or update) a connector on the project NOW — committed to kortix.yaml on
  * main + synced server-side, exactly like the dashboard's "Add app". No change
  * request needed; it's live this session.
  */
@@ -136,7 +170,7 @@ export async function addConnector(
   );
 }
 
-/** Remove a connector from the project (kortix.toml on main + catalog). */
+/** Remove a connector from the project (kortix.yaml on main + catalog). */
 export async function removeConnector(slug: string, projectOverride?: string): Promise<void> {
   const { client, projectId } = executorProjectContext(projectOverride);
   await client.delete(`/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`);

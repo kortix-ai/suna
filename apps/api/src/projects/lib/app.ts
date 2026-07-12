@@ -1,5 +1,15 @@
 import { makeOpenApiApp } from '../../openapi';
 import { type AppEnv } from '../../types';
+import {
+  OkResponseSchema as ContractOkResponseSchema,
+  ProjectSchema as ContractProjectSchema,
+  ProjectSessionSchema as ContractProjectSessionSchema,
+  SecretSchema as ContractSecretSchema,
+  SessionCreateInputSchema as ContractSessionCreateInputSchema,
+  SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionStartResultSchema as ContractSessionStartResultSchema,
+  TriggerSchema as ContractTriggerSchema,
+} from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
 import { Hono } from 'hono';
 
@@ -7,19 +17,28 @@ export const projectsApp = makeOpenApiApp<AppEnv>();
 
 export const projectWebhooksApp = new Hono<AppEnv>();
 
-// ─── Reusable OpenAPI schemas (permissive — these power the docs, not runtime
-// response validation). Many handlers return large/dynamic shapes, so common
-// surfaces are modeled loosely and a permissive fallback is used elsewhere. ───
+// ─── Reusable OpenAPI schemas (these power the docs, not runtime response
+// validation). Core project-domain surfaces come from @kortix/api-contract —
+// the shared wire contract — while large/dynamic shapes are still modeled
+// loosely with a permissive fallback. ───
 
-export const ProjectSchema = z.object({}).passthrough().openapi('Project');
+export const ProjectSchema = ContractProjectSchema.openapi('Project');
 
-export const SessionSchema = z.object({}).passthrough().openapi('Session');
+export const SessionSchema = ContractProjectSessionSchema.openapi('Session');
+
+export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi('SessionStartResult');
+
+export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
+
+export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
+
+export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 
 export const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeRequest');
 
-export const SecretSchema = z.object({}).passthrough().openapi('Secret');
+export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
-export const TriggerSchema = z.object({}).passthrough().openapi('Trigger');
+export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
 
 export const AppSchema = z.object({}).passthrough().openapi('App');
 

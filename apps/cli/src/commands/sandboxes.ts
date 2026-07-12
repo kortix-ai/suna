@@ -11,7 +11,7 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects sandbox-template + snapshot routes) ─
 
@@ -48,12 +48,12 @@ interface SnapshotBuild {
   finished_at: string | null;
 }
 
-const HELP = `Usage: kortix sandboxes <subcommand> [options]
+const HELP = help`Usage: kortix sandboxes <subcommand> [options]
 
 Manage the project's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +
 resources); a build produces the actual snapshot the platform boots sessions
-from. Templates also come from \`[[sandbox.templates]]\` in kortix.toml.
+from. Templates also come from \`[[sandbox.templates]]\` in kortix.yaml.
 
 Subcommands:
   ls [--json]                       List templates + live provider state.
@@ -105,14 +105,14 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Template definitions live in kortix.toml `[[sandbox.templates]]` (source of
+  // ── Template definitions live in kortix.yaml `[[sandbox.templates]]` (source of
   //    truth). add/update/rm edit the LOCAL file — `kortix ship` applies +
   //    builds. Only build/rebuild/health/builds/fix are cloud actions. ────────
   if (sub === 'add' || sub === 'create') return sandboxAddLocal(positional[0], f);
   if (sub === 'update' || sub === 'edit') return sandboxUpdateLocal(positional[0], f);
   if (sub === 'rm' || sub === 'remove' || sub === 'delete') return sandboxRmLocal(positional[0]);
 
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}`;
 
@@ -230,7 +230,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   }
 }
 
-// ── Local kortix.toml `[[sandbox.templates]]` edits (source of truth) ────────────────
+// ── Local kortix.yaml `[[sandbox.templates]]` edits (source of truth) ────────────────
 
 function sandboxAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a template slug');
@@ -241,7 +241,7 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
   }
   try {
     if (arrayEntryExists('sandbox.templates', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A [[sandbox.templates]] "${slug}" already exists in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`A [[sandbox.templates]] "${slug}" already exists in kortix.yaml.`)}\n`);
       return 1;
     }
     const fields: Record<string, unknown> = { slug };
@@ -253,7 +253,7 @@ function sandboxAddLocal(slug: string | undefined, f: Record<string, string | un
     if (f.disk) fields.disk = Number(f.disk);
     appendArrayBlock('sandbox.templates', fields);
     process.stdout.write(
-      `${status.ok(`Added [[sandbox.templates]] ${C.bold}${slug}${C.reset} to kortix.toml`)} ${C.dim}— \`kortix ship\` builds it.${C.reset}\n`,
+      `${status.ok(`Added [[sandbox.templates]] ${C.bold}${slug}${C.reset} to kortix.yaml`)} ${C.dim}— \`kortix ship\` builds it.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -266,7 +266,7 @@ function sandboxUpdateLocal(slug: string | undefined, f: Record<string, string |
   if (!slug) return missing('a template slug');
   try {
     if (!arrayEntryExists('sandbox.templates', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.toml (platform/UI templates aren't file-based).`)}\n`);
+      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.yaml (platform/UI templates aren't file-based).`)}\n`);
       return 1;
     }
     const updates: Array<[string, string | number]> = [];
@@ -292,7 +292,7 @@ function sandboxRmLocal(slug: string | undefined): number {
   if (!slug) return missing('a template slug');
   try {
     if (!removeArrayBlock('sandbox.templates', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`No [[sandbox.templates]] "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     process.stdout.write(

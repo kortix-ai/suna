@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { sandboxEnvValue } from './sandbox-env.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-host config storage.
@@ -59,13 +60,35 @@ const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
 const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
 const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
+/** The global default project for a host — used by every project-scoped
+ *  command (executor, connectors, sessions, …) when the cwd is not bound
+ *  to a project via `.kortix/link.json`. Carries its account_id so the
+ *  default always resolves under the right account. */
+export interface DefaultProjectRef {
+  project_id: string;
+  account_id: string;
+  name?: string;
+}
+
 export interface Host {
   url: string;
   token: string;
   user_id: string;
   user_email: string;
+  /** The host's active account id — every account-scoped call defaults to it. */
   account_id: string;
+  /** Active account display fields, captured at login / `accounts use`. */
+  account_slug?: string;
+  account_name?: string;
+  /** Global default project for this host (see DefaultProjectRef). */
+  default_project?: DefaultProjectRef;
   logged_in_at: string;
+}
+
+export interface ActiveAccount {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 export interface Config {
@@ -148,8 +171,10 @@ export function loadConfig(): Config {
 export function saveConfig(config: Config): void {
   const path = configFilePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
   try {
+    // Belt-and-braces for pre-existing files whose mode predates this fix —
+    // writeFileSync's `mode` option only applies when the file is created.
     chmodSync(path, 0o600);
   } catch {
     /* Windows */
@@ -166,13 +191,14 @@ export function deleteConfig(): void {
 /**
  * Resolve the active Host for the current invocation. Priority:
  *   1. KORTIX_CLI_TOKEN env var (synthetic ephemeral host, never persisted),
- *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the project-scoped
- *      session PAT the platform injects into a sandbox. (The SANDBOX credential
+ *      falling back to KORTIX_EXECUTOR_TOKEN — both carry the session-scoped
+ *      executor PAT the platform injects into a sandbox. (The SANDBOX credential
  *      — KORTIX_SANDBOX_TOKEN / its legacy KORTIX_TOKEN alias — is deliberately
  *      NOT used here: it's the daemon's identity, not the user's, and does not
  *      authenticate against the project-scoped API routes the CLI calls.)
- *   2. `--host` flag (handled at the call site via `getHost(name)`)
- *   3. The `active` host in config.json
+ *   2. KORTIX_API_URL env var (URL override for the stored active host)
+ *   3. `--host` flag (handled at the call site via `getHost(name)`)
+ *   4. The `active` host in config.json
  */
 /**
  * True when the platform-injected sandbox token (KORTIX_CLI_TOKEN /
@@ -181,15 +207,19 @@ export function deleteConfig(): void {
  * inside a sandbox the named host has no stored credentials, so honoring
  * the link would strand a fully-authenticated CLI on "not logged in".
  */
+function sandboxCliToken(): string | undefined {
+  return sandboxEnvValue('KORTIX_CLI_TOKEN') || sandboxEnvValue('KORTIX_EXECUTOR_TOKEN');
+}
+
 export function hasEnvTokenHost(): boolean {
-  return Boolean(process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN);
+  return Boolean(sandboxCliToken());
 }
 
 export function activeHost(): Host | null {
-  const envToken = process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN;
+  const envToken = sandboxCliToken();
   if (envToken) {
     return {
-      url: process.env.KORTIX_API_URL ?? DEFAULT_API_BASE,
+      url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
       token: envToken,
       user_id: '',
       user_email: '',
@@ -199,7 +229,10 @@ export function activeHost(): Host | null {
   }
   const config = loadConfig();
   const host = config.hosts[config.active];
-  return host ?? null;
+  if (!host) return null;
+  const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
+  if (envApiUrl) return { ...host, url: envApiUrl };
+  return host;
 }
 
 export function getHost(name: string): Host | null {
@@ -215,6 +248,9 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
 }
 
 export function activeHostEntry(): { name: string; host: Host } {
+  const envHost = activeHost();
+  if (sandboxCliToken() && envHost) return { name: 'sandbox', host: envHost };
+  if (sandboxEnvValue('KORTIX_API_URL') && envHost) return { name: 'env', host: envHost };
   const config = loadConfig();
   const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
   return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
@@ -223,6 +259,83 @@ export function activeHostEntry(): { name: string; host: Host } {
 export function activeHostName(): string | null {
   const config = loadConfig();
   return config.hosts[config.active] ? config.active : null;
+}
+
+// ─── Active account + default project ───────────────────────────────────────
+
+/** The active account for the current invocation (the active host's
+ *  stored account), or null when there's no host / no account yet (e.g.
+ *  inside a sandbox, where the env host carries no account). */
+export function activeAccount(): ActiveAccount | null {
+  const host = activeHost();
+  if (!host || !host.account_id) return null;
+  return {
+    id: host.account_id,
+    slug: host.account_slug || host.account_id.slice(0, 8),
+    name: host.account_name || '',
+  };
+}
+
+/** The active host's global default project, or null when none is set. */
+export function defaultProject(): DefaultProjectRef | null {
+  const host = activeHost();
+  return host?.default_project ?? null;
+}
+
+/** Plain "Name (slug)" label, or just the slug when no name is known (a
+ *  pre-name-capture login). Avoids the ugly "slug (slug)" duplication. */
+export function accountLabel(a: { name?: string; slug: string }): string {
+  return a.name ? `${a.name} (${a.slug})` : a.slug;
+}
+
+/** Switch the active account on a host (default: the active host). A
+ *  default project that no longer lives in the active account is dropped —
+ *  the default must always be reachable under the active account. */
+export function setActiveAccount(
+  account: { id: string; slug?: string; name?: string },
+  hostName?: string,
+): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.account_id = account.id;
+  host.account_slug = account.slug ?? account.id.slice(0, 8);
+  host.account_name = account.name ?? '';
+  if (host.default_project && host.default_project.account_id !== account.id) {
+    delete host.default_project;
+  }
+  saveConfig(config);
+}
+
+/** Set the global default project on a host (default: the active host). */
+export function setDefaultProject(project: DefaultProjectRef, hostName?: string): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.default_project = {
+    project_id: project.project_id,
+    account_id: project.account_id,
+    ...(project.name ? { name: project.name } : {}),
+  };
+  saveConfig(config);
+}
+
+/** Clear the global default project. Returns true if one was removed. */
+export function clearDefaultProject(hostName?: string): boolean {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host?.default_project) return false;
+  delete host.default_project;
+  saveConfig(config);
+  return true;
+}
+
+function resolveTargetHostName(config: Config, hostName?: string): string {
+  if (hostName) return hostName;
+  return config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────
@@ -297,6 +410,11 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       user_email: h.user_email ?? '',
       account_id: h.account_id ?? '',
       logged_in_at: h.logged_in_at ?? new Date().toISOString(),
+      // New optional fields — carried through verbatim when present so an
+      // older config (without them) still loads, and a newer one round-trips.
+      ...(typeof h.account_slug === 'string' ? { account_slug: h.account_slug } : {}),
+      ...(typeof h.account_name === 'string' ? { account_name: h.account_name } : {}),
+      ...(isDefaultProjectRef(h.default_project) ? { default_project: h.default_project } : {}),
     };
   }
   // Tracks which old names were folded into new ones so we can retarget the
@@ -357,6 +475,12 @@ function normalizeConfig(parsed: Partial<Config>): Config {
     active = cleaned[DEFAULT_HOST_NAME] ? DEFAULT_HOST_NAME : Object.keys(cleaned)[0]!;
   }
   return { active, hosts: cleaned };
+}
+
+function isDefaultProjectRef(value: unknown): value is DefaultProjectRef {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.project_id === 'string' && typeof v.account_id === 'string';
 }
 
 function defaultHost(url: string): Host {

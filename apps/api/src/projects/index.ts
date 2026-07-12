@@ -30,7 +30,12 @@ import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
 import './routes/r10';
+import './routes/r11';
+import './routes/model-defaults';
+import './routes/agent-scope';
+import './routes/agent-config';
 import './routes/gateway';
+import './routes/channel-bindings';
 
 // The wired Hono app instances (all routes registered above via side-effect).
 export { projectsApp, projectWebhooksApp } from './lib/app';
@@ -43,7 +48,7 @@ export {
   type GitProxyAuth,
 } from './lib/git';
 
-// Session helpers (consumed by warm-pool / channels).
+// Session helpers (consumed by channels and provisioning).
 export {
   buildSessionSandboxEnvVars,
   createProjectSession,

@@ -20,23 +20,33 @@ other agent, every trigger fire, every collaborator.
 
 The contract is:
 
-1. **Commit on the session branch** (`$KORTIX_BRANCH_NAME`). Small,
-   working commits. Don't rewrite or force-push.
-2. **Push the branch** (`git push origin HEAD`).
-3. **Open the CR** (`kortix cr open --title "…" --description "…"`).
+1. **Sync with the base** (`git fetch origin`; rebase onto
+   `origin/main` if it advanced while you worked — conflicts are
+   yours to resolve before review, not the reviewer's).
+2. **Commit on the session branch** (`$KORTIX_BRANCH_NAME`). Small,
+   working commits. Don't rewrite history that isn't yours.
+3. **Push the branch** (`git push origin HEAD`). Not optional — an
+   unpushed commit produces an empty CR the platform refuses (`422
+   CR_HEAD_NOT_AHEAD`). If the remote session branch moved under you,
+   `git fetch origin` then `git push --force-with-lease origin HEAD`
+   (your session branch only — never force any other branch).
+4. **Open the CR** (`kortix cr open --title "…" --description "…"`).
    From inside the sandbox `--head` and `--session` are auto-detected
    from `$KORTIX_BRANCH_NAME` and `$KORTIX_SESSION_ID`; `--base`
    defaults to the project's default branch.
-4. **Surface the CR number to the user** (`kortix cr ls`) so they can
+5. **Verify it carries your diff** (`kortix cr diff <n>`). No changes
+   shown = your push didn't land; push and re-check the SAME CR — it
+   recomputes live. Never open a duplicate.
+6. **Surface the CR number to the user** (`kortix cr ls`) so they can
    review.
-5. **Stop. The agent does not merge its own CR.** Merging is the
+7. **Stop. The agent does not merge its own CR.** Merging is the
    user's call, from the dashboard or `kortix cr merge <n>`.
 
 This mandate applies to **everything**:
 
 - code edits
 - new files (skills, agents, slash commands, tools, plugins)
-- `kortix.toml` edits (triggers, env, sandbox, apps)
+- `kortix.yaml` edits (triggers, env, sandbox, apps)
 - `AGENTS.md` rule changes
 - new MCP server configs
 - anything else committed to the working tree
@@ -261,6 +271,12 @@ Validation rules on `POST /`:
 - `head_ref` required.
 - `base_ref` defaults to the project's `default_branch`.
 - `head_ref === base_ref` → 400 (must differ).
+- `head_ref` with no commits ahead of `base_ref` → 422
+  `CR_HEAD_NOT_AHEAD` (an empty CR can never be opened). Covers both
+  an unpushed session branch (head tip == base tip) and a stale branch
+  strictly behind an advanced base. The server force-refreshes its git
+  mirror before rejecting, so a push that just landed never bounces —
+  if you hit this error, your push genuinely didn't land.
 - `session_id` is validated against `project_sessions`; unknown
   session IDs are silently dropped (`origin_session_id` becomes
   null).
@@ -274,8 +290,8 @@ Validation rules on `POST /`:
 | **Sessions**  | A CR's `origin_session_id` is back-filled from `$KORTIX_SESSION_ID` so the dashboard shows the session that opened it. Cascade is `ON DELETE SET NULL` — closing the session orphans the link, doesn't delete the CR. |
 | **Skills**    | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
 | **Agents**    | Same: new `.kortix/opencode/agents/<agent>.md` files need to land via CR.                       |
-| **Triggers**  | Edits to `[[triggers]]` in `kortix.toml` only reach the scheduler after the CR merges. The scheduler reads `kortix.toml` on `main`. |
-| **Apps**      | `[[apps]]` redeploys are driven by manifest-hash changes on `main`. A CR that changes app config triggers a redeploy *after* merge, not before. |
+| **Triggers**  | Edits to `triggers:` in `kortix.yaml` only reach the scheduler after the CR merges. The scheduler reads `kortix.yaml` on `main`. |
+| **Apps**      | `apps:` redeploys are driven by manifest-hash changes on `main`. A CR that changes app config triggers a redeploy *after* merge, not before. |
 | **Secrets**   | Decoupled. Secrets live in the Kortix Secrets Manager, not the manifest; CRs don't move secrets. |
 | **Dashboard** | Renders CR list / detail / diff / merge button. Same data as the CLI sees.                       |
 | **Triggers firing inside a session** | A trigger-spawned session can itself open a CR — same flow.                       |

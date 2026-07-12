@@ -6,11 +6,11 @@ import { getStarterFiles, type StarterFile, type StarterTemplateId } from '@kort
 export interface ScaffoldInput {
   /** Absolute path of the destination directory. Must already exist. */
   repoRoot: string;
-  /** Display name written into kortix.toml + README. */
+  /** Display name written into kortix.yaml + README. */
   projectName: string;
   /** Optional "owner/repo" placeholder for README clone URL. */
   repoFullName?: string;
-  /** Starter variant. Defaults to the richer general knowledge worker. */
+  /** Starter variant. Defaults to the minimal Kortix runtime floor. */
   template?: StarterTemplateId;
   /**
    * If true, skip writing any file whose path already exists at the

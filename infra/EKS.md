@@ -1,10 +1,14 @@
-# Kortix API on EKS (prod) — `api-eks.kortix.com`
+# Kortix API on EKS — prod, staging, and dev
 
-A production EKS stack for the Kortix API that runs **in parallel** with the
-existing ECS prod stack. Nothing here touches ECS: dev stays on ECS, prod ECS
-keeps serving `api-prod` / `api.kortix.com`, and EKS comes up under
-`api-eks.kortix.com`. Once EKS is proven in prod, `api.kortix.com` is flipped to
-it via the existing Cloudflare Worker switch — instantly and reversibly.
+EKS is the active API runtime for prod, staging, and dev. Public API hosts route
+through the Cloudflare Worker:
+
+- `api.kortix.com` → `api-eks.kortix.com`
+- `staging-api.kortix.com` → `staging-api-eks.kortix.com`
+- `dev-api.kortix.com` → `dev-api-eks.kortix.com`
+
+ECS Fargate remains available as the Cloudflare Worker warm standby; do not
+delete it as "legacy" while it is still the failover origin.
 
 ## Why EKS, and why it auto-heals better
 
@@ -52,14 +56,15 @@ infra/terraform/
   environments/prod-eks/
     cluster/                 # state 1: AWS-only (VPC, EKS, ACM, IAM/IRSA, access)
     platform/                # state 2: in-cluster controllers + app namespace
-infra/k8s/charts/kortix-api/ # the app workload (deployed by CI / helm)
-.github/workflows/deploy-prod-eks.yml
+infra/k8s/charts/kortix-api/ # the app workload (reconciled by Argo CD)
+.github/workflows/deploy-dev.yml / deploy-staging.yml / deploy-prod.yml
 ```
 
 Two Terraform states on purpose: the kubernetes/helm providers can't be
 configured until the cluster endpoint exists, so the cluster (`cluster`) and the
 in-cluster controllers (`platform`) are separate states. The app itself is a
-Helm chart that CI rolls — Terraform owns infra, CI owns the app, mirroring ECS.
+Helm chart that Argo CD reconciles from `infra/k8s/envs/<env>/values.yaml` —
+Terraform owns infra, GitOps owns the app.
 
 ## Bring-up (one time)
 
@@ -90,11 +95,11 @@ cd ../platform
 terraform init
 terraform apply                                 # ~5 min (Helm releases)
 
-# 3) First app deploy (CI does this automatically on every prod push afterward).
+# 3) First app deploy (Argo CD / CI owns this automatically afterward).
 cd ../cluster
 ROLE_ARN=$(terraform output -raw app_irsa_role_arn)
 CERT_ARN=$(terraform output -raw acm_certificate_arn)
-aws eks update-kubeconfig --name kortix-prod-eks --region us-west-2
+aws eks update-kubeconfig --name kortix-prod-eks --region eu-west-2
 helm upgrade --install kortix-api ../../../k8s/charts/kortix-api \
   --namespace kortix-prod \
   --set image.tag="$(tr -d '[:space:]' < ../../../../VERSION)" \
@@ -107,33 +112,35 @@ helm upgrade --install kortix-api ../../../k8s/charts/kortix-api \
 curl -fsS https://api-eks.kortix.com/v1/health
 ```
 
-After bring-up, every push to `prod` deploys to EKS automatically via
-`deploy-prod-eks.yml` (parallel to the ECS pipeline; it no-ops until the cluster
-exists).
+After bring-up, a push to `main` deploys dev via `deploy-dev.yml`; a PR merged
+into `staging` deploys staging via `deploy-staging.yml`; a reviewed promote PR
+merged to `prod` deploys prod via `deploy-prod.yml`.
 
 ## Switch-back / coexistence
 
-- **EKS** → `api-eks.kortix.com` (this stack).
-- **ECS** → keep it permanently reachable at `api-ecs.kortix.com` by adding that
-  host to ECS prod's `extra_api_hostnames` (the module already supports it):
+- **EKS** → `api-eks.kortix.com` / `staging-api-eks.kortix.com` /
+  `dev-api-eks.kortix.com` (active).
+- **ECS** → keep it permanently reachable at `api-ecs-fargate.kortix.com` /
+  `dev-api-ecs-fargate.kortix.com` as standby (the module supports extra hostnames):
 
   ```hcl
   # infra/terraform/environments/prod/terraform.tfvars
-  extra_api_hostnames = ["api-ecs.kortix.com"]
+  extra_api_hostnames = ["api-ecs-fargate.kortix.com"]
   ```
   then `terraform apply` in `environments/prod` (adds an ACM SAN + proxied CNAME;
   does not disturb anything else).
-- **`api.kortix.com`** keeps flipping via the Cloudflare Worker `ACTIVE_BACKEND`
-  var (see `infra/CICD.md`): add an `eks → api-eks.kortix.com` case next to the
-  existing `ecs-fargate → api-prod.kortix.com`. Flip to `eks` to cut over, back
-  to `ecs-fargate` to roll back — sub-second, no DNS surgery.
+- **`api.kortix.com` / `staging-api.kortix.com` / `dev-api.kortix.com`** flip via the Cloudflare Worker
+  `ACTIVE_BACKEND` var (see `infra/CICD.md` and
+  `infra/cloudflare/workers/api-router`): `eks` is active, `ecs-fargate` is
+  rollback/standby — sub-second, no DNS surgery.
 
-Discontinue ECS only after EKS is proven; until then both serve in parallel.
+Discontinue ECS only after the standby decision is explicit; until then keep both
+origins healthy.
 
 ## Operations
 
 ```bash
-aws eks update-kubeconfig --name kortix-prod-eks --region us-west-2
+aws eks update-kubeconfig --name kortix-prod-eks --region eu-west-2
 
 kubectl -n kortix-prod get pods -o wide          # placement across AZs/nodes
 kubectl -n kortix-prod rollout status deploy/kortix-api
@@ -143,8 +150,8 @@ kubectl -n kortix-prod get externalsecret         # SecretSynced=True when healt
 kubectl -n kortix-prod get ingress                # ADDRESS = the ALB hostname
 
 # Rollback to a previous release:
-helm -n kortix-prod history kortix-api
-helm -n kortix-prod rollback kortix-api <REVISION>
+git revert <prod values/release commit>   # preferred GitOps rollback
+# or, for emergency operator rollback: argocd app rollback kortix-prod <REVISION>
 ```
 
 ## Teardown (if abandoning EKS)

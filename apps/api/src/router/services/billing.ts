@@ -1,4 +1,7 @@
 import { config, getToolCost } from '../../config';
+
+import { creditGateExemptEnv } from './credit-gate-env';
+
 import {
   checkCredits as checkCreditsDb,
   deductCredits as deductCreditsDb,
@@ -17,7 +20,7 @@ export async function checkCredits(
 ): Promise<BillingCheckResult> {
   // When billing is disabled (self-host/dev), all checks pass — no Stripe, no
   // real subscriptions, and gating on a $0 balance just stalls everything.
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
     return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
   }
 
@@ -51,7 +54,7 @@ export async function deductToolCredits(
   // Skip deduction when billing is disabled (self-host/dev) — no Stripe, no
   // real subscriptions, billing on a $0 balance would just stall everything
   // with InsufficientCreditsError.
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
     return { success: true, cost: 0, newBalance: 0 };
   }
 
@@ -96,7 +99,7 @@ export async function deductLLMCredits(
   }
 
   // Skip deduction when billing is disabled (see deductToolCredits for rationale).
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
     return { success: true, cost: 0, newBalance: 0 };
   }
 

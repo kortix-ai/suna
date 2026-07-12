@@ -391,6 +391,94 @@ spec = "https://example.com/openapi.json"
 `);
     expect(errorPaths).toContain('connectors[0].policies[0].action');
   });
+
+  // The platform itself writes an equivalent entry into kortix.yaml when a Slack
+  // channel is connected (executor/channel-manifest.ts); this exercises the same
+  // shape against the legacy v1 (kortix.toml) validator. The gate must accept it,
+  // or it blocks merging a manifest the backend produced.
+  test('a platform-written channel connector is valid', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_slack"
+provider = "channel"
+platform = "slack"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('channel connector requires a known platform', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_slack"
+provider = "channel"
+`);
+    expect(errorPaths).toContain('connectors[0].platform');
+  });
+
+  test('channel connector must not declare [connectors.auth]', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_slack"
+provider = "channel"
+platform = "slack"
+  [connectors.auth]
+  type = "bearer"
+`);
+    expect(errorPaths).toContain('connectors[0].auth');
+  });
+
+  test('a reserved slug rejects the wrong provider', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_slack"
+provider = "http"
+base_url = "https://example.com"
+`);
+    expect(errorPaths).toContain('connectors[0].provider');
+  });
+
+  test('computer cannot be declared by hand', () => {
+    const result = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "computer"
+provider = "computer"
+`);
+    expect(result.errorPaths).toContain('connectors[0].provider');
+    expect(result.issues.some((i) => i.message.includes('managed automatically'))).toBe(true);
+  });
+
+  // The platform now also writes a `meet` channel connector — mirrors
+  // connectors.ts's CHANNEL_PLATFORMS (which already included it) and
+  // RESERVED_SLUG_PROVIDERS (`kortix_meet`). Was previously rejected by the
+  // schema gate even though the runtime accepted it.
+  test('a platform-written "meet" channel connector is valid', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_meet"
+provider = "channel"
+platform = "meet"
+`);
+    expect(errorPaths).toEqual([]);
+    expect(valid).toBe(true);
+  });
+
+  test('reserved slug "kortix_meet" rejects a mismatched provider', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[connectors]]
+slug = "kortix_meet"
+provider = "http"
+base_url = "https://example.com"
+`);
+    expect(errorPaths).toContain('connectors[0].provider');
+  });
 });
 
 describe('validateManifest — [[apps]]', () => {
@@ -403,6 +491,61 @@ slug = "site"
   type = "ftp"
 `);
     expect(errorPaths).toContain('apps[0].source.type');
+  });
+});
+
+// The gate must accept every form the runtime parser accepts, or it falsely
+// blocks a manifest that materializes fine — the same bug class as the missing
+// `channel` provider. These lock the gate to the runtime's input tolerance.
+describe('validateManifest — input tolerance (mirrors runtime parser)', () => {
+  function connectorErrors(body: string): string[] {
+    return validateManifest(`kortix_version = 1\n${body}`)
+      .issues.filter((i) => i.severity === 'error')
+      .map((i) => i.path);
+  }
+
+  test('trigger accepts the prompt_template alias', () => {
+    expect(
+      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt_template = "go"`),
+    ).not.toContain('triggers[0].prompt');
+  });
+
+  test('cron trigger accepts the schedule alias', () => {
+    expect(
+      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\nschedule = "0 9 * * *"\nprompt = "go"`),
+    ).not.toContain('triggers[0].cron');
+  });
+
+  test('trigger enabled accepts coercible values', () => {
+    expect(
+      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = 1`),
+    ).not.toContain('triggers[0].enabled');
+  });
+
+  test('trigger session_mode is case-insensitive', () => {
+    expect(
+      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "Reuse"`),
+    ).not.toContain('triggers[0].session_mode');
+  });
+
+  test('connector provider is case-insensitive', () => {
+    expect(connectorErrors(`[[connectors]]\nslug = "m"\nprovider = "MCP"\nurl = "https://e.com"`)).toEqual([]);
+  });
+
+  test('http connector accepts the baseUrl alias', () => {
+    expect(connectorErrors(`[[connectors]]\nslug = "h"\nprovider = "http"\nbaseUrl = "https://e.com"`)).toEqual([]);
+  });
+
+  test('an empty-string grant is accepted as deny', () => {
+    expect(
+      connectorErrors(`[[agents]]\nname = "a"\nkortix_cli = ""\nconnectors = ""`),
+    ).toEqual([]);
+  });
+
+  test('app enabled accepts coercible values', () => {
+    expect(
+      connectorErrors(`[[apps]]\nslug = "s"\nenabled = "yes"\n  [apps.source]\n  type = "git"`),
+    ).not.toContain('apps[0].enabled');
   });
 });
 

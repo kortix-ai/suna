@@ -6,7 +6,7 @@ name: QA - PR
 
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +30,7 @@ jobs:
       QA_REPORTS_PREFIX: ${{ vars.QA_REPORTS_PREFIX || 'reports' }}
       QA_REPORTS_PUBLIC_BASE_URL: ${{ vars.QA_REPORTS_PUBLIC_BASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -56,7 +56,7 @@ jobs:
           npx allure generate test-results/allure-results -o test-results/allure-report
       - name: AWS auth for report publish
         if: always() && env.QA_REPORTS_ROLE_ARN != '' && env.QA_REPORTS_BUCKET != '' && env.QA_REPORTS_PUBLIC_BASE_URL != ''
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}

@@ -7,21 +7,86 @@ interface SlackApiResult {
   [key: string]: unknown;
 }
 
+// Slack errors (ok:false) that are transient and worth retrying. A permanent
+// error (channel_not_found, not_in_channel, invalid_blocks, …) is returned
+// immediately so the caller can fall back instead of hammering a doomed call.
+const TRANSIENT_SLACK_ERRORS = new Set([
+  'ratelimited',
+  'service_unavailable',
+  'internal_error',
+  'fatal_error',
+  'request_timeout',
+]);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function slackApiCall(
   token: string,
   method: string,
   body: Record<string, unknown>,
+  opts: { retries?: number; idempotent?: boolean } = {},
 ): Promise<SlackApiResult> {
-  const res = await fetch(`${SLACK_API_BASE}/${method}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return (await res.json()) as SlackApiResult;
+  // `idempotent` (default true) controls whether ambiguous failures are retried.
+  // A 429 is ALWAYS safe to retry — Slack guarantees the request wasn't processed
+  // — but a 5xx / timeout / network error on a non-idempotent WRITE
+  // (chat.postMessage, chat.startStream) may have already landed, so retrying it
+  // would duplicate the message. chat.update / reactions.* are idempotent and
+  // retry freely.
+  const idempotent = opts.idempotent !== false;
+  const maxAttempts = Math.max(1, (opts.retries ?? 1) + 1);
+  let last: SlackApiResult = { ok: false, error: 'unknown' };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(`${SLACK_API_BASE}/${method}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.status === 429) {
+        // Rate-limited → not processed → always safe to retry (honor Retry-After).
+        const retryAfter = Number(res.headers.get('retry-after')) || attempt;
+        last = { ok: false, error: 'ratelimited' };
+        if (attempt < maxAttempts) {
+          await sleep(Math.min(retryAfter, 5) * 1000);
+          continue;
+        }
+        return last;
+      }
+      if (res.status >= 500) {
+        last = { ok: false, error: `http_${res.status}` };
+        // May have been processed server-side — only retry idempotent calls.
+        if (idempotent && attempt < maxAttempts) {
+          await sleep(attempt * 400);
+          continue;
+        }
+        return last;
+      }
+      const data = (await res.json()) as SlackApiResult;
+      if (!data.ok && attempt < maxAttempts) {
+        const err = data.error ?? '';
+        // 'ratelimited' is always safe; other transient errors only for idempotent.
+        if (err === 'ratelimited' || (idempotent && TRANSIENT_SLACK_ERRORS.has(err))) {
+          await sleep(attempt * 400);
+          continue;
+        }
+      }
+      return data;
+    } catch (err) {
+      // A timeout may mean the write succeeded slowly; a network error may not
+      // have been sent. Either way, only retry idempotent calls.
+      last = { ok: false, error: (err as Error)?.name === 'TimeoutError' ? 'timeout' : 'network_error' };
+      if (idempotent && attempt < maxAttempts) {
+        await sleep(attempt * 400);
+        continue;
+      }
+      return last;
+    }
+  }
+  return last;
 }
 
 // Posts a plain message. Returns the message ts (needed to delete it later).
@@ -32,11 +97,12 @@ export async function postMessage(
   threadTs?: string,
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(token, 'chat.postMessage', {
-      channel,
-      text,
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-    });
+    const r = await slackApiCall(
+      token,
+      'chat.postMessage',
+      { channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) },
+      { idempotent: false }, // a write — don't retry an ambiguous 5xx/timeout into a duplicate
+    );
     if (!r.ok) {
       console.warn('[slack-api] chat.postMessage failed', { error: r.error });
       return null;
@@ -44,6 +110,24 @@ export async function postMessage(
     return typeof r.ts === 'string' ? r.ts : null;
   } catch (err) {
     console.warn('[slack-api] chat.postMessage error', err);
+    return null;
+  }
+}
+
+// Opens (or returns) the bot's DM channel with a user so we can message them
+// directly — a real DM notifies and persists, unlike an ephemeral. Returns the
+// IM channel id, or null on failure.
+export async function openDmChannel(token: string, userId: string): Promise<string | null> {
+  try {
+    const r = await slackApiCall(token, 'conversations.open', { users: userId });
+    if (!r.ok) {
+      console.warn('[slack-api] conversations.open failed', { error: r.error });
+      return null;
+    }
+    const ch = r.channel as { id?: string } | undefined;
+    return ch?.id ?? null;
+  } catch (err) {
+    console.warn('[slack-api] conversations.open error', err);
     return null;
   }
 }
@@ -57,12 +141,12 @@ export async function postBlocks(
   threadTs?: string,
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(token, 'chat.postMessage', {
-      channel,
-      text,
-      blocks,
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-    });
+    const r = await slackApiCall(
+      token,
+      'chat.postMessage',
+      { channel, text, blocks, ...(threadTs ? { thread_ts: threadTs } : {}) },
+      { idempotent: false }, // a write — don't retry an ambiguous 5xx/timeout into a duplicate
+    );
     if (!r.ok) {
       console.warn('[slack-api] postBlocks failed', { error: r.error });
       return null;
@@ -71,6 +155,43 @@ export async function postBlocks(
   } catch (err) {
     console.warn('[slack-api] postBlocks error', err);
     return null;
+  }
+}
+
+// Post a message visible ONLY to `user`, in-channel (and in-thread when
+// `threadTs` is set). Used for the identity/access nudges so they appear right
+// where the user @-mentioned Kortix instead of in a separate DM. Returns whether
+// it landed. Note: an ephemeral cannot be edited by ts later — to update it after
+// a button click, respond via the interaction's response_url.
+export async function postEphemeral(
+  token: string,
+  channel: string,
+  user: string,
+  text: string,
+  blocks?: unknown[],
+  threadTs?: string,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(
+      token,
+      'chat.postEphemeral',
+      {
+        channel,
+        user,
+        text,
+        ...(blocks ? { blocks } : {}),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      },
+      { idempotent: false },
+    );
+    if (!r.ok) {
+      console.warn('[slack-api] chat.postEphemeral failed', { error: r.error });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] chat.postEphemeral error', err);
+    return false;
   }
 }
 
@@ -88,18 +209,23 @@ export async function updateMessage(
   }
 }
 
+// Returns whether the update landed, so the finalizer can fall back to a plain
+// post when a block render is rejected (e.g. invalid_blocks) instead of silently
+// losing the answer.
 export async function updateBlocks(
   token: string,
   channel: string,
   ts: string,
   text: string,
   blocks: unknown[],
-): Promise<void> {
+): Promise<boolean> {
   try {
     const r = await slackApiCall(token, 'chat.update', { channel, ts, text, blocks });
     if (!r.ok) console.warn('[slack-api] chat.update (blocks) failed', { error: r.error });
+    return r.ok;
   } catch (err) {
     console.warn('[slack-api] chat.update (blocks) error', err);
+    return false;
   }
 }
 
@@ -142,7 +268,9 @@ export async function addReaction(
   name: string,
 ): Promise<void> {
   try {
-    const r = await slackApiCall(token, 'reactions.add', { channel, timestamp, name });
+    // Cosmetic (the ⏳/✅ marker) — don't retry; a dropped reaction is harmless and
+    // retrying only stacks latency onto the awaited finalize path.
+    const r = await slackApiCall(token, 'reactions.add', { channel, timestamp, name }, { retries: 0 });
     if (!r.ok && r.error !== 'already_reacted') {
       console.warn('[slack-api] reactions.add failed', { error: r.error });
     }
@@ -158,7 +286,9 @@ export async function removeReaction(
   name: string,
 ): Promise<void> {
   try {
-    const r = await slackApiCall(token, 'reactions.remove', { channel, timestamp, name });
+    // Cosmetic (clears the ⏳) — don't retry; keeps the finalize path from
+    // stacking retry latency, and a missed clear is low-harm.
+    const r = await slackApiCall(token, 'reactions.remove', { channel, timestamp, name }, { retries: 0 });
     if (!r.ok && r.error !== 'no_reaction') {
       console.warn('[slack-api] reactions.remove failed', { error: r.error });
     }
@@ -229,14 +359,19 @@ export async function startStream(
   chunks: StreamChunk[],
 ): Promise<string | null> {
   try {
-    const r = await slackApiCall(token, 'chat.startStream', {
-      channel,
-      thread_ts: threadTs,
-      recipient_user_id: recipientUserId,
-      recipient_team_id: recipientTeamId,
-      task_display_mode: 'plan',
-      chunks,
-    });
+    const r = await slackApiCall(
+      token,
+      'chat.startStream',
+      {
+        channel,
+        thread_ts: threadTs,
+        recipient_user_id: recipientUserId,
+        recipient_team_id: recipientTeamId,
+        task_display_mode: 'plan',
+        chunks,
+      },
+      { idempotent: false }, // creates a message — a retry would orphan the first
+    );
     if (!r.ok) {
       console.warn('[slack-api] chat.startStream failed', { error: r.error });
       return null;

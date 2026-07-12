@@ -6,46 +6,28 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-d70251ba"
+  tag: "dev-f70b7be2"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
-# Pool-only mode: disable the experimental Daytona memory-snapshot path on dev.
-# It depends on the flaky experimental region and doesn't beat the warm pool
-# (which runs on the reliable region). Rendered as explicit container env, so it
-# OVERRIDES whatever the synced kortix-dev-env secret bundle carries (k8s env
-# wins over envFrom). Flip back to "true" only once Daytona stabilizes the
-# experimental region.
 extraEnv:
+  # Slack identity gate ON in dev so @mentions require the caller to connect
+  # their Kortix account and pass project access checks. Rendered as explicit k8s
+  # env so it OVERRIDES the synced kortix-dev-env secret bundle.
+  SLACK_REQUIRE_USER_IDENTITY: "true"
   # Point sandboxes at the standalone LLM gateway. Must be the PUBLIC host —
   # sandboxes are remote Daytona VMs that can't resolve cluster DNS. Without it
   # the API falls back to its in-API /v1/llm passthrough (OpenRouter-only, wrong
   # catalog shape) and the model picker collapses to a single model.
   LLM_GATEWAY_BASE_URL: "https://gateway-dev.kortix.com/v1/llm"
-  KORTIX_WARM_SNAPSHOT_ENABLED: "false"
-  # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
-  # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's
-  # a pure accelerator: any claim miss/error falls through to the unchanged cold
-  # provision (session-runtime-allocator.ts:83-88), so it can only speed starts
-  # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
-  # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
-  # (~0.5s, no network) instead of re-cloning (~9s).
-  #
-  # Per-project, active-only model: SIZE spares per project the user CURRENTLY has
-  # OPEN (FE presence heartbeat → DB presence → reconcile keeps/refills only
-  # present projects and reaps a project's spares the moment its tab closes). So
-  # MAX_TOTAL is now just a runaway COST CEILING, not the limiter — the real count
-  # is (projects open right now) × SIZE. Also master-enable: warmPoolEnabled() =
-  # MAX_TOTAL>0. Pre-warm is skipped for non-billing accounts (refillProjectPool
-  # gate). Must live here (k8s env), NOT in .env.dev (unit-warm-pool.test asserts
-  # off there). For prod, raise MAX_TOTAL to your cost budget (it caps concurrent
-  # open projects × SIZE, not total projects).
-  KORTIX_WARM_POOL_MAX_TOTAL: "20"
-  KORTIX_WARM_POOL_SIZE: "2"
-  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
-  # Vestigial under the presence model (the DB-presence staleness window in
-  # warm-pool.ts governs reaping now); kept for back-compat.
-  KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
+  # NOTE: warm-template (warm_snapshot) is NOT an env — it's the admin Providers
+  # panel toggle (DB row), default OFF / opt-in. Don't reintroduce an env knob.
+  # Idle auto-stop for sandboxes (Daytona AND Platinum honor this now — Platinum
+  # used to hardcode persistent and depend on the maintenance reaper, which died
+  # and let boxes run 24/7 and flood the host). 15min keeps idle cost down; a
+  # stopped Platinum box CoW-resumes on reopen (~2.3s, CH resume-freeze is fixed).
+  # Per-deployment setting, not a code default.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: "15"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev
@@ -96,6 +78,8 @@ ingress:
   host: dev-api-eks.kortix.com
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
   cloudflareProxied: true
+  # Lock the origin ALB to Cloudflare's edge ranges (no direct-to-origin bypass).
+  inboundCidrs: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"
 # Plain rolling Deployment (no canary) — same delivery model as prod-eks:
 # probe-based auto-healing, HPA autoscaling, zero-downtime rolling deploys.
 rollout:

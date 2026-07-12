@@ -32,6 +32,9 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { RolesTab } from '@/components/iam/roles-tab';
+import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
+import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
 import { ScimCard } from '@/components/iam/scim-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
@@ -56,7 +59,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -97,7 +100,7 @@ import {
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
-} from '@/lib/projects-client';
+} from '@kortix/sdk/projects-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -113,6 +116,7 @@ const ACCOUNT_PERMISSION_PROBES = [
   { action: 'member.update' },
   { action: 'group.create' },
   { action: 'audit.read' },
+  { action: 'role.create' },
 ];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
@@ -200,6 +204,16 @@ export default function AccountSettingsPage() {
   const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
   const entitlements = accountStateQuery.data?.tier?.entitlements;
   const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
+  // The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated.
+  // Tabs/sections stay VISIBLE for discoverability, but a non-entitled
+  // account sees the EnterpriseUpsell card in place of the feature — mirrors
+  // the server's 402 (requireEntitlement) so an admin never touches a control
+  // the backend will reject. While the account state is still loading we
+  // render nothing gated (skeleton) to avoid flashing the upsell at
+  // enterprise accounts.
+  const rbacEnabled = !!entitlements?.rbac;
+  const auditEnabled = !!entitlements?.auditAccess;
+  const entitlementsLoading = !entitlements && accountStateQuery.isLoading;
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -219,6 +233,7 @@ export default function AccountSettingsPage() {
     { allowed: canUpdateMember },
     { allowed: canCreateGroup },
     { allowed: canReadAudit },
+    { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
@@ -230,6 +245,7 @@ export default function AccountSettingsPage() {
   const VALID_TABS = [
     'members',
     'groups',
+    'roles',
     'billing',
     'transactions',
     'git',
@@ -242,7 +258,10 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
     | (typeof VALID_TABS)[number]
     | null;
-  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  const requestedTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  // The 'roles' tab trigger + panel are gated on canManageRoles; a non-manager
+  // deep-linking ?tab=roles would otherwise land on an empty panel.
+  const initialTab = requestedTab === 'roles' && !canManageRoles ? 'members' : requestedTab;
 
   return (
     <main className="w-full flex-1 px-4 py-8">
@@ -293,6 +312,7 @@ export default function AccountSettingsPage() {
                 {tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}
               </TabsTrigger>
               <TabsTrigger value="groups">Groups</TabsTrigger>
+              {canManageRoles && <TabsTrigger value="roles">Roles</TabsTrigger>}
               {/* Billing holds plan + limits + wallet + spend; Credits ledger
                     holds the per-transaction history. Both are gated on
                     account.write so non-admins don't see money surfaces. */}
@@ -357,12 +377,44 @@ export default function AccountSettingsPage() {
             </TabsContent>
 
             <TabsContent value="groups" className="space-y-6">
-              <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              {entitlementsLoading ? (
+                <Skeleton className="h-64 w-full rounded-2xl" />
+              ) : rbacEnabled ? (
+                <GroupsTab
+                  accountId={account.account_id}
+                  canCreate={canCreateGroup}
+                  rbacEnabled={rbacEnabled}
+                />
+              ) : (
+                <EnterpriseUpsell feature="groups" />
+              )}
             </TabsContent>
+
+            {canManageRoles && (
+              <TabsContent value="roles" className="space-y-6">
+                {entitlementsLoading ? (
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                ) : rbacEnabled ? (
+                  <RolesTab
+                    accountId={account.account_id}
+                    canManage={canManageRoles}
+                    rbacEnabled={rbacEnabled}
+                  />
+                ) : (
+                  <EnterpriseUpsell feature="roles" />
+                )}
+              </TabsContent>
+            )}
 
             {canReadAudit && (
               <TabsContent value="audit" className="space-y-6">
-                <AuditTab accountId={account.account_id} />
+                {entitlementsLoading ? (
+                  <Skeleton className="h-64 w-full rounded-2xl" />
+                ) : auditEnabled ? (
+                  <AuditTab accountId={account.account_id} />
+                ) : (
+                  <EnterpriseUpsell feature="audit" />
+                )}
               </TabsContent>
             )}
 
@@ -422,24 +474,37 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                {/* SAML SSO + SCIM are Enterprise-plan features. The cards
-                    render only when the account's tier carries the
-                    entitlement (sales-assigned `enterprise` tier); the
-                    SCIM/SSO API routes enforce the same gate server-side
-                    (402 for non-entitled accounts). */}
-                {enterpriseIdentityEnabled && (
-                  <SettingsGroup
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
-                    )}
-                  >
-                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                  </SettingsGroup>
-                )}
+                {/* The enterprise-demo toggle is ALWAYS shown to account admins
+                    so they can unlock the surface self-serve. SAML SSO + SCIM
+                    are Enterprise features and only render once the entitlement
+                    is on (the demo flag OR a real enterprise tier); their API
+                    routes enforce the same gate server-side (402 for non-entitled
+                    accounts). Keeping the toggle OUTSIDE the entitlement gate
+                    avoids a chicken-and-egg where the enabler is hidden behind
+                    the very thing it enables. */}
+                <SettingsGroup
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrTitleIdentityDirectory6089983a',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppAccountsIdPageJsxAttrDescriptionBringMembersa0baf40c',
+                  )}
+                >
+                  <EnterpriseDemoCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
+                  />
+                  {entitlementsLoading ? (
+                    <Skeleton className="h-40 w-full rounded-2xl" />
+                  ) : enterpriseIdentityEnabled ? (
+                    <>
+                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                    </>
+                  ) : (
+                    <EnterpriseUpsell feature="identity" />
+                  )}
+                </SettingsGroup>
 
                 {/* ── Tokens & automation ──────────────────────── */}
                 <SettingsGroup
@@ -740,10 +805,10 @@ function SettingsGroup({
   return (
     <section className="space-y-3">
       <div className="space-y-0.5 px-1">
-        <h3 className="text-muted-foreground/70 text-[10px] font-semibold tracking-[0.08em] uppercase">
+        <h3 className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
           {title}
         </h3>
-        {description && <p className="text-muted-foreground/80 text-[11px]">{description}</p>}
+        {description && <p className="text-muted-foreground/80 text-xs">{description}</p>}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -1083,7 +1148,12 @@ function MembersCard({
   return (
     <SectionCard
       title="Members"
-      count={account.member_count}
+      // Count what THIS caller can actually see, not the raw total. The roster
+      // is visibility-filtered server-side for plain members (owners/admins +
+      // self), while account.member_count is the unfiltered COUNT(*) — using it
+      // would leak the roster size and mismatch the list below. Owners/admins
+      // see everyone, so for them members.length === member_count anyway.
+      count={members.length}
       description={tHardcodedUi.raw(
         'appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount',
       )}
@@ -1195,7 +1265,6 @@ function MembersCard({
             <Button
               size="sm"
               variant="outline"
-              className="border-destructive/40 text-destructive hover:bg-destructive/5"
               onClick={() => setBulkDialog('remove')}
               disabled={bulkBusy}
             >
@@ -1275,7 +1344,8 @@ function MembersCard({
                   <InlineMeta>
                     <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
-                    typeof member.explicit_project_count === 'number' ? (
+                    typeof member.explicit_project_count === 'number' &&
+                    member.explicit_project_count > 0 ? (
                       <span>
                         {member.explicit_project_count} project
                         {member.explicit_project_count === 1 ? '' : 's'}
@@ -1288,8 +1358,8 @@ function MembersCard({
                     <div className="hidden items-center gap-1.5 sm:flex">
                       {member.is_super_admin && (
                         <Badge
-                          variant="outline"
-                          className="h-5 rounded-2xl border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                          variant="warning"
+                          size="sm"
                           title={tHardcodedUi.raw(
                             'appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck',
                           )}
@@ -1300,7 +1370,7 @@ function MembersCard({
                       {member.groups && member.groups.length > 0 && (
                         <Badge
                           variant="outline"
-                          className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                          size="sm"
                           title={member.groups.map((g) => g.name).join(', ')}
                         >
                           {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
@@ -1310,7 +1380,7 @@ function MembersCard({
                         member.active_pat_count > 0 && (
                           <Badge
                             variant="outline"
-                            className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                            size="sm"
                             title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
                           >
                             {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
@@ -1318,8 +1388,8 @@ function MembersCard({
                         )}
                       {member.has_verified_mfa && (
                         <Badge
-                          variant="outline"
-                          className="h-5 rounded-2xl border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                          variant="success"
+                          size="sm"
                           title={tHardcodedUi.raw(
                             'appAccountsIdPage.line952JsxAttrTitleMFAEnrolled',
                           )}
@@ -1991,7 +2061,14 @@ function PendingInvitesSection({
           return (
             <ListRow
               key={invite.invite_id}
-              leading={<UserAvatar email={invite.email} size="md" />}
+              leading={
+                <div className="flex items-center gap-2.5">
+                  {/* Spacer matching the members list's checkbox column so
+                      invite avatars align with member avatars below. */}
+                  <span className="w-3.5" aria-hidden />
+                  <UserAvatar email={invite.email} size="md" />
+                </div>
+              }
               title={invite.email}
               badges={
                 <Badge variant="secondary" size="sm">

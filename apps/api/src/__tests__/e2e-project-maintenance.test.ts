@@ -78,6 +78,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
@@ -154,7 +155,7 @@ describe('project maintenance', () => {
         projectId: '00000000-0000-4000-a000-000000000201',
         repoUrl: 'https://github.com/kortix-ai/project.git',
         defaultBranch: 'main',
-        manifestPath: 'kortix.toml',
+        manifestPath: 'kortix.yaml',
       },
       {
         sessionId: 'session-pr',
@@ -164,7 +165,7 @@ describe('project maintenance', () => {
         projectId: '00000000-0000-4000-a000-000000000201',
         repoUrl: 'https://github.com/kortix-ai/project.git',
         defaultBranch: 'main',
-        manifestPath: 'kortix.toml',
+        manifestPath: 'kortix.yaml',
       },
     ];
 

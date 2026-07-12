@@ -1,32 +1,32 @@
 ---
 name: kortix-system
-description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.toml` and OpenCode config under `.kortix/opencode/`); the full `kortix.toml` manifest (keys, trigger fields, secrets contract, `[[apps]]` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.toml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
+description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.kortix/opencode/`); the full `kortix.yaml` manifest (keys, trigger fields, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.yaml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
 ---
 
 <skill name="kortix-system">
 
 <overview>
-A **Kortix project** is one GitHub repo with a `kortix.toml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
+A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
 The repo has two configuration surfaces with strict ownership:
 
-- **Kortix config** — `kortix.toml` at the repo root, plus the `.kortix/` folder beside it (Dockerfile, opencode dir). The platform reads this.
-- **OpenCode config** — `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this; the platform never touches it.
+- **Kortix config** — `kortix.yaml` at the repo root, plus the `.kortix/` folder beside it (Dockerfile, opencode dir). The platform reads this for project config, sandbox/triggers/apps, and Kortix-side agent governance.
+- **OpenCode config** — `.kortix/opencode/` (`opencode.jsonc`, agents, skills, commands, tools, plugins). OpenCode reads this as its native runtime implementation. `opencode.jsonc` remains the OpenCode-native registry for plugins, MCP servers, providers, models, permissions, and default runtime behavior.
 
-Kortix-specific things — triggers, env spec, sandbox image, deployable apps, project metadata — go in `kortix.toml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.kortix/opencode/`. Each side owns its half.
+Kortix-specific things — triggers, env spec, sandbox image, deployable apps, project metadata, and which agents the platform may launch/authorize — go in `kortix.yaml`. OpenCode-specific things — agent personas, on-demand skills, slash commands, custom tools, plugins, MCP servers, providers — stay under `.kortix/opencode/`. Each side owns its half.
 
-The default agent runtime inside every session is **OpenCode**. The same `.kortix/opencode/` config dir drives both the remote sandbox and a local `opencode` run on the user's machine — one source of truth, both surfaces.
+The default agent runtime inside every session is **OpenCode**. For legacy v1 projects (which used `kortix.toml`), OpenCode-native discovery remains backward-compatible. For projects on `agents:` (v2, `kortix.yaml`) — or the legacy `[[agents]]` (v1 TOML) — Kortix treats the manifest as the server-side source for the launchable agent list and grants, while still launching OpenCode against its native config dir. The same `.kortix/opencode/` config dir can still drive a local `opencode` run on the user's machine.
 </overview>
 
 <when-to-load>
 Load this skill when the user asks any of:
 
-- "What does `kortix.toml` do?" / "What is `kortix_version`?"
+- "What does `kortix.yaml` do?" / "What is `kortix_version`?"
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
-- "What's the difference between `kortix.toml` and `opencode.jsonc`?"
+- "What's the difference between `kortix.yaml` and `opencode.jsonc`?"
 - "How do I customize the sandbox image?"
-- "How do I deploy a frontend from this project?" (`[[apps]]`)
+- "How do I deploy a frontend from this project?" (`apps:`)
 - "How do I create a new OpenCode agent / skill / slash command / custom tool / plugin?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -47,7 +47,8 @@ is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
 this exact project — a project-scoped token is already injected as
 `$KORTIX_CLI_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
 You can run `kortix …` from any shell with zero setup. (Don't reach for
-`$KORTIX_TOKEN`: that's the sandbox *service key* for the runtime/LLM/git
+`$KORTIX_SANDBOX_TOKEN` (the deprecated `$KORTIX_TOKEN` alias still works too):
+that's the sandbox *service key* for the runtime/LLM/git
 layer, and the project APIs reject it — just use the CLI, which already
 holds the right token.)
 
@@ -68,7 +69,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+| "deploy the marketing app" | `kortix apps deploy marketing-site` (when `apps:` is enabled) |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,
@@ -99,10 +100,50 @@ modal (web) or a tappable link (Slack); you never touch the raw value. Do this
 automatically whenever you add or need a tool. Full playbook in the
 **credentials-and-setup-links** reference below.
 
+**Exception — connecting Slack itself.** Slack is a built-in channel, not a
+connector or a secret. `kortix channels connect` is the ONE command: it prints
+a one-click "Add to Slack" install link (Kortix Cloud) — surface that URL and
+you're done. No manifest, no bot token, no secret-intake link. Details in the
+`kortix-slack` skill.
+
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
 </cli>
+
+<marketplace>
+The **Kortix Marketplace** is the project skill library and the normal way to
+discover, install, inspect, and update optional capabilities. Search it before
+creating a new skill from scratch.
+
+Use the consumer CLI surface:
+
+```sh
+kortix marketplace search <query> --json
+kortix marketplace show <name> --json
+kortix marketplace install <name> --project <project-id>
+kortix marketplace status --project <project-id> --json
+kortix marketplace updates --project <project-id> --json
+kortix marketplace update <name> --project <project-id>
+kortix marketplace update --all --project <project-id>
+```
+
+The web equivalent is the project's Marketplace/Customize surface. Normal
+agents should not use `kortix registry build/validate/publish`; those are
+developer-authoring tools for producing registries, not for consuming skills in
+a project.
+
+Marketplace installs are git-native: installing or updating writes files into
+`.kortix/opencode/skills/...`, updates `registry-lock.json`, and commits the
+change to the project repo. Installed state and update detection come from the
+lock file's target paths and content hashes, not from a hidden database flag.
+`update --all` uses one server-side batch update so all outdated skills land in
+one commit.
+
+**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/marketplace.md`
+— load it whenever you need to pick skills, explain installed/update status,
+debug marketplace behavior, or decide whether to create a new skill.
+</marketplace>
 
 <change-requests>
 **This is the single most important rule for any agent running in a
@@ -121,26 +162,51 @@ or closes it).
 
 When you, as an agent, have changes you believe should persist:
 
-1. **Commit on the session branch.** Small, working commits. No
-   force-pushes, no rewriting upstream history.
-2. **Push the branch.**
+1. **Sync with the base first.** `main` may have advanced while you
+   worked (other sessions merge CRs, the dashboard commits config):
+   ```sh
+   git fetch origin && git log HEAD..origin/main --oneline
+   ```
+   If the base moved, rebase onto it (`git rebase origin/main`) and
+   resolve any conflicts NOW — a CR whose head is behind or in conflict
+   with base can't be applied, and the conflict is yours to fix, not
+   the reviewer's.
+2. **Commit on the session branch.** Small, working commits. Never
+   rewrite history that isn't yours.
+3. **Push the branch.** This step is NOT optional — a commit that
+   never leaves the sandbox produces an empty, un-appliable CR:
    ```sh
    git push origin HEAD
    ```
-3. **Open a CR.** From inside the sandbox the CLI reads
-   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_TOKEN`
-   automatically:
+   If the push is rejected because the remote session branch moved
+   (the platform can advance it to the latest base), run
+   `git fetch origin` then `git push --force-with-lease origin HEAD`.
+   Force-pushing is acceptable ONLY for your own session branch —
+   never for `main` or anyone else's branch.
+4. **Open a CR.** From inside the sandbox the CLI reads
+   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
+   (deprecated alias: `$KORTIX_TOKEN`) automatically:
    ```sh
    kortix cr open \
      --title  "Short, imperative summary" \
      --description "What changed and why. Test plan. Risks."
    ```
-4. **Surface the CR to the user.** Print the CR number so they can
+   The API refuses an empty CR (`422 CR_HEAD_NOT_AHEAD`) — that error
+   always means your push didn't land (or your branch has nothing new
+   over base). Fix the push and retry; don't work around it.
+5. **Verify the CR carries your diff.**
+   ```sh
+   kortix cr diff <n>
+   ```
+   If it shows no changes, your push didn't land — push and re-check
+   the SAME CR (the diff recomputes live from the refs). Never open a
+   duplicate CR for the same work.
+6. **Surface the CR to the user.** Print the CR number so they can
    review:
    ```sh
    kortix cr ls
    ```
-5. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
+7. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
    <n>`), or asks for changes. *You do not merge your own CRs.*
 
 ### Don't bypass this
@@ -157,10 +223,10 @@ When you, as an agent, have changes you believe should persist:
 
 | Surface       | How it interacts with the CR                                                              |
 | ------------- | ----------------------------------------------------------------------------------------- |
-| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_TOKEN`. Branch tip is the session HEAD. |
+| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_SANDBOX_TOKEN` (deprecated alias: `$KORTIX_TOKEN`). Branch tip is the session HEAD. |
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
-| `kortix.toml` | Edits to triggers / env / apps land via CR like any other file.                           |
+| `kortix.yaml` | Edits to triggers / env / apps land via CR like any other file.                           |
 | Skills        | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges. |
 | Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
 
@@ -172,58 +238,119 @@ The boundary between the two halves of the project:
 
 | Surface           | Owner    | File                                                       | Read by                          |
 | ----------------- | -------- | ---------------------------------------------------------- | -------------------------------- |
-| Kortix config     | Kortix   | `kortix.toml` + `.kortix/Dockerfile`                       | The Kortix platform              |
-| OpenCode config   | OpenCode | `.kortix/opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox)       |
+| Kortix config     | Kortix   | `kortix.yaml` + `.kortix/Dockerfile`                       | The Kortix platform              |
+| OpenCode config   | OpenCode | `.kortix/opencode/opencode.jsonc` + everything beside it   | OpenCode (local + sandbox); Kortix may inspect metadata for server-side agent/model UI surfaces |
 
-The location of OpenCode's config dir is declared in `kortix.toml` under `[opencode] config_dir` — the default is `.kortix/opencode`. Relocate only if you want to share one OpenCode config across multiple Kortix repos.
+The location of OpenCode's config dir is declared in `kortix.yaml` under `opencode: config_dir` — the default is `.kortix/opencode`. Relocate only if you want to share one OpenCode config across multiple Kortix repos.
 
-The platform never reads opencode's config dir; OpenCode never reads `kortix.toml`. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
+Do not duplicate OpenCode-native config in `kortix.yaml`. `opencode.jsonc` owns plugins, MCP, providers, model/provider config, and OpenCode runtime defaults. `kortix.yaml` owns the project/platform manifest and the server-side registry of launchable agents and their Kortix grants. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.yaml` — they round-trip cleanly with edits made inside a session.
 </contract>
 
+<canonical-schema>
+## The canonical manifest schema — one URL, always correct
+
+This project's `kortix.yaml` is `kortix_version: 2` — check its own top
+`# yaml-language-server: $schema=...` line. That URL is the public, versioned
+JSON Schema, generated straight from `@kortix/manifest-schema` (the same
+package that backs `kortix validate` and the CR-merge gate — one source of
+truth, no separate spec to keep in sync by hand):
+
+| URL | Covers |
+| --- | --- |
+| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` only (this project) |
+| `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
+| `https://kortix.com/schema/kortix.schema.json` | Both — dispatches on `kortix_version` |
+
+`kortix schema` (from any session — the CLI is always pre-authenticated, see
+`<cli>` above) prints the same document locally: `kortix schema --version 2`,
+or `kortix schema --url` for just the URL. If you are AUTHORING or EDITING
+`kortix.yaml` and unsure whether a field/shape is legal, this schema — not
+this skill's prose, which can drift — is the authoritative structural spec;
+`kortix validate` is the authoritative behavioral one (it also catches
+cross-field rules the static schema can't express, e.g. `default_agent` must
+name a declared agent).
+
+**v2 in one paragraph** (see `<agent-authorization>` below for the fuller
+write-up, and `docs/specs/2026-07-05-agent-first-config-unification.md` for
+the design rationale): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
+and every block is **governance only** —
+`enabled`/`connectors`/`secrets`/`skills`/`kortix_cli`/`workspace`. `env` was
+renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
+`prompt` on the manifest side at all in v2 — every one of those is OpenCode
+behavior and lives in that agent's own `.kortix/opencode/agents/<name>.md`
+frontmatter, joined by name (this project's `kortix` and `memory-reflector`
+agents both work this way — open their `.md` files to see what they
+actually do). `default_agent` is required and must resolve to a declared,
+enabled agent. `[[channels]]` is removed outright (channel↔agent routing is
+dashboard-managed, not git). v2 is YAML-only and deny-by-default on every
+grant set (an omitted `connectors`/`secrets`/`skills`/`kortix_cli` resolves
+to `none`, not `all`).
+</canonical-schema>
+
 <agent-authorization>
-## Per-agent authorization — `[[agents]]`
+## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
 
 An agent **is** its OpenCode `.md` (front matter + system prompt). Everything about
-*how an agent behaves* stays OpenCode-native in that file. `kortix.toml`'s optional
-`[[agents]]` block is a thin **scoping overlay**, keyed by the agent's name, that adds
-only the two things OpenCode's agent config cannot express:
+*how an agent behaves* stays OpenCode-native in that file. The manifest's optional
+`agents:` map (v2 — `kortix.yaml`, this project's format) is the Kortix-side
+declaration for **launchability and authority**, keyed by the agent's name — and in
+v2 it is **governance only**: no `model`/`mode`/`description`/`permission`/`prompt`
+on the manifest side at all (this project's `kortix` and `memory-reflector` agents
+both work this way — open their `.md` files to see what they actually do).
 
-```toml
-[[agents]]
-name       = "release-bot"            # = the agent's .md name (e.g. .kortix/opencode/agents/release-bot.md)
-connectors = ["github"]               # which connector profiles it may call   (default: none)
-kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Kortix CLI/API (default: none)
+```yaml
+agents:
+  release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
+    connectors: [github]                # which connector profiles it may call   (default: none)
+    kortix_cli: [project.deploy, project.cr.open]   # what it may do via the Kortix CLI/API (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
 
 | Setting | Lives in |
 | --- | --- |
-| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** (OpenCode-native) |
-| **`connectors`** (integration access) + **`kortix_cli`** (Kortix CLI/API powers) | **`kortix.toml` `[[agents]]`** |
+| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** / `opencode.jsonc` (OpenCode-native) |
+| plugins, MCP servers, providers, runtime model catalog/defaults | **`opencode.jsonc`** (OpenCode-native) |
+| **`connectors`** (integration access) + **`secrets`** (env-var access) + **`kortix_cli`** (Kortix CLI/API powers) + **`skills`** | the manifest's **`agents:`** map (v2) / **`[[agents]]`** array (v1) |
 
-**How the grant resolves at session start (backward-compatible):**
-- Manifest has **no `[[agents]]`** at all → no restriction (full access). Existing projects are unchanged.
-- Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
-- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** (it still runs its `.md`, but with no connectors and no Kortix-CLI powers).
-- **Your default agent:** with no `[[agents]]` it has **full access** (merge / deploy / spawn sub-agents, ∩ the user). The moment you adopt `[[agents]]`, **declare it too** — `[[agents]] name = "kortix"`, `kortix_cli = "all"`, `connectors = "all"` — or it falls under the unlisted-deny rule above. So: keep the default agent `"all"` and scope the *specialists* down.
-- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
+**How the grant resolves at session start:**
+- v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`kortix_cli` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_cli: all`, `skills: all` explicitly if it should keep full access.
+- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_cli` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
+- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing the manifest only takes effect once the **CR is merged** (read from the default branch).
+
+**Discovery contract:**
+- Declaring `agents:` (v2) or `[[agents]]` (v1) is an opt-in to declarative, server-side agent discovery. It is not a validation rule that every file under `.kortix/opencode/agents/` must be registered. Unregistered native files can exist for local experiments or runtime internals.
+- Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
+- Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
+- New projects default to `kortix.yaml` (v2) declarative discovery. Older `kortix.toml` (v1) projects stay in legacy mode until they migrate.
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
-like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent). Run
-`kortix validate --scopes` to print this list:
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent — nor can
+`project.delete` / `project.members.manage` / `project.gateway.keys.manage`: the project-role
+collapse promoted those three to ACCOUNT owner/admin authority even though they still target a
+specific project). Run `kortix validate --scopes` to print this list:
 
 ```
-project.read  project.write  project.delete  project.deploy
+project.read  project.write  project.deploy
 project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
-project.session.read  project.session.start  project.session.exec  project.session.stop
-project.members.read  project.members.manage
+project.session.read  project.session.start  project.session.stop
+project.members.read
 project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
-channel.read  channel.connect  channel.send  channel.disconnect
+project.gateway.logs.read  project.gateway.spend.read  project.gateway.budget.set
+project.agent.read  project.agent.write
+project.skill.read  project.skill.write
+project.command.read  project.command.write
+project.file.read  project.file.write
+project.customize.read  project.customize.write
+project.gitops.read  project.gitops.push  project.gitops.merge
+project.secret.read  project.secret.write
+project.connector.read  project.connector.write   # channels (Slack/meet/email) send + connect are gated here
+project.review.read  project.review.submit  project.review.act
 ```
 
-`kortix validate` validates `[[agents]]` (rejecting unknown / account-scoped actions) and
-prints each agent's resolved scope. Use `kortix validate --scopes` to see the full enum.
+`kortix validate` validates `agents:` (v2) / `[[agents]]` (v1) — rejecting unknown /
+account-scoped actions — and prints each agent's resolved scope. Use `kortix validate --scopes`
+to see the full enum.
 </agent-authorization>
 
 <references>
@@ -245,18 +372,27 @@ prints each agent's resolved scope. Use `kortix validate --scopes` to see the fu
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
   project-scoped token model and what the CLI can do **from inside a
-  session sandbox** (where `KORTIX_TOKEN` + `KORTIX_API_URL` are
+  session sandbox** (where `KORTIX_SANDBOX_TOKEN` + `KORTIX_API_URL` are
   pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
   `kortix cr ls` all work out of the box). Load this when you want to
   drive the Kortix cloud from a terminal or agent.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md">
-  In-depth `kortix.toml` reference. Every top-level table (`[project]`,
-  `[env]`, `[sandbox]`, `[opencode]`), every `[[triggers]]` field (cron +
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/marketplace.md">
+  In-depth Kortix Marketplace reference. What the marketplace is, when to use
+  it before authoring a new skill, CLI and web workflows, install/update/remove
+  semantics, `registry-lock.json`, default starter skills, source registries,
+  and the difference between consumer `kortix marketplace` commands and
+  developer-only `kortix registry` commands.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
+  In-depth `kortix.yaml` reference. Every top-level key (`project:`,
+  `env:`, `sandbox:`, `opencode:`), every `triggers:` field (cron +
   webhook), the prompt template variables, the secrets contract, the
-  `[[apps]]` deployment surface, schema versioning, common gotchas.
-  Load this when editing or debugging the manifest.
+  `apps:` deployment surface, schema versioning, common gotchas, and a
+  legacy note on the v1 `kortix.toml` TOML format. Load this when
+  editing or debugging the manifest.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/change-requests.md">
@@ -361,24 +497,25 @@ Things that surprise people:
   keeping, the next move is *always* `kortix cr open`, never a force
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
-- **Triggers live in `kortix.toml`, not as files.** Old Kortix shipped
+- **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped
   triggers under `.opencode/triggers/<slug>.md` — that's gone.
-  Centralized in the manifest now, parsed as `[[triggers]]`.
+  Centralized in the manifest now, parsed as `triggers:`.
 - **Kortix-owned files live in `.kortix/` at the repo root.** The
   `Dockerfile` and `opencode/` config dir sit under there to keep the
-  root clean. Both paths are declared in `kortix.toml`
-  (`[sandbox] dockerfile`, `[opencode] config_dir`) — relocate freely.
-- **OpenCode primitives are never platform-special.** The platform
-  doesn't read them; OpenCode does. Adding a new agent/skill/command/
-  tool/plugin is purely an OpenCode config change.
+  root clean. Both paths are declared in `kortix.yaml`
+  (`sandbox: dockerfile`, `opencode: config_dir`) — relocate freely.
+- **OpenCode primitives remain runtime-native.** Adding a skill, command,
+  tool, plugin, MCP, or provider is still an OpenCode config change. Declaring
+  an agent in `agents:` is a separate Kortix decision: it controls what the
+  platform may launch and what server-side grants that agent receives.
 - **Manifest schema is versioned.** `kortix_version` lets the platform
   evolve safely. A manifest declaring a higher version than the platform
   knows about is rejected outright — better than silent misread.
-- **`[env].required` is advisory, not enforced.** The platform surfaces
+- **`env.required` is advisory, not enforced.** The platform surfaces
   `required` to the dashboard so the user knows what to set, but session
   bootstrap won't block on missing values today. Treat `required` as a
   contract with the user, not the platform.
-- **`[[apps]]` is experimental.** Gated behind
+- **`apps:` is experimental.** Gated behind
   `KORTIX_APPS_EXPERIMENTAL`. When off, entries are parsed but never
   acted on.
 </gotchas>

@@ -80,12 +80,14 @@ export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
-  authType?: 'supabase' | 'pat' | 'apiKey';
+  authType?: 'supabase' | 'pat' | 'apiKey' | 'service_account';
   apiKeyType?: 'user' | 'sandbox';
   keyId?: string;
   sandboxId?: string;
   /** Set for project-scoped CLI PATs — enforced against the URL :projectId. */
   tokenProjectId?: string;
+  /** Set for session-scoped sandbox executor PATs. */
+  sessionId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
   /** Per-agent authorization grant — non-null only for agent-session tokens.
@@ -116,6 +118,20 @@ export interface TierEntitlements {
   sso: boolean;
   /** SCIM 2.0 directory provisioning (token mint/revoke + /scim/v2 endpoints). */
   scim: boolean;
+  /**
+   * Custom RBAC: user-defined roles, fine-grained policy bindings, and groups
+   * (IAM v1 — custom-roles.ts + groups.ts). Built-in preset roles (owner/admin/
+   * member/manager/editor/user) stay free on every tier — this only gates the
+   * ability to define custom roles/policies/groups beyond those presets.
+   */
+  rbac: boolean;
+  /**
+   * Read/export access to the audit trail (account audit log + per-session
+   * agent-action audit) and audit-webhook streaming. Recording is NEVER gated —
+   * every tier's actions are always captured; this only gates who can read,
+   * export, or stream them out.
+   */
+  auditAccess: boolean;
 }
 
 export interface TierConfig {

@@ -1,9 +1,6 @@
 "use client";
 
-import { useTranslations } from 'next-intl';
-
-import { ExternalLink, SquareKanban, X } from "lucide-react";
-import { useCallback } from "react";
+import { SquareKanban, X } from "lucide-react";
 import { SessionChat } from "@/features/session/session-chat";
 import {
 	Dialog,
@@ -11,14 +8,11 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useServerStore } from "@/stores/server-store";
-import { openTabAndNavigate } from "@/stores/tab-store";
 
 interface SubSessionModalProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	sessionId: string;
-	parentSessionId?: string;
 	title?: string;
 }
 
@@ -26,29 +20,15 @@ export function SubSessionModal({
 	open,
 	onOpenChange,
 	sessionId,
-	parentSessionId,
 	title,
 }: SubSessionModalProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-	const handleOpenInTab = useCallback(() => {
-		onOpenChange(false);
-		openTabAndNavigate({
-			id: sessionId,
-			title: title || "Sub-agent",
-			type: "session",
-			href: `/sessions/${sessionId}`,
-			parentSessionId,
-			serverId: useServerStore.getState().activeServerId,
-		});
-	}, [sessionId, parentSessionId, title, onOpenChange]);
-
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				hideCloseButton
 				className={cn(
 					"flex flex-col p-0 gap-0 overflow-hidden",
-					"w-[90vw] max-w-4xl h-[80vh] max-h-[800px]",
+					"w-[92vw] max-w-5xl h-[80vh] max-h-[840px]",
 				)}
 				aria-describedby={undefined}
 			>
@@ -58,18 +38,6 @@ export function SubSessionModal({
 					<DialogTitle className="text-sm font-medium truncate flex-1">
 						{title || "Sub-session"}
 					</DialogTitle>
-					<button
-						type="button"
-						onClick={handleOpenInTab}
-						className={cn(
-							"flex items-center gap-1.5 px-2 py-1 rounded-md text-xs",
-							"text-muted-foreground hover:text-foreground",
-							"hover:bg-muted/60 transition-colors",
-						)}
-					>
-						<ExternalLink className="size-3" />
-						<span>{tHardcodedUi.raw('componentsSessionSubSessionModal.line68JsxTextOpenInTab')}</span>
-					</button>
 					<button
 						type="button"
 						onClick={() => onOpenChange(false)}

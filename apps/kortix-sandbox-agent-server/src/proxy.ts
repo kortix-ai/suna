@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { ServerWebSocket } from 'bun'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -12,7 +13,9 @@ import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
 import { createFindRouter } from './routes/find'
+import { createPresentationRouter } from './routes/presentation'
 import webProxyRouter from './routes/web-proxy'
+import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
 import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -29,6 +32,68 @@ const STRIP_REQUEST_HEADERS = new Set([
 
 const STRIP_RESPONSE_HEADERS = new Set(['transfer-encoding', 'connection'])
 
+const KORTIX_PTY_WS_PATH_RE = /^\/kortix\/pty\/([^/]+)\/connect\/?$/
+const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
+
+// Bound on waiting for opencode to respond to a proxied request. Applied only
+// to the wait for the response to arrive (headers), never to a streaming body
+// already in flight — an SSE stream like /global/event legitimately stays open
+// for the life of the session, so aborting on a fixed wall clock would sever
+// healthy long-lived connections. A wedged opencode process (hung event loop,
+// deadlock) otherwise leaves this `fetch` unresolved forever: the daemon's own
+// `/kortix/health` stays green throughout (it never touches opencode), so
+// nothing else catches it, and the browser just sees the request hang until
+// something upstream (ALB/ingress) eventually resets the connection — which
+// surfaces as a confusing "blocked by CORS" error with no real diagnostic
+// value. Failing fast here instead gives a clean 502 that apps/api's own
+// retry+auto-wake loop can act on immediately.
+const UPSTREAM_RESPONSE_TIMEOUT_MS = 10_000
+
+type OpencodeWsData = {
+  ptyId: string
+  handle?: PtyAttachHandle
+}
+
+function jsonError(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+// The Kortix-native PTY WS upgrade — independent of opencode/repo readiness
+// entirely (it just spawns a shell), unlike the (now removed) opencode-
+// proxied path this replaced: a raw terminal works even while the repo is
+// still cloning or opencode hasn't come up yet.
+function prepareKortixPtyWsUpgrade(
+  req: Request,
+  cfg: Config,
+): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
+  const url = new URL(req.url)
+  const match = KORTIX_PTY_WS_PATH_RE.exec(url.pathname)
+  if (!match) {
+    return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
+  }
+  const ptyId = match[1]!
+
+  if (!cfg.sandboxToken) {
+    logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
+    }
+  }
+
+  const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
+  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  if (!auth.ok) {
+    logger.warn('[pty] reject websocket', { reason: auth.reason, path: url.pathname })
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+  }
+
+  return { ok: true, data: { ptyId } }
+}
+
 export function buildOpencodeApp(
   cfg: Config,
   opencode: Opencode,
@@ -36,6 +101,7 @@ export function buildOpencodeApp(
   bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
+  ptyRegistry?: PtyRegistry,
 ): Hono {
   const app = new Hono()
 
@@ -51,6 +117,10 @@ export function buildOpencodeApp(
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
   // opens change requests from a chat prompt). Kept as a host-driven primitive.
   const gitRouter = createGitRouter(cfg)
+  // /kortix/pty — Kortix's own terminal, independent of opencode entirely
+  // (see routes/pty.ts). `ptyRegistry` is always passed by `startProxy`;
+  // the parameter is optional only so tests can build the app without one.
+  const ptyRouter = createPtyRouter(cfg, ptyRegistry ?? createPtyRegistry(cfg))
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
@@ -59,6 +129,8 @@ export function buildOpencodeApp(
   kortixRouter.route('/abort/', abortRouter)
   kortixRouter.route('/git', gitRouter)
   kortixRouter.route('/git/', gitRouter)
+  kortixRouter.route('/pty', ptyRouter)
+  kortixRouter.route('/pty/', ptyRouter)
   if (envRouter) {
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
@@ -116,6 +188,12 @@ export function buildOpencodeApp(
   // /find/* — daemon-served search (file-by-name + ripgrep text search), also
   // formerly forwarded to OpenCode.
   app.route('/find', createFindRouter(cfg))
+
+  // /presentation/* — on-demand PDF/PPTX export for the slide-deck viewer's
+  // download buttons. Runs the conversion in the background and answers each
+  // poll fast (202 while generating, 200 + the file when ready) so it never
+  // trips the apps/api preview-proxy's per-attempt timeout. See the router doc.
+  app.route('/presentation', createPresentationRouter(cfg))
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of
@@ -185,6 +263,13 @@ export function buildOpencodeApp(
     const method = c.req.method.toUpperCase()
     const hasBody = method !== 'GET' && method !== 'HEAD'
 
+    // Bound only the wait for opencode's response (headers) — not the abort
+    // controller's whole lifetime — so we can free-run a stream once it starts.
+    // Clearing the timer right after `fetch` resolves means the controller can
+    // never fire again, so a long-lived SSE body already in flight (e.g.
+    // /global/event) is never cut off mid-stream.
+    const controller = new AbortController()
+    const responseTimer = setTimeout(() => controller.abort(), UPSTREAM_RESPONSE_TIMEOUT_MS)
     try {
       const fetchInit: RequestInit & { duplex?: 'half' } = {
         method,
@@ -193,8 +278,10 @@ export function buildOpencodeApp(
         // duplex: 'half' is required by undici when piping a ReadableStream body;
         // Bun accepts the extra key too. Not in lib.dom RequestInit yet.
         duplex: 'half',
+        signal: controller.signal,
       }
       const upstream = await fetch(upstreamUrl, fetchInit)
+      clearTimeout(responseTimer)
 
       const respHeaders = new Headers()
       upstream.headers.forEach((value, key) => {
@@ -207,7 +294,16 @@ export function buildOpencodeApp(
         headers: respHeaders,
       })
     } catch (err) {
-      logger.error('[proxy] upstream fetch failed', err)
+      clearTimeout(responseTimer)
+      const timedOut = err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+      if (timedOut) {
+        logger.error('[proxy] upstream fetch timed out — opencode unresponsive', {
+          path: url.pathname,
+          timeoutMs: UPSTREAM_RESPONSE_TIMEOUT_MS,
+        })
+      } else {
+        logger.error('[proxy] upstream fetch failed', err)
+      }
       return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502)
     }
   })
@@ -218,10 +314,9 @@ export function buildOpencodeApp(
 export type ProxyServer = {
   stop(): Promise<void>
   port: number
-  // Rebuild the control surface with a new Config. A warm-pool spare boots
-  // tokenless and only learns its session cfg (KORTIX_TOKEN, projectId, …) on
-  // claim; without this the proxy auth gate + routers keep the empty boot cfg
-  // and reject every request with "KORTIX_TOKEN not configured".
+  // Rebuild the control surface with a new Config. A warm snapshot seed boots
+  // with seed-time credentials and only learns its forked session cfg after
+  // restore; without this the proxy auth gate + routers keep the seed cfg.
   reload(next: Config): void
 }
 
@@ -233,17 +328,59 @@ export function startProxy(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {
-  // Mutable so claim-time reload() can hot-swap the handler in place; the
+  // Mutable so restore-time reload() can hot-swap the handler in place; the
   // indirection below re-reads `app` per request, so reassigning it is enough.
-  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
+  let currentCfg = cfg
+  // Constructed once, outside reload() — pty state must survive a config
+  // hot-swap (warm-snapshot restore) exactly like `opencode`/`bootState` do.
+  const ptyRegistry = createPtyRegistry(cfg)
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
 
-  const server = Bun.serve({
+  const server = Bun.serve<OpencodeWsData>({
     port: cfg.servicePort,
     hostname: '0.0.0.0',
     // SSE streams from OpenCode can be long-lived with no traffic; default 10s
     // kills them. 255s matches kortix-master's tuned value.
     idleTimeout: 255,
-    fetch: (req, srv) => app.fetch(req, srv),
+    async fetch(req, srv) {
+      const url = new URL(req.url)
+      const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+      if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
+        const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
+        if (!prep.ok) return prep.response
+        const upgraded = srv.upgrade(req, { data: prep.data })
+        if (upgraded) return undefined
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
+      return app.fetch(req, srv)
+    },
+    websocket: {
+      open(ws: ServerWebSocket<OpencodeWsData>) {
+        const state = ws.data
+        const handle = ptyRegistry.attach(state.ptyId, {
+          onData: (chunk) => {
+            try { ws.send(chunk) } catch {}
+          },
+          onExit: (exitCode) => {
+            try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
+          },
+        })
+        if (!handle) {
+          try { ws.close(1011, 'pty not found') } catch {}
+          return
+        }
+        state.handle = handle
+        if (handle.replay) {
+          try { ws.send(handle.replay) } catch {}
+        }
+      },
+      message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
+        ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
+      },
+      close(ws: ServerWebSocket<OpencodeWsData>) {
+        ws.data.handle?.detach()
+      },
+    },
   })
 
   const boundPort = server.port ?? cfg.servicePort
@@ -252,7 +389,8 @@ export function startProxy(
   return {
     port: boundPort,
     reload(next: Config) {
-      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort)
+      currentCfg = next
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort, ptyRegistry)
       logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
     },
     async stop() {

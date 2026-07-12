@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 
 import { useGlobalSandboxUpdate, detectChannel } from '@/hooks/platform/use-global-sandbox-update';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
 

@@ -4,7 +4,7 @@
  * The durable identity for "what kind of sandbox a session can boot from."
  * Templates live in `kortix.sandbox_templates`. The platform default is a
  * shared row (project_id NULL, is_shared=true) that any project can boot
- * from. Custom templates can be defined either in `kortix.toml` (synced to
+ * from. Custom templates can be defined either in `kortix.yaml` (synced to
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries a `provider` column; the matching
@@ -13,8 +13,10 @@
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
+import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
 import { SANDBOX_VERSION, config } from '../config';
@@ -30,7 +32,7 @@ import {
 import { computeSnapshotHash } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -39,23 +41,47 @@ const AGENT_SRC_DIR = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src')
 const AGENT_PKG_JSON = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/package.json');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
+const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Source of the `kortix` CLI binary baked into every sandbox. We fingerprint
 // the SOURCE (not the compiled binary, which `bun build --compile` produces
 // non-deterministically) so a CLI code change rebuilds snapshots while a
-// rebuild of the identical source does not. packages/starter is deliberately
-// excluded: it only feeds `kortix init` scaffolding, which is never run inside
-// a sandbox, so its churn shouldn't invalidate every project's image.
+// rebuild of the identical source does not.
+//
+// Scope: only the files whose change can alter what the CLI does INSIDE a
+// sandbox. The single compiled `kortix` binary bakes ALL of apps/cli/src, but a
+// session only ever invokes `kortix executor` / `kortix executor mcp` — the rest
+// (`ship`, `cr`, `tunnel`, `self-host`, `accounts`, the whole `init`/scaffold
+// surface, …) is developer-facing and runs on a laptop, never in the sandbox.
+// Hashing the WHOLE tree meant every dev-only CLI edit re-minted every project's
+// runtime identity AND moved the non-agent `swapKey`, which DISABLES the cheap
+// agent-swap fast path and forces a full O(all-projects) rebuild (measured: ~4 of
+// 11 forced mass-rebuilds over 2 weeks were pure dev-CLI churn). So we hash the
+// in-sandbox executor import-closure instead of `apps/cli/src` wholesale.
+//
+// This closure is asserted complete by snapshots/__tests__/cli-executor-closure
+// .test.ts, which re-derives it from the `kortix executor` entrypoints and fails
+// if a new import escapes the hashed set — so scoping can never silently ship a
+// stale in-sandbox executor. packages/starter (scaffolding) and packages/
+// manifest-schema (only reached by laptop-side `ship`/`validate`) are likewise
+// never in the sandbox and are deliberately not fingerprinted.
 const CLI_SRC_DIR = resolve(REPO_ROOT, 'apps/cli/src');
+// The in-sandbox `kortix executor` closure (see comment above). Relative to
+// CLI_SRC_DIR; the guard test keeps this in sync with the real import graph.
+const CLI_EXECUTOR_CLOSURE = [
+  'executor',
+  'commands/executor.ts',
+  'api/auth.ts',
+  'api/client.ts',
+  'api/config.ts',
+  'api/sandbox-env.ts',
+  'project-link.ts',
+] as const;
 const CLI_PKG_JSON = resolve(REPO_ROOT, 'apps/cli/package.json');
-const MANIFEST_SCHEMA_SRC_DIR = resolve(REPO_ROOT, 'packages/manifest-schema/src');
 const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 // Bump when the rendered Kortix Dockerfile layer changes (the Dockerfile text
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
@@ -65,9 +91,29 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // instead of paid on the session hot path (6–60s → ~2–4s cold start).
 // v11: bake a real Chromium (Playwright, cross-arch) for agent-browser so the
 // browser-automation skill works out of the box with no runtime download.
-const RUNTIME_LAYER_VERSION = 'baked-chromium-v11';
+// v12: bake the full LLM model catalog (/opt/kortix/llm-catalog.json) so the
+// no-restart warm seed serves the full picker without a PARK-time fetch.
+// v14: bake the COMPLETE config-dir deps (incl. @opencode-ai/plugin + its effect/
+// zod/sdk tree + overrides) instead of a partial hardcoded list.
+// v15: pin the baked @opencode-ai/plugin to the OPENCODE BINARY version (opencode
+// loads the plugin SDK matching its own binary and re-fetches it over the network
+// if the baked tree carries a different version — the stale starter pin left every
+// boot re-installing it, the ~5–8s opencode-session-created gap).
+// v16: ship the `meet` channel CLI + the kortix-meet skill.
+// v17: `meet chat` (bot talks back in-call) + live-relay skill section.
+// v18: `meet speak` (TTS voice in-call) + voice-reply skill section.
+// v19: natural-conversation relay (debounce + acknowledgement + follow-up) skill notes.
+// v20: multi-platform rebrand (Meet/Zoom/Teams) + dedicated speaking skill section.
+// v21: configurable bot name (project setting) + wake word = bot's first name (skill).
+// v22: spoken turns MUST reply by voice (skill) — no chat fallback for speech.
+// v23: auto-recap on meeting end (bot.done webhook -> session produces notes).
+// v24: hard-fail the bake if the baked opencode-config-deps tree (or the
+// starter tool files against it) can't actually be bundled by Bun — a
+// bundle-breaking axios override once shipped silently baked into every
+// sandbox image (bun install succeeded; the runtime bundle did not).
+const RUNTIME_LAYER_VERSION = 'baked-config-deps-binplugin-v24';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
+const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 function readPositiveIntEnv(name: string, fallback: number): number {
@@ -96,6 +142,11 @@ export interface ResolvedTemplate {
   contentHash: string | null;
   /** Git commit the last successful build read the Dockerfile from. */
   builtFromCommit: string | null;
+  /**
+   * Agent-swap eligibility key of the last build (user image + spec + non-agent
+   * runtime). null for rows built before this column existed → no swap (rebuild).
+   */
+  swapKey: string | null;
 }
 
 /**
@@ -146,7 +197,7 @@ export async function listTemplatesForProject(
 
   const last = tomlSyncCache.get(project.projectId) ?? 0;
   if (opts.forceTomlSync || Date.now() - last > TOML_SYNC_TTL_MS) {
-    await syncTomlTemplatesForProject(project);
+    await syncManifestTemplatesForProject(project);
     tomlSyncCache.set(project.projectId, Date.now());
   }
 
@@ -181,7 +232,18 @@ export async function listTemplatesForProject(
   return value;
 }
 
-/** Resolve a slug → ResolvedTemplate. Throws if slug missing. */
+/**
+ * A slug that resolves to no template. Typed so callers can answer 404 instead of
+ * folding a client mistake into a generic 502 alongside real provider failures.
+ */
+export class TemplateNotFoundError extends Error {
+  constructor(readonly slug: string) {
+    super(`No sandbox template with slug "${slug}" in this project.`);
+    this.name = 'TemplateNotFoundError';
+  }
+}
+
+/** Resolve a slug → ResolvedTemplate. Throws TemplateNotFoundError if slug missing. */
 export async function resolveTemplateBySlug(
   project: GitBackedProject,
   slug: string | undefined,
@@ -190,13 +252,13 @@ export async function resolveTemplateBySlug(
 
   // Fast path for the platform default — the overwhelming majority of boots.
   // The default template's identity is a constant (PLATFORM_DEFAULT_USER_DOCKERFILE),
-  // so it does NOT depend on the project's kortix.toml. `listTemplatesForProject`
-  // would run `syncTomlTemplatesForProject` → `readManifest` → a host-side git
+  // so it does NOT depend on the project's kortix.yaml. `listTemplatesForProject`
+  // would run `syncManifestTemplatesForProject` → `readManifest` → a host-side git
   // fetch of the repo (15-30s cold) on every boot once the 60s TTL lapses — and
   // boots are minutes apart, so it lapses every time. Slug "default" is reserved
-  // (the TOML sync skips it and the manifest schema forbids it), so a project can
-  // never shadow it: the shared row is always the answer. Resolve it from the DB
-  // directly and skip the git fetch entirely.
+  // (the manifest sync skips it and the manifest schema forbids it), so a project
+  // can never shadow it: the shared row is always the answer. Resolve it from the
+  // DB directly and skip the git fetch entirely.
   if (target === DEFAULT_SANDBOX_SLUG) {
     return resolveDefaultTemplate();
   }
@@ -204,7 +266,31 @@ export async function resolveTemplateBySlug(
   const items = await listTemplatesForProject(project);
   const match = items.find((t) => t.slug === target);
   if (match) return match;
-  throw new Error(`No sandbox template with slug "${target}" in this project.`);
+  throw new TemplateNotFoundError(target);
+}
+
+/**
+ * Resolve a slug that may have come from a BUILD LOG rather than a template.
+ *
+ * The warm bake records its build under `<template>-warm`, which is not a template
+ * (see WARM_BUILD_SLUG_SUFFIX). Every surface that hands a `latest_failure.slug` /
+ * `latest_build.slug` back to the API — Retry build, Fix with agent — lands here.
+ * Resolving the slug verbatim FIRST keeps a project that legitimately declares a
+ * template named `foo-warm` working; only when that misses do we treat the `-warm`
+ * as the derived-bake marker it usually is.
+ */
+export async function resolveTemplateForBuildSlug(
+  project: GitBackedProject,
+  slug: string | undefined,
+): Promise<ResolvedTemplate> {
+  try {
+    return await resolveTemplateBySlug(project, slug);
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError && slug && isWarmBuildSlug(slug)) {
+      return resolveTemplateBySlug(project, templateSlugFromBuildSlug(slug));
+    }
+    throw err;
+  }
 }
 
 /**
@@ -300,13 +386,18 @@ export interface UpdateTemplateInput {
   diskGb?: number | null;
 }
 
-/** Patch a template by id. */
+/** Patch a template by id. When `expectProjectId` is given, the row must belong
+ *  to that project or the update is refused (returns null) — a data-layer guard
+ *  against cross-tenant mutation so callers can't poison another project's
+ *  template by id even if a handler-level ownership check is missing. */
 export async function updateTemplate(
   templateId: string,
   patch: UpdateTemplateInput,
+  expectProjectId?: string,
 ): Promise<DbSandboxTemplate | null> {
   const row = await getTemplateById(templateId);
   if (!row) return null;
+  if (expectProjectId !== undefined && row.projectId !== expectProjectId) return null;
   if (row.isShared) {
     throw new Error('Shared platform templates are read-only.');
   }
@@ -389,15 +480,32 @@ export async function computeTemplateIdentity(
   userDockerfile: string;
   /** Commit the Dockerfile was read from; null for default/image templates. */
   builtFromCommit: string | null;
+  /**
+   * Identity of everything the agent-swap does NOT touch: user image + spec +
+   * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
+   * in place of the full one). The builder swaps the agent ONLY when this matches
+   * the predecessor's STORED swapKey (→ the agent binary is the sole delta);
+   * otherwise it does a full rebuild. Never ships stale opencode/CLI/entrypoint.
+   */
+  swapKey: string;
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
-  const hash = computeSnapshotHash({
+  const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
-    runtimeFingerprint,
-  });
+  };
+  const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
+  // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
+  // the spec, and the NON-agent runtime layer (opencode/entrypoint/CLI/slack-cli/
+  // executor-sdk/manifest-schema/layer+browser versions). It is computed by hashing
+  // the same inputs with the non-agent runtime fingerprint in place of the full one.
+  // Two identities with the SAME swapKey differ ONLY by the agent binary → the swap
+  // is sound. A change to the user image, spec, OR any non-agent runtime artifact
+  // moves swapKey → the builder rebuilds instead of swapping (never ships stale).
+  const nonAgentRuntimeFingerprint = await currentNonAgentRuntimeFingerprint();
+  const swapKey = computeSnapshotHash({ ...hashInputs, runtimeFingerprint: nonAgentRuntimeFingerprint }).shortHash;
   const namePrefix = template.isShared ? 'kortix-default' : 'kortix-tpl';
   return {
     snapshotName: `${namePrefix}-${hash.shortHash}`,
@@ -406,6 +514,7 @@ export async function computeTemplateIdentity(
     runtimeFingerprint,
     userDockerfile,
     builtFromCommit: commit,
+    swapKey,
   };
 }
 
@@ -435,7 +544,7 @@ export async function resolveUserDockerfile(
  */
 export async function recordTemplateBuilt(
   templateId: string | null,
-  args: { snapshotName: string; contentHash: string; builtFromCommit?: string | null; provider?: string },
+  args: { snapshotName: string; contentHash: string; builtFromCommit?: string | null; provider?: string; swapKey?: string | null },
 ): Promise<void> {
   if (!templateId) return;
   // Read the row first so we know which snapshot we're about to repoint AWAY
@@ -447,6 +556,10 @@ export async function recordTemplateBuilt(
       providerSnapshotName: args.snapshotName,
       contentHash: args.contentHash,
       builtFromCommit: args.builtFromCommit ?? null,
+      // swapKey of what we just built — the agent-swap eligibility key (user image
+      // + spec + non-agent runtime). Only overwrite when provided so a state-only
+      // observation doesn't wipe it. The agent-swap fast path requires this stored.
+      ...(args.swapKey !== undefined ? { swapKey: args.swapKey } : {}),
       providerState: 'active',
       // Track WHERE it was built — so the build-state is correct per provider
       // (the trust-the-row fast path checks this) and switching providers
@@ -471,7 +584,7 @@ export async function recordTemplateBuilt(
 
 /** Managed snapshot namespaces we own and may reap. Anything else (Daytona's
  *  own base/sample images, etc.) is left strictly alone. */
-const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-'];
+const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-', 'kortix-ppwarm-'];
 
 /**
  * Delete a snapshot a template row just stopped pointing at. Best-effort and
@@ -550,6 +663,7 @@ function synthesizedDefault(): ResolvedTemplate {
     providerSnapshotName: null,
     contentHash: null,
     builtFromCommit: null,
+    swapKey: null,
   };
 }
 
@@ -572,14 +686,15 @@ function rowToResolved(row: DbSandboxTemplate): ResolvedTemplate {
     providerSnapshotName: row.providerSnapshotName,
     contentHash: row.contentHash,
     builtFromCommit: row.builtFromCommit ?? null,
+    swapKey: row.swapKey ?? null,
   };
 }
 
 /**
- * Upsert `[[sandbox.templates]]` entries from the project's kortix.toml into the DB.
+ * Upsert `sandbox.templates` entries from the project's kortix.yaml into the DB.
  * Best-effort: a broken manifest never blocks the boot path.
  */
-async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<void> {
+async function syncManifestTemplatesForProject(project: GitBackedProject): Promise<void> {
   try {
     const parsed = await readManifest(project);
     const tomlTemplates = extractSandboxTemplates(parsed?.raw ?? null);
@@ -617,7 +732,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
         });
     }
 
-    // Persist `[sandbox] default` → projects.metadata.default_sandbox_slug, so
+    // Persist `sandbox.default` → projects.metadata.default_sandbox_slug, so
     // session boot can cheaply pick the project's default template without a
     // git fetch. Only honor a default that names a template we just synced
     // (else it would point at nothing); clear it otherwise.
@@ -642,7 +757,7 @@ async function syncTomlTemplatesForProject(project: GitBackedProject): Promise<v
     }
   } catch (err) {
     console.warn(
-      `[templates] TOML sync failed for ${project.projectId}:`,
+      `[templates] manifest sync failed for ${project.projectId}:`,
       err instanceof Error ? err.message : err,
     );
   }
@@ -671,8 +786,41 @@ function validateTemplateMutation(args: { image?: unknown; dockerfilePath?: unkn
   }
 }
 
+// The runtime layer bakes source artifacts into every template's rootfs. Exactly
+// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// slack-cli, executor-sdk) are the non-agent runtime. The agent-swap fast path
+// replaces ONLY the agent, so the builder must prove the NON-agent runtime is
+// byte-identical before swapping — hence the split into two artifact sets.
+const AGENT_RUNTIME_ARTIFACTS = [
+  { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
+  { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+];
+const NON_AGENT_RUNTIME_ARTIFACTS = [
+  { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
+  { label: 'kortix-slack-cli', path: SLACK_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
+  { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
+  // Only the in-sandbox `kortix executor` closure (NOT the whole apps/cli/src) —
+  // see CLI_EXECUTOR_CLOSURE. Labels carry the relative path so two files can't
+  // collide, and the set is sorted by label in buildRuntimeArtifactFingerprint.
+  ...CLI_EXECUTOR_CLOSURE.map((rel) => ({
+    label: `kortix-cli-${rel}`,
+    path: join(CLI_SRC_DIR, rel),
+    excludeNames: FINGERPRINT_EXCLUDES,
+  })),
+  { label: 'kortix-cli-pkg', path: CLI_PKG_JSON },
+];
+// Both version strings fold in the layer/opencode/browser/sandbox constants — all
+// NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
+// binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
+// actual files on every fresh deploy, so an agent-src change between deploys moves
+// the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
+const runtimeVersionKey = () => `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+const sandboxVersionStr = () => `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`;
+
 let runtimeFingerprintCache: { key: string; value: string } | null = null;
 let runtimeFingerprintInflight: Promise<string> | null = null;
+let nonAgentFingerprintCache: { key: string; value: string } | null = null;
+let nonAgentFingerprintInflight: Promise<string> | null = null;
 
 /**
  * Cache the runtime artifact fingerprint by the pinned version constants only,
@@ -690,23 +838,14 @@ let runtimeFingerprintInflight: Promise<string> | null = null;
  * bump / runtime source change) automatically gets a fresh warm base.
  */
 export async function currentRuntimeArtifactFingerprint(): Promise<string> {
-  const key = `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
+  const key = runtimeVersionKey();
   if (runtimeFingerprintCache?.key === key) return runtimeFingerprintCache.value;
   if (runtimeFingerprintInflight) return runtimeFingerprintInflight;
 
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
-    sandboxVersion: `${SANDBOX_VERSION}:layer:${RUNTIME_LAYER_VERSION}:ab:${AGENT_BROWSER_VERSION}`,
+    sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: [
-      { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
-      { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
-      { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
-      { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-      { label: 'kortix-executor-sdk', path: EXECUTOR_SDK_SRC_PATH, excludeNames: FINGERPRINT_EXCLUDES },
-      { label: 'kortix-cli-src', path: CLI_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
-      { label: 'kortix-cli-pkg', path: CLI_PKG_JSON },
-      { label: 'kortix-manifest-schema-src', path: MANIFEST_SCHEMA_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
-    ],
+    artifacts: [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS],
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -718,4 +857,35 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
+}
+
+/**
+ * Fingerprint of the runtime layer EXCLUDING the kortix-agent binary. Changes iff
+ * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/executor-sdk/
+ * manifest-schema source, or the layer/browser/sandbox version constants. The
+ * agent-swap fast path is sound ONLY when this is byte-identical between the
+ * predecessor and the new identity (i.e. the agent binary is the SOLE runtime
+ * delta). Folded into the template's swapKey so the builder can compare against the
+ * predecessor's stored value — see maybeSwapAgent in builder.ts.
+ */
+export async function currentNonAgentRuntimeFingerprint(): Promise<string> {
+  const key = runtimeVersionKey();
+  if (nonAgentFingerprintCache?.key === key) return nonAgentFingerprintCache.value;
+  if (nonAgentFingerprintInflight) return nonAgentFingerprintInflight;
+
+  nonAgentFingerprintInflight = buildRuntimeArtifactFingerprint({
+    sandboxVersion: sandboxVersionStr(),
+    opencodeVersion: OPENCODE_VERSION,
+    artifacts: [...NON_AGENT_RUNTIME_ARTIFACTS],
+  })
+    .then((value) => {
+      nonAgentFingerprintCache = { key, value };
+      nonAgentFingerprintInflight = null;
+      return value;
+    })
+    .catch((err) => {
+      nonAgentFingerprintInflight = null;
+      throw err;
+    });
+  return nonAgentFingerprintInflight;
 }

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   isExtensionSource,
+  isInjectedAppSource,
   isKnownBrowserNoiseMessage,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
@@ -186,4 +187,9 @@ test('suppresses the Better Stack Promise.then incident event', () => {
     }),
     true,
   )
+})
+
+test('flags the injected embed widget source as third-party noise', () => {
+  assert.equal(isInjectedAppSource('app:///embed/embed.js'), true)
+  assert.equal(isInjectedAppSource('app:///_next/static/chunks/main.js'), false)
 })

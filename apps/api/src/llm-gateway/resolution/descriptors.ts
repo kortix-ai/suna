@@ -1,7 +1,8 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import type { ManagedModel } from '@kortix/shared/llm-catalog';
+import type { ManagedModel } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
+import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import { getModelPricing } from '../../router/config/model-pricing';
 import {
   CHATGPT_CODEX_BASE_URL,
@@ -23,18 +24,8 @@ export function livePricing(modelId: string): UpstreamDescriptor['pricing'] | un
   };
 }
 
-function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.AWS_BEDROCK_API_KEY) return null;
-  return {
-    provider: 'bedrock',
-    kind: 'bedrock',
-    baseUrl: bedrockBaseUrl(),
-    apiKey: config.AWS_BEDROCK_API_KEY,
-    billingMode: 'credits',
-    markup: llmPriceMarkup(),
-    resolvedModel: managed.bedrockModelId,
-    pricing: livePricing(managed.bedrockModelId),
-  };
+function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
+  return livePricing(managed.pricingRef);
 }
 
 function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
@@ -46,17 +37,35 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
     apiKey: config.OPENROUTER_API_KEY,
     billingMode: 'credits',
     markup: llmPriceMarkup(),
-    appName: 'Kortix',
-    appReferer: config.KORTIX_URL,
-    resolvedModel: managed.openRouterModelId,
-    pricing: livePricing(managed.openRouterModelId),
+    appName: OPENROUTER_APP_TITLE,
+    appReferer: OPENROUTER_APP_REFERER,
+    resolvedModel: managed.upstreamModelId,
+    pricing: managedPricing(managed),
+    ...(managed.openrouterProvider ? { bodyExtras: { provider: managed.openrouterProvider } } : {}),
+  };
+}
+
+function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
+  if (!config.AWS_BEDROCK_API_KEY) return null;
+  // Managed Bedrock = Claude via the Anthropic InvokeModel/anthropic-payload transport.
+  return {
+    provider: 'bedrock',
+    kind: 'bedrock',
+    baseUrl: bedrockBaseUrl(),
+    apiKey: config.AWS_BEDROCK_API_KEY,
+    billingMode: 'credits',
+    markup: llmPriceMarkup(),
+    resolvedModel: managed.upstreamModelId,
+    pricing: managedPricing(managed),
   };
 }
 
 export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  return [bedrockManagedDescriptor(managed), openRouterManagedDescriptor(managed)].filter(
-    (d): d is UpstreamDescriptor => d !== null,
-  );
+  const d =
+    managed.transport === 'openrouter'
+      ? openRouterManagedDescriptor(managed)
+      : bedrockManagedDescriptor(managed);
+  return d ? [d] : [];
 }
 
 export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {

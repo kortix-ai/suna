@@ -17,7 +17,11 @@ import type {
   RequestContext,
 } from './engine';
 import type { ResourceType } from './actions';
-import { authorizeV2, listAccessibleProjectsV2 } from './engine-v2';
+import { authorizeV2, filterAccessibleProjectResources, listAccessibleProjectsV2 } from './engine-v2';
+
+// Per-resource (agent/skill) list filter — see engine-v2. Re-exported here so the
+// route layer keeps a single iam import surface (the dispatcher), like authorize.
+export { filterAccessibleProjectResources };
 
 export async function authorize(
   userId: string,

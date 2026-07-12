@@ -1,0 +1,17 @@
+{
+  "title": "TypeScript SDK",
+  "pages": [
+    "index",
+    "getting-started",
+    "full-example",
+    "auth",
+    "the-client",
+    "sessions",
+    "streaming",
+    "react",
+    "error-handling",
+    "modules",
+    "turns",
+    "distribution"
+  ]
+}

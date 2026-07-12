@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts } from '@kortix/db';
 import { db } from '../../shared/db';
+import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
   createAccountToken,
@@ -10,14 +11,17 @@ import {
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
   accountDisplayName,
   AccountTokenSchema,
   OkSchema,
   MeSchema,
+  autoClaimPendingInvites,
   readBodyTokens,
   resolveAccountForUser,
+  resolveAccountDisplayNames,
   lookupEmailsByUserIds,
 } from './app';
 
@@ -40,6 +44,7 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  const authType = (c.get('authType') as string | undefined) ?? null;
   let userEmail = (c.get('userEmail') as string) || '';
   // CLI PAT requests carry no email in context (the auth middleware sets it
   // empty for PATs), so resolve it from the user record — otherwise whoami
@@ -48,33 +53,57 @@ accountsRouter.openapi(
     userEmail = (await lookupEmailsByUserIds([userId])).get(userId) || '';
   }
 
-  let memberships: Array<{
+  const loadMemberships = async (): Promise<Array<{
     accountId: string;
     accountRole: string;
     name: string;
-  }> = [];
+  }>> => {
+    try {
+      return await db
+        .select({
+          accountId: accountMembers.accountId,
+          accountRole: accountMembers.accountRole,
+          name: accounts.name,
+        })
+        .from(accountMembers)
+        .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+        .where(eq(accountMembers.userId, userId));
+    } catch {
+      /* table may not exist yet */
+      return [];
+    }
+  };
 
-  try {
-    memberships = await db
-      .select({
-        accountId: accountMembers.accountId,
-        accountRole: accountMembers.accountRole,
-        name: accounts.name,
-      })
-      .from(accountMembers)
-      .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-      .where(eq(accountMembers.userId, userId));
-  } catch {
-    /* table may not exist yet */
+  if (authType === 'supabase' && userEmail) {
+    await autoClaimPendingInvites(userId, userEmail);
   }
+  let memberships = await loadMemberships();
+  if (memberships.length === 0 && authType === 'supabase') {
+    await resolveAccountId(userId);
+    memberships = await loadMemberships();
+  }
+
+  const displayNames = await resolveAccountDisplayNames(memberships, {
+    userId,
+    email: userEmail,
+  });
 
   return c.json({
     user_id: userId,
     email: userEmail,
+    token_context: {
+      auth_type: authType,
+      project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
+      session_id: (c.get('sessionId') as string | undefined) ?? null,
+      agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
+      connectors: (c.get('agentGrant') as { connectors?: string[] | 'all' } | null | undefined)?.connectors ?? null,
+      kortix_cli: (c.get('agentGrant') as { kortixCli?: string[] | 'all' } | null | undefined)?.kortixCli ?? null,
+      env: (c.get('agentGrant') as { env?: string[] | 'all' } | null | undefined)?.env ?? null,
+    },
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),
-      name: accountDisplayName(m.name, userEmail),
+      name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
       role: m.accountRole,
     })),
   });
@@ -106,11 +135,14 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+
   const tokens = await listAccountTokens(accountId);
   return c.json(
     tokens.map((t) => ({
       token_id: t.tokenId,
       name: t.name,
+      project_id: t.projectId ?? null,
       public_key: t.publicKey,
       status: t.status,
       expires_at: t.expiresAt?.toISOString() ?? null,
@@ -138,6 +170,7 @@ accountsRouter.openapi(
               name: z.string(),
               account_id: z.string().optional(),
               expires_at: z.string().optional(),
+              project_id: z.string().uuid().optional(),
             }),
           },
         },
@@ -176,9 +209,23 @@ accountsRouter.openapi(
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
   }
 
+  // Optional project scope. A project-scoped key only ever works on that one
+  // project (the auth middleware enforces the binding); it never widens access.
+  const projectId =
+    typeof body.project_id === 'string' && body.project_id.trim()
+      ? body.project_id.trim()
+      : undefined;
+
+  if (projectId) {
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded?.row || loaded.row.accountId !== accountId) {
+      return c.json({ error: 'Project not found in account' }, 403);
+    }
+  }
+
   let created;
   try {
-    created = await createAccountToken({ accountId, userId, name, expiresAt });
+    created = await createAccountToken({ accountId, userId, name, expiresAt, projectId });
   } catch (err) {
     if (err instanceof PatPolicyError) {
       return c.json({ error: err.message, code: err.code }, 400);
@@ -189,6 +236,7 @@ accountsRouter.openapi(
     {
       token_id: created.tokenId,
       name: created.name,
+      project_id: created.projectId ?? null,
       public_key: created.publicKey,
       secret_key: created.secretKey,
       status: created.status,

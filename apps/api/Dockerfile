@@ -58,7 +58,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
 # Copy the target app and workspace packages it depends on
 COPY ${SERVICE} ./${SERVICE}
+COPY packages/api-contract ./packages/api-contract
 COPY packages/shared ./packages/shared
+COPY packages/llm-catalog ./packages/llm-catalog
 COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
 COPY packages/starter ./packages/starter
@@ -113,9 +115,10 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy workspace packages — source only, skip nested node_modules
 # which may contain stale symlinks to the .pnpm store.
-# Full dirs (not src-only): @kortix/llm-gateway resolves the @kortix/shared/llm-catalog
-# subpath transitively, which needs shared's package-resolution intact at runtime.
+# Full dirs (not src-only): the API and @kortix/llm-gateway resolve @kortix/llm-catalog
+# (and @kortix/shared's subpaths) at runtime, which needs package-resolution intact.
 COPY --from=deps /app/packages/shared ./packages/shared
+COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
@@ -143,6 +146,9 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
+COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
+COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
@@ -155,7 +161,7 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 COPY --from=sandbox-agent /agent/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
-COPY apps/sandbox/agent-cli ./apps/sandbox/agent-cli
+COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
 COPY packages/executor-sdk ./packages/executor-sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
@@ -186,7 +192,8 @@ RUN rm -rf \
     apps/kortix-sandbox-agent-server/src/__tests__ \
     apps/cli/src/__tests__ \
     packages/starter/src/__tests__ \
-    packages/manifest-schema/src/__tests__
+    packages/manifest-schema/src/__tests__ \
+    packages/api-contract/src/__tests__
 
 WORKDIR /app/${SERVICE}
 

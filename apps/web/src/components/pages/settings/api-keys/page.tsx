@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { stripTrailingSlashes } from '@kortix/sdk';
 
 import { cn } from '@/lib/utils';
 import React, { useState, useMemo, useCallback } from 'react';
@@ -45,10 +46,8 @@ import {
   APIKeyCreateResponse,
   APIKeyRegenerateResponse,
 } from '@/lib/api/api-keys';
-import { getActiveServer, getActiveOpenCodeUrl } from '@/stores/server-store';
-import { getAuthToken } from '@/lib/auth-token';
-import { useServerStore } from '@/stores/server-store';
-import { getEnv } from '@/lib/env-config';
+import { getActiveSandboxId, getActiveDbSandboxId, getActiveOpenCodeUrl } from '@/stores/server-store';
+import { createSandboxShare, listSandboxShares, revokeSandboxShare } from '@kortix/sdk/projects-client';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -161,21 +160,12 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function APIKeysPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  // Use instanceId (the stable DB UUID) so the api-keys backend can resolve
-  // ownership unambiguously. Using sandboxId (external_id) breaks for cloud
-  // providers like Daytona where the external_id is also a UUID — the backend
-  // would mistakenly treat it as the DB primary key and return 404.
-  // Subscribing to both activeServerId and servers ensures reactivity when
-  // the server entry is updated without an activeServerId change.
-  const activeSandboxId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.instanceId;
-  });
-  const activeSandboxExternalId = useServerStore((s) => {
-    const server = s.servers.find((e) => e.id === s.activeServerId);
-    return server?.sandboxId;
-  });
-  const activeServer = getActiveServer();
+  // Per-sandbox API keys are keyed by the sandbox's DB instance id (sandbox_id),
+  // resolved from the active session runtime. The external id can't be used —
+  // for cloud providers like Daytona it's also a UUID and the backend would
+  // treat it as the DB primary key and 404.
+  const activeSandboxId = getActiveDbSandboxId();
+  const activeSandboxExternalId = getActiveSandboxId();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({
     title: '',
@@ -190,11 +180,7 @@ export default function APIKeysPage() {
     label: '',
   });
   const queryClient = useQueryClient();
-  const activeInstanceUrl = getActiveOpenCodeUrl()?.replace(/\/+$/, '');
-  const backendBase = useMemo(
-    () => (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, ''),
-    [],
-  );
+  const activeInstanceUrl = stripTrailingSlashes(getActiveOpenCodeUrl() ?? '') || undefined;
 
   // ── Queries & mutations ────────────────────────────────────────────────
 
@@ -281,18 +267,7 @@ export default function APIKeysPage() {
     queryFn: async (): Promise<PublicShareEntry[]> => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const token = await getAuthToken();
-      if (!token) throw new Error('Not authenticated');
-      const url = new URL(`${backendBase}/p/share`);
-      url.searchParams.set('sandbox_id', sandboxId);
-      const res = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((data as any)?.error || (data as any)?.message || 'Failed to load public links');
-      return (data as { shares?: PublicShareEntry[] }).shares ?? [];
+      return listSandboxShares(sandboxId);
     },
   });
 
@@ -300,24 +275,12 @@ export default function APIKeysPage() {
     mutationFn: async () => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const token = await getAuthToken();
-      if (!token) throw new Error('Not authenticated');
-      const res = await fetch(`${backendBase}/p/share`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          sandbox_id: sandboxId,
-          port: Number(shareForm.port),
-          ttl: shareForm.ttl,
-          label: shareForm.label.trim() || undefined,
-        }),
+      return createSandboxShare({
+        sandboxId,
+        port: Number(shareForm.port),
+        ttl: shareForm.ttl,
+        label: shareForm.label.trim() || undefined,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || data?.message || 'Failed to generate public URL');
-      return data as { url: string; expiresAt?: string; label?: string };
     },
     onSuccess: (data) => {
       setPublicUrlResult(data);
@@ -331,21 +294,7 @@ export default function APIKeysPage() {
     mutationFn: async (token: string) => {
       const sandboxId = activeSandboxExternalId;
       if (!sandboxId) throw new Error('No active sandbox external id');
-      const authToken = await getAuthToken();
-      if (!authToken) throw new Error('Not authenticated');
-      const url = new URL(`${backendBase}/p/share/${encodeURIComponent(token)}`);
-      url.searchParams.set('sandbox_id', sandboxId);
-      const res = await fetch(url.toString(), {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Failed to revoke public link');
-      }
-      return res.json();
+      return revokeSandboxShare(sandboxId, token);
     },
     onSuccess: () => {
       refetchShares();

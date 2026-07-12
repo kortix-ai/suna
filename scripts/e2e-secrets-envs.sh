@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# E2E check for the three local-dev secret environments (dotenvx profiles).
+# E2E check for the local-dev secret environments (dotenvx profiles).
 # Proves each profile DECRYPTS cleanly and points at the right stack — i.e. the
 # local / dev / prod separation is intact. Safe to run anytime: it only reads
 # (decrypts) the env files, it does NOT boot the API or touch any database.
@@ -47,12 +47,14 @@ echo "API — dotenvx secret environments (decrypt + separation check):"
 echo
 row "local" "apps/api/.env"
 row "dev"   "apps/api/.env.dev"
+row "stage" "apps/api/.env.staging"
 row "prod"  "apps/api/.env.prod"
 echo
 echo "WEB — dotenvx secret environments:"
 echo
 webrow "local" "apps/web/.env"
 webrow "dev"   "apps/web/.env.dev"
+webrow "stage" "apps/web/.env.staging"
 webrow "prod"  "apps/web/.env.prod"
 echo
 if [ "$fail" = 0 ]; then

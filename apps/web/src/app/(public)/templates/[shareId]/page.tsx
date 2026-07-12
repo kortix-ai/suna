@@ -28,7 +28,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
-import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { AgentAvatar } from '@/components/ui/agent-avatar';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 interface MarketplaceTemplate {
@@ -242,7 +242,7 @@ export default function TemplateSharePage() {
     return (
       <div className="min-h-screen">
         <div className="flex items-center justify-center h-screen">
-          <KortixLoader size="large" />
+          <KortixHyperLogo size={72} startOnView={false} loop className="text-foreground" />
         </div>
       </div>
     );

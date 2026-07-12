@@ -48,6 +48,14 @@ provider "cloudflare" {
 locals {
   name   = "kortix-dev"
   domain = "dev-api-ecs-fargate.kortix.com" # the ECS fallback name; dev-api itself is the Worker's custom domain
+  # Cloudflare's published IPv4 edge ranges — lock the ALB so the origin is only
+  # reachable THROUGH Cloudflare. Mirrors the EKS chart inboundCidrs / prod.
+  cloudflare_ip_ranges = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+  ]
   tags = {
     Environment = "dev"
     Service     = "kortix-api"
@@ -94,6 +102,9 @@ module "api" {
   certificate_arn = var.enable_https ? one(module.acm[*].certificate_arn) : ""
   environment     = var.api_environment
   secrets         = var.api_secrets
+
+  # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
+  alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # dev sizing: small + spot, floor of 1
   task_cpu         = 512

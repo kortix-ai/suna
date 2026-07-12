@@ -13,7 +13,8 @@ against any backend (GitHub, GitLab, plain git) — no per-host integration.
 - **Why** — sessions run on ephemeral branches; the sandbox is destroyed at the
   end, and everything else boots from the default branch. Until a change request
   merges, the work is invisible and unreviewed. This covers everything committed:
-  code, skills, agents, `kortix.toml`, `AGENTS.md` — no exceptions.
+  code, skills, agents, the manifest (`kortix.yaml`/`kortix.toml`), `AGENTS.md`
+  — no exceptions.
 - **Lifecycle** — `open → merged` (terminal) or `open → closed` (reopenable). A
   merged request can't be reopened or closed.
 - **Merge** — fast-forward when `head_ref` is ahead, else a three-way merge

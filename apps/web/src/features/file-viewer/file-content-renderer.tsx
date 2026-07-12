@@ -17,11 +17,12 @@ import {
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { getAuthToken } from '@/lib/auth-token';
-import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { SANDBOX_PORTS } from '@kortix/sdk/platform-client';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
+import { toSandboxAbsolutePath } from '@kortix/sdk/files';
 import {
   AlertTriangle,
   Braces,
@@ -30,9 +31,9 @@ import {
   Code,
   Download,
   Eye,
+  FileDiff,
   FileWarning,
   FileX,
-  GitBranch,
   Globe,
   Loader2,
   RotateCcw,
@@ -76,14 +77,8 @@ const SqliteRenderer = lazy(() =>
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Ensure a sandbox file path starts with /workspace/ for the static file server. */
-function ensureWorkspacePath(filePath: string): string {
-  if (filePath.startsWith('/workspace/')) return filePath;
-  return '/workspace/' + filePath.replace(/^\/+/, '');
-}
-
 /** Categories that need a blob fetched via readFileAsBlob */
-const BLOB_CATEGORIES = ['pdf', 'docx', 'video', 'audio', 'pptx'] as const;
+const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
 
 export type FileCategory =
@@ -299,6 +294,12 @@ export interface FileContentRendererProps {
    *  preview/source toggle into its own chrome. */
   markdownPreview?: boolean;
   onMarkdownPreviewChange?: (preview: boolean) => void;
+  /**
+   * Optional: report load status to the caller. Used by `show` tool cards to
+   * hide a dead/renamed file reference (→ 'error') instead of rendering the
+   * "file does not exist" state. No effect on the default viewer chrome.
+   */
+  onStatusChange?: (status: 'loading' | 'ready' | 'error') => void;
 }
 
 export function FileContentRenderer({
@@ -313,6 +314,7 @@ export function FileContentRenderer({
   readOnly = false,
   markdownPreview,
   onMarkdownPreviewChange,
+  onStatusChange,
 }: FileContentRendererProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -370,7 +372,7 @@ export function FileContentRenderer({
 
   const htmlPreviewUrl = useMemo(() => {
     if (!isHtmlFile) return '';
-    const normalizedPath = ensureWorkspacePath(filePath);
+    const normalizedPath = toSandboxAbsolutePath(filePath);
     const encodedPath = normalizedPath.split('/').filter(Boolean).map(encodeURIComponent).join('/');
     return rewritePortPath(staticPort, `/open?path=/${encodedPath}`);
   }, [isHtmlFile, filePath, rewritePortPath, staticPort]);
@@ -475,7 +477,8 @@ export function FileContentRenderer({
     [fileDiagnostics],
   );
 
-  // Binary blob for PDF, DOCX, video, audio, PPTX — AND HEIC images
+  // Binary blob for DOCX, video, audio, PPTX — AND HEIC images.
+  // PDFs intentionally use /file/content base64 so PdfRenderer can create a Blob URL from the string.
   const blobPath = isBlobCategory(fileCategory) || isHeicImage ? filePath : null;
   const {
     blobUrl,
@@ -508,7 +511,7 @@ export function FileContentRenderer({
     // HTML files always default to preview mode
     setIsHtmlPreview(true);
     latestContentRef.current = '';
-  }, [filePath]);
+  }, [filePath, setIsMarkdownPreview]);
 
   // Notify parent of unsaved state changes
   useEffect(() => {
@@ -637,6 +640,16 @@ export function FileContentRenderer({
     blobError,
     rawBlob,
   ]);
+
+  // Report load status up (used by `show` cards to hide dead references). Only
+  // fires when a caller opts in via `onStatusChange`; the default viewer is
+  // unaffected.
+  useEffect(() => {
+    if (!onStatusChange) return;
+    if (isNotFound) onStatusChange('error');
+    else if (showLoadingState) onStatusChange('loading');
+    else onStatusChange('ready');
+  }, [onStatusChange, isNotFound, showLoadingState]);
 
   // ---------------------------------------------------------------------------
   // Shared CodeEditor props — keeps edit & read-only paths DRY
@@ -789,14 +802,15 @@ export function FileContentRenderer({
             {headerActions}
 
             <Button
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground/60 hover:text-foreground h-7 w-7"
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-3 text-xs font-medium"
               onClick={handleDownload}
               disabled={!fileContent && !blobUrl && !rawBlob}
               title="Download"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
+              Download
             </Button>
           </div>
         </div>
@@ -873,16 +887,16 @@ export function FileContentRenderer({
           )}
 
           {/* PDF preview */}
-          {isContentReady && fileCategory === 'pdf' && rawBlob && (
+          {isContentReady && fileCategory === 'pdf' && fileContent?.content && (
             <Suspense fallback={<RendererFallback />}>
-              <PdfRenderer blob={rawBlob} className="h-full" />
+              <PdfRenderer fileContent={fileContent.content} className="h-full" />
             </Suspense>
           )}
 
           {/* DOCX preview */}
           {isContentReady && fileCategory === 'docx' && rawBlob && (
             <Suspense fallback={<RendererFallback />}>
-              <DocxRenderer blob={rawBlob} className="h-full" />
+              <DocxRenderer blob={rawBlob} fileName={fileName} className="h-full" />
             </Suspense>
           )}
 
@@ -1047,7 +1061,7 @@ export function FileContentRenderer({
                 {fileContent.patch && fileContent.patch.hunks.length > 0 && (
                   <InfoBanner
                     tone="warning"
-                    icon={GitBranch}
+                    icon={FileDiff}
                     className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
                   >
                     {tHardcodedUi.raw(

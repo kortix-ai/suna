@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { GitPullRequestArrow } from 'lucide-react';
+import { FileDiff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -50,51 +50,13 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
           aria-label={`${changedCount} change${changedCount === 1 ? '' : 's'} in this version, not in ${baseRef} yet`}
           className="relative"
         >
-          <svg
-            width="200"
-            height="200"
-            viewBox="0 0 200 200"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-foreground size-4"
-          >
-            <path
-              d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
-              stroke="currentColor"
-              strokeWidth="16.6667"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <span className="relative inline-flex">
+            <FileDiff className="text-foreground size-4" />
+            <span
+              className="bg-kortix-orange ring-background absolute -top-1 -right-1 size-2 rounded-full ring-2"
+              aria-hidden
             />
-            <path
-              d="M41.6667 75V175"
-              stroke="currentColor"
-              strokeWidth="16.6667"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M100 50H141.667C146.087 50 150.326 51.7559 153.452 54.8816C156.577 58.0072 158.333 62.2464 158.333 66.6667V125"
-              stroke="currentColor"
-              strokeWidth="16.6667"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M158.333 175C172.14 175 183.333 163.807 183.333 150C183.333 136.193 172.14 125 158.333 125C144.526 125 133.333 136.193 133.333 150C133.333 163.807 144.526 175 158.333 175Z"
-              stroke="currentColor"
-              strokeWidth="16.6667"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="fill-kortix-orange stroke-kortix-orange"
-            />
-            <path
-              d="M125 75L100 50L125 25"
-              stroke="currentColor"
-              strokeWidth="16.6667"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          </span>
         </Button>
       </PopoverTrigger>
 
@@ -108,50 +70,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
                 STATUS_TEXT.warning,
               )}
             >
-              <svg
-                width="200"
-                height="200"
-                viewBox="0 0 200 200"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="text-foreground size-4"
-              >
-                <path
-                  d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
-                  stroke="currentColor"
-                  strokeWidth="16.6667"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M41.6667 75V175"
-                  stroke="currentColor"
-                  strokeWidth="16.6667"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M100 50H141.667C146.087 50 150.326 51.7559 153.452 54.8816C156.577 58.0072 158.333 62.2464 158.333 66.6667V125"
-                  stroke="currentColor"
-                  strokeWidth="16.6667"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M158.333 175C172.14 175 183.333 163.807 183.333 150C183.333 136.193 172.14 125 158.333 125C144.526 125 133.333 136.193 133.333 150C133.333 163.807 144.526 175 158.333 175Z"
-                  stroke="currentColor"
-                  strokeWidth="16.6667"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M125 75L100 50L125 25"
-                  stroke="currentColor"
-                  strokeWidth="16.6667"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <FileDiff className="size-4" />
             </span>
             <div className="min-w-0">
               <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
@@ -212,11 +131,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
 
         <div className="border-border flex items-center gap-2 border-t px-3 py-2.5">
           <Button size="sm" onClick={openChangeRequest} disabled={asking}>
-            {asking ? (
-              <Loading className="size-3.5" />
-            ) : (
-              <GitPullRequestArrow className="size-3.5" />
-            )}
+            {asking ? <Loading className="size-3.5" /> : <FileDiff className="size-3.5" />}
             {tI18nHardcoded.raw(
               'autoFeaturesSessionHeaderSessionChangesIndicatorJsxTextOpenChangedc3b8624',
             )}

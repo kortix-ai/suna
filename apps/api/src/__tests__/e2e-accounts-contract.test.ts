@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
+import { accountInvitations, accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -36,6 +36,7 @@ interface InviteRow {
   invitedBy: string | null;
   initialRole: AccountRole;
   acceptedAt: Date | null;
+  acceptedByUserId?: string | null;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -193,7 +194,6 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
     );
   }
 
-  if (table === accountUser) return [];
   if (table === projects) return [{ n: 0 }];
   if (table === projectMembers) return [];
   return [];
@@ -224,6 +224,7 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
     existing.expiresAt = (set?.expiresAt ?? values.expiresAt) as Date;
     existing.invitedBy = (set?.invitedBy ?? values.invitedBy) as string;
     existing.acceptedAt = (set?.acceptedAt ?? null) as Date | null;
+    existing.acceptedByUserId = (set?.acceptedByUserId ?? null) as string | null;
     return existing;
   }
   const invite: InviteRow = {
@@ -233,6 +234,7 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
     invitedBy: values.invitedBy ?? null,
     initialRole: values.initialRole ?? 'member',
     acceptedAt: values.acceptedAt ?? null,
+    acceptedByUserId: values.acceptedByUserId ?? null,
     createdAt: baseDate,
     expiresAt: values.expiresAt,
   };
@@ -258,6 +260,7 @@ mock.module('../iam/dispatcher', () => {
       if (!decide(userId, action)) throw new HTTPException(403, { message: `forbidden: ${action} (denied)` });
     },
     listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+    filterAccessibleProjectResources: async (_u: string, _a: string, _p: string, _t: string, ids: readonly string[]) => [...ids],
   };
 });
 
@@ -266,6 +269,7 @@ mock.module('../middleware/auth', () => ({
     if (!currentUserId) return c.json({ error: 'Unauthorized' }, 401);
     c.set('userId', currentUserId);
     c.set('userEmail', currentUserEmail);
+    c.set('authType', 'supabase');
     await next();
   },
 }));
@@ -295,7 +299,32 @@ mock.module('../shared/rate-limit', () => ({
   createInviteAcceptRateLimitMiddleware: () => async (_c: any, next: any) => next(),
 }));
 
+mock.module('../shared/resolve-account', () => ({
+  resolveAccountId: async (userId: string) => {
+    const existing = memberRows.find((row) => row.userId === userId);
+    if (existing) return existing.accountId;
+    const accountId = accountRows[0]?.accountId ?? userId;
+    if (!accountRows.some((row) => row.accountId === accountId)) {
+      accountRows.push({
+        accountId,
+        name: 'Personal Account',
+        personalAccount: true,
+        createdAt: baseDate,
+        updatedAt: baseDate,
+      });
+    }
+    memberRows.push({
+      userId,
+      accountId,
+      accountRole: 'owner',
+      joinedAt: baseDate,
+    });
+    return accountId;
+  },
+}));
+
 mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -314,15 +343,30 @@ mock.module('../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: any) => {
         if (table === accounts) {
-          const row: AccountRow = {
-            accountId: nextAccountId,
+          const buildRow = (): AccountRow => ({
+            accountId: values.accountId ?? nextAccountId,
             name: values.name,
             personalAccount: values.personalAccount ?? false,
             createdAt: baseDate,
             updatedAt: values.updatedAt ?? baseDate,
+          });
+          return {
+            onConflictDoNothing: () => ({
+              returning: async () => {
+                if (accountRows.some((row) => row.accountId === (values.accountId ?? nextAccountId))) {
+                  return [];
+                }
+                const row = buildRow();
+                accountRows.push(row);
+                return [row];
+              },
+            }),
+            returning: async () => {
+              const row = buildRow();
+              accountRows.push(row);
+              return [row];
+            },
           };
-          accountRows.push(row);
-          return { returning: async () => [row] };
         }
 
         if (table === accountMembers) {
@@ -445,6 +489,34 @@ function createApp() {
 describe('accounts API contract', () => {
   beforeEach(() => resetState());
 
+  test('identity probe repairs and returns a fresh user account membership', async () => {
+    accountRows = [{
+      accountId: PERSONAL_ACCOUNT_ID,
+      name: 'Fresh Personal',
+      personalAccount: true,
+      createdAt: baseDate,
+      updatedAt: baseDate,
+    }];
+    memberRows = [];
+
+    const res = await createApp().request('/v1/accounts/me');
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.accounts).toEqual([
+      expect.objectContaining({
+        account_id: PERSONAL_ACCOUNT_ID,
+        name: 'Fresh Personal',
+        role: 'owner',
+      }),
+    ]);
+    expect(memberRows).toContainEqual(expect.objectContaining({
+      userId: OWNER_ID,
+      accountId: PERSONAL_ACCOUNT_ID,
+      accountRole: 'owner',
+    }));
+  });
+
   test('auto-creates a personal account when the caller has no membership', async () => {
     accountRows = [];
     memberRows = [];
@@ -455,13 +527,13 @@ describe('accounts API contract', () => {
     const body = await res.json();
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
-      account_id: PERSONAL_ACCOUNT_ID,
+      account_id: OWNER_ID,
       account_role: 'owner',
       is_primary_owner: true,
     });
     expect(memberRows).toContainEqual(expect.objectContaining({
       userId: OWNER_ID,
-      accountId: PERSONAL_ACCOUNT_ID,
+      accountId: OWNER_ID,
       accountRole: 'owner',
     }));
   });
@@ -671,6 +743,7 @@ describe('accounts API contract', () => {
     });
     expect(membership(INVITEE_ID, ACCOUNT_ID)?.accountRole).toBe('member');
     expect(inviteRows[0]?.acceptedAt).toBeInstanceOf(Date);
+    expect(inviteRows[0]?.acceptedByUserId).toBe(INVITEE_ID);
 
     const again = await app.request(`/v1/account-invites/${INVITE_ID}/accept`, { method: 'POST' });
     expect(again.status).toBe(200);
@@ -679,6 +752,14 @@ describe('accounts API contract', () => {
       account_role: 'member',
       already_accepted: true,
       bootstrap_grants_applied: [],
+    });
+
+    currentUserId = MEMBER_ID;
+    currentUserEmail = 'invitee@example.test';
+    const otherIdentity = await app.request(`/v1/account-invites/${INVITE_ID}/accept`, { method: 'POST' });
+    expect(otherIdentity.status).toBe(409);
+    expect(await otherIdentity.json()).toEqual({
+      error: 'Invite has already been accepted by another account.',
     });
 
     inviteRows[0] = {

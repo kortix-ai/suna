@@ -3,10 +3,11 @@ import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
+import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
-import { featureFlags } from '@/lib/feature-flags';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
@@ -59,6 +60,11 @@ const AuthEventTracker = lazy(() =>
 const LocalhostLinkInterceptor = lazy(() =>
   import('@/components/localhost-link-interceptor').then((mod) => ({
     default: mod.LocalhostLinkInterceptor,
+  })),
+);
+const MaintenanceBannerHost = lazy(() =>
+  import('@/components/announcements/maintenance-banner-host').then((mod) => ({
+    default: mod.MaintenanceBannerHost,
   })),
 );
 
@@ -345,6 +351,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <script
             src="https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js"
             async
+            crossOrigin="anonymous"
           />
         )}
       </head>
@@ -371,7 +378,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 <DesktopUrlPrompt />
                 <ReactQueryProvider>
                   <Toaster />
-                  {children}
+                  <KortixProjectScope>{children}</KortixProjectScope>
+                  {/* Global maintenance/incident banner (info/warning/critical).
+                      Needs the query client, so it mounts inside ReactQueryProvider. */}
+                  <Suspense fallback={null}>
+                    <MaintenanceBannerHost />
+                  </Suspense>
                 </ReactQueryProvider>
                 {/* Analytics - lazy loaded to not block FCP */}
                 <Suspense fallback={null}>

@@ -112,7 +112,7 @@ structure. Nothing else here rises above a nit.
   still 200 + install still commits. No new file > 1000 lines.
 
 ### B1 — Cloud install lifecycle (started)
-- `kortix add --project` (done), in-project overlay (done). Add **uninstall in
+- `kortix marketplace install --project` (done), in-project overlay (done). Add **uninstall in
   the repo**: a `DELETE /projects/:id/registry/:name` that *removes* files from
   the tree — needs `update-index --remove` plumbing (a sibling of
   `commitMultipleFilesToBranch`, sharing the same throwaway-index core extracted

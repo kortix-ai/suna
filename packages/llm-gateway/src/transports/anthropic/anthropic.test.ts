@@ -32,10 +32,14 @@ describe('buildAnthropicRequest', () => {
     expect(req.headers['x-api-key']).toBe('sk-ant-test');
     expect(req.headers['anthropic-version']).toBeTruthy();
     expect(req.payload.model).toBe('claude-sonnet-4-6');
-    expect(req.payload.system).toBe('be nice');
+    expect(req.payload.system).toEqual([
+      { type: 'text', text: 'be nice', cache_control: { type: 'ephemeral' } },
+    ]);
     expect(req.payload.max_tokens).toBeGreaterThan(0);
     expect(req.payload.stream).toBe(true);
-    expect(req.payload.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(req.payload.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }] },
+    ]);
   });
 
   test('normalizes dotted catalog ids to Anthropic dashed model names', () => {
@@ -57,6 +61,59 @@ describe('buildAnthropicRequest', () => {
       descriptor,
     );
     expect((req.payload.tools as any[])[0]).toMatchObject({ name: 'search', description: 'd' });
+  });
+});
+
+describe('buildAnthropicRequest — prompt caching', () => {
+  test('marks system, the last tool, and the conversation tail as cacheable', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          { role: 'system', content: 'a long stable system prompt' },
+          { role: 'user', content: 'first' },
+          { role: 'assistant', content: 'ok' },
+          { role: 'user', content: 'second' },
+        ],
+        tools: [
+          { type: 'function', function: { name: 'a', parameters: { type: 'object' } } },
+          { type: 'function', function: { name: 'b', parameters: { type: 'object' } } },
+        ],
+      },
+      descriptor,
+    );
+    const p = req.payload as any;
+    expect(p.system).toEqual([
+      { type: 'text', text: 'a long stable system prompt', cache_control: { type: 'ephemeral' } },
+    ]);
+    expect(p.tools[0].cache_control).toBeUndefined();
+    expect(p.tools[1].cache_control).toEqual({ type: 'ephemeral' });
+    const lastMsg = p.messages[p.messages.length - 1];
+    expect(lastMsg.content).toEqual([
+      { type: 'text', text: 'second', cache_control: { type: 'ephemeral' } },
+    ]);
+    const firstUser = p.messages[0];
+    expect(firstUser.content).toBe('first');
+  });
+
+  test('adds the breakpoint to the final block of an array-content tail message', () => {
+    const req = buildAnthropicRequest(
+      {
+        messages: [
+          { role: 'user', content: 'hi' },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'look' },
+              { type: 'text', text: 'at this' },
+            ],
+          },
+        ],
+      },
+      descriptor,
+    );
+    const tail = (req.payload as any).messages.at(-1).content;
+    expect(tail[0].cache_control).toBeUndefined();
+    expect(tail[1].cache_control).toEqual({ type: 'ephemeral' });
   });
 });
 
@@ -101,5 +158,41 @@ describe('translateAnthropicResponse (non-streaming)', () => {
       type: 'function',
       function: { name: 'search', arguments: JSON.stringify({ q: 'x' }) },
     });
+  });
+});
+
+describe('translateAnthropicResponse (streaming)', () => {
+  function anthropicSse(...frames: string[]): Response {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(frames.join('')));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  }
+
+  test('translates a mid-stream `error` event into an OpenAI-shaped error frame', async () => {
+    const upstream = anthropicSse(
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","model":"claude-sonnet-4-6","usage":{"input_tokens":10}}}\n\n',
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+    );
+    const out = await translateAnthropicResponse(upstream, { streaming: true });
+    const text = await new Response(out.body).text();
+
+    // The error surfaces as a canonical `{error:{...}}` SSE frame that the probe /
+    // sseErrorFrame recognize — not swallowed into a silent empty stop.
+    expect(text).toContain('"error"');
+    const frame = text
+      .split('\n')
+      .find((l) => l.startsWith('data:') && l.includes('"error"'))!
+      .slice(5)
+      .trim();
+    const parsed = JSON.parse(frame) as { error: { message: string; type: string; code: string } };
+    expect(parsed.error.message).toBe('Overloaded');
+    expect(parsed.error.type).toBe('overloaded_error');
+    expect(parsed.error.code).toBe('overloaded_error');
   });
 });

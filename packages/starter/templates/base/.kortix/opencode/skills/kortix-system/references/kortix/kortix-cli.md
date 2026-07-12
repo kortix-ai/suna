@@ -6,8 +6,8 @@ sandbox. It is **always available** inside a Kortix session sandbox:
 
 - the binary is on `PATH` (`/usr/local/bin/kortix`)
 - `KORTIX_CLI_TOKEN` is pre-injected — a project-scoped token the CLI
-  authenticates with automatically (not `KORTIX_TOKEN`; see "Inside a
-  sandbox" below)
+  authenticates with automatically (not `KORTIX_SANDBOX_TOKEN` / its
+  deprecated `KORTIX_TOKEN` alias; see "Inside a sandbox" below)
 - `KORTIX_API_URL` points at the platform you're running against
 
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
@@ -157,7 +157,7 @@ core: the `kortix-executor` **MCP** (primary; auto-loaded), this **CLI**, and th
 | `kortix executor discover "<intent>"` | Search tools by natural language (`--limit`). |
 | `kortix executor describe <connector>.<action>` | Show one tool's input schema + risk. |
 | `kortix executor call <connector> <action> '<json>'` | Run a tool (gateway resolves the credential, enforces policy, audits). |
-| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.toml` on main + syncs. |
+| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector NOW (no CR) — commits to `kortix.yaml` on main + syncs. |
 | `kortix executor rm <slug>` | Remove a connector. |
 | `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
 | `kortix executor mcp` | Run the Executor as a stdio MCP server (opencode auto-loads this). |
@@ -230,7 +230,7 @@ can immediately drive); `sessions status` is the at-a-glance fleet view;
 
 ### Triggers
 
-Round-trip through `kortix.toml`'s `[[triggers]]`. Dashboard sees
+Round-trip through `kortix.yaml`'s `triggers:`. Dashboard sees
 the same state.
 
 | Command | Effect |
@@ -240,6 +240,18 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+
+### Channels (Slack)
+
+The project's Slack wiring. **Connecting Slack is one command** — never a
+manifest, bot token, or secret-intake link on Kortix Cloud.
+
+| Command | Effect |
+| --- | --- |
+| `kortix channels connect` | **THE way to connect Slack.** Prints a one-click "Add to Slack" install link (Kortix Cloud) — surface the URL; the human picks a workspace and clicks Allow. Add `--wait` to block until the install lands. Self-host without the shared Slack app: falls back to manual token mode and says so. `--json` for machine output. |
+| `kortix channels status` | Show the connected workspace (or "not connected"). `--json`. |
+| `kortix channels disconnect` | Drop the project's Slack connection. |
+| `kortix channels manifest` | Slack app manifest JSON — **manual/self-host setup only**. |
 
 ### Change requests (`cr`)
 
@@ -330,8 +342,7 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
-| `kortix <project-name>` | Same as `init` but creates a new directory next to cwd. |
+| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.yaml`, `.kortix/Dockerfile`, the OpenCode config dir with the default agent + kortix-system skill, and a `.kortix/link.json` placeholder. Then, for each coding agent you select (opencode/claude/codex/cursor), symlinks the OpenCode config dir into that agent's native location (`.opencode` / `.claude` → `.kortix/opencode`; codex wires `.agents` → `.kortix/opencode`, its documented cross-tool skills dir) so they share its skills + agents; Codex and Cursor also get a root `AGENTS.md` pointer they read natively (so Cursor needs no rule file). Note: Claude scans `.claude/skills` only one level deep, so skills nested under a grouping folder aren't discovered by Claude locally (they still load in the OpenCode sandbox and for Codex). |
 
 ## Token scope
 
@@ -354,8 +365,9 @@ outright.
 The session bootstrap injects:
 
 ```
-KORTIX_CLI_TOKEN=kortix_pat_…   ← project-scoped PAT; what the CLI authenticates with
-KORTIX_TOKEN=kortix_sb_…        ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
+KORTIX_CLI_TOKEN=kortix_pat_…       ← project-scoped PAT; what the CLI authenticates with
+KORTIX_SANDBOX_TOKEN=kortix_sb_…    ← sandbox service key (runtime/clone/LLM) — NOT for the CLI
+KORTIX_TOKEN=kortix_sb_…            ← deprecated alias for KORTIX_SANDBOX_TOKEN, same value
 KORTIX_API_URL=https://<host>/v1
 KORTIX_PROJECT_ID=<uuid>
 KORTIX_SESSION_ID=<uuid>
@@ -366,12 +378,12 @@ The CLI reads `KORTIX_CLI_TOKEN` (falling back to `KORTIX_EXECUTOR_TOKEN`)
 automatically and uses `KORTIX_API_URL` as the host base. No config file,
 no `kortix login` needed — `kortix …` just works.
 
-> **Don't authenticate with `KORTIX_TOKEN`.** That's the sandbox *service
-> key* (used for the LLM gateway, the tool router, and just-in-time git
-> clone credentials). The project-scoped routes the CLI calls
-> (`change-requests`, `secrets`, …) reject it with `401 Invalid or expired
-> token` — it isn't expired, it's simply the wrong token. Use the CLI; it
-> already holds the right one.
+> **Don't authenticate with `KORTIX_SANDBOX_TOKEN`** (or its deprecated
+> `KORTIX_TOKEN` alias). That's the sandbox *service key* (used for the LLM
+> gateway, the tool router, and just-in-time git clone credentials). The
+> project-scoped routes the CLI calls (`change-requests`, `secrets`, …)
+> reject it with `401 Invalid or expired token` — it isn't expired, it's
+> simply the wrong token. Use the CLI; it already holds the right one.
 
 ### Rotating
 
@@ -387,7 +399,7 @@ kortix project token rotate             # rotates the project token
 ### Spin up a fresh session with custom env
 
 ```sh
-kortix secrets set OPENAI_API_KEY=sk-… ANTHROPIC_API_KEY=sk-…
+kortix secrets set STRIPE_API_KEY=sk_live_… WEBHOOK_SLACK_SECRET=whsec_…
 kortix sessions new --prompt "Audit the auth module and propose a fix"
 ```
 
@@ -459,7 +471,8 @@ conflict story, and data model.
 | --- | --- |
 | `KORTIX_CLI_TOKEN` | Project-scoped PAT the CLI authenticates with (injected in sandboxes). |
 | `KORTIX_EXECUTOR_TOKEN` | Same PAT under another name; the CLI falls back to it. |
-| `KORTIX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
+| `KORTIX_SANDBOX_TOKEN` | Sandbox **service key** — runtime/clone/LLM auth. **Not** a CLI token; project routes reject it. |
+| `KORTIX_TOKEN` | Deprecated alias for `KORTIX_SANDBOX_TOKEN`, same value. **Not** a CLI token. |
 | `KORTIX_API_URL` | API base URL. In a sandbox it already includes the `/v1` mount. |
 | `KORTIX_PROJECT_ID` | Override the linked project for one command. |
 | `KORTIX_CONFIG_FILE` | Override `~/.config/kortix/config.json` location (useful for tests). |
@@ -497,7 +510,7 @@ warns.
   the kortix-system skill. Mention the CLI from there.
 - `change-requests.md` (alongside this file) — full CR data model,
   lifecycle, REST API, and the "MUST open a CR" agent mandate.
-- `kortix.toml` — the manifest the dashboard + the CLI both read.
+- `kortix.yaml` — the manifest the dashboard + the CLI both read.
 - `.kortix/Dockerfile` — your sandbox base image.
 - `.kortix/link.json` — current dir's binding to a remote project
   (project_id + host).

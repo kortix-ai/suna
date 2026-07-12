@@ -1,7 +1,7 @@
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
-// kortix.toml [sandbox]. We bill against that reserved spec × wall-clock time
+// kortix.yaml's `sandbox:` block. We bill against that reserved spec × wall-clock time
 // while the sandbox is `active`. Stopped / hibernated sandboxes do not accrue
 // charges in v1 (archive rate placeholder lives in tiers.ts for future use).
 //
@@ -91,8 +91,11 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     gpuCount: opts.spec.gpuCount ?? 0,
     state: 'active',
     metadata: (opts.metadata ?? {}) as Record<string, unknown>,
+  }).catch(async (err) => {
+    if ((err as { code?: string })?.code !== '23505') throw err;
+    return getOpenComputeSession(opts.sandboxId);
   });
-  return row.id;
+  return row?.id ?? null;
 }
 
 /**
@@ -194,7 +197,7 @@ export async function reopenComputeForSandbox(
   const last = await getLatestComputeSession(sandboxId);
   const spec: SandboxSpec = last
     ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
-    : { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
+    : { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
   return startComputeSession({ sandboxId, accountId, sessionId, actorUserId, spec });
 }
 

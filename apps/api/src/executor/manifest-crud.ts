@@ -1,15 +1,18 @@
 /**
- * Connector CRUD that round-trips `kortix.toml` — the web UI "Add connector"
- * flow (mirrors triggers/apps). The manifest holds the connector definition +
- * credential MODE (shared/per_user, a static per-app default). ACCESS (who can
- * use) is dynamic and stored on the connector (not git). Credentials live in the
- * split store. See docs/specs/executor.md §3, §5–6.
+ * Connector CRUD that round-trips `kortix.yaml` — the web UI "Add connector"
+ * flow (mirrors triggers/apps). The manifest holds the connector definition.
+ * Credential MODE is always `shared` (`per_user` — each member brings their
+ * own — was removed 2026-07-05, docs/specs/2026-07-05-agent-first-config-
+ * unification.md §2.5). Connectors are project-wide visible — the only ACCESS
+ * gate is the agent-side `agents.<name>.connectors` grant (declared in git, on
+ * the agent, not the connector). Credentials live in the split store. See
+ * docs/specs/executor.md §3, §5–6.
  */
 import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, RESERVED_CONNECTOR_SLUGS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import { extractConnectors, RESERVED_CONNECTOR_SLUGS, RESERVED_SLUG_PROVIDERS, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -19,13 +22,14 @@ import {
   type DefaultMode,
 } from '../projects/policies';
 import { syncProjectConnectors, type SyncResult } from './sync';
-import { setConnectorSharingDb, upsertCredential } from './credentials';
-import type { SharingIntent } from './share';
+import { upsertCredential } from './credentials';
+import { resolveExperimentalFeature } from '../experimental/features';
 
 export interface ConnectorDraft {
   slug: string;
   name?: string;
-  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http' | 'channel';
+  platform?: 'slack' | 'email';
   app?: string;
   account?: string;
   url?: string;
@@ -33,9 +37,11 @@ export interface ConnectorDraft {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Credential storage mode — default per app (pipedream→per_user, else shared). */
-  credential?: 'shared' | 'per_user';
-  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
+  /** Credential storage mode. `shared` is the only mode (`per_user` was
+   *  removed 2026-07-05) — accepted for back-compat callers but never emitted
+   *  into the manifest, since `shared` is already the implicit default. */
+  credential?: 'shared';
+  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in?: 'header' | 'query'; name?: string; prefix?: string };
 }
 
 export type CrudResult =
@@ -45,7 +51,7 @@ export type CrudResult =
 function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
   const entry: Record<string, unknown> = { slug: d.slug, provider: d.provider };
   if (d.name) entry.name = d.name;
-  if (d.credential) entry.credential = d.credential;
+  // `shared` is the only mode and the implicit default — never emit `credential`.
   if (d.provider === 'pipedream') {
     if (d.app) entry.app = d.app;
     if (d.account) entry.account = d.account;
@@ -60,6 +66,8 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'openapi') {
     if (d.spec) entry.spec = d.spec;
+  } else if (d.provider === 'channel') {
+    if (d.platform) entry.platform = d.platform;
   }
   if (d.auth && d.auth.type && d.auth.type !== 'none') {
     const auth: Record<string, unknown> = { type: d.auth.type };
@@ -87,27 +95,45 @@ async function connectorIdFor(projectId: string, slug: string): Promise<string |
   return row?.connectorId ?? null;
 }
 
-/** Create/update a connector in kortix.toml, materialize it, then apply access. */
+/** Create/update a connector in kortix.yaml, then materialize it. */
 export async function upsertConnectorInManifest(
   projectId: string,
   accountId: string,
   draft: ConnectorDraft,
-  sharing?: SharingIntent,
 ): Promise<CrudResult> {
   // Slack is a first-class channel connector — reserve its namespace so a new
   // Pipedream/OpenAPI app can't take the `slack` name (and shadow the built-in
   // Slack CLI). Connect Slack in the Channels tab; it appears as a connector
   // automatically. Only block NEW slugs — editing an existing entry is fine.
-  if (RESERVED_CONNECTOR_SLUGS.has(draft.slug) && (await connectorIdFor(projectId, draft.slug)) === null) {
+  const reservedProvider = RESERVED_SLUG_PROVIDERS[draft.slug];
+  if (
+    RESERVED_CONNECTOR_SLUGS.has(draft.slug) &&
+    (await connectorIdFor(projectId, draft.slug)) === null &&
+    reservedProvider !== draft.provider
+  ) {
     return {
       ok: false,
-      error: `"${draft.slug}" is reserved for the built-in Slack channel — connect Slack in Channels (it appears as a connector automatically). Pick a different slug.`,
+      error:
+        draft.slug === 'slack' || draft.slug === 'kortix_slack'
+          ? `"${draft.slug}" is the built-in Slack channel — run \`kortix channels connect\` for a one-click install link instead of adding a connector. Once installed it appears here as \`kortix_slack\` automatically.`
+          : `"${draft.slug}" is reserved for a built-in channel profile. Pick a different slug.`,
       status: 400,
     };
   }
 
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
+  if (
+    draft.provider === 'channel' &&
+    draft.platform === 'email' &&
+    !resolveExperimentalFeature(row.metadata, 'agentmail_email')
+  ) {
+    return {
+      ok: false,
+      error: 'AgentMail Email is experimental and must be enabled for this project',
+      status: 403,
+    };
+  }
 
   let manifest;
   try {
@@ -141,12 +167,6 @@ export async function upsertConnectorInManifest(
   if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
 
   const sync = await syncProjectConnectors(projectId, accountId);
-
-  // Apply access (who can use) — dynamic, lives on the connector, not in git.
-  if (sharing) {
-    const connectorId = await connectorIdFor(projectId, draft.slug);
-    if (connectorId) await setConnectorSharingDb(connectorId, sharing);
-  }
   return { ok: true, sync };
 }
 
@@ -174,7 +194,8 @@ export async function deleteConnectorFromManifest(projectId: string, slug: strin
   return { ok: true };
 }
 
-/** Set the SHARED credential value (userId null). Per-user creds come via the connect flow. */
+/** Set the SHARED credential value (userId null) — the only credential a
+ *  connector has since `per_user` was removed 2026-07-05. */
 export async function setConnectorCredentialShared(projectId: string, slug: string, value: string): Promise<CrudResult> {
   const connectorId = await connectorIdFor(projectId, slug);
   if (!connectorId) return { ok: false, error: 'connector not found', status: 404 };
@@ -183,17 +204,18 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
 }
 
 /**
- * Change ONLY a connector's credential MODE (shared ↔ per_user) in kortix.toml,
- * commit, and re-sync so the runtime row reflects it. We deliberately don't wipe
- * existing credentials — switching just changes how they resolve (shared = the
- * userId-null row; per_user = each member's own), so the admin is told they may
- * need to (re)connect. Other manifest fields are left untouched.
+ * `shared` is now the only credential mode (`per_user` removed 2026-07-05,
+ * docs/specs/2026-07-05-agent-first-config-unification.md §2.5). This entry
+ * point is kept, restricted to a `shared`-only no-op: it strips a lingering
+ * legacy `credential: per_user` key from kortix.yaml (if present) and
+ * re-syncs, but never writes a mode back. Callers asking for anything other
+ * than `shared` are rejected by the router before this is called.
  */
 export async function setConnectorCredentialModeInManifest(
   projectId: string,
   accountId: string,
   slug: string,
-  mode: 'shared' | 'per_user',
+  mode: 'shared',
 ): Promise<CrudResult> {
   const row = await loadRow(projectId);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
@@ -208,7 +230,7 @@ export async function setConnectorCredentialModeInManifest(
   const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
   const entry = current.find((c) => c?.slug === slug);
   if (!entry) return { ok: false, error: 'connector not found', status: 404 };
-  entry.credential = mode;
+  delete entry.credential;
   manifest.raw.connectors = current;
 
   const parsed = extractConnectors(manifest);
@@ -222,7 +244,48 @@ export async function setConnectorCredentialModeInManifest(
   return { ok: true, sync };
 }
 
-/** Rename a connector — patches the kortix.toml entry's `name` (display label) + re-syncs. */
+/**
+ * Toggle a connector's `sensitive` flag in kortix.yaml, commit, re-sync. A
+ * sensitive connector gates its reads too (every action defaults to
+ * require_approval unless an explicit policy opens it) — for email/files/
+ * secrets-bearing integrations where reading is itself an exfiltration surface.
+ */
+export async function setConnectorSensitiveInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  sensitive: boolean,
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  // Omit the key when false so the emitted manifest stays minimal (false is the default).
+  if (sensitive) entry.sensitive = true;
+  else delete entry.sensitive;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: mark ${slug} ${sensitive ? 'sensitive' : 'not sensitive'}`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+/** Rename a connector — patches the kortix.yaml entry's `name` (display label) + re-syncs. */
 export async function setConnectorNameInManifest(
   projectId: string,
   accountId: string,
@@ -266,7 +329,8 @@ export async function setConnectorNameInManifest(
 export interface ConnectorConfigView {
   slug: string;
   provider: ConnectorSpec['provider'];
-  credentialMode: 'shared' | 'per_user';
+  platform: ConnectorSpec['platform'];
+  credentialMode: 'shared';
   app: string | null;
   account: string | null;
   url: string | null;
@@ -274,11 +338,11 @@ export interface ConnectorConfigView {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom' | 'oauth1'; in: 'header' | 'query'; name: string | null; prefix: string | null };
 }
 
 /**
- * Read a single connector's definition from kortix.toml (source of truth) in the
+ * Read a single connector's definition from kortix.yaml (source of truth) in the
  * same shape the dashboard edits. Parsed via extractConnectors so it round-trips
  * exactly with the upsert path. Returns null if the connector doesn't exist.
  */
@@ -295,6 +359,7 @@ export async function getConnectorConfigFromManifest(
   return {
     slug: spec.slug,
     provider: spec.provider,
+    platform: spec.platform,
     credentialMode: spec.credentialMode,
     app: spec.app,
     account: spec.account,
@@ -307,11 +372,11 @@ export async function getConnectorConfigFromManifest(
   };
 }
 
-// ─── Per-connector policies ([[connectors.policies]]) ───────────────────────
+// ─── Per-connector policies (each connector's `policies:` list) ─────────────
 
 const CONNECTOR_POLICY_ACTIONS: readonly ConnectorPolicyAction[] = ['always_run', 'require_approval', 'block'];
 
-/** Read a single connector's [[connectors.policies]] from kortix.toml (source of truth). */
+/** Read a single connector's `policies:` list from kortix.yaml (source of truth). */
 export async function getConnectorPoliciesFromManifest(
   projectId: string,
   slug: string,
@@ -331,7 +396,7 @@ export async function getConnectorPoliciesFromManifest(
 }
 
 /**
- * Replace a connector's [[connectors.policies]] in kortix.toml, commit, re-sync
+ * Replace a connector's `policies:` list in kortix.yaml, commit, re-sync
  * (→ executor_connector_policies, which the gateway enforces). Matches are glob
  * or `/regex/` — validated here so a bad regex can't be persisted.
  */
@@ -379,7 +444,7 @@ export async function setConnectorPoliciesInManifest(
   return { ok: true, sync };
 }
 
-// ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────
+// ─── Project-level policies (top-level `policies:` list + `policy:` block) ──
 
 export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
@@ -387,7 +452,7 @@ export interface ProjectPoliciesView {
   errors: Array<{ path: string; error: string }>;
 }
 
-/** Read the project's [[policies]] + [policy] block (kortix.toml = source of truth). */
+/** Read the project's `policies:` list + `policy:` block (kortix.yaml = source of truth). */
 export async function getProjectPoliciesFromManifest(projectId: string): Promise<ProjectPoliciesView | null> {
   const row = await loadRow(projectId);
   if (!row) return null;
@@ -398,7 +463,7 @@ export async function getProjectPoliciesFromManifest(projectId: string): Promise
 }
 
 /**
- * Replace the WHOLE [[policies]] array + [policy].default_mode in kortix.toml,
+ * Replace the WHOLE `policies:` list + `policy.default_mode` in kortix.yaml,
  * commit, and re-sync so the runtime tables reflect the new posture. The UI is
  * an ordered list; "save" PUTs the whole list back. Per-rule add/edit/delete
  * remain client-side until commit.

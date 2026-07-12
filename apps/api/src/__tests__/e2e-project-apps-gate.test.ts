@@ -24,7 +24,7 @@ const projectRow: typeof projects.$inferSelect = {
   name: 'Gate Project',
   repoUrl: 'https://github.com/kortix-ai/gate-project.git',
   defaultBranch: 'main',
-  manifestPath: 'kortix.toml',
+  manifestPath: 'kortix.yaml',
   status: 'active',
   metadata: {},
   lastOpenedAt: null,
@@ -62,6 +62,7 @@ mock.module('../projects/git', () => ({
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   readRepoFile: async () => 'kortix_version = 1\n[project]\nname = "x"\n',
+  readManifestFromRepo: async () => null,
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -144,12 +145,15 @@ mock.module('../shared/supabase', () => ({
   getSupabase: () => ({ auth: { admin: { getUserById: async () => ({ data: { user: { email: 'gate@example.test' } } }) } } }),
 }));
 mock.module('../billing/repositories/credit-accounts', () => ({
+  upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
   updateCreditAccount: async () => {},
 }));
+const realProjectSecrets = await import('../projects/secrets');
 mock.module('../projects/secrets', () => ({
+  ...realProjectSecrets,
   encryptProjectSecret: (_p: string, v: string) => v,
   decryptProjectSecret: (_p: string, v: string) => v,
   isValidSecretName: () => true,

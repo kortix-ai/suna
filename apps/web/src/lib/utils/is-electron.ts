@@ -19,8 +19,9 @@ export function isElectron(): boolean {
   if (typeof navigator !== 'undefined' && navigator.userAgent) {
     if (navigator.userAgent.toLowerCase().includes('electron')) return true;
   }
-  // @ts-expect-error - Electron renderer process global
-  if (window.process && window.process.type === 'renderer') return true;
+  // Legacy Electron exposes a `process` global with type === 'renderer'.
+  const electronProcess = (window as { process?: { type?: string } }).process;
+  if (electronProcess?.type === 'renderer') return true;
 
   return false;
 }

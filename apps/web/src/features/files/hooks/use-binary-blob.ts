@@ -4,13 +4,14 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { readFileAsBlob } from '../api/opencode-files';
+import { fileReadRetryDelayMs, shouldRetryFileRead } from './file-read-retry';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
 export const binaryBlobKeys = {
   all: ['opencode-files', 'binary-blob'] as const,
-  file: (serverUrl: string, serverVersion: number, filePath: string) =>
-    ['opencode-files', 'binary-blob', serverUrl, serverVersion, filePath] as const,
+  file: (serverUrl: string, filePath: string) =>
+    ['opencode-files', 'binary-blob', serverUrl, filePath] as const,
 };
 
 // ── Hook ───────────────────────────────────────────────────────────────────
@@ -37,12 +38,11 @@ export function useBinaryBlob(filePath: string | null): {
   error: string | null;
 } {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const serverVersion = useServerStore((s) => s.serverVersion);
 
   // ── Fetch the raw Blob — this is what React Query caches ────────────
   const query = useQuery<Blob>({
     queryKey: filePath
-      ? binaryBlobKeys.file(serverUrl, serverVersion, filePath)
+      ? binaryBlobKeys.file(serverUrl, filePath)
       : ['opencode-files', 'binary-blob', '__disabled__'],
     queryFn: async () => {
       const blob = await readFileAsBlob(filePath!);
@@ -55,13 +55,8 @@ export function useBinaryBlob(filePath: string | null): {
     staleTime: 30_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    retry: (failureCount, error: Error) => {
-      // Don't retry permanent failures (not found, access denied)
-      const msg = error.message.toLowerCase();
-      if (msg.includes('404') || msg.includes('403') || msg.includes('not found') || msg.includes('access denied')) return false;
-      return failureCount < 3;
-    },
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
+    retry: (failureCount, error) => shouldRetryFileRead(filePath, failureCount, error),
+    retryDelay: (attempt) => fileReadRetryDelayMs(attempt, filePath),
   });
 
   const cachedBlob = query.data ?? null;

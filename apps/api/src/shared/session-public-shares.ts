@@ -6,7 +6,7 @@ import { db } from './db';
 export type PublicShareResourceType = 'preview' | 'file';
 
 export const STATIC_FILE_SHARE_PORT = 3211;
-export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000]);
+export const PUBLIC_SHARE_BLOCKED_PORTS = new Set([22, 4096, 8000, STATIC_FILE_SHARE_PORT]);
 
 export const DEFAULT_PREVIEW_CANDIDATES = [
   { id: 'web', label: 'App preview', port: 3000, path: '/', source: 'default' },
@@ -224,6 +224,14 @@ export async function touchPublicShare(shareId: string) {
 }
 
 export async function resolvePublicShare(token: string) {
+  // LEFT JOIN, not INNER: a session that was created but never started (or
+  // whose sandbox hasn't been provisioned yet) has no `session_sandboxes` row
+  // at all. An INNER JOIN made that case fall straight into `!row` → 404
+  // ("not found"), which is a lie — the share link IS valid, its sandbox just
+  // isn't up yet. The LEFT JOIN lets a real, non-revoked, non-expired token
+  // reach the `!row.externalId` branch below and report the truthful 503
+  // ("Sandbox is not ready") instead of a false 404. `sessionId` is unique on
+  // `session_sandboxes` (one row per session), so this never fans out.
   const [row] = await db
     .select({
       shareId: projectSessionPublicShares.shareId,
@@ -243,7 +251,7 @@ export async function resolvePublicShare(token: string) {
       sandboxStatus: sessionSandboxes.status,
     })
     .from(projectSessionPublicShares)
-    .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
     .where(eq(projectSessionPublicShares.tokenHash, publicShareTokenHash(token)))
     .limit(1);
 

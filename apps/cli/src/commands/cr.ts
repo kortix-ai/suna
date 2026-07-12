@@ -1,5 +1,5 @@
 import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
   ChangeRequestDetailResponse,
@@ -10,7 +10,7 @@ import type {
   ChangeRequestsListResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix cr <subcommand> [options]
+const HELP = help`Usage: kortix cr <subcommand> [options]
 
 Open, review, and merge Kortix change requests. A CR proposes merging one
 version (branch) into another inside a project. The CR layer is Kortix-
@@ -179,7 +179,7 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ChangeRequestsListResponse;
@@ -228,7 +228,7 @@ async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number
 }
 
 async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
@@ -301,7 +301,7 @@ async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Pro
 
 async function crDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
   const noColor = takeFlagBool(argv, ['--no-color']);
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -401,7 +401,7 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
     return 2;
   }
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {
@@ -428,6 +428,26 @@ async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
   process.stdout.write(
     `  ${C.dim}${displayBranch(created.head_ref)} → ${displayBranch(created.base_ref)}${C.reset}\n\n`,
   );
+
+  // A CR whose head tip equals base shows "No changes detected" in the
+  // dashboard and can't be applied — by far the most common cause is a
+  // committed-but-never-pushed session branch. Catch it here, at open time,
+  // while the author (usually an agent) can still fix it in one command. The
+  // diff endpoint recomputes live, so pushing after this warning heals the
+  // SAME CR — no need to reopen. Best-effort: never fail the open over it.
+  try {
+    const diff = await ctx.client.get<ChangeRequestDiffResponse>(
+      `/projects/${ctx.projectId}/change-requests/${created.cr_id}/diff`,
+    );
+    if (diff.files_changed === 0) {
+      process.stderr.write(
+        `  ${C.yellow}⚠${C.reset} CR #${created.number} has NO changes — its head branch is identical to ${displayBranch(created.base_ref)}.\n    If you committed locally, push first: ${C.bold}git push origin HEAD${C.reset}\n    The CR updates automatically once the push lands.\n\n`,
+      );
+    }
+  } catch {
+    // Diff unavailable (e.g. transient mirror refresh) — the open succeeded,
+    // don't fail or confuse the caller over a advisory check.
+  }
   return 0;
 }
 
@@ -439,7 +459,7 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -463,7 +483,7 @@ async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
 }
 
 async function crClose(ref: string | undefined, opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
@@ -481,7 +501,7 @@ async function crClose(ref: string | undefined, opts: CtxOpts): Promise<number> 
 }
 
 async function crReopen(ref: string | undefined, opts: CtxOpts): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;

@@ -5,7 +5,6 @@ import { makeOpenApiApp, json } from '../openapi';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
-import { sessionLlm } from './routes/session-llm';
 import { proxy } from './routes/proxy';
 import { anthropic } from './routes/anthropic';
 
@@ -24,7 +23,6 @@ router.openapi(
           status: z.string(),
           service: z.string(),
           timestamp: z.string(),
-          billing_enabled: z.boolean(),
         }),
         'Router health status',
       ),
@@ -35,7 +33,6 @@ router.openapi(
       status: 'ok',
       service: 'kortix-router',
       timestamp: new Date().toISOString(),
-      billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     });
   },
 );
@@ -47,7 +44,6 @@ router.route('/web-search', webSearch);
 router.route('/image-search', imageSearch);
 
 // LLM routes (apiKeyAuth)
-router.route('/llm', sessionLlm);
 router.use('/chat/*', apiKeyAuth);
 router.use('/messages', apiKeyAuth);
 router.use('/models', apiKeyAuth);

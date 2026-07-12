@@ -1,6 +1,6 @@
 ---
 name: kortix-slack
-description: How to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), or when the user asks how to do anything in Slack.
+description: How to CONNECT Slack (one command — `kortix channels connect`, prints a one-click install link) and how to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the user asks to connect/set up Slack, when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or `$SLACK_CHANNEL_ID` is set in the env), or when the user asks how to do anything in Slack.
 ---
 
 <skill name="slack">
@@ -15,6 +15,36 @@ The `slack` CLI is on `$PATH` and **just works** — every call runs through the
 
 Everything else (`slack history`, `slack react`, `slack send --file`, `slack search`, …) is for when the task explicitly asks for it.
 </overview>
+
+<connecting>
+### "Connect my Slack" = ONE command. Nothing else.
+
+If the project isn't wired to Slack yet (or the user asks to connect/set up
+Slack), run:
+
+```sh
+kortix channels connect
+```
+
+On Kortix Cloud this prints a **one-click "Add to Slack" install link**. Your
+entire job is: surface that URL to the user and tell them to open it, pick
+their workspace, and click Allow. That's the whole setup — the platform's
+shared Slack app handles the webhook, tokens, and connector materialization
+automatically. Verify afterwards with `kortix channels status` (or run
+`kortix channels connect --wait` to block until the install lands).
+
+Do **NOT**:
+- walk the user through creating a Slack app at api.slack.com,
+- print or paste the app manifest,
+- ask for a bot token or signing secret,
+- mint a secret-intake link for `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET`,
+- try `kortix executor add slack` (the slug is reserved; it will be rejected).
+
+The manual path exists ONLY for self-hosted servers without the shared Slack
+app — and `kortix channels connect` detects that case itself and prints the
+manual instructions (`kortix channels manifest` + `--manual`). Trust its
+output; don't pre-empt it.
+</connecting>
 
 <live-stream>
 The Slack message you're replying to has a live "plan block" attached. Each `slack step` you emit appears as a new checkpoint in that block in real time. Users can see what you're doing without waiting for the final answer.

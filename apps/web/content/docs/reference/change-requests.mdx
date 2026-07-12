@@ -19,7 +19,7 @@ The contract:
 4. **Surface the CR number to the user** (`kortix cr ls`) so they can review.
 5. **Stop. The agent does not merge its own CR.** Merging is the user's call, from the dashboard or `kortix cr merge <n>`.
 
-Applies to everything: code edits, new files (skills, agents, slash commands, tools, plugins), `kortix.toml` edits (triggers, env, sandbox, apps), `AGENTS.md` changes, new MCP server configs — anything committed to the tree. There is no "small enough to skip the CR" exception.
+Applies to everything: code edits, new files (skills, agents, slash commands, tools, plugins), manifest edits (`kortix.yaml` or legacy `kortix.toml` — triggers, env/secrets, sandbox, apps, agent grants), `AGENTS.md` changes, new MCP server configs — anything committed to the tree. There is no "small enough to skip the CR" exception.
 
 ### Anti-patterns
 
@@ -51,7 +51,7 @@ CRs live in the `change_requests` table.
 | `merge_commit_sha` | text (nullable) | The merge commit. For fast-forwards equals `head_commit_sha` at merge time. |
 | `closed_at` | timestamptz (nullable) | When the CR was closed without merging. |
 | `closed_by` | uuid (nullable) | Who closed it. |
-| `metadata` | jsonb | Free-form key/value. Defaults to `{}`. |
+| `metadata` | jsonb | Free-form key/value. Defaults to `{}`. Holds `requested_changes: { text, by, at }[]` — the log of human "request changes" notes appended by `POST /:crId/request-changes` (CRs have no separate comment table). |
 | `created_at` | timestamptz | Defaults to now. |
 | `updated_at` | timestamptz | Updated on every status change or SHA refresh. |
 
@@ -106,10 +106,11 @@ For open CRs, the API refreshes `head_commit_sha` and `base_commit_sha` against 
 
 `POST /v1/projects/:projectId/change-requests/:crId/merge` runs through `mergeBranches`:
 
+0. **Manifest gate.** Before touching git, the route reads `kortix.yaml` (or legacy `kortix.toml`) from the CR's `head_ref` — the version about to be merged — and validates it against the canonical manifest schema (the same validator `kortix ship` runs pre-flight). A branch with no manifest at all is fine. A branch whose manifest fails to validate is not: 422 with `code: "MANIFEST_INVALID"` and an `issues` array, and the merge never runs.
 1. Fast-forward if `head_ref` is strictly ahead of `base_ref`.
 2. Otherwise create a merge commit (three-way merge). Default message `Merge CR #<n>: <title>`; override with `--message`. Author is `Kortix <noreply@kortix.ai>`.
 3. On success: update the `change_requests` row to `merged`, capture SHAs, invalidate the project's mirror cache.
-4. On conflict: 409 with `error: "Merge failed"` and the conflict list available via `GET /merge-preview`.
+4. On conflict: 409 with `error: <specific message from the merge, e.g. "Merge conflicts detected — resolve before merging">` and the conflict list available via `GET /merge-preview`.
 
 ### Merge preview
 
@@ -184,11 +185,12 @@ All endpoints under `/v1/projects/:projectId/change-requests`. The CLI is a thin
 | PATCH | `/:crId` | Edit `title` / `description`. |
 | GET | `/:crId/diff` | Unified patch + file list. |
 | GET | `/:crId/merge-preview` | Conflict + fast-forward analysis. |
-| POST | `/:crId/merge` | Body: `{ message?: string }`. 409 on conflict or non-`open` status. |
+| POST | `/:crId/merge` | Body: `{ message?: string }`. 422 `MANIFEST_INVALID` if the head branch's manifest fails schema validation. 409 on conflict or non-`open` status. |
 | POST | `/:crId/close` | No body. 409 if already `merged`. |
 | POST | `/:crId/reopen` | No body. 409 if not `closed`. |
+| POST | `/:crId/request-changes` | Body: `{ feedback }`. Appends `{ text, by, at }` to `metadata.requested_changes` and delivers the feedback to the originating session's agent (best-effort, background — a sleeping sandbox is woken to receive it). 409 if not `open`. |
 
-All endpoints require **write** access to the project (the sandbox token always has it; user tokens require account membership). Mismatched token → 403.
+Read endpoints (`GET /`, `GET /:crId`, `GET /:crId/diff`, `GET /:crId/merge-preview`) require **read** access to the project. Mutating endpoints (`POST /`, `PATCH /:crId`, `POST /:crId/merge`, `POST /:crId/close`, `POST /:crId/reopen`, `POST /:crId/request-changes`) require **write** access; `POST /` and `POST /:crId/request-changes` additionally require the `project.gitops.push` capability, and `POST /:crId/merge` additionally requires `project.gitops.merge`. Mismatched token → 403.
 
 Validation on `POST /`:
 
@@ -198,6 +200,7 @@ Validation on `POST /`:
 - `head_ref === base_ref` → 400 (must differ).
 - `session_id` is validated against `project_sessions`; unknown session IDs are silently dropped (`origin_session_id` becomes null).
 - Branch tips are resolved at create time, so the CR row has anchor SHAs from the moment it's opened.
+- `head_ref` must have at least one commit ahead of `base_ref` — otherwise 422 with `code: "CR_HEAD_NOT_AHEAD"` (an empty CR could never be applied — it would render "No changes detected" and `merge-preview` would report it un-mergeable). This covers both a committed-but-never-pushed session branch (head tip == base tip) and a stale branch behind an advanced base. The resolver force-refetches the mirror before concluding "not ahead," so a push that just landed doesn't bounce — this is the concrete error an agent sees if it skips step 2 of [the agent mandate](#the-agent-mandate).
 
 ## Composition with the rest of the system
 
@@ -206,8 +209,8 @@ Validation on `POST /`:
 | **Sessions** | A CR's `origin_session_id` is back-filled from `$KORTIX_SESSION_ID` so the dashboard shows the session that opened it. Cascade is `ON DELETE SET NULL` — closing the session orphans the link, doesn't delete the CR. |
 | **Skills** | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
 | **Agents** | Same: new `.kortix/opencode/agents/<agent>.md` files need to land via CR. |
-| **Triggers** | Edits to `[[triggers]]` in `kortix.toml` only reach the scheduler after the CR merges. The scheduler reads `kortix.toml` on `main`. |
-| **Apps** | `[[apps]]` redeploys are driven by manifest-hash changes on `main`. A CR that changes app config triggers a redeploy *after* merge, not before. |
+| **Triggers** | Edits to `triggers:` (v2) or `[[triggers]]` (legacy v1) only reach the scheduler after the CR merges. The scheduler reads the manifest on `main`. |
+| **Apps** | `apps:` (v2) / `[[apps]]` (legacy v1) redeploys are driven by manifest-hash changes on `main`. A CR that changes app config triggers a redeploy *after* merge, not before. |
 | **Secrets** | Decoupled. Secrets live in the Kortix Secrets Manager, not the manifest; CRs don't move secrets. |
 | **Dashboard** | Renders CR list / detail / diff / merge button. Same data as the CLI sees. |
 | **Triggers firing inside a session** | A trigger-spawned session can itself open a CR — same flow. |
@@ -219,4 +222,4 @@ Validation on `POST /`:
 - **You cannot reopen a `merged` CR.** Open a new one against the post-merge tip.
 - **Branch deletion is not automatic.** After a CR merges, the head branch still exists in the git backend. If the project policy is to clean up session branches, that's a separate sweep — not part of the CR merge.
 - **The session-branch tip changes after the agent commits more.** CRs that read live tips will reflect new commits on the head branch even after the CR is opened — the diff updates. There's no freeze-on-open semantic.
-- **The `KORTIX_*` env vars expected at `cr open` time:** `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_PROJECT_ID`, `KORTIX_BRANCH_NAME` (or `KORTIX_HEAD_REF`), `KORTIX_SESSION_ID`. All are pre-injected by the session bootstrap. Running `kortix cr open` outside a session needs `--head` and `--project` explicitly, or a cwd linked via `kortix projects link`.
+- **The `KORTIX_*` env vars expected at `cr open` time:** `KORTIX_CLI_TOKEN` (or its alias `KORTIX_EXECUTOR_TOKEN`), `KORTIX_API_URL`, `KORTIX_PROJECT_ID`, `KORTIX_BRANCH_NAME` (or `KORTIX_HEAD_REF`), `KORTIX_SESSION_ID`. All are pre-injected by the session bootstrap. Note `KORTIX_TOKEN` is a *different* credential — the sandbox daemon's own service key, not a CLI token — and is not what the CLI authenticates with. Running `kortix cr open` outside a session needs `--head` and `--project` explicitly, or a cwd linked via `kortix projects link`.

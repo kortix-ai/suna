@@ -3,6 +3,7 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
+import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
@@ -16,11 +17,9 @@ import {
   deleteConnector,
   deleteSandboxTemplate,
   fixSandboxWithAgent,
-  getWarmPoolStatus,
   listProjectSnapshots,
   rebuildProjectSnapshot,
   updateSandboxTemplate,
-  updateWarmPool,
   deletePersonalProjectSecret,
   deleteProjectSecret,
   deleteProjectTrigger,
@@ -34,6 +33,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectLlmCatalog,
   getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
@@ -58,7 +58,6 @@ import {
   provisionProject,
   readProjectFile,
   reopenChangeRequest,
-  setConnectorSharing,
   setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
@@ -92,12 +91,16 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { invalidateAfterProjectCreation } from './project-mutation-cache';
+import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
+
+export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
 export const projectKeys = {
   accounts: ['accounts'] as const,
   projects: (accountId: string | null | undefined) => ['projects', accountId] as const,
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
+  llmCatalog: (projectId: string | null | undefined) => ['project-llm-catalog', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) =>
@@ -136,7 +139,6 @@ export const projectKeys = {
     path: string
   ) => ['project-commit-diff', projectId, sha, path] as const,
   snapshots: (projectId: string | null | undefined) => ['project-snapshots', projectId] as const,
-  warmPool: (projectId: string | null | undefined) => ['warm-pool-status', projectId] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
@@ -288,16 +290,6 @@ export function useDisconnectConnector(projectId: string) {
   });
 }
 
-/** Change who can use a connector (project / private / members). */
-export function useSetConnectorSharing(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ slug, intent }: { slug: string; intent: ConnectorSharing }) =>
-      setConnectorSharing(projectId, slug, intent),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
-  });
-}
-
 /** Tool-approval policies for a project. */
 export function useProjectPolicies(projectId: string | null) {
   return useQuery({
@@ -322,7 +314,7 @@ export function useSetProjectPolicies(projectId: string) {
   });
 }
 
-/** Project members (for the connector sharing member picker + Members page). */
+/** Project members (for the Members page). */
 export function useProjectAccess(projectId: string | null) {
   return useQuery({
     queryKey: projectKeys.projectAccess(projectId),
@@ -696,6 +688,34 @@ export function useFireProjectTrigger(projectId: string) {
   });
 }
 
+/** Server-side, sandbox-free agent list for a trigger's "Agent" picker — a
+ *  project may not have a live sandbox running when you're just configuring
+ *  a trigger, so this reads the repo config directly (web parity:
+ *  useVisibleAgents({ projectId })). */
+export function useProjectAgentsForTrigger(projectId: string | null) {
+  const { data, isLoading } = useProjectDetail(projectId);
+  const agents = useMemo(() => filterTriggerAgents(data?.config.agents), [data]);
+  return { agents, isLoading };
+}
+
+/** Gateway model catalog for a trigger's "Model" override picker (web parity:
+ *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  reads the project's server-side catalog directly. `gatewayDisabled` is
+ *  true when the project hasn't turned the LLM gateway on; treat that as "no
+ *  override available" rather than an error. */
+export function useProjectModelCatalogForTrigger(projectId: string | null) {
+  const query = useQuery({
+    queryKey: projectKeys.llmCatalog(projectId),
+    queryFn: () => getProjectLlmCatalog(projectId!),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const gatewayDisabled = (query.error as { code?: string } | null)?.code === 'llm_gateway_disabled';
+  const models = useMemo(() => flattenTriggerModelCatalog(query.data?.models), [query.data]);
+  return { models, isLoading: query.isLoading, gatewayDisabled };
+}
+
 // ── Change requests (web parity) ──────────────────────────────────────────────
 
 /** Invalidate everything that the open-CR count / merge state depends on. */
@@ -959,24 +979,5 @@ export function useFixSandboxWithAgent(projectId: string) {
       queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
     },
-  });
-}
-
-/** Live warm-pool status (ready / warming), polled while enabled. */
-export function useWarmPoolStatus(projectId: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: projectKeys.warmPool(projectId),
-    queryFn: () => getWarmPoolStatus(projectId!),
-    enabled: enabled && !!projectId,
-    refetchInterval: 4_000,
-    staleTime: 0,
-  });
-}
-
-export function useUpdateWarmPool(projectId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { enabled?: boolean; size?: number }) => updateWarmPool(projectId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) }),
   });
 }

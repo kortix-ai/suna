@@ -6,15 +6,17 @@ import {
   DEFAULT_HOST_NAME,
   activeHostName,
   getHost,
+  setActiveAccount,
   validateHostName,
 } from '../api/config.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
-import { C, status } from '../style.ts';
+import { ensureDefaultProjectBinding } from '../project-bind.ts';
+import { C, help, status } from '../style.ts';
 import { webDashboardUrl } from '../web-url.ts';
 import type { MeResponse } from '../api/types.ts';
 
-const HELP = `Usage: kortix login [options]
+const HELP = help`Usage: kortix login [options]
 
 Authenticate the CLI against the Kortix cloud. Browser opens to the
 dashboard, one click authorizes this CLI, the token is sent back to a
@@ -28,6 +30,7 @@ Options:
                     host URL or ${DEFAULT_API_BASE}).
   --token <pat>     Skip the browser flow and authenticate directly
                     with a token. Useful for CI or headless boxes.
+  --no-project      Skip the default-project binding step at the end.
   -h, --help        Show this help.
 
 Examples:
@@ -40,14 +43,16 @@ interface LoginFlags {
   token?: string;
   api?: string;
   host?: string;
+  noProject: boolean;
   help: boolean;
 }
 
 function parseFlags(argv: string[]): LoginFlags {
-  const f: LoginFlags = { help: false };
+  const f: LoginFlags = { help: false, noProject: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '-h' || a === '--help') f.help = true;
+    else if (a === '--no-project') f.noProject = true;
     else if (a === '--token') {
       const next = argv[i + 1];
       if (!next) throw new Error('--token requires a value');
@@ -115,7 +120,7 @@ export async function runLogin(argv: string[]): Promise<number> {
 
   if (!token.startsWith('kortix_pat_')) {
     process.stderr.write(
-      `${status.err('Invalid token format — expected `kortix_pat_...` prefix.')}\n`,
+      `${status.err('Invalid API key format — expected `kortix_pat_...` prefix.')}\n`,
     );
     return 1;
   }
@@ -147,6 +152,14 @@ export async function runLogin(argv: string[]): Promise<number> {
     },
     /* makeActive */ true,
   );
+  // Persist the active account's display fields (and reconcile any default
+  // project) so the context block + `accounts ls` read correctly offline.
+  if (primary) {
+    setActiveAccount(
+      { id: primary.account_id, slug: primary.slug, name: primary.name },
+      hostName,
+    );
+  }
 
   process.stdout.write(
     `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,
@@ -157,6 +170,18 @@ export async function runLogin(argv: string[]): Promise<number> {
     );
   }
   process.stdout.write(`${C.dim}  Stored at ${authFileLocation()}${C.reset}\n`);
+
+  // The always-bound invariant: a fresh login ends with a global default
+  // project so every later command Just Works from any directory.
+  if (!flags.noProject) {
+    const saved = loadAuthForHost(hostName);
+    if (saved?.token) {
+      process.stdout.write('\n');
+      await ensureDefaultProjectBinding(saved, {
+        promptTitle: 'Pick your default project (used anywhere no directory is linked)',
+      });
+    }
+  }
   return 0;
 }
 
@@ -207,6 +232,10 @@ function safeHostname(): string {
 }
 
 function openInBrowser(url: string): void {
+  // Only hand a real web URL to the OS opener — a value starting with '-' would
+  // be read as a flag by open/xdg-open, and Windows `start` parses its argument,
+  // so an unvalidated URL is a command-injection vector.
+  if (!/^https?:\/\//i.test(url)) return;
   const platform = process.platform;
   let cmd: string;
   let args: string[];
@@ -227,6 +256,3 @@ function openInBrowser(url: string): void {
     /* user can copy-paste the URL from stdout */
   }
 }
-
-// Silence unused-import detection if loadAuthForHost ever becomes useful here.
-void loadAuthForHost;

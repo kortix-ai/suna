@@ -209,13 +209,12 @@ $CLI self-host env set --instance "$INSTANCE" \
   "API_PORT=$API_PORT" \
   "SUPABASE_PORT=$SUPABASE_PORT" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
-  "SANDBOX_PORT_BASE=$SANDBOX_PORT_BASE" \
-  "SANDBOX_CONTAINER_NAME=kortix-$INSTANCE-sandbox" \
-  "ALLOWED_SANDBOX_PROVIDERS=local_docker" \
+  "ALLOWED_SANDBOX_PROVIDERS=daytona" \
   "KORTIX_LOCAL_IMAGES=$KORTIX_LOCAL_IMAGES" >/dev/null
-# The e2e runs the full agent-session path hermetically (no external provider
-# account), so it pins the sandbox runtime to local_docker. Real deployments use
-# Daytona/Platinum — that's the `configure` default.
+# Sandbox runtime is Daytona (the only sandbox provider after local_docker was
+# removed). NOTE: this self-host e2e therefore needs Daytona credentials in the
+# environment to provision a sandbox — it is no longer hermetic. If those aren't
+# available in CI, this golden path must be reworked or retired.
 if [ -n "$FRONTEND_IMAGE" ]; then
   $CLI self-host env set --instance "$INSTANCE" "FRONTEND_IMAGE=$FRONTEND_IMAGE" >/dev/null
 fi
@@ -236,8 +235,8 @@ ok "Docker Compose started"
 
 section "Schema Bootstrap (migrate one-shot)"
 # The kortix-migrate one-shot must complete (exit 0) before the API starts. On a
-# fresh DB it installs the non-kortix prerequisites (basejump etc.) then applies
-# all migrations. Assert it ran and provisioned the managed schema.
+# fresh DB it installs the non-kortix prerequisites then applies all
+# migrations. Assert it ran and provisioned the managed schema.
 MIGRATE_EXIT=$(docker inspect -f '{{.State.ExitCode}}' "kortix-$INSTANCE-kortix-migrate-1" 2>/dev/null || echo "missing")
 [ "$MIGRATE_EXIT" = "0" ] || die "kortix-migrate one-shot did not succeed (exit=$MIGRATE_EXIT)"
 ok "kortix-migrate one-shot completed (exit 0)"
@@ -246,9 +245,7 @@ section "HTTP Health"
 wait_for_json "API" "$API_PUBLIC_URL/v1/health" 180
 wait_for_json "frontend runtime config" "$PUBLIC_URL/api/runtime-config" 180
 wait_for_db_table "Kortix schema" "kortix.project_snapshot_builds" 180
-# basejump must exist too — it's the account framework the schema is built on,
-# and the regression we guard against was a DB with empty kortix + no basejump.
-wait_for_db_table "basejump accounts" "basejump.account_user" 60
+wait_for_db_table "Kortix accounts" "kortix.account_members" 60
 
 source "$CONFIG_DIR/.env"
 curl -fsS -H "apikey: $SUPABASE_ANON_KEY" "$SUPABASE_PUBLIC_URL/auth/v1/health" >/dev/null
@@ -303,7 +300,7 @@ insert into kortix.projects (
   '$PROJECT_NAME',
   '$PROJECT_REPO_URL',
   'main',
-  'kortix.toml',
+  'kortix.yaml',
   'active',
   '{"self_host_e2e":true}'::jsonb
 );
@@ -347,11 +344,11 @@ ok "Project and ready snapshot build log seeded: $PROJECT_ID"
 curl -fsS -H "authorization: Bearer $ACCESS_TOKEN" "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" >/dev/null
 ok "Seeded project is visible to API"
 
-section "Create Local Docker Session"
+section "Create Session"
 SESSION_JSON=$(curl -fsS -X POST "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" \
   -H "authorization: Bearer $ACCESS_TOKEN" \
   -H 'content-type: application/json' \
-  -d '{"provider":"local_docker","base_ref":"main","name":"self-host e2e","branch_already_created":true}')
+  -d '{"provider":"daytona","base_ref":"main","name":"self-host e2e","branch_already_created":true}')
 SESSION_ID=$(printf '%s' "$SESSION_JSON" | json_get session_id)
 [ -n "$SESSION_ID" ] || die "session create failed: $SESSION_JSON"
 ok "POST /v1/projects/:id/sessions works: $SESSION_ID"

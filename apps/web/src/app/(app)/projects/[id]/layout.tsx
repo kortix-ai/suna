@@ -1,8 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
 import { ProjectAccessBoundary } from '@/components/projects/project-access-boundary';
+import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
 import { createClient } from '@/lib/supabase/server';
 
 interface ProjectLayoutProps {

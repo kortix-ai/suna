@@ -1,13 +1,14 @@
 import { and, eq } from 'drizzle-orm';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
-import { resolveShareSubject } from '../../executor/share';
-import {
-  listProjectSecretsForUser,
-  projectSecretsRevision,
-} from '../secrets';
+import { config } from '../../config';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
+import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
+import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
+import { daytonaPreviewHeaders, waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -25,13 +26,40 @@ async function resolveOwnerRawEnv(
 ): Promise<Record<string, string> | null> {
   if (!sessionId) return null;
   const [row] = await db
-    .select({ createdBy: projectSessions.createdBy })
+    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row?.createdBy) return null;
-  const subject = await resolveShareSubject(row.createdBy);
-  return listProjectSecretsForUser(projectId, subject);
+
+  // Resolve the running agent's `secrets` grant (by identifier) — the SAME gate
+  // applied at sandbox boot (buildSessionSandboxEnvVars). A hot-push must not
+  // deliver an identifier a scoped agent isn't granted; back-compat/no-git-
+  // context sessions default to 'all' (undefined).
+  const [project] = await db
+    .select({
+      repoUrl: projects.repoUrl,
+      defaultBranch: projects.defaultBranch,
+      manifestPath: projects.manifestPath,
+    })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  let grantEnv: string[] | 'all' | undefined;
+  if (project?.defaultBranch) {
+    const loadedAgents = await loadProjectAgents({
+      projectId,
+      repoUrl: project.repoUrl ?? '',
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath ?? 'kortix.yaml',
+      gitAuthToken: null,
+    }).catch(() => null);
+    const grant = loadedAgents ? grantFromLoadedAgents(row.agentName ?? '', loadedAgents) : null;
+    grantEnv = grant?.env;
+  }
+
+  return (await listProjectSecretsSnapshotForUser(projectId, row.createdBy, grantEnv)).env;
 }
 
 export async function resolveSandboxEnvSnapshot(
@@ -73,22 +101,33 @@ async function postEnvToDaemon(args: {
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   refreshModels?: boolean;
-}): Promise<void> {
+  llmGatewayEnabled?: boolean;
+  llmGatewayBaseUrl?: string;
+  llmGatewayDenyEnv?: string;
+}): Promise<{ opencodeState: string | null }> {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${args.serviceKey}`,
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
+    ...daytonaPreviewHeaders(args.previewToken),
   };
-  if (args.previewToken) headers['X-Daytona-Preview-Token'] = args.previewToken;
 
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ...args.snapshot, refreshModels: args.refreshModels ?? false }),
+    body: JSON.stringify({
+      ...args.snapshot,
+      refreshModels: args.refreshModels ?? false,
+      ...(typeof args.llmGatewayEnabled === 'boolean'
+        ? {
+            llmGatewayEnabled: args.llmGatewayEnabled,
+            ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
+            llmGatewayDenyEnv: args.llmGatewayDenyEnv ?? '',
+          }
+        : {}),
+    }),
     signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
   });
 
@@ -96,6 +135,11 @@ async function postEnvToDaemon(args: {
     const body = await res.text().catch(() => '');
     throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
   }
+  // The daemon echoes opencode's post-sync state. After a model-affecting change
+  // it restarts opencode and reports `starting` here — the signal we use to wait
+  // for readiness before the prompt is forwarded.
+  const body = (await res.json().catch(() => null)) as { opencode?: unknown } | null;
+  return { opencodeState: typeof body?.opencode === 'string' ? body.opencode : null };
 }
 
 export async function syncSandboxEnvForPrompt(args: {
@@ -108,12 +152,34 @@ export async function syncSandboxEnvForPrompt(args: {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
   if (!snapshot) return;
-  await postEnvToDaemon({
+  const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  const { opencodeState } = await postEnvToDaemon({
     previewUrl: args.previewUrl,
     previewToken: args.previewToken,
     serviceKey: args.serviceKey,
     snapshot,
+    refreshModels: true,
+    llmGatewayEnabled,
+    llmGatewayBaseUrl: llmGatewayEnabled ? resolveLlmGatewayBaseUrl() : undefined,
+    llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
   });
+  // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
+  // is forwarded the instant this returns, so block until opencode is serving —
+  // otherwise the forward hits the restart window and 503s "opencode not ready",
+  // dropping the session's first prompt (the user then has to resend).
+  if (opencodeState && opencodeState !== 'ok') {
+    const waitStartedAt = Date.now();
+    const ready = await waitForDaemonOpencodeReady({
+      previewUrl: args.previewUrl,
+      previewToken: args.previewToken,
+    });
+    console.log(
+      `[env-sync] opencode restarted by prompt env-sync (state=${opencodeState}); ` +
+        `waited ${Date.now() - waitStartedAt}ms for readiness before forwarding ` +
+        `(ready=${ready}) session=${args.sessionId}`,
+    );
+  }
+  await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
 }
 
 export async function propagateProjectSecretsToActiveSandboxes(
@@ -155,6 +221,107 @@ export async function propagateProjectSecretsToActiveSandboxes(
       err instanceof Error ? err.message : err,
     );
   }
+}
+
+export async function propagateLlmGatewayModeToActiveSandboxes(
+  projectId: string,
+  enabled: boolean,
+): Promise<void> {
+  try {
+    const rows = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        sessionId: sessionSandboxes.sessionId,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+
+    const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
+    if (targets.length === 0) return;
+
+    const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl();
+    await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
+      const rowConfig = (row.config || {}) as Record<string, unknown>;
+      const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
+      if (!serviceKey) return;
+      try {
+        const snapshot =
+          (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
+          emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
+        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
+        await postEnvToDaemon({
+          previewUrl: url,
+          previewToken: token,
+          serviceKey,
+          snapshot,
+          refreshModels: true,
+          llmGatewayEnabled: enabled,
+          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrl : undefined,
+          llmGatewayDenyEnv: enabled ? nativeProviderEnvNames().join(',') : '',
+        });
+        await markSandboxLlmGatewayMode(row.sessionId, enabled);
+      } catch (err) {
+        console.warn(
+          `[env-sync] LLM gateway mode push failed for sandbox ${row.externalId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    });
+  } catch (err) {
+    console.warn(
+      `[env-sync] LLM gateway mode fan-out failed for project ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+async function resolveProjectLlmGatewayEnabled(projectId: string): Promise<boolean> {
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return projectLlmGatewayEnabled(project?.metadata);
+}
+
+async function markSandboxLlmGatewayMode(
+  sessionId: string,
+  enabled: boolean,
+): Promise<void> {
+  const [row] = await db
+    .select({ config: sessionSandboxes.config })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  if (!row) return;
+  await db
+    .update(sessionSandboxes)
+    .set({
+      config: {
+        ...((row.config as Record<string, unknown> | null) ?? {}),
+        llmGatewayEnabled: enabled,
+      },
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionSandboxes.sessionId, sessionId));
+}
+
+function resolveLlmGatewayBaseUrl(): string {
+  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
+  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
+  return (
+    config.LLM_GATEWAY_BASE_URL ||
+    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`)
+  );
+}
+
+function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
+  return {
+    env: {},
+    names: [],
+    revision: `${reason}-${Date.now()}`,
+  };
 }
 
 async function runBounded<T>(

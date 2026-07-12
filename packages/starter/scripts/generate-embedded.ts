@@ -26,6 +26,7 @@ const STARTER_ROOT = join(import.meta.dir, '..');
 const TEMPLATE_ROOTS = {
   base: join(STARTER_ROOT, 'templates', 'base'),
   'general-knowledge-worker': join(STARTER_ROOT, 'templates', 'general-knowledge-worker'),
+  marketplace: join(STARTER_ROOT, 'templates', 'marketplace'),
 } as const;
 
 interface RawFile {
@@ -33,9 +34,26 @@ interface RawFile {
   content: string;
 }
 
+const IGNORED_DIRS = new Set([
+  '.cache',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
+  '.tox',
+  '.venv',
+  '__pycache__',
+  'node_modules',
+]);
+
+// OS-generated cruft that can appear in a real contributor's working tree
+// (e.g. Finder writes `.DS_Store` into any directory it has browsed) but
+// must never be captured into a starter template snapshot.
+const IGNORED_FILES = new Set(['.DS_Store', 'Thumbs.db']);
+
 function walk(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root)) {
+    if (IGNORED_DIRS.has(entry) || IGNORED_FILES.has(entry)) continue;
     const abs = join(root, entry);
     const st = statSync(abs);
     if (st.isDirectory()) out.push(...walk(abs));

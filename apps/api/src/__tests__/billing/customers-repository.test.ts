@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+// Queue-based db mock: each select() call shifts the next result set. Writes
+// are captured for assertions. Conditions are real drizzle objects and are
+// deliberately ignored — the queue controls what each query "finds", which
+// keeps this file independent of drizzle internals and other files' mocks.
+
 type Row = {
   accountId: string;
   id: string;
@@ -8,99 +13,60 @@ type Row = {
   active?: boolean | null;
 };
 
-let kortixRows: Row[] = [];
-let basejumpRows: Row[] = [];
+let selectResults: Row[][] = [];
+let inserted: Row[] = [];
+let updated: Array<Partial<Row>> = [];
 
-const billingCustomers = {
-  __table: 'kortix.billing_customers',
-  accountId: { field: 'accountId' },
-  id: { field: 'id' },
-  provider: { field: 'provider' },
-  active: { field: 'active' },
-};
-
-const billingCustomersInBasejump = {
-  __table: 'basejump.billing_customers',
-  accountId: { field: 'accountId' },
-  id: { field: 'id' },
-  provider: { field: 'provider' },
-  active: { field: 'active' },
-};
-
-function matches(row: Row, condition: any): boolean {
-  if (!condition) return true;
-  if (condition.op === 'and') return condition.conditions.every((c: any) => matches(row, c));
-  if (condition.op === 'eq') return row[condition.field as keyof Row] === condition.value;
-  if (condition.op === 'ne') return row[condition.field as keyof Row] !== condition.value;
-  return true;
+function nextRows(): Row[] {
+  return selectResults.shift() ?? [];
 }
-
-function makeQuery(rows: Row[]) {
-  return {
-    limit(n: number) {
-      return Promise.resolve(rows.slice(0, n));
-    },
-    then(resolve: (value: Row[]) => unknown, reject?: (reason?: any) => unknown) {
-      return Promise.resolve(rows).then(resolve, reject);
-    },
-  };
-}
-
-mock.module('drizzle-orm', () => ({
-  eq: (left: any, value: any) => ({ op: 'eq', field: left.field, value }),
-  ne: (left: any, value: any) => ({ op: 'ne', field: left.field, value }),
-  and: (...conditions: any[]) => ({ op: 'and', conditions }),
-}));
-
-mock.module('@kortix/db', () => ({
-  billingCustomers,
-  billingCustomersInBasejump,
-}));
 
 mock.module('../../shared/db', () => ({
   db: {
     select() {
+      const rows = nextRows();
       return {
-        from(table: any) {
-          const source = table.__table === 'basejump.billing_customers' ? basejumpRows : kortixRows;
+        from() {
           return {
-            where(condition: any) {
-              return makeQuery(source.filter((row) => matches(row, condition)));
+            where() {
+              return {
+                limit(n: number) {
+                  return Promise.resolve(rows.slice(0, n));
+                },
+                then(resolve: (value: Row[]) => unknown, reject?: (reason?: any) => unknown) {
+                  return Promise.resolve(rows).then(resolve, reject);
+                },
+              };
             },
           };
         },
       };
     },
-    insert(table: any) {
-      const source = table.__table === 'basejump.billing_customers' ? basejumpRows : kortixRows;
+    insert() {
       return {
         values(data: Row) {
           return {
-            async onConflictDoUpdate({ target, set }: any) {
-              const idField = target.field as keyof Row;
-              const index = source.findIndex((row) => row[idField] === data[idField]);
-              if (index >= 0) {
-                source[index] = { ...source[index], ...set };
-              } else {
-                source.push({ ...data });
-              }
+            async onConflictDoUpdate() {
+              inserted.push({ ...data });
             },
           };
         },
       };
     },
-    update(table: any) {
-      const source = table.__table === 'basejump.billing_customers' ? basejumpRows : kortixRows;
+    update() {
       return {
         set(data: Partial<Row>) {
           return {
-            async where(condition: any) {
-              source.forEach((row, index) => {
-                if (matches(row, condition)) source[index] = { ...row, ...data };
-              });
+            async where() {
+              updated.push({ ...data });
             },
           };
         },
+      };
+    },
+    delete() {
+      return {
+        async where() {},
       };
     },
   },
@@ -109,63 +75,47 @@ mock.module('../../shared/db', () => ({
 const {
   getCustomerByAccountId,
   getCustomerByStripeId,
+  listAccountStripeCustomerIds,
   upsertCustomer,
 } = await import('../../billing/repositories/customers');
 
 describe('billing customer repository', () => {
   beforeEach(() => {
-    kortixRows = [];
-    basejumpRows = [];
+    selectResults = [];
+    inserted = [];
+    updated = [];
   });
 
-  test('falls back to basejump and lazy-migrates legacy customer', async () => {
-    basejumpRows.push({
-      accountId: 'acc_1',
-      id: 'cus_legacy',
-      email: 'legacy@example.com',
-      provider: 'stripe',
-      active: true,
-    });
+  test('resolves the canonical customer for an account', async () => {
+    selectResults = [[{ accountId: 'acc_1', id: 'cus_1', provider: 'stripe', active: true }]];
 
     const customer = await getCustomerByAccountId('acc_1');
 
-    expect(customer?.id).toBe('cus_legacy');
-    expect(kortixRows).toEqual([
-      expect.objectContaining({ accountId: 'acc_1', id: 'cus_legacy', provider: 'stripe', active: true }),
-    ]);
+    expect(customer?.id).toBe('cus_1');
   });
 
-  test('prefers legacy customer over wrong kortix duplicate and deactivates duplicate', async () => {
-    basejumpRows.push({
-      accountId: 'acc_2',
-      id: 'cus_old',
-      email: 'user@example.com',
-      provider: 'stripe',
-      active: true,
-    });
-    kortixRows.push({
-      accountId: 'acc_2',
-      id: 'cus_new',
-      email: 'user@example.com',
-      provider: 'stripe',
-      active: true,
-    });
+  test('prefers an active stripe customer over inactive duplicates', async () => {
+    selectResults = [[
+      { accountId: 'acc_2', id: 'cus_inactive', provider: 'stripe', active: false },
+      { accountId: 'acc_2', id: 'cus_active', provider: 'stripe', active: true },
+    ]];
 
     const customer = await getCustomerByAccountId('acc_2');
 
-    expect(customer?.id).toBe('cus_old');
-    expect(kortixRows.find((row) => row.id === 'cus_old')?.active).toBe(true);
-    expect(kortixRows.find((row) => row.id === 'cus_new')?.active).toBe(false);
+    expect(customer?.id).toBe('cus_active');
+  });
+
+  test('returns null when the account has no customers', async () => {
+    selectResults = [[]];
+
+    expect(await getCustomerByAccountId('acc_none')).toBeNull();
   });
 
   test('upsertCustomer does not replace canonical customer mapping with new duplicate', async () => {
-    basejumpRows.push({
-      accountId: 'acc_3',
-      id: 'cus_old',
-      email: 'user@example.com',
-      provider: 'stripe',
-      active: true,
-    });
+    // getCustomerByAccountId inside upsertCustomer finds the existing canonical row.
+    selectResults = [[
+      { accountId: 'acc_3', id: 'cus_old', email: 'user@example.com', provider: 'stripe', active: true },
+    ]];
 
     const preserved = await upsertCustomer({
       accountId: 'acc_3',
@@ -176,22 +126,46 @@ describe('billing customer repository', () => {
     });
 
     expect(preserved?.id).toBe('cus_old');
-    expect(kortixRows.find((row) => row.id === 'cus_new')).toBeUndefined();
-    expect(kortixRows.find((row) => row.id === 'cus_old')?.active).toBe(true);
+    expect(inserted).toEqual([]); // the duplicate was NOT inserted
+    expect(updated).toEqual([
+      expect.objectContaining({ email: 'user@example.com', active: true }),
+    ]);
   });
 
-  test('falls back by stripe id to legacy customer and lazy-migrates it', async () => {
-    basejumpRows.push({
+  test('upsertCustomer inserts when the account has no existing customer', async () => {
+    selectResults = [[]];
+
+    const created = await upsertCustomer({
       accountId: 'acc_4',
-      id: 'cus_legacy_by_id',
-      email: 'legacy@example.com',
+      id: 'cus_fresh',
+      email: 'fresh@example.com',
       provider: 'stripe',
       active: true,
     });
 
-    const customer = await getCustomerByStripeId('cus_legacy_by_id');
+    expect(created?.id).toBe('cus_fresh');
+    expect(inserted).toEqual([expect.objectContaining({ id: 'cus_fresh', accountId: 'acc_4' })]);
+  });
 
-    expect(customer?.accountId).toBe('acc_4');
-    expect(kortixRows.find((row) => row.id === 'cus_legacy_by_id')?.accountId).toBe('acc_4');
+  test('looks up customers by stripe id', async () => {
+    selectResults = [
+      [{ accountId: 'acc_5', id: 'cus_by_id', provider: 'stripe', active: true }],
+      [],
+    ];
+
+    expect((await getCustomerByStripeId('cus_by_id'))?.accountId).toBe('acc_5');
+    expect(await getCustomerByStripeId('cus_missing')).toBeNull();
+  });
+
+  test('lists every stripe customer id, active and inactive', async () => {
+    selectResults = [[
+      { accountId: 'acc_6', id: 'cus_a', provider: 'stripe', active: true },
+      { accountId: 'acc_6', id: 'cus_b', provider: 'stripe', active: false },
+      { accountId: 'acc_6', id: 'cus_c', provider: 'other', active: true },
+    ]];
+
+    const ids = await listAccountStripeCustomerIds('acc_6');
+
+    expect(ids.sort()).toEqual(['cus_a', 'cus_b']);
   });
 });

@@ -55,24 +55,14 @@ load_local_env() {
 
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
-  # `local_docker` was removed when we consolidated on cloud — listing it here
-  # only made the API log "Unknown sandbox provider" twice on every boot.
   # Default only — the shared .env (decrypted above) or a personal .env.local
   # (below) decides the real provider order (e.g. "platinum,daytona").
   export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
   # Warm SNAPSHOT baking OFF for local dev. The [warm-bake] builder (gated by
   # warmSnapshotsEnabled() = KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET)
   # keeps trying to bake a `kortix-warm-runtime-*` base on Daytona's experimental
-  # region, which flakes locally with "internal error" and spams the logs. The
-  # warm POOL is left untouched (it's per-project via projects.metadata.warm_pool).
+  # region, which flakes locally with "internal error" and spams the logs.
   export KORTIX_WARM_SNAPSHOT_ENABLED=false
-  # DOCKER_HOST only feeds the (now-disabled) local_docker provider, but the
-  # committed apps/api/.env may carry a stale per-machine socket path (e.g.
-  # another dev's ~/.docker/run/docker.sock). Once exported it hijacks the
-  # `docker`/`supabase` commands below — which must use THIS machine's active
-  # Docker context — making them fail with "Docker daemon is not running" even
-  # though Docker is up. Drop it so Docker resolves the context normally.
-  unset DOCKER_HOST
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
@@ -96,7 +86,7 @@ load_local_env() {
   # Personal per-machine overrides — sourced LAST so they beat both the shared
   # encrypted env and the defaults above. Gitignored plaintext KEY=VALUE files
   # (no spaces in unquoted values). This is where billing-off, provider order,
-  # DOCKER_HOST, etc. live for YOUR machine — never in the committed .env.
+  # etc. live for YOUR machine — never in the committed .env.
   for _f in apps/api/.env.local apps/web/.env.local; do
     if [[ -f "$ROOT_DIR/$_f" ]]; then
       set -a; source "$ROOT_DIR/$_f"; set +a
@@ -106,8 +96,8 @@ load_local_env() {
 }
 
 # Front the local API with a public Cloudflare quick tunnel so cloud Daytona
-# sandboxes can reach it as $KORTIX_URL. No-op when sandboxes run locally
-# (local_docker default) or when KORTIX_DEV_TUNNEL=0.
+# sandboxes can reach it as $KORTIX_URL. No-op when KORTIX_DEV_TUNNEL=0 or the
+# default provider isn't cloud-based.
 ensure_dev_tunnel() {
   local api_port="${PORT:-8008}"
   local api_origin="http://localhost:${api_port}"
@@ -129,7 +119,7 @@ ensure_dev_tunnel() {
     unset KORTIX_URL
   fi
 
-  # Local-docker sandboxes run on this machine — no public callback needed.
+  # Non-cloud providers run on this machine — no public callback needed.
   # Honor an explicit opt-out too.
   if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
@@ -146,7 +136,7 @@ ensure_dev_tunnel() {
     echo "[dev] ERROR: cloudflared is required for cloud (Daytona) sandboxes but was not found."
     echo "[dev]        Cloud sandboxes can't reach localhost; they need a public KORTIX_URL."
     echo "[dev]        Install:  brew install cloudflared"
-    echo "[dev]        Or:       KORTIX_DEV_TUNNEL=0 pnpm dev   (uses local_docker sandboxes only)"
+    echo "[dev]        Or:       KORTIX_DEV_TUNNEL=0 pnpm dev   (skips the tunnel — cloud sandboxes won't reach localhost)"
     exit 1
   fi
 

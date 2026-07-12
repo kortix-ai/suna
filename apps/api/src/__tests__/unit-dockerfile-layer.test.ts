@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  AGENT_BROWSER_VERSION,
+  OPENCODE_VERSION,
+  PLAYWRIGHT_VERSION,
+} from '@kortix/shared';
+import {
   buildDefaultSandboxTemplate,
   buildLayeredDockerfile,
   DEFAULT_SANDBOX_SLUG,
@@ -10,12 +15,12 @@ import {
 } from '../snapshots/dockerfile-layer';
 
 const COMMON = {
-  opencodeVersion: '1.15.10',
-  agentBrowserVersion: '0.27.0',
+  opencodeVersion: OPENCODE_VERSION,
+  agentBrowserVersion: AGENT_BROWSER_VERSION,
   agentBinaryPath: 'kortix-agent.gz',
   cliBinaryPath: 'kortix.gz',
   entrypointScriptPath: 'kortix-entrypoint',
-  agentCliPath: 'kortix-agent-cli',
+  slackCliPath: 'kortix-slack-cli',
   executorSdkPath: 'kortix-executor-sdk',
 };
 
@@ -25,15 +30,20 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
     expect(merged.startsWith('FROM ubuntu:24.04\nRUN apt-get install -y foo')).toBe(true);
     expect(merged).toContain('Kortix runtime layer (auto-injected)');
-    expect(merged).toContain('opencode-ai@1.15.10');
-    expect(merged).toContain('agent-browser@0.27.0');
+    expect(merged).toContain(`opencode-ai@${OPENCODE_VERSION}`);
+    expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
+    expect(merged).toContain('python3 python3-dev python3-pip python3-venv');
+    expect(merged).toContain('"openpyxl>=3.1"');
+    expect(merged).toContain('"pandas>=2.2"');
+    expect(merged).toContain('"playwright>=1.58"');
+    expect(merged).toContain('importlib.import_module(mod)');
     expect(merged).toContain('COPY kortix-agent.gz /tmp/kortix-agent.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent');
     // The admin CLI is baked alongside the daemon and verified at build time.
     expect(merged).toContain('COPY kortix.gz /tmp/kortix.gz');
     expect(merged).toContain('gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix');
     expect(merged).toContain('kortix --version');
-    expect(merged).toContain('COPY kortix-agent-cli/ /opt/kortix/apps/sandbox/agent-cli/');
+    expect(merged).toContain('COPY kortix-slack-cli/ /opt/kortix/apps/sandbox/slack-cli/');
     expect(merged).toContain('COPY kortix-executor-sdk/ /opt/kortix/packages/executor-sdk/');
     expect(merged).toContain('ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]');
   });
@@ -42,7 +52,7 @@ describe('buildLayeredDockerfile', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
     // Chromium comes from Playwright (cross-arch; Chrome for Testing has no
     // linux-arm64 build) and pulls its OS libs via --with-deps.
-    expect(merged).toContain('playwright@1.60.0 install --with-deps chromium');
+    expect(merged).toContain(`playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium`);
     // Wired BOTH ways: the documented env var → a stable symlink, AND
     // agent-browser's own auto-detected cache (env-independent, #422-proof).
     expect(merged).toContain('AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium');
@@ -55,9 +65,51 @@ describe('buildLayeredDockerfile', () => {
     // PLAYWRIGHT_BROWSERS_PATH must be set BEFORE the install so Chromium lands
     // in the stable system path the symlinks resolve against.
     const envIdx = merged.indexOf('PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers');
-    const installIdx = merged.indexOf('playwright@1.60.0 install');
+    const installIdx = merged.indexOf(`playwright@${PLAYWRIGHT_VERSION} install`);
     expect(envIdx).toBeGreaterThanOrEqual(0);
     expect(envIdx).toBeLessThan(installIdx);
+  });
+
+  test('hard-fails the bake if opencode-config-deps cannot be bundled by Bun', () => {
+    const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    // Regression coverage for the incident where `bun install` exited 0 but
+    // the installed tree (a CVE-driven axios override) failed to BUNDLE at
+    // session runtime, silently baking a broken image. This must be its own
+    // RUN step, not folded into a `set +e` block — an unbundlable dependency
+    // tree has to fail the image build.
+    const verifyIdx = merged.indexOf(
+      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
+    );
+    expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const precedingRun = merged.lastIndexOf('RUN', verifyIdx);
+    const stepText = merged.slice(precedingRun, verifyIdx);
+    expect(stepText).not.toContain('set +e');
+    // Must run after the install it's verifying, not before.
+    const installIdx = merged.indexOf('bun install');
+    expect(installIdx).toBeGreaterThanOrEqual(0);
+    expect(installIdx).toBeLessThan(verifyIdx);
+  });
+
+  test('also verifies the real starter tool files bundle when opencodeConfigPath is provided', () => {
+    const withConfig = buildLayeredDockerfile({
+      userDockerfile: 'FROM ubuntu:24.04',
+      ...COMMON,
+      opencodeConfigPath: 'kortix-opencode-config',
+      catalogPath: 'kortix-llm-catalog.json',
+    });
+    const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
+    expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
+    const stepText = withConfig.slice(precedingRun, verifyIdx);
+    expect(stepText).not.toContain('set +e');
+    // Without opencodeConfigPath there's no starter tool tree to verify, so
+    // this stricter check is correctly absent — only the axios/form-data
+    // override check (always present) still runs.
+    const withoutConfig = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
+    expect(withoutConfig).not.toContain('bun build tools/*.ts');
+    expect(withoutConfig).toContain(
+      'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
+    );
   });
 
   test('does NOT bake the project workspace into the image', () => {
@@ -100,7 +152,7 @@ WORKDIR /workspace
   test('agentBrowserVersion is optional — falls back to the pinned default', () => {
     const { agentBrowserVersion, ...withoutVersion } = COMMON;
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM scratch', ...withoutVersion });
-    expect(merged).toContain('agent-browser@0.27.0');
+    expect(merged).toContain(`agent-browser@${AGENT_BROWSER_VERSION}`);
   });
 
   test('platform default Dockerfile composes to a valid image', () => {

@@ -12,7 +12,7 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import type { AppEnv } from '../types';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
@@ -82,7 +82,7 @@ function getMasterUrlCandidates(): string[] {
   candidates.push('http://sandbox:8000');
 
   // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
+  candidates.push('http://localhost:14000');
 
   // De-dupe
   return Array.from(new Set(candidates));
@@ -328,8 +328,8 @@ setupApp.openapi(
 
   let dockerRunning = false;
   try {
-    execSync('docker info', { stdio: 'pipe', timeout: 10000 });
-    dockerRunning = true;
+    const result = spawnSync('docker', ['info'], { stdio: 'pipe', timeout: 10000 });
+    dockerRunning = result.status === 0;
   } catch {}
 
   return c.json({

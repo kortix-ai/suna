@@ -40,8 +40,8 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { writeStartStash } from '@kortix/sdk/react';
 import {
   Blocks,
   Bot,
@@ -436,13 +436,15 @@ export default function WorkspacePage() {
         const session = await createSession.mutateAsync({
           title: preset.title,
         });
-        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, preset.prompt);
+        // `session.id` is the canonical OpenCode session id (created directly
+        // by this hook) so the SDK's start-stash reads it back under the same
+        // id — no route/pin translation involved.
+        writeStartStash(session.id, { prompt: preset.prompt, model: null, agent: null });
         openTabAndNavigate({
           id: session.id,
           title: preset.title,
           type: 'session',
           href: `/sessions/${session.id}`,
-          serverId: useServerStore.getState().activeServerId,
         });
         requestAnimationFrame(() =>
           window.dispatchEvent(new CustomEvent('focus-session-textarea')),

@@ -2,14 +2,8 @@
 // file reads, subtree archive streaming, and per-file/at-ref history.
 
 import { validateRef } from '../git-ref';
-import {
-  normalizeTreePath,
-  refreshMirror,
-  runGit,
-  runGitCapture,
-  spawn,
-} from './mirror';
 import { listCommits } from './commits';
+import { normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
 import type {
   GetFileAtRefResult,
   GetFileHistoryOptions,
@@ -19,7 +13,11 @@ import type {
   RepoGrepMatch,
 } from './types';
 
-export async function listRepoFiles(project: GitBackedProject, ref?: string, path?: string | null): Promise<ProjectFileEntry[]> {
+export async function listRepoFiles(
+  project: GitBackedProject,
+  ref?: string,
+  path?: string | null,
+): Promise<ProjectFileEntry[]> {
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
   const treePath = normalizeTreePath(path);
@@ -117,6 +115,43 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
 }
 
 /**
+ * Resolve + read the project's manifest, preferring the first candidate path
+ * that exists (the dual-format rule: kortix.yaml over kortix.toml). ONE ls-tree
+ * finds which candidates exist at the ref, then a single `show` reads the
+ * highest-priority present one — refreshing the mirror once, unlike probing each
+ * path via readRepoFile (which would refresh + spawn a process per candidate).
+ * Returns the matched path + content, or null when no candidate exists.
+ */
+export async function readManifestFromRepo(
+  project: GitBackedProject,
+  candidatePaths: string[],
+  ref?: string,
+): Promise<{ path: string; content: string } | null> {
+  const normalized = candidatePaths
+    .map((p) => normalizeTreePath(p))
+    .filter((p): p is string => !!p);
+  if (normalized.length === 0) return null;
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const repoPath = await refreshMirror(project);
+  // A pathspec-scoped ls-tree prints only the candidates present at this ref
+  // (order-agnostic), so we pick the highest-priority one ourselves.
+  const listed = await runGitCapture(
+    ['ls-tree', '--name-only', treeRef, '--', ...normalized],
+    repoPath,
+  );
+  const present = new Set(
+    listed.stdout
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const winner = normalized.find((p) => present.has(p));
+  if (!winner) return null;
+  const shown = await runGit(['show', `${treeRef}:${winner}`], repoPath, false);
+  return { path: winner, content: shown.stdout };
+}
+
+/**
  * Stream a zip archive of the repo (or a subtree) at the given ref.
  *
  * Uses `git archive --format=zip` so the work happens server-side and the
@@ -140,7 +175,9 @@ export async function archiveRepoSubtree(
   });
 
   let stderr = '';
-  proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+  proc.stderr.on('data', (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -167,7 +204,11 @@ export async function archiveRepoSubtree(
       proc.on('error', (err) => controller.error(err));
     },
     cancel() {
-      try { proc.kill(); } catch { /* ignore */ }
+      try {
+        proc.kill();
+      } catch {
+        /* ignore */
+      }
     },
   });
 }

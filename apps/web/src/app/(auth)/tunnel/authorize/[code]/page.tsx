@@ -3,12 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
+import { CAPABILITY_REGISTRY } from '@/features/tunnel/types';
 import {
   useApproveDeviceAuth,
   useDenyDeviceAuth,
@@ -19,7 +19,7 @@ import { Check, Clock, Monitor, X } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
-const EXPIRED_STATUS_ICON_CLASS = 'bg-amber-500/10 border-amber-500/20';
+const EXPIRED_STATUS_ICON_CLASS = 'bg-kortix-yellow/10 border-kortix-yellow/20';
 
 export default function DeviceAuthorizePage() {
   return (
@@ -127,7 +127,7 @@ function DeviceAuthorize() {
   if (info.status === 'expired' || remaining <= 0) {
     return (
       <StatusScreen
-        icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
+        icon={<Clock className="h-6 w-6 text-kortix-yellow" />}
         iconClassName={EXPIRED_STATUS_ICON_CLASS}
         title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line125JsxAttrTitleRequestExpired')}
         description={tHardcodedUi.raw(
@@ -144,14 +144,14 @@ function DeviceAuthorize() {
       <StatusScreen
         icon={
           isApproved ? (
-            <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+            <Check className="h-6 w-6 text-kortix-green" />
           ) : (
             <X className="text-destructive h-6 w-6" />
           )
         }
         iconClassName={
           isApproved
-            ? 'bg-emerald-500/10 border-emerald-500/20'
+            ? 'bg-kortix-green/10 border-kortix-green/20'
             : 'bg-destructive/10 border-destructive/20'
         }
         title={isApproved ? 'Device Authorized' : 'Request Denied'}
@@ -167,7 +167,7 @@ function DeviceAuthorize() {
   // ── Main form ──
   return (
     <div className="fixed inset-0 overflow-hidden">
-      <WallpaperBackground />
+      <WallpaperBackground showBrandMark={false} />
 
       <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
 
@@ -185,7 +185,7 @@ function DeviceAuthorize() {
             {/* Device code hero */}
             <div className="bg-foreground/[0.04] border-foreground/[0.06] mb-6 flex items-center justify-between rounded-2xl border px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="size-2 animate-pulse rounded-full bg-amber-500" />
+                <div className="size-2 animate-pulse rounded-full bg-kortix-yellow" />
                 <span className="font-mono text-lg font-medium tracking-[0.15em]">
                   {info.deviceCode}
                 </span>
@@ -239,7 +239,7 @@ function DeviceAuthorize() {
                     onClick={() => toggleCap(cap.key)}
                     className={cn(
                       'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
-                      selected ? 'bg-foreground/[0.06]' : 'hover:bg-foreground/[0.03]',
+                      selected ? 'bg-primary/[0.08]' : 'hover:bg-foreground/[0.03]',
                     )}
                   >
                     <div
@@ -315,13 +315,13 @@ function StatusScreen({
   description: string;
 }) {
   return (
-    <div className="fixed inset-0">
-      <WallpaperBackground />
-      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-6 px-4">
-        <KortixLogo size={28} />
+    <div className="fixed inset-0 overflow-hidden">
+      <WallpaperBackground showBrandMark={false} />
+      <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
+      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-5 px-4">
         <div
           className={cn(
-            'flex h-14 w-14 items-center justify-center rounded-full border',
+            'flex h-16 w-16 items-center justify-center rounded-full border',
             iconClassName || 'bg-foreground/[0.06] border-foreground/[0.08]',
           )}
         >

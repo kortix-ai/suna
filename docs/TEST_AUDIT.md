@@ -214,7 +214,7 @@ Severity: **P0** = blocks an enterprise sale / silently hides failures · **P1**
 - **Env-driven configuration everywhere** — localhost fallbacks, no hardcoded prod URLs or real secrets (sampled fixtures only: `whsec_test`, `sk_test_*`).
 - **Quality-gates aggregator** (`tests/scripts/quality-gates.sh`) unifying JUnit + coverage + SARIF + k6.
 - **Allure portal** (`qa.kortix.com`) with trend history via S3 + Argo.
-- **Tiered CI cadence** (`qa-pr` → `qa-main` → `qa-nightly` → `qa-release`) — the right shape; it just needs the gates made real.
+- **Tiered CI cadence** (`qa-pr` → `qa-staging` → `qa-nightly` → `qa-release`) — the right shape; it just needs the gates made real.
 
 ---
 

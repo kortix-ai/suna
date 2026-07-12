@@ -1,9 +1,9 @@
-import type { Transport } from './transport';
-import { buildUpstreamRequest } from './openai-compat';
-import { buildResponsesRequest, translateResponsesResponse } from './openai-responses';
+import type { ProviderKind } from '../domain';
 import { buildAnthropicRequest, translateAnthropicResponse } from './anthropic';
 import { buildBedrockRequest, translateBedrockResponse } from './bedrock';
-import type { ProviderKind } from '../domain';
+import { buildUpstreamRequest } from './openai-compat';
+import { buildResponsesRequest, translateResponsesResponse } from './openai-responses';
+import type { Transport } from './transport';
 
 const openaiCompat: Transport = {
   buildRequest: buildUpstreamRequest,

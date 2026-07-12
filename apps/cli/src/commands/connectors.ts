@@ -12,7 +12,7 @@ import {
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/executor) ───────────────────────────────────
 
@@ -31,17 +31,12 @@ interface AdminConnector {
   name: string;
   provider: Provider;
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
-  credentialMode: 'shared' | 'per_user';
+  /** Always `shared` — `per_user` (each member's own) was removed 2026-07-05. */
+  credentialMode: 'shared';
   actions: ConnectorAction[];
   authSecret: string | null;
-  sharing: ConnectorSharing | null;
   secretSet: boolean;
 }
-
-type ConnectorSharing =
-  | { mode: 'project' }
-  | { mode: 'private'; ownerId?: string }
-  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
 
 interface SyncResult {
   synced: number;
@@ -50,31 +45,32 @@ interface SyncResult {
 
 const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
-const HELP = `Usage: kortix connectors <subcommand> [options]
+const HELP = help`Usage: kortix connectors <subcommand> [options]
 
 Manage the project's connectors — the integrations agents call as tools
 (Pipedream apps, MCP servers, OpenAPI/GraphQL/HTTP endpoints). Mirrors the
-dashboard's Customize → Connectors.
+dashboard's Customize → Connectors. Connectors are project-wide visible; the
+only access gate is which AGENTS may call one (\`kortix agents scope\` /
+\`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
 
-Config lives in kortix.toml (the source of truth): \`add\`/\`rm\`/\`policy set\`
+Config lives in kortix.yaml (the source of truth): \`add\`/\`rm\`/\`policy set\`
 edit your LOCAL file — run \`kortix ship\` to apply, then \`sync\` to reconcile.
-Only credentials, OAuth, sharing and reads talk to the cloud.
+Only credentials, OAuth, and reads talk to the cloud.
 
 Subcommands:
-  ls [--json]                       List connectors + status, auth, sharing.
+  ls [--json]                       List connectors + status, auth.
   show <slug> [--json]              Show one connector's tools (actions).
-  add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.toml.
+  add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
                                     instantly on the cloud project (commit to
                                     main + sync, like the dashboard).
-  rm <slug> [--apply]               Remove a [[connectors]] block from kortix.toml
+  rm <slug> [--apply]               Remove a [[connectors]] block from kortix.yaml
                                     (or --apply to remove on the cloud now).
   rename <slug> <name…>             Set a connector's display name (applies now).
-  mode <slug> <shared|per_user>     Set the profile model (applies now + re-syncs).
-  sync                              Reconcile the catalog from the shipped kortix.toml.
+  mode <slug> shared                 Set the profile model (applies now + re-syncs; shared is the only mode).
+  sync                              Reconcile the catalog from the shipped kortix.yaml.
   credential <slug> [value]         Set a connector's credential (prompts if
                                     no value; reads stdin with \`-\`).
-  share <slug> --mode <m> [...]     Set who can use it (project|private|members).
   connect <slug>                    Start a Pipedream 1-click connect.
   link <slug> [--expires <min>]     Mint a DURABLE shareable Quick Connect link
                                     to hand a human (web: popup, Slack: link).
@@ -99,12 +95,7 @@ Add options (provider-specific):
   --base-url <url>         HTTP base URL (provider=http).
   --spec <url|path>        OpenAPI/GraphQL/HTTP spec ref.
   --auth-type <t>          none|bearer|basic|custom.
-  --credential <mode>      shared|per_user.
-
-Share options:
-  --mode <m>               project | private | members.
-  --members <id,id>        member ids (mode=members).
-  --groups <id,id>         group ids (mode=members).
+  --credential <mode>      shared (the only mode).
 
 Global:
   --project <id>     Operate on this project id (default: linked).
@@ -139,9 +130,6 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.spec = takeFlagValue(rest, ['--spec']);
     f.authType = takeFlagValue(rest, ['--auth-type']);
     f.credential = takeFlagValue(rest, ['--credential']);
-    f.mode = takeFlagValue(rest, ['--mode']);
-    f.members = takeFlagValue(rest, ['--members']);
-    f.groups = takeFlagValue(rest, ['--groups']);
     f.cursor = takeFlagValue(rest, ['--cursor']);
     f.default = takeFlagValue(rest, ['--default']);
     asStdin = takeFlagBool(rest, ['--stdin']);
@@ -151,24 +139,24 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  // ── Config mutations edit the LOCAL kortix.toml (the source of truth). No
+  // ── Config mutations edit the LOCAL kortix.yaml (the source of truth). No
   //    cloud call, no auth — you `kortix ship` to apply. Only credentials,
-  //    OAuth, sharing, reconcile + reads talk to the cloud. ───────────────────
+  //    OAuth, reconcile + reads talk to the cloud. ───────────────────
   //    `--apply` skips the local-edit + ship/CR flow and applies the change
-  //    instantly on the cloud project (commit to kortix.toml on main + sync,
+  //    instantly on the cloud project (commit to kortix.yaml on main + sync,
   //    exactly like the dashboard) — handled in the switch below.
   if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
   if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
   if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set') return policySetLocal(f.default);
 
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const ex = `/executor/projects/${ctx.projectId}`;
 
   try {
     switch (sub) {
       // `--apply` paths: mutate the cloud project directly (commit to
-      // kortix.toml on main + sync, like the dashboard) — no local edit, no CR.
+      // kortix.yaml on main + sync, like the dashboard) — no local edit, no CR.
       case 'add':
       case 'create': {
         const slug = positional[0];
@@ -190,7 +178,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, draft);
         if (json) { emitJson(resp); return 0; }
         process.stdout.write(
-          `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.toml on main + synced)${C.reset}\n` +
+          `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.yaml on main + synced)${C.reset}\n` +
             `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors link ${slug}${C.reset}${C.dim} or ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
         );
         return 0;
@@ -201,7 +189,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
         await ctx.client.delete(`${ex}/connectors/${encodeURIComponent(slug)}`);
-        process.stdout.write(`${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.toml on main + catalog)${C.reset}\n`);
+        process.stdout.write(`${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`);
         return 0;
       }
       case 'ls':
@@ -220,11 +208,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slugW = Math.max(...connectors.map((c) => c.slug.length), 4);
         process.stdout.write('\n');
         process.stdout.write(
-          `  ${C.dim}${pad('SLUG', slugW)}   STATUS       PROVIDER     CRED        TOOLS  SHARING${C.reset}\n`,
+          `  ${C.dim}${pad('SLUG', slugW)}   STATUS       PROVIDER     CRED        TOOLS${C.reset}\n`,
         );
         for (const c of connectors) {
           process.stdout.write(
-            `  ${pad(c.slug, slugW)}   ${statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(c.credentialMode, 9)}  ${pad(String(c.actions.length), 5)}  ${C.faded}${sharingLabel(c.sharing)}${C.reset}\n`,
+            `  ${pad(c.slug, slugW)}   ${statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(c.credentialMode, 9)}  ${pad(String(c.actions.length), 5)}\n`,
           );
         }
         process.stdout.write(`\n  ${C.dim}${connectors.length} connector${connectors.length === 1 ? '' : 's'}${C.reset}\n\n`);
@@ -244,8 +232,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
-        process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n`);
-        process.stdout.write(`  ${C.dim}sharing ${C.reset}${sharingLabel(c.sharing)}\n\n`);
+        process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`);
         if (c.actions.length === 0) {
           process.stdout.write(`  ${C.dim}No tools materialized yet — run \`kortix connectors sync\`.${C.reset}\n\n`);
           return 0;
@@ -282,28 +269,6 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential`, { value });
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
-        return 0;
-      }
-      case 'share':
-      case 'sharing': {
-        const slug = positional[0];
-        if (!slug) return missing('a connector slug');
-        const mode = f.mode;
-        if (mode !== 'project' && mode !== 'private' && mode !== 'members') {
-          return missing('--mode project|private|members');
-        }
-        let sharing: ConnectorSharing;
-        if (mode === 'members') {
-          sharing = {
-            mode,
-            memberIds: splitCsv(f.members),
-            groupIds: splitCsv(f.groups),
-          };
-        } else {
-          sharing = { mode };
-        }
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/sharing`, sharing);
-        process.stdout.write(`${status.ok(`Sharing for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
         return 0;
       }
       case 'connect': {
@@ -375,10 +340,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
       case 'mode': {
+        // `per_user` (each member brings their own) was removed 2026-07-05
+        // (docs/specs/2026-07-05-agent-first-config-unification.md §2.5) —
+        // `shared` is the only mode; the route stays as a restricted no-op.
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
         const mode = positional[1] ?? f.credential;
-        if (mode !== 'shared' && mode !== 'per_user') return missing('<shared|per_user>');
+        if (mode === 'per_user') {
+          process.stderr.write(`${status.err('per_user credential mode was removed — connectors are always shared now')}\n`);
+          return 1;
+        }
+        if (mode !== 'shared') return missing('<shared>');
         await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
         process.stdout.write(`${status.ok(`Profile model for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
         return 0;
@@ -492,7 +464,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
   }
 }
 
-// ── Local kortix.toml config edits (source of truth; no cloud round-trip) ────
+// ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
 function connectorAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
   if (!slug) return missing('a connector slug');
@@ -503,7 +475,7 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
   }
   try {
     if (arrayEntryExists('connectors', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A connector "${slug}" already exists in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`A connector "${slug}" already exists in kortix.yaml.`)}\n`);
       return 1;
     }
     // Insertion order = field order in the block.
@@ -520,7 +492,7 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
     if (f.authType) fields.auth = { type: f.authType };
     appendArrayBlock('connectors', fields);
     process.stdout.write(
-      `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.toml`)}\n` +
+      `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}, then set auth: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}${C.dim} / ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
     );
     return 0;
@@ -535,11 +507,11 @@ function connectorRmLocal(slug: string | undefined): number {
   try {
     const removed = removeArrayBlock('connectors', 'slug', slug);
     if (!removed) {
-      process.stderr.write(`${status.err(`No [[connectors]] "${slug}" in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`No [[connectors]] "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     process.stdout.write(
-      `${status.ok(`Removed ${C.bold}${slug}${C.reset} from kortix.toml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Removed ${C.bold}${slug}${C.reset} from kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -568,15 +540,6 @@ function statusCell(s: AdminConnector['status']): string {
   return `${color}${pad(s, 11)}${C.reset}`;
 }
 
-function sharingLabel(s: ConnectorSharing | null): string {
-  if (!s) return 'project';
-  if (s.mode === 'members') {
-    const n = (s.memberIds?.length ?? 0) + (s.groupIds?.length ?? 0);
-    return `members (${n})`;
-  }
-  return s.mode;
-}
-
 function reportSync(sync?: SyncResult): void {
   if (!sync) return;
   for (const e of sync.errors) process.stderr.write(`  ${status.warn(`${e.slug}: ${e.error}`)}\n`);
@@ -598,10 +561,6 @@ function normalizePolicyAction(v: string | undefined): 'always_run' | 'require_a
     default:
       return null;
   }
-}
-
-function splitCsv(v: string | undefined): string[] {
-  return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
 }
 
 async function readStdin(): Promise<string> {

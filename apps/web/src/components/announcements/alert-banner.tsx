@@ -6,7 +6,7 @@ import { X, ExternalLink, LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
-import { normalizeAppPathname } from '@/lib/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
 export type AlertBannerVariant = 'warning' | 'error' | 'info';
 
@@ -22,26 +22,13 @@ interface AlertBannerProps {
   onDismiss?: () => void;
 }
 
-const variantStyles: Record<AlertBannerVariant, {
-  iconBg: string;
-  iconBorder: string;
-  iconColor: string;
-}> = {
-  warning: {
-    iconBg: 'bg-amber-500/10',
-    iconBorder: 'border-amber-500/30',
-    iconColor: 'text-amber-600 dark:text-amber-400',
-  },
-  error: {
-    iconBg: 'bg-muted',
-    iconBorder: 'border-border/40',
-    iconColor: 'text-muted-foreground',
-  },
-  info: {
-    iconBg: 'bg-blue-500/10',
-    iconBorder: 'border-blue-500/25',
-    iconColor: 'text-blue-600 dark:text-blue-400',
-  },
+// Tone → brand tokens (kortix-*), mirroring the InfoBanner / MaintenanceBanner
+// scale so every floating alert in the app reads as one system. The card border
+// is tinted to the tone so severity is legible at a glance.
+const variantStyles: Record<AlertBannerVariant, { tile: string; border: string }> = {
+  warning: { tile: 'bg-kortix-orange/10 text-kortix-orange', border: 'border-kortix-orange/25' },
+  error: { tile: 'bg-kortix-red/10 text-kortix-red', border: 'border-kortix-red/25' },
+  info: { tile: 'bg-kortix-blue/10 text-kortix-blue', border: 'border-kortix-blue/25' },
 };
 
 export function AlertBanner({
@@ -51,100 +38,112 @@ export function AlertBanner({
   icon: Icon,
   dismissKey,
   statusUrl,
-  statusLabel = 'View Status',
+  statusLabel = 'View status',
   countdown,
   onDismiss,
 }: AlertBannerProps) {
   const [isDismissed, setIsDismissed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const pathname = normalizeAppPathname(usePathname());
-  const isDashboardPage = pathname?.startsWith('/agents') || pathname?.startsWith('/workspace') || pathname?.startsWith('/projects') || pathname?.startsWith('/settings') || pathname === '/';
+  const isDashboardPage =
+    pathname?.startsWith('/agents') ||
+    pathname?.startsWith('/workspace') ||
+    pathname?.startsWith('/projects') ||
+    pathname?.startsWith('/settings') ||
+    pathname === '/';
 
   const storageKey = `alert-dismissed-${dismissKey}`;
 
   useEffect(() => {
     setIsMounted(true);
     try {
-      const dismissed = localStorage.getItem(storageKey);
-      if (dismissed === 'true') {
-        setIsDismissed(true);
-      }
+      if (localStorage.getItem(storageKey) === 'true') setIsDismissed(true);
     } catch {
+      // ignore
     }
   }, [storageKey]);
 
-  const handleDismiss = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDismiss = () => {
     setIsDismissed(true);
     try {
       localStorage.setItem(storageKey, 'true');
     } catch {
+      // ignore
     }
     onDismiss?.();
   };
 
   const handleStatusClick = () => {
-    if (statusUrl) {
-      if (statusUrl.startsWith('http')) {
-        window.open(statusUrl, '_blank', 'noopener,noreferrer');
-      } else {
-        window.location.href = statusUrl;
-      }
+    if (!statusUrl) return;
+    if (statusUrl.startsWith('http')) {
+      window.open(statusUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      window.location.href = statusUrl;
     }
   };
 
-  if (!isMounted || isDismissed || !isDashboardPage) {
-    return null;
-  }
-
+  // Keep AnimatePresence mounted so a dismiss animates out instead of hard-cutting.
+  const shouldRender = isMounted && !isDismissed && isDashboardPage;
   const styles = variantStyles[variant];
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed bottom-4 right-4 z-[110] w-[340px]"
-      >
-        <div className="relative bg-muted rounded-2xl overflow-hidden border">
-          <Button variant="ghost" size="icon-sm" onClick={handleDismiss}>
-<X className="h-3 w-3 text-foreground" />
-
-</Button>
-
+      {shouldRender && (
+        <motion.div
+          key="alert-banner"
+          initial={{ opacity: 0, y: 24, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="fixed right-4 bottom-4 z-[110] w-[360px] max-w-[calc(100vw-2rem)]"
+        >
           <div
-            className={`p-4 bg-muted/50 ${statusUrl ? 'cursor-pointer hover:bg-muted' : ''} transition-colors`}
-            onClick={statusUrl ? handleStatusClick : undefined}
+            className={cn(
+              'bg-background relative flex items-start gap-3 rounded-[0.64rem] border p-4 shadow-lg',
+              styles.border,
+            )}
           >
-            <div className="flex items-start gap-3">
-              <div className={`w-12 h-12 ${styles.iconBg} rounded-2xl border ${styles.iconBorder} flex items-center justify-center flex-shrink-0`}>
-                <Icon className={cn('h-5 w-5', styles.iconColor)} />
-              </div>
-              <div className="flex-1 min-w-0 pr-4">
-                <h3 className="text-foreground text-sm font-semibold mb-1">
-                  {title}
-                </h3>
-                <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">
+            <span
+              className={cn(
+                'flex size-10 shrink-0 items-center justify-center rounded-sm border',
+                styles.tile,
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+
+            <div className="min-w-0 flex-1 pr-6">
+              <h3 className="text-foreground text-sm font-semibold text-balance">{title}</h3>
+              {message && (
+                <p className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">
                   {message}
                 </p>
-                {countdown && (
-                  <div className="mt-2">
-                    {countdown}
-                  </div>
-                )}
-                {statusUrl && (
-                  <Button variant="ghost" size="icon-xs" onClick={handleStatusClick}>
-{statusLabel}
-                    <ExternalLink className="h-3 w-3" />
-</Button>
-                )}
-              </div>
+              )}
+              {countdown && <div className="mt-2">{countdown}</div>}
+              {statusUrl && (
+                <Button
+                  variant="transparent"
+                  size="sm"
+                  onClick={handleStatusClick}
+                  className="text-muted-foreground hover:text-foreground mt-2 h-auto gap-1 p-0 text-xs"
+                >
+                  {statusLabel}
+                  <ExternalLink className="size-3" />
+                </Button>
+              )}
             </div>
+
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={handleDismiss}
+              className="text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 absolute top-2.5 right-2.5 flex size-7 items-center justify-center rounded-md transition-colors active:scale-[0.96]"
+            >
+              <X className="size-3.5" />
+            </button>
           </div>
-        </div>
-      </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

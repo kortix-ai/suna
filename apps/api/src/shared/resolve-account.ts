@@ -1,10 +1,13 @@
-import { and, eq } from 'drizzle-orm';
-import { HTTPException } from 'hono/http-exception';
-import { accounts, accountMembers, accountUser } from '@kortix/db';
-import { db } from './db';
-import { ttlMemo } from './ttl-memo';
-import { withTimeout } from './with-timeout';
-import { syncLegacyStripeSubscription } from '../billing/services/legacy-stripe-sync';
+import { accountMembers } from "@kortix/db";
+import { and, eq } from "drizzle-orm";
+import type { Context } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
+import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
+import { db } from "./db";
+import { getSupabase } from "./supabase";
+import { ttlMemo } from "./ttl-memo";
+import { withTimeout } from "./with-timeout";
 
 // Legacy Stripe recovery sync — throttled to once per account per hour and
 // bounded to 1.5s on the request path.
@@ -25,22 +28,24 @@ const syncLegacySubscriptionThrottled = ttlMemo({
   keyFn: (accountId: string) => accountId,
   loader: async (accountId: string): Promise<void> => {
     const result = await syncLegacyStripeSubscription(accountId);
-    if (result.status === 'error') {
-      console.warn(`[resolve-account] Stripe sync error for ${accountId}: ${result.error}`);
+    if (result.status === "error") {
+      console.warn(
+        `[resolve-account] Stripe sync error for ${accountId}: ${result.error}`,
+      );
     }
   },
 });
 
 async function syncLegacySubscription(accountId: string): Promise<void> {
   try {
-    await withTimeout(syncLegacySubscriptionThrottled(accountId), 1_500, 'legacy-stripe-sync');
+    await withTimeout(
+      syncLegacySubscriptionThrottled(accountId),
+      1_500,
+      "legacy-stripe-sync",
+    );
   } catch {
     // Timeout or sync failure — never block account resolution on recovery.
   }
-}
-
-function defaultAccountName(): string {
-  return 'Account';
 }
 
 /**
@@ -62,14 +67,14 @@ function defaultAccountName(): string {
  * body once and look for `account_id`). Pass `source: 'query'` for GETs.
  */
 export async function resolveScopedAccountId(
-  c: any,
-  source: 'query' | 'body' = 'query',
+  c: Context,
+  source: "query" | "body" = "query",
 ): Promise<string> {
-  const userId = c.get('userId') as string;
+  const userId = c.get("userId") as string;
 
   let requested: string | undefined;
-  if (source === 'query') {
-    requested = c.req.query('account_id');
+  if (source === "query") {
+    requested = c.req.query("account_id");
   } else {
     try {
       // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
@@ -79,7 +84,7 @@ export async function resolveScopedAccountId(
       // own account instead of being 403'd. c.req.json() returns the cached parse.
       const body = await c.req.json();
       const candidate = body?.account_id;
-      if (typeof candidate === 'string' && candidate) requested = candidate;
+      if (typeof candidate === "string" && candidate) requested = candidate;
     } catch {
       // No JSON body or malformed — that's fine, fall through.
     }
@@ -102,7 +107,7 @@ export async function resolveScopedAccountId(
 
   if (!member) {
     throw new HTTPException(403, {
-      message: 'Not a member of the requested account',
+      message: "Not a member of the requested account",
     });
   }
 
@@ -110,54 +115,23 @@ export async function resolveScopedAccountId(
 }
 
 export async function resolveAccountId(userId: string): Promise<string> {
-  try {
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      // Deterministic "primary account" = the user's earliest-joined account
-      // (their original). No personal/team flag — there is no such thing now;
-      // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
-      .orderBy(accountMembers.joinedAt)
-      .limit(1);
+  // NOTE: a failing membership lookup must THROW, not fall through — silently
+  // treating a DB error as "no membership" would mis-scope a multi-account
+  // user to their personal account id below.
+  const [membership] = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(eq(accountMembers.userId, userId))
+    // Deterministic "primary account" = the user's earliest-joined account
+    // (their original). No personal/team flag — there is no such thing now;
+    // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
+    .orderBy(accountMembers.joinedAt)
+    .limit(1);
 
-    if (membership) {
-      await syncLegacySubscription(membership.accountId);
-      return membership.accountId;
-    }
-  } catch { }
-
-  try {
-    const [legacy] = await db
-      .select({ accountId: accountUser.accountId })
-      .from(accountUser)
-      .where(eq(accountUser.userId, userId))
-      .limit(1);
-
-    if (legacy) {
-      try {
-        await db.insert(accounts).values({
-          accountId: legacy.accountId,
-          name: defaultAccountName(),
-        }).onConflictDoNothing();
-
-        await db.insert(accountMembers).values({
-          userId,
-          accountId: legacy.accountId,
-          accountRole: 'owner',
-          isSuperAdmin: true,
-        }).onConflictDoNothing();
-
-        console.log(`[resolve-account] Lazy-migrated basejump account ${legacy.accountId} for user ${userId}`);
-      } catch (migErr) {
-        console.warn(`[resolve-account] Lazy migration failed for ${legacy.accountId}:`, migErr);
-      }
-
-      await syncLegacySubscription(legacy.accountId);
-
-      return legacy.accountId;
-    }
-  } catch { }
+  if (membership) {
+    await syncLegacySubscription(membership.accountId);
+    return membership.accountId;
+  }
 
   // First-time signup → create the user's personal account (id == userId) and a
   // self-membership. Pending account invitations are auto-claimed on the first
@@ -174,20 +148,23 @@ export async function resolveAccountId(userId: string): Promise<string> {
   // genuine new-user signup working while never minting a self-membership for an
   // account that already exists.
   try {
-    const createdAccount = await db.insert(accounts).values({
-      accountId: userId,
-      name: defaultAccountName(),
-    }).onConflictDoNothing().returning({ accountId: accounts.accountId });
-
-    if (createdAccount.length > 0) {
-      await db.insert(accountMembers).values({
-        userId,
-        accountId: userId,
-        accountRole: 'owner',
-        isSuperAdmin: true,
-      }).onConflictDoNothing();
+    // Resolve the signup email so the account gets a real name
+    // ("<email>'s Account") instead of the bare "Account" placeholder. A
+    // token-authed caller reaches here with userId == an existing account_id,
+    // which is not an auth user — the lookup misses and the placeholder
+    // fallback inside bootstrapPersonalAccount still applies (the insert is a
+    // conflict no-op for those anyway).
+    let email: string | null = null;
+    try {
+      const { data } = await getSupabase().auth.admin.getUserById(userId);
+      email = data?.user?.email ?? null;
+    } catch {
+      /* name falls back to the placeholder */
     }
-  } catch { }
+    await bootstrapPersonalAccount(userId, email);
+  } catch (err) {
+    console.warn("[resolve-account] Failed to initialize first account:", err);
+  }
 
   return userId;
 }

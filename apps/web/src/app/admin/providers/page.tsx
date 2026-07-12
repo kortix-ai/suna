@@ -32,7 +32,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
@@ -54,6 +53,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { backendApi } from '@/lib/api-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -170,7 +170,7 @@ function StatStrip({
     warning: 'text-amber-500',
   };
   return (
-    <div className="border-border/60 divide-border/60 grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
+    <div className="border-border/60 divide-border grid grid-cols-2 divide-x divide-y overflow-hidden rounded-2xl border lg:grid-cols-4 lg:divide-y-0">
       {items.map((it, i) => (
         <div key={i} className="min-w-0 p-4">
           <div className="text-muted-foreground/70 truncate text-xs font-medium tracking-wider uppercase">
@@ -266,40 +266,6 @@ export default function ProvidersPage() {
       qc.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
     },
     onError: (e: any) => toast.error(e?.message ?? 'Migrate failed'),
-  });
-
-  // ── Warm pool (DB-backed master gate + default size) ──────────────────────
-  const warmQ = useQuery({
-    queryKey: ['admin', 'warm-pool-config'],
-    queryFn: async () => {
-      const r = await backendApi.get<{ enabled: boolean; size: number }>(
-        '/admin/api/warm-pool-config',
-      );
-      if (r.error) throw new Error(r.error.message);
-      return r.data!;
-    },
-  });
-  const [warmEnabled, setWarmEnabled] = useState(false);
-  const [warmSize, setWarmSize] = useState('0');
-  useEffect(() => {
-    if (!warmQ.data) return;
-    setWarmEnabled(!!warmQ.data.enabled);
-    setWarmSize(String(warmQ.data.size ?? 0));
-  }, [warmQ.data]);
-  const saveWarm = useMutation({
-    mutationFn: async () => {
-      const r = await backendApi.put('/admin/api/warm-pool-config', {
-        enabled: warmEnabled,
-        size: Number(warmSize) || 0,
-      });
-      if (r.error) throw new Error(r.error.message);
-      return r.data;
-    },
-    onSuccess: () => {
-      toast.success('Warm pool saved');
-      qc.invalidateQueries({ queryKey: ['admin', 'warm-pool-config'] });
-    },
-    onError: (e: any) => toast.error(e?.message ?? 'Save failed'),
   });
 
   // ── Provider failover (one-shot, on session init) ─────────────────────────
@@ -499,56 +465,6 @@ export default function ProvidersPage() {
                 </Button>
               </>
             )}
-          </div>
-
-          {/* ── Warm pool ──────────────────────────────────────────────────── */}
-          <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <h2 className="text-sm font-semibold tracking-tight">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextWarmPoola20d2303')}
-                </h2>
-                <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextOffByDefaultWee49f5846')}
-                </p>
-              </div>
-              {warmQ.isLoading ? (
-                <Skeleton className="h-6 w-10 rounded-full" />
-              ) : (
-                <Switch
-                  checked={warmEnabled}
-                  onCheckedChange={setWarmEnabled}
-                  aria-label={tI18nHardcoded.raw(
-                    'autoAppAdminProvidersPageJsxAttrAriaLabelEnableWarm7db63fc6',
-                  )}
-                />
-              )}
-            </div>
-            <div className="flex items-end gap-3">
-              <div className="w-40 space-y-1.5">
-                <label className="text-muted-foreground text-xs font-medium">
-                  {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextDefaultReadyCounte4299c59')}
-                </label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={25}
-                  value={warmSize}
-                  disabled={!warmEnabled}
-                  onChange={(e) => setWarmSize(e.target.value)}
-                  className="rounded-2xl"
-                />
-              </div>
-              <Button
-                size="sm"
-                onClick={() => saveWarm.mutate()}
-                disabled={saveWarm.isPending}
-                className="gap-1.5"
-              >
-                {saveWarm.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {tI18nHardcoded.raw('autoAppAdminProvidersPageJsxTextSaveWarmPool72b9a69a')}
-              </Button>
-            </div>
           </div>
 
           {/* ── Provider failover ──────────────────────────────────────────── */}

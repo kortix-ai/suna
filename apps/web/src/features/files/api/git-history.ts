@@ -1,14 +1,14 @@
 /**
- * Git History API — retrieve commit history for files via the OpenCode PTY system.
+ * Git History API — retrieve commit history for files via a short-lived PTY.
  *
- * Since the OpenCode SDK doesn't expose a native `git log` endpoint,
- * we create a short-lived PTY that runs git commands, collect the output
- * via WebSocket, parse it, and return structured data.
+ * Since there's no native `git log` endpoint, we create a short-lived
+ * terminal that runs git commands, collect the output via WebSocket, parse
+ * it, and return structured data.
  */
 
-import { getClient } from '@/lib/opencode-sdk';
+import { createKortixPty, removeKortixPty, getKortixPtyWebSocketUrl } from '@/lib/opencode-sdk';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
-import type { GitCommit, FileHistoryResult, FileCommitDiff } from '../types';
+import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -31,30 +31,18 @@ const WS_TIMEOUT = 15_000;
  * Returns the combined stdout as a string.
  */
 async function runGitCommand(command: string): Promise<string> {
-  const client = getClient();
+  const baseUrl = getActiveOpenCodeUrl();
 
   // Create a PTY that runs the git command
-  const createResult = await client.pty.create({
+  const pty = await createKortixPty(baseUrl, {
     command: '/bin/sh',
     args: ['-c', command],
     title: '__git-history-query__',
   });
-
-  if (createResult.error) {
-    const err = createResult.error as any;
-    throw new Error(err?.data?.message || err?.message || 'Failed to create PTY for git command');
-  }
-
-  const pty = createResult.data as any;
-  const ptyId = pty?.id;
-  if (!ptyId) {
-    throw new Error('PTY created but no ID returned');
-  }
+  const ptyId = pty.id;
 
   // Connect via WebSocket to read output
-  const baseUrl = getActiveOpenCodeUrl();
-  const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-  const connectUrl = `${wsUrl}/pty/${ptyId}/connect`;
+  const connectUrl = await getKortixPtyWebSocketUrl(ptyId, baseUrl);
 
   const output = await new Promise<string>((resolve, reject) => {
     const chunks: string[] = [];
@@ -101,7 +89,7 @@ async function runGitCommand(command: string): Promise<string> {
   });
 
   // Cleanup: remove the PTY (fire-and-forget)
-  client.pty.remove({ ptyID: ptyId } as any).catch(() => {});
+  removeKortixPty(baseUrl, ptyId).catch(() => {});
 
   return output;
 }

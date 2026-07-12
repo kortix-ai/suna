@@ -113,7 +113,7 @@ function CliAuthorizeInner() {
       const minted = await withTimeout(
         accountTokensApi.create({ name }),
         MINT_TIMEOUT_MS,
-        'Timed out asking the Kortix API to mint a token. Is the API reachable?',
+        'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
       );
 
       const controller = new AbortController();
@@ -132,7 +132,7 @@ function CliAuthorizeInner() {
         accountTokensApi.revoke(minted.token_id).catch(() => {});
         if ((err as Error).name === 'AbortError') {
           throw new Error(
-            `Timed out delivering the token to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
+            `Timed out delivering the API key to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
           );
         }
         throw new Error(
@@ -220,10 +220,10 @@ function ConsentCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const busy = phase === 'authorizing';
   return (
-    <div className="bg-background rounded-2xl border shadow-sm">
+    <div className="bg-background rounded-md border shadow-sm">
       <div className="p-7">
         <div className="mb-6 flex items-center gap-3">
-          <div className="bg-muted/40 grid size-11 place-items-center rounded-2xl border">
+          <div className="bg-muted/40 grid size-11 place-items-center rounded-sm border">
             <TerminalSquare className="size-5" />
           </div>
           <div>
@@ -242,14 +242,14 @@ function ConsentCard({
           )}
         </p>
 
-        <dl className="bg-muted/30 mt-5 space-y-2 rounded-2xl border p-4 text-sm">
+        <dl className="bg-muted/30 mt-5 space-y-2 rounded-md border p-4 text-sm">
           <Row label="Account" value={userEmail || 'You'} />
           <Row label="Callback" value={callbackHost} />
           {deviceLabel && <Row label="Device" value={deviceLabel} />}
         </dl>
 
         {phase === 'error' && error && (
-          <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-2xl border p-3 text-sm">
+          <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-md border p-3 text-sm">
             <XCircle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -304,7 +304,7 @@ function Row({ label, value }: { label: string; value: string }) {
 function SuccessCard() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="bg-background rounded-2xl border p-7 text-center shadow-sm">
+    <div className="bg-background rounded-md border p-7 text-center shadow-sm">
       <div className="mx-auto grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="size-6" />
       </div>
@@ -323,7 +323,7 @@ function SuccessCard() {
 
 function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
-    <div className="bg-background rounded-2xl border p-7 text-center shadow-sm">
+    <div className="bg-background rounded-md border p-7 text-center shadow-sm">
       <div className="bg-destructive/10 text-destructive mx-auto grid size-12 place-items-center rounded-full">
         <XCircle className="size-6" />
       </div>

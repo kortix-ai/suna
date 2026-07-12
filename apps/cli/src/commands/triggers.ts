@@ -11,16 +11,16 @@ import {
   removeArrayBlock,
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   ProjectTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix triggers <subcommand> [options]
+const HELP = help`Usage: kortix triggers <subcommand> [options]
 
-Manage the [[triggers]] declared in your project's kortix.toml — cron
-schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.toml
+Manage the [[triggers]] declared in your project's kortix.yaml — cron
+schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.yaml
 (the source of truth); \`kortix ship\` applies them. ls/fire/info read live
 state from the cloud. pause/resume are a SERVER-SIDE activation switch
 (cloud state, not the manifest).
@@ -28,7 +28,7 @@ state from the cloud. pause/resume are a SERVER-SIDE activation switch
 Subcommands:
   ls [--json]              List triggers + runtime state.
   add <slug> [options]     Append a [[triggers]] block (cron or webhook).
-  rm <slug>                Remove a trigger from kortix.toml.
+  rm <slug>                Remove a trigger from kortix.yaml.
   fire <slug>              Manually fire a trigger now.
   enable <slug>            Set enabled = true on a trigger.
   disable <slug>           Set enabled = false on a trigger.
@@ -122,7 +122,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;
@@ -146,7 +146,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   if (resp.triggers.length === 0) {
-    process.stdout.write(`  ${C.dim}No triggers declared. Add [[triggers]] to kortix.toml.${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}No triggers declared. Add [[triggers]] to kortix.yaml.${C.reset}\n`);
   } else {
     const slugW = Math.max(...resp.triggers.map((t) => t.slug.length), 4);
     const nameW = Math.max(...resp.triggers.map((t) => t.name.length), 4);
@@ -183,7 +183,7 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: TriggerFireResponse;
@@ -208,7 +208,7 @@ async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<nu
 // Server-side activation switch (cloud state in projects.metadata, NOT the
 // manifest). Pause = the platform stops auto-running this project's triggers.
 async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -228,7 +228,7 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
   return 0;
 }
 
-// add/rm a [[triggers]] block in the LOCAL kortix.toml (source of truth).
+// add/rm a [[triggers]] block in the LOCAL kortix.yaml (source of truth).
 function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
@@ -253,7 +253,7 @@ function triggersAddLocal(
   }
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A [[triggers]] "${slug}" already exists in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`A [[triggers]] "${slug}" already exists in kortix.yaml.`)}\n`);
       return 1;
     }
     const fields: Record<string, unknown> = { slug };
@@ -270,7 +270,7 @@ function triggersAddLocal(
     fields.prompt = tf.prompt;
     appendArrayBlock('triggers', fields);
     process.stdout.write(
-      `${status.ok(`Added [[triggers]] ${C.bold}${slug}${C.reset} (${type}) to kortix.toml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
+      `${status.ok(`Added [[triggers]] ${C.bold}${slug}${C.reset} (${type}) to kortix.yaml`)} ${C.dim}— \`kortix ship\` to apply.${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -286,7 +286,7 @@ function triggersRmLocal(slug: string | undefined): number {
   }
   try {
     if (!removeArrayBlock('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     process.stdout.write(
@@ -299,7 +299,7 @@ function triggersRmLocal(slug: string | undefined): number {
   }
 }
 
-// enabled is config — toggle it in the LOCAL kortix.toml `[[triggers]]` block
+// enabled is config — toggle it in the LOCAL kortix.yaml `[[triggers]]` block
 // (the source of truth), preserving the block's comments. `kortix ship` applies.
 function triggersToggle(slug: string | undefined, enabled: boolean): number {
   if (!slug) {
@@ -308,7 +308,7 @@ function triggersToggle(slug: string | undefined, enabled: boolean): number {
   }
   try {
     if (!arrayEntryExists('triggers', 'slug', slug)) {
-      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.toml.`)}\n`);
+      process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
       return 1;
     }
     setScalarInArrayBlock('triggers', 'slug', slug, 'enabled', enabled);
@@ -327,7 +327,7 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;

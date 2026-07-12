@@ -1,5 +1,7 @@
+import { OPENCODE_USER_AGENT } from '@kortix/shared';
+
 export const CHATGPT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
-export const CODEX_USER_AGENT = 'opencode/1.14.28';
+export const CODEX_USER_AGENT = OPENCODE_USER_AGENT;
 export const OPENAI_AUTH_BASE = 'https://auth.openai.com';
 export const CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 export const REFRESH_WINDOW_MS = 5 * 60 * 1000;
@@ -64,6 +66,18 @@ export function accountIdFromJwt(jwt?: string): string | undefined {
 export function needsRefresh(stored: StoredCodexAuth, now: number): boolean {
   if (typeof stored.expires !== 'number') return false;
   return stored.expires - now < REFRESH_WINDOW_MS;
+}
+
+/**
+ * Whether the current access token can still be used right now. Used as a grace
+ * fallback: when a refresh blip (OpenAI auth briefly unreachable) happens, an
+ * access token that hasn't actually expired yet should keep serving instead of
+ * failing every Codex request.
+ */
+export function tokenStillValid(stored: StoredCodexAuth, now: number): boolean {
+  if (!stored.access) return false;
+  if (typeof stored.expires !== 'number') return true;
+  return stored.expires > now;
 }
 
 export function applyRefresh(tokens: RefreshTokenResponse, current: StoredCodexAuth, now: number): StoredCodexAuth | null {

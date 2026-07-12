@@ -14,13 +14,13 @@ const REQUIRED_BASE_PATHS = [
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'README.md',
-  'kortix.toml',
+  'kortix.yaml',
 ];
 
 const GKW_SKILL_PATHS = [
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/account-research/SKILL.md',
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/audit-support/SKILL.md',
-  '.kortix/opencode/skills/GENERAL-KNOWLEDGE-WORKER/content-creation/SKILL.md',
+  '.kortix/opencode/skills/account-research/SKILL.md',
+  '.kortix/opencode/skills/audit-support/SKILL.md',
+  '.kortix/opencode/skills/content-creation/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {
@@ -52,25 +52,36 @@ function walk(root: string, relPrefix = ''): string[] {
 }
 
 describe('applyScaffold', () => {
-  test('writes the full Kortix starter into a fresh directory', () => {
+  test('writes the default minimal Kortix starter into a fresh directory', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
 
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
-    for (const path of GKW_SKILL_PATHS) expect(result.written).toContain(path);
+    for (const path of GKW_SKILL_PATHS) expect(result.written).not.toContain(path);
     expect(result.skipped).toEqual([]);
 
     expect(walk(dir)).toEqual(result.written.sort());
 
-    const manifest = readFileSync(join(dir, 'kortix.toml'), 'utf8');
-    expect(manifest).toContain('name = "Hello World"');
+    const manifest = readFileSync(join(dir, 'kortix.yaml'), 'utf8');
+    expect(manifest).toContain('name: "Hello World"');
     expect(manifest).not.toContain('{{projectName}}');
 
-    expect(manifest).not.toMatch(/^\[sandbox\]/m);
-    expect(manifest).toContain('config_dir = ".kortix/opencode"');
+    expect(manifest).not.toMatch(/^sandbox:/m);
+    expect(manifest).toContain('config_dir: .kortix/opencode');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
     expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
     expect(result.written).not.toContain('.kortix/memory/overview.md');
+  });
+
+  test('general knowledge worker skills are explicit opt-in', () => {
+    const result = applyScaffold({
+      repoRoot: dir,
+      projectName: 'Hello World',
+      template: 'general-knowledge-worker',
+    });
+
+    for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
+    for (const path of GKW_SKILL_PATHS) expect(result.written).toContain(path);
   });
 
   test('minimal template writes only the shared Kortix starter', () => {
@@ -96,7 +107,7 @@ describe('applyScaffold', () => {
     });
 
     expect(result.skipped.sort()).toEqual(['.kortix/opencode/agents/kortix.md', 'README.md']);
-    expect(result.written).toContain('kortix.toml');
+    expect(result.written).toContain('kortix.yaml');
     expect(result.written).toContain('.kortix/memory/MEMORY.md');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');

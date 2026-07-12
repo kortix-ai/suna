@@ -8,7 +8,8 @@
  * can only write the names sealed into the token, into the one project the token
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
-import { Hono } from 'hono';
+import { createHash } from 'node:crypto';
+import { Hono, type Context, type Next } from 'hono';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
@@ -16,8 +17,50 @@ import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets
 import { propagateProjectSecretsToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
 import { pipedreamConfigured, pipedreamConnectUrl } from '../executor/pipedream';
 import { resolveSetupLink } from './token';
+import { enforceRateLimit, TokenBucketRateLimiter } from '../shared/rate-limit';
 
 const setupLinksPublicApp = new Hono();
+
+// Same shape as createPublicSessionShareRateLimitMiddleware (public-session-shares):
+// no authenticated identity to key on, so key on the bearer token itself — every
+// legitimate use of one link shares that bucket. `ksl_...` is the wire prefix
+// minted in ./token.ts; anything not shaped like a real token falls back to the
+// client IP so a flood of garbage tokens (each a distinct, never-colliding key)
+// can't allocate unbounded rate-limit buckets or dodge the limit entirely.
+const TOKEN_LIKE_REGEX = /^ksl_[A-Za-z0-9_-]{8,512}$/;
+const setupLinkLimiter = new TokenBucketRateLimiter('setup_link');
+
+function clientIp(c: Context) {
+  return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
+    || c.req.header('x-real-ip')
+    || 'unknown';
+}
+
+function createSetupLinkRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const rawToken = c.req.param('token');
+    const key = rawToken && TOKEN_LIKE_REGEX.test(rawToken) ? rawToken : `ip:${clientIp(c)}`;
+    // Never persist the raw bearer token (it's a live capability) — audit on a
+    // truncated hash so hits on the same link/attempt are still correlatable.
+    const resourceId = rawToken
+      ? `ksl:${createHash('sha256').update(rawToken).digest('hex').slice(0, 16)}`
+      : null;
+    const denied = await enforceRateLimit(
+      c,
+      setupLinkLimiter,
+      key,
+      { limit: 30, windowMs: 60_000 },
+      {
+        action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
+        resourceType: 'setup_link',
+        resourceId,
+        metadata: { limiter: 'setup_link' },
+      },
+    );
+    if (denied) return denied;
+    await next();
+  };
+}
 
 async function projectName(projectId: string): Promise<string> {
   const [row] = await db
@@ -27,6 +70,10 @@ async function projectName(projectId: string): Promise<string> {
     .limit(1);
   return row?.name ?? 'this project';
 }
+
+setupLinksPublicApp.use('/secret/:token', createSetupLinkRateLimitMiddleware());
+setupLinksPublicApp.use('/connector/:token', createSetupLinkRateLimitMiddleware());
+setupLinksPublicApp.use('/connector/:token/start', createSetupLinkRateLimitMiddleware());
 
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
 setupLinksPublicApp.get('/secret/:token', async (c) => {
@@ -116,13 +163,14 @@ setupLinksPublicApp.post('/connector/:token/start', async (c) => {
   if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
   if (!resolved.payload.app) return c.json({ error: 'This connector has no Pipedream app bound' }, 400);
 
-  const effectiveUser = resolved.payload.mode === 'per_user' ? resolved.payload.uid : null;
   try {
+    // Always the shared project account — `per_user` (each member's own) was
+    // removed 2026-07-05.
     const { connectUrl } = await pipedreamConnectUrl(
       resolved.projectId,
       resolved.payload.slug,
       resolved.payload.app,
-      effectiveUser,
+      null,
     );
     if (!connectUrl) return c.json({ error: 'Pipedream did not return a connect URL' }, 502);
     return c.json({ connect_url: connectUrl });

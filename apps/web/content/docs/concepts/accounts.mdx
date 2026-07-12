@@ -3,8 +3,6 @@ title: Accounts and teams
 description: Your account holds your projects and the people you work with.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 An **account** holds your [projects](/docs/concepts/projects) and teammates. Signing up gives you a personal account; you can also create shared accounts for a company or team.
 
 ## People and roles
@@ -15,7 +13,13 @@ Each person you invite has a role:
 - **Admin** — manage projects and members.
 - **Member** — work in the projects they're given access to.
 
-Within a project you can grant finer access (for example, view-only). Those controls live in each project's access settings.
+Within a project, access is one of three project roles:
+
+- **Member** — read the project and run sessions/chat and fire triggers.
+- **Editor** — everything a member can do, plus edit/customize the project, deploy apps, and manage triggers.
+- **Manager** — everything an editor can do, plus invite/remove project members, change member roles, manage gateway keys, and delete the project.
+
+Those controls live in each project's access settings.
 
 ## Switching accounts
 
@@ -25,8 +29,9 @@ If you belong to more than one account, switch between them from the account swi
 
 Invite teammates by email from the account's members page; they get access as
 soon as they accept. Adding someone as **owner** or **admin** gives them manager
-access to every project; a plain **member** sees only the projects they're
-granted.
+access to every project (full control, including managing members and deleting
+the project); a plain account **member** sees only the projects they're
+granted a project role on.
 
 <Callout type="info" title="Under the hood">
 An account is the top-level tenant; projects belong to accounts, and access is governed by account roles (owner, admin, member) plus per-project roles. Personal and team accounts use the same model.

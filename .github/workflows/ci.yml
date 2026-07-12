@@ -5,7 +5,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
   workflow_dispatch:
 
 concurrency:
@@ -41,7 +41,7 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -59,6 +59,7 @@ jobs:
               - *pnpm
               - 'apps/api/**'
               - 'packages/agent-tunnel/**'
+              - 'packages/api-contract/**'
               - 'packages/db/**'
               - 'packages/manifest-schema/**'
               - 'packages/shared/**'
@@ -78,7 +79,7 @@ jobs:
               - 'apps/kortix-sandbox-agent-server/**'
             desktop:
               - '.github/workflows/ci.yml'
-              - 'apps/desktop/**'
+              - 'apps/desktop-electron/**'
             # self-host stack: anything that can break `kortix self-host start`'s
             # from-scratch DB bootstrap or the CLI's compose generation.
             self_host:
@@ -98,7 +99,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -132,7 +133,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -152,6 +153,7 @@ jobs:
       - name: Build standalone frontend
         run: pnpm --filter ./apps/web build
         env:
+          NODE_OPTIONS: --max-old-space-size=6144
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
@@ -166,7 +168,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -198,7 +200,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -235,7 +237,7 @@ jobs:
   # Always-on gate against the self-host schema-bootstrap regression class: a
   # fresh `kortix self-host` database must come up fully provisioned. Boots the
   # data plane (Postgres + Supabase + the kortix-migrate one-shot + the API) and
-  # asserts the migrate one-shot installs basejump + all migrations and the
+  # asserts the migrate one-shot applies all migrations and the
   # owner/account flow works. The frontend/gateway + a live agent session +
   # the update mechanism are covered by the nightly full e2e (self-host-e2e.yml).
   self-host-schema:
@@ -246,7 +248,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -278,65 +280,42 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
-    # Skip on PRs that don't touch desktop code — the Tauri/Rust build is the
-    # slowest job in CI and the desktop shell changes rarely. Push-to-main builds
-    # (desktop.yml) still cover release artifacts.
+    # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
+    # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Linux Tauri dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            curl \
-            file \
-            libgtk-3-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            wget
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-
       - name: Install pnpm
         run: corepack enable pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
         env:
           npm_config_engine_strict: "false"
 
-      - name: Prepare desktop shell assets
-        run: pnpm --filter @kortix/desktop run prepare-assets
+      - name: Ensure Electron runtime
+        run: pnpm --filter @kortix/desktop-electron exec node scripts/ensure-runtime.js
 
-      - name: Build Linux desktop installer
-        run: pnpm --filter @kortix/desktop tauri build --bundles appimage
+      - name: Build Linux desktop installer (Electron, unsigned)
+        run: pnpm --filter @kortix/desktop-electron exec electron-builder --linux --publish never
         env:
           KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/projects
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Verify installer exists
         run: |
           shopt -s nullglob
-          files=(apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage)
+          files=(apps/desktop-electron/dist/*.AppImage)
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
 
@@ -345,9 +324,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Trivy filesystem (fail on CRITICAL)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .

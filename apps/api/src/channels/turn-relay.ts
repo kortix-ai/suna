@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
 import { db } from '../shared/db';
+import type { TurnErrorInfo } from './slack/errors';
 import * as slack from './slack/turn';
 import * as teams from './teams/turn';
 
@@ -32,8 +33,12 @@ export async function relayTurnAnswer(sessionId: string, text: string, blocks?: 
     : slack.relayTurnAnswer(sessionId, text, blocks);
 }
 
-export async function relayTurnEnd(sessionId: string, status: 'idle' | 'error' = 'idle'): Promise<boolean> {
+export async function relayTurnEnd(
+  sessionId: string,
+  status: 'idle' | 'error' = 'idle',
+  errorInfo?: TurnErrorInfo,
+): Promise<boolean> {
   return (await platformFor(sessionId)) === 'teams'
     ? teams.relayTurnEnd(sessionId, status)
-    : slack.relayTurnEnd(sessionId, status);
+    : slack.relayTurnEnd(sessionId, status, errorInfo);
 }

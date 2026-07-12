@@ -25,6 +25,11 @@ type Entry<T> = { value: Promise<T>; expiresAt: number };
 export type TtlMemo<A extends unknown[], T> = ((...args: A) => Promise<T>) & {
   /** Drop all cached entries (tests / targeted invalidation). */
   clear: () => void;
+  /** Drop a single entry by its exact key. No-op if absent. */
+  invalidate: (key: string) => void;
+  /** Drop every entry whose key starts with `prefix`. Used to bust all of a
+   *  principal's entries on a grant/revoke (keys are `${userId}|…`). */
+  invalidateByPrefix: (prefix: string) => void;
 };
 
 export function ttlMemo<A extends unknown[], T>(opts: {
@@ -83,5 +88,13 @@ export function ttlMemo<A extends unknown[], T>(opts: {
   }) as TtlMemo<A, T>;
 
   fn.clear = () => cache.clear();
+  fn.invalidate = (key: string) => {
+    cache.delete(key);
+  };
+  fn.invalidateByPrefix = (prefix: string) => {
+    for (const k of cache.keys()) {
+      if (k.startsWith(prefix)) cache.delete(k);
+    }
+  };
   return fn;
 }

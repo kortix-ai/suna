@@ -50,7 +50,6 @@ required_self_hosted_titles=(
   "admin overview and operations dashboard use the supported ops API cleanly"
   "E2E-2 and E2E-3: account filtering plus pending invite auto-claim"
   "E2E-1 and E2E-4: GitHub repo project starts a session and reaches daemon health"
-  "E2E-5: local_docker provider starts the same sandbox image and reaches health"
   "E2E-6: new session opens the project chat route without legacy redirects"
   "E2E-7: signed webhook trigger fires a session and rejects bad signatures"
   "§10.6/§10.7 API boundaries and invite concurrency hold"
@@ -62,7 +61,6 @@ required_target_titles=(
   "admin overview and operations dashboard use the supported ops API cleanly"
   "E2E-2 and E2E-3: account filtering plus pending invite auto-claim"
   "E2E-1 and E2E-4: GitHub repo project starts a session and reaches daemon health"
-  "E2E-5: local_docker provider starts the same sandbox image and reaches health"
   "E2E-6: new session opens the project chat route without legacy redirects"
   "E2E-7: signed webhook trigger fires a session and rejects bad signatures"
   "§10.6/§10.7 API boundaries and invite concurrency hold"
@@ -186,7 +184,6 @@ LOG
       github_app_required: "1",
       golden_paths_enabled: "1",
       golden_backpressure_enabled: "1",
-      local_docker_golden_enabled: "1",
       slos_enforced: "1",
       managed_observability_required: "1",
       no_active_legacy_required: "1",
@@ -198,7 +195,7 @@ LOG
       }
     }' >"$target_dir/summary.json"
 
-  write_playwright_report "$target_dir/playwright-report.json" 9 "${required_target_titles[@]}"
+  write_playwright_report "$target_dir/playwright-report.json" "${#required_target_titles[@]}" "${required_target_titles[@]}"
 
   jq -n \
     --arg api_url "$api_url" \
@@ -254,7 +251,7 @@ LOG
     account_id: "account-fixture",
     repo_url: "https://github.com/kortix/fixture.git",
     default_branch: "main",
-    manifest_path: "kortix.toml",
+    manifest_path: "kortix.yaml",
     status: "active"
   }' >"$target_dir/api-curl-project.json"
   jq -n '{
@@ -266,13 +263,13 @@ LOG
     file_count: 3,
     files: [
       {type: "file", path: "README.md", name: "README.md"},
-      {type: "file", path: "kortix.toml", name: "kortix.toml"},
+      {type: "file", path: "kortix.yaml", name: "kortix.yaml"},
       {type: "file", path: ".opencode/opencode.jsonc", name: "opencode.jsonc"}
     ]
   }' >"$target_dir/api-curl-project-detail.json"
   jq -n '[
     {type: "file", path: "README.md", name: "README.md"},
-    {type: "file", path: "kortix.toml", name: "kortix.toml"},
+    {type: "file", path: "kortix.yaml", name: "kortix.yaml"},
     {type: "file", path: ".opencode/opencode.jsonc", name: "opencode.jsonc"}
   ]' >"$target_dir/api-curl-project-files.json"
   jq -n '{
@@ -424,9 +421,8 @@ write_self_hosted_fixture() {
     evidence_contract_version: 1,
     status: "passed",
     golden_paths_enabled: "1",
-    local_docker_golden_enabled: "1",
     golden_backpressure_enabled: "1",
-    provider: "local_docker"
+    provider: "daytona"
   }' >"$self_hosted_dir/summary.json"
   write_playwright_report "$self_hosted_dir/playwright-report.json" "${#required_self_hosted_titles[@]}" "${required_self_hosted_titles[@]}"
   printf 'self-hosted fixture\n' >"$self_hosted_dir/playwright.log"

@@ -1,0 +1,176 @@
+{
+  "name": "@kortix/sdk",
+  "version": "0.2.0",
+  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
+  "type": "module",
+  "license": "Elastic-2.0",
+  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kortix-ai/suna.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "sideEffects": false,
+  "dependencies": {
+    "@kortix/llm-catalog": "workspace:*",
+    "@opencode-ai/sdk": "1.17.11",
+    "zustand": "^5.0.3"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": { "optional": true },
+    "react": { "optional": true }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react/index.ts",
+    "./server": "./src/node/server.ts",
+    "./internal/sync-store": "./src/internal/sync-store.ts",
+    "./internal/server-store": "./src/internal/server-store.ts",
+    "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
+    "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
+    "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
+    "./opencode-client": "./src/deprecated/opencode-client.ts",
+    "./config": "./src/deprecated/config.ts",
+    "./auth": "./src/deprecated/auth.ts",
+    "./api-client": "./src/deprecated/api-client.ts",
+    "./projects-client": "./src/deprecated/projects-client.ts",
+    "./feature-flags": "./src/deprecated/feature-flags.ts",
+    "./fresh-sessions": "./src/deprecated/fresh-sessions.ts",
+    "./instance-routes": "./src/deprecated/instance-routes.ts",
+    "./opencode-errors": "./src/deprecated/opencode-errors.ts",
+    "./platform-client": "./src/deprecated/platform-client.ts",
+    "./event-stream": "./src/deprecated/event-stream.ts",
+    "./files": "./src/deprecated/files.ts",
+    "./session": "./src/deprecated/session.ts",
+    "./session/url": "./src/deprecated/session-url.ts",
+    "./turns": "./src/deprecated/turns.ts",
+    "./sync-store": "./src/deprecated/sync-store.ts",
+    "./server-store": "./src/deprecated/server-store.ts",
+    "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
+    "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
+    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+      "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
+      "./internal/sync-store": {
+        "types": "./dist/internal/sync-store.d.ts",
+        "import": "./dist/internal/sync-store.js"
+      },
+      "./internal/server-store": {
+        "types": "./dist/internal/server-store.d.ts",
+        "import": "./dist/internal/server-store.js"
+      },
+      "./internal/sandbox-connection-store": {
+        "types": "./dist/internal/sandbox-connection-store.d.ts",
+        "import": "./dist/internal/sandbox-connection-store.js"
+      },
+      "./internal/opencode-pending-store": {
+        "types": "./dist/internal/opencode-pending-store.d.ts",
+        "import": "./dist/internal/opencode-pending-store.js"
+      },
+      "./internal/idb-sync-cache": {
+        "types": "./dist/internal/idb-sync-cache.d.ts",
+        "import": "./dist/internal/idb-sync-cache.js"
+      },
+      "./opencode-client": {
+        "types": "./dist/deprecated/opencode-client.d.ts",
+        "import": "./dist/deprecated/opencode-client.js"
+      },
+      "./config": { "types": "./dist/deprecated/config.d.ts", "import": "./dist/deprecated/config.js" },
+      "./auth": { "types": "./dist/deprecated/auth.d.ts", "import": "./dist/deprecated/auth.js" },
+      "./api-client": {
+        "types": "./dist/deprecated/api-client.d.ts",
+        "import": "./dist/deprecated/api-client.js"
+      },
+      "./projects-client": {
+        "types": "./dist/deprecated/projects-client.d.ts",
+        "import": "./dist/deprecated/projects-client.js"
+      },
+      "./feature-flags": {
+        "types": "./dist/deprecated/feature-flags.d.ts",
+        "import": "./dist/deprecated/feature-flags.js"
+      },
+      "./fresh-sessions": {
+        "types": "./dist/deprecated/fresh-sessions.d.ts",
+        "import": "./dist/deprecated/fresh-sessions.js"
+      },
+      "./instance-routes": {
+        "types": "./dist/deprecated/instance-routes.d.ts",
+        "import": "./dist/deprecated/instance-routes.js"
+      },
+      "./opencode-errors": {
+        "types": "./dist/deprecated/opencode-errors.d.ts",
+        "import": "./dist/deprecated/opencode-errors.js"
+      },
+      "./platform-client": {
+        "types": "./dist/deprecated/platform-client.d.ts",
+        "import": "./dist/deprecated/platform-client.js"
+      },
+      "./event-stream": {
+        "types": "./dist/deprecated/event-stream.d.ts",
+        "import": "./dist/deprecated/event-stream.js"
+      },
+      "./files": { "types": "./dist/deprecated/files.d.ts", "import": "./dist/deprecated/files.js" },
+      "./session": { "types": "./dist/deprecated/session.d.ts", "import": "./dist/deprecated/session.js" },
+      "./session/url": {
+        "types": "./dist/deprecated/session-url.d.ts",
+        "import": "./dist/deprecated/session-url.js"
+      },
+      "./turns": { "types": "./dist/deprecated/turns.d.ts", "import": "./dist/deprecated/turns.js" },
+      "./sync-store": {
+        "types": "./dist/deprecated/sync-store.d.ts",
+        "import": "./dist/deprecated/sync-store.js"
+      },
+      "./server-store": {
+        "types": "./dist/deprecated/server-store.d.ts",
+        "import": "./dist/deprecated/server-store.js"
+      },
+      "./sandbox-connection-store": {
+        "types": "./dist/deprecated/sandbox-connection-store.d.ts",
+        "import": "./dist/deprecated/sandbox-connection-store.js"
+      },
+      "./opencode-pending-store": {
+        "types": "./dist/deprecated/opencode-pending-store.d.ts",
+        "import": "./dist/deprecated/opencode-pending-store.js"
+      },
+      "./idb-sync-cache": {
+        "types": "./dist/deprecated/idb-sync-cache.d.ts",
+        "import": "./dist/deprecated/idb-sync-cache.js"
+      }
+    },
+    "browser": "./dist/kortix.esm.min.js",
+    "unpkg": "./dist/kortix.global.js",
+    "jsdelivr": "./dist/kortix.global.js",
+    "files": ["dist", "README.md"]
+  },
+  "files": ["dist", "src", "README.md"],
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
+    "test": "bun test --isolate src",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "build:bundles": "pnpm run build && tsup",
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",
+    "smoke:install": "node scripts/smoke-install.mjs"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.75.2",
+    "@types/react": "^19.1.17",
+    "react": "^19.1.0",
+    "tsc-alias": "^1.8.17",
+    "tsup": "^8.5.1",
+    "typescript": "^5.4.0"
+  }
+}

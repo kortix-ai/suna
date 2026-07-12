@@ -2,7 +2,7 @@
  * Shared build-context staging for sandbox snapshots.
  *
  * Both providers build the SAME image: the user's Dockerfile + the Kortix
- * runtime layer (agent binary + CLI + entrypoint + agent-cli + executor-sdk +
+ * runtime layer (agent binary + CLI + entrypoint + slack-cli + executor-sdk +
  * opencode/agent-browser). Daytona ships this context to its build service via
  * `Image.fromDockerfile(ctx)`; Platinum ships it to `POST /v1/templates/
  * from-build`. Staging the context here — once — guarantees the produced image
@@ -18,6 +18,8 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import { AGENT_BROWSER_VERSION, OPENCODE_VERSION } from '@kortix/shared';
+import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { tmpdir } from 'node:os';
 import { buildLayeredDockerfile } from './dockerfile-layer';
 import { buildStarterFiles, DEFAULT_STARTER_TEMPLATE_ID } from '../projects/starter';
@@ -27,25 +29,26 @@ const execFileAsyncBC = promisify(execFile);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
-const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
+// These artifact paths are read LAZILY (per call, not as module-load consts).
+// build-context is imported once and shared across the whole `bun test` process;
+// tests override KORTIX_SNAPSHOT_* per suite, so module-load consts let the
+// first-imported suite's fixtures win and break sibling suites in a combined run.
+// In production the env is set once, so reading per-call is behaviour-neutral.
+const agentBinPath = () => process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
-const CLI_BIN_PATH = process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
+const cliBinPath = () => process.env.KORTIX_SNAPSHOT_CLI_BIN_PATH
   || resolve(REPO_ROOT, 'apps/cli/dist/kortix');
-const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
+const entrypointSrcPath = () => process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
-const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
-  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
-const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
+const slackCliSrcPath = () => process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/slack-cli');
+const executorSdkSrcPath = () => process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
 // Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
 // skills). Staged into the context so the layer can warm a real opencode project
-// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`), moving
-// the one-time first-instance cost off the session hot path.
-const OPENCODE_CONFIG_SRC_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
+// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`).
+const opencodeConfigSrcPath = () => process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
   || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
-
-const OPENCODE_VERSION = '1.15.10';
-const AGENT_BROWSER_VERSION = '0.27.0';
 
 function readPositiveIntEnv(name: string, fallback: number): number {
   const raw = Number.parseInt(process.env[name] || '', 10);
@@ -70,6 +73,23 @@ export interface StagedContext {
 }
 
 /**
+ * Per-project COLD warm: bake the project's repo checkout into /workspace at
+ * build time. Passed straight through to the Dockerfile layer, which clones the
+ * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
+ * shared, project-independent default image.
+ */
+export interface WarmRepoContext {
+  /** Upstream URL to clone from at BUILD time (real git host or proxy). */
+  cloneUrl: string;
+  /** Auth headers for the build-time clone (git -c http.extraHeader). */
+  cloneHeaders: Record<string, string>;
+  /** Branch to check out (default-branch tip). */
+  branch: string;
+  /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
+  originUrl: string;
+}
+
+/**
  * Stage a build context for `snapshotName` from the user's Dockerfile. Returns
  * the temp dir + composed Dockerfile path. The CALLER is responsible for
  * removing contextDir when done.
@@ -77,11 +97,18 @@ export interface StagedContext {
 export async function stageBuildContext(
   snapshotName: string,
   userDockerfile: string,
+  warmRepo?: WarmRepoContext,
 ): Promise<StagedContext> {
+  const AGENT_BIN_PATH = agentBinPath();
+  const CLI_BIN_PATH = cliBinPath();
+  const ENTRYPOINT_PATH = entrypointSrcPath();
+  const SLACK_CLI_SRC_PATH = slackCliSrcPath();
+  const EXECUTOR_SDK_SRC_PATH = executorSdkSrcPath();
+  const OPENCODE_CONFIG_SRC_PATH = opencodeConfigSrcPath();
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
+  await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
   // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
   // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
@@ -107,7 +134,7 @@ export async function stageBuildContext(
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
-  await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
+  await cp(SLACK_CLI_SRC_PATH, join(contextDir, 'kortix-slack-cli'), { recursive: true });
   await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
   // Stage the starter opencode config for the build-time instance warm-up.
   // Best effort: if it's missing, skip the warm-up (the build still succeeds and
@@ -119,6 +146,16 @@ export async function stageBuildContext(
     });
     opencodeConfigPath = 'kortix-opencode-config';
   }
+
+  // Bake the FULL gateway model catalog into the image. The no-restart warm seed
+  // has no sandbox token / projectId to fetch the catalog at PARK, so without this
+  // its opencode picker would fall back to the daemon's minimal (~11) set. Computed
+  // server-side at build time → full picker, no token, no runtime fetch. The shared
+  // seed's captureEnv (builder.ts) points KORTIX_LLM_CATALOG_FILE at the COPY target.
+  await writeFileFs(
+    join(contextDir, 'kortix-llm-catalog.json'),
+    JSON.stringify({ models: gatewayModelCatalog('shared-seed') }),
+  );
 
   // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
   // DEFAULT starter with the SAME pinned commit metadata the project seeder
@@ -138,18 +175,64 @@ export async function stageBuildContext(
     agentBinaryPath: 'kortix-agent.gz',
     cliBinaryPath: 'kortix.gz',
     entrypointScriptPath: 'kortix-entrypoint',
-    agentCliPath: 'kortix-agent-cli',
+    slackCliPath: 'kortix-slack-cli',
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
+    catalogPath: 'kortix-llm-catalog.json',
+    warmRepo,
   });
+
+  // ── Buildah-portability guard ──────────────────────────────────────────────
+  // The SAME composed context ships to BOTH providers. Daytona builds with
+  // BuildKit (supports `# syntax=docker/dockerfile:1.7` + RUN heredocs); Platinum
+  // builds with podman/buildah's classic imagebuilder, which supports NEITHER — it
+  // parses a heredoc body's first line (e.g. `import importlib`) as a Dockerfile
+  // instruction and aborts EVERY build ("Unknown instruction: IMPORT"), failing
+  // all Platinum sessions. This exact regression (a `<<'PY'` python verify added
+  // 2026-06-27) took dev down for hours because Daytona silently tolerated it.
+  // Reject it at the SOURCE with a clear error instead of an opaque remote build
+  // failure minutes later — and keep the Dockerfile portable to both builders.
+  const heredocLine = composed
+    .split('\n')
+    .find((l) => !/^\s*#/.test(l) && /<<-?['"]?[A-Za-z_]\w*['"]?\s*\\?\s*$/.test(l));
+  if (heredocLine) {
+    throw new Error(
+      `composed Dockerfile is not buildah-portable — it contains a RUN heredoc Platinum's ` +
+        `builder cannot parse: "${heredocLine.trim().slice(0, 120)}". Use a single-line ` +
+        `equivalent (e.g. \`python3 -c '...'\`). Heredocs and BuildKit-only \`# syntax\` ` +
+        `directives work on Daytona but silently break every Platinum template build.`,
+    );
+  }
+
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);
   } else {
     const fs = await import('node:fs/promises');
     await fs.writeFile(composedPath, composed);
   }
+  // Fail-loud completeness guard: a context missing scaffold.git / the agent
+  // binary / the composed Dockerfile reaches the provider as a confusing remote
+  // "Path does not exist", and the auto-build can't tell it's a staging miss to
+  // recover from. Assert at the source so a miss is caught here AND is retryable
+  // (the daytona adapter re-stages on "staging incomplete").
+  await assertContextComplete(contextDir, dockerfileName);
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
+}
+
+/**
+ * Verify the staged context contains the load-bearing files the composed
+ * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
+ * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
+ */
+async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
+  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+    try {
+      await stat(join(contextDir, rel));
+    } catch {
+      throw new Error(`build context staging incomplete: ${rel} missing in ${contextDir}`);
+    }
+  }
 }
 
 async function newestMtimeMs(dir: string): Promise<number> {
@@ -196,7 +279,7 @@ async function assertExistsDir(path: string, envVarHint: string): Promise<void> 
   } catch (err) {
     if (err instanceof Error && err.message.includes(envVarHint)) throw err;
     throw new Error(
-      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/agent-cli.`,
+      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/slack-cli.`,
     );
   }
 }
@@ -207,6 +290,26 @@ async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
     createGzip({ level: 9 }),
     createWriteStream(targetPath),
   );
+}
+
+/**
+ * Gzip ONLY the kortix-agent binary to a temp .gz — for the Platinum agent-swap
+ * fast path, which ships just the agent (not a whole build context) and has the
+ * host debugfs-swap it into the predecessor's rootfs. Caller cleans up.
+ */
+export async function stageAgentBinaryGz(): Promise<{ gzPath: string; cleanup: () => Promise<void> }> {
+  const AGENT_BIN_PATH = agentBinPath();
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  // Refuse an empty/truncated dist (e.g. an interrupted `bun build`) at the source.
+  // The host re-validates (ELF/size + post-swap size match), but failing here keeps
+  // a dead agent from ever being uploaded + swapped into a template.
+  if ((await stat(AGENT_BIN_PATH)).size === 0) {
+    throw new Error(`agent binary ${AGENT_BIN_PATH} is empty — refusing to stage for agent-swap`);
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'kortix-agent-swap-'));
+  const gzPath = join(dir, 'kortix-agent.gz');
+  await gzipFile(AGENT_BIN_PATH, gzPath);
+  return { gzPath, cleanup: async () => { await rm(dir, { recursive: true, force: true }).catch(() => {}); } };
 }
 
 async function stageScaffoldRepo(contextDir: string): Promise<void> {

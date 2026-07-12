@@ -46,6 +46,45 @@ export async function getMergeBase(
   }
 }
 
+export interface BranchAheadState {
+  /** True when headRef carries at least one commit baseRef doesn't — i.e. a
+   *  CR from head into base would be non-empty. False covers BOTH failure
+   *  shapes: head tip equal to base (committed-but-never-pushed session
+   *  branch) and head strictly behind an advanced base (merge-base == head). */
+  ahead: boolean;
+  baseSha: string;
+  headSha: string;
+}
+
+/**
+ * Resolve both branch tips and decide whether head is ahead of base. The
+ * mirror serves refs up to KORTIX_GIT_REFRESH_INTERVAL_MS stale and the
+ * caller (CR open) typically runs moments after the author's `git push` —
+ * so when the cached refs say "not ahead", force ONE fetch and re-check
+ * before answering: a just-pushed branch must never read as empty.
+ */
+export async function resolveBranchAheadState(
+  project: GitBackedProject,
+  baseRef: string,
+  headRef: string,
+): Promise<BranchAheadState> {
+  validateRef(baseRef);
+  validateRef(headRef);
+  const resolve = async (): Promise<BranchAheadState> => {
+    const [baseSha, headSha] = await Promise.all([
+      resolveBranchTip(project, baseRef),
+      resolveBranchTip(project, headRef),
+    ]);
+    if (baseSha === headSha) return { ahead: false, baseSha, headSha };
+    const mergeBase = await getMergeBase(project, baseRef, headRef);
+    return { ahead: mergeBase !== headSha, baseSha, headSha };
+  };
+  const cached = await resolve();
+  if (cached.ahead) return cached;
+  await refreshMirror(project, true);
+  return resolve();
+}
+
 async function computeDiffByRange(
   project: GitBackedProject,
   baseRevish: string,

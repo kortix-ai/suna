@@ -1,5 +1,6 @@
 /**
- * Parse the address forms a user can pass to `kortix add` / `kortix registry`.
+ * Parse the address forms accepted by marketplace installs and legacy registry
+ * developer commands.
  *
  * Registry addresses (point at a whole registry):
  *   kortix-ai/skills                      GitHub repo (registry.json at root)
@@ -171,6 +172,37 @@ export function parseItemAddress(raw: string): ItemAddress {
   const item = segments[segments.length - 1];
   const subdir = segments.length > 3 ? segments.slice(2, -1).join('/') : undefined;
   return { registry: { kind: 'github', owner, repo, ref, subdir }, item, raw };
+}
+
+// ── SSRF guard ───────────────────────────────────────────────────────────
+// User-supplied `url` registry/item addresses are fetched by this package
+// (loadRegistry/loadItem in fetch.ts) from contexts (hosted API, sandboxes)
+// where the target may be internal. Block loopback/link-local/RFC1918/
+// metadata hosts and anything not https. Mirrors `isPrivateHost` in
+// apps/api/src/marketplace/catalog.ts (kept in sync by hand — this package
+// cannot import across the package boundary).
+function isPrivateRegistryHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/\.$/, '');
+  if (!h || h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '127.0.0.1' || h === '0.0.0.0' || h === '::1' || h.startsWith('127.')) return true;
+  if (h.startsWith('169.254.')) return true; // link-local incl. 169.254.169.254 cloud metadata
+  if (/^10\./.test(h) || /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (h.endsWith('.internal') || h.endsWith('.local')) return true;
+  return false;
+}
+
+/** Throw unless `url` is safe to fetch: https on a non-private host. Every
+ *  user-supplied registry/item URL must pass this before it's fetched. */
+export function assertFetchableUrl(url: string): void {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error(`"${url}" is not a valid URL`);
+  }
+  if (u.protocol !== 'https:' || isPrivateRegistryHost(u.hostname)) {
+    throw new Error(`refusing to fetch "${url}" — only https:// URLs on public hosts are allowed`);
+  }
 }
 
 /** Build a raw.githubusercontent.com URL for a file at a ref. */

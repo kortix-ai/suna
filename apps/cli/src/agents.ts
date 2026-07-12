@@ -28,7 +28,7 @@ const OPENCODE_DIR = '.kortix/opencode';
  * own — it reads the root `AGENTS.md` natively.
  *
  * Note: Claude Code scans `.claude/skills` only one level deep, so skills nested
- * under a grouping folder (e.g. `GENERAL-KNOWLEDGE-WORKER/<skill>/SKILL.md`) are
+ * under a grouping folder (e.g. `<skill>/SKILL.md`) are
  * NOT discovered locally by Claude. They still load in the OpenCode sandbox and
  * for Codex, both of which discover skills recursively.
  */
@@ -118,11 +118,11 @@ function agentsPointer(): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project — its agent runtime
-config lives under \`.kortix/\` and the manifest is \`kortix.toml\`. The OpenCode
+config lives under \`.kortix/\` and the manifest is \`kortix.yaml\`. The OpenCode
 config dir is symlinked into each wired coding agent's native location
 (\`.opencode\`, \`.claude\`, \`.agents\`), so its skills and agents are shared.
 
-Whenever the user asks about Kortix — \`kortix.toml\`, triggers, secrets, the
+Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
 sandbox image, sessions, deployable apps, or how to configure OpenCode
 (agents / skills / commands / tools / plugins / MCP servers / custom tools /
 ACP) — read \`${CANONICAL_SKILL}\` first. It is the canonical reference.

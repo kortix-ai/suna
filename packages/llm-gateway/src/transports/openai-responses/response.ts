@@ -80,6 +80,27 @@ interface StreamState {
   toolIndex: Map<string, number>;
   nextToolIndex: number;
   sawToolCall: boolean;
+  sawText: boolean;
+}
+
+// Pull a usable message/code/type out of an upstream Responses error object
+// (`response.error` on a `response.failed` event, or a top-level `error` frame).
+function extractError(err: unknown): { message?: string; code?: string; type?: string } {
+  if (!err || typeof err !== 'object') return {};
+  const e = err as Json;
+  return {
+    message: typeof e.message === 'string' ? e.message : undefined,
+    code: typeof e.code === 'string' ? e.code : undefined,
+    type: typeof e.type === 'string' ? e.type : undefined,
+  };
+}
+
+// An OpenAI-shaped error frame. The `@ai-sdk/openai-compatible` provider opencode
+// runs treats a streamed `{ error: { message, ... } }` chunk as a terminal error
+// (surfaced as a retry banner), NOT a clean stop — so a failed/empty upstream turn
+// no longer masquerades as the assistant choosing to say nothing.
+function errorChunk(message: string, code: string, type = 'upstream_error'): Json {
+  return { error: { message, type, code } };
 }
 
 function chunk(state: StreamState, delta: Json, finishReason: string | null, usage?: Json): Json {
@@ -104,6 +125,7 @@ function eventToChunks(event: Json, state: StreamState): Json[] {
     }
     case 'response.output_text.delta': {
       if (typeof event.delta !== 'string') return [];
+      state.sawText = true;
       return [chunk(state, { content: event.delta }, null)];
     }
     case 'response.output_item.added': {
@@ -131,9 +153,32 @@ function eventToChunks(event: Json, state: StreamState): Json[] {
       const usage = mapUsage(response?.usage);
       return [chunk(state, {}, state.sawToolCall ? 'tool_calls' : 'stop', usage)];
     }
-    case 'response.failed':
+    case 'response.failed': {
+      // Upstream gave up mid-stream (HTTP stays 200, so retry/failover upstream
+      // never sees it). Surface the error instead of laundering it into `stop`.
+      const response = event.response as Json | undefined;
+      const { message, code, type } = extractError(response?.error);
+      return [errorChunk(message ?? 'Upstream model failed to generate a response', code ?? 'upstream_failed', type ?? 'upstream_error')];
+    }
+    case 'error': {
+      // Top-level Responses API error frame.
+      const { message, code, type } = extractError(event);
+      return [errorChunk(message ?? 'Upstream stream error', code ?? 'upstream_error', type ?? 'upstream_error')];
+    }
     case 'response.incomplete': {
-      return [chunk(state, {}, 'stop')];
+      const response = event.response as Json | undefined;
+      const usage = mapUsage(response?.usage);
+      const reason = (response?.incomplete_details as Json | undefined)?.reason;
+      // Output already streamed → honest truncation (`length`/`content_filter`),
+      // keeping usage so the partial turn is billed and the client knows it was cut off.
+      if (state.sawText || state.sawToolCall) {
+        const finish = reason === 'content_filter' ? 'content_filter' : 'length';
+        return [chunk(state, {}, finish, usage)];
+      }
+      // No output at all (e.g. a reasoning model that spent its whole budget before
+      // emitting anything) → an error, not a clean stop, so the agent doesn't die silently.
+      const detail = typeof reason === 'string' ? ` (${reason})` : '';
+      return [errorChunk(`Model returned an incomplete response with no output${detail}`, typeof reason === 'string' ? reason : 'incomplete', 'incomplete')];
     }
     default:
       return [];
@@ -146,7 +191,7 @@ function translateStream(upstream: Response): Response {
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  const state: StreamState = { id: '', model: undefined, toolIndex: new Map(), nextToolIndex: 0, sawToolCall: false };
+  const state: StreamState = { id: '', model: undefined, toolIndex: new Map(), nextToolIndex: 0, sawToolCall: false, sawText: false };
   let buffer = '';
 
   const stream = new ReadableStream<Uint8Array>({

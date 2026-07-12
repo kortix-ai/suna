@@ -23,7 +23,24 @@ export interface ProjectConfigSummary {
   env: { required: string[]; optional: string[] };
   open_code_raw: string | null;
   open_code_default_agent: string | null;
-  agents: Array<{ name: string; path: string; description: string | null; mode: string | null }>;
+  agent_discovery: 'opencode' | 'declarative';
+  agents: Array<{
+    name: string;
+    path: string;
+    description: string | null;
+    mode: string | null;
+    source: 'opencode' | 'kortix.yaml';
+    enabled?: boolean;
+    /** Per-agent governance from the manifest's `agents` declarations (v2
+     *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
+     *  Read-only mirror of the allowlists the parser resolved — `'all'`
+     *  means unscoped (every secret/connector the launching user can see). */
+    scope?: {
+      env: string[] | 'all';
+      connectors: string[] | 'all';
+      kortix_cli: string[] | 'all';
+    };
+  }>;
   skills: Array<{ name: string; path: string; description: string | null }>;
   commands: Array<{ name: string; path: string; description: string | null }>;
 }

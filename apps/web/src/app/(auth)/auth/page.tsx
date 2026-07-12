@@ -1,9 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 /**
- * Unified auth — wallpaper + lock-screen UX, password-based register + login.
+ * Unified auth — quiet, flat, staged UX (email → credentials → code).
  *
  * Identical in local and cloud. The only mode-dependent piece is whether
  * Supabase requires email confirmation (Supabase config, not a billing flag).
@@ -12,25 +10,33 @@ import { useTranslations } from 'next-intl';
  * hardcoded surface.
  */
 
-import { AlertCircle, ChevronRight } from 'lucide-react';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Eye, EyeOff } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import Loading from '@/components/ui/loading';
+import { errorToast } from '@/components/ui/toast';
+import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
+import { AuthLegalFooter } from '@/features/auth/auth-card-shell';
+import {
+  AuthMobileLogo,
+  CodeInput,
+  FieldLabel,
+  InfoStrip,
+  StepHeader,
+} from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
+import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import {
   signIn as signInWithMagicLink,
   signInWithPassword,
@@ -39,54 +45,75 @@ import {
   verifyOtp,
 } from './actions';
 
-const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
+const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
 type Mode = 'signin' | 'signup';
 type AuthMethod = 'magic' | 'password';
+type Step = 'entry' | 'credentials' | 'code';
 
-/* ─── Live clock ────────────────────────────────────────────────────────── */
+const RESEND_COOLDOWN_SECONDS = 30;
+const EASE = [0.23, 1, 0.32, 1] as const;
 
-function LiveClock() {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    const update = () => setNow(new Date());
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, []);
-  const day = now?.toLocaleDateString('en-US', { weekday: 'short' }) ?? '---';
-  const month = now?.toLocaleDateString('en-US', { month: 'short' }) ?? '---';
-  const date = now?.getDate() ?? '--';
-  const h = now ? now.getHours() % 12 || 12 : '--';
-  const m = now ? now.getMinutes().toString().padStart(2, '0') : '--';
+/* ─── Small shared pieces ──────────────────────────────────────────────── */
+
+function PasswordInput({
+  id,
+  name,
+  placeholder,
+  autoComplete,
+  autoFocus,
+  invalid,
+}: {
+  id: string;
+  name: string;
+  placeholder: string;
+  autoComplete: string;
+  autoFocus?: boolean;
+  invalid?: boolean;
+}) {
+  const [show, setShow] = useState(false);
   return (
-    <div className="pointer-events-none flex flex-col items-center select-none">
-      <p className="text-foreground/35 text-sm font-light tracking-widest" suppressHydrationWarning>
-        {day} {month} {date}
-      </p>
-      <p
-        className="text-foreground/80 text-7xl leading-none font-extralight -tracking-[0.02em] tabular-nums sm:text-8xl"
-        suppressHydrationWarning
+    <div className="relative">
+      <Input
+        id={id}
+        name={name}
+        type={show ? 'text' : 'password'}
+        size="md"
+        placeholder={placeholder}
+        required
+        autoComplete={autoComplete}
+        autoFocus={autoFocus}
+        aria-invalid={invalid || undefined}
+        className="pr-10"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex w-10 items-center justify-center transition-colors"
       >
-        {h}:{m}
-      </p>
+        {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
     </div>
   );
 }
 
-/* ─── Form inside the frosted-glass card ───────────────────────────────── */
+/* ─── The staged auth flow ─────────────────────────────────────────────── */
 
 function AuthCardForm({
+  mode,
+  onModeChange,
   returnUrl,
   mobileCallbackState,
 }: {
+  mode: Mode;
+  onModeChange: (mode: Mode) => void;
   returnUrl: string;
   mobileCallbackState: string | null;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('signup');
+  const prefersReducedMotion = useReducedMotion();
   const enabledMethods = useMemo(() => {
     const raw = getEnv().AUTH_METHODS || 'magic,password';
     const parsed = raw
@@ -97,8 +124,13 @@ function AuthCardForm({
   }, []);
   const magicLinkEnabled = enabledMethods.includes('magic');
   const passwordEnabled = enabledMethods.includes('password');
-  const [method, setMethod] = useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
-  const [pending, setPending] = useState(false);
+
+  const [step, setStep] = useState<Step>('entry');
+  const [email, setEmail] = useState('');
+  // Which button kicked off the in-flight request — every action button
+  // disables while anything is pending, but only the clicked one spins.
+  const [pendingAction, setPendingAction] = useState<'continue' | 'code' | 'resend' | null>(null);
+  const pending = pendingAction !== null;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   // After a magic-link email is sent, the same email also carries a 6-digit
@@ -107,15 +139,22 @@ function AuthCardForm({
   const [sentEmail, setSentEmail] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
+  const lastTriedCode = useRef('');
+  const emailRef = useRef<HTMLInputElement>(null);
 
-  const awaitingCode = method === 'magic' && !!sentEmail;
+  // Gentle two-part entrance per step: header first, body 60ms behind.
+  const rise = (delay = 0) => ({
+    initial: { opacity: 0, y: prefersReducedMotion ? 0 : 8 },
+    animate: { opacity: 1, y: 0 },
+    transition: { duration: 0.3, delay, ease: EASE },
+  });
 
-  const resetTransientState = () => {
-    setErrorMessage(null);
-    setInfo(null);
-    setSentEmail(null);
-    setCode('');
-  };
+  useEffect(() => {
+    if (step !== 'code' || resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn(resendIn - 1), 1000);
+    return () => clearTimeout(t);
+  }, [step, resendIn]);
 
   const enabledProviders = useMemo(() => {
     const raw = getEnv().AUTH_PROVIDERS || '';
@@ -126,56 +165,219 @@ function AuthCardForm({
   }, []);
   const googleEnabled = enabledProviders.includes('google');
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const clearNotices = () => {
     setErrorMessage(null);
     setInfo(null);
-    setPending(true);
+  };
 
-    const form = e.currentTarget;
-    const formData = new FormData(form);
+  // Errors surface as a toast plus a shake on the offending field — no inline
+  // block. `errorMessage` sticks around only to drive aria-invalid; clearing
+  // it before each attempt lets the shake replay on repeat failures.
+  const failWith = (msg: string) => {
+    setErrorMessage(msg);
+    errorToast(msg);
+  };
+
+  const goToEntry = () => {
+    clearNotices();
+    setSentEmail(null);
+    setCode('');
+    setStep('entry');
+  };
+
+  const switchMode = (next: Mode) => {
+    onModeChange(next);
+    clearNotices();
+  };
+
+  const establishSessionAndRedirect = async (result: any) => {
+    const mobileHandoffUrl = result?.mobileHandoffUrl as string | null | undefined;
+    if (mobileHandoffUrl) {
+      window.location.assign(mobileHandoffUrl);
+      return;
+    }
+
+    // Establish the session on the CLIENT immediately so useAuth() sees the
+    // user synchronously and the redirect is instant — without this the
+    // client waits for a background refresh and bounces back to /auth.
+    const tokens = result as { accessToken?: string | null; refreshToken?: string | null };
+    if (tokens.accessToken && tokens.refreshToken) {
+      try {
+        const supabase = createBrowserSupabaseClient();
+        await supabase.auth.setSession({
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+        });
+        setBootstrapAuthToken(tokens.accessToken);
+        invalidateTokenCache();
+      } catch {
+        // Server cookies still carry the session; fall through to redirect.
+      }
+    }
+
+    const dest = result?.redirectTo || returnUrl;
+    router.push(dest);
+    router.refresh();
+  };
+
+  const buildBaseFormData = (target: string) => {
+    const formData = new FormData();
+    formData.set('email', target);
     formData.set('returnUrl', returnUrl);
     formData.set('origin', window.location.origin);
     if (mobileCallbackState) {
       formData.set('mobileCallback', 'true');
       formData.set('mobileCallbackState', mobileCallbackState);
     }
-    if (method === 'magic' && mode === 'signup') {
+    return formData;
+  };
+
+  const sendMagic = async (to?: string, source: 'continue' | 'code' | 'resend' = 'code') => {
+    const target = (to ?? email).trim();
+    if (!target) return;
+    clearNotices();
+    setPendingAction(source);
+
+    try {
+      const formData = buildBaseFormData(target);
+      if (mode === 'signup') formData.set('acceptedTerms', 'true');
+
+      const result =
+        mode === 'signup'
+          ? await signUpWithMagicLink(null, formData)
+          : await signInWithMagicLink(null, formData);
+
+      if (result && (result as any).success) {
+        setSentEmail((result as any).email || target);
+        setCode('');
+        lastTriedCode.current = '';
+        setResendIn(RESEND_COOLDOWN_SECONDS);
+        setStep('code');
+      } else if (result && 'message' in result) {
+        failWith((result as any).message as string);
+      }
+    } catch (err: any) {
+      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
+      failWith(err?.message || 'An unexpected error occurred');
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed) return;
+    clearNotices();
+    setPendingAction('continue');
+
+    // Enterprise home-realm discovery — zero-config. When the address is a WORK
+    // email (isWorkEmail skiplists gmail/outlook/… in-memory, so consumer logins
+    // never reach the network) whose domain is bound to a SAML provider, hand off
+    // to the IdP instead of magic-link/password. signInWithSSO returns
+    // { data: { url } } for a matching domain and an error otherwise, so a work
+    // domain with no provider — or a Supabase without SAML enabled — falls
+    // straight through to the email flow below. Runs in both sign-in and sign-up
+    // (an SSO user is JIT-provisioned on first login). `emailDomain` mirrors the
+    // parser isWorkEmail used, so we probe exactly the domain it validated.
+    // "SSO required" enforcement is a server-side concern; this is opportunistic
+    // routing with the email flow as the always-present fallback.
+    try {
+      const domain = emailDomain(trimmed);
+      if (domain && isWorkEmail(trimmed)) {
+        try {
+          const supabase = createBrowserSupabaseClient();
+          const callbackParams = new URLSearchParams();
+          if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+          if (mobileCallbackState) {
+            callbackParams.set('mobile_callback', '1');
+            callbackParams.set('state', mobileCallbackState);
+          }
+          const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${
+            callbackParams.size ? `?${callbackParams.toString()}` : ''
+          }`;
+          const { data, error } = await supabase.auth.signInWithSSO({
+            domain,
+            // We own the redirect (below) so authRedirectUrl's desktop `?desktop=true`
+            // bounce stays authoritative; without skipBrowserRedirect, auth-js also
+            // calls window.location.assign(data.url) — a redundant double-navigation.
+            options: { redirectTo: authRedirectUrl(callbackPath), skipBrowserRedirect: true },
+          });
+          if (!error && data?.url) {
+            // Full navigation to the IdP; the callback route exchanges the code
+            // on return (same PKCE path as Google OAuth).
+            window.location.href = data.url;
+            return;
+          }
+          // Work domain with no SAML provider → fall through to magic/password.
+        } catch {
+          // SAML not enabled on this Supabase, or a transient error — fall through.
+        }
+      }
+
+      // Magic link is the default path: Continue emails a code and lands the
+      // user on the code step. Password is the secondary route, reachable from
+      // the button below the form — so it only loads for people who want it.
+      if (magicLinkEnabled) {
+        await sendMagic(trimmed, 'continue');
+        return;
+      }
+      setStep('credentials');
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  // Escape hatch off the code step for people who'd rather type a password.
+  // The address can live in either field depending on how the step was reached,
+  // and the credentials step renders it read-only from `email` — so settle on
+  // one before switching, and bounce focus back if we somehow have neither.
+  const goToPassword = () => {
+    const target = (email || sentEmail || '').trim();
+    if (!target) {
+      emailRef.current?.focus();
+      return;
+    }
+    if (email !== target) setEmail(target);
+    clearNotices();
+    setCode('');
+    setStep('credentials');
+  };
+
+  const handleCredentialsSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    clearNotices();
+    setPendingAction('continue');
+
+    const formData = new FormData(e.currentTarget);
+    formData.set('email', email.trim());
+    formData.set('returnUrl', returnUrl);
+    formData.set('origin', window.location.origin);
+    if (mobileCallbackState) {
+      formData.set('mobileCallback', 'true');
+      formData.set('mobileCallbackState', mobileCallbackState);
+    }
+    if (mode === 'signup') {
+      // Single password field (with reveal toggle) — the server still expects
+      // a confirmation value, so mirror it.
+      formData.set('confirmPassword', (formData.get('password') as string) || '');
       formData.set('acceptedTerms', 'true');
     }
 
     try {
       const result =
-        method === 'magic'
-          ? mode === 'signup'
-            ? await signUpWithMagicLink(null, formData)
-            : await signInWithMagicLink(null, formData)
-          : mode === 'signup'
-            ? await signUpWithPassword(null, formData)
-            : await signInWithPassword(null, formData);
+        mode === 'signup'
+          ? await signUpWithPassword(null, formData)
+          : await signInWithPassword(null, formData);
 
       if (
         result &&
         typeof result === 'object' &&
         'message' in result &&
-        (!('success' in result) || !(result as any).success)
+        (!('success' in result) || !(result as any).success) &&
+        !(result as any).requiresEmailConfirmation
       ) {
-        const msg = result.message as string;
-        setErrorMessage(msg);
-        toast.error(msg);
-        return;
-      }
-
-      if (result && method === 'magic' && (result as any).success) {
-        setInfo((result as any).message || 'Check your email for a magic link');
-        setSentEmail((result as any).email || (formData.get('email') as string));
-        setCode('');
-        return;
-      }
-
-      const mobileHandoffUrl = (result as any)?.mobileHandoffUrl as string | null | undefined;
-      if (mobileHandoffUrl) {
-        window.location.assign(mobileHandoffUrl);
+        failWith(result.message as string);
         return;
       }
 
@@ -184,379 +386,310 @@ function AuthCardForm({
         return;
       }
 
-      const tokens = result as { accessToken?: string | null; refreshToken?: string | null };
-      if (tokens.accessToken && tokens.refreshToken) {
-        try {
-          const supabase = createBrowserSupabaseClient();
-          await supabase.auth.setSession({
-            access_token: tokens.accessToken,
-            refresh_token: tokens.refreshToken,
-          });
-          setBootstrapAuthToken(tokens.accessToken);
-          invalidateTokenCache();
-        } catch {
-          // Server cookies still carry the session; fall through to redirect.
-        }
-      }
-
-      const dest = (result as any)?.redirectTo || returnUrl;
-      router.push(dest);
-      router.refresh();
+      await establishSessionAndRedirect(result);
     } catch (err: any) {
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      const msg = err?.message || 'An unexpected error occurred';
-      setErrorMessage(msg);
-      toast.error(msg);
+      failWith(err?.message || 'An unexpected error occurred');
     } finally {
-      setPending(false);
+      setPendingAction(null);
     }
   };
 
-  const handleVerifyCode = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const verifyCode = async () => {
     if (!sentEmail || code.length !== 6) return;
     setErrorMessage(null);
     setVerifying(true);
 
-    const formData = new FormData();
-    formData.set('email', sentEmail);
+    const formData = buildBaseFormData(sentEmail);
     formData.set('token', code);
-    formData.set('returnUrl', returnUrl);
-    formData.set('origin', window.location.origin);
-    if (mobileCallbackState) {
-      formData.set('mobileCallback', 'true');
-      formData.set('mobileCallbackState', mobileCallbackState);
-    }
 
     try {
       const result = await verifyOtp(null, formData);
 
       if (result && (!('success' in result) || !(result as any).success)) {
-        const msg = (result as any).message || 'Invalid or expired code';
-        setErrorMessage(msg);
-        toast.error(msg);
+        failWith(((result as any).message as string) || 'Invalid or expired code');
         return;
       }
 
-      const mobileHandoffUrl = (result as any)?.mobileHandoffUrl as string | null | undefined;
-      if (mobileHandoffUrl) {
-        window.location.assign(mobileHandoffUrl);
-        return;
-      }
-
-      // Establish the session on the CLIENT immediately so useAuth() sees the
-      // user synchronously and the redirect is instant — without this the
-      // client waits for a background refresh and bounces back to /auth.
-      const tokens = result as { accessToken?: string | null; refreshToken?: string | null };
-      if (tokens.accessToken && tokens.refreshToken) {
-        try {
-          const supabase = createBrowserSupabaseClient();
-          await supabase.auth.setSession({
-            access_token: tokens.accessToken,
-            refresh_token: tokens.refreshToken,
-          });
-          setBootstrapAuthToken(tokens.accessToken);
-          invalidateTokenCache();
-        } catch {
-          // Server cookies still carry the session; fall through to redirect.
-        }
-      }
-
-      const dest = (result as any)?.redirectTo || returnUrl;
-      router.push(dest);
-      router.refresh();
+      await establishSessionAndRedirect(result);
     } catch (err: any) {
       if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      const msg = err?.message || 'An unexpected error occurred';
-      setErrorMessage(msg);
-      toast.error(msg);
+      failWith(err?.message || 'An unexpected error occurred');
     } finally {
       setVerifying(false);
     }
   };
 
+  // Auto-verify the moment the sixth digit lands — no extra button press.
+  useEffect(() => {
+    if (step === 'code' && code.length === 6 && !verifying && lastTriedCode.current !== code) {
+      lastTriedCode.current = code;
+      void verifyCode();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, step, verifying]);
+
   const handleResend = async () => {
-    if (!sentEmail || pending) return;
-    setErrorMessage(null);
-    setInfo(null);
-    setPending(true);
-
-    const formData = new FormData();
-    formData.set('email', sentEmail);
-    formData.set('returnUrl', returnUrl);
-    formData.set('origin', window.location.origin);
-    if (mobileCallbackState) {
-      formData.set('mobileCallback', 'true');
-      formData.set('mobileCallbackState', mobileCallbackState);
-    }
-    if (mode === 'signup') formData.set('acceptedTerms', 'true');
-
-    try {
-      const result =
-        mode === 'signup'
-          ? await signUpWithMagicLink(null, formData)
-          : await signInWithMagicLink(null, formData);
-
-      if (result && (result as any).success) {
-        setInfo((result as any).message || 'Check your email for a new link and code');
-        setCode('');
-      } else if (result && 'message' in result) {
-        const msg = (result as any).message as string;
-        setErrorMessage(msg);
-        toast.error(msg);
-      }
-    } catch (err: any) {
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      const msg = err?.message || 'An unexpected error occurred';
-      setErrorMessage(msg);
-      toast.error(msg);
-    } finally {
-      setPending(false);
-    }
+    if (!sentEmail || pending || resendIn > 0) return;
+    await sendMagic(sentEmail, 'resend');
   };
 
-  return (
-    <div className="w-full max-w-sm">
-      {/* Tabs */}
-      <div
-        role="tablist"
-        aria-label={tI18nHardcoded.raw(
-          'autoAppAuthAuthPageJsxAttrAriaLabelAuthenticationMode01efd9f8',
-        )}
-        className="bg-foreground/[0.05] mx-auto mb-5 flex w-fit items-center gap-1 rounded-full p-1"
-      >
-        <button
-          type="button"
-          role="tab"
-          id="auth-tab-signin"
-          aria-selected={mode === 'signin'}
-          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
-          onClick={() => {
-            setMode('signin');
-            resetTransientState();
-          }}
-          className={cn(
-            'rounded-full px-5 py-1.5 text-sm font-medium transition-colors',
-            mode === 'signin'
-              ? 'bg-background/80 text-foreground shadow-sm'
-              : 'text-foreground/50 hover:text-foreground/80',
-          )}
-        >
-          {tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="auth-tab-signup"
-          aria-selected={mode === 'signup'}
-          aria-controls={awaitingCode ? undefined : 'auth-form-panel'}
-          onClick={() => {
-            setMode('signup');
-            resetTransientState();
-          }}
-          className={cn(
-            'rounded-full px-5 py-1.5 text-sm font-medium transition-colors',
-            mode === 'signup'
-              ? 'bg-background/80 text-foreground shadow-sm'
-              : 'text-foreground/50 hover:text-foreground/80',
-          )}
-        >
-          Register
-        </button>
-      </div>
+  /* ── Code step ── */
+  if (step === 'code') {
+    return (
+      <>
+        <motion.div {...rise(0)}>
+          <StepHeader
+            title="Check your email"
+            description={
+              <>
+                We sent a code to{' '}
+                <span className="text-foreground font-medium break-words">{sentEmail}</span>
+              </>
+            }
+          />
+        </motion.div>
 
-      <div className="mb-5 flex flex-col items-center">
-        <h1 className="text-foreground/90 text-base font-medium tracking-tight">
-          {mode === 'signup' ? 'Create your account' : 'Sign in to Kortix'}
-        </h1>
-        <p className="text-foreground/40 mt-0.5 text-sm">
-          {method === 'magic'
-            ? awaitingCode
-              ? 'Click the link in your email, or enter the code below'
-              : 'We will email you a secure sign-in link'
-            : mode === 'signup'
-              ? 'Email and password is all you need'
-              : 'Your AI Computer'}
-        </p>
-      </div>
+        <motion.div {...rise(0.06)}>
+          {info && <InfoStrip message={info} />}
 
-      {errorMessage && (
-        <div className="bg-destructive/10 border-destructive/20 text-destructive mb-4 flex items-center gap-2 rounded-2xl border p-3">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">{errorMessage}</span>
-        </div>
-      )}
+          <CodeInput
+            value={code}
+            onChange={(next) => {
+              if (errorMessage) setErrorMessage(null);
+              setCode(next);
+            }}
+            disabled={verifying}
+            invalid={!!errorMessage}
+          />
 
-      {info && (
-        <div className="bg-foreground/[0.05] border-foreground/[0.08] text-foreground/80 mb-4 flex items-center gap-2 rounded-2xl border p-3">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">{info}</span>
-        </div>
-      )}
+          <div className="text-muted-foreground mt-6 space-y-2 text-sm">
+            {verifying ? (
+              <div className="flex items-center gap-2">
+                <Loading className="text-muted-foreground size-4 shrink-0" />
+                <span>Verifying…</span>
+              </div>
+            ) : (
+              <>
+                <p>
+                  Didn&apos;t receive a code?{' '}
+                  {resendIn > 0 ? (
+                    <span className="tabular-nums">Resend in {resendIn}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={pending}
+                      className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+                    >
+                      {pendingAction === 'resend' ? 'Sending…' : 'Resend'}
+                    </button>
+                  )}
+                </p>
+                {/* The two ways off this step, side by side — same weight, same
+                    dialect as the resend line above. `-my-2 py-2` grows the hit
+                    area to ~40px without opening a gap between the rows. */}
+                <p className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goToEntry}
+                    className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+                  >
+                    Use a different email
+                  </button>
+                  {passwordEnabled && (
+                    <>
+                      <span aria-hidden className="text-muted-foreground/40 select-none">
+                        ·
+                      </span>
+                      <button
+                        type="button"
+                        onClick={goToPassword}
+                        disabled={pending}
+                        className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
+                      >
+                        Use password instead
+                      </button>
+                    </>
+                  )}
+                </p>
+              </>
+            )}
+          </div>
+        </motion.div>
+      </>
+    );
+  }
 
-      {awaitingCode ? (
-        <div className="space-y-3">
-          <form onSubmit={handleVerifyCode} className="space-y-3">
-            <Input
-              id="otp"
-              name="token"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={6}
-              placeholder="000000"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="text-center font-mono text-lg tracking-[0.4em]"
-              autoFocus
-              required
-            />
-            <Button
-              type="submit"
-              size="lg"
-              disabled={verifying || code.length !== 6}
-              className="w-full text-sm"
-            >
-              {verifying ? 'Verifying…' : 'Verify code'}
+  /* ── Credentials step (password, with email-code alternative) ── */
+  if (step === 'credentials') {
+    return (
+      <>
+        <motion.div {...rise(0)}>
+          <StepHeader title={mode === 'signup' ? 'Create your password' : 'Enter your password'} />
+        </motion.div>
+
+        <motion.div {...rise(0.06)}>
+          {info && <InfoStrip message={info} />}
+
+          <form onSubmit={handleCredentialsSubmit} className="space-y-5">
+            <div className="space-y-3">
+              <FieldLabel htmlFor="email-locked">Email</FieldLabel>
+              <div className="relative">
+                <Input
+                  id="email-locked"
+                  value={email}
+                  readOnly
+                  tabIndex={-1}
+                  size="md"
+                  className="text-muted-foreground pr-14"
+                />
+                <button
+                  type="button"
+                  onClick={goToEntry}
+                  aria-label="Change email"
+                  className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex items-center px-3 text-sm font-medium transition-colors"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                {mode === 'signin' && (
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-muted-foreground hover:text-foreground text-sm transition-colors"
+                  >
+                    Forgot your password?
+                  </Link>
+                )}
+              </div>
+              <PasswordInput
+                id="password"
+                name="password"
+                placeholder={mode === 'signup' ? 'Create a password' : 'Your password'}
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                autoFocus
+                invalid={!!errorMessage}
+              />
+            </div>
+
+            <Button type="submit" size="lg" disabled={pending} className="w-full">
+              {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
+              Continue
             </Button>
           </form>
 
-          <div className="text-foreground/40 flex items-center justify-center gap-3 text-xs">
-            <button
+          {magicLinkEnabled && (
+            <Button
               type="button"
-              onClick={handleResend}
+              variant="secondary"
+              size="lg"
+              className="mt-3 w-full"
+              onClick={() => sendMagic()}
               disabled={pending}
-              className="hover:text-foreground/70 underline-offset-4 hover:underline disabled:opacity-50"
             >
-              {pending ? 'Resending…' : 'Resend email'}
-            </button>
-            <span className="text-foreground/20">·</span>
-            <button
-              type="button"
-              onClick={resetTransientState}
-              className="hover:text-foreground/70 underline-offset-4 hover:underline"
-            >
-              {tI18nHardcoded.raw('autoAppAuthAuthPageJsxTextUseADifferentEmail8da2cdb0')}
-            </button>
+              {pendingAction === 'code' ? (
+                <Loading className="text-foreground! size-4 shrink-0" />
+              ) : null}
+              {mode === 'signup' ? 'Continue with email code' : 'Email sign-in code'}
+            </Button>
+          )}
+        </motion.div>
+      </>
+    );
+  }
+
+  /* ── Entry step ── */
+  return (
+    <>
+      <motion.div {...rise(0)}>
+        <StepHeader
+          title={mode === 'signup' ? 'Create your account' : 'Welcome to Kortix'}
+          tagline="Your AI Command Center"
+        />
+      </motion.div>
+
+      <motion.div {...rise(0.06)}>
+        {info && <InfoStrip message={info} />}
+
+        {googleEnabled && (
+          <div className="mb-8">
+            <Suspense fallback={null}>
+              <GoogleSignIn
+                returnUrl={returnUrl}
+                mobileCallbackState={mobileCallbackState ?? undefined}
+              />
+            </Suspense>
           </div>
-        </div>
-      ) : (
-        <>
-          <form
-            id="auth-form-panel"
-            role="tabpanel"
-            aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
-            onSubmit={handleSubmit}
-            className="space-y-3"
-          >
+        )}
+
+        <form onSubmit={handleEntryContinue} className="space-y-5">
+          <div className="space-y-3">
+            <FieldLabel htmlFor="email">Email</FieldLabel>
             <Input
+              ref={emailRef}
               id="email"
               name="email"
               type="email"
-              aria-label={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
-              placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
+              size="md"
+              placeholder="Your email address"
+              value={email}
+              onChange={(e) => {
+                if (errorMessage) setErrorMessage(null);
+                setEmail(e.target.value);
+              }}
               required
               autoComplete="email"
-              className="text-sm"
+              autoFocus
+              aria-invalid={!!errorMessage || undefined}
             />
-            {method === 'password' && (
-              <>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  aria-label="Password"
-                  placeholder="Password"
-                  required
-                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  className="text-sm"
-                />
-                {mode === 'signup' && (
-                  <Input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type="password"
-                    aria-label={tHardcodedUi.raw(
-                      'appAuthPage.line234JsxAttrPlaceholderConfirmPassword',
-                    )}
-                    placeholder={tHardcodedUi.raw(
-                      'appAuthPage.line234JsxAttrPlaceholderConfirmPassword',
-                    )}
-                    required
-                    autoComplete="new-password"
-                    className="text-sm"
-                  />
-                )}
-              </>
-            )}
+          </div>
+          <Button type="submit" size="lg" disabled={pending} className="w-full">
+            {pendingAction === 'continue' ? <Loading className="size-4 shrink-0" /> : null}
+            Continue
+          </Button>
+        </form>
 
-            <Button type="submit" size="lg" disabled={pending} className="w-full text-sm">
-              {pending
-                ? method === 'magic'
-                  ? 'Sending link…'
-                  : mode === 'signup'
-                    ? 'Creating account…'
-                    : 'Signing in…'
-                : method === 'magic'
-                  ? 'Email me a sign-in link'
-                  : mode === 'signup'
-                    ? 'Create account'
-                    : 'Sign in'}
-            </Button>
-          </form>
+        <p className="text-muted-foreground mt-8 text-sm">
+          {mode === 'signup' ? 'Already have an account? ' : "Don't have an account? "}
+          <button
+            type="button"
+            onClick={() => switchMode(mode === 'signup' ? 'signin' : 'signup')}
+            className="text-foreground underline-offset-4 hover:underline"
+          >
+            {mode === 'signup' ? 'Sign in' : 'Sign up'}
+          </button>
+        </p>
+      </motion.div>
+    </>
+  );
+}
 
-          {magicLinkEnabled && passwordEnabled && (
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setMethod(method === 'magic' ? 'password' : 'magic');
-                  resetTransientState();
-                }}
-                className="text-foreground/40 hover:text-foreground/70 text-xs underline-offset-4 hover:underline"
-              >
-                {method === 'magic' ? 'Use password instead' : 'Use email link instead'}
-              </button>
-            </div>
-          )}
+/* ─── Page shell ───────────────────────────────────────────────────────── */
 
-          {/* Social providers — only when configured */}
-          {googleEnabled && (
-            <>
-              <div className="my-5 flex items-center gap-3">
-                <div className="bg-foreground/[0.08] h-px flex-1" />
-                <span className="text-foreground/40 text-xs tracking-wider uppercase">or</span>
-                <div className="bg-foreground/[0.08] h-px flex-1" />
-              </div>
-              <Suspense fallback={null}>
-                <GoogleSignIn
-                  returnUrl={returnUrl}
-                  mobileCallbackState={mobileCallbackState ?? undefined}
-                />
-              </Suspense>
-            </>
-          )}
-
-          {mode === 'signin' && passwordEnabled && (
-            <div className="mt-5 text-center">
-              <Link
-                href="/auth/forgot-password"
-                className="text-foreground/40 hover:text-foreground/70 text-xs underline-offset-4 hover:underline"
-              >
-                {tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}
-              </Link>
-            </div>
-          )}
-        </>
-      )}
+function AuthFrame({
+  children,
+  footerVariant,
+}: {
+  children: React.ReactNode;
+  footerVariant: 'default' | 'signup';
+}) {
+  return (
+    <div className="bg-background relative flex min-h-svh flex-col">
+      <AuthMobileLogo />
+      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
+        <div className="w-full max-w-[380px]">{children}</div>
+      </main>
+      <AuthLegalFooter variant={footerVariant} />
     </div>
   );
 }
 
-/* ─── Lock-screen → frosted-glass form ─────────────────────────────────── */
-
 function AuthContent() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, session, isLoading } = useAuth();
@@ -565,9 +698,8 @@ function AuthContent() {
   );
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
-  const [phase, setPhase] = useState<'lock' | 'form'>('lock');
-  const prefersReducedMotion = useReducedMotion();
   const hasStartedMobileHandoff = useRef(false);
+  const [mode, setMode] = useState<Mode>('signin');
 
   // A web session may already exist when the mobile user returns to this page.
   // Preserve the native handoff instead of routing that browser session to the
@@ -598,132 +730,35 @@ function AuthContent() {
     router.replace(returnUrl);
   }, [isLoading, mobileCallbackState, returnUrl, router, session, user]);
 
-  // Keyboard: Enter/Space opens form, Escape closes it.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (phase === 'lock' && (e.key === 'Enter' || e.key === ' ')) {
-        setPhase('form');
-      }
-      if (phase === 'form' && e.key === 'Escape') {
-        setPhase('lock');
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [phase]);
-
-  if (isLoading || user) {
+  // A session is already established — the effect above is redirecting (or
+  // handing off to mobile). Keep the quiet branded frame up instead of a
+  // spinner, a blank screen, or a dead form.
+  if (user) {
     return (
-      <ConnectingScreen
-        forceConnecting
-        minimal
-        title={tHardcodedUi.raw('appAuthPage.line317JsxAttrTitleSigningIn')}
-      />
+      <AuthFrame footerVariant="default">
+        <StepHeader title="Welcome to Kortix" tagline="Your AI Command Center" />
+      </AuthFrame>
     );
   }
 
+  // Render the form immediately — even while the session check is still in
+  // flight. Signed-out visitors (the common case) get an instantly usable
+  // page; a signed-in visitor sees the form for a beat before the redirect.
   return (
-    <div
-      className="fixed inset-0 cursor-pointer overflow-hidden"
-      onClick={() => phase === 'lock' && setPhase('form')}
-    >
-      <WallpaperBackground wallpaperId="brandmark" />
-
-      {/* Lock phase: clock + hint */}
-      <AnimatePresence>
-        {phase === 'lock' && (
-          <motion.div
-            key="lock"
-            className="pointer-events-none absolute inset-0 z-10 flex flex-col"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-          >
-            <motion.div
-              className="flex justify-center pt-[12vh] sm:pt-[14vh]"
-              initial={{ opacity: 0, y: -12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <LiveClock />
-            </motion.div>
-            <motion.div
-              className="absolute right-0 bottom-[10vh] left-0 flex flex-col items-center gap-3"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="flex flex-col items-center gap-1.5">
-                <p className="text-foreground/50 text-sm font-medium tracking-wide">Kortix</p>
-                <p className="text-foreground/25 text-xs tracking-widest uppercase">
-                  {tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}
-                </p>
-              </div>
-              <motion.div
-                animate={prefersReducedMotion ? undefined : { y: [0, 5, 0] }}
-                transition={
-                  prefersReducedMotion
-                    ? undefined
-                    : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
-                }
-              >
-                <ChevronRight className="text-foreground/20 size-3.5 rotate-90" />
-              </motion.div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Form phase */}
-      <AnimatePresence>
-        {phase === 'form' && (
-          <motion.div
-            key="form"
-            className="absolute inset-0 z-10 flex cursor-default flex-col items-center justify-center"
-            onClick={() => setPhase('lock')}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <motion.div
-              className="bg-background/20 absolute inset-0 backdrop-blur-[2px]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.4 }}
-            />
-            <motion.div
-              className="relative z-10 mx-4 w-full max-w-[400px]"
-              onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, y: 40, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.97 }}
-              transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <div className="bg-background/75 dark:bg-background/70 border-foreground/[0.08] max-h-[calc(100vh-4rem)] overflow-y-auto rounded-2xl border p-7 backdrop-blur-2xl">
-                <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <AuthFrame footerVariant={mode === 'signup' ? 'signup' : 'default'}>
+      <AuthCardForm
+        mode={mode}
+        onModeChange={setMode}
+        returnUrl={returnUrl}
+        mobileCallbackState={mobileCallbackState}
+      />
+    </AuthFrame>
   );
 }
 
 export default function AuthPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense
-      fallback={
-        <ConnectingScreen
-          forceConnecting
-          minimal
-          title={tHardcodedUi.raw('appAuthPage.line408JsxAttrTitleSigningIn')}
-        />
-      }
-    >
+    <Suspense fallback={<div className="bg-background min-h-svh" />}>
       <>
         <AuthBrowserNoiseGuard />
         <AuthContent />

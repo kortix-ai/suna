@@ -92,7 +92,7 @@ export function Lead({ children, className }: { children: ReactNode; className?:
   );
 }
 
-/** Mono inline token, e.g. kortix.toml */
+/** Mono inline token, e.g. kortix.yaml */
 export function Mono({ children, className }: { children: ReactNode; className?: string }) {
   return <span className={cn('font-mono', className)}>{children}</span>;
 }

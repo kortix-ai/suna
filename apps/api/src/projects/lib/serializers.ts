@@ -1,8 +1,14 @@
-import { config } from '../../config';
-import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
-import { resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
+import { config, type SandboxProviderName } from '../../config';
+import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
+import { type SecretGrant, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
+import {
+  classifySnapshotError,
+  describeSnapshotError,
+  type SnapshotErrorCategory,
+} from '../../snapshots/error-classify';
+import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { type ProjectRole } from '../access';
 import { resolveAppsEnabled } from '../apps-config';
 import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
@@ -47,12 +53,12 @@ export function serializeSession(
     grants?: SecretGrant[];
     /** The viewing user, to compute is_owner / can_manage_sharing. */
     viewerId?: string;
-    /** Viewer can manage the project (owner/admin/manager). */
+    /** Viewer can manage the project (account owner/admin, or a project editor). */
     canManageProject?: boolean;
     /** Resolved email of the session owner, for "shared by X" display. */
     ownerEmail?: string | null;
   },
-) {
+): ProjectSession {
   const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
     ? row.metadata.opencode_sessions
     : [];
@@ -97,7 +103,7 @@ export function serializeSession(
  * Load a session and enforce that the viewer can SEE it (owner, project-wide,
  * or in the allow-list). Returns null for both not-found and not-visible so we
  * never reveal the existence of a private session. Also reports whether the
- * viewer may manage its sharing (owner or project manager).
+ * viewer may manage its sharing (account owner/admin, or a project editor).
  */
 
 function dashboardBaseUrl(): string {
@@ -113,7 +119,7 @@ export function isRepoNameTakenError(error: unknown): boolean {
 }
 
 
-export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }) {
+export function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }): Project {
   return {
     project_id: row.projectId,
     account_id: row.accountId,
@@ -144,11 +150,19 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     experimental: resolveExperimentalFeatures(row.metadata),
     experimental_features: buildExperimentalCatalog(row.metadata),
     apps_enabled: resolveAppsEnabled(row.metadata),
-    // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
-    // per-project config (UI value over the operator default); `warm_pool_available`
-    // gates the UI control off the platform feature flag.
-    warm_pool: resolveWarmConfig(row.metadata),
-    warm_pool_available: warmPoolEnabled(),
+    // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
+    // is the current pin (null = follow the platform default/distribution);
+    // `available_sandbox_providers` is the enabled set the picker offers
+    // (ALLOWED ∩ has-API-key) — the web client renders + validates against the SAME
+    // set the backend enforces, without a separate (billing-gated) providers route.
+    // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
+    // create path (which ignores a disabled/removed pin and falls back), so the
+    // picker never shows a value with no matching option.
+    default_sandbox_provider: ((): string | null => {
+      const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
+      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+    })(),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
 }
 
@@ -217,30 +231,30 @@ export function requestAuditContext(c: Context): RequestAuditContext {
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
- * The per-user view of one secret KEY: the shared/project row (what managers
- * control + who it's shared with) merged with the requesting member's own
- * private override, plus which one actually wins for them at runtime. This is
- * what powers the "use shared / use mine" choice in the UI.
+ * The view of one project secret (one IDENTIFIER): the shared/project row
+ * merged with the requesting member's own private override (used today only by
+ * the CODEX_AUTH_JSON per-user provider login), plus which one wins at runtime.
+ * Authorization is centralized on the agent grant (by identifier — see
+ * agentMayUseEnv); every project member with read access sees every secret —
+ * there is no per-secret member/group sharing and no resource-side agent
+ * allow-list.
  */
 
 export function buildSecretView(input: {
+  identifier: string;
   name: string;
   shared?: SecretRow;
-  sharedGrants?: SecretGrant[];
   personal?: SecretRow;
-  subject: ShareSubject;
   canManageShared: boolean;
-}) {
-  const { name, shared, sharedGrants = [], personal, subject, canManageShared } = input;
+}): Secret {
+  const { identifier, name, shared, personal, canManageShared } = input;
   const system = isSystemProjectSecretName(name);
   const isGitAuth = name === PROJECT_GIT_AUTH_SECRET_NAME;
-  const usableByMe = shared
-    ? isSecretUsableBy(shared.shareScope as 'project' | 'restricted', sharedGrants, subject)
-    : false;
   const mineActive = Boolean(personal?.active);
   const effectiveSource: 'mine' | 'shared' | 'none' =
-    personal && mineActive ? 'mine' : usableByMe ? 'shared' : 'none';
+    personal && mineActive ? 'mine' : shared ? 'shared' : 'none';
   return {
+    identifier,
     name,
     project_id: (shared ?? personal)!.projectId,
     secret_id: shared?.secretId ?? null,
@@ -252,28 +266,25 @@ export function buildSecretView(input: {
     purpose: isGitAuth ? 'git_auth' : null,
     can_rotate: isGitAuth,
     managed_by: isGitAuth ? 'project_secret' : null,
-    // The SHARED row: is a project value set, who can use it, and can it reach me.
+    // Is a shared project value set at all.
     configured: Boolean(shared),
-    share_scope: shared?.shareScope ?? 'project',
-    sharing: shared ? scopeToIntent(shared.shareScope as 'project' | 'restricted', sharedGrants) : null,
-    usable_by_me: usableByMe,
     // MY private override (value never returned), and whether I'm using it.
     mine: personal ? { active: personal.active, updated_at: personal.updatedAt.toISOString() } : null,
-    // What actually gets injected into my sessions for this key.
+    // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
-    // Members manage only their own override; managers also manage the shared row.
+    // Members manage only their own override; editors also manage the shared row.
     can_manage_shared: canManageShared && !system,
   };
 }
 
 /**
- * Load every secret KEY in a project as the per-user view (shared + my own
- * override merged). Used by the secrets list + returned after a write.
+ * Load every secret IDENTIFIER in a project as the per-user view (shared + my
+ * own override merged). Used by the secrets list + returned after a write.
  */
 
 export async function loadSecretViewsForUser(
   projectId: string,
-  subject: ShareSubject,
+  userId: string,
   canManageShared: boolean,
 ): Promise<ReturnType<typeof buildSecretView>[]> {
   const rows = await db
@@ -281,26 +292,24 @@ export async function loadSecretViewsForUser(
     .from(projectSecrets)
     .where(and(
       eq(projectSecrets.projectId, projectId),
-      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, subject.userId)),
+      or(isNull(projectSecrets.ownerUserId), eq(projectSecrets.ownerUserId, userId)),
     ))
     .orderBy(desc(projectSecrets.updatedAt));
 
-  const byName = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
+  const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
   for (const row of rows) {
-    const slot = byName.get(row.name) ?? {};
+    const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else slot.personal = row;
-    byName.set(row.name, slot);
+    byIdentifier.set(row.identifier, slot);
   }
-  const grants = await loadGrants(rows.filter((r) => r.ownerUserId === null).map((r) => r.secretId));
 
-  return [...byName.entries()].map(([name, slot]) =>
+  return [...byIdentifier.entries()].map(([identifier, slot]) =>
     buildSecretView({
-      name,
+      identifier,
+      name: (slot.shared ?? slot.personal)!.name,
       shared: slot.shared,
-      sharedGrants: slot.shared ? grants.get(slot.shared.secretId) ?? [] : [],
       personal: slot.personal,
-      subject,
       canManageShared,
     }),
   );
@@ -417,6 +426,15 @@ export function deriveKortixApiRoot(kortixUrl: string): string {
 }
 
 
+// Display cap for user-supplied project names. Well under the projects.name
+// varchar(255) column so every write path (provision, GitHub link, PAT link)
+// fits the schema even after a linked repo's derived name is substituted.
+export const PROJECT_NAME_MAX_LENGTH = 120;
+
+export function clampProjectName(name: string): string {
+  return name.length > PROJECT_NAME_MAX_LENGTH ? name.slice(0, PROJECT_NAME_MAX_LENGTH).trimEnd() : name;
+}
+
 export function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
@@ -437,14 +455,30 @@ export async function readBody(c: Context) {
 
 
 export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotBuilds>>[number]) {
+  // errorCategory is a free-form column; older rows predate the classifier.
+  const category = (b.errorCategory ??
+    (b.error ? classifySnapshotError(b.error) : null)) as SnapshotErrorCategory | null;
   return {
     build_id: b.buildId,
     slug: b.slug,
+    /**
+     * The TEMPLATE this build was for. `slug` may be a build-log pseudo-slug
+     * (`default-warm`) that names no template; clients that want to act on a build
+     * — rebuild it, boot a session on it — must use this, never `slug`.
+     */
+    template_slug: templateSlugFromBuildSlug(b.slug),
     snapshot_name: b.snapshotName,
     content_hash: b.contentHash,
     status: b.status,
     error: b.error,
-    error_category: b.errorCategory,
+    error_category: category,
+    /**
+     * Whether an in-sandbox agent could plausibly fix this by editing the repo.
+     * Server-derived so the UI can't drift from what the API will accept: infra
+     * failures (quota, provider, timeout) are not repo-editable, and a fix session
+     * can't even boot when the snapshot it needs is the thing that failed.
+     */
+    fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
     source: b.source,
     started_at: b.startedAt.toISOString(),
     finished_at: b.finishedAt?.toISOString() ?? null,
@@ -452,17 +486,7 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
 }
 
 
-export interface TemplateWarmStatus {
-  enabled: boolean;
-  size: number;
-  ready: number;
-  warming: number;
-}
-
-export function serializeTemplate(
-  t: Awaited<ReturnType<typeof listSandboxTemplates>>[number],
-  warm?: TemplateWarmStatus | null,
-) {
+export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
   return {
     template_id: t.templateId,
     slug: t.slug,
@@ -484,9 +508,6 @@ export function serializeTemplate(
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
-    // Per-template warm pool config + live counts (null when the operator gate
-    // is off, i.e. the feature isn't available platform-wide).
-    warm_pool: warm ?? null,
   };
 }
 
@@ -516,7 +537,7 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 
-const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
+const PROJECT_ROLES = ['editor', 'member'] as const;
 
 export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
 

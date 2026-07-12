@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Slash command handlers for agent/model selection + session visibility.
 
@@ -18,7 +18,7 @@ mock.module('../shared/db', () => ({
 
 // Controllable selection layer.
 let selection: unknown = { projectId: 'p1', agentName: null, opencodeModel: null };
-let setAgentResult = true;
+let setAgentResult: { ok: true } | { ok: false; reason: 'no_binding' | 'unknown_agent' } = { ok: true };
 let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];
@@ -33,11 +33,27 @@ mock.module('../channels/slack/selection', () => ({
   ],
   isValidModelId: (s: string) => { const i = s.indexOf('/'); return i > 0 && i < s.length - 1 && !/\s/.test(s); },
   modelLabel: (id: string) => (id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id),
+  setChannelConversationPolicy: async () => undefined,
 }));
 
+// Identity layer — kept out of the db chain so it doesn't disturb dbResults
+// ordering. Controllable per-test via `identityRow`.
+let identityRow: { userId: string } | null = null;
+mock.module('../channels/slack/identity', () => ({
+  lookupSlackIdentity: async () => identityRow,
+  revokeSlackIdentity: async () => true,
+  lookupSlackUserIdForKortixUser: async () => null,
+}));
+mock.module('../accounts/core/app', () => ({
+  lookupEmailsByUserIds: async (ids: string[]) =>
+    new Map(ids.map((id) => [id, `${id}@example.com`])),
+  defaultAccountName: (email: string | null | undefined) => email ?? 'Account',
+}));
+
+const { config } = await import('../config');
 const { handleSlashCommand } = await import('../channels/slack/commands');
 
-const ctx = { teamId: 'T1', channelId: 'C1', command: '/kortix' };
+const ctx = { teamId: 'T1', channelId: 'C1', slackUserId: 'U1', command: '/kortix' };
 
 // Flatten all stringy text out of a blocks array for easy assertions.
 function allText(resp: any): string {
@@ -54,8 +70,9 @@ function actionIds(resp: any): string[] {
 
 beforeEach(() => {
   dbResults = [];
+  identityRow = null;
   selection = { projectId: 'p1', agentName: null, opencodeModel: null };
-  setAgentResult = true;
+  setAgentResult = { ok: true };
   setModelResult = true;
   setAgentCalls.length = 0;
   setModelCalls.length = 0;
@@ -75,6 +92,31 @@ describe('unknown subcommand', () => {
   test('points at help', async () => {
     const resp = await handleSlashCommand('frobnicate', '', ctx);
     expect(resp.text).toContain('Unknown subcommand');
+  });
+});
+
+describe('identity feature gated OFF', () => {
+  const originalRequireIdentity = config.SLACK_REQUIRE_USER_IDENTITY;
+
+  beforeEach(() => {
+    config.SLACK_REQUIRE_USER_IDENTITY = false;
+  });
+
+  afterEach(() => {
+    config.SLACK_REQUIRE_USER_IDENTITY = originalRequireIdentity;
+  });
+
+  test('/login is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('login', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('/logout is an unknown subcommand', async () => {
+    const resp = await handleSlashCommand('logout', '', ctx);
+    expect(resp.text).toContain('Unknown subcommand');
+  });
+  test('help does not list login/logout', async () => {
+    const resp = await handleSlashCommand('help', '', ctx);
+    expect(allText(resp)).not.toContain('runs as you');
   });
 });
 
@@ -133,6 +175,17 @@ describe('/kortix agent <name>', () => {
     const resp = await handleSlashCommand('agent', '', ctx);
     expect(resp.text).toContain('Usage');
     expect(setAgentCalls.length).toBe(0);
+  });
+  test('unknown agent in a governed project → clear error, not the generic "bind a project" message', async () => {
+    setAgentResult = { ok: false, reason: 'unknown_agent' };
+    const resp = await handleSlashCommand('agent', 'ghost', ctx);
+    expect(resp.text).toContain('is not a declared agent');
+    expect(resp.text).toContain('ghost');
+  });
+  test('no binding → prompts to switch', async () => {
+    setAgentResult = { ok: false, reason: 'no_binding' };
+    const resp = await handleSlashCommand('agent', 'reviewer', ctx);
+    expect(resp.text).toContain('Bind a project first');
   });
 });
 

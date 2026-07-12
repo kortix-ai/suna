@@ -1,11 +1,19 @@
 ---
 title: Projects
-description: A project is one git repository plus a kortix.toml manifest.
+description: A project is one git repository plus a kortix.yaml manifest.
 ---
 
-A **project is one git repository** with a [`kortix.toml`](/docs/reference/manifest)
-at its root. The repo is the project — files, history, agent config, and settings
-all live in git. No separate database to keep in sync.
+A **project is one git repository** with a [manifest](/docs/reference/manifest)
+at its root — `kortix.yaml` by default. The repo is the project — files, history,
+agent config, and settings all live in git. No separate database to keep in sync.
+
+<Callout type="info" title="kortix.yaml vs legacy kortix.toml">
+New projects get `kortix.yaml` (`kortix_version: 2`) from the starter template.
+Existing projects may still run `kortix.toml` (`kortix_version: 1`) — the
+platform reads both indefinitely. Migrate in-app via the Customize panel's
+**Upgrades** section — run **Migrate manifest to v2 (kortix.yaml)**.
+Full field-by-field comparison: [manifest reference](/docs/reference/manifest).
+</Callout>
 
 Backed two ways:
 
@@ -33,19 +41,28 @@ Large data and other systems are reached through
 it's small and truly yours, keep it in the project; if it's large or lives
 somewhere else, reference it.
 
-So you don't turn an existing codebase into a project by dropping a `kortix.toml`
+So you don't turn an existing codebase into a project by dropping a `kortix.yaml`
 into it — least of all a large monorepo, which would be cloned into every
 session. You create a **dedicated** project for the agent and point it at the
 repositories and tools it should work with.
 
-## What the control plane reads from `kortix.toml`
+## What the control plane reads from the manifest
 
-- `[project]` — name, description
-- `[env]` — [secret](/docs/reference/secrets) names
-- `[sandbox]` + `.kortix/Dockerfile` — the [sandbox image](/docs/reference/sandbox-image)
-- `[opencode] config_dir` — agent config location (default `.kortix/opencode`)
-- `[[triggers]]` — [automations](/docs/concepts/triggers)
-- `[[apps]]` — deployable apps (experimental)
+- `project` — name, description
+- `env` — [secret](/docs/reference/secrets) names
+- `sandbox` + `.kortix/Dockerfile` — the [sandbox image](/docs/reference/sandbox-image)
+- `opencode.config_dir` — agent config location (default `.kortix/opencode`)
+- `agents` — [agent](/docs/concepts/agents) governance (connectors/secrets/CLI/skills grants) and `default_agent`
+- `triggers` — [automations](/docs/concepts/triggers)
+- `apps` — deployable apps (experimental)
 
-Unknown tables are ignored. Dashboard edits to triggers/env/apps are
+Unknown keys are ignored. Dashboard edits to triggers/env/apps are
 read-modify-writes on the same file, so in-session and dashboard edits round-trip.
+
+<Callout type="info" title="v1 equivalents">
+In legacy `kortix.toml` (`kortix_version: 1`) these are TOML tables:
+`[project]`, `[env]`, `[[sandbox.templates]]`, `[opencode]`, `[[agents]]` (array,
+grant field named `env` instead of `secrets`), `[[triggers]]`, `[[apps]]`. v1 also
+has `[[channels]]`, removed outright in v2 — channel↔agent routing is dashboard/CLI
+managed, never committed.
+</Callout>

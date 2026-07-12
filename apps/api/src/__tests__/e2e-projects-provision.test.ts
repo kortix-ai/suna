@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { accountMembers, projectMembers, projects } from '@kortix/db';
+import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
+
+process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -22,6 +24,12 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
+let seedFilePaths: string[];
+let seedBaseFilePaths: string[];
+let seedFilesByPath: Map<string, string>;
+let canonicalMembership: boolean;
+let managedPat: string | null;
+let provisionedInitialToken: string | null;
 
 function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -65,12 +73,17 @@ const stubBackend = {
       installationId: INSTALL_ID,
       credentialRef: null,
       defaultBranch: input.defaultBranch,
-      initialToken: PUSH_TOKEN,
+      initialToken: provisionedInitialToken,
     };
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
   buildUpstream: (ref: any) => ({ url: ref.upstreamUrl, headers: {} }),
-  seedFiles: async () => { backendCalls.push('seedFiles'); },
+  seedFiles: async (_ref: any, _token: string, files: Array<{ path: string; content: string }>, opts: { baseFiles?: Array<{ path: string; content: string }> }) => {
+    backendCalls.push('seedFiles');
+    seedFilePaths = files.map((file) => file.path).sort();
+    seedBaseFilePaths = (opts.baseFiles ?? []).map((file) => file.path).sort();
+    seedFilesByPath = new Map(files.map((file) => [file.path, file.content] as const));
+  },
 };
 
 mock.module('../projects/git-backends', () => ({
@@ -79,7 +92,7 @@ mock.module('../projects/git-backends', () => ({
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
   managedGithubInstallId: () => INSTALL_ID,
-  managedGithubToken: () => null,
+  managedGithubToken: () => managedPat,
 }));
 
 // Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
@@ -97,7 +110,9 @@ mock.module('../deployments/providers/freestyle', () => ({
   },
 }));
 
+const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
+  ...realAuthMiddleware,
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
@@ -124,6 +139,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  readManifestFromRepo: async () => null,
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -143,6 +159,7 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
 }));
 
 mock.module("../snapshots/builder", () => ({
@@ -179,6 +196,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => ({ tier: 'free' }),
   getCreditAccount: async () => null,
   getCreditBalance: async () => ({ balance: 0, granted: 0, used: 0 }),
+  upsertCreditAccount: async () => {},
   updateCreditAccount: async () => {},
 }));
 
@@ -198,6 +216,26 @@ function projectRowFrom(values: any) {
   };
 }
 
+function existingProjectRow() {
+  return projectRowFrom({
+    accountId: ACCOUNT_ID,
+    name: 'Existing Managed Project',
+    repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+    defaultBranch: 'main',
+    manifestPath: 'kortix.yaml',
+    status: 'active',
+    metadata: {
+      git: {
+        url: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+        provider: 'github',
+        managed: true,
+        auth: { method: 'github_app', installation_id: INSTALL_ID },
+        owner: REPO_OWNER,
+      },
+    },
+  });
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
@@ -211,7 +249,42 @@ mock.module('../shared/db', () => ({
           }
           return {
             limit: async () => {
-              if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+              if (table === accountMembers) {
+                if (canonicalMembership) {
+                  return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+                }
+                return [];
+              }
+              if (table === projectMembers) {
+                return [{ projectRole: 'manager' }];
+              }
+              if (table === projects) {
+                return [existingProjectRow()];
+              }
+              if (table === projectGitConnections) {
+                return [{
+                  accountId: ACCOUNT_ID,
+                  projectId: PROJECT_ID,
+                  provider: 'github',
+                  repoUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  upstreamUrl: `https://github.com/${REPO_OWNER}/existing-managed.git`,
+                  managed: true,
+                  repoOwner: REPO_OWNER,
+                  repoName: 'existing-managed',
+                  externalRepoId: EXTERNAL_REPO_ID,
+                  defaultBranch: 'main',
+                  authMethod: 'github_app',
+                  installationId: INSTALL_ID,
+                  credentialRef: null,
+                  permissions: {},
+                  visibility: 'private',
+                  webhookId: null,
+                  status: 'connected',
+                  metadata: {},
+                  createdAt: new Date('2026-01-01T00:00:00Z'),
+                  updatedAt: new Date('2026-01-01T00:00:00Z'),
+                }];
+              }
               return [];
             },
           };
@@ -220,6 +293,9 @@ mock.module('../shared/db', () => ({
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
+        onConflictDoNothing: () => {
+          return Promise.resolve([]);
+        },
         onConflictDoUpdate: () => {
           if (table === projectMembers) {
             grantedProjectRole = values;
@@ -264,8 +340,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     setTestAuth();
     insertedProject = null;
     grantedProjectRole = null;
+    seedFilePaths = [];
+    seedBaseFilePaths = [];
+    seedFilesByPath = new Map();
+    canonicalMembership = true;
     backendCalls.length = 0;
     backendConfigured = true;
+    managedPat = null;
+    provisionedInitialToken = PUSH_TOKEN;
   });
 
   test('provisions a managed repo + scoped token and registers the project', async () => {
@@ -295,7 +377,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
       name: 'My Agent',
       repoUrl: expectedRepoUrl,
       defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
+      manifestPath: 'kortix.yaml',
       status: 'active',
       metadata: {
         git: {
@@ -316,6 +398,103 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
+  });
+
+  test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
+    provisionedInitialToken = null;
+    managedPat = 'server-global-ghp-token';
+
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'PAT Fallback Project' }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.push_token).toBeNull();
+  });
+
+  test('git-token fails closed when managed GitHub auth resolves to server-global PAT fallback', async () => {
+    managedPat = 'server-global-ghp-token';
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/git-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain('repo-scoped installation token');
+  });
+
+  test('rejects an explicit account the caller has no membership in', async () => {
+    canonicalMembership = false;
+
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'No Membership Project' }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(insertedProject).toBeNull();
+  });
+
+  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        name: 'Runtime Project',
+        seed_starter: true,
+        starter_template: 'minimal',
+        marketplace_items: [
+          'kortix-starter:agent-browser',
+          'kortix-starter:deep-research',
+          'kortix-starter:pdf',
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
+
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).toContain('registry-lock.json');
+
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
+    expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
+    expect(seedBaseFilePaths).not.toContain('registry-lock.json');
+
+    const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
+    expect(lock.version).toBe(2);
+    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
+    expect(Object.keys(lock.items).sort()).toContain('deep-research');
+    expect(Object.keys(lock.items).sort()).toContain('pdf');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
+    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
+    expect(Object.keys(lock.items).sort()).not.toContain('account-research');
+    // kortix-computer now lives in the marketplace tier (opt-in), not the base
+    // floor — it's absent here because this request didn't select it.
+    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
+    expect(lock.items['agent-browser'].type).toBe('registry:skill');
+    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
+    expect(lock.items['agent-browser'].sourceType).toBe('local');
+    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
+    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(lock.items['deep-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/deep-research/SKILL.md');
+    expect(lock.items['pdf'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/pdf/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {

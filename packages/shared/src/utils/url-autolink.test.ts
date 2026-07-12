@@ -49,8 +49,21 @@ describe('autoLinkUrls', () => {
     expect(autoLinkUrls(input)).toBe(input);
   });
 
+  test('linkifies domains between escaped currency amounts (post-preprocess)', () => {
+    const input =
+      'raised \\$4M). Earlier from example.com. Built SoftGen (\\$50K MRR).';
+    expect(autoLinkUrls(input)).toBe(
+      'raised \\$4M). Earlier from [example.com](https://example.com). Built SoftGen (\\$50K MRR).',
+    );
+  });
+
   test('does not linkify urls inside inline math', () => {
     const input = 'value $a.com$ end';
+    expect(autoLinkUrls(input)).toBe(input);
+  });
+
+  test('still protects urls inside block math', () => {
+    const input = 'equation $$x = \\text{see example.com}$$ end';
     expect(autoLinkUrls(input)).toBe(input);
   });
 
@@ -77,5 +90,50 @@ describe('autoLinkUrls', () => {
   test('returns non-string input unchanged', () => {
     expect(autoLinkUrls(null as any)).toBeNull();
     expect(autoLinkUrls(undefined as any)).toBeUndefined();
+  });
+
+  test('skips a bare domain immediately after a slash (file path, old lookbehind semantics)', () => {
+    expect(autoLinkUrls('see /etc/config.com for details')).toBe('see /etc/config.com for details');
+  });
+
+  test('still links a protocol url even when preceded by a slash', () => {
+    expect(autoLinkUrls('mirror /https://example.com')).toBe(
+      'mirror /[https://example.com](https://example.com)',
+    );
+  });
+
+  test('protects adjacent inline math spans without consuming separators', () => {
+    expect(autoLinkUrls('$a.com$$b.org$')).toBe('$a.com$$b.org$');
+  });
+
+  test('escaped dollars do not open math spans, so following urls still link', () => {
+    expect(autoLinkUrls('costs \\$5 at example.com today')).toBe(
+      'costs \\$5 at [example.com](https://example.com) today',
+    );
+  });
+
+  test('inline math spanning a url keeps it unlinked', () => {
+    expect(autoLinkUrls('math $x = example.com$ end')).toBe('math $x = example.com$ end');
+  });
+
+  test('adversarial (ReDoS-shaped) input stays fast and correct', () => {
+    // Before the quantifiers were bounded, these repetitive strings drove the
+    // email / markdown-link / angle-link regexes into polynomial backtracking
+    // (seconds+) on user-controlled chat content. Bounded quantifiers keep every
+    // match attempt constant-work, so the whole scan stays linear. A generous
+    // time budget still fails hard if the super-linear behaviour ever returns.
+    const cases = [
+      '%'.repeat(50_000), // email local-part run that never reaches '@'
+      'a.'.repeat(30_000), // dotted run with no '@' and no TLD
+      '['.repeat(50_000), // markdown-link opens that never reach ']('
+      '[]('.repeat(15_000), // link prefixes that never close
+      '<http://'.repeat(15_000), // angle links that never close '>'
+    ];
+    for (const input of cases) {
+      const start = Date.now();
+      const out = autoLinkUrls(input);
+      expect(typeof out).toBe('string');
+      expect(Date.now() - start).toBeLessThan(2_000);
+    }
   });
 });

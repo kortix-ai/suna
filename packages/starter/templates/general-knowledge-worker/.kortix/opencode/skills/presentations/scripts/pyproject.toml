@@ -1,0 +1,19 @@
+[project]
+name = "scripts"
+version = "0.1.0"
+description = "Presentation-gen helper scripts (validate, PDF export, PPTX export)"
+requires-python = ">=3.12"
+dependencies = [
+    "lxml>=6.1.0",
+    "pillow>=12.2.0",
+    "playwright>=1.58.0; sys_platform == 'darwin'",
+    "pypdf>=4.0.0",
+    "python-pptx>=1.0.2",
+]
+
+[tool.uv]
+# Ensure uv resolves for both macOS and Linux platforms
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]

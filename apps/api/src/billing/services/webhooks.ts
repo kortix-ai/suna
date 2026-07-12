@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
-import { recordWebhookEvent, withAccountLock } from './webhook-concurrency';
+import { forgetWebhookEvent, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
 import {
@@ -15,6 +15,7 @@ import {
   getTier,
   getTierByPriceId,
   getMonthlyCredits,
+  grantForSeats,
   isUpgrade,
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
@@ -48,38 +49,45 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
   console.log(`[Webhook] Processing ${event.type} (${event.id})`);
 
-  switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
-      break;
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        break;
 
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated':
-      await handleSubscriptionChange(event.data.object as Stripe.Subscription);
-      break;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await handleSubscriptionChange(event.data.object as Stripe.Subscription);
+        break;
 
-    case 'customer.subscription.deleted':
-      await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
-      break;
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        break;
 
-    case 'invoice.paid':
-      await handleInvoicePaid(event.data.object as Stripe.Invoice);
-      break;
+      case 'invoice.paid':
+        await handleInvoicePaid(event.data.object as Stripe.Invoice);
+        break;
 
-    case 'invoice.payment_failed':
-      await handleInvoiceFailed(event.data.object as Stripe.Invoice);
-      break;
+      case 'invoice.payment_failed':
+        await handleInvoiceFailed(event.data.object as Stripe.Invoice);
+        break;
 
-    case 'subscription_schedule.completed':
-      await handleScheduleCompleted(event.data.object as any);
-      break;
+      case 'subscription_schedule.completed':
+        await handleScheduleCompleted(event.data.object as any);
+        break;
 
-    case 'subscription_schedule.released':
-      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
-      break;
+      case 'subscription_schedule.released':
+        console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
+        break;
 
-    default:
-      console.log(`[Webhook] Unhandled event type: ${event.type}`);
+      default:
+        console.log(`[Webhook] Unhandled event type: ${event.type}`);
+    }
+  } catch (err) {
+    await forgetWebhookEvent(event.id).catch((cleanupErr) => {
+      console.error(`[Webhook] Failed to clear failed event marker ${event.id}:`, cleanupErr);
+    });
+    throw err;
   }
 
   return { received: true, event_type: event.type };
@@ -98,7 +106,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
 
   if (session.mode === 'subscription') {
-    await handleSubscriptionCheckout(session, accountId);
+    await withAccountLock(accountId, () => handleSubscriptionCheckout(session, accountId));
   }
 }
 
@@ -138,6 +146,9 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     : session.subscription?.id;
   if (!subscriptionId) return;
 
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
   const tier = getTier(tierKey);
   const commitmentType = session.metadata?.commitment_type;
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
@@ -151,6 +162,28 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         : null
     );
 
+  // For per-seat plans, seat count drives the grant size and the
+  // auto-topup defaults. Resolve from the subscription line item if available.
+  const perSeatPriceId = resolvePerSeatPriceId();
+  const perSeatItem = subscription.items.data.find(
+    (item) => (perSeatPriceId && item.price?.id === perSeatPriceId) ||
+      subscription.metadata?.billing_model === 'per_seat',
+  );
+  const seatCount = perSeatItem ? Math.max(1, Math.floor(perSeatItem.quantity ?? 1)) : 1;
+  const isPerSeat = tierKey === 'per_seat' || !!perSeatItem;
+
+  // For monthly plans, set next_credit_grant to the period-end so the
+  // renewal loop knows when the next grant is due. Previously this was only
+  // set for yearly plans, leaving monthly accounts with next_credit_grant=NULL
+  // and no way for the cron to know they needed a grant.
+  const nextCreditGrantTs = isYearly
+    ? calculateNextCreditGrant(new Date()).toISOString()
+    : new Date(subscription.current_period_end * 1000).toISOString();
+
+  const perSeatAutoTopupDefaults = isPerSeat && !existingAccount?.autoTopupCustomized
+    ? defaultAutoTopupForSeats(seatCount)
+    : null;
+
   await upsertCreditAccount(accountId, {
     tier: tierKey,
     provider: 'stripe',
@@ -158,20 +191,36 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     stripeSubscriptionStatus: 'active',
     planType: isYearly ? 'yearly' : 'monthly',
     commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
-    ...(isYearly ? { nextCreditGrant: calculateNextCreditGrant(new Date()).toISOString() } : {}),
+    nextCreditGrant: nextCreditGrantTs,
+    lastRenewalPeriodStart: subscription.current_period_start,
+    ...(isPerSeat ? {
+      billingModel: 'per_seat',
+      seatCount,
+      ...(perSeatAutoTopupDefaults ? {
+        autoTopupThreshold: String(perSeatAutoTopupDefaults.threshold),
+        autoTopupAmount: String(perSeatAutoTopupDefaults.amount),
+      } : {}),
+    } : {}),
     autoTopupEnabled: true,
-    autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
-    autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
+    autoTopupThreshold: String(perSeatAutoTopupDefaults?.threshold ?? AUTO_TOPUP_DEFAULT_THRESHOLD),
+    autoTopupAmount: String(perSeatAutoTopupDefaults?.amount ?? AUTO_TOPUP_DEFAULT_AMOUNT),
   });
 
-  if (tier.monthlyCredits > 0) {
+  // For per-seat: grant grantForSeats(seatCount) so 1 seat → $25, 3 seats → $75, etc.
+  // For legacy tiers: grant tier.monthlyCredits (unchanged behaviour).
+  const creditAmount = isPerSeat ? grantForSeats(seatCount) : tier.monthlyCredits;
+  const creditDesc = isPerSeat
+    ? `${tier.displayName} subscription activated: ${creditAmount} credits (${seatCount} ${seatCount === 1 ? 'seat' : 'seats'})`
+    : `${tier.displayName} subscription activated: ${creditAmount} credits`;
+
+  if (creditAmount > 0) {
     await grantCredits(
       accountId,
-      tier.monthlyCredits,
+      creditAmount,
       'tier_grant',
-      `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
+      creditDesc,
       true,
-      session.id,
+      `subscription_activation:${subscriptionId}`,
     );
   }
 
@@ -330,7 +379,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
         accountId,
         credits,
         `Recovered Stripe subscription: ${credits} credits`,
-        `legacy_sync:${subscription.id}`,
+        `subscription_activation:${subscription.id}`,
       );
     }
   }
@@ -419,10 +468,18 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const tierName = account.scheduledTierChange ?? account.tier ?? 'free';
-  const credits = getMonthlyCredits(tierName);
+
+  // Per-seat accounts: credit grant scales with seat count.
+  // Legacy tiers: grant the flat tier credit.
+  const isPerSeatTier = tierName === 'per_seat' || account.billingModel === 'per_seat';
+  const seatCount = isPerSeatTier ? Math.max(1, account.seatCount ?? 1) : 1;
+  const credits = isPerSeatTier ? grantForSeats(seatCount) : getMonthlyCredits(tierName);
+  const renewalDesc = isPerSeatTier
+    ? `Monthly renewal: ${credits} credits (${seatCount} ${seatCount === 1 ? 'seat' : 'seats'})`
+    : `Monthly renewal: ${credits} credits`;
 
   if (credits > 0) {
-    await resetExpiringCredits(accountId, credits, `Monthly renewal: ${credits} credits`, invoice.id);
+    await resetExpiringCredits(accountId, credits, renewalDesc, invoice.id);
   }
 
   const planType = account.planType ?? 'monthly';
@@ -576,8 +633,16 @@ export async function processRevenueCatWebhook(body: any) {
   if (!event) throw new WebhookError('Missing event in RevenueCat webhook');
 
   const eventType = event.type;
+  const eventId = event.id ?? event.event_id;
+  if (!eventId) throw new WebhookError('Missing event id');
   const appUserId = event.app_user_id;
   if (!appUserId) throw new WebhookError('Missing app_user_id');
+
+  const dedupeKey = `revenuecat:${eventId}`;
+  if (!(await recordWebhookEvent(dedupeKey, eventType))) {
+    console.log(`[RevenueCat] Skipping duplicate ${eventType} (${eventId})`);
+    return { received: true, event_type: eventType, deduped: true };
+  }
 
   if (isRevenueCatAnonymous(appUserId)) {
     console.log(`[RevenueCat] Skipping anonymous user: ${appUserId}`);

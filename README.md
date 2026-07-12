@@ -9,7 +9,7 @@
 **One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
 
 [![GitHub stars](https://img.shields.io/github/stars/kortix-ai/suna?style=flat&color=111111&label=Stars)](https://github.com/kortix-ai/suna/stargazers)
-[![Version](https://img.shields.io/badge/version-0.9.5-111111.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.9.98-111111.svg)](VERSION)
 [![Docs](https://img.shields.io/badge/Docs-kortix.com%2Fdocs-111111.svg)](https://kortix.com/docs)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-111111.svg)](#contributing)
 
@@ -31,7 +31,7 @@ Three commands. Build your company like a codebase, then bring it live.
 # 1 · Install the CLI
 curl -fsSL https://kortix.com/install | bash
 
-# 2 · Scaffold a project — creates kortix.toml + your agents, skills and runtime config
+# 2 · Scaffold a project — creates kortix.yaml + your agents, skills and runtime config
 kortix init
 
 # 3 · Ship it — pushes your repo and brings the whole thing live in the cloud
@@ -57,7 +57,7 @@ Not as a metaphor — literally something you can clone. Inside it: your agents,
 Most AI tools give you a chat box. Kortix gives you a **command center** — one place where your agents, skills, integrations, automations and memory all live, and a workforce of agents that produces real output (decks, reports, code, replies, deployed work), not just chat. It feels as simple as a chat app. Underneath, everything is code you own.
 
 ```
-project  (git repo + kortix.toml)
+project  (git repo + kortix.yaml)
    └─ session ──> isolated cloud sandbox on a branch named after the session
                      └─ agent (OpenCode) works, commits, pushes
                            └─ change request ──> you review & merge ──> main
@@ -101,7 +101,7 @@ Kortix runs on your own infrastructure — laptop, VPS, your VPC, or fully air-g
 
 ```bash
 kortix self-host start
-kortix hosts use local     # ↔  kortix hosts use cloud
+kortix hosts use selfhost  # ↔  kortix hosts use cloud
 ```
 
 The first interactive setup asks only for the integration credentials that unlock managed git, GitHub access, and Pipedream connectors — ports, local URLs, keys and Docker Compose defaults are generated for you.
@@ -143,21 +143,22 @@ dotenvx-armor login                        # grants this machine decryption
 pnpm dev                                   # dev-local.sh decrypts apps/api/.env on boot
 ```
 
-Three encrypted environments for local dev, one file each (each with its own keypair in `apps/api/.env.keys`):
+Four encrypted environments for local dev, one file each (each with its own keypair in `apps/api/.env.keys`):
 
 | Run | Env | File | API backend |
 | --- | --- | --- | --- |
 | `pnpm dev` | local | `apps/api/.env` | 100% local stack (local Supabase, test Stripe) + web + tunnel |
 | `pnpm dev:dev-env` | dev | `apps/api/.env.dev` | dev stack — dev DB, test Stripe, dev keys |
+| `pnpm dev:staging-env` | staging | `apps/api/.env.staging` | staging stack — staging DB, test Stripe, staging keys |
 | `pnpm dev:prod-env` | prod | `apps/api/.env.prod` | prod stack — prod DB, **LIVE** Stripe |
 
-Verify all three decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]`, then commit.
+Verify all four decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.staging|.prod]`, then commit. The env-specific run scripts use `dotenvx run --overload` so the selected profile wins over exported local cloud credentials.
 
-These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`, mostly public `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
+These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web` has the **same four encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.staging` / `.env.prod`, mostly public `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
 
 CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
 
-Apps live under `apps/` (`web`, `api`, `cli`, `desktop`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
+Apps live under `apps/` (`web`, `api`, `cli`, `desktop-electron`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
 
 ---
 

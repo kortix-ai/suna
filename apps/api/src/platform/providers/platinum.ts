@@ -25,15 +25,40 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
+  InPlaceRecoveryStatus,
 } from './index';
+import { providerAutoStopBackstopMinutes } from './index';
 
 const AGENT_PORT = 8000;
 
 interface PlatinumSandbox {
   id: string;
   state?: string;
+  backupState?: string | null;
+  backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
+
+function isMissingSandboxError(error: unknown): boolean {
+  const err = error as
+    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
+    | null
+    | undefined;
+  if (err?.status === 404 || err?.statusCode === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'not_found' || code === 'notfound') return true;
+  const message =
+    typeof err?.message === 'string'
+      ? err.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    message.includes('-> 404') ||
+    message.includes('"code":"not_found"') ||
+    message.includes('not found') ||
+    message.includes('no such sandbox') ||
+    message.includes('sandbox does not exist')
+  );
+}
 
 export class PlatinumProvider implements SandboxProvider {
   readonly name: ProviderName = 'platinum';
@@ -73,29 +98,31 @@ export class PlatinumProvider implements SandboxProvider {
       KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       ...opts.envVars,
     };
-    if (!envVars.KORTIX_TOKEN) {
-      throw new Error('[platinum] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
+    if (!envVars.KORTIX_SANDBOX_TOKEN) {
+      throw new Error('[platinum] create() called without KORTIX_SANDBOX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
     // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
     // (never auto-stops); >0 → ephemeral with that idle timeout.
     //
-    // Default 0 (PERSISTENT) for Platinum. Unlike Daytona (cold-container
-    // restart — resumes cleanly), a Platinum stop→resume currently wedges the
-    // restored guest's virtio devices (net AND vsock dead — the CH UFFD
-    // demand-paged device-resume bug; replicated + isolated 2026-06-06,
-    // host→guest:8000 times out, in-guest exec dead). So returning to an
-    // auto-stopped session 502s/hangs (the "resume-freeze", the 27s/502
-    // catastrophe). Never auto-stop into that broken path until the CH-side
-    // resume fix lands (or reprovision-on-resume). Host RAM is the capacity
-    // bound, not disk, and it's plentiful at current scale.
-    const autoStop = opts.autoStopInterval ?? 0;
+    // Platinum AUTO-STOPS idle boxes natively and resumes them CoW on reopen
+    // (the CH UFFD resume bug that once forced persistent is fixed; verified
+    // stop→resume ~2.3s). Its native timer is the BACKSTOP for when this API
+    // is dead — the activity-aware reaper (sandbox-reaper.ts) is the primary
+    // stop, so the native interval sits well above the reaper's TTL to never
+    // kill a box mid-work (providerAutoStopBackstopMinutes).
+    const autoStop = opts.autoStopInterval ?? providerAutoStopBackstopMinutes();
 
     const _t0 = Date.now();
+    // This asks Platinum to long-poll server-side for up to 60s
+    // (wait_timeout_ms) — platinumJson's default 20s client-side abort budget
+    // would cut that off early, so pass an explicit signal comfortably longer
+    // than the server-side wait instead of relying on the default.
     const sandbox = await platinumJson<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
         method: 'POST',
+        signal: AbortSignal.timeout(70_000),
         body: JSON.stringify({
           template,
           envVars,
@@ -107,6 +134,34 @@ export class PlatinumProvider implements SandboxProvider {
     const _vmMs = Date.now() - _t0;
 
     const externalId = sandbox.id;
+
+    // `?wait_for_state=running` returns 200 with the sandbox body even when the
+    // box reached a TERMINAL-FAIL state (failed-start / lost / deleted) — the
+    // wait helper on the Platinum side stops early on those but does NOT error
+    // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
+    // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
+    // an intermittent guest-boot stall surfaced as a "running" session that was
+    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // state=failed-start, comp status=active). Throw on a non-running terminal
+    // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
+    // another host) instead of silently returning an unusable sandbox. The
+    // host-agent also relaunches the guest in-place once, so this retry is the
+    // outer backstop for the rare case both in-host attempts stall.
+    const createdState = String(sandbox.state ?? '').toLowerCase();
+    // Only a TERMINAL-fail state is a definite dead box (mirrors the Platinum
+    // maybeWait TERMINAL_FAIL_STATES set). 'provisioning' here means the wait
+    // timed out on a still-booting box — rare, and the FE readiness poll can
+    // still pick it up — so don't tear that down.
+    const TERMINAL_FAIL = new Set(['failed-start', 'lost', 'deleted']);
+    if (TERMINAL_FAIL.has(createdState)) {
+      // Best-effort remove the dead box so it doesn't linger/eat capacity; the
+      // retry provisions a fresh one.
+      await this.remove(externalId).catch(() => {});
+      throw new Error(
+        `[platinum] sandbox ${externalId} did not reach running (state=${createdState}) after ${_vmMs}ms`,
+      );
+    }
+
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
 
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
@@ -180,9 +235,44 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) return 'stopped';
       if (state === 'deleted' || state === 'failed-start' || state === 'lost') return 'removed';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
-    } catch {
+    } catch (err) {
+      if (isMissingSandboxError(err)) return 'removed';
       return 'unknown';
     }
+  }
+
+  async recoverInPlace(externalId: string): Promise<InPlaceRecoveryStatus> {
+    let sandbox: PlatinumSandbox;
+    try {
+      sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+    } catch (err) {
+      return isMissingSandboxError(err) ? 'unavailable' : 'recovering';
+    }
+
+    const state = String(sandbox.state ?? '').toLowerCase();
+    if (state === 'running') return 'running';
+
+    if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) {
+      await this.start(externalId);
+      return 'recovering';
+    }
+
+    // A terminal VM state is not proof of data loss. Platinum continuously
+    // backs up data-bearing disks and can restore that backup onto a healthy
+    // host while retaining the exact sandbox id.
+    if (
+      ['failed-start', 'lost', 'deleted'].includes(state) &&
+      String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
+    ) {
+      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      });
+      return 'recovering';
+    }
+
+    if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
+    return 'recovering';
   }
 
   async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {

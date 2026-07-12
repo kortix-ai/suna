@@ -11,6 +11,7 @@ import { hasEnvTokenHost } from '../api/config.ts';
 import { loadLink } from '../project-link.ts';
 import {
   emitJson,
+  locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -18,45 +19,56 @@ import {
 } from '../command-helpers.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { selectFromList } from '../tui-select.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-interface ResolvedSession {
+export interface ResolvedSession {
   /** Kortix session row. */
   session: ProjectSession;
   /** Auth used (so opencodeClient builds with the right base URL). */
   auth: Auth;
   /** Convenience: bound OpenCode client. */
   oc: ReturnType<typeof opencodeClient>;
+  /** The sandbox's external/provider id — the `/v1/p/{proxyId}/…` proxy key. */
+  proxyId: string;
   /** The OpenCode session id INSIDE the sandbox. May need creating. */
   opencodeSessionId: string | null;
   /** Kortix-side API client (for PATCH/save-back). */
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>;
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 }
 
 /**
- * Common pre-flight for chat commands: resolve project ctx, fetch the
- * Kortix session, confirm the sandbox is reachable, return a bundle of
- * everything the caller needs.
+ * Common pre-flight for chat commands: locate which project (and host) the
+ * session lives in — trying the active/linked one first, then scanning
+ * every other logged-in host/account when it's not pinned by
+ * --host/--project — fetch the Kortix session, confirm the sandbox is
+ * reachable, and return a bundle of everything the caller needs.
+ *
+ * `cliCommand` (e.g. `"sessions chat"`) is used only to build the
+ * copy-pasteable retry hint printed when the session isn't found on any
+ * host you're logged into.
  *
  * Returns null on any failure (and prints a friendly message itself).
  */
 export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
+  cliCommand = 'sessions chat',
 ): Promise<ResolvedSession | null> {
-  const ctx = resolveProjectContext(opts);
-  if (!ctx) return null;
-
-  let session: ProjectSession;
-  try {
-    session = await ctx.client.get<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+  const found = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix ${cliCommand} ${sessionId} --host ${host}`,
+  );
+  if (!found) return null;
+  const { client, projectId, auth, session, projectName, hostName } = found.located;
+  const ctx = { client, projectId, auth };
+  if (found.switched) {
+    process.stderr.write(
+      `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
+        `${C.dim}(host ${hostName}) — using it.${C.reset}\n`,
     );
-  } catch (err) {
-    surfaceApiError(err);
-    return null;
   }
 
   if (session.status !== 'running') {
@@ -81,22 +93,14 @@ export async function loadSessionForChat(
     return null;
   }
 
-  // Pick the same auth the project context resolved with so the sandbox
-  // proxy auth header matches the host the session lives on.
-  const hostFromLink =
-    !opts.hostArg && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
-  const hostName = opts.hostArg ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
-  if (!auth) {
-    process.stderr.write(`${status.err('Not logged in.')}\n`);
-    return null;
-  }
-
+  // Same auth `locateSessionAnywhere` resolved the session with, so the
+  // sandbox proxy auth header matches the host the session actually lives on.
   const oc = opencodeClient({ auth, sandboxId: proxyId });
   return {
     session,
     auth,
     oc,
+    proxyId,
     opencodeSessionId: session.opencode_session_id,
     ctx,
   };
@@ -236,7 +240,7 @@ function proxyIdFromSession(session: ProjectSession): string | null {
   return session.sandbox_id || null;
 }
 
-const CHAT_HELP = `Usage: kortix sessions chat [<session-id>] [options]
+const CHAT_HELP = help`Usage: kortix sessions chat [<session-id>] [options]
 
 Talk to a running session's agent from your terminal — the same agent you'd
 chat with in the dashboard. With no session id, picks your most recent running
@@ -293,7 +297,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
   if (!sessionId) return 1;
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
 
   const ocSessionId = await ensureOpencodeSession(resolved);
@@ -348,7 +352,7 @@ async function resolveChatSessionId(
 ): Promise<string | null> {
   if (explicit) return explicit;
 
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return null;
 
   if (wantNew) {
@@ -399,8 +403,8 @@ async function resolveChatSessionId(
  *                  deterministic and never block on a prompt
  * Returns the sentinel `'error'` (after printing the API error) on failure.
  */
-async function chooseRunningSession(
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
+export async function chooseRunningSession(
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
   pickTitle: string,
 ): Promise<ProjectSession | null | 'error'> {
   let sessions: ProjectSession[];
@@ -430,9 +434,39 @@ async function chooseRunningSession(
   return picked ?? null;
 }
 
+/**
+ * Resolve a target session id when the caller may not have passed one:
+ * explicit id wins outright; otherwise resolve the project context and hand
+ * off to {@link chooseRunningSession}. Shared by commands like `connect` and
+ * `shell` that both need "an id, or let me pick a running one" up front.
+ * Prints its own "no running session" guidance (with `startHint` appended)
+ * on failure.
+ */
+export async function resolveRunningSessionId(
+  explicit: string | undefined,
+  opts: CtxOpts,
+  pickTitle: string,
+  startHint = 'kortix sessions new --wait',
+): Promise<string | null> {
+  if (explicit) return explicit;
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return null;
+  const chosen = await chooseRunningSession(ctx, pickTitle);
+  if (chosen === 'error') return null;
+  if (!chosen) {
+    process.stderr.write(
+      `${status.err('No running session to connect to.')}\n` +
+        `  ${C.dim}Start one: ${C.reset}${C.cyan}${startHint}${C.reset}` +
+        `${C.dim}, or pass a session id.${C.reset}\n`,
+    );
+    return null;
+  }
+  return chosen.session_id;
+}
+
 /** Poll a freshly-created session until it's running (or fails / times out). */
 async function waitForRunning(
-  ctx: NonNullable<ReturnType<typeof resolveProjectContext>>,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
   sessionId: string,
 ): Promise<boolean> {
   for (let i = 0; i < 75; i += 1) {
@@ -454,7 +488,7 @@ async function waitForRunning(
   return false;
 }
 
-const LOG_HELP = `Usage: kortix sessions log [<session-id>] [options]
+const LOG_HELP = help`Usage: kortix sessions log [<session-id>] [options]
 
 Print a session agent's recent messages — a read-only peek at what an agent is
 doing *right now*, without sending it anything. With no session id, uses your
@@ -511,7 +545,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   // Resolve which session: explicit id → most-recent running.
   let sessionId = positional[0];
   if (!sessionId) {
-    const ctx = resolveProjectContext(opts);
+    const ctx = await resolveProjectContext(opts);
     if (!ctx) return 1;
     const chosen = await chooseRunningSession(ctx, 'Pick a session to read');
     if (chosen === 'error') return 1;
@@ -526,7 +560,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     sessionId = chosen.session_id;
   }
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions log');
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
@@ -624,7 +658,7 @@ async function sendAndPrint(
 
 // ── sessions status — mission control ────────────────────────────────────────
 
-const STATUS_HELP = `Usage: kortix sessions status [options]
+const STATUS_HELP = help`Usage: kortix sessions status [options]
 
 Mission control: a one-line overview of every session and what each agent is
 doing *right now* — for when many run in parallel. For each running session it
@@ -680,7 +714,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
     return 2;
   }
   const opts: CtxOpts = { projectArg, hostArg };
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   // Same auth the project context resolved with — needed for the OpenCode proxy.

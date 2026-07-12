@@ -151,7 +151,7 @@ export async function sendAccountInviteEmail(opts: {
   inviterEmail: string | null;
   inviteId: string;
   // Display label for the role chip (account: admin|member, project:
-  // manager|editor|viewer). Rendered verbatim (uppercased).
+  // manager|editor|user). Rendered verbatim (uppercased).
   role?: string;
   // When set, the invite is framed as joining this project rather than the
   // whole account/team (project-level /access/invite flow).
@@ -206,5 +206,44 @@ export async function sendAccountInviteEmail(opts: {
     subject: `You're invited to ${subjectTarget} on Kortix`,
     html,
     category: 'account-invite',
+  });
+}
+
+export async function sendProjectAccessRequestEmail(opts: {
+  email: string;
+  projectName: string | null;
+  requesterEmail: string;
+  reviewUrl: string;
+  message?: string | null;
+}): Promise<EmailDeliveryResult> {
+  const projectName = opts.projectName?.trim() || 'a Kortix project';
+  const message = opts.message?.trim();
+  const messageBlock = message
+    ? `<p style="${S.p}"><span style="${S.strong}">Message:</span><br />${escapeHtml(message)}</p>`
+    : '';
+
+  const body = `
+    <p style="${S.p}">
+      <span style="${S.strong}">${escapeHtml(opts.requesterEmail)}</span>
+      requested access to <span style="${S.strong}">${escapeHtml(projectName)}</span>.
+    </p>
+    ${messageBlock}
+    <a href="${escapeHtml(opts.reviewUrl)}" style="${S.btn}">Review request</a>
+    <p style="${S.smallNote}">
+      Project managers can approve or decline this from Customize → Members.
+    </p>
+  `;
+
+  const html = renderEmail({
+    kicker: 'Access request',
+    title: 'Review project access',
+    body,
+  });
+
+  return send({
+    to: opts.email,
+    subject: `${opts.requesterEmail} requested access to ${projectName}`,
+    html,
+    category: 'project-access-request',
   });
 }

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 import { ApiError } from '../api/client.ts';
@@ -9,7 +8,8 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { openInBrowser } from '../browser.ts';
+import { C, help, pad, status } from '../style.ts';
 import type {
   OauthFlowStartResponse,
   OauthListResponse,
@@ -17,7 +17,7 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix providers <subcommand> [options]
+const HELP = help`Usage: kortix providers <subcommand> [options]
 
 Configure LLM providers for the linked Kortix project. Two paths:
 
@@ -118,7 +118,7 @@ export async function runProviders(argv: string[]): Promise<number> {
 }
 
 async function providersLs(opts: CtxOpts, json = false): Promise<number> {
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let oauthList: OauthListResponse;
@@ -201,7 +201,7 @@ async function providersLogin(
     );
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   // Kick off the device-code flow.
@@ -288,7 +288,7 @@ async function providersSet(
     );
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let value = key;
@@ -320,7 +320,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
     process.stderr.write(`${status.err('Pass a provider.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(opts);
+  const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let removedOauth = false;
@@ -390,28 +390,6 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-function openInBrowser(url: string): void {
-  const platform = process.platform;
-  let cmd: string;
-  let args: string[];
-  if (platform === 'darwin') {
-    cmd = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else {
-    cmd = 'xdg-open';
-    args = [url];
-  }
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    child.unref();
-  } catch {
-    /* user can copy the URL from stdout */
-  }
 }
 
 /** Read a secret with input echo suppressed when possible. Falls back to

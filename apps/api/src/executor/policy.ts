@@ -2,10 +2,10 @@
  * Tool-call policy engine — globbed pattern match, first-match-wins, layered
  * resolution. Mirrors executor.sh's model.
  *
- * Two scopes, both declared in kortix.toml (docs/specs/executor.md §8):
- *   • project-level `[[policies]]` — patterns are fully-qualified (`<slug>.<path>`),
+ * Two scopes, both declared in kortix.yaml (docs/specs/executor.md §8):
+ *   • project-level `policies:` — patterns are fully-qualified (`<slug>.<path>`),
  *     apply across ALL connectors, evaluated FIRST.
- *   • connector-level `[[connectors.policies]]` — patterns are relative
+ *   • connector-level `connectors[].policies` — patterns are relative
  *     (the connector slug is implicit), evaluated AFTER the project scope.
  *
  * If neither scope matches, the action falls back to a risk-derived default
@@ -15,7 +15,7 @@
  *
  * Pure + unit-tested. Glob grammar (case-insensitive): `*` everywhere, anchored.
  * The UI exposes only three shapes (`*`, `prefix.*`, exact); the engine supports
- * arbitrary `*` positions for power users authoring kortix.toml by hand.
+ * arbitrary `*` positions for power users authoring kortix.yaml by hand.
  */
 type PolicyAction = 'always_run' | 'require_approval' | 'block';
 type Risk = 'read' | 'write' | 'destructive';
@@ -59,16 +59,48 @@ function compileMatcher(pattern: string): RegExp {
   return globToRegex(pattern);
 }
 
+/**
+ * Heuristic catastrophic-backtracking detector: true if a quantified group
+ * (`(...)+`, `(...)*`, `(...){n,}`) itself contains a quantified sub-pattern
+ * (`a+`, `a*`, `a{n,}`). That nesting is the classic ReDoS shape — e.g.
+ * `(a+)+` — where the engine can match the same input exponentially many
+ * ways. Not a full regex-safety proof, just enough to reject the obvious,
+ * common unsafe shapes at write time.
+ */
+function hasNestedQuantifier(body: string): boolean {
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] !== '(') continue;
+    let depth = 1;
+    let j = i + 1;
+    while (j < body.length && depth > 0) {
+      if (body[j] === '\\') { j += 2; continue; }
+      if (body[j] === '(') depth++;
+      else if (body[j] === ')') depth--;
+      j++;
+    }
+    if (depth !== 0) continue; // unbalanced — let RegExp() surface the syntax error
+    const inner = body.slice(i + 1, j - 1);
+    const after = body[j];
+    const groupIsQuantified = after === '*' || after === '+' || after === '{';
+    if (!groupIsQuantified) continue;
+    const innerStripped = inner.replace(/\\./g, '');
+    if (/[*+]|\{\d*,\d*\}/.test(innerStripped)) return true;
+  }
+  return false;
+}
+
 /** True if `pattern` is a syntactically valid matcher (glob always is; regex may not be). */
 export function isValidMatcher(pattern: string): boolean {
   if (!isRegexMatcher(pattern)) return pattern.length > 0;
   const lastSlash = pattern.lastIndexOf('/');
+  const body = pattern.slice(1, lastSlash);
   try {
-    new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1) || 'i');
-    return true;
+    new RegExp(body, pattern.slice(lastSlash + 1) || 'i');
   } catch {
     return false;
   }
+  if (hasNestedQuantifier(body)) return false; // catastrophic-backtracking shape, reject at write time
+  return true;
 }
 
 function matchesPolicy(pattern: string, path: string): boolean {
@@ -104,8 +136,10 @@ export interface EffectiveResolveInput {
   projectPolicies: Policy[];
   connectorPolicies: Policy[];
   risk: Risk;
-  /** Project setting from `[policy].default_mode` in kortix.toml. */
+  /** Project setting from `policy.default_mode` in kortix.yaml. */
   defaultMode: DefaultMode;
+  /** Connector marked `sensitive` — its reads default to require_approval too. */
+  sensitive?: boolean;
 }
 
 export interface EffectiveResolveResult {
@@ -131,6 +165,12 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
   const connectorHit = firstMatchOrNull(input.relPath, input.connectorPolicies);
   if (connectorHit) return { action: connectorHit, source: 'connector' };
 
+  // A `sensitive` connector gates EVERYTHING by default — reads included —
+  // regardless of default_mode. A per-connector "sensitive" is a deliberate,
+  // targeted admin choice that should beat the coarse project default; an
+  // explicit policy rule above can still open a specific action. This is the
+  // "reading a private inbox / files / secrets store is not free" tier.
+  if (input.sensitive) return { action: 'require_approval', source: 'risk_default' };
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
 }

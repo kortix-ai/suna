@@ -16,6 +16,7 @@ import {
   type FileSource,
 } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
+import { SHARE_FILE_IFRAME_CLASS } from './share-layout';
 
 export interface PublicFileShare {
   label: string;
@@ -210,19 +211,20 @@ export function PublicFileShareView({
               <ExternalLink className="h-4 w-4" />
             </Button>
             <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-3 text-xs font-medium"
               onClick={() => source.download(filePath, fileName)}
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
+              Download
             </Button>
           </div>
         </div>
         <iframe
           title={fileName}
           src={fileUrl}
-          className="min-h-0 flex-1 border-0 bg-white"
+          className={SHARE_FILE_IFRAME_CLASS}
           sandbox={tI18nHardcoded.raw(
             'autoAppPublicShareSessionTokenPublicFileShareViewJsxeeb5b063',
           )}

@@ -27,20 +27,16 @@ export type ModelProvider =
  * Check if a model ID corresponds to a Kortix mode (Basic or Advanced)
  */
 export function isKortixMode(modelId: string): boolean {
-  // New Kortix registry IDs
-  if (modelId === 'kortix/basic' || modelId === 'kortix/power' ||
-      modelId === 'kortix-basic' || modelId === 'kortix-power') {
-    return true;
-  }
-  // Legacy: Kortix Basic (Haiku 4.5)
-  if (modelId.includes('claude-haiku-4-5') || modelId.includes('heol2zyy5v48')) {
-    return true;
-  }
-  // Legacy: Kortix Advanced Mode (Sonnet 4.5)
-  if (modelId.includes('claude-sonnet-4-5') || modelId.includes('few7z4l830xh')) {
-    return true;
-  }
-  return false;
+  const id = modelId.startsWith('kortix/') ? modelId.slice('kortix/'.length) : modelId;
+  return (
+    id === 'auto' ||
+    id === 'claude-opus-4.8' ||
+    id === 'claude-sonnet-4.6' ||
+    id === 'glm-5.2' ||
+    id === 'qwen3.7-max' ||
+    id === 'deepseek-v4-pro' ||
+    id === 'deepseek-v4-flash'
+  );
 }
 
 /**
@@ -77,7 +73,18 @@ export function getModelProvider(modelId: string): ModelProvider {
   const parts = modelId.split('/');
   if (parts.length > 1) {
     const provider = parts[0].toLowerCase();
-    if (['openai', 'anthropic', 'google', 'xai', 'moonshotai', 'bedrock', 'openrouter', 'kortix'].includes(provider)) {
+    if (
+      [
+        'openai',
+        'anthropic',
+        'google',
+        'xai',
+        'moonshotai',
+        'bedrock',
+        'openrouter',
+        'kortix',
+      ].includes(provider)
+    ) {
       return provider as ModelProvider;
     }
   }
@@ -124,4 +131,3 @@ export function getModelProviderIcon(modelId: string): React.FC<SvgProps> {
 
   return iconMap[provider] || OAIIcon;
 }
-

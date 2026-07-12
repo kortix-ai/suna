@@ -100,7 +100,7 @@ export function Disclosure({
       <DisclosureProvider open={openProp} onOpenChange={onOpenChange} variants={variants}>
         <DisclosureRoot
           className={cn(
-            variant === 'outline' && 'group border-border w-full rounded-lg border shadow-none',
+            variant === 'outline' && 'group border-border w-full rounded-md border shadow-none',
             className,
           )}
         >
@@ -198,9 +198,7 @@ export function DisclosureContent({
     <div
       className={cn(
         'overflow-hidden',
-        // "group-data-[state=open]:rounded-b-lg group-data-[state=open]:border-x group-data-[state=open]:border-b group-data-[state=open]:border-border",
-        // "group-data-[state=open]:rounded-lg group-data-[state=open]:rounded-t-lg",
-        variant === 'outline' && 'group-data-[state=open]:rounded-b-lg',
+        variant === 'outline' && 'group-data-[state=open]:rounded-b-md',
         className,
       )}
     >

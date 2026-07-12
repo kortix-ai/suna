@@ -1,5 +1,5 @@
 /**
- * Channels — Slack integration + public, signature-gated webhooks. Maps to
+ * Channels — Slack + AgentMail email integration + public, signature-gated webhooks. Maps to
  * spec §CHN.
  *
  * Behavior confirmed against apps/api/src/channels + apps/api/src/projects/index.ts:
@@ -16,6 +16,9 @@
  * - BYO per-project webhook (/webhooks/slack/:projectId) returns 404 when the
  *   project has no install configured; a configured-but-bad-signature would be
  *   401.
+ * - Email connect is AgentMail-native. The negative path uses an intentionally
+ *   bogus API key so live suites do not create real inboxes unless a specific
+ *   positive flow opts in.
  */
 import { flow } from "../core/flow";
 
@@ -47,6 +50,122 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status(401);
+    });
+  },
+);
+
+// CHN-14 — Email installation status (read ACL).
+flow(
+  "CHN-14",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/email/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads email install status → 200 (null when not connected)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(200);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-17 — Email mode/capabilities (managed AgentMail availability).
+flow(
+  "CHN-17",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/email/mode"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER reads email mode → 200 (disabled unless experimental flag is enabled)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status(200).body().has("$.provider", "agentmail").has("$.enabled", false);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-13 — Email connect (manage ACL); creates AgentMail inbox + webhook.
+flow(
+  "CHN-13",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/email/connect"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("disabled by default → 403 before AgentMail key validation", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/channels/email/connect",
+          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
+          { params: { projectId: p.id } },
+        );
+      r.status(403);
+    });
+    await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/channels/email/connect",
+          { api_key: "am_us_bogus", display_name: "Kortix E2E" },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
+
+// CHN-15 — Email disconnect (manage ACL); idempotent.
+flow(
+  "CHN-15",
+  {
+    domain: "channels",
+    routes: ["DELETE /v1/projects/:projectId/channels/email/installation"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status(200).body().has("$.status", "disconnected");
+    });
+    await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+      r.status([403, 404]);
     });
   },
 );
@@ -238,6 +357,209 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/webhooks/slack/interactivity", { payload: "{}" });
       r.status([401, 503]);
     });
+  },
+);
+
+// CHN-16 — AgentMail inbound email webhook. Public, Svix signature-gated when configured.
+flow(
+  "CHN-16",
+  {
+    domain: "channels",
+    routes: ["POST /v1/webhooks/email/agentmail"],
+  },
+  async (ctx) => {
+    await ctx.step("ANON unsigned AgentMail event → accepted locally or rejected by signing gate", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/email/agentmail", {
+          type: "event",
+          event_type: "message.received",
+          event_id: "evt_ke2e_unsigned",
+          message: {
+            inbox_id: "inb_ke2e_missing",
+            thread_id: "thr_ke2e",
+            message_id: "msg_ke2e",
+            from: "sender@example.com",
+            to: ["agent@example.com"],
+            labels: [],
+            timestamp: new Date().toISOString(),
+            size: 1,
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+          thread: {
+            inbox_id: "inb_ke2e_missing",
+            thread_id: "thr_ke2e",
+            labels: [],
+            timestamp: new Date().toISOString(),
+            senders: ["sender@example.com"],
+            recipients: ["agent@example.com"],
+            last_message_id: "msg_ke2e",
+            message_count: 1,
+            size: 1,
+            updated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+          },
+        });
+      r.status([200, 401, 503]);
+    });
+  },
+);
+
+const UNKNOWN_BINDING = "00000000-0000-4000-a000-000000000001";
+
+// CHN-18 — Channel bindings list (read ACL). The web management surface for
+// `chat_channel_bindings` — today only reachable via Slack `/kortix` commands.
+flow(
+  "CHN-18",
+  {
+    domain: "channels",
+    routes: ["GET /v1/projects/:projectId/channels/bindings"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER lists bindings → 200 (empty when no channel is bound)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.bindings");
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-19 — Channel binding update (manage ACL / project.connector.write). No
+// public seam creates a real Slack binding (requires a live Slack app), so the
+// live-only assertable path is the unknown-binding 404 + the auth gate — the
+// same shape every other manage-ACL channel route in this file exercises.
+flow(
+  "CHN-19",
+  {
+    domain: "channels",
+    routes: ["PATCH /v1/projects/:projectId/channels/bindings/:bindingId"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER, unknown bindingId → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          { conversationPolicy: "owner_only" },
+          { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
+        );
+      r.status(404);
+    });
+    await ctx.step("OWNER, empty body → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          {},
+          { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
+        );
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER cannot update → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .patch(
+          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          { conversationPolicy: "owner_only" },
+          { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
+        );
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .patch(
+          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          { conversationPolicy: "owner_only" },
+          { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
+        );
+      r.status(401);
+    });
+  },
+);
+
+// CHN-20 — send-primitive IAM gate (project.connector.write). The Slack file
+// upload proxy and the meet/speak proxy POST to a channel using the project's
+// own bot credentials; the IAM enforcement audit found both were gated by
+// nothing but project-READ, so ANY project-read caller could post arbitrary
+// files to Slack / make the meeting bot speak. They now assert
+// project.connector.write (the same leaf that gates connect/disconnect and the
+// channel-bindings route). Proven black-box: a floor MEMBER (project.read, no
+// connector.write) is rejected 403 BEFORE any Slack/ElevenLabs call, while an
+// EDITOR (holds connector.write) passes the gate (fails later on missing
+// install/keys, never 403). The scoped-agent-token variant (agent grants are
+// server-minted at session start, not reachable over HTTP here) is proven at
+// the API layer in integration-project-read-leaf-gates-http.test.ts.
+flow(
+  "CHN-20",
+  {
+    domain: "channels",
+    routes: [
+      "POST /v1/projects/:projectId/channels/slack/file/upload",
+      "POST /v1/projects/:projectId/channels/meet/speak",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const memberOnly = await team.addMember("member");
+    const editor = await team.addMember("member");
+    await team.grantProjectRole(p.id, memberOnly.userId!, "user");
+    await team.grantProjectRole(p.id, editor.userId!, "editor");
+
+    const SEND_PRIMITIVES = [
+      {
+        name: "slack file upload",
+        path: "/v1/projects/:projectId/channels/slack/file/upload",
+        body: { channel: "C1", filename: "a.txt", content_base64: "eA==" },
+      },
+      {
+        name: "meet speak",
+        path: "/v1/projects/:projectId/channels/meet/speak",
+        body: { bot_id: "bot_x", text: "hi" },
+      },
+    ] as const;
+
+    for (const sp of SEND_PRIMITIVES) {
+      await ctx.step(`${sp.name}: floor MEMBER (no connector.write) → 403`, async () => {
+        const r = await ctx.client
+          .as(memberOnly)
+          .post(sp.path, sp.body, { params: { projectId: p.id } });
+        r.status(403);
+      });
+      await ctx.step(`${sp.name}: EDITOR (has connector.write) → passes the gate (not 403)`, async () => {
+        const r = await ctx.client
+          .as(editor)
+          .post(sp.path, sp.body, { params: { projectId: p.id } });
+        r.status([200, 400, 404, 502, 503]);
+      });
+      await ctx.step(`${sp.name}: NONMEMBER → 403/404`, async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post(sp.path, sp.body, { params: { projectId: p.id } });
+        r.status([403, 404]);
+      });
+      await ctx.step(`${sp.name}: ANON → 401`, async () => {
+        const r = await ctx.client.as(ctx.P.ANON).post(sp.path, sp.body, { params: { projectId: p.id } });
+        r.status(401);
+      });
+    }
   },
 );
 

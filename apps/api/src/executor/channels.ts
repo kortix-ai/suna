@@ -9,6 +9,8 @@
  * Slack catalog mirrors the in-sandbox `slack` CLI 1:1 for full parity. See
  * KORTIX-206.
  */
+import { config } from '../config';
+import type { ExecutorAuth } from './execute';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
 /**
@@ -22,14 +24,34 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
  * `action_not_found`.
  */
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
+export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
+export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
+export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
     case 'slack':
       return SLACK_CHANNEL_CONNECTOR_SLUG;
+    case 'teams':
+      return TEAMS_CHANNEL_CONNECTOR_SLUG;
+    case 'email':
+      return EMAIL_CHANNEL_CONNECTOR_SLUG;
+    case 'meet':
+      return MEET_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
+}
+
+/**
+ * Per-platform credential placement. Slack/email attach their install token as
+ * `Authorization: Bearer <token>`; Recall.ai (meet) wants `Authorization: Token
+ * <key>`. executeCall's applyAuth honors the custom `name`+`prefix` verbatim, so
+ * the only meet-specific auth wiring is this descriptor.
+ */
+export function channelAuth(platform: string): ExecutorAuth {
+  if (platform === 'meet') return { type: 'custom', in: 'header', name: 'Authorization', prefix: 'Token ' };
+  return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
 // `ChannelPlatform` + the platform allow-list are owned by projects/connectors.ts
@@ -44,6 +66,11 @@ export function channelApiBase(platform: string): string {
       return 'https://slack.com/api';
     case 'teams':
       return 'https://graph.microsoft.com/v1.0';
+    case 'email':
+      return 'https://api.agentmail.to/v0';
+    case 'meet':
+      // Recall.ai regional gateway. Swappable via RECALL_BASE_URL.
+      return config.RECALL_BASE_URL;
     default:
       return '';
   }
@@ -56,6 +83,10 @@ export function channelLabel(platform: string): string {
       return 'Slack';
     case 'teams':
       return 'Microsoft Teams';
+    case 'email':
+      return 'Email';
+    case 'meet':
+      return 'Google Meet';
     default:
       return platform;
   }
@@ -65,7 +96,7 @@ export function channelLabel(platform: string): string {
 interface ChannelActionDef {
   /** Connector-relative tool path (the executor namespace tail, e.g. `send_message`). */
   path: string;
-  /** Slack Web API method name (the URL tail under https://slack.com/api/<method>). */
+  /** Platform API path/method tail. */
   method: string;
   /** HTTP verb — POST methods send a JSON body; GET methods send a query string. */
   verb: 'GET' | 'POST';
@@ -288,12 +319,239 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+const EMAIL_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'send_message',
+    method: 'inboxes/{inbox_id}/messages/send',
+    verb: 'POST',
+    name: 'Send email',
+    description: 'Send a new email from an AgentMail inbox. Supports text/html and attachments.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID to send from.' },
+      to: { type: 'array', description: 'Recipient email address or addresses.' },
+      cc: { type: 'array', description: 'Optional CC recipients.' },
+      bcc: { type: 'array', description: 'Optional BCC recipients.' },
+      subject: { type: 'string', description: 'Email subject.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['to'],
+  },
+  {
+    path: 'reply_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/reply',
+    verb: 'POST',
+    name: 'Reply to email',
+    description: 'Reply in the same AgentMail thread as an existing message.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'Message ID to reply to.' },
+      reply_all: { type: 'boolean', description: 'Reply to all recipients of the original message.' },
+      to: { type: 'array', description: 'Optional override recipients.' },
+      cc: { type: 'array', description: 'Optional CC recipients.' },
+      bcc: { type: 'array', description: 'Optional BCC recipients.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'reply_all_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/reply-all',
+    verb: 'POST',
+    name: 'Reply all to email',
+    description: 'Reply-all in the same AgentMail thread as an existing message.',
+    risk: 'write',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'Message ID to reply-all to.' },
+      text: { type: 'string', description: 'Plain text body.' },
+      html: { type: 'string', description: 'HTML body.' },
+      attachments: { type: 'array', description: 'Optional AgentMail send attachments.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'list_messages',
+    method: 'inboxes/{inbox_id}/messages',
+    verb: 'GET',
+    name: 'List inbox messages',
+    description: 'List messages in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      limit: { type: 'number', description: 'Maximum messages to return.' },
+    },
+    required: [],
+  },
+  {
+    path: 'get_message',
+    method: 'inboxes/{inbox_id}/messages/{message_id}',
+    verb: 'GET',
+    name: 'Get email message',
+    description: 'Fetch a single AgentMail message.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'AgentMail message ID.' },
+    },
+    required: ['message_id'],
+  },
+  {
+    path: 'search_messages',
+    method: 'inboxes/{inbox_id}/messages/search',
+    verb: 'GET',
+    name: 'Search inbox messages',
+    description: 'Search messages in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      query: { type: 'string', description: 'Search query.' },
+      limit: { type: 'number', description: 'Maximum messages to return.' },
+    },
+    required: ['query'],
+  },
+  {
+    path: 'list_threads',
+    method: 'inboxes/{inbox_id}/threads',
+    verb: 'GET',
+    name: 'List email threads',
+    description: 'List threads in an AgentMail inbox.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      limit: { type: 'number', description: 'Maximum threads to return.' },
+    },
+    required: [],
+  },
+  {
+    path: 'get_thread',
+    method: 'inboxes/{inbox_id}/threads/{thread_id}',
+    verb: 'GET',
+    name: 'Get email thread',
+    description: 'Fetch an AgentMail thread and its message context.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      thread_id: { type: 'string', description: 'AgentMail thread ID.' },
+    },
+    required: ['thread_id'],
+  },
+  {
+    path: 'get_message_attachment',
+    method: 'inboxes/{inbox_id}/messages/{message_id}/attachments/{attachment_id}',
+    verb: 'GET',
+    name: 'Get email attachment',
+    description: 'Download an attachment from an AgentMail message.',
+    risk: 'read',
+    properties: {
+      inbox_id: { type: 'string', description: 'AgentMail inbox ID.' },
+      message_id: { type: 'string', description: 'AgentMail message ID.' },
+      attachment_id: { type: 'string', description: 'AgentMail attachment ID.' },
+    },
+    required: ['message_id', 'attachment_id'],
+  },
+];
+
+/**
+ * The Recall.ai (Google Meet/Teams/Zoom) catalog — the meeting-bot lifecycle +
+ * transcript reads. Property names match Recall's REST API exactly. Recall is
+ * bot-id-centric: `join_meeting` takes the full `meeting_url` and returns a bot
+ * `id`; everything else keys off that `id` (a path param). Trailing slashes are
+ * required (Recall runs Django REST Framework). Phase 1 is listen-only — speak /
+ * output-media land in Phase 2.
+ */
+const MEET_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'join_meeting',
+    method: 'bot/',
+    verb: 'POST',
+    name: 'Join meeting',
+    description:
+      'Send the notetaker bot to join a meeting and start recording/transcribing. Provide the full `meeting_url`; returns a bot with an `id` used for the other actions.',
+    risk: 'write',
+    properties: {
+      meeting_url: { type: 'string', description: 'Full meeting URL, e.g. https://meet.google.com/abc-defg-hij.' },
+      bot_name: { type: 'string', description: 'Display name the bot joins under (announces it is recording).' },
+      recording_config: {
+        type: 'object',
+        description: 'Recall recording config. Set transcript.provider (e.g. meeting_captions) to enable a transcript.',
+      },
+    },
+    required: ['meeting_url'],
+  },
+  {
+    path: 'leave_meeting',
+    method: 'bot/{id}/leave_call/',
+    verb: 'POST',
+    name: 'Leave meeting',
+    description: 'Remove the bot from the meeting (irreversible). Requires the bot `id`.',
+    risk: 'write',
+    properties: {
+      id: { type: 'string', description: 'The bot id returned by join_meeting.' },
+    },
+    required: ['id'],
+  },
+  {
+    path: 'send_chat_message',
+    method: 'bot/{id}/send_chat_message/',
+    verb: 'POST',
+    name: 'Send chat message',
+    description:
+      "Post a message to the meeting chat as the bot. Requires the bot `id` and `message` text (1–4096 chars). This is how the agent talks back in the call.",
+    risk: 'write',
+    properties: {
+      id: { type: 'string', description: 'The bot id returned by join_meeting.' },
+      message: { type: 'string', description: 'Chat message text (1–4096 characters).' },
+      to: { type: 'string', description: 'Optional recipient (defaults to everyone).' },
+      pin: { type: 'boolean', description: 'Optional — pin the message.' },
+    },
+    required: ['id', 'message'],
+  },
+  {
+    path: 'bot_status',
+    method: 'bot/{id}/',
+    verb: 'GET',
+    name: 'Bot status',
+    description: 'Retrieve a bot — its current status (joining / in_call / done) and recordings. Requires the bot `id`.',
+    risk: 'read',
+    properties: {
+      id: { type: 'string', description: 'The bot id returned by join_meeting.' },
+    },
+    required: ['id'],
+  },
+  {
+    path: 'get_transcript',
+    method: 'transcript/',
+    verb: 'GET',
+    name: 'Get transcript',
+    description:
+      "List the bot's transcript artifact(s). Requires `bot_id`. Each result has a status and, once processing completes, `data.download_url` — a presigned URL to the transcript JSON (words + speaker). The bot must have been created with recording_config.transcript.provider set.",
+    risk: 'read',
+    properties: {
+      bot_id: { type: 'string', description: 'The bot id returned by join_meeting.' },
+    },
+    required: ['bot_id'],
+  },
+];
+
 function toAction(def: ChannelActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'http', method: def.verb, path: `/${def.method}` };
+  const properties: Record<string, { type: string; description: string; 'x-in'?: string }> = {};
+  for (const [key, value] of Object.entries(def.properties)) {
+    properties[key] = {
+      ...value,
+      ...(def.method.includes(`{${key}}`) ? { 'x-in': 'path' } : {}),
+    };
+  }
   const inputSchema = Object.keys(def.properties).length
     ? {
         type: 'object',
-        properties: def.properties,
+        properties,
         ...(def.required.length ? { required: def.required } : {}),
       }
     : null;
@@ -379,6 +637,10 @@ export function channelCatalog(platform: string): NormalizedAction[] {
       return SLACK_ACTIONS.map(toAction);
     case 'teams':
       return TEAMS_ACTIONS.map(toAction);
+    case 'email':
+      return EMAIL_ACTIONS.map(toAction);
+    case 'meet':
+      return MEET_ACTIONS.map(toAction);
     default:
       return [];
   }

@@ -39,7 +39,6 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
-  projectSecretGrants,
   secretShareScopeEnum,
   secretGrantPrincipalEnum,
   projectSecretScopeEnum,
@@ -47,11 +46,16 @@ export {
 	  sessionLifecycleCommands,
 	  chatChannelBindings,
   chatInstalls,
+  chatPendingAuthMessages,
   chatThreads,
+  chatThreadParticipants,
   chatTurnStreams,
   teamsPendingUploads,
   chatEventDedup,
+  chatUserIdentities,
   projectSessions,
+  projectSessionRuntimeContexts,
+  accountModelPreferences,
   projectSessionGrants,
   projectSessionPublicShares,
   projectSessionVisibilityEnum,
@@ -59,7 +63,6 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
-  warmPoolPresence,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -71,7 +74,6 @@ export {
   deployments,
   kortixApiKeys,
   accountTokens,
-  serverEntries,
   workerLeaderLease,
   // Relations
   projectsRelations,
@@ -80,6 +82,7 @@ export {
   projectMembersRelations,
   projectSecretsRelations,
   projectSessionsRelations,
+  projectSessionRuntimeContextsRelations,
   sandboxesRelations,
   sandboxMembersRelations,
   sandboxInvitesRelations,
@@ -105,6 +108,7 @@ export {
   tunnelPermissions,
   tunnelPermissionRequests,
   tunnelAuditLogs,
+  tunnelRpcForwards,
   tunnelDeviceAuthStatusEnum,
   tunnelDeviceAuthRequests,
   tunnelConnectionsRelations,
@@ -124,13 +128,17 @@ export {
   platformSettings,
   accessAllowlist,
   accessRequests,
-  // Pool
-  poolResources,
-  poolSandboxes,
   // Change Requests
   changeRequestStatusEnum,
   changeRequests,
   changeRequestsRelations,
+  // Review Center
+  reviewItemKindEnum,
+  reviewItemStatusEnum,
+  reviewItemRiskEnum,
+  reviewItemSourceEnum,
+  reviewItems,
+  reviewItemsRelations,
   // IAM
   accountGroupSourceEnum,
   accountGroups,
@@ -138,6 +146,12 @@ export {
   projectGroupGrants,
   accountGroupsRelations,
   accountGroupMembersRelations,
+  iamRoles,
+  iamRoleActions,
+  iamPolicies,
+  iamResourceGrants,
+  iamRolesRelations,
+  iamRoleActionsRelations,
   // SCIM
   scimTokens,
   // Audit webhooks
@@ -156,7 +170,12 @@ export {
   executorRiskEnum,
   executorExecutionStatusEnum,
   executorCredentialModeEnum,
+  executorConnectionProfileOwnerTypeEnum,
+  executorConnectionProfileStatusEnum,
+  projectSessionConnectorBindingSourceEnum,
   executorConnectors,
+  executorConnectionProfiles,
+  projectSessionConnectorBindings,
   executorConnectorGrants,
   executorCredentials,
   executorConnectorActions,
@@ -164,12 +183,12 @@ export {
   executorProjectPolicies,
   executorProjectSettings,
   executorExecutions,
+  sessionToolApprovals,
   executorConnectorsRelations,
   executorConnectorActionsRelations,
   executorConnectorPoliciesRelations,
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
-  projectSecretGrantsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
 
@@ -181,12 +200,8 @@ export type {
   TunnelPermissionScope,
 } from './schema/kortix';
 
-// Public/basejump tables
-export {
-  apiKeys,
-  accountUser,
-  billingCustomersInBasejump,
-} from './schema/public';
+// Public tables
+export { apiKeys } from './schema/public';
 
 export type {
   Account,
@@ -215,13 +230,10 @@ export type {
   NewSessionSandbox,
   ApiKey,
   CreditAccount,
-  AccountUser,
   NewApiKey,
   SandboxSelect,
   KortixApiKey,
   NewKortixApiKey,
-  ServerEntry,
-  NewServerEntry,
   TunnelConnection,
   NewTunnelConnection,
   TunnelPermission,

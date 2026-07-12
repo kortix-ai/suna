@@ -10,10 +10,10 @@ import { AiOutlineCheck } from 'react-icons/ai';
 import { HyperText } from '../ui/hyper-text';
 import { Loader } from '../ui/loader';
 
-type TabId = 'toml' | 'agent' | 'deploy';
+type TabId = 'yaml' | 'agent' | 'deploy';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'toml', label: 'kortix.toml' },
+  { id: 'yaml', label: 'kortix.yaml' },
   { id: 'agent', label: 'support.md' },
   { id: 'deploy', label: 'deploy' },
 ];
@@ -77,15 +77,16 @@ const deployLine = {
   visible: { opacity: 1, transition: { duration: 0.25 } },
 };
 
-function TomlBody() {
+function YamlBody() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <>
       <Line>
-        <span className={C.c}>[project]</span>
+        <span className={C.c}>project:</span>
       </Line>
       <Line>
-        <span className={C.f}>name</span> ={' '}
+        <Space />
+        <span className={C.f}>name</span>:{' '}
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line34JsxTextQuotAcmeAgiQuot')}
@@ -96,10 +97,10 @@ function TomlBody() {
         <Space />
       </Line>
       <Line>
-        <span className={C.c}>[[triggers.cron]]</span>
+        <span className={C.c}>triggers:</span>
       </Line>
       <Line>
-        <span className={C.f}>agent</span> ={' '}
+        <Space />- <span className={C.f}>agent</span>:{' '}
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line37JsxTextQuotBriefingQuot')}
@@ -107,7 +108,9 @@ function TomlBody() {
         </span>
       </Line>
       <Line>
-        <span className={C.f}>schedule</span> ={' '}
+        <Space />
+        <Space />
+        <span className={C.f}>schedule</span>:{' '}
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line38JsxTextQuot08Quot')}
@@ -118,16 +121,16 @@ function TomlBody() {
         <Space />
       </Line>
       <Line>
-        <span className={C.c}>[[channels]]</span>
+        <span className={C.c}>channels:</span>
       </Line>
       <Line>
-        <span className={C.f}>type</span> ={' '}
+        <Space />- <span className={C.f}>type</span>:{' '}
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line41JsxTextQuotSlackQuot')}
           </HyperText>
         </span>{' '}
-        · <span className={C.f}>agent</span> ={' '}
+        · <span className={C.f}>agent</span>:{' '}
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line41JsxTextQuotSupportQuot')}
@@ -138,10 +141,10 @@ function TomlBody() {
         <Space />
       </Line>
       <Line>
-        <span className={C.c}>[connectors]</span>
+        <span className={C.c}>connectors:</span>
       </Line>
       <Line>
-        <span className={C.f}>required</span> = [
+        <Space />[
         <span className={C.s}>
           <HyperText>
             {tHardcodedUi.raw('componentsHomeCodeWindow.line44JsxTextQuotGmailQuot')}
@@ -186,7 +189,7 @@ function AgentBody() {
       <Line>
         <span className={C.f}>model</span>:{' '}
         <span className={C.s}>
-          <HyperText>claude-opus-4-7</HyperText>
+          <HyperText>claude-opus-4.8</HyperText>
         </span>
       </Line>
       <Line>
@@ -299,7 +302,7 @@ function DeployBody() {
 
 export function CodeWindow({ className }: { className?: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const [tab, setTab] = useState<TabId>('toml');
+  const [tab, setTab] = useState<TabId>('yaml');
   return (
     <div className={cn('border-border bg-card overflow-hidden rounded border', className)}>
       <SlidingTabIndicator
@@ -330,7 +333,7 @@ export function CodeWindow({ className }: { className?: string }) {
         })}
       </SlidingTabIndicator>
       <div className="min-h-[260px] px-5 py-4 font-mono text-sm lg:min-h-96">
-        {tab === 'toml' && <TomlBody />}
+        {tab === 'yaml' && <YamlBody />}
         {tab === 'agent' && <AgentBody />}
         {tab === 'deploy' && <DeployBody />}
       </div>

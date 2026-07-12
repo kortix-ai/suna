@@ -3,8 +3,9 @@
  *
  * Data source: a slim snapshot of https://models.dev/api.json (the same data
  * OpenCode uses internally). The snapshot lives at
- * `packages/shared/src/llm-catalog/catalog.generated.json` and is regenerated
- * by `apps/web/scripts/refresh-llm-catalog.ts`.
+ * `packages/llm-catalog/src/catalog.generated.json`; its per-model
+ * capability flags are refreshed from models.dev by
+ * `apps/web/scripts/enrich-llm-catalog-capabilities.ts`.
  *
  * "Connecting" a provider writes its env vars to `project_secrets`. Sessions
  * pick those up as env vars at sandbox boot — so connecting Anthropic here is
@@ -12,7 +13,7 @@
  * with a friendlier flow.
  */
 
-import { CATALOG as catalog } from '@kortix/shared/llm-catalog';
+import { CATALOG as catalog } from '@kortix/llm-catalog';
 
 export interface LlmProviderModel {
   id: string;
@@ -128,8 +129,7 @@ const HINT_OVERRIDES: Record<string, string> = {
 function toEntry(raw: RawProvider): LlmProviderEntry {
   const featured = FEATURED_IDS.has(raw.id);
   const hint =
-    HINT_OVERRIDES[raw.id] ??
-    `${raw.models.length} model${raw.models.length === 1 ? '' : 's'}`;
+    HINT_OVERRIDES[raw.id] ?? `${raw.models.length} model${raw.models.length === 1 ? '' : 's'}`;
   return {
     id: raw.id,
     label: raw.name,
@@ -169,9 +169,7 @@ export const LLM_PROVIDER_BY_ID = new Map<string, LlmProviderEntry>(
 
 /** Lookup by env-var name — used to mark "connected" status from secret names. */
 export const LLM_PROVIDER_BY_ENV_VAR = new Map<string, LlmProviderEntry>(
-  LLM_PROVIDERS.flatMap((entry) =>
-    entry.envVars.map((envVar) => [envVar, entry] as const),
-  ),
+  LLM_PROVIDERS.flatMap((entry) => entry.envVars.map((envVar) => [envVar, entry] as const)),
 );
 
 /** Catalog metadata for diagnostic display ("catalog refreshed N hours ago"). */

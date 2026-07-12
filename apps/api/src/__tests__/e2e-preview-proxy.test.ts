@@ -30,6 +30,7 @@ let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
+  agentName: 'default',
   status: 'active',
   config: { serviceKey: TEST_SERVICE_KEY },
   provider: 'daytona',
@@ -48,6 +49,7 @@ let mockFetchResponses: Array<{
 let mockFetchCallCount = 0;
 let mockFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string | null }> = [];
 let mockDbUpdateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+let mockResolvedPreviewPorts: number[] = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -64,8 +66,6 @@ function sortPreferredSandboxRows(rows: any[]): any[] {
   return [...rows].sort((a, b) => {
     const statusDiff = rank(a.status) - rank(b.status);
     if (statusDiff !== 0) return statusDiff;
-    const poolDiff = (a.poolState == null ? 0 : 1) - (b.poolState == null ? 0 : 1);
-    if (poolDiff !== 0) return poolDiff;
     return String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''));
   });
 }
@@ -101,21 +101,26 @@ mock.module('../shared/db', () => {
       select: (fields: any) => {
         // Determine which table is being queried by inspecting selected fields
         // The preview proxy selects several session_sandboxes projections and
-        // { accountRole } from accountUser/account_members depending on the path.
+        // { accountRole } from account_members.
         const fieldKeys = fields ? Object.keys(fields) : [];
-        const isSandboxQuery = fieldKeys.some((key) =>
-          ['accountId', 'sandboxId', 'projectId', 'status', 'config', 'provider', 'baseUrl'].includes(key),
+        // `createdBy` is the unambiguous signal for the projectSessions
+        // owner/agent lookup (sandbox-env-sync.ts) — check it BEFORE the loose
+        // sandbox-field check below, since that query also selects `agentName`
+        // (a field the sandbox-row query shape shares), which would otherwise
+        // misclassify it as a sandbox-table query and starve resolveOwnerRawEnv.
+        const isProjectSessionQuery = fieldKeys.includes('createdBy');
+        const isSandboxQuery = !isProjectSessionQuery && fieldKeys.some((key) =>
+          ['accountId', 'sandboxId', 'projectId', 'agentName', 'status', 'config', 'provider', 'baseUrl'].includes(key),
         );
         const isMembershipQuery = fieldKeys.includes('accountRole');
-        const isProjectSessionQuery = fieldKeys.includes('createdBy');
 
         const rowsFor = (ordered = false): any[] => {
+          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           if (isSandboxQuery) {
             const rows = mockSandboxRows();
             return ordered ? sortPreferredSandboxRows(rows) : rows;
           }
           if (isMembershipQuery) return mockDbMembership ? [mockDbMembership] : [];
-          if (isProjectSessionQuery) return [{ createdBy: TEST_USER_ID }];
           // Fallback: empty (unknown query, e.g. accountGroupMembers in
           // resolveShareSubject — the test models no group memberships).
           return [];
@@ -186,7 +191,8 @@ mock.module('../platform/providers', () => ({
     }
   },
   getProvider: () => ({
-    resolvePreviewLink: async () => {
+    resolvePreviewLink: async (_externalId: string, port: number) => {
+      mockResolvedPreviewPorts.push(port);
       return { url: mockPreviewUrl, token: mockPreviewToken };
     },
     ensureRunning: async (sandboxId: string) => {
@@ -198,9 +204,7 @@ mock.module('../platform/providers', () => ({
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
-    KORTIX_LOCAL_DOCKER_HOST: 'host.docker.internal',
     isDaytonaEnabled: () => true,
-    isLocalDockerEnabled: () => false,
     isJustAVPSEnabled: () => false,
   },
 }));
@@ -232,8 +236,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.startsWith('http://host.docker.internal:')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -245,7 +248,11 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     url: urlStr,
     method: (init?.method || 'GET').toUpperCase(),
     headers: Object.fromEntries(new Headers(init?.headers as any).entries()),
-    body: typeof init?.body === 'string' ? init.body : null,
+    body: typeof init?.body === 'string'
+      ? init.body
+      : init?.body instanceof ArrayBuffer
+        ? new TextDecoder().decode(init.body)
+        : null,
   });
 
   if (!responseConfig) {
@@ -268,6 +275,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
+const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -323,6 +331,7 @@ beforeEach(() => {
   mockFetchCallCount = 0;
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
+  mockResolvedPreviewPorts = [];
 
   // Install mock fetch
   globalThis.fetch = mockFetch as any;
@@ -330,6 +339,49 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+describe('Preview proxy: websocket upstream resolution', () => {
+  test('keeps Daytona PTY websocket upstreams on direct OpenCode port 4096', async () => {
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([4096]);
+    if (upstream.ok) {
+      expect(upstream.url).toBe('wss://preview.daytona.io/proxy-url/pty/pty_test/connect');
+    }
+  });
+
+  test('routes Platinum PTY websocket upstreams through the signed agent bridge on 8000', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockPreviewUrl = 'https://8000-platinum.sbx.example';
+    mockPreviewToken = null;
+
+    const upstream = await resolvePreviewWsUpstream({
+      sandboxId: TEST_SANDBOX_ID,
+      upstreamPort: 4096,
+      userId: TEST_USER_ID,
+      remainingPath: '/pty/pty_test/connect',
+      queryString: '',
+    });
+
+    expect(upstream.ok).toBe(true);
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+    if (upstream.ok) {
+      const url = new URL(upstream.url);
+      expect(`${url.origin}${url.pathname}`).toBe('wss://8000-platinum.sbx.example/pty/pty_test/connect');
+      const queryContext = url.searchParams.get('__kortix_user_context');
+      expect(queryContext).toBeTruthy();
+      expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
+      expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
+    }
+  });
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -471,7 +523,7 @@ describe('Preview proxy: ownership', () => {
     ];
 
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/shared-local-docker-sandbox/${TEST_PORT}/`, {
+    const res = await app.request(`/v1/p/shared-sandbox-ext/${TEST_PORT}/`, {
       headers: { Authorization: 'Bearer test' },
     });
 
@@ -507,22 +559,34 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls).toHaveLength(1);
   });
 
-  test('proxies local_docker sandboxes through the host-mapped port', async () => {
-    mockDbSandbox = {
-      ...mockDbSandbox,
-      provider: 'local_docker',
-      baseUrl: 'http://localhost:18000',
-      metadata: { mappedPorts: { '8000': '18000', '3211': '18001' } },
-    };
-    mockFetchResponses = [{ status: 200, body: '{"runtimeReady":true}' }];
-
+  test('routes Platinum opencode(4096) HTTP through the in-box agent on 8000', async () => {
+    // opencode binds 127.0.0.1:4096 (loopback-only); Platinum's edge dials the
+    // guest eth0 IP, so :4096 is unreachable → 502. The proxy must resolve the
+    // agent's :8000 preview link (it bridges to localhost:4096 in-box). This is
+    // what makes `kortix sessions connect` / `opencode attach` work on Platinum.
+    // Distinct id so the module-level previewLinkCache can't collide with the
+    // PTY test above (which caches a non-preview.* URL for the same id:8000 key).
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
     const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/local-docker-sandbox/8000/kortix/health`, {
+    const res = await app.request(`/v1/p/platinum-oc-http/4096/session`, {
       headers: { Authorization: 'Bearer test' },
     });
-
     expect(res.status).toBe(200);
-    expect(mockFetchCalls[0]?.url).toBe('http://host.docker.internal:18000/kortix/health');
+    // opencode's loopback-only 4096 is unreachable from the Platinum edge, so the
+    // proxy must resolve the agent's :8000 preview link instead of :4096.
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+  });
+
+  test('keeps Daytona opencode(4096) HTTP on the direct port 4096', async () => {
+    // provider defaults to 'daytona' — reaches opencode's 4096 directly, no reroute.
+    mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/daytona-oc-http/4096/session`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockResolvedPreviewPorts).toEqual([4096]);
   });
 
   test('syncs latest project secrets before forwarding prompt_async', async () => {
@@ -552,12 +616,115 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
+      llmGatewayDenyEnv: '',
+      llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  test('allows prompt_async when requested agent matches the session-bound token agent', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'reviewer', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+  });
+
+  test('strips legacy default agent before forwarding prompt_async to OpenCode', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'default', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+  });
+
+  // Agent-lock enforcement is OFF by default (KORTIX_ENFORCE_SESSION_AGENT_LOCK
+  // unset) — in-session agent switching is allowed. A prompt may run a different
+  // concrete agent than the session booted with, and it's forwarded untouched.
+  test('allows in-session agent switching by default (no 409, concrete agent forwarded)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+  });
+
+  // Regression: the reported "agent switch requires a new session" false positive.
+  // A brand-new session is stored with the sentinel agent 'default'; the client
+  // resolves "the default" to a concrete name and echoes it back. With enforcement
+  // off this never 409s, and a concrete agent is forwarded untouched so the user
+  // can switch agents within the session.
+  test('allows a default session to run a concrete agent (forwarded untouched)', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'default' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ agent: 'kortix', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(204);
+    // Concrete agent forwarded untouched (only the literal 'default' sentinel is stripped).
+    expect(JSON.parse(mockFetchCalls[1].body ?? '{}')).toEqual({
+      agent: 'kortix',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
@@ -764,6 +931,30 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['x-request-id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
   });
 
+  test('does not forward the preview session credential cookie upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: '__preview_session=eyJhbGciOiJIUzI1NiJ9.secret-token',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
+  });
+
+  test('does not forward arbitrary caller cookies upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: 'tracking=abc; __preview_session=secret; prefs=dark',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
+  });
+
   test('does NOT inject preview token when null', async () => {
     mockPreviewToken = null;
     mockFetchResponses = [{ status: 200, body: 'OK' }];
@@ -803,6 +994,18 @@ describe('Preview proxy: CORS', () => {
       headers: { Authorization: 'Bearer test', Origin: 'https://app.kortix.com' },
     });
     expect(res.headers.get('access-control-allow-origin')).toBe('https://app.kortix.com');
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+  });
+
+  test('sets CORS headers on proxy-generated sandbox auth errors', async () => {
+    mockFetchResponses = [{ status: 401, body: 'bad signed context' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/global/event`, {
+      headers: { Authorization: 'Bearer test', Origin: 'https://dev.kortix.com' },
+    });
+
+    expect(res.status).toBe(502);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://dev.kortix.com');
     expect(res.headers.get('access-control-allow-credentials')).toBe('true');
   });
 

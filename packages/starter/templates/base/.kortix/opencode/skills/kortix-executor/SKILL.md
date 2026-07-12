@@ -1,163 +1,229 @@
 ---
 name: kortix-executor
-description: How to reach third-party systems from a Kortix session via the Executor — one interface to every configured integration (Pipedream, MCP, OpenAPI, GraphQL, HTTP, chat `channel`s like Slack, and connected machines via `computer`), exposed as the `kortix-executor` MCP server's tools (connectors, discover, describe, call). Load whenever the user asks the agent to DO something in an external app/API (send an email, create a Stripe charge, post to Slack, query an internal API, call any SaaS), asks "what integrations/connectors/tools do I have", asks to add/configure a connector, or asks about `[[connectors]]` in kortix.toml. The agent must use the Executor's MCP tools rather than hand-rolling API calls with raw tokens.
+description: Use the Kortix Executor to reach external systems from a session. Prefer the `kortix executor` CLI for agent work, use `@kortix/executor-sdk` for durable TypeScript workflows and reusable skills, and treat the `kortix executor mcp` server as an optional compatibility face. Load whenever the user asks the agent to act in an external app/API, inspect available connectors/tools, add/configure a connector, or work with `connectors:` in kortix.yaml.
 ---
 
 <skill name="kortix-executor">
 
 <overview>
-The **Executor** is the one way an agent reaches outside systems. Instead of
-juggling per-app SDKs and raw tokens, you use the **`kortix-executor` MCP
-server**, auto-loaded into every session. It talks to the Kortix **Executor
-Gateway**, which holds the credentials, checks what you're allowed to use, runs
-the call, and audits it.
+The **Executor** is the one way an agent reaches outside systems. It gives this
+session access to configured project integrations (Pipedream, MCP, OpenAPI,
+GraphQL, HTTP, `channel` connectors like Slack/email, and connected `computer`
+surfaces) without exposing third-party secrets to the sandbox.
 
-It exposes a small, stable set of MCP tools — not one tool per integration — so
-you **progressively discover** what you need instead of drowning in a giant
-catalog:
+The default agent interface is the **`kortix executor` CLI**:
 
-- **`connectors`** — what this session can use (provider, status, tool count)
-- **`discover`** — intent search across every usable tool
-- **`describe`** — one tool's full input schema + risk
-- **`call`** — run a tool
-- **`add_connector` / `remove_connector`** — declare or remove project
-  connectors through the platform (committed to `kortix.toml` + synced)
-- **`connect` / `request_secret`** — mint a short-lived human setup link for
-  OAuth/API-key credentials without exposing secrets to the sandbox
+- `kortix executor connectors` - list usable connectors and their tools.
+- `kortix executor discover "<intent>"` - search tools by natural-language need.
+- `kortix executor describe <connector>.<action>` - inspect one tool schema.
+- `kortix executor call <connector> <action> '<json-args>'` - run a tool.
+- `kortix executor add/rm/connect` - manage connectors and setup links.
 
-**You never see a third-party secret.** The gateway resolves it server-side from
-the project's secrets and attaches it. The sandbox only carries
-`$KORTIX_EXECUTOR_TOKEN`, which makes every call act **as the user who launched
-the session** — so you can only use connectors that user has been granted.
+The same Executor core is also available as:
 
-A **connector** is one named integration. They're declared in `kortix.toml` as
-`[[connectors]]` (provider = pipedream | mcp | openapi | graphql | http | channel | computer). The
-Executor can add/remove declarations and mint setup links for credentials; the
-secret value / Pipedream 1-click connection is entered by the human in Kortix and
-never exposed to the sandbox. Each connector exposes **tools** (actions) with a
-connector-namespaced path like `stripe.charges.create`.
+- **`@kortix/executor-sdk`** - TypeScript client for multi-step workflows,
+  reusable scripts, skills, agents, and app code.
+- **`kortix executor mcp`** - optional stdio MCP server with stable meta-tools.
+  Do not assume the MCP tools are present in the current tool list. Use the CLI
+  first unless the current runtime explicitly exposes the MCP tools.
+
+Every call goes through the Kortix Executor Gateway. The gateway resolves
+credentials server-side, enforces sharing and policy, executes the upstream call,
+and audits the result. The sandbox carries a Kortix session/user token such as
+`$KORTIX_EXECUTOR_TOKEN`/`$KORTIX_CLI_TOKEN`; it does not carry raw third-party
+API keys.
 </overview>
 
 <when-to-load>
 Load this skill when the user wants to:
-- Act in an external app/API — "send an email", "create a charge", "post to
-  Slack", "create a GitHub issue", "query our internal API".
-- See what's available — "what integrations / connectors / tools do I have?"
-- Add or configure a connector, or asks about `[[connectors]]` in `kortix.toml`.
 
-If the task is purely local (editing files, running tests) you don't need this.
+- Act in an external app/API - send an email, create a charge, post to Slack,
+  create an issue, query an internal API, call a SaaS API, drive a connected
+  computer, or inspect an inbox/thread.
+- See what integrations/connectors/tools are available.
+- Add or configure a connector, request a credential, or work with
+  `connectors:` in `kortix.yaml`.
+- Build a reusable integration workflow, script, skill, or agent that will call
+  external systems repeatedly.
+
+If the task is purely local (editing files, running tests, reading the repo),
+you do not need this skill.
 </when-to-load>
 
-<usage>
-Use the `kortix-executor` MCP tools. They appear in your tool list once the
-session has the Executor wired (it always does in a Kortix sandbox). All return
-JSON.
+<cli-first-loop>
+Use the CLI for normal agent work. It is JSON-only, pre-authenticated in the
+sandbox, and works even when MCP tools are unavailable.
 
-**Loop: `discover` → `describe` → `call`.** Always `describe` an unfamiliar tool
-to learn its input schema before you `call` it.
+1. List available connectors:
 
-1. **See what this session can use** — call `connectors` (no args). Returns each
-   connector's slug, provider, status, and tool count.
-2. **Find a tool by intent** — call `discover` with
-   `{ "query": "send a slack message" }` (optionally `"limit"`). Returns the
-   best-matching tool paths with their risk + description.
-3. **Inspect a tool before calling it** — call `describe` with
-   `{ "tool": "stripe.charges.create" }`. Returns the full input JSON schema.
-4. **Run it** — call `call` with
-   `{ "connector": "stripe", "action": "charges.create", "args": { "amount": 999, "currency": "usd" } }`.
-   The gateway attaches the credential, enforces sharing + policy, runs it, and
-   audits it.
-
-**GraphQL tools:** pass selected fields via `__select` inside `args`, e.g.
-`{ "connector": "internal-graph", "action": "query.user", "args": { "id": "1", "__select": "id name email" } }`.
-
-**The full API of any connector — the `request` tool.** Every connector exposes
-a curated set of named actions, but you are NOT limited to them. Each
-**Pipedream** connector also has a generic **`request`** tool that proxies to
-*any* endpoint of that app's API (the Connect Proxy — the credential is injected
-server-side, you never see it). This is the "complete API access" path: when no
-named action fits, find the endpoint in the app's API docs and call it directly.
-
-```jsonc
-// Post a PR comment on GitHub — no named action needed, just the endpoint:
-{ "connector": "github", "action": "request", "args": {
-    "method": "POST",
-    "url": "https://api.github.com/repos/kortix-ai/suna/issues/1234/comments",
-    "body": { "body": "Thermo review: …" } } }
+```sh
+kortix executor connectors
 ```
 
-`request` args: `method` (GET/POST/PUT/PATCH/DELETE), `url` (the absolute app
-API URL), optional `body` (JSON) and `headers`. The upstream status + JSON come
-back verbatim. Reach for a named action when one fits (typed inputs); reach for
-`request` for everything else. (`openapi`/`http`/`graphql` connectors already
-expose the whole spec as named tools, so they don't need `request`.)
-</usage>
+2. Search by intent:
 
-<rules>
-- **Use the Executor's MCP tools — do not hand-roll** HTTP calls to third-party
-  APIs with raw tokens. There are no raw third-party tokens in the sandbox by
-  design.
-- If `connectors` is empty or a tool is missing, the connector isn't configured
-  or isn't **shared with this user**. If configuration is missing, use
-  `add_connector` and then `connect` / `request_secret` to surface a setup link to
-  the human; don't hand-roll around the Executor.
-- A `call` result of `ok: false` with `denied` (`not_shared` / `needs_auth`)
-  means exactly that — surface it. For `needs_auth`, mint the appropriate setup
-  link (`connect` for Pipedream OAuth, `request_secret` for API keys) instead of
-  asking the user to paste credentials into chat.
-- Tools carry a **risk** (read / write / destructive). Be deliberate with
-  `write`/`destructive` calls; confirm intent with the user for irreversible ones.
-- To add a connector, prefer the Executor's `add_connector` tool (or
-  `kortix executor add` locally); it commits the `kortix.toml` change and syncs
-  the catalog. Then use `connect` / `request_secret` for credentials.
-- A `kortix executor` CLI exists too (same gateway, same auth) — and the same
-  Executor core is also the `@kortix/executor-sdk` TypeScript framework. The MCP
-  tools are the primary path, though — prefer them.
-</rules>
+```sh
+kortix executor discover "send an email"
+```
+
+3. Inspect the exact input schema before calling an unfamiliar tool:
+
+```sh
+kortix executor describe email_email_inbox_bjgk.reply_message
+```
+
+4. Run the tool:
+
+```sh
+kortix executor call email_email_inbox_bjgk reply_message \
+  '{"inbox_id":"email-inbox@agentmail.to","message_id":"<message-id>","text":"Reply text"}'
+```
+
+`call` takes `<connector> <action> <json-args>`. The `<action>` is the part after
+the connector slug in the tool path. For `email_email_inbox_bjgk.reply_message`,
+the connector is `email_email_inbox_bjgk` and the action is `reply_message`.
+
+For GraphQL tools, pass selected fields inside `args.__select`, for example:
+
+```sh
+kortix executor call internal_graph query.user \
+  '{"id":"1","__select":"id name email"}'
+```
+</cli-first-loop>
+
+<sdk-workflows>
+Use `@kortix/executor-sdk` when a workflow is more than a one-off call:
+
+- Several dependent calls, loops, branching, retries, or pagination.
+- A workflow you want to save as a script in the repo.
+- A reusable skill/agent implementation that should have explicit code, tests,
+  and typed inputs.
+- Transforming or validating data between Executor calls.
+- Persisting state, writing reports, or combining Executor calls with local
+  files/database work.
+
+For method signatures, error handling, and a reusable script pattern, read
+`references/executor-sdk.md`.
+
+Inside a Kortix sandbox, the CLI is still the fastest way to inspect the
+catalog. Once the shape is clear, write a TypeScript script around the SDK:
+
+```ts
+import { createExecutorClient } from '@kortix/executor-sdk';
+
+const executor = createExecutorClient({
+  apiUrl: process.env.KORTIX_API_URL!,
+  token: process.env.KORTIX_CLI_TOKEN ?? process.env.KORTIX_EXECUTOR_TOKEN!,
+  projectId: process.env.KORTIX_PROJECT_ID,
+});
+
+const matches = await executor.discover('send an email', { limit: 5 });
+const tool = await executor.describe(matches[0]!.tool);
+if (!tool) throw new Error('email tool not found');
+
+const result = await executor.call('email_email_inbox_bjgk', 'reply_message', {
+  inbox_id: 'email-inbox@agentmail.to',
+  message_id: '<message-id>',
+  text: 'Reply text',
+});
+
+if (!result.ok) throw new Error(`Executor call failed: ${result.reason ?? result.status ?? 'unknown'}`);
+console.log(JSON.stringify(result, null, 2));
+```
+
+For project scripts, prefer `bun run path/to/script.ts`. Keep credentials out of
+code; pass only Kortix auth/context from env and let the gateway resolve
+third-party secrets.
+</sdk-workflows>
+
+<complete-api-access>
+Every connector exposes curated named actions. Pipedream connectors also expose
+a generic `request` action that proxies to any endpoint of that app's API using
+server-side credentials. Use named actions when they fit; use `request` when the
+named catalog is missing the endpoint you need.
+
+```sh
+kortix executor call github request '{
+  "method": "POST",
+  "url": "https://api.github.com/repos/kortix-ai/suna/issues/1234/comments",
+  "body": { "body": "Review note..." }
+}'
+```
+
+`request` args: `method`, absolute `url`, optional JSON `body`, and optional
+`headers`. The upstream status and response come back through the Executor
+envelope. OpenAPI, HTTP, and GraphQL connectors normally expose their whole spec
+as named tools, so they usually do not need `request`.
+</complete-api-access>
 
 <adding-connectors>
-Connectors are defined in `kortix.toml` (committed). Example:
+Connectors are defined in `kortix.yaml` and synced into the Executor catalog.
+Example:
 
-```toml
-[[connectors]]
-slug     = "stripe"
-name     = "Stripe API"
-provider = "openapi"
-spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
-  [connectors.auth]
-  type   = "bearer"
-  secret = "STRIPE_API_KEY"   # the VALUE is entered via setup link, never in git
+```yaml
+connectors:
+  - slug: stripe
+    name: Stripe API
+    provider: openapi
+    spec: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
+    auth:
+      type: bearer
+      # secret value entered through setup link, never in git
 ```
 
-Providers: `pipedream` (`app` + 1-click OAuth — gives the whole app API via the
-`request` proxy tool), `openapi`/`graphql`/`http` (a `spec`/`endpoint`/`base_url`
-+ `[connectors.auth]`), `mcp` (`url` + `transport`), `channel` (`platform`,
-e.g. `slack` — chat platforms; auto-materializes when you connect Slack, credential
-resolved server-side), and `computer` (connected machines over the Agent Computer
-Tunnel; auto-materializes when you connect a machine, no credential — see the
-`kortix-computer` skill). The Executor materializes the catalog after the
-declaration lands. (`channel` and `computer` are SYNTH-ONLY — they appear when you
-connect Slack / a machine, you don't declare them in kortix.toml. For Slack you'll
-usually use the dedicated `slack` CLI — see the `kortix-slack` skill — but it's the
-same connector under the hood.)
+Providers:
 
-**One-click setup (no dashboard hunting).** In a session, prefer the MCP tools:
+- `pipedream` - app slug + one-click OAuth; includes the generic `request`
+  action for full app API access.
+- `openapi`, `graphql`, `http` - declared spec/endpoint/base URL plus auth.
+- `mcp` - remote MCP server endpoint.
+- `channel` - synthesized chat/email connectors such as Slack and AgentMail.
+- `computer` - synthesized connected-machine connector.
 
-```jsonc
-// Add the connector and sync it immediately.
-{ "slug": "github", "provider": "pipedream", "app": "github" }
-// Then call `connect` with { "slug": "github" } and surface the returned URL.
-```
-
-From a terminal, the same flow is available through the unified CLI:
+Use the CLI to add and connect integrations:
 
 ```sh
 kortix executor add github --provider pipedream --app github
-kortix executor connect github   # prints a one-click OAuth URL — open it, authorize
+kortix executor connect github
 ```
 
-That's the whole setup for a new integration: add → connect (click the link). The
-connected app's full API is then reachable via the `request` tool.
+Surface the returned setup URL to the user. Never ask the user to paste raw
+credentials into chat. For API-key style connectors, use setup-link flows
+(`request_secret` via the optional MCP face when available, or the equivalent
+Kortix connector/secret setup command when exposed by the CLI).
+
+**Connecting Slack is ONE command — do not use the executor for it.** Slack is
+a built-in channel (`slack`/`kortix_slack` are reserved slugs; `executor add`
+rejects them). When the user asks to connect Slack, run:
+
+```sh
+kortix channels connect
+```
+
+On Kortix Cloud that prints a one-click "Add to Slack" install link — surface
+the URL to the user and you are done. No Slack app to create, no manifest, no
+bot token, no signing secret, no secret-intake link. After the user clicks
+Allow, `kortix channels status` shows the connected workspace and the `slack`
+CLI + `kortix_slack.*` tools work immediately. Only if `connect` itself reports
+that one-click install is unavailable (self-host without the shared Slack app)
+does the manual path apply — it walks you through `kortix channels manifest` +
+`kortix channels connect --manual`.
 </adding-connectors>
+
+<rules>
+- Prefer `kortix executor ...` CLI commands for one-off agent actions.
+- Use `@kortix/executor-sdk` for durable, multi-step, reusable, or testable
+  workflows.
+- Do not hand-roll third-party API calls with raw provider tokens. There should
+  be no raw third-party tokens in the sandbox.
+- If a connector/tool is missing, the connector may be unconfigured, unauthenticated,
+  disabled, or not shared with this user. Surface that clearly and use setup-link
+  flows when credentials are needed.
+- `ok: false`, `denied`, `not_shared`, or `needs_auth` results are real gateway
+  policy/auth outcomes. Do not bypass them.
+- Be deliberate with `write` and `destructive` tools. Confirm irreversible work.
+- Treat MCP tools like `kortix-executor_call` as optional. If the model tries
+  one and it is unavailable, switch to the CLI immediately.
+</rules>
 
 </skill>

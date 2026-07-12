@@ -1,19 +1,20 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
+import { FileDiff, Sparkles } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { getProjectSession } from '@/lib/projects-client';
+import { getProjectSession } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { STATUS_TEXT } from '@/components/ui/status';
 
 // Status → single-letter badge, using the canonical status-text tones.
@@ -95,7 +96,7 @@ export function SessionFilesPanel({
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      successToast('Asked your agent to open a change request.');
+      successToast('Asked your agent to propose these changes for review.');
     } catch (err) {
       errorToast(
         err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',
@@ -139,11 +140,7 @@ export function SessionFilesPanel({
           onClick={askAgentToOpenChangeRequest}
           disabled={asking}
         >
-          {asking ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="size-3.5" />
-          )}
+          {asking ? <Loading className="size-3.5 shrink-0" /> : <Sparkles className="size-3.5" />}
           {tHardcodedUi.raw(
             'componentsSessionSessionFilesPanel.line96JsxTextAskAgentToOpenAChangeRequest',
           )}
@@ -153,14 +150,14 @@ export function SessionFilesPanel({
       {/* The currently-changed files (git status). */}
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <div className="text-muted-foreground/60 mb-2 flex items-center gap-1.5 px-1 text-xs font-medium tracking-wide uppercase">
-          <GitPullRequestArrow className="size-3.5" />
+          <FileDiff className="size-3.5" />
           Changes
           {changedCount > 0 && <span className="text-muted-foreground/40">· {changedCount}</span>}
         </div>
 
         {isLoadingChanges ? (
           <div className="text-muted-foreground/50 flex items-center justify-center gap-2 py-10 text-xs">
-            <Loader2 className="size-4 animate-spin" />
+            <Loading className="size-4 shrink-0" />
             {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line113JsxTextLoadingChanges')}
           </div>
         ) : changedCount > 0 ? (

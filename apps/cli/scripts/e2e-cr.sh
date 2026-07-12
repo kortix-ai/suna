@@ -145,7 +145,7 @@ dim "pat" "${PAT_SECRET:0:18}…"
 bold "3. Registering the test project"
 PROJECT_ID="$(psql_one "
   insert into kortix.projects (account_id, name, repo_url, default_branch, manifest_path)
-  values ('$ACCOUNT_ID', 'CLI CR e2e', 'file://$REPO_ROOT/origin.git', 'main', 'kortix.toml')
+  values ('$ACCOUNT_ID', 'CLI CR e2e', 'file://$REPO_ROOT/origin.git', 'main', 'kortix.yaml')
   returning project_id;
 ")"
 [[ -z "$PROJECT_ID" ]] && fail "failed to insert project"

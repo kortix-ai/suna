@@ -1,0 +1,149 @@
+---
+title: "How we run personalized outbound"
+description: An agent connected to our CRM, enrichment, and email that researches each lead, drafts a genuinely personalized sequence, logs it to the CRM, and holds every send behind human approval with a daily cap.
+date: "2026-05-06"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Team
+---
+
+Personalized outbound doesn't scale by hand, so most teams give up the
+personalization: a mail-merge template with a first name swapped in, sent to a
+list. It's fast and it's ignored. Real personalization means researching each
+account and writing to its actual context, which is exactly the part that doesn't
+scale.
+
+We run an agent on Kortix that does the research and the writing per contact, then
+holds every send behind a person. It enriches each lead, drafts a first-touch and
+follow-up grounded in the account's real context, logs every draft to the CRM, and
+sends nothing without approval, capped daily. This is how we run our own outbound.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A new segment or lead list</Fact>
+  <Fact label="Connected systems">CRM · Enrichment · Email</Fact>
+  <Fact label="Mode">Every batch approved by a person · daily cap</Fact>
+</KeyFacts>
+
+## The problem
+
+Outbound has a tradeoff most teams resolve the wrong way. Personalized messages
+land, but researching and writing each one doesn't scale, so the list wins: a
+template, a merge field, a send button. The result is volume without relevance,
+and the reply rate shows it.
+
+The usual tools don't fix it. A sequencing tool blasts the same template on a
+schedule. An AI writer produces fluent copy with no real account context, which
+reads as personalized but isn't. And any tool that can mass-send is one wrong
+segment away from putting unreviewed email in front of thousands of people.
+
+## What we built
+
+On Kortix, a new segment or lead list triggers an agent. Each contact spawns an
+isolated session (a cloud sandbox) with scoped access to enrichment, the CRM, and
+email. The agent researches the account, drafts a first-touch and a follow-up
+sequence grounded in what it found, and logs every draft to the CRM. No message
+sends on its own: every batch waits for a person to approve, under a daily cap.
+
+<Figure
+  caption="A batch of drafted, account-specific messages waiting for approval under the daily cap"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the lead list as the trigger">
+
+A new segment or lead list in the CRM is the trigger. Each contact fires a fresh
+**session** in its own sandbox, seeded with that lead. One contact maps to one
+session on one disposable machine, so research on each account is independent and
+the list processes in parallel.
+
+</Step>
+<Step title="Give the agent the outreach playbook">
+
+What genuine personalization looks like lives as **skills** and **memory** that
+travel with the agent: our angles, the proof points that resonate, what to avoid,
+and which signals in an account are worth writing to. When a message pattern
+works, we write it down and the agent reuses it on the next batch.
+
+</Step>
+<Step title="Connect enrichment, the CRM, and email">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Enrich each contact** — role, company, recent signals, and the real context
+  that makes a message specific.
+- **Draft a genuine sequence** — a first-touch and follow-ups grounded in the
+  account's context, not a template with a name swapped in.
+- **Log every draft to the CRM** — each message written back against the contact,
+  so the history is complete.
+- **Send on approval** — the email goes out only after a person clears the batch.
+
+</Step>
+<Step title="Set the guardrails">
+
+Nothing sends without a person approving it, and it never mass-sends unreviewed.
+Every batch stops at a **human approval gate**, and a **daily cap** limits how many
+messages can go out even once approved. A wrong segment can't turn into thousands
+of unreviewed emails, because the send is gated and capped regardless of how big
+the list is. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Run personalized outbound at a safe rate">
+
+With that in place, loading a segment produces a batch of researched, account-
+specific drafts logged to the CRM and waiting for review. A person reads the
+batch, approves what's ready, and the daily cap meters the sends. The
+personalization is real because each message is written to a researched account,
+and nothing leaves without a person clearing it.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **trigger** on a new list spawns a session per contact with scoped
+  **connectors** into enrichment, the CRM, and email. The outreach approach is
+  encoded as **skills** and **memory**. Every batch is approved by a person and
+  the daily cap meters the sends — nothing mass-sends unreviewed.
+</Callout>
+
+## Guardrails
+
+The agent can draft and send email, so the send is the tightly controlled step:
+
+- **Isolation.** Every contact runs in its own microVM sandbox. The session reaches
+  only enrichment, the CRM, and email, and only drafted messages leave it; nothing
+  sends from inside the sandbox.
+- **Scoped secrets.** The enrichment, CRM, and email credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gate.** Nothing sends without a person approving it. Every batch
+  is reviewed before send, and a **daily cap** limits volume even after approval,
+  so a wrong list can never mass-send unreviewed.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="The approval gate and daily cap metering a batch before any message sends"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every send" label="Approved by a person and metered by a daily cap" />
+  <Stat value="Per account" label="Research and copy grounded in real context, not a merge field" />
+  <Stat value="3 systems" label="Enrichment, CRM, and email in one agent" />
+</StatGrid>
+
+Outbound is now personalized per account and sent at a safe rate: each contact is
+researched, each message is written to its context and logged to the CRM, and
+every batch is cleared by a person under a daily cap. The personalization scales
+because the research does, and nothing mass-sends without review.

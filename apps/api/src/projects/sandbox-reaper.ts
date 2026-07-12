@@ -1,31 +1,34 @@
 /**
  * Provider-agnostic sandbox reaper + state/billing reconciler.
  *
- * THE problem this fixes (verified live 2026-06-21): session sandboxes stayed
- * running for hours/days after work finished, and the compute meter kept billing
- * them — 1,597 phantom-active compute rows across 23 accounts.
+ * ONE RULE for running boxes: ask the box itself. Each pass probes the box's
+ * own opencode session status (sandbox-busy-probe.ts):
  *
- * Root cause was twofold:
- *   1. Daytona's provider-side auto-stop ("stop after N min of no REQUEST to the
- *      box") never fired because passive traffic — an open tab streaming opencode
- *      events, repeated /start, the server-side opencode-pin hit — touched each
- *      box < auto-stop apart. So "15 min idle" never elapsed.
- *   2. Kortix's own idle GC keyed off `session_sandboxes.last_used_at`, which is
- *      bumped ONLY by /v1/p proxy traffic — a partial signal that real turn/
- *      session traffic never touches — and its stops didn't stick (auto-wake).
+ *   busy/retry → alive. Disarm the idle countdown, stamp lastTurnAt.
+ *   idle       → the first observation ARMS `metadata.idleObservedAt`; the
+ *                stop fires only once the box has stayed OBSERVABLY idle for
+ *                the full TTL. The TTL counts from real idleness — never from
+ *                a heuristic like "last LLM call", which can predate the turn
+ *                end by a whole tool run (the 2026-06-24 mid-session kills).
+ *   unknown    → unreachable / legacy box. Fall back to the activity clock
+ *                (lastTurnAt | row creation | last LLM usage_event + TTL) so a
+ *                wedged daemon can't hold compute billing open forever.
  *
- * The fix is to stop trusting "any request" as activity. We define MEANINGFUL
- * activity = a real turn (a prompt / Slack message / agent run), stamped as
- * `metadata.lastTurnAt` at the turn boundary, and we make the PROVIDER's real
- * state (getStatus) the source of truth. A box with no meaningful activity for
- * the TTL is stopped regardless of how much passive traffic it sees, and billing
- * is closed the moment the provider reports it is no longer running.
+ * Trigger-fired boxes (metadata.source 'trigger:*') confirm idle on a shorter
+ * TTL — nobody is waiting on a webhook/cron box.
  *
- * Webhooks (see channels/providers webhook ingress) are the fast path that
- * closes billing the instant a box stops; this reaper is the deterministic
- * backstop that runs even if an event is dropped — together they make
- * "15 min of no real activity → stopped, and never billed while stopped" an
- * invariant rather than a best-effort.
+ * Passive traffic (an open tab streaming events, /v1/p proxy hits, repeated
+ * /start polls) is deliberately NEVER treated as activity — trusting it is
+ * what once kept idle boxes alive for days (verified live 2026-06-21: 1,597
+ * phantom-active compute rows). The provider's own auto-stop timer survives
+ * only as the orphan backstop (providerAutoStopBackstopMinutes): its "no
+ * inbound requests" signal is blind to local tool runs, so it sits well above
+ * the reaper's TTL and matters only when this API is dead.
+ *
+ * Provider webhooks are the fast path that closes billing the instant a box
+ * stops; this reaper is the deterministic backstop that runs even if an event
+ * is dropped — together they make "idle for the TTL → stopped, and never
+ * billed while stopped" an invariant rather than a best-effort.
  */
 
 import { and, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
@@ -33,13 +36,17 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { getProvider, type ProviderName, type SandboxStatus } from '../platform/providers';
 import { invalidateProviderCache } from '../sandbox-proxy';
-import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
+import { pauseComputeSession } from '../billing/services/compute-metering';
+import { probeSandboxBusy } from './sandbox-busy-probe';
 import { ACTIVE_SESSION_STATUSES } from './lib/session-status';
 import { config } from '../config';
+import { hasActiveExecutionLease } from './execution-lease';
+import { preserveEstablishedRuntime } from './runtime-identity';
 
 export const REAP_BATCH_SIZE = 100;
 const REAP_CONCURRENCY = 6;
 const DEFAULT_AUTOSTOP_MINUTES = 15;
+const DEFAULT_TRIGGER_AUTOSTOP_MINUTES = 5;
 
 /** The single knob for "how long with no real turn before we stop a box". */
 export function autoStopTtlMs(): number {
@@ -47,57 +54,68 @@ export function autoStopTtlMs(): number {
   return min * 60_000;
 }
 
-export type ReapAction = 'none' | 'stop-idle' | 'reconcile-stopped' | 'reconcile-removed';
-
-export interface ReapDecision {
-  action: ReapAction;
-  /** Platinum stop→resume is broken (CH resume-freeze) → the next open must
-   *  REPROVISION a fresh box rather than start() the stopped one. */
-  reprovisionOnResume: boolean;
-  reason: string;
+/** Shorter idle window for trigger-fired boxes — no human is waiting on them,
+ *  so every idle minute past turn end is pure billed dead time. */
+export function triggerAutoStopTtlMs(): number {
+  const min = Math.max(1, config.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES || DEFAULT_TRIGGER_AUTOSTOP_MINUTES);
+  return min * 60_000;
 }
 
-/**
- * Pure, deterministic decision from the provider's REAL state + meaningful idle.
- * Kept side-effect-free so it is exhaustively unit-tested (the money + UX
- * correctness lives here).
- */
-export function decideReap(input: {
-  providerStatus: SandboxStatus;
-  meaningfulIdleMs: number;
-  hasActiveTurn: boolean;
-  ttlMs: number;
-  provider: ProviderName;
-}): ReapDecision {
-  const { providerStatus, meaningfulIdleMs, hasActiveTurn, ttlMs, provider } = input;
+/** Sandbox rows carry the session's invocation source in `metadata.source`
+ *  (stamped at provisioning). 'trigger:*' boxes are unattended; anything else
+ *  (ui/slack/cli/missing) is treated as interactive — the safe direction. */
+export function isTriggerSession(metadata: Record<string, unknown> | null): boolean {
+  const source = metadata?.source;
+  return typeof source === 'string' && source.startsWith('trigger:');
+}
 
-  // NEVER act on uncertainty. getStatus() returns 'unknown' on a transient
-  // provider error or a transitional state (starting/resuming/migrating);
-  // stopping or reconciling on that could kill a healthy box or fight a wake.
-  if (providerStatus === 'unknown') {
-    return { action: 'none', reprovisionOnResume: false, reason: 'provider-unknown' };
-  }
-  // The external box is gone — finalize billing and mark our row so the next
-  // open reprovisions instead of trying to resume a box that no longer exists.
-  if (providerStatus === 'removed') {
-    return { action: 'reconcile-removed', reprovisionOnResume: true, reason: 'provider-removed' };
-  }
+/** When the reaper first OBSERVED the box idle (probe-confirmed). Null when
+ *  never observed / cleared by a busy observation or an explicit resume. */
+export function idleObservedAtOf(metadata: Record<string, unknown> | null): Date | null {
+  const raw = metadata?.idleObservedAt;
+  if (typeof raw !== 'string') return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+export type IdleConfirmAction = 'arm' | 'wait' | 'stop';
+
+/**
+ * The idle TTL counts from OBSERVED idleness, not from the last LLM call —
+ * the last usage_event can predate the real turn end by however long the
+ * final tool run takes, and stopping "TTL after last LLM call" could kill a
+ * box seconds after its turn actually finished. So the first probe-confirmed
+ * idle observation only ARMS the timer; the stop fires once the box has
+ * stayed observably idle for the full TTL, and any busy observation disarms.
+ * Pure so the money semantics are exhaustively unit-tested.
+ */
+export function decideIdleConfirm(input: {
+  idleObservedAt: Date | null;
+  now: Date;
+  ttlMs: number;
+}): IdleConfirmAction {
+  const { idleObservedAt, now, ttlMs } = input;
+  if (!idleObservedAt || idleObservedAt.getTime() > now.getTime()) return 'arm';
+  return now.getTime() - idleObservedAt.getTime() >= ttlMs ? 'stop' : 'wait';
+}
+
+export type ReconcileAction = 'none' | 'reconcile-stopped' | 'reconcile-removed';
+
+/**
+ * Pure reconcile decision for a box the provider says is NOT running.
+ * (Running boxes take the probe path: busy → alive, observed idle for the
+ * TTL → stop.) 'unknown' is a transient provider error or a transitional
+ * state (starting/resuming/migrating) — NEVER act on uncertainty; acting
+ * could kill a healthy box or fight a wake.
+ */
+export function decideReconcile(providerStatus: SandboxStatus): ReconcileAction {
+  // The provider currently reports the external box gone. Preserve its identity
+  // and stop billing; a later explicit open may retry that same sandbox.
+  if (providerStatus === 'removed') return 'reconcile-removed';
   // Provider already stopped/archived it (its own auto-stop, an admin, or a
   // webhook we missed) but our row still says active — reconcile + close billing.
-  if (providerStatus === 'stopped') {
-    return { action: 'reconcile-stopped', reprovisionOnResume: false, reason: 'provider-stopped' };
-  }
-
-  // providerStatus === 'running'
-  // A turn in flight (long agent run / streaming) is meaningful even if the last
-  // stamped lastTurnAt is older than the TTL — never reap an in-progress turn.
-  if (hasActiveTurn) {
-    return { action: 'none', reprovisionOnResume: false, reason: 'active-turn' };
-  }
-  if (meaningfulIdleMs > ttlMs) {
-    return { action: 'stop-idle', reprovisionOnResume: provider === 'platinum', reason: 'meaningful-idle' };
-  }
-  return { action: 'none', reprovisionOnResume: false, reason: 'within-ttl' };
+  if (providerStatus === 'stopped') return 'reconcile-stopped';
+  return 'none';
 }
 
 /**
@@ -125,7 +143,7 @@ function isLifecycleTransitionInProgress(err: unknown): boolean {
   return msg.includes('state change in progress') || msg.includes('transition in progress');
 }
 
-function isAlreadyNotRunning(err: unknown): boolean {
+export function isAlreadyNotRunning(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     msg.includes('not started') ||
@@ -143,16 +161,14 @@ function mergeMetadata(patch: Record<string, unknown>) {
 /**
  * The metadata patch written when the reaper stops a box. `quiesce` marks an
  * idle-stop so passive traffic can't resurrect it (only an explicit open / new
- * turn clears it); `reprovision` flags that the next open must REPROVISION
- * rather than resume (Platinum's broken stop→resume). Pure so it is unit-tested.
+ * turn clears it). Stopping never authorizes replacing a data-bearing runtime.
  */
-export function buildIdleStopMetadata(opts: { quiesce: boolean; reprovision: boolean; nowIso: string }): Record<string, unknown> {
+export function buildIdleStopMetadata(opts: { quiesce: boolean; nowIso: string }): Record<string, unknown> {
   const meta: Record<string, unknown> = {};
   if (opts.quiesce) {
     meta.idleQuiesced = true;
     meta.idleQuiescedAt = opts.nowIso;
   }
-  if (opts.reprovision) meta.needsReprovision = true;
   return meta;
 }
 
@@ -166,13 +182,13 @@ interface ReapCandidate {
   createdAt: Date;
 }
 
-async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean, reprovision: boolean): Promise<void> {
+async function reconcileRowToStopped(row: ReapCandidate, now: Date, quiesce: boolean): Promise<void> {
   // Close billing FIRST (computes the wall-clock delta against the still-active
   // metering row), then flip status, so the final window is billed correctly.
   await pauseComputeSession(row.sandboxId).catch((err) =>
     console.warn(`[reaper] pauseComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
   );
-  const meta = buildIdleStopMetadata({ quiesce, reprovision, nowIso: now.toISOString() });
+  const meta = buildIdleStopMetadata({ quiesce, nowIso: now.toISOString() });
   await db
     .update(sessionSandboxes)
     .set({
@@ -194,18 +210,77 @@ export interface ReapResult {
   reconciled: number;   // provider already not-running; we synced our row
   billingClosed: number;
   skipped: number;
+  busyVetoed: number;   // idle-by-clock but the box itself reported a running turn
+  idleArmed: number;    // first probe-confirmed idle observation — TTL countdown started
   errors: number;
+}
+
+type RunningBoxOutcome = 'stopped' | 'busyVetoed' | 'idleArmed' | 'skipped' | 'errors';
+
+/**
+ * The rule for one running box: busy → alive; observed idle for the TTL →
+ * shut down; unreachable → activity-clock fallback so a wedged daemon still
+ * stops. `fallbackLastMeaningful` is null when this pass's usage lookup
+ * failed — then an unreachable box cannot be judged at all and is skipped
+ * (never act on uncertainty).
+ */
+async function reapRunningBox(
+  row: ReapCandidate,
+  opts: { now: Date; ttlMs: number; fallbackLastMeaningful: Date | null },
+): Promise<RunningBoxOutcome> {
+  const { now, ttlMs, fallbackLastMeaningful } = opts;
+  const busyState = await probeSandboxBusy({ sandboxId: row.sandboxId, externalId: row.externalId });
+
+  if (busyState === 'busy') {
+    // A running process — disarm the countdown, stamp the activity.
+    await db
+      .update(sessionSandboxes)
+      .set({ updatedAt: now, metadata: mergeMetadata({ lastTurnAt: now.toISOString(), idleObservedAt: null }) })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    return 'busyVetoed';
+  }
+
+  if (busyState === 'idle') {
+    const confirm = decideIdleConfirm({ idleObservedAt: idleObservedAtOf(row.metadata), now, ttlMs });
+    if (confirm === 'arm') {
+      await db
+        .update(sessionSandboxes)
+        .set({ updatedAt: now, metadata: mergeMetadata({ idleObservedAt: now.toISOString() }) })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      return 'idleArmed';
+    }
+    if (confirm === 'wait') return 'skipped';
+    // 'stop' — observed idle for the full TTL → fall through to the stop.
+  } else {
+    // 'unknown' — box unreachable / legacy image: activity-clock fallback.
+    if (!fallbackLastMeaningful) return 'skipped';
+    if (now.getTime() - fallbackLastMeaningful.getTime() <= ttlMs) return 'skipped';
+  }
+
+  try {
+    await getProvider(row.provider).stop(row.externalId);
+  } catch (err) {
+    if (isLifecycleTransitionInProgress(err)) return 'skipped';
+    if (!isAlreadyNotRunning(err)) {
+      console.error(`[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`);
+      return 'errors';
+    }
+    // Already stopped/gone on the provider side is success — reconcile.
+  }
+  await reconcileRowToStopped(row, now, /* quiesce */ true);
+  return 'stopped';
 }
 
 /**
  * One reaper pass over active session sandboxes. For each:
  *   - ask the provider its REAL state,
  *   - reconcile our row + close billing if it is not running,
- *   - stop it (and close billing) if it has had no meaningful activity for the TTL.
+ *   - otherwise apply the running-box rule (probe → busy alive / idle countdown).
  * Bounded concurrency so a batch of provider round-trips doesn't serialize.
  */
 export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapResult> {
   const ttlMs = autoStopTtlMs();
+  const triggerTtlMs = triggerAutoStopTtlMs();
 
   const rows = (await db
     .select({
@@ -221,63 +296,47 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
     .where(and(
       eq(sessionSandboxes.status, 'active'),
       isNotNull(sessionSandboxes.externalId),
-      // Unclaimed warm-pool spares manage their own lifecycle.
-      sql`${sessionSandboxes.poolState} IS NULL`,
     ))
     .limit(REAP_BATCH_SIZE)) as ReapCandidate[];
 
-  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, errors: 0 };
+  const result: ReapResult = { candidates: rows.length, stopped: 0, reconciled: 0, billingClosed: 0, skipped: 0, busyVetoed: 0, idleArmed: 0, errors: 0 };
   if (rows.length === 0) return result;
 
-  const sessionIds = rows.map((r) => r.sessionId);
-  // The real activity signals, batched (both lookups are indexed):
-  //  - last LLM call per session (the truest "a real turn happened" signal,
-  //    covering web / Slack / trigger uniformly — the gateway stamps session_id
-  //    on usage_events), and
-  //  - which sessions have a turn IN FLIGHT (unfinalized stream) — never reap those.
-  const [usageResult, activeTurnResult] = await Promise.all([
-    loadLastUsageBySession(sessionIds),
-    loadActiveTurnSessions(sessionIds),
-  ]);
-  // FAIL-SAFE: a null result means the lookup itself FAILED (DB/transient). We
-  // then cannot prove a box is idle, so we must NOT stop it on uncertain data —
-  // same "never act on uncertainty" rule the provider-status path follows.
-  // Provider-confirmed stopped/removed reconciliation still proceeds below.
-  const activitySignalReliable = usageResult !== null && activeTurnResult !== null;
-  const lastUsageBySession = usageResult ?? new Map<string, Date>();
-  const activeTurnSessions = activeTurnResult ?? new Set<string>();
+  // Batched fallback signal: last LLM call per session (indexed usage_events).
+  // Only consulted for boxes the probe can't reach; null = the lookup itself
+  // failed this pass, and unreachable boxes are then skipped (fail safe).
+  const lastUsageBySession = await loadLastUsageBySession(rows.map((r) => r.sessionId));
 
   let cursor = 0;
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
-        // Local Docker containers are --rm; stopping discards them. Skip (as before).
-        if (row.provider === 'local_docker') {
-          result.skipped += 1;
+        const providerStatus: SandboxStatus = await getProvider(row.provider).getStatus(row.externalId);
+
+        if (providerStatus === 'running') {
+          if (hasActiveExecutionLease(row.metadata, now)) {
+            result.busyVetoed += 1;
+            continue;
+          }
+          let fallbackLastMeaningful: Date | null = null;
+          if (lastUsageBySession !== null) {
+            const base = lastMeaningfulAt(row);
+            const usage = lastUsageBySession.get(row.sessionId);
+            fallbackLastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
+          }
+          const outcome = await reapRunningBox(row, {
+            now,
+            ttlMs: isTriggerSession(row.metadata) ? triggerTtlMs : ttlMs,
+            fallbackLastMeaningful,
+          });
+          result[outcome] += 1;
+          if (outcome === 'stopped') result.billingClosed += 1;
           continue;
         }
-        const provider = getProvider(row.provider);
-        const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
-        // Meaningful = latest of (stamped lastTurnAt | row creation) and the last
-        // LLM call for the session. Passive traffic (proxy/opencode/presence) is
-        // deliberately NOT considered.
-        const base = lastMeaningfulAt(row);
-        const usage = lastUsageBySession.get(row.sessionId);
-        const lastMeaningful = usage && usage.getTime() > base.getTime() ? usage : base;
-        const meaningfulIdleMs = now.getTime() - lastMeaningful.getTime();
-        const decision = decideReap({
-          providerStatus,
-          meaningfulIdleMs,
-          // When the activity signal is unreliable this cycle, treat the box as
-          // if a turn is in flight so a running box is never stopped on uncertain
-          // data (provider-confirmed stopped/removed still reconciles).
-          hasActiveTurn: !activitySignalReliable || activeTurnSessions.has(row.sessionId),
-          ttlMs,
-          provider: row.provider,
-        });
 
-        switch (decision.action) {
+        // ── Not running: reconcile our row to the provider's real state.
+        switch (decideReconcile(providerStatus)) {
           case 'none':
             result.skipped += 1;
             break;
@@ -286,51 +345,17 @@ export async function reapAndReconcileSandboxes(now = new Date()): Promise<ReapR
             // (or a webhook/reaper stop) must NOT be resurrected by passive /v1/p
             // traffic (markSandboxUsed heals unflagged stopped rows). It comes
             // back only on an explicit open / real turn, which clears the flag.
-            await reconcileRowToStopped(row, now, /* quiesce */ true, false);
+            await reconcileRowToStopped(row, now, /* quiesce */ true);
             result.reconciled += 1;
             result.billingClosed += 1;
             break;
           case 'reconcile-removed':
-            await endComputeSession(row.sandboxId).catch((err) =>
-              console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-            );
-            // Status MUST be 'stopped' (not 'archived'): openSession only honors
-            // `needsReprovision` in its `row.status === 'stopped'` branch. An
-            // 'archived' row would fall through to a terminal 'stopped' result and
-            // NEVER reprovision — stranding the session. 'stopped' + the marker
-            // makes the next open reprovision a fresh box.
-            await db
-              .update(sessionSandboxes)
-              .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
-              .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-            await db
-              .update(projectSessions)
-              .set({ status: 'stopped', updatedAt: now })
-              .where(eq(projectSessions.sessionId, row.sessionId));
+            // A provider 404 can be a transient archive/restore observation.
+            // Preserve the established identity; never turn this signal into a
+            // fresh, empty sandbox for the same session.
+            await preserveEstablishedRuntime(row, 'provider_reported_removed', now);
             invalidateProviderCache(row.externalId);
             result.reconciled += 1;
-            result.billingClosed += 1;
-            break;
-          case 'stop-idle':
-            try {
-              await provider.stop(row.externalId);
-            } catch (err) {
-              if (isLifecycleTransitionInProgress(err)) {
-                result.skipped += 1;
-                break;
-              }
-              if (!isAlreadyNotRunning(err)) {
-                result.errors += 1;
-                console.error(
-                  `[reaper] provider.stop failed for sandbox ${row.sandboxId}: ${(err as Error)?.message ?? err}`,
-                );
-                break;
-              }
-              // Already stopped/gone on the provider side is success — reconcile
-              // our row + close billing.
-            }
-            await reconcileRowToStopped(row, now, /* quiesce */ true, decision.reprovisionOnResume);
-            result.stopped += 1;
             result.billingClosed += 1;
             break;
         }
@@ -375,26 +400,6 @@ async function loadLastUsageBySession(sessionIds: string[]): Promise<Map<string,
 }
 
 /**
- * Session ids that currently have an unfinalized turn stream (a turn in flight).
- * Returns `null` on a lookup FAILURE so the caller fails safe (never reap when
- * we can't tell if a turn is running). Empty set = looked up fine, none active.
- */
-async function loadActiveTurnSessions(sessionIds: string[]): Promise<Set<string> | null> {
-  if (sessionIds.length === 0) return new Set();
-  try {
-    const { chatTurnStreams } = await import('@kortix/db');
-    const rows = await db
-      .select({ sessionId: chatTurnStreams.sessionId })
-      .from(chatTurnStreams)
-      .where(and(inArray(chatTurnStreams.sessionId, sessionIds), eq(chatTurnStreams.finalized, false)));
-    return new Set(rows.map((r) => r.sessionId));
-  } catch (err) {
-    console.warn('[reaper] active-turn lookup failed — failing safe (no stops this cycle):', err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
-/**
  * Billing safety net: an `active` compute session whose box is NOT actually
  * running is over-billing. The reaper pass above closes billing for boxes it
  * sees, but a compute row can outlive its session_sandbox row (deleted/migrated)
@@ -433,7 +438,6 @@ export async function reconcileOrphanComputeSessions(): Promise<{ checked: numbe
         }
         // The reaper pass already closes billing for boxes whose row is still
         // active; here we only need to catch rows whose box is NOT running.
-        if (row.provider === 'local_docker') continue;
         const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
         if (status === 'stopped' || status === 'removed') {
           await pauseComputeSession(row.sandboxId);
@@ -469,11 +473,17 @@ const STUCK_SESSION_BATCH = 200;
  * reaper, and it acts ONLY on sessions that are provably idle:
  *   - status ∈ ACTIVE_SESSION_STATUSES and untouched for longer than the auto-
  *     stop TTL (so a healthy in-flight provision/branch is never touched),
- *   - NO `active` session_sandboxes row (a live box is the provider reaper's job),
+ *   - NO `active` session_sandboxes row (a live box is the provider reaper's
+ *     job) — UNLESS `metadata.deletedAt` is set. A session the user deleted
+ *     is tombstoned regardless of what its sandbox row says; this is the
+ *     backstop for the provision-finish race (a provisioning attempt that
+ *     resurrected a deleted session to 'running' before the row-level guard
+ *     landed, or any other path that leaves a deleted session pointing at a
+ *     live box) — it must not hide behind the active-sandbox exclusion,
  *   - NO in-flight turn (unfinalized chat_turn_stream), and
  *   - NO LLM usage within the TTL window.
  * For each it settles + closes any lingering billing window (DB-only) and flips
- * the session to `stopped` — resumable: the next open reprovisions a fresh box.
+ * the session to `stopped` — resumable in place without changing identity.
  * Idempotent; the status guard on UPDATE avoids racing a concurrent real open.
  */
 export async function reconcileStuckActiveSessions(
@@ -489,7 +499,10 @@ export async function reconcileStuckActiveSessions(
       and(
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
-        sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+        or(
+          sql`not exists (select 1 from ${sessionSandboxes} sb where sb.session_id = ${projectSessions.sessionId} and sb.status = 'active')`,
+          sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
+        ),
         sql`not exists (select 1 from ${chatTurnStreams} t where t.session_id = ${projectSessions.sessionId} and t.finalized = false)`,
         sql`not exists (select 1 from ${usageEvents} u where u.session_id = ${projectSessions.sessionId} and u.created_at > ${cutoff.toISOString()})`,
       ),
@@ -555,7 +568,7 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
   // explicit open / real turn.
   await db
     .update(sessionSandboxes)
-    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, reprovision: false, nowIso: now.toISOString() })) })
+    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata(buildIdleStopMetadata({ quiesce: true, nowIso: now.toISOString() })) })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
   invalidateProviderCache(externalId);
@@ -564,26 +577,24 @@ export async function reconcileSandboxStoppedByExternalId(externalId: string, no
 
 /**
  * The provider reports the box destroyed/deleted/lost — finalize billing and
- * flag the row so the next open reprovisions a fresh box. Keyed by external id;
- * idempotent. Shared by webhook ingress + reaper.
+ * preserve the original mapping. Keyed by external id; idempotent. Shared by
+ * webhook ingress + reaper.
  */
 export async function reconcileSandboxRemovedByExternalId(externalId: string, now = new Date()): Promise<boolean> {
   const [row] = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, status: sessionSandboxes.status })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      externalId: sessionSandboxes.externalId,
+      metadata: sessionSandboxes.metadata,
+      status: sessionSandboxes.status,
+    })
     .from(sessionSandboxes)
     .where(eq(sessionSandboxes.externalId, externalId))
     .limit(1);
   if (!row) return false;
-  await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[reaper] endComputeSession failed for ${row.sandboxId}:`, err instanceof Error ? err.message : err),
-  );
-  // 'stopped' (not 'archived') + needsReprovision so openSession's stopped-branch
-  // reprovisions a fresh box on the next open (an archived row would strand it).
-  await db
-    .update(sessionSandboxes)
-    .set({ status: 'stopped', updatedAt: now, metadata: mergeMetadata({ needsReprovision: true }) })
-    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  await db.update(projectSessions).set({ status: 'stopped', updatedAt: now }).where(eq(projectSessions.sessionId, row.sessionId));
+  if (!row.externalId) return false;
+  await preserveEstablishedRuntime(row, 'provider_webhook_removed', now);
   invalidateProviderCache(externalId);
   return true;
 }
@@ -640,8 +651,8 @@ export interface OrphanReapResult {
 export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
   const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
   if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
-  // Daytona is the only org-shared provider that leaks this way; local_docker
-  // boxes are per-host and Platinum is reconciled on its own path.
+  // Daytona is the only org-shared provider that leaks this way; Platinum is
+  // reconciled on its own path.
   if (!config.DAYTONA_API_KEY) return zero;
   let listManaged: (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>) | undefined;
   try {

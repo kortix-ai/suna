@@ -1,11 +1,11 @@
-import fs from 'fs';
-import path from 'path';
-import { blogSource } from '@/lib/blog-source';
+import type { CoverLogo } from '@/components/blog/blog-cover';
+import { BLOG_POSTS, type BlogPostEntry } from '@/lib/blog-posts';
 
 /**
- * Blog data layer. One place that turns the raw fumadocs pages into the shape
- * the UI renders — sorted, draft-filtered, with derived reading time and a
- * resolved author. Routes and components import only from here.
+ * Blog data layer. The blog is React-rendered from a typed registry
+ * (`blog-posts.ts`), not MDX. This module turns those entries into the shape
+ * the UI renders — sorted, draft-filtered, with a resolved author. Routes and
+ * components import only from here.
  */
 
 export interface Author {
@@ -17,8 +17,8 @@ export interface Author {
   avatarUrl?: string;
 }
 
-// Author registry. A post references one of these keys in its frontmatter
-// (`author: marko`); edit a person once here and every post updates.
+// Author registry. A post references one of these keys (`author: 'marko'`);
+// edit a person once here and every post updates.
 export const AUTHORS: Record<string, Author> = {
   marko: {
     name: 'Marko Kraemer',
@@ -43,7 +43,11 @@ export interface PostFrontmatter {
   author: string;
   tags: string[];
   cover?: string;
+  coverLogos?: CoverLogo[];
+  coverKortix?: boolean;
   draft: boolean;
+  /** Catalog id of an installable template this post maps to (use cases only). */
+  template?: string;
 }
 
 export interface Post {
@@ -54,46 +58,37 @@ export interface Post {
   readingTime: number;
 }
 
-const WORDS_PER_MINUTE = 220;
-const BLOG_DIR = path.join(process.cwd(), 'content', 'blog');
-
-// Estimate reading time by counting words in the source file. Every blog page
-// is statically generated, so this file read only ever happens at build time
-// and the result is baked into the rendered HTML.
-function readingTimeFor(slug: string): number {
-  try {
-    const raw = fs.readFileSync(path.join(BLOG_DIR, `${slug}.mdx`), 'utf8');
-    const body = raw
-      .replace(/^---[\s\S]*?---/, '') // strip frontmatter
-      .replace(/```[\s\S]*?```/g, '') // drop code blocks
-      .replace(/[#>*_`\-]/g, ' '); // drop markdown punctuation
-    const words = body.split(/\s+/).filter(Boolean).length;
-    return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
-  } catch {
-    return 1;
-  }
-}
-
-function toPost(page: any): Post {
-  const data = page.data as PostFrontmatter;
-  const slug = page.slugs[0] ?? '';
+function toPost(entry: BlogPostEntry): Post {
   return {
-    slug,
-    url: page.url,
-    data,
-    author: resolveAuthor(data.author),
-    readingTime: readingTimeFor(slug),
+    slug: entry.slug,
+    url: `/blog/${entry.slug}`,
+    data: {
+      title: entry.title,
+      description: entry.description,
+      date: entry.date,
+      author: entry.author,
+      tags: entry.tags,
+      cover: entry.cover,
+      coverLogos: entry.coverLogos,
+      coverKortix: entry.coverKortix,
+      draft: entry.draft ?? false,
+    },
+    author: resolveAuthor(entry.author),
+    readingTime: entry.readingTime,
   };
 }
 
 /** All published posts, newest first. Drafts are excluded in production. */
 export function getAllPosts(): Post[] {
   const includeDrafts = process.env.NODE_ENV !== 'production';
-  return blogSource
-    .getPages()
-    .filter((page) => includeDrafts || !(page.data as PostFrontmatter).draft)
+  return BLOG_POSTS.filter((entry) => includeDrafts || !entry.draft)
     .map(toPost)
     .sort((a, b) => b.data.date.localeCompare(a.data.date));
+}
+
+/** The full registry entry (including the renderable blocks) for one post. */
+export function getPostEntry(slug: string): BlogPostEntry | undefined {
+  return BLOG_POSTS.find((entry) => entry.slug === slug);
 }
 
 export function formatPostDate(date: string): string {

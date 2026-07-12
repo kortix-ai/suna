@@ -1,15 +1,13 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { HIDE_BROWSER_TAB } from '@/components/thread/utils';
 import { useFilesStore } from '@/features/files';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+
+const HIDE_BROWSER_TAB = true;
 
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
 interface KortixComputerState {
-  // === SANDBOX CONTEXT ===
-  currentSandboxId: string | null;
-
   // Main view state
   activeView: ViewType;
 
@@ -30,7 +28,6 @@ interface KortixComputerState {
 
   // === ACTIONS ===
 
-  setSandboxContext: (sandboxId: string | null) => void;
   setActiveView: (view: ViewType) => void;
 
   // For external triggers (clicking file in chat) — delegates to useFilesStore + opens panel
@@ -65,7 +62,6 @@ interface KortixComputerState {
 }
 
 const initialState = {
-  currentSandboxId: null as string | null,
   activeView: 'tools' as ViewType,
   shouldOpenPanel: false,
   isSidePanelOpen: false,
@@ -80,20 +76,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
   devtools(
     (set, get) => ({
       ...initialState,
-
-      setSandboxContext: (sandboxId: string | null) => {
-        const currentSandboxId = get().currentSandboxId;
-
-        if (currentSandboxId !== sandboxId) {
-          console.log('[KortixComputerStore] Sandbox context changed:', currentSandboxId, '->', sandboxId);
-          // Reset files store when sandbox changes
-          useFilesStore.getState().reset();
-          set({
-            currentSandboxId: sandboxId,
-            activeView: 'tools',
-          });
-        }
-      },
 
       setActiveView: (view: ViewType) => {
         // If browser tab is hidden and trying to set browser view, default to tools
@@ -222,13 +204,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 );
 
 // === SELECTOR HOOKS ===
-
-// Sandbox context
-export const useKortixComputerSandboxId = () =>
-  useKortixComputerStore((state) => state.currentSandboxId);
-
-export const useSetSandboxContext = () =>
-  useKortixComputerStore((state) => state.setSandboxContext);
 
 // Main view state
 export const useKortixComputerActiveView = () =>

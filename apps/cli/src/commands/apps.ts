@@ -6,7 +6,7 @@ import {
   takeFlagValue,
   takeFlagBool,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // ── Shapes (mirror apps/api/src/projects apps routes) ───────────────────────
 
@@ -32,15 +32,34 @@ interface ProjectApp {
   drift: boolean;
 }
 
-const HELP = `Usage: kortix apps <subcommand> [options]
+const APPS_EXPERIMENTAL_ENV = 'KORTIX_APPS_EXPERIMENTAL';
+
+/** Local (CLI-side) experimental gate — mirrors the platform's own
+ *  KORTIX_APPS_EXPERIMENTAL flag on the API. The CLI can't see the server's
+ *  flag ahead of a request, so `apps` is hidden from `kortix help` and its
+ *  subcommands refuse to run unless this env var is also set here. */
+export function appsExperimentalEnabled(): boolean {
+  const v = process.env[APPS_EXPERIMENTAL_ENV];
+  return v === '1' || v?.toLowerCase() === 'true';
+}
+
+function experimentalGateMessage(): string {
+  return (
+    `${status.warn('kortix apps is experimental and hidden on this CLI.')}\n` +
+    `  ${C.dim}Enable it with ${C.reset}${C.cyan}${APPS_EXPERIMENTAL_ENV}=true${C.reset}${C.dim} and re-run.${C.reset}\n`
+  );
+}
+
+const HELP = help`Usage: kortix apps <subcommand> [options]
 
 Manage deployable apps (experimental) — mirrors the dashboard's Apps surface.
-Apps are declared in \`[[apps]]\` in kortix.toml and deployed to a provider
-(Freestyle). Requires the platform flag KORTIX_APPS_EXPERIMENTAL.
+Apps are declared in \`[[apps]]\` in kortix.yaml and deployed to a provider
+(Freestyle). Requires ${APPS_EXPERIMENTAL_ENV}=true set locally (CLI) as well
+as the matching platform flag on the API.
 
 Subcommands:
   ls [--json]                       List apps + latest deployment status.
-  add <slug> --repo <url> [...]     Create an app in kortix.toml.
+  add <slug> --repo <url> [...]     Create an app in kortix.yaml.
   update <slug> [...]               Update an app's fields.
   rm <slug>                         Remove an app from the manifest.
   deploy <slug>                     Deploy now (bypasses the drift check).
@@ -66,6 +85,10 @@ Global:
 `;
 
 export async function runApps(argv: string[]): Promise<number> {
+  if (!appsExperimentalEnabled()) {
+    process.stderr.write(experimentalGateMessage());
+    return 1;
+  }
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
@@ -95,7 +118,7 @@ export async function runApps(argv: string[]): Promise<number> {
     return 2;
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
-  const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/projects/${ctx.projectId}/apps`;
 
@@ -151,7 +174,7 @@ export async function runApps(argv: string[]): Promise<number> {
         const body = buildBody();
         body.slug = slug;
         await ctx.client.post(base, body);
-        process.stdout.write(`${status.ok(`App ${C.bold}${slug}${C.reset} written to kortix.toml`)}\n`);
+        process.stdout.write(`${status.ok(`App ${C.bold}${slug}${C.reset} written to kortix.yaml`)}\n`);
         process.stdout.write(`  ${C.dim}Deploy it: ${C.reset}${C.cyan}kortix apps deploy ${slug}${C.reset}\n`);
         return 0;
       }

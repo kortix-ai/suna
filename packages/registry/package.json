@@ -1,7 +1,7 @@
 {
   "name": "@kortix/registry",
   "version": "1.0.0",
-  "description": "Kortix registry + marketplace engine. A shadcn-compatible registry format (registry.json / registry-item.json) plus build, resolve, and install primitives — turn any Kortix repo into a registry and 1-click install skills, agents, commands, tools, files, folders, or whole projects. Used by the `kortix` CLI today; the API + web marketplace build on the same engine.",
+  "description": "Kortix marketplace engine. A shadcn-compatible registry format (registry.json / registry-item.json) plus build, resolve, and install primitives for skills, agents, commands, tools, files, folders, or whole projects. Used by the `kortix marketplace` CLI and API marketplace.",
   "private": true,
   "main": "./src/index.ts",
   "types": "./src/index.ts",

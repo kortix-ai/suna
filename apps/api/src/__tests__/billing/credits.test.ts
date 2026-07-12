@@ -289,6 +289,28 @@ describe('grantCredits', () => {
     expect(Number(updateCalls[0].data.expiringCredits)).toBe(130);
   });
 
+  test('fallback treats nested duplicate stripe-event errors as idempotent', async () => {
+    mockRegistry.supabaseRpc = {
+      rpc: (name: string, params?: any) => {
+        rpcCalls.push({ name, params });
+        return Promise.resolve({ data: null, error: { message: 'RPC failed after writing ledger row' } });
+      },
+    };
+    mockRegistry.insertLedgerEntry = async () => {
+      throw Object.assign(new Error('Failed query: insert into "kortix"."credit_ledger"'), {
+        cause: Object.assign(
+          new Error('duplicate key value violates unique constraint "kortix_unique_stripe_event"'),
+          { code: '23505', constraint_name: 'kortix_unique_stripe_event' },
+        ),
+      });
+    };
+
+    const result = await grantCredits('acc_test_123', 25, 'purchase', 'Credit purchase', false, 'cs_test_duplicate');
+
+    expect(result).toEqual({ success: true, duplicate_prevented: true });
+    expect(updateCalls.length).toBe(0);
+  });
+
   test('fallback on RPC error for non-expiring: updates nonExpiringCredits additively', async () => {
     mockRegistry.supabaseRpc = {
       rpc: (name: string, params?: any) => {

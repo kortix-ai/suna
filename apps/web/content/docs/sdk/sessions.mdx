@@ -1,0 +1,183 @@
+---
+title: Sessions
+description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
+---
+
+A **session** is one agent run, in its own disposable sandbox, on its own git
+branch. `kortix.session(projectId, sessionId)` binds both ids and is the single
+handle for everything a session does.
+
+```ts
+const s = kortix.session(projectId, sessionId);
+```
+
+<Callout>
+  **Session-scoped, by design.** A session owns its runtime, so you ask the *session* about health
+  and previews — never a global "sandbox." The sandbox is plumbing the SDK resolves for you.
+</Callout>
+
+## Lifecycle
+
+```ts
+await s.get(); // session detail
+await s.update({/* … */}); // rename, settings
+await s.start(); // provision + boot the runtime
+await s.restart(); // restart the same runtime in place
+await s.stop(); // stop the runtime without deleting the session
+await s.commit(); // commit the agent's work
+await s.setSharing(intent); // sharing / visibility
+await s.delete();
+```
+
+`restart()` preserves the session's established sandbox identity and refreshes
+the handle's cached readiness state. If the original provider object is
+unavailable, restart fails explicitly instead of attaching an empty replacement.
+`delete()` removes the runtime; `stop()` clears readiness without deleting the
+session itself.
+
+### Previews & public shares
+
+```ts
+await s.previews(); // candidate preview ports the runtime exposes
+await s.publicShares.list();
+await s.publicShares.create(input);
+await s.publicShares.revoke(shareId);
+```
+
+### Audit & transcript
+
+```ts
+await s.audit(limit?);         // per-session audit trail of executor-gated agent actions
+await s.transcript(options?);  // compact server-side transcript (text + tool calls, no tool inputs/outputs)
+```
+
+`transcript()` is callable with project-scoped session tokens, so it's the
+right read for a scoped/embedded host that only has a session token.
+
+## The runtime
+
+The session owns its runtime, so these resolve the active sandbox for you — you
+pass a port or a URL, never a sandbox id.
+
+| method                      | returns                        | what                                                                 |
+| --------------------------- | ------------------------------ | -------------------------------------------------------------------- |
+| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready                         |
+| `s.previewUrl(port, path?)` | `string`                       | proxy/preview URL for a port the agent exposed                       |
+| `s.proxyUrl(url?)`          | `string \| undefined`          | rewrite a localhost URL the agent printed into a reachable proxy URL |
+
+```ts
+const { ok, health } = await s.health();
+// health?.runtimeReady · health?.status · health?.version …
+
+const url = s.previewUrl(3000, '/docs'); // → the live preview URL
+const fixed = s.proxyUrl('http://localhost:8080');
+```
+
+`s.health()` never throws `SessionNotReadyError` — it's safe to poll before
+the session has ever resolved a runtime. `s.previewUrl()` and `s.proxyUrl()`
+do require a resolved runtime; call `s.ensureReady()` first (or `s.send()` /
+`s.abort()`, which call it internally).
+
+<Callout>
+  Stateless URL helpers — detecting localhost URLs in agent output, parsing preview URLs — live at
+  [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The session handle wraps them with
+  the sandbox context already resolved.
+</Callout>
+
+## Talking to the agent
+
+These are the opinionated wrappers over the runtime — the right entry points for
+a script, server, worker, or any non-React host. Each auto-provisions the
+runtime via `ensureReady()` internally, resolves the OpenCode session id for
+you, and always acts against **this handle's own** resolved runtime — never
+whatever sandbox happens to be globally "active" — so two handles on two
+different sessions never cross wires.
+
+```ts
+await s.ensureReady(); // provision/resume the runtime; idempotent
+s.setModel({ providerID, modelID }); // sticky model for subsequent send()s
+s.setAgent('build'); // sticky agent for subsequent send()s
+
+await s.send('Refactor the auth module'); // prompt the agent
+await s.send('One-off task', { model, agent }); // per-call override
+await s.abort(); // abort the current run
+```
+
+Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
+`.runtime`, `.previewUrl()`, or `.proxyUrl()` — those throw
+`SessionNotReadyError` if this handle hasn't resolved a runtime yet.
+`.health()` is the exception: it never throws and is safe to call anytime.
+
+### Streaming events — `s.stream()`
+
+For **live** message / part / event streaming from a non-React host, use
+`s.stream()` — a framework-free facade over the same primitive
+[`useSession`](/docs/sdk/react#usesessionprojectid-sessionid-options) uses
+internally. It handles connect/reconnect/backoff and a 15s heartbeat watchdog.
+
+```ts
+const handle = await s.stream({
+  onEvent: (event) => console.log(event),
+  onGapRehydrate: (gapMs) => console.log('reconnected, gap:', gapMs),
+});
+// later
+handle.close();
+```
+
+In a React app, prefer [`useSession(projectId, sessionId)`](/docs/sdk/react#usesessionprojectid-sessionid-options)
+instead — the hook that owns the whole runtime (start, SSE, readiness) and
+returns the thread, `send`, and the boot `phase`.
+
+### The typed runtime — `s.runtime`
+
+`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
+only through the SDK — the escape hatch for anything not covered by
+`send`/`abort`/`stream`. It requires a resolved runtime (call `s.ensureReady()`
+first, or use it after `send`/`abort`/`stream` have run).
+
+```ts
+await s.ensureReady();
+
+// send a prompt (equivalent to s.send(), shown for the raw client)
+await s.runtime.session.prompt({
+  sessionID: (await s.ensureReady()).opencodeSessionId,
+  parts: [{ type: 'text', text: 'Refactor the auth module' }],
+});
+```
+
+<Callout type="warn">
+  The OpenCode `sessionID` the runtime expects is **not** the Kortix `sessionId` passed to
+  `kortix.session(projectId, sessionId)` — it's resolved server-side at `/start` and cached on the
+  handle. Prefer `s.send()` / `s.abort()`, which resolve it for you; only reach for raw `s.runtime`
+  calls when you need something those wrappers don't cover.
+</Callout>
+
+<Callout type="warn">
+  Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by the SDK, with
+  the full opencode type surface re-exported from
+  [`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
+</Callout>
+
+## Files — `s.files`
+
+`s.files` is the session-scoped equivalent of the top-level `@kortix/sdk`
+`files` export: the same 12-op workspace surface, but every call auto-provisions
+via `ensureReady()` and always targets **this handle's own** resolved runtime —
+never the module-global "active" sandbox. This fixes a cross-session bleed bug:
+a host juggling multiple open sessions that called the global `files.list()`
+could silently read/write the wrong sandbox.
+
+```ts
+await s.files.list(dirPath);
+await s.files.read(filePath);
+await s.files.readBlob(filePath);
+await s.files.status();
+await s.files.findFiles(query, { type: 'file', limit });
+await s.files.findText(pattern);
+await s.files.upload(file, targetPath?, filename?);
+await s.files.create(filePath);
+await s.files.copy(sourcePath, destPath);
+await s.files.remove(filePath);
+await s.files.mkdir(dirPath);
+await s.files.rename(from, to);
+```

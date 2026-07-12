@@ -3,13 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import {
   effectiveProjectRole,
   isAccountManager,
-  parseProjectRole,
   roleAllows,
   type AccountRole,
   type ProjectAccessAction,
   type ProjectRole,
 } from '../projects/access';
-import { isUuid } from '../projects/lib/access';
+import { normalizeProjectRole as parseProjectRole } from '../iam/role-perms';
+import { iamActionForProjectAccess, isUuid } from '../projects/lib/access';
 
 describe('isUuid project-id guard', () => {
   test.each([
@@ -34,7 +34,7 @@ describe('project access roles', () => {
 
   test.each([
     ['owner', null, 'manager'],
-    ['admin', 'viewer', 'manager'],
+    ['admin', 'member', 'manager'],
     ['member', 'editor', 'editor'],
     ['member', null, null],
   ] as Array<[AccountRole, ProjectRole | null, ProjectRole | null]>)(
@@ -45,16 +45,20 @@ describe('project access roles', () => {
   );
 
   test.each([
-    ['viewer', 'read', true],
-    ['viewer', 'write', false],
-    ['viewer', 'manage', false],
+    ['member', 'read', true],
+    ['member', 'session', true], // member is the floor usable role — can run sessions
+    ['member', 'write', false],
+    ['member', 'manage', false],
     ['editor', 'read', true],
+    ['editor', 'session', true],
     ['editor', 'write', true],
     ['editor', 'manage', false],
     ['manager', 'read', true],
+    ['manager', 'session', true],
     ['manager', 'write', true],
     ['manager', 'manage', true],
     [null, 'read', false],
+    [null, 'session', false], // no role → no session
   ] as Array<[ProjectRole | null, ProjectAccessAction, boolean]>)(
     '%s can %s => %p',
     (role, action, expected) => {
@@ -62,10 +66,27 @@ describe('project access roles', () => {
     },
   );
 
+  test.each([
+    ['read', 'project.read'],
+    ['session', 'project.session.start'],
+    ['write', 'project.write'],
+    ['manage', 'project.write'],
+  ] as Array<[ProjectAccessAction, string]>)(
+    'iamActionForProjectAccess(%p) === %p',
+    (action, expected) => {
+      expect(iamActionForProjectAccess(action)).toBe(expected);
+    },
+  );
+
   test('normalizes valid role input and rejects invalid values', () => {
     expect(parseProjectRole(' Manager ')).toBe('manager');
     expect(parseProjectRole('editor')).toBe('editor');
-    expect(parseProjectRole('viewer')).toBe('viewer');
+    expect(parseProjectRole('member')).toBe('member');
+    // `user` and `viewer` are deprecated aliases — both fold into `member`, never round-trip.
+    expect(parseProjectRole('user')).toBe('member');
+    expect(parseProjectRole(' USER ')).toBe('member');
+    expect(parseProjectRole('viewer')).toBe('member');
+    expect(parseProjectRole(' VIEWER ')).toBe('member');
     expect(parseProjectRole('owner')).toBeNull();
     expect(parseProjectRole(null)).toBeNull();
   });

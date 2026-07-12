@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
-import { listAccountMembers } from '@/lib/projects-client';
+import { listAccountMembers } from '@kortix/sdk/projects-client';
 import { KIND_DOT_CLASS, formatResourcePill, humanizeAuditAction } from './audit-display-helpers';
 
 // ─── Quick filters ─────────────────────────────────────────────────────────
@@ -82,8 +82,10 @@ export function AuditTab({ accountId }: AuditTabProps) {
         toast.error('Not signed in');
         return;
       }
-      const base = getEnv().BACKEND_URL ?? '';
-      const url = `${base}/v1/accounts/${accountId}/audit/export?${params.toString()}`;
+      // BACKEND_URL already includes the `/v1` prefix (e.g. https://api.kortix.com/v1),
+      // so paths are appended WITHOUT another `/v1` — adding one 404'd the export.
+      const base = (getEnv().BACKEND_URL ?? '').replace(/\/+$/, '');
+      const url = `${base}/accounts/${accountId}/audit/export?${params.toString()}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -171,7 +173,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
               onClick={() => setFilterIndex(i)}
               className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 filterIndex === i
-                  ? 'border-foreground/30 bg-foreground/[0.06] text-foreground'
+                  ? 'border-primary/30 bg-primary/10 text-primary'
                   : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -213,7 +215,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
       )}
 
       {query.isLoading && (
-        <div className="divide-border/60 divide-y">
+        <div className="divide-border divide-y">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="px-6 py-3">
               <Skeleton className="h-4 w-3/4" />
@@ -237,7 +239,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
       )}
 
       {!query.isLoading && allEvents.length > 0 && (
-        <ul className="divide-border/60 divide-y">
+        <ul className="divide-border divide-y">
           {allEvents.map((e) => (
             <AuditRow
               key={e.event_id}

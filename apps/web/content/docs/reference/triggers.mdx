@@ -7,11 +7,27 @@ Field-level reference for triggers. For the plain-language version, see [Automat
 
 A trigger fires and spawns a new session that runs the rendered prompt as its initial message. The platform creates a session branch like an interactive session; the agent works, commits, pushes. Landing on `main` goes through a [change request](/docs/reference/change-requests).
 
-Triggers live in `kortix.toml` as `[[triggers]]` array entries. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
+Triggers live in the manifest — `triggers:` (a YAML list) in v2 `kortix.yaml`, `[[triggers]]` (a TOML array of tables) in legacy v1 `kortix.toml`. Same fields either way, just a different container. The manifest is the source of truth for *config*; runtime state (`last_fired_at` only — there is no fire count) lives in `project_trigger_runtime` so a fire doesn't commit on every tick. For when a trigger last fired, check the dashboard, not the repo.
 
 ## Cron triggers
 
+```yaml
+# kortix.yaml (v2)
+triggers:
+  - slug: daily-digest
+    name: Daily digest
+    type: cron
+    agent: kortix
+    enabled: true
+    cron: "0 0 9 * * 1-5"
+    timezone: America/Los_Angeles
+    prompt: |
+      Summarize yesterday's commits across the repo. Save the result to
+      notes/digest-{{ cron.fired_at }}.md and open a CR against main.
+```
+
 ```toml
+# kortix.toml (legacy v1) — same fields, TOML array of tables
 [[triggers]]
 slug     = "daily-digest"
 name     = "Daily digest"
@@ -30,7 +46,20 @@ notes/digest-{{ cron.fired_at }}.md and open a CR against main.
 
 ## Webhook triggers
 
+```yaml
+# kortix.yaml (v2)
+triggers:
+  - slug: slack-hook
+    name: Slack handler
+    type: webhook
+    agent: kortix
+    enabled: true
+    secret_env: WEBHOOK_SLACK_SECRET
+    prompt: "Slack event: {{ body.text }}"
+```
+
 ```toml
+# kortix.toml (legacy v1)
 [[triggers]]
 slug       = "slack-hook"
 name       = "Slack handler"
@@ -47,7 +76,7 @@ Fires on signed `POST` requests to:
 POST /v1/webhooks/projects/<project_id>/<slug>
 ```
 
-The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `[env].optional` so it shows up in the Secrets Manager.
+The secret value lives in `project_secrets`; the manifest references it by name. Declare it in `env.optional` (v2) or `[env].optional` (v1 legacy) so it shows up in the dashboard's Environment variables page.
 
 ### Signature
 
@@ -57,16 +86,24 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 - Format: exactly 64 hex chars (mixed case accepted).
 - Compared with constant-time `timingSafeEqual`.
 
+**Fallback: static token auth.** If neither `X-Kortix-Signature` nor `X-Hub-Signature-256` is present on the request, the receiver falls back to a static shared-token check against the same `secret_env` value — for senders that can't HMAC-sign a body (e.g. Better Stack error webhooks, which only support custom headers or basic auth). Send the token as:
+
+- `X-Kortix-Token: <secret>`, or
+- `Authorization: Bearer <secret>`, or
+- `Authorization: Basic <base64(user:secret)>` — the password half is used as the token.
+
+The token is compared to `secret_env` with constant-time `timingSafeEqual`, same as the HMAC path. If a signature header is present, the token headers are ignored — signature auth always takes priority.
+
 ### Response codes
 
 | Status | Meaning |
 | --- | --- |
-| 202 | Signature valid — the session was fired or queued. The body is `{ "status": "fired", "session_id": … }` or `{ "status": "queued", "reason": … }` (queued when you're at a concurrency cap). |
+| 202 | Signature or token valid — the session was fired or queued. The body is `{ "status": "fired", "session_id": … }` or `{ "status": "queued", "reason": … }` (queued when you're at a concurrency cap). |
 | 400 | Malformed project id or slug in the URL. |
-| 401 | Signature missing or mismatched. |
+| 401 | Signature/token missing or mismatched. |
 | 404 | Trigger not found, disabled, or not a webhook (also when the project isn't active). |
-| 409 | `secret_env` value is not configured in Secrets Manager. |
-| 500 | The signature was valid but the session failed to fire. |
+| 409 | `secret_env` value is not configured in the dashboard's Environment variables page. |
+| 500 | Auth succeeded but the session failed to fire. |
 
 ## Field reference
 
@@ -76,25 +113,28 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | --- | --- | --- | --- | --- |
 | `slug` | yes | string | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers. |
 | `type` | yes | string | — | `"cron"` or `"webhook"`. |
-| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. |
+| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. Alias: `prompt_template`. |
 | `name` | no | string | `slug` | Human label. |
-| `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. |
+| `agent` | no | string | `"default"` | Agent name. In v2 (`kortix.yaml`), must name a key in `agents:` or be omitted to fall back to `default_agent`. Legacy v1 projects with no `[[agents]]` resolve it through OpenCode discovery instead. Alias: `agent_name`. |
+| `model` | no | string | — (resolves at fire time) | Per-trigger model override, wire form `provider/model` (e.g. `"anthropic/claude-sonnet-4-5"`). When unset, resolves through the chain agent → project → account → platform `auto` at fire time — catalog availability is validated when the trigger runs, not when the manifest is parsed. |
+| `session_mode` | no | string | `"fresh"` | `"fresh"`: every fire mints a brand-new session (new sandbox + branch). `"reuse"`: re-prompts the trigger's most recent session (resuming its sandbox) so one long-lived session accumulates context across fires; falls back to a fresh session if none exists or the last one is dead. Case-insensitive. Alias: `sessionMode`. |
 | `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
 
 ### Cron-only fields
 
 | Field | Required | Type | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `cron` | yes | string | — | 6-field croner expression. |
+| `cron` | one of `cron` / `run_at` | string | — | 6-field croner expression. Mutually exclusive with `run_at`. Alias: `schedule`. |
+| `run_at` | one of `cron` / `run_at` | string | — | ISO-8601 datetime for a one-off ("run once") schedule — the trigger fires once at/after this instant and then stays dormant. Mutually exclusive with `cron`. Alias: `runAt`. |
 | `timezone` | no | string | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`. |
 
 ### Webhook-only fields
 
 | Field | Required | Type | Notes |
 | --- | --- | --- | --- |
-| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
+| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret (and the static-token fallback secret — see [Signature](#signature)). Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). Alias: `secretEnv`. |
 
-The parser accepts only the canonical field names shown above.
+The parser also accepts the camelCase / alternate aliases noted above (`prompt_template`, `agent_name`, `sessionMode`, `schedule`, `runAt`, `secretEnv`) — the manifest-schema validator mirrors this same tolerance so a manifest that materializes fine never fails validation.
 
 ## Template variables
 
@@ -134,8 +174,8 @@ Missing values render as empty strings — no error, no leftover `{{ x }}`. Obje
 
 ## Common gotchas
 
-- `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
+- In legacy `kortix.toml`, `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array of tables). The parser surfaces a clear error.
 - Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
 - A webhook trigger without `secret_env` is rejected. There is no unauthenticated webhook surface — by design.
-- A cron trigger without a `cron` expression is rejected.
+- A cron trigger must declare either `cron` or a one-off `run_at` — having neither is rejected.
 - Bad entries surface in the listing's `errors` array next to the good ones — they don't break the whole manifest.

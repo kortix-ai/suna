@@ -4,19 +4,13 @@ import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { useCreatePty, useOpenCodePtyList, useRemovePty } from '@/hooks/opencode/use-opencode-pty';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef } from 'react';
 
-// Lazy-load terminal components to avoid SSR issues with xterm.js
-const SSHTerminal = dynamic(
-  () => import('@/features/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
-  { ssr: false },
-);
-
+// Lazy-load to avoid SSR issues with xterm.js
 const PtyTerminal = dynamic(
   () => import('@/features/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
   { ssr: false },
@@ -34,16 +28,10 @@ interface TerminalTabContentProps {
 /**
  * Terminal tab content — renders a single PtyTerminal for one PTY session.
  * Each terminal tab maps 1:1 to a PTY process.
- *
- * For sandbox mode, renders SSHTerminal instead (shared across all terminal tabs).
  */
 export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
-  const serverUrl = useServerStore((s) => {
-    const server = s.servers.find((srv) => srv.id === s.activeServerId);
-    return server?.url ?? s.getActiveServerUrl();
-  });
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   const { data: ptys, isLoading, refetch } = useOpenCodePtyList();
   const removePty = useRemovePty();
@@ -109,15 +97,6 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
       // Tab was already closed, nothing more to do
     }
   }, [tabId, createPty]);
-
-  // Sandbox mode — shared SSH terminal
-  if (currentSandboxId) {
-    return (
-      <div className="bg-background h-full w-full">
-        <SSHTerminal sandboxId={currentSandboxId} className="h-full" />
-      </div>
-    );
-  }
 
   // Loading — also treat "never seen this PTY yet" as loading to handle the
   // race between tab navigation and the PTY list refetch after creation.

@@ -1,7 +1,15 @@
-// Project config introspection: parses kortix.toml + the OpenCode config dir
+// Project config introspection: parses the project manifest (kortix.yaml,
+// falling back to legacy kortix.toml) + the OpenCode config dir
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 
-import { readRepoFile, listRepoFiles } from './files';
+import {
+  type ManifestFormat,
+  manifestCandidatePaths,
+  manifestFormatForPath,
+  parseManifestText,
+} from '@kortix/manifest-schema';
+import { type LoadedAgents, extractAgents } from '../agents';
+import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
 async function optionalFile(project: GitBackedProject, filePath: string) {
@@ -27,7 +35,10 @@ function stripTomlComment(line: string) {
 
 function parseTomlValue(rawValue: string): unknown {
   const value = rawValue.trim();
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
   if (value.startsWith('[') && value.endsWith(']')) {
@@ -78,7 +89,10 @@ function asStringArray(value: unknown) {
 }
 
 function envRequirements(manifest: Record<string, unknown>) {
-  const env = typeof manifest.env === 'object' && manifest.env ? manifest.env as Record<string, unknown> : {};
+  const env =
+    typeof manifest.env === 'object' && manifest.env
+      ? (manifest.env as Record<string, unknown>)
+      : {};
   return {
     required: asStringArray(env.required),
     optional: asStringArray(env.optional),
@@ -108,10 +122,123 @@ function agentNameFromPath(path: string) {
   return path.split('/').pop()?.replace(/\.md$/, '') || path;
 }
 
-export async function loadProjectConfig(project: GitBackedProject, files?: ProjectFileEntry[]): Promise<ProjectConfigSummary> {
-  const repoFiles = files ?? await listRepoFiles(project, project.defaultBranch);
-  const manifestRaw = await optionalFile(project, project.manifestPath);
-  const manifest = parseManifest(manifestRaw);
+function parseFullManifest(
+  raw: string | null,
+  format: ManifestFormat,
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    return parseManifestText(raw, format);
+  } catch {
+    return null;
+  }
+}
+
+function hasAgentsDeclaration(raw: string | null): boolean {
+  // TOML `[[agents]]` / `[agents]`, OR YAML `agents:`.
+  return Boolean(raw && (/^\s*\[\[?agents\]?\]/m.test(raw) || /^\s*agents\s*:/m.test(raw)));
+}
+
+/** Tolerant `kortix_version` read for a raw parsed manifest object — mirrors
+ *  `parseManifestString` in `../triggers.ts` (defaults to 1 when absent, the
+ *  same back-compat rule every other manifest reader in this package uses). */
+function manifestSchemaVersionFor(parsed: Record<string, unknown>): number {
+  const raw = parsed.kortix_version;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.floor(raw);
+  if (typeof raw === 'string') {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return Math.floor(n);
+  }
+  return 1;
+}
+
+type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' | 'enabled'>;
+
+export function resolveConfigAgents(
+  nativeAgents: NativeAgentSummary[],
+  loadedAgents: LoadedAgents,
+): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
+  if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
+    return {
+      agent_discovery: 'opencode',
+      agents: nativeAgents.map((agent) => ({
+        ...agent,
+        source: 'opencode' as const,
+        enabled: true,
+      })),
+    };
+  }
+
+  const nativeByName = new Map(nativeAgents.map((agent) => [agent.name, agent]));
+  const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
+  return {
+    agent_discovery: 'declarative',
+    agents: loadedAgents.specs
+      .filter((spec) => spec.enabled)
+      .map((spec) => {
+        const native =
+          (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
+        return {
+          name: spec.name,
+          path: spec.file ?? native?.path ?? spec.path,
+          description: native?.description ?? null,
+          mode: native?.mode ?? null,
+          source: 'kortix.yaml' as const,
+          enabled: spec.enabled,
+          // Surface the per-agent allowlists so the UI can show (read-only) what
+          // secrets/connectors/CLI powers each declared agent is scoped to.
+          scope: {
+            env: spec.env,
+            connectors: spec.connectors,
+            kortix_cli: spec.kortixCli,
+          },
+        };
+      }),
+  };
+}
+
+export async function loadProjectConfig(
+  project: GitBackedProject,
+  files?: ProjectFileEntry[],
+): Promise<ProjectConfigSummary> {
+  const repoFiles = files ?? (await listRepoFiles(project, project.defaultBranch));
+  // Dual-format: resolve kortix.yaml (preferred) or kortix.toml, then parse in
+  // the matched format. Without this, a yaml-only project reads no manifest here
+  // → its [[agents]] scoping silently vanishes from the config introspection.
+  const resolved = await readManifestFromRepo(
+    project,
+    manifestCandidatePaths(project.manifestPath).map((c) => c.path),
+    project.defaultBranch,
+  ).catch(() => null);
+  const manifestRaw = resolved?.content ?? null;
+  const manifestFormat: ManifestFormat = resolved ? manifestFormatForPath(resolved.path) : 'toml';
+  const manifestFilePath = resolved?.path ?? project.manifestPath;
+  const parsedManifest = parseFullManifest(manifestRaw, manifestFormat);
+  const manifest = parsedManifest ?? parseManifest(manifestRaw);
+  const loadedAgents = parsedManifest
+    ? extractAgents({
+        // `extractAgents` dispatches its `[[agents]]` (v1 array) vs `agents:`
+        // (v2 map) reader on THIS field — it must reflect the manifest's own
+        // declared `kortix_version`, not a hardcoded v1, or a v2 project's
+        // config summary would misreport its map-shaped `agents` as an
+        // invalid v1 array.
+        schemaVersion: manifestSchemaVersionFor(parsedManifest),
+        raw: parsedManifest,
+        format: manifestFormat,
+        path: manifestFilePath,
+      })
+    : hasAgentsDeclaration(manifestRaw)
+      ? {
+          specs: [],
+          errors: [
+            {
+              name: '(manifest)',
+              path: manifestFilePath,
+              error: 'Failed to parse agents declaration',
+            },
+          ],
+        }
+      : { specs: [], errors: [] };
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -129,16 +256,19 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     .map((file) => file.path)
     .filter((path) => agentRe.test(path))
     .sort();
-  const agents = await Promise.all(agentPaths.map(async (path) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || meta.slug || agentNameFromPath(path),
-      path,
-      description: meta.description || null,
-      mode: meta.mode || null,
-    };
-  }));
+  const nativeAgents = await Promise.all(
+    agentPaths.map(async (path) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || meta.slug || agentNameFromPath(path),
+        path,
+        description: meta.description || null,
+        mode: meta.mode || null,
+      };
+    }),
+  );
+  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
@@ -151,15 +281,17 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     })
     .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
-  const skills = await Promise.all(skillPaths.map(async ({ slug, path }) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || slug,
-      path,
-      description: meta.description || null,
-    };
-  }));
+  const skills = await Promise.all(
+    skillPaths.map(async ({ slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    }),
+  );
 
   // OpenCode slash commands — `<opencode>/command/<slug>.md` or
   // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
@@ -170,15 +302,17 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .map((match) => ({ slug: match[1], path: match.input as string }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
-  const commands = await Promise.all(commandPaths.map(async ({ slug, path }) => {
-    const raw = await optionalFile(project, path);
-    const meta = parseFrontmatter(raw);
-    return {
-      name: meta.name || slug,
-      path,
-      description: meta.description || null,
-    };
-  }));
+  const commands = await Promise.all(
+    commandPaths.map(async ({ slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    }),
+  );
 
   const signals = {
     manifest: Boolean(manifestRaw),
@@ -193,7 +327,11 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     manifest,
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
-    open_code_default_agent: parseJsonCString(openCodeRaw, 'default_agent'),
+    // v2 makes the manifest's declared default authoritative. Legacy projects
+    // keep reading OpenCode's native default_agent for backwards compatibility.
+    open_code_default_agent:
+      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
+    agent_discovery,
     agents,
     skills,
     commands,

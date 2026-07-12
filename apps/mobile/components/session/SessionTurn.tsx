@@ -5,17 +5,16 @@
  */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { View, TouchableOpacity, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image, TextInput } from 'react-native';
-import { BottomSheetModal, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { View, TouchableOpacity, Animated, StyleSheet, LayoutAnimation, Platform, UIManager, ScrollView, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/chat/SandboxPreviewCard';
-import { ReasoningSection, GroupedReasoningCard } from '@/components/chat';
+import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
+import { ReasoningSection } from '@/components/session/ReasoningSection';
+import { GroupedReasoningCard } from '@/components/session/GroupedReasoningCard';
 import { SessionErrorBanner } from './SessionErrorBanner';
-import { getSheetBg } from '@/lib/theme-colors';
 import ReAnimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -91,7 +90,7 @@ import {
   getRetryMessage,
   splitUserParts,
   isFilePart,
-} from '@/lib/opencode/turns';
+} from '@kortix/sdk/turns';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -2801,8 +2800,6 @@ interface SessionTurnProps {
   sessionStatus?: SessionStatus;
   isBusy: boolean;
   pendingQuestions?: QuestionRequest[];
-  onFork?: (messageId: string) => void;
-  onEditFork?: (messageId: string, editedText: string) => void;
   agentNames?: string[];
   onFileMention?: (path: string) => void;
   onSessionMention?: (sessionId: string) => void;
@@ -2815,8 +2812,6 @@ export function SessionTurn({
   sessionStatus,
   isBusy,
   pendingQuestions = [],
-  onFork,
-  onEditFork,
   agentNames,
   onFileMention,
   onSessionMention,
@@ -2963,18 +2958,6 @@ export function SessionTurn({
     if (working) return undefined;
     return getTurnCost(allParts);
   }, [working, allParts]);
-
-  // Last assistant message ID (for fork)
-  const lastAssistantMessageId = useMemo(() => {
-    if (turn.assistantMessages.length === 0) return undefined;
-    return turn.assistantMessages[turn.assistantMessages.length - 1].info.id;
-  }, [turn.assistantMessages]);
-
-  // User message ID (for fork/edit on user bubble)
-  const userMessageId = turn.userMessage.info.id;
-
-  // Edit prompt sheet ref
-  const editSheetRef = useRef<BottomSheetModal>(null);
 
   return (
     <View className="mb-4">
@@ -3138,29 +3121,16 @@ export function SessionTurn({
         )}
         </View>
 
-        {/* User message actions — copy, edit, fork */}
+        {/* User message actions — copy */}
         {!!userText && !channelMessageInfo && !triggerEventInfo && (
           <UserMessageActions
             userText={userText}
             isDark={isDark}
-            isBusy={isBusy}
             onCopy={async () => {
               await Clipboard.setStringAsync(userText);
             }}
-            onEdit={() => editSheetRef.current?.present()}
-            onFork={() => onFork?.(userMessageId)}
           />
         )}
-
-        {/* Edit prompt sheet */}
-        <EditPromptSheet
-          ref={editSheetRef}
-          initialText={userText}
-          isDark={isDark}
-          onSave={(editedText) => {
-            onEditFork?.(userMessageId, editedText);
-          }}
-        />
       </View>
 
       {/* Assistant response — interleaved text + tool calls */}
@@ -3387,23 +3357,17 @@ function UserFileCard({ file, isDark }: { file: { path: string; mime: string; fi
 }
 
 // ---------------------------------------------------------------------------
-// UserMessageActions — copy, edit, fork buttons below user message
+// UserMessageActions — copy button below user message
 // ---------------------------------------------------------------------------
 
 function UserMessageActions({
   userText,
   isDark,
-  isBusy,
   onCopy,
-  onEdit,
-  onFork,
 }: {
   userText: string;
   isDark: boolean;
-  isBusy: boolean;
   onCopy: () => void;
-  onEdit: () => void;
-  onFork: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const mutedColor = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
@@ -3430,145 +3394,9 @@ function UserMessageActions({
           color={copied ? copiedColor : mutedColor}
         />
       </TouchableOpacity>
-
-      {/* Edit (fork with edited text) */}
-      {!isBusy && (
-        <TouchableOpacity
-          onPress={onEdit}
-          activeOpacity={0.6}
-          hitSlop={6}
-          style={{ padding: 5, borderRadius: 6 }}
-        >
-          <Ionicons name="pencil-outline" size={13} color={mutedColor} />
-        </TouchableOpacity>
-      )}
-
-      {/* Fork */}
-      {!isBusy && (
-        <TouchableOpacity
-          onPress={onFork}
-          activeOpacity={0.6}
-          hitSlop={6}
-          style={{ padding: 5, borderRadius: 6 }}
-        >
-          <Ionicons name="git-branch-outline" size={13} color={mutedColor} />
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// EditPromptModal — edit user message text before forking
-// ---------------------------------------------------------------------------
-
-const EditPromptSheet = React.forwardRef<BottomSheetModal, {
-  initialText: string;
-  isDark: boolean;
-  onSave: (text: string) => void;
-}>(function EditPromptSheet({ initialText, isDark, onSave }, ref) {
-  const [text, setText] = useState(initialText);
-  const inputRef = React.useRef<TextInput>(null);
-
-  const bg = isDark ? '#161618' : '#FFFFFF';
-  const fg_ = isDark ? '#e4e4e7' : '#18181b';
-  const inputBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const inputBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-
-  const renderBackdrop = useMemo(
-    () => (props: any) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    [],
-  );
-
-  // Reset text when sheet opens
-  const handleChange = useCallback((index: number) => {
-    if (index >= 0) {
-      setText(initialText);
-      setTimeout(() => inputRef.current?.focus(), 300);
-    }
-  }, [initialText]);
-
-  const handleFork = useCallback(() => {
-    if (text.trim()) {
-      (ref as React.RefObject<BottomSheetModal>)?.current?.dismiss();
-      onSave(text.trim());
-    }
-  }, [text, onSave, ref]);
-
-  return (
-    <BottomSheetModal
-      ref={ref}
-      index={0}
-      snapPoints={['70%']}
-      enableDynamicSizing={false}
-      enablePanDownToClose
-      onChange={handleChange}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      android_keyboardInputMode="adjustResize"
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={renderBackdrop}
-    >
-      <View style={{ flex: 1, paddingHorizontal: 20 }}>
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14 }}>
-          <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: fg_ }}>
-            Edit prompt
-          </Text>
-          <TouchableOpacity
-            onPress={handleFork}
-            activeOpacity={0.8}
-            style={{
-              backgroundColor: fg_,
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              borderRadius: 10,
-            }}
-          >
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: bg }}>
-              Fork
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Text input */}
-        <TextInput
-          ref={inputRef}
-          value={text}
-          onChangeText={setText}
-          multiline
-          textAlignVertical="top"
-          scrollEnabled
-          style={{
-            flex: 1,
-            fontSize: 15,
-            fontFamily: 'Roobert',
-            color: fg_,
-            backgroundColor: inputBg,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: inputBorder,
-            padding: 14,
-            lineHeight: 22,
-            marginBottom: 20,
-          }}
-        />
-      </View>
-    </BottomSheetModal>
-  );
-});
 
 // ---------------------------------------------------------------------------
 // TurnActions — fade-in action bar below assistant response (copy only)

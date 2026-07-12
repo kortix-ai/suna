@@ -1,0 +1,41 @@
+{
+  "name": "@kortix/whitelabel-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Golden white-label reference — a complete Kortix client built on ONLY @kortix/sdk. Reskin the brand config + point at any Kortix deployment.",
+  "scripts": {
+    "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
+    "build": "next build",
+    "start": "next start --port ${WHITELABEL_PORT:-3010}",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests/e2e",
+    "test:e2e": "bun test tests/e2e"
+  },
+  "dependencies": {
+    "@kortix/sdk": "workspace:*",
+    "@tanstack/react-query": "^5.75.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.479.0",
+    "next": "15.5.18",
+    "next-themes": "^0.4.6",
+    "radix-ui": "^1.4.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.3",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.2.4",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/node": "^20",
+    "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

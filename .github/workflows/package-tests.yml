@@ -2,7 +2,7 @@ name: Package Unit Tests
 
 on:
   pull_request:
-    branches: [main, prod]
+    branches: [main, staging, prod]
   workflow_dispatch:
 
 concurrency:
@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Require a test change alongside source changes
@@ -49,7 +49,7 @@ jobs:
       npm_config_engine_strict: 'false'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -78,6 +78,44 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build + dry-pack publishable npm packages (release gate)
+        run: |
+          set -euo pipefail
+          # @kortix/llm-catalog, @kortix/sdk and @kortix/executor-sdk publish to npm
+          # on release (deploy-prod.yml). Build + stage + dry-pack them on every PR
+          # so a broken dist/ or published manifest fails here, not at release time.
+          # The staging script asserts every publishConfig entrypoint exists in the
+          # emitted dist/ and that workspace deps pin cleanly.
+          node scripts/stage-npm-publish.test.mjs
+          for dir in llm-catalog sdk executor-sdk; do
+            echo "::group::@kortix/$dir build + stage + dry-pack"
+            # @kortix/sdk's build:bundles also emits the tsup browser bundles
+            # (dist/kortix.esm.min.js, dist/kortix.global.js) that
+            # publishConfig.browser/unpkg/jsdelivr point at. stage-npm-publish.mjs
+            # promotes those fields and verifies they exist in dist/, so they must
+            # be built here — plain `build` only runs tsc. Packages with no CDN
+            # bundle have no build:bundles script and fall back unchanged.
+            if node -e "process.exit(require('./packages/$dir/package.json').scripts?.['build:bundles'] ? 0 : 1)"; then
+              pnpm --filter "./packages/$dir" run build:bundles
+            else
+              pnpm --filter "./packages/$dir" run build
+            fi
+            ( cd "packages/$dir" \
+              && cp package.json /tmp/pkg-bak.json \
+              && VERSION=0.0.0-ci node ../../scripts/stage-npm-publish.mjs \
+              && npm pack --dry-run \
+              && mv /tmp/pkg-bak.json package.json )
+            echo "::endgroup::"
+          done
+
+      - name: Install smoke test — pack, install, import (@kortix/sdk)
+        run: |
+          set -euo pipefail
+          # `npm pack --dry-run` above lists tarball CONTENTS. stage-npm-publish
+          # asserts publishConfig paths exist in dist/. Neither proves the
+          # published package actually RESOLVES and IMPORTS. This does.
+          pnpm --filter @kortix/sdk run smoke:install
+
       - name: Guard against focused tests
         run: |
           set -euo pipefail
@@ -87,6 +125,16 @@ jobs:
             exit 1
           fi
           echo "No focused tests."
+
+      - name: Typecheck @kortix/sdk
+        run: pnpm --filter @kortix/sdk typecheck
+
+      - name: Build @kortix/sdk bundles (for bundle.test.ts)
+        run: |
+          # bundle.test.ts skips its assertions when dist/kortix.esm.min.js and
+          # dist/kortix.global.js aren't present (test.skipIf). Build them here so
+          # the suite actually runs those tests instead of silently skipping.
+          pnpm --filter @kortix/sdk run build:bundles
 
       - name: Test packages
         run: pnpm --filter "./packages/**" --if-present test
@@ -112,7 +160,7 @@ jobs:
       DOTENV_PRIVATE_KEY: ${{ secrets.DOTENV_PRIVATE_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Node
         uses: actions/setup-node@v4

@@ -43,7 +43,7 @@ interface ProjectSession {
   session_id: string;
   project_id: string;
   branch_name: string;
-  sandbox_provider: 'daytona' | 'local_docker';
+  sandbox_provider: 'daytona';
   sandbox_id: string | null;
   status: string;
 }
@@ -52,7 +52,7 @@ interface SessionSandbox {
   sandbox_id: string;
   session_id: string;
   project_id: string;
-  provider: 'daytona' | 'local_docker';
+  provider: 'daytona';
   external_id: string | null;
   status: string;
 }
@@ -377,9 +377,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
 
     const sandboxActivation = await measure(() => waitForSandbox(ownerSession.access_token, project.project_id, primarySession.session_id));
     primarySandbox = sandboxActivation.value;
-    const sandboxLimit = primarySession.sandbox_provider === 'local_docker'
-      ? threshold('E2E_SLO_LOCAL_DOCKER_ACTIVE_MS', 15_000)
-      : threshold('E2E_SLO_DAYTONA_ACTIVE_MS', 45_000);
+    const sandboxLimit = threshold('E2E_SLO_DAYTONA_ACTIVE_MS', 45_000);
     assertSlo(`${primarySession.sandbox_provider} provisioning -> active`, sandboxActivation.durationMs, sandboxLimit);
     expect(primarySandbox.session_id).toBe(primarySession.session_id);
     expect(primarySandbox.sandbox_id).toBe(primarySession.session_id);
@@ -414,47 +412,6 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     );
     expect(proxiedAgentFiles.some((file) => file.type === 'file' && (file.path.endsWith('/default.md') || file.name === 'default.md'))).toBe(true);
     expect(proxiedAgentFiles.some((file) => file.type === 'file' && (file.path.endsWith('/reviewer.md') || file.name === 'reviewer.md'))).toBe(true);
-  });
-
-  test('E2E-5: local_docker provider starts the same sandbox image and reaches health', async () => {
-    test.skip(process.env.E2E_GOLDEN_LOCAL_DOCKER !== '1', 'Set E2E_GOLDEN_LOCAL_DOCKER=1 to run the local_docker golden path.');
-    expect(project).toBeTruthy();
-
-    if (primarySession?.sandbox_provider === 'local_docker' && primarySandbox?.external_id) {
-      expect(primarySandbox.provider).toBe('local_docker');
-      expect(primarySandbox.external_id).not.toBe(primarySession.session_id);
-      const health = await waitForDaemonHealth(ownerSession.access_token, primarySandbox.external_id);
-      expect(health.daemon).toBe('ok');
-      return;
-    }
-
-    const localSession = await api<ProjectSession>(
-      ownerSession.access_token,
-      'POST',
-      `/projects/${project.project_id}/sessions`,
-      { provider: 'local_docker' },
-      201,
-    );
-    expect(localSession.sandbox_provider).toBe('local_docker');
-    expect(localSession.branch_name).toBe(localSession.session_id);
-
-    const sandbox = await waitForSandbox(ownerSession.access_token, project.project_id, localSession.session_id);
-    expect(sandbox.provider).toBe('local_docker');
-    expect(sandbox.external_id).toBeTruthy();
-    expect(sandbox.external_id).not.toBe(localSession.session_id);
-
-    const dockerPs = execFileSync('docker', [
-      'ps',
-      '--format',
-      '{{.Names}} {{.ID}} {{.Ports}}',
-      '--filter',
-      `name=kortix-session-${localSession.session_id.slice(0, 8)}`,
-    ], { encoding: 'utf8' });
-    expect(dockerPs).toContain('kortix-session-');
-    expect(dockerPs).toContain('8000');
-
-    const health = await waitForDaemonHealth(ownerSession.access_token, sandbox.external_id!);
-    expect(health.daemon).toBe('ok');
   });
 
   test('E2E-6: new session opens the project chat route without legacy redirects', async ({ page }) => {

@@ -1,24 +1,41 @@
-export type WallpaperType = 'svg' | 'symbol' | 'aurora' | 'shader' | 'image';
+export type WallpaperType = 'svg' | 'shader' | 'image' | 'none';
 
 export interface Wallpaper {
-  id: "brandmark" | "symbol" | "aurora" | "ascii-tunnel" | "matrix" | "nebula";
+  id: 'brandmark' | 'nebula' | 'silk' | 'dither' | 'grain' | 'neuro' | 'blank';
   name: string;
   type: WallpaperType;
   /** For 'svg' wallpapers — path to the SVG file */
   svgUrl?: string;
-  /** For 'symbol' wallpapers — path to the symbol SVG shown centered at low opacity */
-  symbolUrl?: string;
   /** For 'image' wallpapers — path to the light-mode image */
   lightUrl?: string;
   /** For 'image' wallpapers — path to the dark-mode image */
   darkUrl?: string;
   /** Small thumbnail for the picker */
-  thumbnailUrl: string;
+  thumbnailUrl?: string;
+  /**
+   * Pre-rendered picker thumbnails per theme. Shader wallpapers use these
+   * in the settings grid so only the wallpaper actually applied to the
+   * page runs a live canvas.
+   */
+  thumbs?: { dark: string; light: string };
 }
 
-export const DEFAULT_WALLPAPER_ID = 'brandmark';
+export const DEFAULT_WALLPAPER_ID = 'dither';
+
+function shaderThumbs(id: Wallpaper['id']): Wallpaper['thumbs'] {
+  return {
+    dark: `/wallpapers/${id}-dark.jpg`,
+    light: `/wallpapers/${id}-light.jpg`,
+  };
+}
 
 export const WALLPAPERS: Wallpaper[] = [
+  {
+    id: 'dither',
+    name: 'Dither',
+    type: 'shader',
+    thumbs: shaderThumbs('dither'),
+  },
   {
     id: 'brandmark',
     name: 'Brandmark',
@@ -27,39 +44,33 @@ export const WALLPAPERS: Wallpaper[] = [
     thumbnailUrl: '/kortix-brandmark-bg.svg',
   },
   {
-    id: 'symbol',
-    name: 'Symbol',
-    type: 'symbol',
-    symbolUrl: '/kortix-symbol.svg',
-    thumbnailUrl: '/kortix-symbol.svg',
-  },
-  {
-    id: 'aurora',
-    name: 'Aurora',
-    type: 'aurora',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
-  },
-  {
     id: 'nebula',
     name: 'Pixel Beams',
     type: 'shader',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
+    thumbs: shaderThumbs('nebula'),
   },
   {
-    id: 'ascii-tunnel',
-    name: 'ASCII Tunnel',
+    id: 'silk',
+    name: 'Silk',
     type: 'shader',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
+    thumbs: shaderThumbs('silk'),
   },
   {
-    id: 'matrix',
-    name: 'Enter the Matrix',
+    id: 'grain',
+    name: 'Grain',
     type: 'shader',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
+    thumbs: shaderThumbs('grain'),
+  },
+  {
+    id: 'neuro',
+    name: 'Neuro',
+    type: 'shader',
+    thumbs: shaderThumbs('neuro'),
+  },
+  {
+    id: 'blank',
+    name: 'Blank',
+    type: 'none',
   },
 ];
 

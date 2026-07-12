@@ -3,17 +3,16 @@ title: Computers
 description: Let the agent reach your own machine — files, shell, and desktop — over a permissioned tunnel, through the Executor.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A **computer** is one of your own machines (laptop, desktop, server) connected to
 Kortix over the **Agent Computer Tunnel** — a permissioned reverse tunnel. Once
 connected, the agent can read/write files, run shell commands, and drive the
 desktop **on that machine**, with you granting access per capability.
 
-- **Connect a machine** from the project's Computers page in the dashboard
-  (device pairing), or with [`kortix tunnel`](/docs/reference/cli). It's an
-  experimental feature — enable **Agent Computer Tunnel** in Customize →
-  Experimental first.
+- **Connect a machine** from the project's Computers page in the dashboard.
+  It's an experimental feature — enable **Agent Computer Tunnel** in Customize →
+  Experimental first, then the Computers page shows a one-line command to run
+  on the target machine (`npx @kortix/agent-tunnel connect --api-url ...`) to
+  pair it.
 - **Grant access per capability** — filesystem / shell / desktop, scoped to
   allowed paths, commands, and desktop features. The agent only gets what you
   grant; a call to something ungranted raises a **permission request** you
@@ -30,8 +29,9 @@ desktop **on that machine**, with you granting access per capability.
   tunnel permission layer. Nothing is exposed inside the sandbox.
 
 <Callout type="info" title="Note">
-Computers are configured through the dashboard (Computers) and `kortix tunnel` —
-**not** through `kortix.toml`. The `computer` connector auto-materializes when you
-connect a machine; you don't declare it. Calls run through the same tunnel
-permission, approval, and audit model as the dedicated Computers surface.
+Computers are configured through the dashboard (Computers) — **not** through
+the manifest (`kortix.yaml`/`kortix.toml`). The `computer` connector
+auto-materializes when you connect a machine; you don't declare it. Calls run
+through the same tunnel permission, approval, and audit model as the dedicated
+Computers surface.
 </Callout>

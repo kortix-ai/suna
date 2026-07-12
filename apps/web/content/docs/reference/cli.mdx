@@ -16,7 +16,7 @@ Always available inside a session sandbox, no setup:
 ```sh
 kortix whoami                       # confirms what project + account this token has
 kortix projects info                # the project you're running inside
-kortix secrets ls                   # encrypted env vars + manifest [env] spec
+kortix secrets ls                   # encrypted env vars + manifest env spec
 kortix sessions ls                  # every session on this project (incl. you)
 kortix cr ls                        # open change requests
 kortix cr open --title "..."        # propose merging your branch into main
@@ -41,7 +41,8 @@ The local CLI uses a user-scoped token at `~/.config/kortix/config.json` (mode 0
 | --- | --- |
 | `kortix login [--token <pat>] [--host <name>] [--api <url>]` | Default: opens browser → click Authorize → token written. `--token` is the headless fallback. `--host` logs into a named host slot. |
 | `kortix logout [--host <name>]` | Remove the token for the active host (or named one). |
-| `kortix whoami [--host <name>]` | Print the user + active account on the chosen host. |
+| `kortix whoami [--host <name>] [--json] [--token-only]` | Print the user + active account on the chosen host. `--json` for machine-readable output; `--token-only` prints just the active token context. |
+| `kortix token [--host <name>]` | Shortcut for `whoami --token-only` — the active token's project/session/agent grants, script-friendly. |
 
 ### Hosts
 
@@ -58,18 +59,38 @@ A host is one Kortix API endpoint. The built-ins `cloud` (Kortix Cloud), `selfho
 
 `--host <name>` overrides the active host for one invocation: `kortix projects ls --host local`.
 
-### Self-host
+### Accounts
 
-`kortix self-host start` creates and starts a production-style local Kortix stack
-using Docker Compose. On first interactive setup it only asks for the product
-integrations you may need: Freestyle for app deployments, a GitHub App
-or PAT for repo access, and Pipedream for app connectors. Local ports, Supabase,
-generated secrets, and Docker defaults are handled automatically.
+One Kortix login can belong to many accounts (personal, a company account, …). Exactly one is active at a time; every account-scoped command (`projects ls`, `ship`, …) operates on it unless overridden.
 
 | Command | Effect |
 | --- | --- |
+| `kortix accounts ls [--json]` | List the accounts you belong to. |
+| `kortix accounts use [<slug-or-id>]` | Switch the active account. No arg → arrow-key picker. |
+| `kortix accounts current [--json]` | Print the active account. |
+| `kortix accounts info [<slug-or-id>] [--json]` | Show one account (defaults to the active one). |
+
+### Self-host
+
+`kortix self-host start` creates and starts a production-style local Kortix stack
+using Docker Compose. On first interactive setup it always collects a Daytona
+API key (the sandbox runtime — required, or agent sessions can't start) and
+managed GitHub access (a PAT or GitHub App — required to create projects), plus
+the optional integrations you may not need yet: Freestyle for app deployments
+and Pipedream for app connectors. Local ports, Supabase, generated secrets, and
+Docker defaults are handled automatically. `start` prints a warning if the
+sandbox provider or git provider still isn't configured.
+
+| Command | Effect |
+| --- | --- |
+| `kortix self-host init` | Create the self-host config with production defaults, without starting the stack. |
 | `kortix self-host start` | Create config if needed, start the local stack, and register the `selfhost` host. |
-| `kortix self-host configure` | Re-run the Freestyle, GitHub, and Pipedream credential wizard. |
+| `kortix self-host update [--tag <v>]` | Pull a newer version (default: `latest`), apply migrations, and recreate the stack in place — preserves the Postgres volume. |
+| `kortix self-host version` | Show the running version and image tags. |
+| `kortix self-host restart` | Restart the stack. |
+| `kortix self-host status` | Show Docker Compose service status. |
+| `kortix self-host open` | Open the local dashboard in your browser. |
+| `kortix self-host configure` | Re-run the Daytona, Freestyle, GitHub, and Pipedream credential wizard. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
 | `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
 | `kortix self-host logs [service]` | Tail Docker Compose logs. |
@@ -79,28 +100,34 @@ generated secrets, and Docker defaults are handled automatically.
 
 | Command | Effect |
 | --- | --- |
-| `kortix projects ls` | Every project on the active account. |
-| `kortix projects info [<id-or-slug>]` | Show one project (defaults to the linked one). |
+| `kortix projects ls [--all] [--json]` | Every project on the active account. `--all` spans every account you belong to, grouped. |
+| `kortix projects info [<id-or-slug>] [--json]` | Show one project (defaults to the linked/default one). |
+| `kortix projects use [<id>]` | Set the global **default** project (interactive picker if omitted). Switches the active account to that project's account. |
+| `kortix projects unset` | Clear the global default project. |
 | `kortix projects link [<id>]` | Bind cwd to a remote project. Writes `.kortix/link.json` with `project_id`, `account_id`, `host`, `host_url`. No arg → arrow-key picker. |
 | `kortix projects unlink` | Drop `.kortix/link.json`. |
+| `kortix projects rm [<id>] [--purge] [-y\|--yes]` | Archive a project (defaults to the linked one). `--purge` also deletes its managed git repo (irreversible). `-y` skips the confirmation. |
 | `kortix projects open [<id>]` | Open the dashboard URL for a project in your browser. |
+
+A directory link (`.kortix/link.json`) always wins over the default; the default (`kortix projects use`) is what commands use anywhere else on your machine.
 
 #### How a command finds "the project"
 
 In strict order:
 
 1. `--project <id>` flag.
-2. `KORTIX_PROJECT_ID` env var.
-3. `.kortix/link.json` in cwd (or any ancestor — git-style).
-4. Inside a session sandbox: the sandbox's own `KORTIX_PROJECT_ID`.
+2. `KORTIX_PROJECT_ID` env var (this is also how a session sandbox's own project is picked up — one check, not a separate sandbox step).
+3. `.kortix/link.json` in the exact cwd — no ancestor/parent-directory search.
+4. The global default project set by `kortix projects use`.
 
 If none resolve, the command errors pointing to `projects link`.
 
 #### How a command finds "the host"
 
 1. `--host <name>` flag.
-2. `host` field in `.kortix/link.json` (so a repo always hits its home Kortix instance).
-3. The globally-active host.
+2. Inside a session sandbox: the platform-injected `KORTIX_CLI_TOKEN` / `KORTIX_EXECUTOR_TOKEN` resolves the host directly — this wins over `.kortix/link.json`'s host field.
+3. `host` field in `.kortix/link.json` (so a repo on your laptop hits its home Kortix instance).
+4. The globally-active host.
 
 ### Secrets
 
@@ -108,8 +135,9 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
+| `kortix secrets ls` | List secret names + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`); marks required-but-missing. |
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
+| `kortix secrets request NAME [NAME …] [--scope runtime\|connector] [--expires <min>]` | Mint a short-lived link for a human to **enter** the value(s) directly — you never see or handle the raw value. Surface the URL (web: fill-in modal; Slack: tappable link). |
 | `kortix secrets unset NAME …` | Remove. |
 
 ### Env — dotenv ↔ secrets
@@ -119,6 +147,112 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 | `kortix env pull [--out .env] [--force]` | Write a `.env` skeleton (names only — plaintext can't leave the cloud). |
 | `kortix env push --from <path>` | Upload every `NAME=VALUE` from a dotenv file as a secret. Supports quoted values, `export NAME=…`, comment lines. |
 
+### Connectors
+
+Integrations agents call as tools (Pipedream apps, MCP servers, OpenAPI/GraphQL/HTTP endpoints) — mirrors the dashboard's Customize → Connectors. Connectors are project-wide visible; the access gate is which agents may call one (`[[agents]].connectors` in `kortix.yaml`, see [Grants](#grants)). `add` / `rm` / `policy set` edit the **local** `kortix.yaml` (the source of truth) — run `kortix ship` to apply, then `sync` to reconcile — unless you pass `--apply`, which skips ship/CR and applies on the cloud project immediately.
+
+| Command | Effect |
+| --- | --- |
+| `kortix connectors ls [--json]` | List connectors + status, auth. |
+| `kortix connectors show <slug> [--json]` | Show one connector's tools (actions). |
+| `kortix connectors add <slug> --provider <p> [options] [--apply]` | Add a `[[connectors]]` block to `kortix.yaml` (or apply instantly on the cloud project with `--apply`). |
+| `kortix connectors rm <slug> [--apply]` | Remove a `[[connectors]]` block. |
+| `kortix connectors rename <slug> <name…>` | Set a connector's display name (applies now). |
+| `kortix connectors mode <slug> shared` | Set the profile model — `shared` is currently the only mode (applies now + re-syncs). |
+| `kortix connectors sync` | Reconcile the catalog from the shipped `kortix.yaml`. |
+| `kortix connectors credential <slug> [value]` | Set a connector's credential (prompts if no value; reads stdin with `-`). |
+| `kortix connectors connect <slug>` | Start a Pipedream 1-click connect. |
+| `kortix connectors link <slug> [--expires <min>]` | Mint a durable shareable Quick Connect link to hand a human. Auto-finalizes. |
+| `kortix connectors finalize <slug>` | Confirm a Pipedream connection completed. |
+| `kortix connectors apps [<query>] [--json]` | Browse the Pipedream app catalog. |
+| `kortix connectors policy ls [--json]` | Show project-wide execution policies. |
+| `kortix connectors policy set --default <risk\|allow_all>` | Set the default execution mode. |
+| `kortix connectors policy <slug> ls [--json]` | Show one connector's tool-call rules. |
+| `kortix connectors policy <slug> set <match> <allow\|ask\|block>` | Set a rule for a tool name, glob (`send_*`), or `/regex/` (applies now). |
+| `kortix connectors policy <slug> rm <match>` | Remove a connector rule. |
+| `kortix connectors policy <slug> clear` | Remove all of a connector's rules. |
+
+`add` options: `--name <label>` (default: slug), `--provider <pipedream\|mcp\|openapi\|graphql\|http>`, `--app <slug>` (Pipedream), `--url <url>` (MCP), `--transport <http\|sse>` (MCP), `--endpoint <url>` (GraphQL), `--base-url <url>` (HTTP), `--spec <url\|path>` (OpenAPI/GraphQL/HTTP), `--auth-type <none\|bearer\|basic\|custom>`, `--credential shared`.
+
+### Channels
+
+Manages the per-project Slack connection. Tokens are stored encrypted in the project's secrets manager; at session spawn they land in the sandbox as env vars, so the in-sandbox `slack` CLI can post back to your workspace.
+
+| Command | Effect |
+| --- | --- |
+| `kortix channels status` | Show the current Slack connection. `--json` for machine output. |
+| `kortix channels connect` | **Connect Slack in one step.** On Kortix Cloud (or any host with the shared Slack app configured) it prints a one-click "Add to Slack" install link — open it, pick the workspace, click Allow. Add `--wait` to poll until the install lands (`--timeout <sec>`, default 300). Hosts without the shared app fall back to manual token mode automatically. |
+| `kortix channels connect --manual [--bot-token <xoxb-…>] [--signing-secret <…>]` | Bring-your-own-app mode: save a bot token + signing secret to project secrets. Flags (which imply `--manual`), `SLACK_BOT_TOKEN`/`SLACK_SIGNING_SECRET` env vars, or `-` to read from stdin. |
+| `kortix channels disconnect` | Drop the project's Slack secrets. |
+| `kortix channels manifest` | Print the Slack app manifest JSON for the bring-your-own-app path — paste into `api.slack.com/apps` → "From a manifest". Not needed for the one-click install. |
+
+### Sandboxes
+
+Manages the project's sandbox images — the same surface as the dashboard's Customize → Sandbox images. A template is a definition (image OR Dockerfile + resources); a build produces the actual snapshot the platform boots sessions from. Templates can also come from `[[sandbox.templates]]` in `kortix.yaml`.
+
+| Command | Effect |
+| --- | --- |
+| `kortix sandboxes ls [--json]` | List templates + live provider state. |
+| `kortix sandboxes builds [--json]` | Recent build log (last 25). |
+| `kortix sandboxes health [--json]` | Primary template readiness (quick check). |
+| `kortix sandboxes add <slug> (--image <i> \| --dockerfile <p>) [options]` | Create a custom template (kicks a build). |
+| `kortix sandboxes update <slug> [options]` | Update a UI-created template. |
+| `kortix sandboxes build <slug>` | Trigger a rebuild for a template. |
+| `kortix sandboxes rebuild <slug>` | Force-rebuild (delete existing snapshot first). |
+| `kortix sandboxes rm <slug>` | Delete a UI-created template. |
+| `kortix sandboxes fix` | Start a session seeded with the last failed build log so an agent can repair it. |
+
+Options for `add`/`update`: `--image <ref>` (mutually exclusive with `--dockerfile`), `--dockerfile <path>` (repo-relative), `--name <label>` (default: slug), `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
+
+### Apps (experimental)
+
+Manages deployable [apps](/docs/concepts/apps) — the same surface as the dashboard's Apps page. Apps are declared in `[[apps]]` in the manifest and deployed to a provider. Hidden from `kortix help` and refuses to run unless `KORTIX_APPS_EXPERIMENTAL=true` is set locally, in addition to the platform-side apps feature being enabled for the project.
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List apps + latest deployment status. |
+| `kortix apps add <slug> --repo <url> [options]` | Create an app in the manifest. |
+| `kortix apps update <slug> [options]` | Update an app's fields. |
+| `kortix apps rm <slug>` | Remove an app from the manifest. |
+| `kortix apps deploy <slug>` | Deploy now (bypasses the drift check). |
+| `kortix apps stop <slug>` | Tear down the latest deployment. |
+| `kortix apps logs <slug> [--json]` | Fetch provider logs for the latest deploy. |
+
+Options for `add`/`update`: `--name <label>`, `--framework <f>` (e.g. `next`, `vite`, `static`), `--repo <url>` (git source), `--branch <b>`, `--root-path <p>` (subdir to deploy), `--tar <url>` (tarball source, alternative to `--repo`), `--build-command <cmd>`, `--out-dir <dir>`, `--domains <d,d>` (comma-separated), `--disable` (set `enabled=false`). Global: `--project <id>`, `--host <name>`.
+
+### Marketplace
+
+Browse and install items (skills, etc.) from the Kortix marketplace into a linked cloud project.
+
+| Command | Effect |
+| --- | --- |
+| `kortix marketplace search [query]` | Search marketplace items. |
+| `kortix marketplace list` | List marketplace items. |
+| `kortix marketplace show <id-or-name>` | Show one marketplace item. |
+| `kortix marketplace install <id-or-name> [--dry-run]` | Install into a linked cloud project. `--dry-run` shows what would be installed. |
+| `kortix marketplace status` | List installed marketplace items for a project. |
+| `kortix marketplace updates` | List installed items with available updates. |
+| `kortix marketplace update <name>` | Update one installed marketplace item. |
+| `kortix marketplace update --all` | Update all outdated items in one commit. |
+| `kortix marketplace remove <name>` | Remove one installed marketplace item. |
+
+Common options: `--query <text>` (same as `search [query]`), `--type <type>` (e.g. `skill`), `--source <source>` (e.g. `kortix`), `--project <id>`, `--json`.
+
+### Executor
+
+The agent's primary interface to every configured connector — a thin client that never holds a third-party credential; every call goes to the Kortix Executor Gateway, which checks sharing, resolves the secret server-side, runs the call, and audits it. Auth comes from `KORTIX_EXECUTOR_TOKEN` + `KORTIX_API_URL`, injected at sandbox spawn. Machine-facing: emits JSON only.
+
+| Command | Effect |
+| --- | --- |
+| `kortix executor connectors` | List connectors + tools this session can use. |
+| `kortix executor discover "<intent>"` | Search tools by natural language. |
+| `kortix executor describe <connector>.<action>` | Show a tool's input schema. |
+| `kortix executor call <connector> <action> '<json-args>'` | Run a tool. |
+| `kortix executor add <slug> --provider pipedream --app <app>` | Add a connector now (no CR), then connect. |
+| `kortix executor rm <slug>` | Remove a connector from the project. |
+| `kortix executor connect <slug>` | Mint a Pipedream Quick Connect link to hand the human. |
+| `kortix executor mcp` | Run the optional stdio MCP compatibility server. |
+
 ### Sessions
 
 Each session is an isolated sandbox VM on its own ephemeral branch.
@@ -127,27 +261,56 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | Command | Effect |
 | --- | --- |
 | `kortix sessions ls` | All sessions on the project. |
+| `kortix sessions status [--all] [--json]` | "Mission control": every session + what each agent is doing right now, live. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. |
-| `kortix sessions new [--prompt "<text>"]` | Start a new session, optionally with an initial prompt. |
+| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session, optionally with an initial prompt. `--wait` blocks until it's running; `--json` prints the session object. |
+| `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
+| `kortix sessions connect [<id>] [-- <opencode attach args>]` | Attach your local OpenCode TUI to the OpenCode server already running inside the session sandbox. |
+| `kortix sessions log [<id>] [--limit <n>] [--json]` | Print a session's recent messages, read-only — peek at what an agent is doing without sending it anything. Alias: `messages`. |
+| `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review for reflection: metadata + compressed transcript snippets with tool outputs stripped. Aliases: `review`, `summary`. |
+| `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable, root-served preview URL for a port in the session's sandbox (default `3000`). |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
+| `kortix sessions rename <id> <name>` | Set a session's name. Pass `""` to clear it and revert to the automatic title. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
-| `kortix sessions chat [<id>] [--prompt "<text>"] [--new]` | Talk to a session's agent — interactive REPL, or one-shot with `--prompt`. Alias: `talk`. |
-| `kortix sessions preview <id> [port]` | Print a clickable preview URL for a port in the session's sandbox (default `3000`). |
 
 Inside a sandbox, `KORTIX_SESSION_ID` is your session; `kortix sessions info $KORTIX_SESSION_ID` is the live view of yourself.
 
-### Triggers
+### Files
 
-Round-trip through `kortix.toml`'s `[[triggers]]`; the dashboard sees the same state.
+Browse the project's git repo — the same read-only view the dashboard shows (Files tab + version history). Operates on the default branch unless `--ref` selects another branch, tag, or commit sha.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
-| `kortix triggers info <slug>` | Show one trigger in full. |
+| `kortix files ls [<path>]` | List files (recursive) under a path. |
+| `kortix files cat <path>` | Print a file's contents. |
+| `kortix files search <query> [--content]` | Search filenames, or file contents with `--content`. |
+| `kortix files history <path>` | Commit history for one file. |
+| `kortix files branches` | List branches (ahead/behind the default). |
+| `kortix files commits [--path <p>]` | List commits on `--ref`. |
+| `kortix files show <sha>` | Show one commit + its changed files. |
+| `kortix files diff <sha> [--path <p>]` | Print a commit's unified patch. |
+| `kortix files compare <from> <into>` | Summarize the diff between two refs. |
+
+Options: `--ref <ref>` (branch/tag/commit, default: the project's default branch), `--path <p>` (scope to a subtree or file), `--limit <n>`, `--json` (supported by every subcommand).
+
+### Triggers
+
+Round-trip through the manifest's `triggers:` (v2 `kortix.yaml`) or `[[triggers]]` (legacy `kortix.toml`); the dashboard sees the same state. `add` / `rm` / `enable` / `disable` edit the **local** manifest — run `kortix ship` to apply. `pause` / `resume` are a separate **server-side** activation switch (cloud state, not the manifest) — use them to stop one of two deployments of the same repo from double-firing; manual `fire` still works while paused.
+
+| Command | Effect |
+| --- | --- |
+| `kortix triggers ls [--json]` | List triggers + runtime state (`last_fired_at`). |
+| `kortix triggers add <slug> [options]` | Append a `[[triggers]]` block (cron or webhook) to `kortix.yaml`. See options below. |
+| `kortix triggers rm <slug>` | Remove a trigger from `kortix.yaml`. |
+| `kortix triggers info <slug> [--json]` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+| `kortix triggers pause` | Deactivate **all** of this project's triggers server-side (crons + webhooks stop auto-running). |
+| `kortix triggers resume` | Re-activate this project's triggers server-side. |
+
+`add` options: `--type <cron\|webhook>` (default `cron`), `--prompt <text>` (required — initial prompt for the spawned session), `--agent <name>` (default: the opencode default), `--cron <expr>` (6-field cron, e.g. `"0 0 9 * * 1-5"`), `--timezone <tz>` (default UTC), `--secret-env <NAME>` (HMAC secret env var, webhook type), `--name <label>` (default: slug), `--disabled` (create it disabled).
 
 ### Change requests (`cr`)
 
@@ -189,6 +352,63 @@ kortix cr diff 3
 
 The agent does not merge its own CR — that's the user's call, in the dashboard or via `kortix cr merge <n>`.
 
+### Agents
+
+Per-agent settings on the linked project. Today: which model each agent runs on — the dynamic gateway default, applied instantly with no `kortix.yaml` commit. A session that asks for the synthetic `auto` model resolves to this pick, falling back to the project → account → platform default. (The declarative default lives in `kortix.yaml` as `[[agents]].model`.)
+
+| Command | Effect |
+| --- | --- |
+| `kortix agents models [--json]` | Show every agent's pinned model + the fallback default. |
+| `kortix agents model <agent> <provider/model>` | Pin an agent to a model, e.g. `anthropic/claude-opus-4-8`. |
+| `kortix agents model <agent> --clear` | Clear the pin — the agent follows the default again. |
+
+### Access
+
+Manage who can use the linked project — mirrors the dashboard's project sharing/access panel. Roles: `manager`, `editor`, `member`.
+
+| Command | Effect |
+| --- | --- |
+| `kortix access ls [--json]` | List members + effective project roles. |
+| `kortix access invite <email> --role <r>` | Invite someone to the project. |
+| `kortix access grant <user-id> --role <r>` | Set/grant a member's project role. |
+| `kortix access revoke <user-id>` | Remove a member's project access. |
+| `kortix access pending [--json]` | List pending project invitations. |
+| `kortix access cancel <invite-id>` | Cancel a pending invitation. |
+
+Options: `--role <manager\|editor\|member>`, `--expires <iso>` (optional auto-revoke timestamp for a grant).
+
+### Roles
+
+Account-level custom IAM roles + policy assignments — the CLI face of the dashboard's Roles tab and a project's "Custom roles" card. Built-in roles (owner/admin/member, manager/editor/user) are read-only references; custom roles are yours to create, edit, and bind. `export` / `import` round-trip roles + bindings as TOML or JSON — "IAM as code".
+
+| Command | Effect |
+| --- | --- |
+| `kortix roles ls [--json]` | List roles (built-in + custom). |
+| `kortix roles show <role> [--json]` | Show a role's permissions + usage. |
+| `kortix roles actions [--json]` | List the permission catalog. |
+| `kortix roles create <key> --name <n> [options]` | Create a custom role. |
+| `kortix roles set-actions <role> --actions a,b` | Replace a custom role's permissions. |
+| `kortix roles rm <role>` | Delete a custom role. |
+| `kortix roles assignments [--project <id>] [--json]` | List policy bindings. |
+| `kortix roles assign <role> --to <type>:<id> [options]` | Bind a role to a principal (`member:<id>`, `group:<id>`, or `token:<id>`). |
+| `kortix roles unassign <policy-id>` | Remove a binding. |
+| `kortix roles export [--project <id>] [--out <file>] [--format toml\|json]` | Dump custom roles + bindings to a file (or stdout). |
+| `kortix roles import <file>` | Apply a roles/policies file — creates missing roles, then bulk-imports bindings. |
+
+A `<role>` may be its key (e.g. `support_agent`) or its role id. Options: `--name`, `--desc`, `--scope <account\|project>`, `--actions <list>`, `--to <type>:<id>`, `--project <id>`, `--expires <iso>`, `--account <id>`.
+
+### Grants
+
+Assign project resources to people — the inheritance pyramid. Secrets and connectors live on **agents**; assigning an agent to a member (or group) grants them everything that agent declares. Mirrors the dashboard's "Members → Resource access" panel. `assign` only ever creates agent grants now; `ls` still lists any legacy skill/secret rows for visibility.
+
+| Command | Effect |
+| --- | --- |
+| `kortix grants ls [--json]` | List grants + grantable agents/skills/secrets. |
+| `kortix grants assign <agent-name> --to <who> [--group]` | Assign an agent to a member (or a group with `--group`). |
+| `kortix grants revoke <grant-id>` | Remove a grant. |
+
+Options: `--to <who>` (member email or user-id; group id with `--group`), `--expires <iso>`.
+
 ### Install / update / uninstall
 
 | Command | Effect |
@@ -199,12 +419,55 @@ The agent does not merge its own CR — that's the user's call, in the dashboard
 
 ### Project scaffold
 
+`kortix init` creates a **new, standalone** directory — like `create-next-app`, it never scaffolds into an existing folder or the current directory, and it refuses to run against a non-empty one. Scaffolding is explicit-only: `init` is the single command that creates a project. An unrecognized subcommand (`kortix use`, `kortix inti`, …) exits with an error and a did-you-mean suggestion — it never creates a directory. (Older CLI versions treated any unknown first argument as a project name to scaffold; that form is gone.)
+
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold a Kortix project in the current directory. Writes `kortix.toml`, `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools), and wires the Kortix skill into any local coding agents it finds (`.opencode/`, `.claude/`, `AGENTS.md`, `.cursor/`). It does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
-| `kortix <project-name>` | Same as `init` but scaffolds into a new directory next to cwd. |
+| `kortix init [project-name] [options]` | Prompts for a project name if omitted, then creates that directory and scaffolds it: `kortix.yaml` (the v2 manifest), `.kortix/Dockerfile`, and the OpenCode config dir (default agent + the kortix-system skill + tools). Runs the wizard: pick coding agent(s) to wire up (symlinks `.opencode`/`.claude`/`.agents` + `AGENTS.md` into `.kortix/opencode` so skills/agents are shared), pick a starter template, pick marketplace skills to install. Does **not** write `.kortix/link.json` — that's created later by `projects link` or `ship`. |
 
-Other commands: `ship` (alias `deploy`) pushes your local commits to the project's cloud repo, provisioning a managed repo on first run — despite the alias, it's a git push, not app deployment. `channels` connects Slack to a project. Run `kortix help` for the full list.
+`kortix init` options: `--name <project>` (alias for the positional name), `--primary <agent>` (opencode\|claude\|codex\|cursor), `--agents <list>` (comma-separated extras to wire up alongside `--primary`), `--template <minimal\|general-knowledge-worker>` (default `minimal`; `general-knowledge-worker` includes the optional skill pack), `--marketplace <list>` (comma-separated marketplace skills, or `none`; interactive mode opens a preselected picker), `--no-git` (skip `git init`), `-y`/`--yes` (skip prompts — requires a project name).
+
+### Dev
+
+Run OpenCode locally against this project's `.kortix/opencode` config — the same config the cloud sandbox uses — so you can test agents, skills, tools, and runtime config without spinning up a sandbox. Works from anywhere inside the project; no `cd` or `OPENCODE_CONFIG_DIR` needed. Scope: this exercises the OpenCode half of your config only — connectors/executor, triggers, and channels are injected by the platform at session start, so test those against a live session instead.
+
+| Command | Effect |
+| --- | --- |
+| `kortix dev` | Interactive session with your local config. |
+| `kortix dev run --agent <agent> "<prompt>"` | One-shot run of an agent. |
+| `kortix dev debug skill` | List the skills your config discovers. |
+| `kortix dev debug agent <agent>` | Show the resolved agent: model, tools, permissions. |
+
+### Ship
+
+Stage everything, commit, and push your current branch to the project's git repo — in one command. Run it once to create the project, then run it again any time to sync. Alias: `kortix deploy` — despite the name, it's a git push, not app deployment.
+
+Every run: (1) verify `kortix.yaml` parses + validates (skip with `--no-verify`); (2) `git add -A` + commit (skipped if nothing changed); (3) offer to set any `[env]` secret not yet set (skip with `--no-env`); (4) push the branch you're on to the same-named branch on the project's repo; (5) connect any declared connector that still needs auth (skip with `--no-connect`).
+
+The **first** ship creates the cloud project + a git repo and links the folder (`.kortix/link.json`); every ship after that just commits + pushes. Origin is inferred, never asked: an existing GitHub `origin` links directly (GitHub-backed — prints a one-click App-install link if needed, or pass `--github-token`); another existing remote is registered + pushed; no `origin` creates a managed Kortix git repo.
+
+| Option | Effect |
+| --- | --- |
+| `--name <project>` | Display name for a new project (default: folder name). |
+| `--account <id\|slug>` | Account to create the project under (first ship only). |
+| `--origin <value>` | Override origin choice: `managed` (force a managed Kortix repo) or a git URL to register + push to. |
+| `--github-token <pat>` | Link a GitHub origin with this token instead of the GitHub App (needs repo Contents R/W). |
+| `-m, --message <msg>` | Commit message for the sync (default: `kortix: ship`). |
+| `--no-commit` | Don't commit — fails if the working tree is dirty. |
+| `--no-verify` | Skip the `kortix.yaml` validation check. |
+| `--no-env` | Skip the `[env]` secret check + prompts. |
+| `--no-connect` | Skip the connector connect/credential prompts. |
+| `-y, --yes` | Don't prompt; use the active account, skip secret prompts. |
+| `-n, --dry-run` | Print what would happen, do nothing. |
+| `--project <id>` | Operate on this project id (default: linked). |
+| `--host <name>` | Operate against a non-default Kortix host. |
+
+### Manifest validation
+
+| Command | Effect |
+| --- | --- |
+| `kortix validate [--file <path>]` | Statically validate the project's manifest against the canonical schema. Resolves `kortix.yaml` first, falling back to legacy `kortix.toml`, unless `--file` names a specific path. Prints per-agent scope (connectors / `kortix_cli` / secrets) on success. `--json` for a machine-readable report; `--scopes` prints the full grantable `kortix_cli` action enum and exits. Exit codes: `0` valid, `1` validation errors, `2` file missing/unreadable. This is the same validator `kortix ship` runs as a pre-flight check and the CR-merge gate runs server-side — one schema, three call sites. |
+| `kortix schema [--version 1\|2] [--url]` | Print the canonical JSON Schema for the manifest — the same document served at `https://kortix.com/schema/kortix.v2.schema.json` (and the `v1` / combined variants). `--version 2` (or `1`) prints just that version; omit it for the combined document that dispatches on `kortix_version`. `--url` prints the schema URL instead of the body — paste it as a `kortix.yaml`'s first-line `# yaml-language-server: $schema=…` comment for editor validation + autocomplete. |
 
 ## Token scope
 
@@ -240,7 +503,7 @@ A sandbox's project token is minted at session create and lives for that sandbox
 ### Spin up a fresh session with custom env
 
 ```sh
-kortix secrets set OPENAI_API_KEY=sk-… ANTHROPIC_API_KEY=sk-…
+kortix secrets set STRIPE_API_KEY=sk_live_… WEBHOOK_SLACK_SECRET=whsec_…
 kortix sessions new --prompt "Audit the auth module and propose a fix"
 ```
 

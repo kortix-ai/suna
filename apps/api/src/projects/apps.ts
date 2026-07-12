@@ -1,5 +1,6 @@
 /**
- * `[[apps]]` parsing for `kortix.toml`.
+ * `apps` list parsing for the project manifest (`kortix.yaml`; a legacy v1
+ * project may instead declare `[[apps]]` in `kortix.toml`).
  *
  * Each entry declares one deployable surface (fly.toml-style) — slug,
  * source, build, env, domains. The platform reads this array, dispatches
@@ -8,27 +9,24 @@
  * can be plugged in without touching the manifest schema), and registers
  * a row in the `deployments` table per actual deploy.
  *
- * Example:
+ * Example (kortix.yaml):
  *
- *   [[apps]]
- *   slug = "marketing-site"
- *   name = "Marketing site"
- *   enabled = true
- *   domains = ["marketing.style.dev"]
- *   framework = "next"
- *
- *     [apps.source]
- *     type = "git"
- *     repo = "https://github.com/me/site"
- *     branch = "main"
- *     root_path = "apps/site"
- *
- *     [apps.build]
- *     command = "pnpm build"
- *     out_dir = "dist"
- *
- *     [apps.env]
- *     NEXT_PUBLIC_API_URL = "https://api.example.com"
+ *   apps:
+ *     - slug: marketing-site
+ *       name: Marketing site
+ *       enabled: true
+ *       domains: ["marketing.style.dev"]
+ *       framework: next
+ *       source:
+ *         type: git
+ *         repo: "https://github.com/me/site"
+ *         branch: main
+ *         root_path: apps/site
+ *       build:
+ *         command: "pnpm build"
+ *         out_dir: dist
+ *       env:
+ *         NEXT_PUBLIC_API_URL: "https://api.example.com"
  *
  * Parser mirrors `projects/triggers.ts`: never throws on bad entries,
  * collects them in `errors` so the UI can render them alongside good ones.
@@ -51,7 +49,7 @@ export interface AppBuildSpec {
 export interface AppSpec {
   /** URL-safe slug — unique per project. */
   slug: string;
-  /** `kortix.toml#apps.<slug>` for UI / error reporting. */
+  /** e.g. `kortix.yaml#apps.<slug>` (or the project's actual manifest filename) for UI / error reporting. */
   path: string;
   /** Human label; defaults to slug. */
   name: string;
@@ -76,9 +74,10 @@ export interface LoadedApps {
 }
 
 /**
- * Pull `[[apps]]` out of a parsed manifest. Never throws.
+ * Pull the `apps` list out of a parsed manifest. Never throws.
  */
 export function extractApps(manifest: ParsedManifest): LoadedApps {
+  const filename = manifest.path || MANIFEST_FILENAME;
   const raw = manifest.raw.apps;
   if (raw === undefined || raw === null) {
     return { specs: [], errors: [] };
@@ -88,8 +87,11 @@ export function extractApps(manifest: ParsedManifest): LoadedApps {
       specs: [],
       errors: [{
         slug: '(top-level)',
-        path: MANIFEST_FILENAME,
-        error: '`apps` must be an array of tables — use [[apps]], not [apps]',
+        path: filename,
+        error:
+          manifest.format === 'yaml'
+            ? '`apps` must be a list — write it as a YAML `apps:` list, not a map or scalar.'
+            : '`apps` must be an array of tables — use [[apps]], not [apps]',
       }],
     };
   }
@@ -99,7 +101,7 @@ export function extractApps(manifest: ParsedManifest): LoadedApps {
   const seenSlugs = new Set<string>();
 
   raw.forEach((entry, index) => {
-    const result = parseAppEntry(entry, index);
+    const result = parseAppEntry(entry, index, filename);
     if (!result.ok) {
       errors.push(result.error);
       return;
@@ -122,7 +124,7 @@ export function extractApps(manifest: ParsedManifest): LoadedApps {
 }
 
 /**
- * Read + parse a project's manifest, then extract `[[apps]]`. Returns
+ * Read + parse a project's manifest, then extract the `apps` list. Returns
  * empty arrays + a single top-level error when the manifest fails to
  * load — never throws.
  */
@@ -135,7 +137,7 @@ export async function loadProjectApps(project: GitBackedProject): Promise<Loaded
       specs: [],
       errors: [{
         slug: '(manifest)',
-        path: MANIFEST_FILENAME,
+        path: project.manifestPath || MANIFEST_FILENAME,
         error: (err as Error).message || 'Failed to read manifest',
       }],
     };
@@ -145,8 +147,9 @@ export async function loadProjectApps(project: GitBackedProject): Promise<Loaded
 }
 
 /**
- * Convert an AppSpec back to the TOML-shaped object that lives in
- * `manifest.raw.apps`. Inverse of `parseAppEntry`. Used by the CRUD
+ * Convert an AppSpec back to the raw object that lives in
+ * `manifest.raw.apps` (serialized as YAML for `kortix.yaml`, or TOML for a
+ * legacy v1 `kortix.toml`). Inverse of `parseAppEntry`. Used by the CRUD
  * path to round-trip an edit before committing.
  */
 export function appSpecToTomlEntry(spec: AppSpec): Record<string, unknown> {
@@ -159,7 +162,7 @@ export function appSpecToTomlEntry(spec: AppSpec): Record<string, unknown> {
   if (spec.framework) entry.framework = spec.framework;
 
   // Nested tables — only emit keys that carry information so the
-  // serialized TOML stays close to what a human would write.
+  // serialized manifest stays close to what a human would write.
   if (spec.source.type === 'git') {
     const src: Record<string, unknown> = { type: 'git' };
     if (spec.source.repo) src.repo = spec.source.repo;
@@ -227,16 +230,16 @@ export function resolveAppDomains(projectId: string, spec: AppSpec): string[] {
 interface ParseOk { ok: true; spec: AppSpec }
 interface ParseErr { ok: false; error: AppParseError }
 
-function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
+function parseAppEntry(entry: unknown, index: number, filename: string = MANIFEST_FILENAME): ParseOk | ParseErr {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-    return err('(invalid)', `[[apps]] entry #${index + 1} is not a table`);
+    return err('(invalid)', `[[apps]] entry #${index + 1} is not a table`, filename);
   }
   const row = entry as Record<string, unknown>;
 
   const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
-  if (!slug) return err(`(index-${index})`, `[[apps]] entry #${index + 1} is missing a slug`);
+  if (!slug) return err(`(index-${index})`, `[[apps]] entry #${index + 1} is missing a slug`, filename);
   if (!SLUG_RE.test(slug)) {
-    return err(slug, `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`);
+    return err(slug, `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`, filename);
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
@@ -250,11 +253,11 @@ function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
   const domains: string[] = [];
   if (domainsRaw !== undefined) {
     if (!Array.isArray(domainsRaw)) {
-      return err(slug, 'domains must be an array of strings when set');
+      return err(slug, 'domains must be an array of strings when set', filename);
     }
     for (const d of domainsRaw) {
       if (typeof d !== 'string' || !d.trim()) {
-        return err(slug, 'domains entries must be non-empty strings');
+        return err(slug, 'domains entries must be non-empty strings', filename);
       }
       domains.push(d.trim());
     }
@@ -265,18 +268,18 @@ function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
     : null;
 
   // [apps.source] — required nested table.
-  const sourceParsed = parseAppSource(slug, row.source);
+  const sourceParsed = parseAppSource(slug, row.source, filename);
   if (!sourceParsed.ok) return sourceParsed;
 
   // [apps.build] — optional nested table.
-  const buildParsed = parseAppBuild(slug, row.build);
+  const buildParsed = parseAppBuild(slug, row.build, filename);
   if (!buildParsed.ok) return buildParsed;
 
   // [apps.env] — optional flat table of string values.
-  const envParsed = parseAppEnv(slug, row.env);
+  const envParsed = parseAppEnv(slug, row.env, filename);
   if (!envParsed.ok) return envParsed;
 
-  const path = `${MANIFEST_FILENAME}#apps.${slug}`;
+  const path = `${filename}#apps.${slug}`;
   return {
     ok: true,
     spec: {
@@ -296,9 +299,10 @@ function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
 function parseAppSource(
   slug: string,
   raw: unknown,
+  filename: string = MANIFEST_FILENAME,
 ): { ok: true; value: AppSourceSpec } | ParseErr {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return err(slug, '[apps.source] is required and must be a table');
+    return err(slug, '[apps.source] is required and must be a table', filename);
   }
   const row = raw as Record<string, unknown>;
   const type = typeof row.type === 'string' ? row.type.trim().toLowerCase() : '';
@@ -316,19 +320,20 @@ function parseAppSource(
   }
   if (type === 'tar') {
     const url = typeof row.url === 'string' && row.url.trim() ? row.url.trim() : '';
-    if (!url) return err(slug, '[apps.source] type="tar" requires a non-empty url');
+    if (!url) return err(slug, '[apps.source] type="tar" requires a non-empty url', filename);
     return { ok: true, value: { type: 'tar', url } };
   }
-  return err(slug, `[apps.source].type must be "git" or "tar" (got "${type || 'unset'}")`);
+  return err(slug, `[apps.source].type must be "git" or "tar" (got "${type || 'unset'}")`, filename);
 }
 
 function parseAppBuild(
   slug: string,
   raw: unknown,
+  filename: string = MANIFEST_FILENAME,
 ): { ok: true; value: AppBuildSpec | null } | ParseErr {
   if (raw === undefined || raw === null) return { ok: true, value: null };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    return err(slug, '[apps.build] must be a table');
+    return err(slug, '[apps.build] must be a table', filename);
   }
   const row = raw as Record<string, unknown>;
   const command = typeof row.command === 'string' && row.command.trim() ? row.command.trim() : null;
@@ -344,18 +349,19 @@ function parseAppBuild(
 function parseAppEnv(
   slug: string,
   raw: unknown,
+  filename: string = MANIFEST_FILENAME,
 ): { ok: true; value: Record<string, string> } | ParseErr {
   if (raw === undefined || raw === null) return { ok: true, value: {} };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    return err(slug, '[apps.env] must be a table of string values');
+    return err(slug, '[apps.env] must be a table of string values', filename);
   }
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     if (typeof v !== 'string') {
-      return err(slug, `[apps.env].${k} must be a string (got ${typeof v})`);
+      return err(slug, `[apps.env].${k} must be a string (got ${typeof v})`, filename);
     }
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
-      return err(slug, `[apps.env] key "${k}" must look like an env var name`);
+      return err(slug, `[apps.env] key "${k}" must look like an env var name`, filename);
     }
     out[k] = v;
   }
@@ -373,9 +379,9 @@ function coerceBool(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-function err(slug: string, message: string): ParseErr {
+function err(slug: string, message: string, filename: string = MANIFEST_FILENAME): ParseErr {
   return {
     ok: false,
-    error: { slug, path: `${MANIFEST_FILENAME}#apps.${slug}`, error: message },
+    error: { slug, path: `${filename}#apps.${slug}`, error: message },
   };
 }

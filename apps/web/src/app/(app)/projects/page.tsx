@@ -2,45 +2,83 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
+import Link from 'next/link';
+
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
-import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
+import { UpgradeButton } from '@/features/billing/upgrade-button';
 import { Icon } from '@/features/icon/icon';
 import { AppHeader } from '@/features/layout/app-header';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
 import { RenameProjectDialog } from '@/features/projects/modal/rename-project-modal';
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
-import {
-  useLegacyMachines,
-  useStartLegacyMigration,
-} from '@/hooks/legacy/use-legacy-machine-migration';
+import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
 import { billingApi } from '@/lib/api/billing';
+import { isBillingEnabled } from '@/lib/config';
 import {
+  ensureFirstProject,
+  hasFirstProjectBootstrapSignal,
+  shouldAutoCreateFirstProject,
+} from '@/lib/onboarding/ensure-first-project';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { type ProjectsViewMode, useProjectsViewStore } from '@/stores/projects-view-store';
+import {
+  type KortixProject,
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-  provisionProject,
-  type KortixProject,
-} from '@/lib/projects-client';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useProjectsViewStore, type ProjectsViewMode } from '@/stores/projects-view-store';
+} from '@kortix/sdk/projects-client';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, FolderPlus } from 'lucide-react';
+import { FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+const PROJECT_SKELETON_KEYS = Array.from({ length: 6 }, (_, index) => `project-skeleton-${index}`);
+
+/**
+ * The one loading state for this page. Auth gate, first-project bootstrap, and
+ * the in-list fetch all resolve to the same skeleton grid — no progress line, no
+ * connecting shell — so nothing else ever flashes before the projects land.
+ */
+function ProjectsLoadingScreen() {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <div className="w-full border-b">
+        <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
+          <Skeleton className="h-5 w-24 rounded-md" />
+          <Skeleton className="h-8 w-20 rounded-full" />
+        </div>
+      </div>
+      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
+        <div className="mx-auto w-full max-w-6xl space-y-8">
+          <div className="space-y-2">
+            <Skeleton className="h-9 w-44 rounded-md" />
+            <Skeleton className="h-5 w-80 max-w-full rounded-md" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {PROJECT_SKELETON_KEYS.map((key) => (
+              <Skeleton key={key} className="h-[92px] rounded-2xl" />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
 
 export default function ProjectsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -53,9 +91,13 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<KortixProject | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<KortixProject | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const [firstProjectBootstrapRequested, setFirstProjectBootstrapRequested] = useState(() => {
+    return hasFirstProjectBootstrapSignal(searchParams);
+  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -178,14 +220,11 @@ export default function ProjectsPage() {
     enabled: !!user && !!activeAccountId,
     accountId: activeAccountId,
   });
-  const startMigration = useStartLegacyMigration(activeAccountId);
 
-  // ── Onboarding: a subscribed account with zero projects auto-gets a starter
-  // project and drops straight into it — no "create your first project" substep.
-  // Also makes the post-subscribe return (/projects?team_signup=success) land
-  // directly inside a project. Fires once per account (ref guard); falls back to
-  // the manual empty state on failure so the user is never trapped.
-  const { data: accountState } = useAccountState({
+  // ── Onboarding: only explicit signup/subscription returns auto-bootstrap the
+  // first project. A normal empty projects list can come from deleting the last
+  // project, and must stay empty instead of recreating it.
+  const { data: accountState, isLoading: accountStateLoading } = useAccountState({
     accountId: activeAccountId ?? undefined,
     enabled: !!user && !!activeAccountId,
   });
@@ -193,25 +232,45 @@ export default function ProjectsPage() {
   const [autoCreating, setAutoCreating] = useState(false);
 
   useEffect(() => {
-    if (!activeAccountId || !canCreateProjects) return;
-    if (autoCreateAttempted.current.has(activeAccountId)) return;
-    if (accountsQuery.isLoading || projectsQuery.isLoading || projectsQuery.isError) return;
-    if (!projectsQuery.data || !legacyMachinesQuery.data) return;
-    if ((projectsQuery.data.length ?? 0) > 0) return;
-    if ((legacyMachinesQuery.data.sandboxes?.length ?? 0) > 0) return;
-    // Only bootstrap accounts that can actually run — subscribed, or billing
-    // disabled / self-host (where can_run is forced true). Unpaid accounts fall
-    // through to the empty state / subscribe wall.
-    if (!accountState?.credits?.can_run) return;
+    const accountId = activeAccountId;
+    const legacySandboxes = legacyMachinesQuery.data?.sandboxes;
+    if (
+      !shouldAutoCreateFirstProject({
+        bootstrapRequested: firstProjectBootstrapRequested,
+        activeAccountId: accountId,
+        canCreateProjects,
+        autoCreateAttempted: accountId ? autoCreateAttempted.current.has(accountId) : false,
+        accountsLoading: accountsQuery.isLoading,
+        projectsLoading: projectsQuery.isLoading,
+        projectsError: projectsQuery.isError,
+        projectsLoaded: !!projectsQuery.data,
+        projectCount: projectsQuery.data?.length ?? 0,
+        legacyMachinesLoaded: legacyMachinesQuery.isSuccess,
+        legacyMachineCount: legacySandboxes?.length ?? 0,
+        billingEnabled: isBillingEnabled(),
+        accountStateLoading,
+        canRun: !!accountState?.credits?.can_run,
+      })
+    ) {
+      return;
+    }
+    if (!accountId) return;
 
-    autoCreateAttempted.current.add(activeAccountId);
+    autoCreateAttempted.current.add(accountId);
+    setFirstProjectBootstrapRequested(false);
     setAutoCreating(true);
-    provisionProject({ account_id: activeAccountId, name: 'My First Project' })
+    ensureFirstProject(accountId)
       .then((project) => {
-        queryClient.invalidateQueries({ queryKey: ['projects', activeAccountId] });
+        if (!project) {
+          setAutoCreating(false);
+          autoCreateAttempted.current.delete(accountId);
+          return;
+        }
+        queryClient.invalidateQueries({ queryKey: ['projects', accountId] });
         router.replace(`/projects/${project.project_id}`);
       })
       .catch((err) => {
+        autoCreateAttempted.current.delete(accountId);
         setAutoCreating(false);
         console.error('[onboarding] auto-create first project failed', err);
       });
@@ -222,80 +281,64 @@ export default function ProjectsPage() {
     projectsQuery.isLoading,
     projectsQuery.isError,
     projectsQuery.data,
+    legacyMachinesQuery.isSuccess,
     legacyMachinesQuery.data,
+    firstProjectBootstrapRequested,
+    accountStateLoading,
     accountState?.credits?.can_run,
     queryClient,
     router,
   ]);
 
-  const handleMigrate = (sandboxId: string) =>
-    startMigration.mutate(sandboxId, {
-      onSuccess: () => successToast('Migration started — this runs in the background'),
-      onError: (e: Error) => errorToast(e.message || 'Failed to start migration'),
-    });
-
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
     onMutate: (projectId) => setArchivingId(projectId),
     onSettled: () => setArchivingId(null),
-    onSuccess: () => {
+    onSuccess: (_data, projectId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      successToast('Project archived');
+      const name = projectId === archiveTarget?.project_id ? archiveTarget?.name : undefined;
+      successToast(name ? `"${name}" archived` : 'Project archived');
+      setArchiveTarget(null);
     },
     onError: (error: Error) => {
       errorToast(error.message || 'Failed to archive project');
     },
   });
 
+  const confirmArchive = () => {
+    if (!archiveTarget || archiveMutation.isPending) return;
+    archiveMutation.mutate(archiveTarget.project_id);
+  };
+
   const filtered = useMemo(
     () => filterProjects(projectsQuery.data ?? []),
     [filterProjects, projectsQuery.data],
   );
 
-  const projectIds = useMemo(
-    () => new Set((projectsQuery.data ?? []).map((p) => p.project_id)),
-    [projectsQuery.data],
-  );
-
-  const legacyMachines = useMemo(() => {
-    const items = legacyMachinesQuery.data?.sandboxes ?? [];
-    const q = query.trim().toLowerCase();
-    return items.filter((machine) => {
-      const projectId = machine.migration?.project_id;
-      if (machine.migration?.status === 'completed' && projectId && projectIds.has(projectId)) {
-        return false;
-      }
-      if (!q) return true;
-      return machine.name.toLowerCase().includes(q) || machine.provider.toLowerCase().includes(q);
-    });
-  }, [legacyMachinesQuery.data, query, projectIds]);
+  // Legacy machines are no longer shown inline on Projects; the count only drives
+  // the discreet link to the hidden /legacy-machines archive.
+  const hasLegacyMachines = (legacyMachinesQuery.data?.sandboxes?.length ?? 0) > 0;
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return <ProjectsLoadingScreen />;
   }
 
-  // Bootstrapping the first project — hold the connecting screen instead of
-  // flashing the empty "create your first project" state before the redirect.
+  // Bootstrapping the first project — hold the skeleton instead of flashing the
+  // empty "create your first project" state before the redirect.
   if (autoCreating) {
-    return <ConnectingScreen forceConnecting hideWorkspacePicker />;
+    return <ProjectsLoadingScreen />;
   }
 
   const total = projectsQuery.data?.length ?? 0;
-  const totalLegacy = legacyMachinesQuery.data?.sandboxes?.length ?? 0;
   const showProjectsLoading = accountsQuery.isLoading || projectsQuery.isLoading;
   const showEmptyState =
-    !!activeAccountId &&
-    !showProjectsLoading &&
-    !projectsQuery.isError &&
-    total === 0 &&
-    totalLegacy === 0;
+    !!activeAccountId && !showProjectsLoading && !projectsQuery.isError && total === 0;
   const showNoResults =
     !!activeAccountId &&
     !showProjectsLoading &&
     !projectsQuery.isError &&
-    total + totalLegacy > 0 &&
-    filtered.length === 0 &&
-    legacyMachines.length === 0;
+    total > 0 &&
+    filtered.length === 0;
 
   const allRawTotal = viewAll
     ? accounts.reduce((n, _a, i) => n + (allAccountQueries[i]?.data?.length ?? 0), 0)
@@ -303,13 +346,11 @@ export default function ProjectsPage() {
   const allFilteredTotal = accountGroups.reduce((n, g) => n + g.projects.length, 0);
   const showAllLoading =
     viewAll && (accountsQuery.isLoading || allAccountQueries.some((q) => q.isLoading));
-  const showAllEmpty = viewAll && !showAllLoading && allRawTotal === 0 && totalLegacy === 0;
+  const failedAllAccountQueries = viewAll ? allAccountQueries.filter((q) => q.isError) : [];
+  const showAllError = viewAll && !showAllLoading && failedAllAccountQueries.length > 0;
+  const showAllEmpty = viewAll && !showAllLoading && !showAllError && allRawTotal === 0;
   const showAllNoResults =
-    viewAll &&
-    !showAllLoading &&
-    allRawTotal + totalLegacy > 0 &&
-    allFilteredTotal === 0 &&
-    legacyMachines.length === 0;
+    viewAll && !showAllLoading && !showAllError && allRawTotal > 0 && allFilteredTotal === 0;
 
   const openCreateModal = (accountId: string | null) => {
     setCreateAccountId(accountId);
@@ -317,11 +358,16 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="bg-foreground/5 flex min-h-screen flex-col">
-      <AppHeader user={user} breadcrumb="Projects" />
-      <main className="ring-input bg-background px-mobile flex-1 rounded-t-xl py-10 ring sm:py-12">
+    <div className="flex min-h-screen flex-col">
+      <div className="w-full border-b">
+        <AppHeader
+          user={user}
+          breadcrumb="Projects"
+          actions={<UpgradeButton accountId={activeAccountId ?? undefined} />}
+        />
+      </div>
+      <main className="bg-background px-mobile flex-1 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
-          <SunaMigrationBanner accountId={activeAccountId} />
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 space-y-1">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -383,87 +429,69 @@ export default function ProjectsPage() {
             <>
               {showProjectsLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  {PROJECT_SKELETON_KEYS.map((key) => (
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
               )}
 
               {projectsQuery.isError && (
-                <SectionCard flush>
-                  <EmptyState
-                    icon={AlertCircle}
-                    title={tHardcodedUi.raw(
-                      'appProjectsPage.line252JsxAttrTitleFailedToLoadProjects',
-                    )}
-                    description={(projectsQuery.error as Error).message}
-                    action={
-                      <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
-                        Retry
-                      </Button>
-                    }
-                  />
-                </SectionCard>
+                <ErrorState
+                  title={tHardcodedUi.raw(
+                    'appProjectsPage.line252JsxAttrTitleFailedToLoadProjects',
+                  )}
+                  description={(projectsQuery.error as Error).message}
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
+                      Retry
+                    </Button>
+                  }
+                />
               )}
 
               {showEmptyState && (
-                <SectionCard flush>
-                  <EmptyState
-                    icon={FolderPlus}
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
-                    )}
-                    action={
-                      <Button
-                        onClick={() => openCreateModal(activeAccountId)}
-                        disabled={!canCreateProjects}
-                      >
-                        <Icon.Plus />
-                        {tI18nHardcoded.raw(
-                          'autoAppAppProjectsPageJsxTextCreateYourFirstProject061cafdb',
-                        )}
-                      </Button>
-                    }
-                  />
-                </SectionCard>
+                <EmptyState
+                  icon={FolderPlus}
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
+                  )}
+                  action={
+                    <Button
+                      onClick={() => openCreateModal(activeAccountId)}
+                      disabled={!canCreateProjects}
+                    >
+                      <Icon.Plus />
+                      {tI18nHardcoded.raw(
+                        'autoAppAppProjectsPageJsxTextCreateYourFirstProject061cafdb',
+                      )}
+                    </Button>
+                  }
+                />
               )}
 
               {showNoResults && (
-                <SectionCard flush>
-                  <EmptyState
-                    icon={Search}
-                    size="sm"
-                    title={`No matches for "${query}"`}
-                    description={tHardcodedUi.raw(
-                      'appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm',
-                    )}
-                  />
-                </SectionCard>
+                <EmptyState
+                  icon={Search}
+                  size="sm"
+                  title={`No matches for "${query}"`}
+                  description={tHardcodedUi.raw(
+                    'appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm',
+                  )}
+                />
               )}
 
-              {(filtered.length > 0 || legacyMachines.length > 0) && (
+              {filtered.length > 0 && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {legacyMachines.map((machine) => (
-                    <LegacyMachineCard
-                      key={machine.sandbox_id}
-                      machine={machine}
-                      starting={
-                        startMigration.isPending && startMigration.variables === machine.sandbox_id
-                      }
-                      onMigrate={() => handleMigrate(machine.sandbox_id)}
-                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
-                    />
-                  ))}
                   {filtered.map((project) => (
                     <ProjectCard
                       key={project.project_id}
                       project={project}
                       onOpen={() => router.push(`/projects/${project.project_id}`)}
                       onRename={() => setRenameTarget(project)}
-                      onArchive={() => archiveMutation.mutate(project.project_id)}
+                      onArchive={() => setArchiveTarget(project)}
                       archiving={archivingId === project.project_id}
                     />
                   ))}
@@ -476,65 +504,65 @@ export default function ProjectsPage() {
             <div className="space-y-10">
               {showAllLoading && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  {PROJECT_SKELETON_KEYS.map((key) => (
+                    <Skeleton key={key} className="h-[92px] rounded-2xl" />
                   ))}
                 </div>
+              )}
+
+              {showAllError && (
+                <InfoBanner
+                  tone="destructive"
+                  title={`Failed to load projects for ${failedAllAccountQueries.length} account${failedAllAccountQueries.length === 1 ? '' : 's'}`}
+                  action={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        for (const q of allAccountQueries) {
+                          if (q.isError) void q.refetch();
+                        }
+                      }}
+                    >
+                      Retry
+                    </Button>
+                  }
+                />
               )}
 
               {showAllEmpty && (
-                <SectionCard flush>
-                  <EmptyState
-                    icon={FolderPlus}
-                    title={tI18nHardcoded.raw(
-                      'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
-                    )}
-                    description={tI18nHardcoded.raw(
-                      'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
-                    )}
-                    action={
-                      <NewProjectControl
-                        viewAll
-                        creatableAccounts={creatableAccounts}
-                        activeAccountId={activeAccountId}
-                        canCreateActive={canCreateProjects}
-                        onPick={openCreateModal}
-                        label={tI18nHardcoded.raw(
-                          'autoAppAppProjectsPageJsxAttrLabelCreateYourFirst301a83a6',
-                        )}
-                      />
-                    }
-                  />
-                </SectionCard>
+                <EmptyState
+                  icon={FolderPlus}
+                  title={tI18nHardcoded.raw(
+                    'autoAppAppProjectsPageJsxAttrTitleNoProjectsYet85527dd3',
+                  )}
+                  description={tI18nHardcoded.raw(
+                    'autoAppAppProjectsPageJsxAttrDescriptionAProjectIsa4dc84d2',
+                  )}
+                  action={
+                    <NewProjectControl
+                      viewAll
+                      creatableAccounts={creatableAccounts}
+                      activeAccountId={activeAccountId}
+                      canCreateActive={canCreateProjects}
+                      onPick={openCreateModal}
+                      label={tI18nHardcoded.raw(
+                        'autoAppAppProjectsPageJsxAttrLabelCreateYourFirst301a83a6',
+                      )}
+                    />
+                  }
+                />
               )}
 
               {showAllNoResults && (
-                <SectionCard flush>
-                  <EmptyState
-                    icon={Search}
-                    size="sm"
-                    title={`No matches for "${query}"`}
-                    description={tHardcodedUi.raw(
-                      'appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm',
-                    )}
-                  />
-                </SectionCard>
-              )}
-
-              {!showAllLoading && legacyMachines.length > 0 && (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {legacyMachines.map((machine) => (
-                    <LegacyMachineCard
-                      key={machine.sandbox_id}
-                      machine={machine}
-                      starting={
-                        startMigration.isPending && startMigration.variables === machine.sandbox_id
-                      }
-                      onMigrate={() => handleMigrate(machine.sandbox_id)}
-                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
-                    />
-                  ))}
-                </div>
+                <EmptyState
+                  icon={Search}
+                  size="sm"
+                  title={`No matches for "${query}"`}
+                  description={tHardcodedUi.raw(
+                    'appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm',
+                  )}
+                />
               )}
 
               {!showAllLoading &&
@@ -557,13 +585,23 @@ export default function ProjectsPage() {
                             router.push(`/projects/${project.project_id}`);
                           }}
                           onRename={() => setRenameTarget(project)}
-                          onArchive={() => archiveMutation.mutate(project.project_id)}
+                          onArchive={() => setArchiveTarget(project)}
                           archiving={archivingId === project.project_id}
                         />
                       ))}
                     </div>
                   </section>
                 ))}
+            </div>
+          )}
+          {hasLegacyMachines && (
+            <div className="pt-2 text-center">
+              <Link
+                href="/legacy-machines"
+                className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-4 transition-colors"
+              >
+                Looking for older machines?
+              </Link>
             </div>
           )}
         </div>
@@ -587,7 +625,26 @@ export default function ProjectsPage() {
         }}
       />
 
+      <ConfirmDialog
+        open={!!archiveTarget}
+        onOpenChange={(o) => {
+          if (!o && !archiveMutation.isPending) setArchiveTarget(null);
+        }}
+        title="Archive project"
+        description={
+          <>
+            <span className="text-foreground font-medium">{archiveTarget?.name}</span> will be
+            archived and removed from your projects list.
+          </>
+        }
+        confirmLabel="Archive"
+        confirmVariant="destructive"
+        isPending={archiveMutation.isPending}
+        onConfirm={confirmArchive}
+      />
+
       <PersonalOnboardingWelcome />
+      {isBillingEnabled() && <GlobalUpgradeModal />}
     </div>
   );
 }

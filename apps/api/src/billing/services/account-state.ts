@@ -1,36 +1,41 @@
-import { eq, and, inArray, sql } from 'drizzle-orm';
 import { projectSessions, sandboxes } from '@kortix/db';
-import {
-  getCreditAccount,
-  getSubscriptionInfo,
-} from '../repositories/credit-accounts';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
+import { db } from '../../shared/db';
+import { isPlatformAdmin } from '../../shared/platform-roles';
+import type { AccountStateResponse, CommitmentInfo, ScheduledChange } from '../../types';
+import { getCreditAccount, getSubscriptionInfo } from '../repositories/credit-accounts';
+import { getAutoTopupSettings } from './auto-topup';
+import { getCreditSummary } from './credits';
+import { initializeFreeTierAccount } from './free-tier';
+import { countActiveMembers } from './seat-management';
 import {
-  getTier,
-  getTierEntitlements,
-  getDailyCreditConfig,
-  isPaidTier,
-  isLegacyPaidTier,
-  isPerSeatAccount,
-  canClaimPerSeat,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
+  canClaimPerSeat,
+  getDailyCreditConfig,
+  getTier,
+  getTierEntitlements,
+  isLegacyPaidTier,
+  isPaidTier,
+  isPerSeatAccount,
 } from './tiers';
+import { getAccountEntitlements } from './entitlements';
 import { getUsageBreakdownThisPeriod } from './usage-breakdown';
-import { getCreditSummary } from './credits';
-import { getAutoTopupSettings } from './auto-topup';
-import { countActiveMembers } from './seat-management';
-import { isPlatformAdmin } from '../../shared/platform-roles';
-import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
-import { db } from '../../shared/db';
-import type {
-  AccountStateResponse,
-  ScheduledChange,
-  CommitmentInfo,
-} from '../../types';
 
 const ACTIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
+
+type InstanceSummary = AccountStateResponse['instances'][number] & {
+  stripe_subscription_id: string | null;
+  cancel_at_period_end: boolean;
+  cancel_at: string | null;
+};
+
+function metadataString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
 
 async function countActiveSessions(accountId: string): Promise<number> {
   const [row] = await db
@@ -47,22 +52,31 @@ async function countActiveSessions(accountId: string): Promise<number> {
 }
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
+  let sub = await getSubscriptionInfo(accountId);
+  if (!sub) {
+    await initializeFreeTierAccount(accountId);
+    sub = await getSubscriptionInfo(accountId);
+  }
+
   const credits = await getCreditSummary(accountId);
-  const sub = await getSubscriptionInfo(accountId);
   const isAdmin = await isPlatformAdmin(accountId);
 
-  // If no credit_accounts row exists, user hasn't been initialized yet.
-  // Return 'none' so middleware redirects to /setting-up for auto-initialization.
-  // Only return 'free' when the row actually exists with tier='free'.
   const tierName = sub ? (sub.tier ?? 'free') : 'none';
   const tier = getTier(tierName);
+  // Entitlements must honor the self-serve enterprise DEMO flag, not just the
+  // billing tier — otherwise flipping the demo on never surfaces the SSO/SCIM
+  // cards (the tier's static entitlements say sso:false). getAccountEntitlements
+  // applies the demo override.
+  const entitlements = await getAccountEntitlements(accountId);
   const dailyConfig = getDailyCreditConfig(tierName);
 
   let dailyRefresh = null;
   if (dailyConfig) {
     const lastRefresh = sub?.lastDailyRefresh ?? null;
     const nextRefresh = lastRefresh
-      ? new Date(new Date(lastRefresh).getTime() + dailyConfig.refreshIntervalHours * 3600000).toISOString()
+      ? new Date(
+          new Date(lastRefresh).getTime() + dailyConfig.refreshIntervalHours * 3600000,
+        ).toISOString()
       : null;
     const secondsUntil = nextRefresh
       ? Math.max(0, Math.floor((new Date(nextRefresh).getTime() - Date.now()) / 1000))
@@ -78,12 +92,13 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     };
   }
 
-  const isCancelled = sub?.stripeSubscriptionStatus === 'canceled'
-    || (sub?.revenuecatCancelledAt != null);
+  const isCancelled =
+    sub?.stripeSubscriptionStatus === 'canceled' || sub?.revenuecatCancelledAt != null;
   const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
-  const subscriptionId = sub?.provider === 'revenuecat'
-    ? sub?.revenuecatSubscriptionId ?? sub?.revenuecatCustomerId ?? null
-    : sub?.stripeSubscriptionId ?? null;
+  const subscriptionId =
+    sub?.provider === 'revenuecat'
+      ? (sub?.revenuecatSubscriptionId ?? sub?.revenuecatCustomerId ?? null)
+      : (sub?.stripeSubscriptionId ?? null);
 
   const commitment = extractCommitment(sub);
   const scheduledChange = extractScheduledChange(sub, tierName);
@@ -92,7 +107,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const autoTopup = await getAutoTopupSettings(accountId);
 
   // User's instances (sandboxes)
-  let instances: any[] = [];
+  let instances: InstanceSummary[] = [];
   try {
     const sandboxRows = await db
       .select()
@@ -106,20 +121,26 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
     instances = sandboxRows.map((row) => {
       const metadata = row.metadata as Record<string, unknown> | null;
+      const billingRow = row as typeof row & {
+        stripeSubscriptionId?: string | null;
+        cancelAtPeriodEnd?: boolean | null;
+        cancelAt?: string | null;
+      };
       return {
         sandbox_id: row.sandboxId,
         external_id: row.externalId || null,
         name: row.name,
         provider: row.provider,
         status: row.status,
-        server_type: metadata?.serverType ?? null,
-        location: metadata?.location ?? null,
-        error_message: metadata?.errorMessage ?? null,
+        server_type: metadataString(metadata?.serverType),
+        location: metadataString(metadata?.location),
+        error_message: metadataString(metadata?.errorMessage),
         is_included: row.isIncluded ?? false,
-        stripe_subscription_id: (row as any).stripeSubscriptionId || (metadata?.stripe_subscription_id as string) || null,
+        stripe_subscription_id:
+          billingRow.stripeSubscriptionId || (metadata?.stripe_subscription_id as string) || null,
         stripe_subscription_item_id: row.stripeSubscriptionItemId ?? null,
-        cancel_at_period_end: (row as any).cancelAtPeriodEnd || !!(metadata?.cancel_at_period_end),
-        cancel_at: (row as any).cancelAt || (metadata?.cancel_at as string) || null,
+        cancel_at_period_end: billingRow.cancelAtPeriodEnd || !!metadata?.cancel_at_period_end,
+        cancel_at: billingRow.cancelAt || (metadata?.cancel_at as string) || null,
         created_at: row.createdAt.toISOString(),
       };
     });
@@ -128,7 +149,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   }
 
   // Legacy paid users with no active machine can claim a free default computer
-  const hasActiveMachine = instances.some((i: any) => i.status === 'active' || i.status === 'provisioning');
+  const hasActiveMachine = instances.some(
+    (i) => i.status === 'active' || i.status === 'provisioning',
+  );
   const canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
 
   // Only genuine legacy per-machine accounts (with a machine to move off of)
@@ -140,6 +163,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     commitmentType: sub?.commitmentType ?? null,
     commitmentEndDate: sub?.commitmentEndDate ?? null,
   });
+  const billingPeriod = (sub?.planType ??
+    null) as AccountStateResponse['subscription']['billing_period'];
+  const provider = (sub?.provider ?? 'stripe') as AccountStateResponse['subscription']['provider'];
 
   const state = {
     credits: {
@@ -154,8 +180,8 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       status: subscriptionStatus,
-      billing_period: (sub?.planType as any) ?? null,
-      provider: (sub?.provider as any) ?? 'stripe',
+      billing_period: billingPeriod,
+      provider,
       subscription_id: subscriptionId,
       current_period_end: null,
       cancel_at_period_end: false,
@@ -171,7 +197,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
-      entitlements: tier.entitlements,
+      entitlements,
     },
     models: [],
     auto_topup: autoTopup,
@@ -179,7 +205,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
     can_claim_per_seat: canClaimPerSeatPricing,
-    billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as
+      | 'per_seat'
+      | 'legacy',
     // Live member count = the seat quantity a per-seat subscribe bills for now
     // (matches createPerSeatCheckoutSession). Drives the modal's projected total.
     member_count: await countActiveMembers(accountId).catch(() => 1),
@@ -192,12 +220,20 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         }
       : undefined,
     usage_this_period: isPerSeatAccount(sub?.billingModel)
-      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(() => null)
+      ? await getUsageBreakdownThisPeriod(accountId, sub?.billingCycleAnchor ?? null).catch(
+          () => null,
+        )
       : null,
     limits: {
       concurrent_sessions: {
         active: await countActiveSessions(accountId).catch(() => 0),
-        limit: maxConcurrentSessionsForTier(tierName),
+        // Per-account override (credit_accounts.max_concurrent_sessions) wins
+        // over the tier limit — mirrors resolveAccountSessionLimit, reusing the
+        // `sub` row already fetched above instead of a second read.
+        limit:
+          typeof sub?.maxConcurrentSessions === 'number' && sub.maxConcurrentSessions > 0
+            ? Math.floor(sub.maxConcurrentSessions)
+            : maxConcurrentSessionsForTier(tierName),
       },
     },
   };
@@ -236,7 +272,13 @@ export function buildLocalAccountState(): AccountStateResponse {
       cancellation_effective_date: null,
       has_scheduled_change: false,
       scheduled_change: null,
-      commitment: { has_commitment: false, can_cancel: true, commitment_type: null, months_remaining: null, commitment_end_date: null },
+      commitment: {
+        has_commitment: false,
+        can_cancel: true,
+        commitment_type: null,
+        months_remaining: null,
+        commitment_end_date: null,
+      },
       can_purchase_credits: false,
     },
     tier: {
@@ -263,12 +305,21 @@ export function buildLocalAccountState(): AccountStateResponse {
 
 function extractCommitment(sub: Awaited<ReturnType<typeof getSubscriptionInfo>>): CommitmentInfo {
   if (!sub?.commitmentType || !sub.commitmentEndDate) {
-    return { has_commitment: false, can_cancel: true, commitment_type: null, months_remaining: null, commitment_end_date: null };
+    return {
+      has_commitment: false,
+      can_cancel: true,
+      commitment_type: null,
+      months_remaining: null,
+      commitment_end_date: null,
+    };
   }
 
   const endDate = new Date(sub.commitmentEndDate);
   const now = new Date();
-  const monthsRemaining = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (30 * 86400000)));
+  const monthsRemaining = Math.max(
+    0,
+    Math.ceil((endDate.getTime() - now.getTime()) / (30 * 86400000)),
+  );
   const canCancel = endDate <= now;
 
   return {
@@ -306,8 +357,16 @@ function extractScheduledChange(
     const target = getTier(sub.scheduledTierChange);
     return {
       type: 'downgrade',
-      current_tier: { name: current.name, display_name: current.displayName, monthly_credits: current.monthlyCredits },
-      target_tier: { name: target.name, display_name: target.displayName, monthly_credits: target.monthlyCredits },
+      current_tier: {
+        name: current.name,
+        display_name: current.displayName,
+        monthly_credits: current.monthlyCredits,
+      },
+      target_tier: {
+        name: target.name,
+        display_name: target.displayName,
+        monthly_credits: target.monthlyCredits,
+      },
       effective_date: sub.scheduledTierChangeDate,
     };
   }
@@ -317,7 +376,10 @@ function extractScheduledChange(
     return {
       type: 'downgrade',
       current_tier: { name: current.name, display_name: current.displayName },
-      target_tier: { name: sub.revenuecatPendingChangeProduct, display_name: sub.revenuecatPendingChangeProduct },
+      target_tier: {
+        name: sub.revenuecatPendingChangeProduct,
+        display_name: sub.revenuecatPendingChangeProduct,
+      },
       effective_date: sub.revenuecatPendingChangeDate,
     };
   }

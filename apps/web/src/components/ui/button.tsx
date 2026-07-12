@@ -16,8 +16,10 @@ const buttonVariants = cva(
         blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
         'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
         'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
-        danger: 'bg-destructive text-background hover:bg-destructive/90',
-        destructive: 'bg-destructive/80 text-background hover:bg-destructive/85',
+        danger:
+          'bg-destructive text-background hover:bg-destructive/90 focus-visible:ring-destructive/35 focus-visible:ring-offset-4 focus-visible:ring-2',
+        destructive:
+          'bg-destructive/80 text-background hover:bg-destructive/85 focus-visible:ring-destructive/35 focus-visible:ring-offset-1 focus-visible:ring-2',
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
@@ -25,8 +27,9 @@ const buttonVariants = cva(
         'secondary-outline': 'bg-secondary hover:bg-secondary border border-border text-foreground',
         sidebar: 'text-sidebar-foreground hover:bg-sidebar-accent/80 ',
         background: 'bg-background hover:bg-background/90  text-foreground ',
-        input: 'bg-input text-primary hover:bg-input',
-        accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10 rounded-md',
+        input:
+          'bg-input dark:bg-input/30  text-foreground hover:bg-input/95 dark:hover:bg-input/235',
+        accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/8 rounded-md',
         ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',
         muted: 'bg-muted text-foreground hover:bg-muted/90',
         link: 'text-foreground underline-offset-4 hover:underline bg-transparent',
@@ -39,7 +42,7 @@ const buttonVariants = cva(
           'border border-background/10 bg-foreground/90 hover:bg-foreground text-background hover:text-background',
         transparent: 'bg-transparent hover:bg-transparent text-foreground',
         text: 'text-muted-foreground hover:text-primary',
-
+        'ghost-input': 'bg-transparent hover:bg-input ',
         'ghost-sidebar': 'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
         'outline-sidebar':
           'border border-border bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
@@ -48,10 +51,11 @@ const buttonVariants = cva(
         error: 'bg-kortix-red/80 text-background hover:bg-kortix-red/85',
         info: 'bg-kortix-blue/80 text-background hover:bg-kortix-blue/85',
         warning: 'bg-kortix-yellow/80 text-background hover:bg-kortix-yellow/85',
+        popover: 'bg-popover text-foreground',
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-        xs: 'h-7  gap-1.5 px-2.5 has-[>svg]:px-2',
+        xs: 'h-7  gap-1.5 px-2.5 rounded-sm has-[>svg]:px-2',
         base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-2xl has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         sm: 'h-8  gap-1.5 px-3 has-[>svg]:px-2.5',
         lg: 'h-10  px-6 has-[>svg]:px-4',

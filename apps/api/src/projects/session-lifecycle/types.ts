@@ -7,12 +7,15 @@ export type SessionInvocationSource =
   | 'mobile'
   | 'cli'
   | 'slack'
+  | 'email'
   | 'telegram'
   | 'teams'
+  | 'meet'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
   | 'system:sandbox-build-fix'
+  | 'system:approval-resume'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';
@@ -23,6 +26,12 @@ export type SessionLifecyclePostCreateAction =
       platform: 'slack' | 'telegram' | string;
       workspaceId: string;
       threadId: string;
+    }
+  | {
+      type: 'deliver_prompt';
+      source: SessionInvocationSource;
+      text: string;
+      userId?: string | null;
     };
 
 export type SessionLifecycleStatus =
@@ -40,7 +49,7 @@ export interface CreateSessionCommand {
   project: ProjectRow;
   userId: string;
   body: Record<string, unknown>;
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   enforceAccountCap?: boolean;
@@ -54,7 +63,7 @@ export interface QueuedCreateSessionPayload {
   body: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  visibility?: 'private' | 'project';
+  visibility?: 'private' | 'project' | 'restricted';
   enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
 }
@@ -82,6 +91,11 @@ export interface StartSessionCommand {
   };
   projectId: string;
   sessionId: string;
+  /** Optional server-side long-poll budget (ms). When set, startSession keeps
+   *  re-resolving readiness until ready/terminal or this deadline, so the client
+   *  learns `ready` the instant it flips instead of on its own poll tick.
+   *  Bounded server-side (START_AWAIT_MAX_MS); omit/0 = original one-shot. */
+  waitMs?: number;
 }
 
 export type SessionDeliveryOutcome = 'delivered' | 'pending' | 'no-session' | 'failed';

@@ -22,14 +22,31 @@ mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb',
   saveSlackOauthInstall: async () => {},
 }));
-mock.module('../channels/slack-api', () => ({ updateMessage: async () => {} }));
+mock.module('../channels/slack-api', () => ({
+  openDmChannel: async () => 'D1',
+  postBlocks: async () => 'ts',
+  postEphemeral: async () => true,
+  updateMessage: async () => {},
+}));
 
 const setAgentCalls: Array<string | null> = [];
 const setModelCalls: Array<string | null> = [];
 let setResult = true;
+let setAgentReason: 'no_binding' | 'unknown_agent' = 'no_binding';
 mock.module('../channels/slack/selection', () => ({
-  setChannelAgent: async (_c: unknown, a: string | null) => { setAgentCalls.push(a); return setResult; },
+  // `./commands` (transitively imported by interactivity.ts for handleSlashCommand)
+  // also pulls this in — the mock module shape must cover its full surface or
+  // the import fails, not just the bits this file's own code paths exercise.
+  currentChannelSelection: async () => null,
+  setChannelAgent: async (_c: unknown, a: string | null) => {
+    setAgentCalls.push(a);
+    return setResult ? { ok: true } : { ok: false, reason: setAgentReason };
+  },
   setChannelModel: async (_c: unknown, m: string | null) => { setModelCalls.push(m); return setResult; },
+  setChannelConversationPolicy: async () => undefined,
+  listProjectAgents: async () => [],
+  RECOMMENDED_MODELS: [],
+  isValidModelId: (s: string) => { const i = s.indexOf('/'); return i > 0 && i < s.length - 1 && !/\s/.test(s); },
   modelLabel: (id: string) => id,
 }));
 
@@ -41,6 +58,7 @@ beforeEach(() => {
   setAgentCalls.length = 0;
   setModelCalls.length = 0;
   setResult = true;
+  setAgentReason = 'no_binding';
   posts.length = 0;
   globalThis.fetch = (async (url: string, init?: any) => {
     posts.push({ url, body: JSON.parse(init?.body ?? '{}') });
@@ -90,11 +108,23 @@ describe('agent/model picker clicks', () => {
 
   test('binding gone → tells the user to switch', async () => {
     setResult = false;
+    setAgentReason = 'no_binding';
     await handleBlockAction({
       ...basePayload,
       actions: [{ action_id: 'set_agent_reviewer', value: JSON.stringify({ c: 'C1', a: 'reviewer' }) }],
     });
     expect(posts[0]?.body.text).toContain('no longer bound');
+  });
+
+  test('unknown agent in a governed project → declared-agent error, not "no longer bound"', async () => {
+    setResult = false;
+    setAgentReason = 'unknown_agent';
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'set_agent_ghost', value: JSON.stringify({ c: 'C1', a: 'ghost' }) }],
+    });
+    expect(posts[0]?.body.text).toContain('is not a declared agent');
+    expect(posts[0]?.body.text).not.toContain('no longer bound');
   });
 
   test('a plain "Open session" link button is ignored (no work, no post)', async () => {

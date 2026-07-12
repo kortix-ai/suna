@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
 import { Heatmap } from '@paper-design/shaders-react';
+import { ShaderSafe } from '@/components/ui/shader-safe';
 import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -79,25 +80,27 @@ const Security = () => {
       <div className="border-border bg-card grid min-h-[390px] w-full overflow-hidden rounded-sm border lg:grid-cols-12">
         <div className="bg-foreground relative hidden h-full w-full overflow-hidden rounded-sm border-b lg:col-span-4 lg:block lg:border-r lg:border-b-0">
           <div className="relative flex h-full w-full items-center justify-center lg:scale-90">
-            <Heatmap
-              speed={1}
-              contour={0.5}
-              angle={0}
-              noise={0}
-              innerGlow={0.5}
-              outerGlow={0.05}
-              scale={0.65}
-              image="https://app.paper.design/file-assets/01KSZX87JES96T455ZX3RRGMPP/01KT47X1FY5YNJN6EPP8TW6ZB1.svg"
-              frame={407072.499999992}
-              colors={['var(--kortix-orange)', '#fafafa', '#242424']}
-              colorBack="#ffffff00"
-              className="shrink-0"
-              style={{
-                // backgroundColor: 'var(--card)',
-                height: '182px',
-                width: '220px',
-              }}
-            />
+            <ShaderSafe>
+              <Heatmap
+                speed={1}
+                contour={0.5}
+                angle={0}
+                noise={0}
+                innerGlow={0.5}
+                outerGlow={0.05}
+                scale={0.65}
+                image="/shaders/heatmap-mark.svg"
+                frame={407072.499999992}
+                colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+                colorBack="#ffffff00"
+                className="shrink-0"
+                style={{
+                  // backgroundColor: 'var(--card)',
+                  height: '182px',
+                  width: '220px',
+                }}
+              />
+            </ShaderSafe>
           </div>
         </div>
 

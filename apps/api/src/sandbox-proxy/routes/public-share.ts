@@ -67,29 +67,6 @@ function publicOrigin(c: any): string {
   return `${proto}://${host}`;
 }
 
-function requestHostParts(c: any): { proto: string; hostname: string; port: string } {
-  const url = new URL(c.req.url);
-  const host = c.req.header('host') || url.host;
-  const proto = c.req.header('x-forwarded-proto') || url.protocol.replace(':', '');
-  const [hostname, port = ''] = host.split(':');
-  return { proto, hostname, port };
-}
-
-function appendPublicShareToken(path: string, token: string): string {
-  const url = new URL(path || '/', 'http://preview.local');
-  url.searchParams.set('public_share', token);
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
-function publicPreviewUrl(c: any, token: string, row: any): string | null {
-  if (row.resourceType !== 'preview' || !row.port || !row.externalId) return null;
-
-  const { proto, hostname, port } = requestHostParts(c);
-  const parentHost = hostname === '127.0.0.1' ? 'localhost' : hostname;
-  const previewHost = `p${row.port}-${row.externalId}.${parentHost}`;
-  return `${proto}://${previewHost}${port ? `:${port}` : ''}${appendPublicShareToken(row.path, token)}`;
-}
-
 publicShareApp.get('/:token', async (c) => {
   const token = c.req.param('token');
   const resolved = await resolvePublicShare(token);
@@ -98,6 +75,10 @@ publicShareApp.get('/:token', async (c) => {
   const proxyPath = row.resourceType === 'file'
     ? `/v1/p/public-share/${token}/file`
     : `/v1/p/public-share/${token}/${row.port}${row.path}`;
+  // Path-based absolute URL only. The subdomain form (p{port}-{id}.{host}) has
+  // no wildcard DNS in production, so it never resolves — always serve the
+  // token-gated proxy path that the proxy routes below actually handle.
+  const publicUrl = row.resourceType === 'preview' ? `${publicOrigin(c)}${proxyPath}` : null;
   return c.json({
     share: {
       share_id: row.shareId,
@@ -113,7 +94,7 @@ publicShareApp.get('/:token', async (c) => {
       sandbox_status: row.sandboxStatus,
       expires_at: row.expiresAt?.toISOString() ?? null,
       proxy_path: proxyPath,
-      public_url: publicPreviewUrl(c, token, row),
+      public_url: publicUrl,
     },
   });
 });
@@ -176,10 +157,10 @@ async function forwardPublicShare(c: any, args: {
         headers,
         body,
         redirect: 'manual',
-        // @ts-ignore Bun/undici streaming option.
+        // Bun/undici streaming extensions — not in the lib RequestInit type.
         decompress: false,
         duplex: 'half',
-      });
+      } as RequestInit);
 
       if ((upstream.status === 502 || upstream.status === 503) && attempt < maxRetries) {
         invalidatePreviewLink(args.share.externalId!, args.port);
@@ -227,13 +208,16 @@ async function forwardFileShare(c: any, args: {
   const file = assertFileShare(args.share);
   if (!file.ok) return c.json({ error: 'Not authorized for this file' }, 403);
 
-  const isFileEntry = args.remainingPath === '/';
+  const isFileEntry = args.remainingPath === '/' || args.remainingPath === '/open';
+  if (!isFileEntry) {
+    return c.json({ error: 'Not authorized for this file path' }, 403);
+  }
   return forwardPublicShare(c, {
     token: args.token,
     share: args.share,
     port: STATIC_FILE_SHARE_PORT,
-    remainingPath: isFileEntry ? '/open' : args.remainingPath,
-    queryString: isFileEntry ? fileOpenQuery(file.filePath) : args.queryString,
+    remainingPath: '/open',
+    queryString: fileOpenQuery(file.filePath),
     redirectPrefix: `/v1/p/public-share/${args.token}/file`,
   });
 }

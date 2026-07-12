@@ -39,6 +39,7 @@ const EXTENSION_PROTOCOL_PREFIXES = [
 const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/scripts\/inpage\.js$/,
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
+  /^app:\/\/\/embed\/embed\.js$/,
 ] as const;
 
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {

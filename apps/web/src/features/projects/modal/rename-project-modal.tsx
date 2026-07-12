@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -16,7 +17,7 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { updateProject } from '@/lib/projects-client';
+import { updateProject } from '@kortix/sdk/projects-client';
 
 interface RenameProjectDialogProps {
   projectId: string | null;
@@ -53,7 +54,7 @@ export const RenameProjectDialog = ({
         queryClient.setQueryData(['project', projectId], updated);
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      successToast('Project renamed');
+      successToast(updated?.name ? `Renamed to "${updated.name}"` : 'Project renamed');
       onSaved?.();
       onOpenChange(false);
     },
@@ -72,7 +73,12 @@ export const RenameProjectDialog = ({
   };
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
+    <Modal
+      open={open}
+      onOpenChange={(o) => {
+        if (!renameMutation.isPending) onOpenChange(o);
+      }}
+    >
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
           <ModalTitle>
@@ -104,11 +110,16 @@ export const RenameProjectDialog = ({
           />
         </ModalBody>
         <ModalFooter className="sm:justify-between">
-          <Button variant="outline-ghost" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline-ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={renameMutation.isPending}
+          >
             Cancel
           </Button>
           <Button onClick={submit} disabled={renameMutation.isPending || isUnchanged || isEmpty}>
-            {renameMutation.isPending ? 'Saving…' : 'Save'}
+            {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            Save
           </Button>
         </ModalFooter>
       </ModalContent>

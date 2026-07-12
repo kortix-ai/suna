@@ -14,6 +14,7 @@ import {
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
+import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { cors } from 'hono/cors';
@@ -30,7 +31,6 @@ import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
@@ -50,6 +50,7 @@ import { startAccessControlCache, stopAccessControlCache } from './shared/access
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
+import { templatesApp } from './projects/templates/routes';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -61,9 +62,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { kickWarmBaseBuild } from './snapshots/warm-bake';
-import { warmSnapshotsEnabled } from './shared/daytona';
-import { warmPoolEnabled } from './platform/services/warm-pool';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -135,7 +133,9 @@ app.use('*', async (c, next) => {
     await next();
     status = c.res.status;
   } catch (err) {
-    status = 500;
+    // Record the thrown status (e.g. the request-deadline 503), not a blanket
+    // 500 — otherwise deadline hits are unattributable per route in metrics.
+    status = err instanceof HTTPException ? err.status : 500;
     throw err;
   } finally {
     decInFlight();
@@ -165,6 +165,9 @@ const cloudOrigins = [
 const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  // Local dev: the white-label reference app (apps/whitelabel-demo) defaults to :3010.
+  'http://localhost:3010',
+  'http://127.0.0.1:3010',
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
@@ -346,26 +349,9 @@ const HealthSchema = z
   .object({
     status: z.string(),
     service: z.string(),
-    version: z.string(),
-    commit: z.string(),
-    environment: z.string(),
-    instance: z.string(),
-    started_at: z.string(),
-    uptime_seconds: z.number(),
-    memory_mb: z.number(),
     timestamp: z.string(),
-    billing_enabled: z.boolean(),
-    warm_snapshots: z.boolean(),
-    warm_pool: z.object({
-      enabled: z.boolean(),
-      max_total: z.number(),
-      size: z.number(),
-      clone_at_park: z.boolean(),
-      presence_minutes: z.number(),
-    }),
-    tunnel: z.any(),
-    leader: z.boolean(),
-    trigger_scheduler: z.any(),
+    environment: z.string(),
+    version: z.string(),
   })
   .openapi('Health');
 
@@ -373,40 +359,9 @@ const healthHandler = (c: any) =>
   c.json({
     status: 'ok',
     service: 'kortix-api',
-    version: API_VERSION,
-    commit: API_COMMIT,
-    environment: config.INTERNAL_KORTIX_ENV,
-    instance: API_INSTANCE,
-    started_at: STARTED_AT,
-    uptime_seconds: Math.round(process.uptime()),
-    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
-    // the container's memory limit, without needing metrics-server/dashboards.
-    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
-    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
-    // misconfigured env var is visible remotely instead of failing silently.
-    warm_snapshots: warmSnapshotsEnabled(),
-    // Whether the warm POOL is live in THIS pod + its tuning. Surfaced so a
-    // values.yaml extraEnv that never reached the running pod (e.g. a stuck
-    // Argo sync) is visible remotely instead of silently leaving every start
-    // cold. Config-only — no DB query, so /health stays cheap (see the Better
-    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_ENABLED (no global cap).
-    warm_pool: {
-      enabled: warmPoolEnabled(),
-      default_size: config.KORTIX_WARM_POOL_SIZE,
-      clone_at_park: config.KORTIX_WARM_POOL_CLONE_AT_PARK,
-      presence_minutes: config.KORTIX_WARM_POOL_PRESENCE_MINUTES,
-    },
-    tunnel: getTunnelServiceStatus(),
-    leader: isLeader(),
-    // The leader pod's trigger-sweep heartbeat: when it last ran, how long it
-    // took, and what it did. On a non-leader pod the fields are null (the sweep
-    // only runs on the leader) — so "all pods null" = no leader = no triggers.
-    // `stale` is true when we're the leader but the sweep has frozen (started
-    // and not completed within the stale window) — the signal to alert on.
-    trigger_scheduler: { ...getTriggerSchedulerHealth(), stale: schedulerSweepIsStale(isLeader()) },
+    environment: config.INTERNAL_KORTIX_ENV,
+    version: API_VERSION,
   });
 
 app.openapi(
@@ -465,7 +420,23 @@ const livenessHandler = (c: any) => {
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
 
+function hasInternalObservabilityAuth(c: any): boolean {
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
+  const expected = config.INTERNAL_SERVICE_KEY;
+  const safeEq = (a: string, b: string) => {
+    const aa = Buffer.from(a);
+    const bb = Buffer.from(b);
+    return aa.length === bb.length && timingSafeEqual(aa, bb);
+  };
+  return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
+}
+
 app.get('/metrics', (c) => {
+  if (!hasInternalObservabilityAuth(c)) {
+    return c.text('unauthorized\n', 401);
+  }
   if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
   c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return c.body(renderMetrics());
@@ -570,19 +541,19 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  if (role !== 'admin' && role !== 'super_admin') {
-    return c.json({ error: 'Admin access required' }, 403);
-  }
-  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
-  const body = await c.req.json().catch(() => ({}));
-  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  await db
-    .insert(platformSettings)
-    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
-  return c.json(config);
+    const userId = c.get('userId') as string;
+    const role = await getPlatformRole(userId);
+    if (role !== 'admin' && role !== 'super_admin') {
+      return c.json({ error: 'Admin access required' }, 403);
+    }
+    if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+    const body = await c.req.json().catch(() => ({}));
+    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    await db
+      .insert(platformSettings)
+      .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+    return c.json(maintenanceConfig);
   },
 );
 
@@ -646,121 +617,10 @@ app.openapi(
 app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
-  const { createLlmGateway } = await import('./llm-gateway');
-  const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
-  const { validateAccountToken } = await import('./repositories/account-tokens');
-  const { assertBillingActive } = await import('./billing/services/billing-gate');
-  const { deductForLlmUsage } = await import('./billing/services/credits');
-  const { recordUsageEvent } = await import('./shared/usage-events');
-  const { llmPriceMarkup } = await import('./billing/services/tiers');
-
-  app.route(
-    '/v1/llm',
-    createLlmGateway(
-      {
-        enabled: config.LLM_GATEWAY_ENABLED,
-        openrouterApiKey: config.OPENROUTER_API_KEY,
-        markup: llmPriceMarkup(),
-        appName: 'Kortix',
-        appReferer: config.KORTIX_URL,
-      },
-      {
-        authenticateToken: async (token) => {
-          // Legacy per-member YOLO token (prod per-seat path) takes priority.
-          const yolo = await attributeYoloToken(token);
-          if (yolo) return yolo;
-          // YOLO is discontinued; sandboxes now present their account token
-          // (a kortix_pat_ minted at provision). Resolve it to {userId, accountId}
-          // so the managed gateway works for self-hosted / billing-off deploys.
-          const acct = await validateAccountToken(token);
-          if (acct.isValid && acct.userId && acct.accountId) {
-            // projectId/sessionId attribute LLM usage to the calling session
-            // (sandbox executor token is minted per-session with session_id =
-            // sandbox_id) — the reaper's reliable activity signal + precise
-            // per-session billing.
-            return {
-              userId: acct.userId,
-              accountId: acct.accountId,
-              projectId: acct.projectId ?? null,
-              sessionId: acct.sessionId ?? null,
-            };
-          }
-          return null;
-        },
-        assertBillingActive,
-        recordUsage: async (event) => {
-          // Always record usage_events for observability (token counts, model,
-          // request id) — useful in self-hosted for debugging even with no
-          // wallet deduction.
-          const usageEventId = await recordUsageEvent({
-            accountId: event.accountId,
-            actorUserId: event.actorUserId,
-            projectId: event.projectId ?? null,
-            sessionId: event.sessionId ?? null,
-            provider: event.provider,
-            model: event.model,
-            route: '/v1/llm/chat/completions',
-            inputTokens: event.promptTokens,
-            outputTokens: event.completionTokens,
-            cachedTokens: event.cachedTokens,
-            costUsd: event.finalCost,
-            streaming: event.streaming,
-            metadata: {
-              upstreamCostUsd: event.upstreamCost,
-              markup: llmPriceMarkup(),
-              requestId: event.requestId,
-            },
-          });
-          // Hard gate: never debit the wallet when billing is disabled.
-          if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return;
-          await deductForLlmUsage({
-            accountId: event.accountId,
-            costUsd: event.finalCost,
-            model: event.model,
-            provider: event.provider,
-            actorUserId: event.actorUserId,
-            usageEventId,
-            upstreamCostUsd: event.upstreamCost,
-            markup: llmPriceMarkup(),
-          });
-        },
-      },
-    ),
-  );
-
-  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
-  app.route('/internal/gateway', createInternalGatewayRoutes());
-
-  if (
-    config.LLM_GATEWAY_ENABLED &&
-    !config.LLM_GATEWAY_BASE_URL &&
-    !config.LLM_GATEWAY_PROXY_PORT &&
-    !config.LLM_GATEWAY_PROXY_TARGET
-  ) {
-    appLogger.error(
-      '[gateway] LLM_GATEWAY_BASE_URL is unset and no proxy is configured — sandboxes will fall back to the in-API /v1/llm passthrough (OpenRouter-only, wrong catalog shape → single-model picker). Set LLM_GATEWAY_BASE_URL to the standalone gateway URL (e.g. https://gateway.kortix.com/v1/llm).',
-    );
-  }
-
-  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
-    const proxyBase = (
-      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
-    ).replace(/\/+$/, '');
-    app.all('/v1/llm-gateway/*', async (c) => {
-      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-      const target = `${proxyBase}${tail}`;
-      const init: RequestInit & { duplex?: 'half' } = {
-        method: c.req.method,
-        headers: c.req.raw.headers,
-      };
-      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-        init.body = c.req.raw.body;
-        init.duplex = 'half';
-      }
-      const upstream = await fetch(target, init);
-      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
-    });
-  }
+  // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
+  // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
+  const { mountLlmGateway } = await import('./llm-gateway/wire');
+  mountLlmGateway(app);
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -770,6 +630,7 @@ registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
+app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -791,11 +652,14 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, teamsWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
+const { slackWebhookApp, teamsWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
+app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
 
 const { sandboxWebhooksApp } = await import('./platform/webhooks/routes');
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -810,6 +674,14 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 import { setupLinksPublicApp } from './setup-links/public-app';
 app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
+// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
+// session title + sanitized transcript for a valid session public-share
+// (any resource type SESS-13's CRUD creates); backs the logged-out
+// `/share/[shareId]` viewer (apps/web). No auth, no client-side sandbox
+// access — the API reads the sandbox's OpenCode daemon server-side.
+import { publicSessionSharesApp } from './public-session-shares';
+app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -821,10 +693,6 @@ app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
-
-// All remaining routes require authentication (JWT or kortix_ token).
-app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -841,10 +709,9 @@ app.use('/v1/tunnel/*', async (c, next) => {
 });
 app.route('/v1/tunnel', tunnelApp);
 
-// Preview Proxy — unified route for both cloud (Daytona) and local mode.
-// Pattern: /v1/p/{sandboxId}/{port}/* for ALL modes.
-// Cloud:  sandboxId = Daytona external ID → proxied via Daytona SDK
-// Local:  sandboxId = container name (e.g. 'kortix-sandbox') → Docker DNS resolution
+// Preview Proxy — unified route for sandbox HTTP access.
+// Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
+// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);
@@ -984,6 +851,15 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
+  // toggles (warm_snapshot / provider_fallback) are honored from
+  // request #1. Without this a fresh pod serves the cold-cache defaults for the
+  // first ~30s — which on a deploy let warm_snapshot resolve to the (old hardcoded)
+  // ON despite the admin "off", warm-forking a stale seed: the 2026-06-26 opencode
+  // wedge. Best-effort: a DB hiccup leaves the fail-safe OFF defaults.
+  await import('./platform/services/runtime-settings')
+    .then((m) => m.refreshRuntimeSettings())
+    .catch(() => {});
   // Every replica stages snapshot/session-boot build contexts in tmpdir and can
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
@@ -993,8 +869,8 @@ async function startReplicaServices() {
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
 // (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
 // up to 10); running these on every replica would double-fire cron triggers
-// (N duplicate paid agent sessions + duplicate external side effects),
-// over-provision the warm pool, and double-run legacy migrations. Leader
+// (N duplicate paid agent sessions + duplicate external side effects) and
+// double-run legacy migrations. Leader
 // election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
 // The guard makes start/stop idempotent across leadership flaps.
 let singletonWorkersRunning = false;
@@ -1007,10 +883,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  // Experimental: pre-bake the shared memory-state warm base so the first
-  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
-  // + DAYTONA_WARM_TARGET are set; best-effort.
-  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -1119,6 +991,13 @@ export default {
     // the proxy's own upstream timeout decide instead of Bun closing the client
     // socket early with an empty reply.
     if (url.pathname.includes('/v1/p/')) {
+      server.timeout(req, 0);
+    }
+
+    // The standalone-gateway reverse proxy streams chat completions (SSE). Let
+    // the gateway's own keep-alive / upstream timeout govern it instead of Bun
+    // closing the client socket at idleTimeout with an empty reply.
+    if (url.pathname.startsWith('/v1/llm-gateway')) {
       server.timeout(req, 0);
     }
 

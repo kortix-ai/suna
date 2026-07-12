@@ -37,6 +37,7 @@ import {
   resolveRootSessionId,
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
+import { sandboxRuntimeRequestHeaders } from './sandbox-fetch';
 
 export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
@@ -90,7 +91,11 @@ export async function listSandboxOpencodeSessions(
       // latency 1:1 because the FE's ensure retry can't start until this
       // returns. Observed: 8s 'unreachable' tails on warm forks; 3s + the
       // FE's ~1.6s backoff retry beats hanging.
-      { method: 'GET', headers: ep.headers, signal: AbortSignal.timeout(3_000) },
+      {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(ep.headers),
+        signal: AbortSignal.timeout(3_000),
+      },
     );
     // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
     // failure so callers can retry rather than treat it as "empty".

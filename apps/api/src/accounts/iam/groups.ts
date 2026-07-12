@@ -10,6 +10,11 @@ import {
   assertAuthorized,
 } from '../../iam';
 import {
+  invalidateIamCacheForGroup,
+  invalidateIamCacheForUser,
+  invalidateIamCacheForUsers,
+} from '../../iam/cache-invalidation';
+import {
   addGroupMembers,
   createGroup,
   deleteGroup,
@@ -27,7 +32,13 @@ import {
   GroupMemberSchema,
   ProjectGrantSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
+
+// Groups are an Enterprise-only construct (no free-tier group concept). The
+// `rbac` entitlement gates every route that CREATES or GROWS group state
+// (create group, rename, add members); reads and deletions stay open so a
+// downgraded account can still see and clean up leftover groups — revoking
+// access is never paywalled. See TierEntitlements in ../../types.
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -83,6 +94,8 @@ iamRouter.openapi(
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -177,6 +190,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const patch: { name?: string; description?: string | null } = {};
@@ -235,8 +250,15 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  // No entitlement gate: deletion is cleanup, always allowed (see file header).
 
   const beforeGroup = await getGroup(accountId, groupId);
+
+  // Bust every member's cached decision BEFORE the delete: the cascade removes
+  // accountGroupMembers, so invalidateIamCacheForGroup (which reads that table)
+  // would find no one to bust if called afterwards. Otherwise the group's
+  // grants would keep applying for up to the cache TTL after deletion.
+  await invalidateIamCacheForGroup(groupId);
 
   const ok = await deleteGroup(accountId, groupId);
   if (!ok) return c.json({ error: 'group not found' }, 404);
@@ -308,6 +330,8 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  const denied = await requireEntitlement(c, accountId, 'rbac');
+  if (denied) return denied;
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
@@ -321,6 +345,10 @@ iamRouter.openapi(
   if (userIds.length === 0) return c.json({ error: 'userIds required' }, 400);
 
   const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });
+
+  // New members inherit the group's project grants immediately — bust their
+  // cached decisions so the added access isn't delayed by the cache TTL.
+  if (result.added > 0) invalidateIamCacheForUsers(userIds);
 
   if (result.added > 0) {
     await auditIam(c, {
@@ -358,12 +386,17 @@ iamRouter.openapi(
     type: 'group',
     id: groupId,
   });
+  // No entitlement gate: removing a member is cleanup, always allowed.
 
   const group = await getGroup(accountId, groupId);
   if (!group) return c.json({ error: 'group not found' }, 404);
 
   const ok = await removeGroupMember(groupId, targetUserId);
   if (!ok) return c.json({ error: 'not a member of this group' }, 404);
+
+  // Revocation must take effect now, not after the cache TTL: drop the removed
+  // user's cached decision so the group's grants stop applying immediately.
+  invalidateIamCacheForUser(targetUserId);
 
   await auditIam(c, {
     accountId,

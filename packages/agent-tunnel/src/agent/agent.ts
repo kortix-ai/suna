@@ -51,6 +51,7 @@ export class TunnelAgent {
   private maxReconnectDelay = 30_000;
   private baseReconnectDelay = 1_000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableConnectionTimer: ReturnType<typeof setTimeout> | null = null;
   private isShuttingDown = false;
   private uptime = 0;
   private uptimeInterval: ReturnType<typeof setInterval> | null = null;
@@ -114,7 +115,6 @@ export class TunnelAgent {
     if (!this.ws) return;
 
     this.ws.addEventListener('open', () => {
-      this.reconnectAttempts = 0;
       this.uptime = 0;
       this.lastNonce = 0;
       this.responseNonce = 0;
@@ -133,6 +133,10 @@ export class TunnelAgent {
       if (this.uptimeInterval) {
         clearInterval(this.uptimeInterval);
         this.uptimeInterval = null;
+      }
+      if (this.stableConnectionTimer) {
+        clearTimeout(this.stableConnectionTimer);
+        this.stableConnectionTimer = null;
       }
 
       if (!this.isShuttingDown) {
@@ -163,6 +167,11 @@ export class TunnelAgent {
     if (msg.type === 'auth_ok' && msg.signingKey) {
       this.signingKey = msg.signingKey;
       log(`${c.green}●${c.reset}`, `Connected ${c.reset}${c.gray}(${this.registry.getCapabilityNames().join(', ')})${c.reset}`);
+      if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
+      this.stableConnectionTimer = setTimeout(() => {
+        this.reconnectAttempts = 0;
+        this.stableConnectionTimer = null;
+      }, 30_000);
       return;
     }
 
@@ -258,7 +267,8 @@ export class TunnelAgent {
     const { id, method, params = {} } = request;
 
     const permissionId = params.permissionId as string | undefined;
-    if (!this.permissionGuard.checkPermission(permissionId)) {
+    const permission = this.permissionGuard.getPermission(permissionId);
+    if (!permission) {
       this.sendSignedError(id, -32000, `Permission denied: ${permissionId ? 'invalid or expired permission' : 'no permissionId provided'}`);
       return;
     }
@@ -270,7 +280,10 @@ export class TunnelAgent {
     }
 
     try {
-      const result = await handler(params);
+      const result = await handler({
+        ...params,
+        __permission: permission,
+      });
       this.sendSignedResult(id, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

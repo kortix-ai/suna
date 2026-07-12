@@ -1,0 +1,141 @@
+---
+title: "How we handle access requests"
+description: An access request in Slack triggers an agent to check policy, gather context, and prepare a least-privilege grant, with every grant requiring a human approval and logged.
+date: "2026-04-08"
+author: team
+tags:
+  - Security
+  - Case Study
+  - Enterprise
+---
+
+Access requests arrive constantly and informally. Someone needs a repo, a role in
+Okta, or a cloud IAM permission to finish a task, and they ask in Slack. Whoever
+holds the access has to check what the person's role should have, work out the
+narrowest grant that unblocks them, apply it, and remember to record it. Under
+time pressure the easy path is to grant broadly and move on, and the record of
+who has what drifts.
+
+We handle this by tying the grant to the request that starts it, and to the
+policy that governs it. This writes up how we run that on Kortix — the
+connections, the steps, and the guardrails — so you can set up the same flow.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Trigger">An access request in Slack</Fact>
+  <Fact label="Connected systems">Okta · GitHub · Cloud IAM</Fact>
+  <Fact label="Mode">Policy-checked · Approval-gated · Logged</Fact>
+</KeyFacts>
+
+## The problem
+
+The common approaches each fall short. A ticket queue routes the request to a
+person who still does all the lookup and grant work by hand. A standing broad
+role avoids the back-and-forth but hands out more than the task needs. And a
+self-serve grant with no policy check trades safety for speed. None of them keep
+a clean record of what was granted and why.
+
+We wanted each request checked against policy, scoped to the least privilege that
+unblocks the work, and granted only after a person signs off, with a log left
+behind.
+
+## What we built
+
+On Kortix, an access request in Slack triggers an agent. Each request runs in its
+own isolated session — a cloud sandbox — with scoped access to Okta, GitHub, and
+cloud IAM. The agent reads the request, checks it against policy, gathers context
+on the person's role, team, and the least-privilege scope that fits, and prepares
+the grant. Every grant requires a human approval, and each one is logged.
+
+<Figure
+  caption="The agent checking a request against policy and preparing a least-privilege grant"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect Slack as the trigger">
+
+Slack is connected as a **channel**, so a request is the trigger. Post the access
+request and it spawns a fresh **session** in its own sandbox, seeded with who's
+asking and what they need. One request, one session, one disposable machine.
+
+</Step>
+<Step title="Give the agent the access policy">
+
+Which roles map to which grants, what least privilege means for each system, and
+which requests need extra scrutiny are stored as **skills** and **memory** that
+load into every session. The agent checks requests against that policy rather
+than improvising, and it updates as the policy changes.
+
+</Step>
+<Step title="Connect what a grant can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read Okta** — the requester's role, team, and current group memberships.
+- **Prepare a GitHub grant** — repo or team access scoped to what the task needs.
+- **Prepare a cloud IAM grant** — the narrowest role or permission set that
+  unblocks the work.
+
+</Step>
+<Step title="Set the guardrails">
+
+Granting access is the step that changes who can do what, so every grant stops at
+a **human approval gate** — no access is applied until a person signs off. Each
+approved grant is logged with the request, the policy check, and the scope.
+Credentials are encrypted in the secrets manager and injected at runtime, never
+shown to the model or written to logs.
+
+</Step>
+<Step title="Let each request come back scoped and logged">
+
+With that in place, a request in Slack comes back as a policy-checked,
+least-privilege grant ready for a person to approve, with a record attached. "I
+need access to this repo" becomes a scoped GitHub grant; "I need this cloud role"
+becomes the narrowest IAM permission that fits, both held for sign-off.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect Slack via a **channel** trigger, give the agent scoped **connectors**
+  into Okta, GitHub, and cloud IAM, encode the access policy as **skills** and
+  **memory**, and gate every grant behind a human with a log left behind.
+</Callout>
+
+## Guardrails
+
+Giving an agent a hand in access decisions is a trust question. The relevant
+controls on Kortix:
+
+- **Isolation.** Every request runs in its own microVM sandbox on its own branch.
+  The session can reach only the systems it's scoped to, and only what it's
+  explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** Each credential is encrypted in the secrets manager,
+  injected into the sandbox at runtime, and never exposed to the model or the
+  logs.
+- **Human approval gate.** No grant is applied until a person approves it, and
+  each approved grant is logged.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not
+  a dashboard setting.
+
+<Figure
+  caption="A prepared grant held for human approval, with its policy check and scope attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Least privilege" label="Every grant scoped to what the task needs" />
+  <Stat value="Approval-gated" label="No access applied without a person signing off" />
+  <Stat value="Logged" label="Every grant recorded with its request and scope" />
+</StatGrid>
+
+Access requests that used to be granted broadly under time pressure now come back
+scoped, policy-checked, and ready for a person to approve, with a record left
+behind. Extending it to another system means connecting one more platform.

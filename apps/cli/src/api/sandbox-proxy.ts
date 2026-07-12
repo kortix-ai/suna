@@ -91,6 +91,20 @@ export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   return payload as T;
 }
 
+/** Build the WebSocket URL for a raw terminal (PTY) session, mirroring what
+ *  the web app's browser client connects to — same host, same `?token=`
+ *  query auth (WebSocket can't set custom headers). Reaches Kortix's own
+ *  `/kortix/pty` implementation in the sandbox daemon (routes/pty.ts),
+ *  independent of whatever agent runtime (OpenCode today) is running — same
+ *  daemon port, same proxy, same auth as everything else, just a different
+ *  path than OpenCode's own (now-unused-by-the-CLI) `/pty`. */
+export function kortixPtyWsUrl(auth: Auth, sandboxId: string, ptyId: string): string {
+  const base = auth.api_base.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const httpBase = `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
+  const wsBase = httpBase.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+  return `${wsBase}/kortix/pty/${encodeURIComponent(ptyId)}/connect?token=${encodeURIComponent(auth.token)}`;
+}
+
 export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
@@ -156,6 +170,58 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
         method: 'POST',
         body: {},
       }),
+    listPermissions: () =>
+      sandboxRequest<OpencodePermissionRequest[]>({ ...base, path: '/permission' }),
+    replyPermission: (requestId: string, reply: 'once' | 'always' | 'reject', message?: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/permission/${requestId}/reply`,
+        method: 'POST',
+        body: { reply, ...(message ? { message } : {}) },
+      }),
+    listQuestions: () =>
+      sandboxRequest<OpencodeQuestionRequest[]>({ ...base, path: '/question' }),
+    replyQuestion: (requestId: string, answers: string[][]) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reply`,
+        method: 'POST',
+        body: { answers },
+      }),
+    rejectQuestion: (requestId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/question/${requestId}/reject`,
+        method: 'POST',
+        body: {},
+      }),
+    listPty: () => sandboxRequest<OpencodePty[]>({ ...base, path: '/kortix/pty' }),
+    createPty: (body?: {
+      command?: string;
+      args?: string[];
+      cwd?: string;
+      title?: string;
+      env?: Record<string, string>;
+    }) =>
+      sandboxRequest<OpencodePty>({
+        ...base,
+        path: '/kortix/pty',
+        method: 'POST',
+        body: body ?? {},
+      }),
+    updatePty: (ptyId: string, body: { title?: string; size?: { rows: number; cols: number } }) =>
+      sandboxRequest<OpencodePty>({
+        ...base,
+        path: `/kortix/pty/${ptyId}`,
+        method: 'PATCH',
+        body,
+      }),
+    removePty: (ptyId: string) =>
+      sandboxRequest<boolean>({
+        ...base,
+        path: `/kortix/pty/${ptyId}`,
+        method: 'DELETE',
+      }),
   };
 }
 
@@ -203,3 +269,52 @@ export type OpencodePart =
   | { type: 'tool'; tool: string; state?: { status?: string; output?: string } }
   | { type: 'file'; mime?: string; filename?: string; url?: string }
   | { type: string; [k: string]: unknown };
+
+/** A pending tool-permission ask (OpenCode holds the tool call open until
+ *  `/permission/{id}/reply`). */
+export interface OpencodePermissionRequest {
+  id: string;
+  sessionID: string;
+  permission: string;
+  patterns: string[];
+  metadata: Record<string, unknown>;
+  always: string[];
+  tool?: { messageID: string; callID: string };
+}
+
+export interface OpencodeQuestionOption {
+  label: string;
+  value?: string;
+  hint?: string;
+}
+
+export interface OpencodeQuestionInfo {
+  question: string;
+  header: string;
+  options: OpencodeQuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+/** A pending question the agent asked (blocks the turn until answered). */
+export interface OpencodeQuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: OpencodeQuestionInfo[];
+  tool?: { messageID: string; callID: string };
+}
+
+/** A raw terminal (PTY) running inside the sandbox — Kortix's own
+ *  implementation (routes/pty.ts in the sandbox daemon), independent of
+ *  whatever agent runtime is running. Same shape the web app's terminal
+ *  panel binds to. */
+export interface OpencodePty {
+  id: string;
+  title: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  status: 'running' | 'exited';
+  pid: number;
+  exitCode?: number;
+}

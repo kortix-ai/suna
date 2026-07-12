@@ -1,8 +1,8 @@
 /**
- * Persist a channel connector (Slack today) into kortix.toml so it's a
+ * Persist a channel connector (Slack today) into kortix.yaml so it's a
  * first-class, git-tracked connector profile — not just an install-driven
- * synthetic row. Connecting Slack in the Channels tab writes
- * `[[connectors]] slug="kortix_slack" provider="channel" platform="slack"` here,
+ * synthetic row. Connecting Slack in the Channels tab writes a `connectors`
+ * entry (`slug: kortix_slack`, `provider: channel`, `platform: slack`) here,
  * and disconnecting removes it.
  *
  * Best-effort by design: `synthesizeChannelConnectors` still materializes the
@@ -27,13 +27,15 @@ function connectorsOf(manifest: { raw: Record<string, unknown> }): Entry[] {
 }
 
 /**
- * Ensure kortix.toml declares the reserved channel connector for `platform`.
+ * Ensure kortix.yaml declares the reserved channel connector for `platform`.
  * Idempotent — once declared, subsequent calls are a no-op (no commit). Returns
  * whether a commit was made. Never throws.
  */
 export async function ensureChannelConnectorDeclared(
   projectId: string,
   platform: ChannelPlatform,
+  slug = channelDefaultSlug(platform),
+  name = channelLabel(platform),
 ): Promise<boolean> {
   try {
     const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -41,12 +43,11 @@ export async function ensureChannelConnectorDeclared(
     const manifest = await loadManifestForEdit(row).catch(() => null);
     if (!manifest) return false;
 
-    const slug = channelDefaultSlug(platform);
     const { connectors, changed } = withChannelDeclaration(
       connectorsOf(manifest),
       platform,
       slug,
-      channelLabel(platform),
+      name,
     );
     if (!changed) return false;
     manifest.raw.connectors = connectors;
@@ -62,12 +63,13 @@ export async function ensureChannelConnectorDeclared(
 }
 
 /**
- * Remove the reserved channel connector for `platform` from kortix.toml — the
+ * Remove the reserved channel connector for `platform` from kortix.yaml — the
  * platform was disconnected. Best-effort; never throws.
  */
 export async function removeChannelConnectorDeclared(
   projectId: string,
   platform: ChannelPlatform,
+  slug = channelDefaultSlug(platform),
 ): Promise<boolean> {
   try {
     const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
@@ -75,7 +77,6 @@ export async function removeChannelConnectorDeclared(
     const manifest = await loadManifestForEdit(row).catch(() => null);
     if (!manifest) return false;
 
-    const slug = channelDefaultSlug(platform);
     const { connectors, changed } = withoutChannelDeclaration(connectorsOf(manifest), platform, slug);
     if (!changed) return false;
     manifest.raw.connectors = connectors;

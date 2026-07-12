@@ -41,12 +41,11 @@ describe('setup-link token codec', () => {
     expect(r.payload.uid).toBe('user-1');
   });
 
-  test('connector link round-trips with slug, app, and mode', () => {
+  test('connector link round-trips with slug and app', () => {
     const { token } = mintSetupLink(PROJECT_A, {
       kind: 'connector',
       slug: 'smartlead',
       app: 'smartlead',
-      mode: 'per_user',
       uid: 'user-1',
     });
     const r = resolveSetupLink(token);
@@ -54,7 +53,6 @@ describe('setup-link token codec', () => {
     if (!r.ok || r.payload.kind !== 'connector') throw new Error('expected connector');
     expect(r.payload.slug).toBe('smartlead');
     expect(r.payload.app).toBe('smartlead');
-    expect(r.payload.mode).toBe('per_user');
   });
 
   test('scope defaults to runtime when omitted', () => {

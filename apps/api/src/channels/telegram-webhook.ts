@@ -58,6 +58,40 @@ telegramWebhookApp.openapi(
 },
 );
 
+// Gate for the Telegram equivalent of Slack's SLACK_REQUIRE_USER_IDENTITY: the
+// webhook otherwise runs every agent turn AS THE ACCOUNT OWNER for whoever can
+// message the bot, with no sender check. Defaults ON: a webhook secret proves
+// the request came from Telegram, but not that this sender may run this project
+// as the automation actor. Operators may temporarily set
+// TELEGRAM_REQUIRE_USER_IDENTITY=false only while migrating legacy projects to
+// metadata.telegram.allowedUserIds.
+// Read live (not module-scope) so it's cheap to flip per-request in tests.
+export function telegramRequireUserIdentityForTest(): boolean {
+  const raw = (process.env.TELEGRAM_REQUIRE_USER_IDENTITY ?? 'true').trim().toLowerCase();
+  return !['false', '0', 'no', 'off'].includes(raw);
+}
+
+// "Bound identity" here is a per-project allowlist of Telegram user ids, stored
+// in the existing projects.metadata jsonb column (no schema change) at
+// metadata.telegram.allowedUserIds. There is no product surface to populate
+// this yet — see risk note in the PR. Until one exists, enabling the flag
+// rejects every sender for a project with no allowlist configured, which is
+// the safe direction to fail in.
+export function isKnownTelegramSenderForTest(
+  project: { metadata: unknown },
+  message: TelegramMessage,
+): boolean {
+  const senderId = message.from?.id;
+  if (senderId === undefined || senderId === null) return false;
+  const metadata = project.metadata as
+    | { telegram?: { allowedUserIds?: unknown } }
+    | null
+    | undefined;
+  const allowedUserIds = metadata?.telegram?.allowedUserIds;
+  if (!Array.isArray(allowedUserIds)) return false;
+  return allowedUserIds.some((id) => String(id) === String(senderId));
+}
+
 async function spawnAgentTurn(
   projectId: string,
   update: TelegramUpdate,
@@ -69,6 +103,15 @@ async function spawnAgentTurn(
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (!project) return;
+
+  if (telegramRequireUserIdentityForTest() && !isKnownTelegramSenderForTest(project, message)) {
+    console.warn(
+      '[telegram-webhook] rejecting unbound sender for project',
+      projectId,
+      message.from?.id,
+    );
+    return;
+  }
 
   const userId = await resolveProjectAutomationActor(project.accountId);
   if (!userId) {

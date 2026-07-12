@@ -1,28 +1,23 @@
-import { config } from '../../config';
-
 /**
  * DB-backed runtime toggles operators flip from the admin Providers panel —
  * NOT env vars. Stored in kortix.platform_settings (key -> jsonb value),
  * mirroring provider_distribution (provider-balancer.ts).
  *
  * Read through a SYNC accessor backed by a 30s-TTL cache that refreshes in the
- * background, so hot paths (warmPoolEnabled, provider failover) never block on
- * the DB. The admin PUT awaits refreshRuntimeSettings() after writing, so a
- * toggle takes effect immediately for the writing process; other processes
- * pick it up within the TTL. Both settings DEFAULT OFF (fail-safe): a DB
- * hiccup, a missing row, or a cold cache all resolve to "off".
+ * background, so hot paths (provider failover) never block on the DB. The admin
+ * PUT awaits refreshRuntimeSettings() after writing, so a toggle takes effect
+ * immediately for the writing process; other processes pick it up within the TTL.
+ *
+ * The admin DB row is the ONLY control surface for these toggles — NOT env vars.
+ * provider_fallback defaults OFF and is opt-in via the panel (the panel writes
+ * { enabled: true }). A cold cache / DB hiccup / missing row resolves to OFF, so
+ * a fresh pod (e.g. right after a deploy) is never on against the admin's setting
+ * before the first DB read completes — boot awaits refreshRuntimeSettings() so
+ * the row is loaded before serving.
  */
 
-export const WARM_POOL_KEY = 'warm_pool';
 export const PROVIDER_FALLBACK_KEY = 'provider_fallback';
 
-export interface WarmPoolSetting {
-  /** Master gate. OFF = the warm pool subsystem is inert (no spares, every
-   *  create cold-provisions). Per-template opt-in is AND-gated on this. */
-  enabled: boolean;
-  /** Default ready-count a template gets when first opted in (UI overrides). */
-  size: number;
-}
 export interface ProviderFallbackSetting {
   /** When ON, a provider that fails to provision a session AT BIRTH hands off
    *  once to the next allowed provider before the session is marked failed. */
@@ -30,23 +25,27 @@ export interface ProviderFallbackSetting {
 }
 
 const TTL_MS = 30_000;
-const MAX_WARM_SIZE = 25;
 
-/** Env is only the FALLBACK default now (both ship OFF); the DB row is the real
- *  control surface, so operators never redeploy to toggle these. */
-function envDefaults(): { warmPool: WarmPoolSetting; fallback: ProviderFallbackSetting } {
+/** Fallback defaults used until the DB rows load and whenever the DB can't be
+ *  read. Default OFF (fail-safe): the admin Providers panel turns provider
+ *  failover on/off and that DB row is the ONLY control surface (no env knob). A
+ *  cold cache / DB hiccup / no row therefore resolves to OFF. */
+function envDefaults(): {
+  fallback: ProviderFallbackSetting;
+} {
   return {
-    warmPool: { enabled: config.KORTIX_WARM_POOL_ENABLED, size: Math.max(0, config.KORTIX_WARM_POOL_SIZE) },
     fallback: { enabled: false },
   };
 }
 
-let cache: { warmPool: WarmPoolSetting; fallback: ProviderFallbackSetting; at: number } | null = null;
+let cache: {
+  fallback: ProviderFallbackSetting;
+  at: number;
+} | null = null;
 let inflight: Promise<void> | null = null;
 
 export async function refreshRuntimeSettings(): Promise<void> {
   const def = envDefaults();
-  let warmPool = def.warmPool;
   let fallback = def.fallback;
   try {
     const { hasDatabase, db } = await import('../../shared/db');
@@ -56,35 +55,24 @@ export async function refreshRuntimeSettings(): Promise<void> {
       const rows = await db
         .select({ key: platformSettings.key, value: platformSettings.value })
         .from(platformSettings)
-        .where(inArray(platformSettings.key, [WARM_POOL_KEY, PROVIDER_FALLBACK_KEY]));
+        .where(inArray(platformSettings.key, [PROVIDER_FALLBACK_KEY]));
       for (const r of rows) {
         const v = r.value as Record<string, unknown> | null;
         if (!v || typeof v !== 'object') continue;
-        if (r.key === WARM_POOL_KEY) {
-          const size =
-            typeof v.size === 'number' && Number.isInteger(v.size) && v.size >= 0
-              ? Math.min(v.size, MAX_WARM_SIZE)
-              : def.warmPool.size;
-          warmPool = { enabled: v.enabled === true, size };
-        } else if (r.key === PROVIDER_FALLBACK_KEY) {
+        if (r.key === PROVIDER_FALLBACK_KEY) {
           fallback = { enabled: v.enabled === true };
         }
       }
     }
   } catch {
-    /* DB hiccup -> env defaults (fail-safe: both OFF) */
+    /* DB hiccup -> fail-safe defaults: fallback OFF */
   }
-  cache = { warmPool, fallback, at: Date.now() };
+  cache = { fallback, at: Date.now() };
 }
 
 function ensureFresh(): void {
   if (cache && Date.now() - cache.at < TTL_MS) return;
   if (!inflight) inflight = refreshRuntimeSettings().finally(() => { inflight = null; });
-}
-
-export function warmPoolSetting(): WarmPoolSetting {
-  ensureFresh();
-  return cache?.warmPool ?? envDefaults().warmPool;
 }
 
 export function providerFallbackSetting(): ProviderFallbackSetting {

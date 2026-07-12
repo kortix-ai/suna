@@ -68,11 +68,33 @@ describe('chatToResponses', () => {
         messages: [{ role: 'user', content: 'x' }],
         reasoning_effort: 'high',
         tools: [{ type: 'function', function: { name: 'get_weather', description: 'd', parameters: { type: 'object' } } }],
+        tool_choice: { type: 'function', function: { name: 'get_weather' } },
       },
       codex,
     );
     expect(payload.reasoning).toEqual({ effort: 'high' });
     expect(payload.tools).toEqual([{ type: 'function', name: 'get_weather', description: 'd', parameters: { type: 'object' } }]);
+    expect(payload.tool_choice).toEqual({ type: 'function', name: 'get_weather' });
+  });
+
+  test('defaults Codex requests to low reasoning unless the caller overrides it', () => {
+    const implicit = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }] },
+      codex,
+    );
+    expect(implicit.reasoning).toEqual({ effort: 'low' });
+
+    const explicit = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }], reasoning: { effort: 'high' } },
+      codex,
+    );
+    expect(explicit.reasoning).toEqual({ effort: 'high' });
+
+    const nonCodex = chatToResponses(
+      { messages: [{ role: 'user', content: 'x' }] },
+      { ...codex, provider: 'openai' },
+    );
+    expect(nonCodex.reasoning).toBeUndefined();
   });
 
   test('flattens assistant tool calls and tool results into input items', () => {
@@ -177,6 +199,75 @@ describe('translateResponsesResponse (streaming)', () => {
 
     const final = chunks[chunks.length - 1];
     expect((final.choices as Record<string, unknown>[])[0].finish_reason).toBe('tool_calls');
+  });
+});
+
+describe('translateResponsesResponse (failure + incomplete events)', () => {
+  // A `response.failed` / `response.incomplete` / top-level `error` arrives on a
+  // 200 OK stream, so the upstream retry layer never sees it. The translator must
+  // NOT launder these into a clean `finish_reason: "stop"` with empty content —
+  // otherwise opencode records a zero-token empty turn and the agent dies silently.
+  const finishReasons = (chunks: Record<string, unknown>[]): unknown[] =>
+    chunks
+      .map((c) => (c.choices as Record<string, unknown>[] | undefined)?.[0]?.finish_reason)
+      .filter((r) => r != null);
+  const errorChunks = (chunks: Record<string, unknown>[]): Record<string, unknown>[] =>
+    chunks.filter((c) => c.error != null);
+
+  test('surfaces response.failed as an error chunk, never a clean stop', async () => {
+    const upstream = sseResponse([
+      { type: 'response.created', response: { id: 'resp_f', model: 'gpt-5.5' } },
+      { type: 'response.failed', response: { error: { message: 'boom upstream', code: 'server_error' } } },
+    ]);
+    const chunks = dataChunks(await (await translateResponsesResponse(upstream, { streaming: true })).text());
+
+    const errors = errorChunks(chunks);
+    expect(errors).toHaveLength(1);
+    expect((errors[0].error as Record<string, unknown>).message).toBe('boom upstream');
+    expect((errors[0].error as Record<string, unknown>).code).toBe('server_error');
+    expect(finishReasons(chunks)).not.toContain('stop');
+  });
+
+  test('surfaces a top-level error frame as an error chunk', async () => {
+    const upstream = sseResponse([
+      { type: 'response.created', response: { id: 'resp_e', model: 'gpt-5.5' } },
+      { type: 'error', message: 'rate limited', code: 'rate_limit_exceeded' },
+    ]);
+    const chunks = dataChunks(await (await translateResponsesResponse(upstream, { streaming: true })).text());
+
+    const errors = errorChunks(chunks);
+    expect(errors).toHaveLength(1);
+    expect((errors[0].error as Record<string, unknown>).message).toBe('rate limited');
+    expect(finishReasons(chunks)).not.toContain('stop');
+  });
+
+  test('response.incomplete with no output becomes an error, not a stop', async () => {
+    const upstream = sseResponse([
+      { type: 'response.created', response: { id: 'resp_i', model: 'gpt-5.5' } },
+      { type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' } } },
+    ]);
+    const chunks = dataChunks(await (await translateResponsesResponse(upstream, { streaming: true })).text());
+
+    const errors = errorChunks(chunks);
+    expect(errors).toHaveLength(1);
+    expect((errors[0].error as Record<string, unknown>).message).toContain('max_output_tokens');
+    expect((errors[0].error as Record<string, unknown>).code).toBe('max_output_tokens');
+    expect(finishReasons(chunks)).not.toContain('stop');
+  });
+
+  test('response.incomplete after text is an honest length truncation with usage', async () => {
+    const upstream = sseResponse([
+      { type: 'response.created', response: { id: 'resp_t', model: 'gpt-5.5' } },
+      { type: 'response.output_text.delta', delta: 'partial answer' },
+      { type: 'response.incomplete', response: { incomplete_details: { reason: 'max_output_tokens' }, usage: { input_tokens: 7, output_tokens: 3 } } },
+    ]);
+    const sse = await (await translateResponsesResponse(upstream, { streaming: true })).text();
+    const chunks = dataChunks(sse);
+
+    expect(errorChunks(chunks)).toHaveLength(0);
+    expect(finishReasons(chunks)).toContain('length');
+    expect(finishReasons(chunks)).not.toContain('stop');
+    expect(extractUsageFromSseBuffer(sse)?.completionTokens).toBe(3);
   });
 });
 

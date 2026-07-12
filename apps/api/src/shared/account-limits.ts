@@ -1,15 +1,21 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { getTier, isPaidTier, isPerSeatAccount, tierGrantsAllModels, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { accountIsFreeTierForModels, getTier, isPaidTier, isPerSeatAccount, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must
 // subscribe before creating projects. This cap governs any legacy/backwards-compat
 // free account; any paid plan lifts it to MAX_PROJECTS_PER_ACCOUNT, and Enterprise
 // is uncapped (see maxProjectsForAccount).
-export const FREE_TIER_PROJECT_LIMIT = 1;
+export const FREE_TIER_PROJECT_LIMIT = 3;
 
-const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
+type AccountLimitInfo = {
+  tier: string | null;
+  /** Operator-set credit_accounts.max_concurrent_sessions; null = no override. */
+  sessionOverride: number | null;
+};
+
+const accountLimitCache = new Map<string, AccountLimitInfo & { expiresAt: number }>();
 
 function positiveInt(value: unknown, fallback: number) {
   const n = typeof value === 'number' ? value : Number(value);
@@ -30,9 +36,9 @@ function tierMultiplier(tier: string | null | undefined) {
   return legacyMultipliers[name] ?? (name !== 'free' && name !== 'none' ? 1 : 0);
 }
 
-export async function resolveAccountTier(accountId: string): Promise<string | null> {
-  const cached = tierCache.get(accountId);
-  if (cached && Date.now() < cached.expiresAt) return cached.tier;
+async function resolveAccountLimitInfo(accountId: string): Promise<AccountLimitInfo> {
+  const cached = accountLimitCache.get(accountId);
+  if (cached && Date.now() < cached.expiresAt) return cached;
 
   try {
     const subscription = await getSubscriptionInfo(accountId);
@@ -52,11 +58,21 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
     ) {
       tier = 'per_seat';
     }
-    tierCache.set(accountId, { tier, expiresAt: Date.now() + 60_000 });
-    return tier;
+    const rawOverride = subscription?.maxConcurrentSessions;
+    const sessionOverride =
+      typeof rawOverride === 'number' && Number.isFinite(rawOverride) && rawOverride > 0
+        ? Math.floor(rawOverride)
+        : null;
+    const info: AccountLimitInfo = { tier, sessionOverride };
+    accountLimitCache.set(accountId, { ...info, expiresAt: Date.now() + 60_000 });
+    return info;
   } catch {
-    return 'free';
+    return { tier: 'free', sessionOverride: null };
   }
+}
+
+export async function resolveAccountTier(accountId: string): Promise<string | null> {
+  return (await resolveAccountLimitInfo(accountId)).tier;
 }
 
 /**
@@ -81,7 +97,7 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
 export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
   const tier = await resolveAccountTier(accountId);
-  return tierGrantsAllModels(tier ?? 'free');
+  return !accountIsFreeTierForModels(tier ?? 'free');
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
@@ -106,6 +122,35 @@ export function maxConcurrentSessionsForTier(tier: string | null | undefined) {
   return getTier(tier ?? 'free').concurrentSessionLimit;
 }
 
+export type AccountSessionLimit = {
+  tier: string | null;
+  limit: number;
+  /** Where the limit came from — drives audit metadata and support triage. */
+  source: 'tier' | 'account_override' | 'billing_disabled';
+};
+
+/**
+ * Concurrent-session cap for an account. Resolution order:
+ *   1. billing off (local / self-hosted) → effectively unlimited;
+ *   2. credit_accounts.max_concurrent_sessions (operator-set per-account
+ *      override, e.g. enterprise deals or our own dogfood account) → wins over
+ *      the tier in both directions;
+ *   3. the plan tier's TierConfig.concurrentSessionLimit.
+ * Backed by the same 60s cache as resolveAccountTier; operator changes are
+ * visible immediately after clearAccountLimitCache() (the admin tier route
+ * already clears it).
+ */
+export async function resolveAccountSessionLimit(accountId: string): Promise<AccountSessionLimit> {
+  if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { tier: null, limit: Number.MAX_SAFE_INTEGER, source: 'billing_disabled' };
+  }
+  const { tier, sessionOverride } = await resolveAccountLimitInfo(accountId);
+  if (sessionOverride !== null) {
+    return { tier, limit: sessionOverride, source: 'account_override' };
+  }
+  return { tier, limit: maxConcurrentSessionsForTier(tier), source: 'tier' };
+}
+
 /**
  * Maximum number of projects an account may own, by plan:
  *   Free        → FREE_TIER_PROJECT_LIMIT (3)
@@ -125,5 +170,5 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
 }
 
 export function clearAccountLimitCache() {
-  tierCache.clear();
+  accountLimitCache.clear();
 }

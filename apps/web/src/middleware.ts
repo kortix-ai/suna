@@ -1,5 +1,6 @@
 import { locales, type Locale } from '@/i18n/config';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -20,6 +21,7 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/share', // Shared content should be public
   '/templates', // Template pages should be public
+  '/marketplace', // Public read-only marketplace directory; installs still require auth
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
@@ -36,7 +38,9 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
+  '/review', // Review Center clickable prototype — mock data only, public so it is shareable/clickable without login
   '/presentation', // Standalone product deck (/presentation) should be public
+  '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
@@ -53,6 +57,13 @@ const PUBLIC_ROUTES = [
   ...locales.flatMap((locale) =>
     MARKETING_ROUTES.map((route) => `/${locale}${route === '/' ? '' : route}`),
   ),
+];
+
+// Visual, static public canvases do not need Supabase session reads. Keep them
+// reachable even when local encrypted env vars are not available.
+const STATIC_PUBLIC_ROUTES = [
+  '/game-of-life',
+  '/rauch',
 ];
 
 // Routes that require authentication but are related to billing/setup
@@ -82,6 +93,7 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/github',
   '/cli',
   '/templates',
+  '/marketplace',
   '/maintenance',
   '/countryerror',
   '/debug',
@@ -116,10 +128,18 @@ export async function middleware(request: NextRequest) {
     try {
       const config = await getMaintenanceConfig();
       if (config.level === 'blocking') {
-        return NextResponse.redirect(new URL('/maintenance', request.url));
+        // Platform admins can mint a signed bypass token from the maintenance
+        // page (POST /api/maintenance/bypass) to keep working during a full
+        // lockdown. Honor a valid, unexpired token instead of redirecting.
+        const adminBypass = await verifyBypassToken(
+          request.cookies.get(MAINTENANCE_BYPASS_COOKIE)?.value,
+        );
+        if (!adminBypass) {
+          return NextResponse.redirect(new URL('/maintenance', request.url));
+        }
       }
     } catch {
-      // If Edge Config is unreachable, don't block traffic
+      // If the maintenance config is unreachable, don't block traffic
     }
   }
 
@@ -194,6 +214,10 @@ export async function middleware(request: NextRequest) {
 
       return response;
     }
+  }
+
+  if (STATIC_PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+    return NextResponse.next();
   }
 
   // Create a single Supabase client instance that we'll reuse

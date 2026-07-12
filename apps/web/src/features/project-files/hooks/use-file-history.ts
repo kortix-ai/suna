@@ -6,7 +6,7 @@ import {
   getFileHistory,
 } from '../api/git-history';
 import { useProjectContext } from '../context';
-import type { FileCommitDiff, FileHistoryResult } from '../types';
+import type { FileCommitDiff, FileHistoryResult } from '@/features/file-browser/types';
 
 export const fileHistoryKeys = {
   all: ['project-files', 'history'] as const,

@@ -16,26 +16,11 @@ export {
   fileContentKeys,
 } from './use-file-content';
 
-// File/text search
+// File search
 export {
   useFileSearch,
-  useTextSearch,
   fileSearchKeys,
 } from './use-file-search';
-
-// Standalone workspace search (CMD+K, @-mentions, etc.)
-export {
-  useWorkspaceSearch,
-  searchWorkspaceFiles,
-  rankFileResult,
-  parseFileResults,
-  type FileSearchResult,
-  type WorkspaceSearchState,
-  type UseWorkspaceSearchOptions,
-} from './use-workspace-search';
-
-// Semantic search (LSS)
-export { useLssSearch, lssSearchKeys } from './use-lss-search';
 
 // Server health & project info
 export { useServerHealth, useCurrentProject } from './use-server-health';
@@ -61,7 +46,7 @@ export {
 export { useBinaryBlob, binaryBlobKeys } from './use-binary-blob';
 
 // SSE-based real-time invalidation
-export { useFileEventInvalidation } from './use-file-events';
+export { useFileEventInvalidation } from '@/features/file-browser/hooks/use-file-events';
 
 // Git history
 export {

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
 import { prompt, selectFrom } from '../prompts.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const DEFAULT_TAG = 'latest';
@@ -22,7 +22,7 @@ const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 const LOCAL_SOURCE_TAG = 'selfhost-local';
 
-const HELP = `Usage: kortix self-host <subcommand> [options]
+const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run your own Kortix Cloud locally or on your infrastructure using the
 published Docker images from Docker Hub.
@@ -91,8 +91,6 @@ interface SelfHostEnv {
   INTERNAL_SERVICE_KEY: string;
   API_KEY_SECRET: string;
   TUNNEL_SIGNING_SECRET: string;
-  SANDBOX_CONTAINER_NAME: string;
-  SANDBOX_PORT_BASE: string;
   ALLOWED_SANDBOX_PROVIDERS: string;
   DAYTONA_API_KEY: string;
   DAYTONA_SERVER_URL: string;
@@ -519,19 +517,12 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
   // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
-  // sandboxes on Daytona; the wizard just collects the API key. (local_docker is
-  // still a valid ALLOWED_SANDBOX_PROVIDERS value for fully-local / CI use, but it
-  // is intentionally not offered here — Daytona is the supported user runtime. An
-  // instance already pinned to local_docker is left as-is, not flipped.)
-  if (sandboxProviders(env).includes('local_docker')) {
-    process.stdout.write(`  ${C.dim}Sandbox runtime: local_docker (advanced) — leaving as configured.${C.reset}\n`);
-  } else {
-    env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
-    process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
-    env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
-    env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
-    env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-  }
+  // sandboxes on Daytona; the wizard just collects the API key.
+  env.ALLOWED_SANDBOX_PROVIDERS = 'daytona';
+  process.stdout.write(`  ${C.dim}Agent sandbox runtime: Daytona (https://app.daytona.io)${C.reset}\n`);
+  env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
+  env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
+  env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
 
   const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
   if (freestyleMode === 'configure') {
@@ -612,10 +603,9 @@ function sandboxProviders(env: SelfHostEnv): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-/** A provider is "ready" if local_docker (no creds) or daytona with an API key. */
+/** A provider is "ready" if daytona has an API key. */
 function sandboxProviderConfigured(env: SelfHostEnv): boolean {
   const providers = sandboxProviders(env);
-  if (providers.includes('local_docker')) return true;
   if (providers.includes('daytona')) return !!env.DAYTONA_API_KEY;
   return false;
 }
@@ -867,11 +857,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
-    SANDBOX_CONTAINER_NAME: `kortix-${flags.instance}-sandbox`,
-    SANDBOX_PORT_BASE: '15000',
     // Sandboxes run on a real provider, just like Kortix Cloud. Daytona is the
-    // default; `kortix self-host configure` collects the API key. local_docker
-    // remains available (no external account) for fully-local / CI use.
+    // self-host sandbox provider; `kortix self-host configure` collects the API key.
     ALLOWED_SANDBOX_PROVIDERS: 'daytona',
     DAYTONA_API_KEY: '',
     DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
@@ -1029,8 +1016,9 @@ function writeCompose(instance: string): void {
     restart: unless-stopped
 
   # One-shot: provision the database schema before the API serves traffic.
-  # On a FRESH db this installs the non-kortix prerequisites (basejump etc.)
-  # then applies all migrations; on an already-provisioned db it is a no-op.
+  # On a FRESH db this installs the non-kortix prerequisites (public credit
+  # RPCs, welcome webhook, storage buckets) then applies all migrations; on an
+  # already-provisioned db it is a no-op.
   # Runs the migrator from the API image, which bundles migrations + runner.
   kortix-migrate:
     image: \${API_IMAGE}
@@ -1063,13 +1051,11 @@ function writeCompose(instance: string): void {
       DAYTONA_API_KEY: \${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: \${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: \${DAYTONA_TARGET}
-      DOCKER_HOST: unix:///var/run/docker.sock
       KORTIX_URL: http://kortix-api:8008
       FRONTEND_URL: \${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: \${PUBLIC_URL},\${API_PUBLIC_URL}
       SANDBOX_IMAGE: \${SANDBOX_IMAGE}
       SANDBOX_NETWORK: ${project}_default
-      KORTIX_LOCAL_DOCKER_HOST: host.docker.internal
       KORTIX_LOCAL_IMAGES: \${KORTIX_LOCAL_IMAGES}
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
       KORTIX_BILLING_INTERNAL_ENABLED: "false"
@@ -1077,8 +1063,6 @@ function writeCompose(instance: string): void {
       LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
       GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: \${OPENROUTER_API_KEY}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -1155,7 +1139,6 @@ ALTER ROLE supabase_admin WITH PASSWORD '${sqlString(env.POSTGRES_PASSWORD)}';
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS pg_net;
 CREATE SCHEMA IF NOT EXISTS kortix;
-CREATE SCHEMA IF NOT EXISTS basejump;
 `;
 
   writeFileSync(join(dbDir, 'roles.sql'), roles, 'utf8');

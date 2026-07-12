@@ -9,7 +9,7 @@ import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, prompt, promptSecret } from '../prompts.ts';
 import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import { projectWebUrl } from '../web-url.ts';
 import type {
   ProjectSummary,
@@ -18,14 +18,14 @@ import type {
   ProjectSecretsResponse,
 } from '../api/types.ts';
 
-const HELP = `Usage: kortix ship [options]
+const HELP = help`Usage: kortix ship [options]
 
 Stage everything, commit, and push your current branch to the project's git
 repo — in one command. Run it once to create the project, then run it again
 any time to sync. It's the everyday "save my work to the cloud" command.
 
 Every run:
-  1. verify kortix.toml parses + validates   (skip with --no-verify)
+  1. verify kortix.yaml parses + validates   (skip with --no-verify)
   2. git add -A + commit                      (skipped if nothing changed)
   3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
   4. push the branch you're on → the same-named branch on the project's repo
@@ -67,7 +67,7 @@ Options:
                        GitHub App (App-free import; needs repo Contents R/W).
   -m, --message <msg>  Commit message for the sync (default: "kortix: ship").
   --no-commit          Don't commit. Fail if the working tree is dirty.
-  --no-verify          Skip the kortix.toml validation (compile) check.
+  --no-verify          Skip the kortix.yaml validation (compile) check.
   --no-env             Skip the [env] secret check + prompts.
   --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
@@ -105,6 +105,49 @@ interface GitTokenResponse {
   repo_url: string;
 }
 
+type ShipCredentialMode = 'none' | 'kortix-token' | 'managed-git-token';
+
+interface ShipGitTarget {
+  repoUrl: string;
+  credentialMode: ShipCredentialMode;
+}
+
+function isGitProxyUrl(url: string | undefined | null): boolean {
+  return Boolean(url && /\/v1\/git\//.test(url));
+}
+
+function projectIsManaged(project: ProjectSummary): boolean {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const git = meta.git as { managed?: boolean } | undefined;
+  return git?.managed === true;
+}
+
+export function resolveProvisionShipGitTarget(project: ProvisionResponse): ShipGitTarget {
+  return {
+    repoUrl: project.repo_url,
+    credentialMode: 'managed-git-token',
+  };
+}
+
+export function resolveExistingShipGitTarget(project: ProjectSummary): ShipGitTarget {
+  if (projectIsManaged(project)) {
+    return {
+      repoUrl: project.repo_url,
+      credentialMode: 'managed-git-token',
+    };
+  }
+  if (isGitProxyUrl(project.git_origin_url)) {
+    return {
+      repoUrl: project.git_origin_url!,
+      credentialMode: 'kortix-token',
+    };
+  }
+  return {
+    repoUrl: project.repo_url,
+    credentialMode: 'none',
+  };
+}
+
 export async function runShip(argv: string[]): Promise<number> {
   let flags: ShipFlags;
   try {
@@ -121,7 +164,7 @@ export async function runShip(argv: string[]): Promise<number> {
   // ── Guards ───────────────────────────────────────────────────────────────
   if (!isKortixProject()) {
     process.stderr.write(
-      `${status.err(`Not a Kortix project — no .kortix/ or kortix.toml in ${process.cwd()}.`)}\n` +
+      `${status.err(`Not a Kortix project — no .kortix/ or kortix.yaml in ${process.cwd()}.`)}\n` +
         `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first.${C.reset}\n`,
     );
     return 1;
@@ -152,8 +195,8 @@ export async function runShip(argv: string[]): Promise<number> {
   const client = clientFromAuth(auth);
 
   // ── Verify the manifest "compiles" before we touch the cloud ──────────────
-  // Parse + validate kortix.toml locally so a broken config fails fast — long
-  // before we create a project, commit, or push. Also yields the [env] spec
+  // Parse + validate kortix.yaml locally so a broken config fails fast — long
+  // before we create a project, commit, or push. Also yields the env: spec
   // we use to make sure required secrets are set.
   const prepared = prepareManifest(flags);
   if (!prepared.ok) return 1;
@@ -171,9 +214,9 @@ export async function runShip(argv: string[]): Promise<number> {
 }
 
 /**
- * Parse + statically validate the local kortix.toml (the "compile" check).
- * Returns `ok:false` to abort the ship, plus the parsed `[env]` spec so the
- * caller can reconcile required secrets. A TOML syntax error or a schema
+ * Parse + statically validate the local kortix.yaml (the "compile" check).
+ * Returns `ok:false` to abort the ship, plus the parsed `env:` spec so the
+ * caller can reconcile required secrets. A YAML syntax error or a schema
  * error blocks the ship unless `--no-verify` is passed; warnings never block.
  */
 function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
@@ -186,19 +229,19 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     const detail = (err as Error).message;
     if (flags.noVerify) {
       process.stdout.write(
-        `  ${status.warn(`kortix.toml has a syntax error (ignored via --no-verify)`)}\n`,
+        `  ${status.warn(`kortix.yaml has a syntax error (ignored via --no-verify)`)}\n`,
       );
       return { ok: true, env: empty };
     }
     process.stderr.write(
-      `\n${status.err("kortix.toml doesn't parse — fix it before shipping.")}\n` +
+      `\n${status.err("kortix.yaml doesn't parse — fix it before shipping.")}\n` +
         `  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n` +
         `  ${C.dim}Bypass with ${C.reset}${C.cyan}--no-verify${C.reset}${C.dim}.${C.reset}\n\n`,
     );
     return { ok: false, env: empty };
   }
 
-  // No kortix.toml at all (a `.kortix/`-only project) — nothing to verify.
+  // No kortix.yaml at all (a `.kortix/`-only project) — nothing to verify.
   if (!manifest) return { ok: true, env: empty };
 
   if (!flags.noVerify) {
@@ -207,7 +250,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
     if (errors.length > 0) {
       process.stderr.write(
         `\n${status.err(
-          `kortix.toml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
+          `kortix.yaml has ${errors.length} error${errors.length === 1 ? '' : 's'}:`,
         )}\n`,
       );
       for (const e of errors) process.stderr.write(`  ${C.dim}•${C.reset} ${e}\n`);
@@ -216,7 +259,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
       );
       return { ok: false, env: manifest.env };
     }
-    process.stdout.write(`  ${status.ok('kortix.toml verified')}\n`);
+    process.stdout.write(`  ${status.ok('kortix.yaml verified')}\n`);
   }
 
   return { ok: true, env: manifest.env };
@@ -585,16 +628,9 @@ async function shipFirstTime(
       account_id: accountId,
     });
     project = prov;
-    // Universal proxy origin: when the server returns a git-proxy origin, push
-    // THROUGH the proxy with our own Kortix token (the proxy resolves the real
-    // upstream + host credential server-side) — never the upstream push token.
-    if (prov.git_origin_url && /\/v1\/git\//.test(prov.git_origin_url)) {
-      repoUrl = prov.git_origin_url;
-      pushToken = auth.token;
-    } else {
-      repoUrl = prov.repo_url;
-      pushToken = prov.push_token;
-    }
+    const target = resolveProvisionShipGitTarget(prov);
+    repoUrl = target.repoUrl;
+    pushToken = prov.push_token;
     setOrigin(repoUrl);
   }
 
@@ -636,18 +672,9 @@ async function shipExisting(
     if (handled !== null) return handled;
     throw err;
   }
-  // Universal proxy origin: push THROUGH the Kortix git proxy with our own
-  // Kortix token when the server advertises one (the proxy resolves the real
-  // upstream + host credential server-side).
-  const proxyOrigin =
-    project.git_origin_url && /\/v1\/git\//.test(project.git_origin_url)
-      ? project.git_origin_url
-      : null;
-  const repoUrl = proxyOrigin ?? project.repo_url;
-  const meta = (project.metadata ?? {}) as Record<string, any>;
-  // Canonical managed flag lives at metadata.git.managed.
-  const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
-  const managed = git?.managed === true;
+  const target = resolveExistingShipGitTarget(project);
+  const managed = target.credentialMode === 'managed-git-token';
+  const repoUrl = target.repoUrl;
 
   process.stdout.write(
     `\n  ${C.bold}kortix ship${C.reset}  ${C.dim}sync${C.reset}\n` +
@@ -662,18 +689,21 @@ async function shipExisting(
     return 0;
   }
 
-  // Push credential: through the proxy we authenticate with our own Kortix
-  // token; otherwise managed repos get a fresh scoped push token per ship (never
-  // persisted in .git/config).
+  // Push credential: managed repos use a fresh provider token and push to the
+  // managed upstream URL. Non-managed proxy pushes use the Kortix CLI token.
   let pushToken: string | null = null;
-  if (proxyOrigin) {
+  if (target.credentialMode === 'kortix-token') {
     pushToken = auth.token;
-  } else if (managed) {
+  } else if (target.credentialMode === 'managed-git-token') {
     const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
     pushToken = tok.push_token;
   }
-  // BYO repos may have lost their remote (fresh clone of a linked repo); heal it.
-  ensureOrigin(repoUrl);
+  // Managed projects own the remote URL, so keep origin aligned with the
+  // upstream that matches the freshly minted provider token. BYO repos may
+  // have lost their remote (fresh clone of a linked repo); heal only when
+  // missing so user-managed credentials stay untouched.
+  if (managed) setOrigin(repoUrl);
+  else ensureOrigin(repoUrl);
 
   const committed = commitIfNeeded(flags);
   if (committed === 'error') return 1;
@@ -691,7 +721,7 @@ async function shipExisting(
 
 // ── git helpers ─────────────────────────────────────────────────────────────
 
-/** The display name from kortix.toml's [project].name, if present. Lets a
+/** The display name from kortix.yaml's project.name, if present. Lets a
  *  first ship honor the manifest instead of defaulting to the folder name. */
 function manifestProjectName(): string | undefined {
   try {
@@ -873,7 +903,7 @@ async function resolveShipAccount(
     title: 'Ship to which account?',
     items: accounts.map((a) => ({
       value: a,
-      label: `${a.name}${a.personal_account ? ' (personal)' : ''}`,
+      label: a.name,
       sublabel: `${a.slug} · ${a.role}`,
     })),
   });
