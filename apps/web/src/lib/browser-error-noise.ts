@@ -29,6 +29,25 @@ const KNOWN_HYDRATION_NOISE_MESSAGES = [
   "Hydration failed because the server rendered",
 ] as const;
 
+// Transient "the session runtime / sandbox URL hasn't pinned yet" throws. The
+// SDK throws `RuntimeNotReadyError` (`[opencode-sdk] Server URL not ready —
+// sandbox is still loading`) from `getClient()` for the ~1s window before a
+// new/switched session's runtime URL resolves; sibling guards reuse the same
+// wording for the pty/env paths (`[kortix-pty] Server URL not ready …`). It is
+// an EXPECTED, self-healing info state — never an error — but it can reach
+// Sentry through paths that don't go through the global `app/error.tsx`
+// boundary's manual guard: a subtree wrapped in `<ClientErrorBoundary>`
+// (whose `componentDidCatch` captures unconditionally), `route-error`/
+// `system-fault`, `error-handler`'s network branch, and unhandled promise
+// rejections auto-captured by the Sentry SDK. Filter it once, here, so every
+// capture path drops it. The render-path UI handling lives in `app/error.tsx`
+// + `SandboxLoadingBoundary`; this is the telemetry-side backstop.
+const RUNTIME_NOT_READY_NOISE_PATTERNS = [
+  'Server URL not ready',
+  'sandbox is still loading',
+  'opencode not ready',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -48,6 +67,17 @@ function containsKnownPattern(message: string, patterns: readonly string[]): boo
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function isBareImageLoadNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return normalized === 'Failed to load image' || normalized === 'Error: Failed to load image';
+}
+
+function isBrowserBundleSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized.startsWith('app:///_next/static/')
+    || /^https?:\/\/[^/]+\/_next\/static\//.test(normalized);
 }
 
 function extractMessage(value: unknown): string {
@@ -85,6 +115,19 @@ export function isLikelyDomMutationNoise(message: unknown): boolean {
     || containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES);
 }
 
+/**
+ * Whether a message is the transient, self-healing "session runtime not ready
+ * yet" state — `[opencode-sdk] Server URL not ready — sandbox is still loading`
+ * and its sibling variants. Such a message must NEVER page Better Stack: it
+ * resolves on its own within ~1s (every session switch/provisioning window).
+ */
+export function isRuntimeNotReadyNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).toLowerCase();
+  return RUNTIME_NOT_READY_NOISE_PATTERNS.some((pattern) =>
+    normalized.includes(pattern.toLowerCase()),
+  );
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -98,7 +141,19 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser-native <img> / next/image load failures can surface as this exact
+  // message through window.onerror. Keep this exact: pptx-react-viewer throws
+  // actionable errors such as "Failed to load image for colour change
+  // processing", which must still reach error tracking.
+  if (isBareImageLoadNoiseMessage(message)) {
+    return true;
+  }
+
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  if (isRuntimeNotReadyNoiseMessage(message)) {
     return true;
   }
 
@@ -129,7 +184,23 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // This helper is also used by the server and edge Sentry configs. Require a
+  // browser bundle frame here so a same-worded server exception is not hidden.
+  // The client config additionally has an anchored ignoreErrors regex for
+  // frame-less browser events.
+  if (isBareImageLoadNoiseMessage(message)
+    && frames.some((frame) => isBrowserBundleSource(frame.filename))) {
+    return true;
+  }
+
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  // Transient "session runtime not ready yet" — expected during every session
+  // switch/provisioning window, self-heals in ~1s, never an error. Drop it
+  // before it pages Better Stack, no matter which capture path delivered it.
+  if (isRuntimeNotReadyNoiseMessage(message)) {
     return true;
   }
 

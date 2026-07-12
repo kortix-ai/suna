@@ -11,6 +11,43 @@ export function isInternalUrl(href: string | undefined): boolean {
   return href.startsWith('/') || href.startsWith('#');
 }
 
+/**
+ * Can this href be handed to `next/link` without crashing the prefetch path?
+ *
+ * Next.js' app-router `createPrefetchURL` (in `app-router.tsx`) does
+ * `new URL(addBasePath(href), window.location.href)` and, on failure, throws
+ * `Cannot prefetch '<href>' because it cannot be converted to a URL.` — which
+ * fires whenever a `<Link>` carrying a malformed absolute href scrolls into
+ * view (segment-cache `pingVisibleLinks`). A valid external URL is fine
+ * (`isExternalURL` short-circuits prefetch); only URLs that fail `new URL()`
+ * blow up, e.g. `http://:` (an empty host/port template like
+ * `http://${HOST}:${PORT}` that leaked unsubstituted from content).
+ *
+ * Internal (`/`, `#`, `?`) and bare-relative hrefs are always safe. We only
+ * reject protocol-prefixed hrefs that don't parse, so the renderer can fall
+ * back to a plain `<a>` and never feed garbage to `next/link`.
+ */
+export function isLinkSafeHref(href: string | undefined): boolean {
+  if (!href) return false;
+  // Root-relative, hash, and query links are always safe for next/link.
+  if (href.startsWith('/') || href.startsWith('#') || href.startsWith('?')) {
+    return true;
+  }
+  // Protocol-prefixed URLs must parse, or next/link's prefetch throws on
+  // `new URL()` failure when the link enters the viewport.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(href)) {
+    try {
+      new URL(href);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  // Bare-relative paths are resolved against the current URL by next/link —
+  // `new URL(..., window.location.href)` always succeeds for them.
+  return true;
+}
+
 /** Normalise a fenced-code language hint to a Shiki grammar id. */
 export function normalizeLanguage(lang: string): string {
   const map: Record<string, string> = {

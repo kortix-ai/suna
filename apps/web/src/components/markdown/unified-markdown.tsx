@@ -15,6 +15,7 @@ import {
 } from '@/components/markdown/katex-markdown';
 import {
   isInternalUrl,
+  isLinkSafeHref,
   languageLabel,
   looksLikeFilePath,
   looksLikeUrl,
@@ -340,13 +341,32 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const isAbsolute = text.startsWith('/');
 
   if (isUrl) {
+    const href = proxyUrl(text) ?? text;
+    const linkClass = cn(INLINE_CODE, 'hover:text-kortix-blue cursor-pointer transition-colors');
+
+    // A malformed absolute URL (e.g. `http://:`) must not reach next/link —
+    // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).
+    if (!isLinkSafeHref(href)) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Open ${text} in a new tab`}
+          className={linkClass}
+        >
+          {children}
+        </a>
+      );
+    }
+
     return (
       <Link
-        href={proxyUrl(text) ?? text}
+        href={href}
         target="_blank"
         rel="noopener noreferrer"
         title={`Open ${text} in a new tab`}
-        className={cn(INLINE_CODE, 'hover:text-kortix-blue cursor-pointer transition-colors')}
+        className={linkClass}
       >
         {children}
       </Link>
@@ -495,6 +515,21 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
             'transition-colors hover:decoration-kortix-blue',
             '[overflow-wrap:anywhere]',
           );
+
+          // A malformed absolute href (e.g. `http://:` from an unsubstituted
+          // `${HOST}:${PORT}` template in content) must not reach next/link —
+          // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).
+          if (!isLinkSafeHref(resolvedHref)) {
+            return (
+              <a
+                href={resolvedHref}
+                className={linkClass}
+                {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+              >
+                {children}
+              </a>
+            );
+          }
 
           return (
             <Link
