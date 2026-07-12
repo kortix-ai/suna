@@ -450,14 +450,12 @@ function envSources(): string[] {
 
 /**
  * Marketplaces that ship ENABLED by default — loaded like the Kortix base (not
- * removable), so the catalog is full on day one. Kept to a sane size + clean
- * licenses; the long tail lives in FEATURED_MARKETPLACES (one-click add). Can be
- * overridden by `KORTIX_DEFAULT_MARKETPLACES` (comma-separated).
+ * removable), so the catalog is full on day one. For now this is empty: **only
+ * Kortix is active by default**, and every other source (Anthropic, OpenAI, and
+ * the rest of FEATURED_MARKETPLACES) is one-click opt-in via "Add a source".
+ * Can be overridden by `KORTIX_DEFAULT_MARKETPLACES` (comma-separated).
  */
-export const DEFAULT_MARKETPLACES: string[] = [
-  "anthropics/skills", // official Anthropic Agent Skills (the anchor)
-  "anthropics/knowledge-work-plugins", // official Anthropic knowledge-work skills
-];
+export const DEFAULT_MARKETPLACES: string[] = [];
 
 /** The defaults actually loaded — `KORTIX_DEFAULT_MARKETPLACES` overrides (set it
  *  to "" to disable, e.g. for hermetic tests). Read at call-time, not import. */
