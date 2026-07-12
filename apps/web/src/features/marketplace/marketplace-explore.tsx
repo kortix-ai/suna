@@ -10,27 +10,18 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { useAddMarketplaceSource, useFeaturedMarketplaces } from '@/hooks/marketplace';
 import { AddMarketplaceModal } from './add-marketplace-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
-import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
 import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-projects-grid';
-import {
-  defaultProjectMarketplaceItems,
-  type MarketplaceItem,
-  type MarketplaceSummary,
-} from '@/lib/marketplace-client';
+import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace-client';
 import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { cn } from '@/lib/utils';
 import {
   MARKETPLACE_GRID_COLUMNS,
   resolveMarketplaceTypeSectionTotal,
-  shouldOfferMarketplaceSeeAll,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
@@ -40,8 +31,6 @@ import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
 // bundles are hidden from browse — see MARKETPLACE_VISIBLE_TYPES on the API).
 const TYPE_ORDER = ['registry:skill'];
 
-const FEATURED_ID = 'featured';
-const PREVIEW_COUNT = 9;
 const SEARCH_GRID_COLUMNS = 2;
 
 const ALL_SOURCES = 'all';
@@ -52,13 +41,6 @@ function sectionId(type: string): string {
 
 function pluralize(label: string): string {
   return label.endsWith('s') ? label : `${label}s`;
-}
-
-function pickFeatured(items: MarketplaceItem[]): MarketplaceItem[] {
-  const curated = defaultProjectMarketplaceItems(items);
-  if (curated.length) return curated.slice(0, 8);
-  const kortix = items.filter((i) => i.marketplaceId === 'kortix');
-  return (kortix.length ? kortix : items).slice(0, 8);
 }
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -104,99 +86,6 @@ function SourceRow({
         <span className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">{count}</span>
       ) : null}
     </button>
-  );
-}
-
-/** A not-yet-enabled source in the rail — one click activates it and its items
- *  join the catalog. */
-function FeaturedSourceRow({
-  label,
-  avatar,
-  busy,
-  onEnable,
-}: {
-  label: string;
-  avatar?: React.ReactNode;
-  busy: boolean;
-  onEnable: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onEnable}
-      disabled={busy}
-      className="group text-muted-foreground hover:text-foreground hover:bg-foreground/5 flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm transition-colors disabled:opacity-60"
-    >
-      {avatar ? <span className="shrink-0 opacity-70 grayscale group-hover:opacity-100 group-hover:grayscale-0">{avatar}</span> : null}
-      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-      <span className="text-muted-foreground/60 group-hover:text-foreground shrink-0">
-        {busy ? <Loading className="size-3.5" /> : <Plus className="size-3.5" />}
-      </span>
-    </button>
-  );
-}
-
-function ExploreSection({
-  id,
-  title,
-  items,
-  type,
-  total,
-  publicOnly,
-  scrollContainerRef,
-  initial = PREVIEW_COUNT,
-}: {
-  id: string;
-  title: string;
-  items: MarketplaceItem[];
-  type?: string;
-  total?: number;
-  publicOnly: boolean;
-  scrollContainerRef?: RefObject<HTMLElement | null>;
-  initial?: number;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = items.slice(0, initial);
-  const effectiveTotal = total ?? items.length;
-  const canExpand = shouldOfferMarketplaceSeeAll({
-    hasPagedView: !!type,
-    renderedCount: visible.length,
-    total: effectiveTotal,
-  });
-
-  return (
-    <section id={id} className="scroll-mt-28">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">{title}</h2>
-        {canExpand ? (
-          <Button
-            variant="transparent"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? 'Show less' : `See all ${effectiveTotal}`}
-          </Button>
-        ) : null}
-      </div>
-      {expanded && type ? (
-        <MarketplacePagedGrid
-          type={type}
-          publicOnly={publicOnly}
-          scrollContainerRef={scrollContainerRef}
-          columns={MARKETPLACE_GRID_COLUMNS}
-          gridClassName="sm:grid-cols-3"
-          emptyTitle="No matches"
-          emptyDescription="No items match this type right now."
-        />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {visible.map((item) => (
-            <MarketplaceExploreCard key={item.id} item={item} />
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -256,40 +145,11 @@ export function MarketplaceExplore({
     return () => clearTimeout(t);
   }, [query]);
 
-  // "Other sources" you can activate — featured registries not yet enabled on
-  // this account, plus a custom "Add a source" flow. Authenticated surface only
-  // (the public marketing page stays browse-only).
+  // Adding/activating sources is an authenticated action — the public marketing
+  // page stays browse-only. The featured list + custom git URL live in the
+  // "Add a source" modal so the rail stays short (just enabled sources).
   const canManageSources = !publicOnly;
-  const featuredQuery = useFeaturedMarketplaces({ enabled: canManageSources });
-  const addSource = useAddMarketplaceSource();
   const [addSourceOpen, setAddSourceOpen] = useState(false);
-  const [enabling, setEnabling] = useState<string | null>(null);
-  const featuredSources = useMemo(() => {
-    if (!canManageSources) return [];
-    const seen = new Set<string>();
-    return (featuredQuery.data ?? []).filter((f) => {
-      if (f.added || seen.has(f.address)) return false;
-      seen.add(f.address);
-      return true;
-    });
-  }, [canManageSources, featuredQuery.data]);
-
-  const onEnableSource = useCallback(
-    (address: string, label: string) => {
-      setEnabling(address);
-      addSource
-        .mutateAsync({ address, label })
-        .then(
-          () =>
-            successToast(`Enabled ${label}`, {
-              description: 'Its items now appear in the catalog.',
-            }),
-          (e) => errorToast('Could not enable', { description: (e as Error).message }),
-        )
-        .finally(() => setEnabling(null));
-    },
-    [addSource],
-  );
 
   const searching = debounced.length > 0;
   const isAll = source === ALL_SOURCES;
@@ -302,7 +162,6 @@ export function MarketplaceExplore({
     () => catalogItems.filter((it) => it.type !== 'registry:project'),
     [catalogItems],
   );
-  const featured = useMemo(() => pickFeatured(componentItems), [componentItems]);
   const typeCounts = useMemo(() => sumMarketplaceTypeCounts(marketplaces), [marketplaces]);
 
   const groups = useMemo(() => {
@@ -412,25 +271,6 @@ export function MarketplaceExplore({
                 onClick={() => selectSource(m.id)}
               />
             ))}
-
-            {canManageSources && featuredSources.length > 0 ? (
-              <>
-                <div className="text-muted-foreground/70 px-2.5 pt-3 pb-1 text-xs font-medium tracking-wide uppercase">
-                  Add sources
-                </div>
-                {featuredSources.map((f) => (
-                  <FeaturedSourceRow
-                    key={f.address}
-                    label={displayCompanyLabel(f.address, f.label)}
-                    busy={enabling === f.address}
-                    avatar={
-                      <MarketplaceAvatar id={f.address} owner={f.owner} label={f.label} size="xs" />
-                    }
-                    onEnable={() => onEnableSource(f.address, f.label)}
-                  />
-                ))}
-              </>
-            ) : null}
           </div>
 
           {canManageSources ? (
@@ -487,26 +327,27 @@ export function MarketplaceExplore({
                 description="The catalog is empty right now — check back soon."
               />
             ) : (
+              // Show the whole catalog at once — one virtualized, scrollable grid
+              // per type. Single type (skills) → no redundant per-type heading
+              // (the "Skills" section heading above already names it).
               <div className="space-y-12">
-                <ExploreSection
-                  id={FEATURED_ID}
-                  title="Featured"
-                  items={featured}
-                  initial={8}
-                  publicOnly={publicOnly}
-                  scrollContainerRef={scrollContainerRef}
-                />
                 {groups.map((g) => (
-                  <ExploreSection
-                    key={g.type}
-                    id={sectionId(g.type)}
-                    title={g.label}
-                    items={g.items}
-                    type={g.type}
-                    total={g.total}
-                    publicOnly={publicOnly}
-                    scrollContainerRef={scrollContainerRef}
-                  />
+                  <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
+                    {groups.length > 1 ? (
+                      <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
+                        {g.label}
+                      </h2>
+                    ) : null}
+                    <MarketplacePagedGrid
+                      type={g.type}
+                      publicOnly={publicOnly}
+                      scrollContainerRef={scrollContainerRef}
+                      columns={MARKETPLACE_GRID_COLUMNS}
+                      gridClassName="sm:grid-cols-3"
+                      emptyTitle="Nothing here yet"
+                      emptyDescription="The catalog is empty right now — check back soon."
+                    />
+                  </section>
                 ))}
               </div>
             )

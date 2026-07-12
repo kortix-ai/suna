@@ -13,6 +13,7 @@ import {
   assertAllowedSourceAddress,
   catalogStatus,
   clampMarketplaceItemsLimit,
+  FEATURED_MARKETPLACES,
   getCatalogItemDetail,
   getCatalogItemFile,
   listCatalogItemsLive,
@@ -166,12 +167,22 @@ marketplaceApp.use('/sources', supabaseAuth);
 marketplaceApp.use('/sources/*', supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
-// Mutating this list is a platform-admin action (GET stays open to any
-// authenticated user); gate POST/DELETE the same way admin/index.ts and
-// ops/index.ts do, without touching the GET listing above.
+// Mutating this list is normally a platform-admin action (GET stays open to any
+// authenticated user).
+//
+// Exception: the curated FEATURED_MARKETPLACES are vetted, public, read-only git
+// repos (they resolve out of the box and carry no SSRF/LFI surface). Enabling one
+// is "just git" — any signed-in user may flip a featured source on so they can
+// explore it. Adding an ARBITRARY address stays admin-only (that's the injection
+// surface `assertAllowedSourceAddress` guards). DELETE stays admin-only.
+const FEATURED_SOURCE_ADDRESSES = new Set(FEATURED_MARKETPLACES.map((f) => f.address));
 marketplaceApp.use('/sources', async (c, next) => {
-  if (c.req.method === 'POST') return requireAdmin(c, next);
-  await next();
+  if (c.req.method !== 'POST') return next();
+  // Hono memoizes the parsed body, so the handler can re-read it safely.
+  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+  const address = String((body as { address?: unknown })?.address ?? '').trim();
+  if (FEATURED_SOURCE_ADDRESSES.has(address)) return next();
+  return requireAdmin(c, next);
 });
 marketplaceApp.use('/sources/*', async (c, next) => {
   if (c.req.method === 'DELETE') return requireAdmin(c, next);
