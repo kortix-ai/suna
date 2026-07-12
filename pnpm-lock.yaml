@@ -190,6 +190,9 @@ importers:
       '@kortix/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@kortix/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter

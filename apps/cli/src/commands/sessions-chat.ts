@@ -1,4 +1,9 @@
 import { createInterface } from 'node:readline';
+import {
+  projectAcpTranscript,
+  type AcpStoredEnvelope,
+  type AcpTranscriptMessage,
+} from '@kortix/sdk/acp/transcript';
 
 import { ApiError } from '../api/client.ts';
 import {
@@ -6,9 +11,7 @@ import {
   type OpencodeMessageWithParts,
   type OpencodePart,
 } from '../api/sandbox-proxy.ts';
-import { loadAuthForHost, loadAuth, type Auth } from '../api/auth.ts';
-import { hasEnvTokenHost } from '../api/config.ts';
-import { loadLink } from '../project-link.ts';
+import { type Auth } from '../api/auth.ts';
 import {
   emitJson,
   locateSessionAnywhere,
@@ -36,6 +39,95 @@ export interface ResolvedSession {
   opencodeSessionId: string | null;
   /** Kortix-side API client (for PATCH/save-back). */
   ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
+}
+
+type AcpResponse<T = unknown> = {
+  jsonrpc: '2.0';
+  id: string | number;
+  result?: T;
+  error?: { code: number; message: string; data?: unknown };
+};
+
+type AcpTranscriptResponse = {
+  runtime_id: string;
+  envelopes: AcpStoredEnvelope[];
+};
+
+function runtimeConversationId(session: ProjectSession): string | null {
+  if (typeof session.runtime_session_id === 'string' && session.runtime_session_id) {
+    return session.runtime_session_id;
+  }
+  if (typeof session.acp_session_id === 'string' && session.acp_session_id) {
+    return session.acp_session_id;
+  }
+  const meta = session.metadata ?? {};
+  const fromMeta = meta.acp_session_id;
+  return typeof fromMeta === 'string' && fromMeta ? fromMeta : null;
+}
+
+async function acpRequest<T>(
+  r: ResolvedSession,
+  method: string,
+  params?: unknown,
+): Promise<T> {
+  const response = await r.ctx.client.post<AcpResponse<T>>(
+    `/projects/${r.ctx.projectId}/sessions/${r.session.session_id}/acp`,
+    {
+      jsonrpc: '2.0',
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      method,
+      ...(params === undefined ? {} : { params }),
+    },
+  );
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
+  return response.result as T;
+}
+
+async function ensureAcpSession(r: ResolvedSession): Promise<string | null> {
+  try {
+    await acpRequest<Record<string, unknown>>(r, 'initialize', {
+      protocolVersion: 1,
+      clientCapabilities: { auth: { _meta: { gateway: true } } },
+      clientInfo: { name: '@kortix/cli', title: 'Kortix CLI', version: '0.1.0' },
+    });
+    const existing = runtimeConversationId(r.session);
+    if (existing) {
+      await acpRequest<Record<string, unknown>>(r, 'session/load', {
+        sessionId: existing,
+        cwd: '/workspace',
+        mcpServers: [],
+      });
+      return existing;
+    }
+    const created = await acpRequest<{ sessionId: string }>(r, 'session/new', {
+      cwd: '/workspace',
+      mcpServers: [],
+    });
+    return created.sessionId || null;
+  } catch (err) {
+    surfaceApiError(err);
+    return null;
+  }
+}
+
+async function fetchAcpMessages(
+  r: ResolvedSession,
+  limit: number,
+): Promise<AcpTranscriptMessage[]> {
+  return fetchAcpMessagesForSession(r.ctx, r.session, limit);
+}
+
+async function fetchAcpMessagesForSession(
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  session: ProjectSession,
+  limit: number,
+): Promise<AcpTranscriptMessage[]> {
+  const transcript = await ctx.client.get<AcpTranscriptResponse>(
+    `/projects/${ctx.projectId}/sessions/${session.session_id}/acp/transcript`,
+  );
+  return projectAcpTranscript(transcript.envelopes, { limit, maxChars: 8_000 });
 }
 
 /**
@@ -216,6 +308,27 @@ export function printMessage(msg: OpencodeMessageWithParts): void {
   }
 }
 
+export function printAcpMessage(msg: AcpTranscriptMessage): void {
+  const color = msg.role === 'assistant' ? C.cyan : C.green;
+  const ts = msg.created ? new Date(msg.created).toLocaleTimeString() : '';
+  process.stdout.write(
+    `\n${color}${C.bold}${msg.role}${C.reset} ${C.faded}${ts}${C.reset}\n`,
+  );
+  if (msg.text) {
+    for (const line of msg.text.split('\n')) {
+      process.stdout.write(`  ${line}\n`);
+    }
+  }
+  for (const tool of msg.tools) {
+    process.stdout.write(
+      `  ${C.faded}[${tool.tool}${tool.status ? ` · ${tool.status}` : ''}]${C.reset}\n`,
+    );
+  }
+  if (msg.reasoning_omitted) {
+    process.stdout.write(`  ${C.dim}[reasoning omitted]${C.reset}\n`);
+  }
+}
+
 /** Promise-based readline `question` (single line). */
 export function prompt(label: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -259,7 +372,7 @@ session (or starts one with --new).
 In the REPL: type a message + Enter to send. Ctrl-D or \`exit\` quits.`;
 
 /**
- * `kortix sessions chat` — send prompts to a session's OpenCode agent and
+ * `kortix sessions chat` — send prompts to a session's ACP agent and
  * print replies. One-shot with --prompt; interactive REPL otherwise.
  */
 export async function runSessionsChat(argv: string[]): Promise<number> {
@@ -300,14 +413,17 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
 
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
+  const runtimeSessionId = await ensureAcpSession(resolved);
+  if (!runtimeSessionId) return 1;
 
   const extra = agent ? { agent } : undefined;
+  if (extra && !json) {
+    process.stderr.write(`${C.dim}Note: --agent is ignored by ACP sessions; the session-bound agent is used.${C.reset}\n`);
+  }
 
   // ── One-shot ─────────────────────────────────────────────────────────────
   if (promptText !== undefined) {
-    return sendAndPrint(resolved, ocSessionId, promptText, extra, json);
+    return sendAndPrint(resolved, runtimeSessionId, promptText, json);
   }
 
   // ── Interactive REPL ───────────────────────────────────────────────────────
@@ -318,8 +434,8 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   );
   // Replay any prior conversation so the REPL has context on screen.
   try {
-    const history = await resolved.oc.listMessages(ocSessionId, 20);
-    for (const msg of history) printMessage(msg);
+    const history = await fetchAcpMessages(resolved, 20);
+    for (const msg of history) printAcpMessage(msg);
   } catch {
     /* no history / sandbox warming — start fresh */
   }
@@ -329,7 +445,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     const text = line.trim();
     if (text === '' ) continue;
     if (text === 'exit' || text === 'quit') break;
-    const code = await sendAndPrint(resolved, ocSessionId, text, extra);
+    const code = await sendAndPrint(resolved, runtimeSessionId, text);
     if (code !== 0) {
       // Transient sandbox error — let the user retry rather than killing the REPL.
       process.stderr.write(`${C.dim}(message failed — try again, or \`exit\`)${C.reset}\n`);
@@ -505,7 +621,7 @@ agents: list them, then \`kortix sessions log <id>\` to read what any one of
 them is currently doing. Aliases: \`messages\`, \`history\`.`;
 
 /**
- * `kortix sessions log` — print a running session's recent OpenCode messages.
+ * `kortix sessions log` — print a running session's recent ACP transcript.
  * Read-only: it never sends a prompt, so it's the safe way for one agent to
  * observe what other agents are doing. Reading requires a live sandbox, so the
  * session must be `running` (a stopped session has no sandbox to query).
@@ -562,18 +678,18 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
 
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions log');
   if (!resolved) return 1;
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
+  const runtimeSessionId = await ensureAcpSession(resolved);
+  if (!runtimeSessionId) return 1;
 
-  let messages: OpencodeMessageWithParts[];
+  let messages: AcpTranscriptMessage[];
   try {
-    messages = await resolved.oc.listMessages(ocSessionId, limit);
+    messages = await fetchAcpMessages(resolved, limit);
   } catch (err) {
     return surfaceApiError(err);
   }
 
   if (json) {
-    process.stdout.write(`${JSON.stringify(messages.map(messageToJson), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(messages.map(acpMessageToJson), null, 2)}\n`);
     return 0;
   }
 
@@ -586,7 +702,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     process.stdout.write(`  ${C.dim}No messages yet.${C.reset}\n\n`);
     return 0;
   }
-  for (const msg of messages) printMessage(msg);
+  for (const msg of messages) printAcpMessage(msg);
   process.stdout.write('\n');
   return 0;
 }
@@ -627,29 +743,45 @@ function messageToJson(msg: OpencodeMessageWithParts): Record<string, unknown> {
   };
 }
 
+function acpMessageToJson(msg: AcpTranscriptMessage): Record<string, unknown> {
+  return {
+    role: msg.role,
+    created: msg.created,
+    completed: msg.completed,
+    error: msg.error,
+    text: msg.text,
+    parts: [
+      ...(msg.text ? [{ type: 'text', text: msg.text }] : []),
+      ...msg.tools.map((tool) => ({ type: 'tool', tool: tool.tool, status: tool.status })),
+      ...msg.files.map((file) => ({ type: 'file', filename: file.filename, mime: file.mime })),
+    ],
+  };
+}
+
 /** Send one prompt, print the assistant reply (and any error). */
 async function sendAndPrint(
   resolved: ResolvedSession,
-  ocSessionId: string,
+  runtimeSessionId: string,
   text: string,
-  extra: { agent?: string } | undefined,
   json = false,
 ): Promise<number> {
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
   try {
-    const reply = await resolved.oc.sendPrompt(
-      ocSessionId,
-      [{ type: 'text', text }],
-      extra,
-    );
+    await acpRequest<{ stopReason: string }>(resolved, 'session/prompt', {
+      sessionId: runtimeSessionId,
+      prompt: [{ type: 'text', text }],
+    });
+    const messages = await fetchAcpMessages(resolved, 20);
+    const reply = [...messages].reverse().find((msg) => msg.role === 'assistant') ?? null;
     if (json) {
-      emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
-      return reply.info.error ? 1 : 0;
+      emitJson(reply ? acpMessageToJson(reply) : { role: 'assistant', text: '', parts: [] });
+      return reply?.error ? 1 : 0;
     }
     process.stdout.write(`${' '.repeat(12)}\r`); // clear "…thinking"
-    printMessage({ info: reply.info, parts: reply.parts });
-    return reply.info.error ? 1 : 0;
+    if (reply) printAcpMessage(reply);
+    else process.stdout.write(`  ${C.dim}No assistant reply yet.${C.reset}\n`);
+    return reply?.error ? 1 : 0;
   } catch (err) {
     if (!json) process.stdout.write(`${' '.repeat(12)}\r`);
     return surfaceApiError(err);
@@ -690,7 +822,7 @@ interface SessionActivity {
 
 /**
  * `kortix sessions status` — overview of all sessions + live per-agent
- * activity. Running sessions get one concurrent OpenCode read each (capped),
+ * activity. Running sessions get one concurrent ACP transcript read each (capped),
  * so it scales to a wall of parallel sessions without a thundering herd.
  */
 export async function runSessionsStatus(argv: string[]): Promise<number> {
@@ -717,16 +849,6 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
-  // Same auth the project context resolved with — needed for the OpenCode proxy.
-  const hostFromLink =
-    !hostArg && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
-  const hostName = hostArg ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
-  if (!auth) {
-    process.stderr.write(`${status.err('Not logged in.')}\n`);
-    return 1;
-  }
-
   let sessions: ProjectSession[];
   try {
     sessions = await ctx.client.get<ProjectSession[]>(
@@ -749,7 +871,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
   await mapLimit(running, 8, async (s) => {
-    const a = await fetchSessionActivity(s, auth);
+    const a = await fetchSessionActivity(s, ctx);
     if (a) activity.set(s.session_id, a);
   });
 
@@ -806,26 +928,35 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
 /** Read one running session's latest message and summarize what it's doing. */
 async function fetchSessionActivity(
   s: ProjectSession,
-  auth: Auth,
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
 ): Promise<SessionActivity | null> {
-  const proxyId = proxyIdFromSession(s);
-  if (!proxyId) return null;
-  const oc = opencodeClient({ auth, sandboxId: proxyId });
   try {
-    let ocId = s.opencode_session_id;
-    if (!ocId) {
-      const list = await oc.listSessions();
-      ocId = list[0]?.id ?? null;
-    }
-    if (!ocId) return null;
-    const msgs = await oc.listMessages(ocId, 2);
+    const msgs = await fetchAcpMessagesForSession(ctx, s, 2);
     const last = msgs[msgs.length - 1];
     if (!last) return { working: false, summary: 'no messages yet' };
-    return deriveActivity(last);
+    return deriveAcpActivity(last);
   } catch {
-    // Sandbox still warming / proxy hiccup — treat as unknown, not fatal.
+    // Runtime still warming / proxy hiccup — treat as unknown, not fatal.
     return null;
   }
+}
+
+function deriveAcpActivity(m: AcpTranscriptMessage): SessionActivity {
+  const at = m.created ?? undefined;
+  if (m.role === 'user') {
+    return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
+  }
+  const runningTool = m.tools.find((tool) => tool.status === 'running' || tool.status === 'pending');
+  if (runningTool) {
+    return { working: true, tool: runningTool.tool, summary: `running ${runningTool.tool}…`, last_role: 'assistant', last_at: at };
+  }
+  const text = m.text.trim().replace(/\s+/g, ' ');
+  return {
+    working: false,
+    summary: text ? truncate(text, 72) : 'idle',
+    last_role: 'assistant',
+    last_at: at,
+  };
 }
 
 /** Turn the latest message into a compact "what's it doing" summary. */
