@@ -209,11 +209,11 @@ export function MarketplaceExplore({
         <>
           <div className="space-y-2">
             <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
-              Clone a project, or add a skill
+              Install a project, or add a skill
             </h1>
             <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
-              Start from a full, working Kortix project in one click — or add skills from every
-              source into a project you already have.
+              Install a full, working Kortix project in one click — or add skills from every source
+              into a project you already have.
             </p>
           </div>
 
@@ -281,8 +281,8 @@ export function MarketplaceExplore({
         {showProjects ? (
           <section className="scroll-mt-28">
             <SectionHeading
-              title="Clone a project"
-              subtitle="A full, working Kortix project — cloned into your account, ready in one session."
+              title="Install a project"
+              subtitle="A full, working Kortix project — spun up as its own project and set up for you in one session."
             />
             <MarketplaceProjectsGrid items={projectItems} query={debounced} size="featured" />
           </section>

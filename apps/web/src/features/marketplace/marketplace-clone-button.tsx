@@ -8,14 +8,13 @@ import { useAuth } from '@/features/providers/auth-provider';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 
 /**
- * Clone CTA for a `registry:project` item's detail page. Unlike
- * `MarketplaceAddButton` (installs into an existing project via a modal),
- * cloning creates a brand-new project — so this just routes into the normal
+ * Primary "Install" CTA for a `registry:project` item — installing a whole
+ * project spins up a brand-new project from it, so this routes into the normal
  * "New Project" flow on `/projects`, pre-seeded with this item
- * (`project-create-modal.tsx` picks up `?clone=`), same as the existing
- * `?new=1` auto-open pattern used after GitHub-connect. Sized as the page's
- * primary CTA (not `size="sm"` like the skill/agent "Add to project" button)
- * since cloning is the marketplace's main growth action.
+ * (`project-create-modal.tsx` picks up `?clone=`). That flow now also starts a
+ * setup session right away that wires up the template's integrations. Sized as
+ * the page's primary CTA since installing a project is the marketplace's main
+ * growth action.
  */
 export function MarketplaceCloneButton({ item }: { item: MarketplaceItem }) {
   const { user, isLoading } = useAuth();
@@ -24,7 +23,7 @@ export function MarketplaceCloneButton({ item }: { item: MarketplaceItem }) {
   if (isLoading) {
     return (
       <Button variant="default" disabled className="w-full gap-1.5">
-        Clone project
+        Install project
       </Button>
     );
   }
@@ -33,7 +32,7 @@ export function MarketplaceCloneButton({ item }: { item: MarketplaceItem }) {
     return (
       <Button variant="default" className="w-full gap-1.5" asChild>
         <Link href={cloneHref}>
-          Clone project
+          Install project
           <ArrowRight className="size-4" />
         </Link>
       </Button>
@@ -43,7 +42,7 @@ export function MarketplaceCloneButton({ item }: { item: MarketplaceItem }) {
   return (
     <Button variant="default" className="w-full gap-1.5" asChild>
       <Link href={`/auth?redirect=${encodeURIComponent(cloneHref)}`}>
-        Sign in to clone
+        Sign in to install
         <ArrowRight className="size-4" />
       </Link>
     </Button>

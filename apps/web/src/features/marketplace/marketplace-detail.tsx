@@ -193,7 +193,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
             onClick={() => setAddToExistingOpen(true)}
             className="text-muted-foreground hover:text-foreground text-xs transition-colors"
           >
-            Or add to a project you already have
+            Or install into a project you already have
           </button>
         ) : null}
         <AddProjectToProjectModal
@@ -234,7 +234,7 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
           className="flex-1 gap-1.5"
           onClick={() => setAddOpen(true)}
         >
-          {installed ? 'Re-install' : `Add to this project`}
+          {installed ? 'Re-install' : 'Install into this project'}
         </Button>
         {installed ? (
           <Button

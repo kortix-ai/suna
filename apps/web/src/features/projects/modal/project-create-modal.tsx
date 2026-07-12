@@ -59,6 +59,7 @@ import {
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
+  createProjectSession,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -69,6 +70,7 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk/projects-client';
+import { buildTemplateSetupPrompt } from '@/features/marketplace/marketplace-setup-prompt';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
@@ -229,7 +231,7 @@ export const ProjectCreateModal = ({
 
   const createMutation = useMutation({
     mutationFn: provisionProject,
-    onSuccess: (project) => {
+    onSuccess: async (project) => {
       successToast('Project created');
       queryClient.setQueryData<KortixProject[]>(['projects', project.account_id], (projects) =>
         upsertProject(projects, project),
@@ -242,6 +244,29 @@ export const ProjectCreateModal = ({
         queryKey: ['projects'],
         type: 'active',
       });
+
+      // Cloned from a marketplace item → don't drop the user on an empty
+      // project. Immediately start a setup session that reads the seeded config
+      // and wires up its integrations, and land them there.
+      if (effectiveSourceItemId) {
+        try {
+          const title = sourceItemQuery.data?.title ?? 'this project';
+          const session = await createProjectSession(project.project_id, {
+            initial_prompt: buildTemplateSetupPrompt(title),
+            name: `Set up ${title.replaceAll('-', ' ')}`,
+            metadata: { kind: 'template-setup', item_id: effectiveSourceItemId },
+          });
+          const sessionId = (session as { session_id?: string } | undefined)?.session_id;
+          if (sessionId) {
+            resetAndClose();
+            router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
+            return;
+          }
+        } catch {
+          // Fall through to the project home if the setup session can't start.
+        }
+      }
+
       resetAndClose();
       router.replace(`/projects/${project.project_id}`);
     },
