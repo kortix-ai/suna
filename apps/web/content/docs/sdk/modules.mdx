@@ -1,6 +1,6 @@
 ---
 title: Modules
-description: The @kortix/sdk subpath imports — files, session runtime, the opencode client, auth, REST, and the live stores.
+description: The @kortix/sdk subpath imports — ACP, files, session runtime, runtime helpers, auth, REST, and the live stores.
 ---
 
 Most app code should use the [`createKortix`](/docs/sdk/the-client) facade and the
@@ -14,9 +14,10 @@ Each is a separate entry point, so you only pull in what you import:
 
 | import | what |
 |---|---|
+| `@kortix/sdk/acp` · `@kortix/sdk/acp/transcript` | ACP client, protocol types, project-session endpoints, and transcript projections |
 | `@kortix/sdk/files` | workspace file operations |
 | `@kortix/sdk/session` · `@kortix/sdk/session/url` | a session's runtime surface — health + URL builders |
-| `@kortix/sdk/opencode-client` | the typed OpenCode v2 client + its full type surface |
+| `@kortix/sdk/runtime-client` | structural daemon/runtime helpers and wire types |
 | `@kortix/sdk/auth` | `authenticatedFetch` + token accessors |
 | `@kortix/sdk/projects-client` | the raw REST functions the facade wraps |
 | `@kortix/sdk/api-client` | `backendApi` — the low-level typed HTTP client |
@@ -34,8 +35,8 @@ surface a host reaches for. The one exception is internal: `sandbox-connection-s
 (see [below](#other-subpaths-internal-plumbing)) tracks low-level health/reconnect
 state for the sandbox process itself and uses "sandbox" in its name — it's
 plumbing `useSession` consumes, not something host code should import directly.
-Host code imports only from `@kortix/sdk/*` — never `@opencode-ai/sdk`, never raw
-`backendApi` / `authenticatedFetch` from elsewhere.
+Host code imports only from `@kortix/sdk/*` — never a native harness SDK, never
+raw `backendApi` / `authenticatedFetch` from elsewhere.
 </Callout>
 
 ## `@kortix/sdk/files`
@@ -104,24 +105,24 @@ Plus `parseLocalhostUrl`, `hasLocalhostUrls`, `isProxiableLocalhostUrl`,
 rendering agent output that mentions `localhost`, or building a preview iframe
 without going through the session handle.
 
-## `@kortix/sdk/opencode-client`
+## `@kortix/sdk/runtime-client`
 
-`getClient()` returns the typed [OpenCode](/docs/concepts/agents) v2 client for the
-**active** runtime, with auth injected. This module also re-exports the *entire*
-OpenCode v2 type surface (`Session`, `Message`, `Part`, `Agent`, `Config`, … and
-the `OpencodeClient` type), so you have one place for runtime types.
+`getRuntimeClient()` returns the structural daemon/runtime client for the
+**active** session runtime, with auth injected. Conversation traffic is ACP-first;
+this module is the lower-level escape hatch for daemon helpers that are not yet
+covered by the session facade.
 
 ```ts
-import { getClient, type Session, type Part } from '@kortix/sdk/opencode-client';
+import { getRuntimeClient, type RuntimeClient, type Session, type Part } from '@kortix/sdk/runtime-client';
 
-const client = getClient();
+const client = getRuntimeClient();
 const { data } = await client.session.list({ limit: 100 });
 ```
 
-Also `getClientForUrl(url)` (a client pinned to a specific runtime),
-`dropClientForUrl(url)`, and `resetClient()` (used on a runtime switch). **When to
-use:** a typed runtime call the facade doesn't yet wrap. Prefer
-`kortix.session(pid, sid).runtime`, the same client scoped to a session.
+Also `getRuntimeClientForUrl(url)` (a client pinned to a specific runtime),
+`dropRuntimeClientForUrl(url)`, and `resetRuntimeClient()` (used on a runtime
+switch). **When to use:** a daemon/runtime call the facade doesn't yet wrap.
+Prefer `kortix.session(pid, sid).runtime`, the same client scoped to a session.
 
 ## `@kortix/sdk/auth`
 

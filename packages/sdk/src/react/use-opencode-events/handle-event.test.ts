@@ -8,7 +8,7 @@ import type {
   Session,
   ToolPart,
   UserMessage,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../runtime/wire-types';
 
 // Mock the notification sink BEFORE importing the module under test, so
 // `handle-event.ts`'s `import { infoToast, notify* } from '../../platform/ui'`

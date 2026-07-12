@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { Agent } from '@opencode-ai/sdk/v2/client';
+import type { Agent } from '../runtime/wire-types';
 import { useOpenCodeAgents } from './use-opencode-sessions';
 import { featureFlags } from '../platform/feature-flags';
 

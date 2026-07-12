@@ -6,7 +6,7 @@
  * packages/opencode/src/cli/cmd/tui/util/transcript.ts
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from './runtime/wire-types';
 
 // ============================================================================
 // Types

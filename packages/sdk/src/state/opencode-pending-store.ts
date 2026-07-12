@@ -1,6 +1,6 @@
 'use client';
 
-import type { PermissionRequest, QuestionRequest } from '@opencode-ai/sdk/v2/client';
+import type { PermissionRequest, QuestionRequest } from '../runtime/wire-types';
 import { create } from 'zustand';
 
 // Cap on how many resolved request ids we remember. Request ids are unique per

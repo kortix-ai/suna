@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
+description: The session handle — lifecycle, ACP conversation flow, and the session-owned runtime (health & previews).
 ---
 
 A **session** is one agent run, in its own disposable sandbox, on its own git
@@ -129,17 +129,17 @@ In a React app, prefer [`useSession(projectId, sessionId)`](/docs/sdk/react#uses
 instead — the hook that owns the whole runtime (start, SSE, readiness) and
 returns the thread, `send`, and the boot `phase`.
 
-### The typed runtime — `s.runtime`
+### The daemon/runtime escape hatch — `s.runtime`
 
-`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
-only through the SDK — the escape hatch for anything not covered by
-`send`/`abort`/`stream`. It requires a resolved runtime (call `s.ensureReady()`
-first, or use it after `send`/`abort`/`stream` have run).
+`s.runtime` is the structural daemon/runtime client, scoped to this session and
+reached only through the SDK — the escape hatch for anything not covered by the
+ACP-first `send`/`abort`/`stream` facade. It requires a resolved runtime (call
+`s.ensureReady()` first, or use it after `send`/`abort`/`stream` have run).
 
 ```ts
 await s.ensureReady();
 
-// send a prompt (equivalent to s.send(), shown for the raw client)
+// Prefer s.send() for conversation prompts; raw daemon calls are escape hatches.
 await s.runtime.session.prompt({
   sessionID: (await s.ensureReady()).opencodeSessionId,
   parts: [{ type: 'text', text: 'Refactor the auth module' }],
@@ -155,9 +155,9 @@ something those wrappers don't cover.
 </Callout>
 
 <Callout type="warn">
-Never import `@opencode-ai/sdk` directly. `s.runtime` is the same client, owned by
-the SDK, with the full opencode type surface re-exported from
-[`@kortix/sdk/opencode-client`](/docs/sdk/modules#kortix-sdk-opencode-client).
+Never import a native harness SDK directly. ACP is the app/client protocol;
+remaining daemon helpers and structural wire types are owned by
+[`@kortix/sdk/runtime-client`](/docs/sdk/modules#kortix-sdk-runtime-client).
 </Callout>
 
 ## Files — `s.files`

@@ -3,14 +3,14 @@ import { AcpClient, createAcpClient, type AcpStreamHandle } from './acp';
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
  * One client. Every action a method. The host app imports ONLY from `@kortix/sdk`
- * — never `@opencode-ai/sdk`, never `backendApi`/`authenticatedFetch` directly.
+ * — never native harness SDKs, never `backendApi`/`authenticatedFetch` directly.
  *
  *   const kortix = createKortix({ getToken });
  *   await kortix.projects.list();
  *   await kortix.project(pid).secrets.upsert({ name, value });
  *   const s = kortix.session(pid, sid);
  *   await s.start();
- *   s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via the SDK
+ *   await s.send('do the task');   // ACP-first conversation, via the SDK
  *
  * REST methods are direct references to the platform client, so they keep their
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
@@ -608,7 +608,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
   /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
   function session(projectId: string, sessionId: string) {
-    // Opinionated-action state, scoped to THIS handle. The opencode runtime is
+    // Opinionated-action state, scoped to THIS handle. The runtime is
     // keyed by the OpenCode session id (resolved server-side at /start), NOT the
     // Kortix `sessionId` — they differ. We resolve+cache it once (including the
     // resolved runtime URL + sandbox id), and remember a chosen model so `send`

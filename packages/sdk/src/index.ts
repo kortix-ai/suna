@@ -8,7 +8,6 @@
  * The data modules are exposed as subpaths (not merged here) to keep the
  * surface collision-free and tree-shakeable:
  *   @kortix/sdk/react            — all useOpenCode* hooks + providers
- *   @kortix/sdk/opencode-client  — the scoped OpenCode v2 client factory
  *   @kortix/sdk/auth             — authenticatedFetch + token accessors
  *   @kortix/sdk/api-client       — backendApi (typed REST)
  *   @kortix/sdk/projects-client  — project/session REST surface

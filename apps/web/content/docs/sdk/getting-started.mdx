@@ -82,15 +82,12 @@ const created = await kortix.project(projectId).sessions.create();
 const s = kortix.session(projectId, created.session_id);
 await s.start();
 
-// talk to the running agent — the typed opencode runtime, reached via the SDK
-await s.runtime.session.prompt({
-  sessionID: (await s.ensureReady()).opencodeSessionId,
-  parts: [{ type: 'text', text: 'Add a README' }],
-});
+// talk to the running agent through the ACP-first session facade
+await s.send('Add a README');
 ```
 
 <Callout type="warn">
-Don't import `@opencode-ai/sdk`, `backendApi`, or `authenticatedFetch` in app
+Don't import native harness SDKs, `backendApi`, or `authenticatedFetch` in app
 code. Everything is reachable through `createKortix` or a `@kortix/sdk/*` subpath.
 </Callout>
 
@@ -120,5 +117,5 @@ canonical id — no provider to mount, no poller, no server store. See
 ## Next
 
 - [The client](/docs/sdk/the-client) — the full facade surface.
-- [Sessions](/docs/sdk/sessions) — lifecycle, runtime health, previews, and the opencode runtime.
+- [Sessions](/docs/sdk/sessions) — lifecycle, ACP, runtime health, and previews.
 - [React hooks](/docs/sdk/react) — live, reactive data for your UI.

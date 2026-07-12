@@ -4,13 +4,14 @@ import type {
 	Message,
 	Part,
 	SessionStatus,
+	SnapshotFileDiff,
 	Todo,
-} from "@opencode-ai/sdk/v2/client";
+} from "../runtime/wire-types";
 import { useEffect, useRef } from "react";
 import { getClient } from "../opencode/client";
 // Inlined verbatim from web's `@/ui/types` — FileDiff is a derived type, NOT
-// exported by @opencode-ai/sdk/v2/client. SDK-port: keep type shape identical.
-type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
+// exported by ../runtime/wire-types. SDK-port: keep type shape identical.
+type FileDiff = Omit<SnapshotFileDiff, 'patch'> & {
 	patch?: string;
 	before?: string;
 	after?: string;

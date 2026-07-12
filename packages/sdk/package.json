@@ -14,7 +14,6 @@
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "1.17.11",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
@@ -34,7 +33,6 @@
     "./acp": "./src/acp/index.ts",
     "./acp/transcript": "./src/acp/transcript.ts",
     "./runtime-client": "./src/runtime/client.ts",
-    "./opencode-client": "./src/opencode/client.ts",
     "./config": "./src/platform/config.ts",
     "./auth": "./src/platform/auth.ts",
     "./api-client": "./src/platform/api-client.ts",
@@ -64,10 +62,6 @@
       "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
       "./acp": { "types": "./dist/acp/index.d.ts", "import": "./dist/acp/index.js" },
-      "./opencode-client": {
-        "types": "./dist/opencode/client.d.ts",
-        "import": "./dist/opencode/client.js"
-      },
       "./config": { "types": "./dist/platform/config.d.ts", "import": "./dist/platform/config.js" },
       "./auth": { "types": "./dist/platform/auth.d.ts", "import": "./dist/platform/auth.js" },
       "./api-client": {

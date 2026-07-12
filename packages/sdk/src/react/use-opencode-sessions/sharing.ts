@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import type { Session } from '../../runtime/wire-types';
 import { opencodeKeys } from './keys';
 import { unwrap } from './shared';
 

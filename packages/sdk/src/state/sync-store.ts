@@ -8,7 +8,7 @@ import type {
 	SessionStatus,
 	TextPart,
 	Todo,
-} from "@opencode-ai/sdk/v2/client";
+} from "../runtime/wire-types";
 import { create } from "zustand";
 
 import { ascendingId } from "./sync-store/ascending-id";

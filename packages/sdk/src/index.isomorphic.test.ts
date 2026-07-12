@@ -142,7 +142,9 @@ interface Subpath {
 
 const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'server.ts', tier: 'node-allowed' },
-  { name: './opencode-client', file: 'opencode/client.ts', tier: 'isomorphic-core' },
+  { name: './acp', file: 'acp/index.ts', tier: 'isomorphic-core' },
+  { name: './acp/transcript', file: 'acp/transcript.ts', tier: 'isomorphic-core' },
+  { name: './runtime-client', file: 'runtime/client.ts', tier: 'isomorphic-core' },
   { name: './config', file: 'platform/config.ts', tier: 'isomorphic-core' },
   { name: './auth', file: 'platform/auth.ts', tier: 'isomorphic-core' },
   { name: './api-client', file: 'platform/api-client.ts', tier: 'isomorphic-core' },

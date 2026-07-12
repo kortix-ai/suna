@@ -2,7 +2,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '../../runtime/wire-types';
 import { unwrap } from './shared';
 
 // ============================================================================

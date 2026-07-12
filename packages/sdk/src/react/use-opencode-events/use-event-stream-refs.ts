@@ -1,7 +1,7 @@
 'use client';
 
 import { type QueryClient } from '@tanstack/react-query';
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../../runtime/wire-types';
 import { useRef } from 'react';
 import { authenticatedFetch } from '../../platform/auth';
 import { useDiagnosticsStore, type RawDiagnostic } from '../../state/diagnostics-store';

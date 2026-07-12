@@ -1,8 +1,8 @@
 /**
  * OpenCode Session Types for Mobile — framework-agnostic.
  *
- * These types mirror the Computer frontend's ui/types.ts but define the SDK types
- * locally instead of importing from @opencode-ai/sdk (which is web-only).
+ * These types mirror the Computer frontend's ui/types.ts but define runtime
+ * wire shapes locally instead of importing a native harness SDK.
  */
 
 // ---------------------------------------------------------------------------

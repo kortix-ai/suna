@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../opencode/client';
-import type { Config } from '@opencode-ai/sdk/v2/client';
+import type { Config } from '../runtime/wire-types';
 import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 export type { Config };

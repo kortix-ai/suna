@@ -47,9 +47,9 @@ export type {
   Provider,
   Todo,
   SnapshotFileDiff,
-} from '@kortix/sdk/opencode-client';
+} from '@kortix/sdk/runtime-client';
 
-export type FileDiff = Omit<import('@kortix/sdk/opencode-client').SnapshotFileDiff, 'patch'> & {
+export type FileDiff = Omit<import('@kortix/sdk/runtime-client').SnapshotFileDiff, 'patch'> & {
   patch?: string;
   before?: string;
   after?: string;
@@ -64,8 +64,8 @@ export type FileDiff = Omit<import('@kortix/sdk/opencode-client').SnapshotFileDi
  * `session.messages()`.
  */
 export interface MessageWithParts {
-  info: import('@kortix/sdk/opencode-client').Message;
-  parts: import('@kortix/sdk/opencode-client').Part[];
+  info: import('@kortix/sdk/runtime-client').Message;
+  parts: import('@kortix/sdk/runtime-client').Part[];
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../../runtime/wire-types';
 import { clearConfigOverrides } from '../use-opencode-config';
 import { saveSessionToIDB } from '../../state/idb-sync-cache';
 import { logger } from '../../platform/logger';

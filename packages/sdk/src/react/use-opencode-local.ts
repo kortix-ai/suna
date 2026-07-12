@@ -15,7 +15,7 @@ import { flattenModels, type FlatModel } from './model-flatten';
 import { featureFlags } from '../platform/feature-flags';
 import { listProjectSecrets } from '../platform/projects-client';
 import { AUTO_DEFAULT_MODEL_ID, AUTO_MODEL_ID } from '@kortix/llm-catalog';
-import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { Agent, Config, ProviderListResponse } from '../runtime/wire-types';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useKortixRouteProjectId } from './route-project';
@@ -420,7 +420,7 @@ export function useOpenCodeLocal({
     // Priority 3: Provider defaults -> first model of first connected provider
     if (providers) {
       const defaults = providers.default || {};
-      const all = Array.isArray(providers.all) ? providers.all : [];
+      const all: any[] = Array.isArray(providers.all) ? providers.all : [];
       const connectedIds = Array.isArray(providers.connected) ? providers.connected : [];
       const connected = all.filter((p) => connectedIds.includes(p.id));
       for (const p of connected) {

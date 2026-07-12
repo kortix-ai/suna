@@ -17,7 +17,7 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../runtime/wire-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../platform/auth';
 import { logger } from '../platform/logger';
 
@@ -467,9 +467,8 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
       // retries FOREVER: the proxy 503s every `/global/event` connect, and
       // prod showed continuous 503 loops from several dead sandboxes at once.
       // Classify this attempt: a HARD failure delivered zero events AND
-      // either carried an HTTP-level status (the vendor client wraps non-2xx
-      // as `Error` with `cause: { status }` — see @opencode-ai/sdk's
-      // error-interceptor) or died within HARD_FAILURE_WINDOW_MS (edge 503s
+      // either carried an HTTP-level status (the runtime client wraps non-2xx
+      // as `Error` with `cause: { status }`) or died within HARD_FAILURE_WINDOW_MS (edge 503s
       // surface as opaque network/CORS errors with no status attached).
       // Slow failures without a status (a black-holed connect that hit the
       // 20s connect timeout) and anything that streamed a real event reset

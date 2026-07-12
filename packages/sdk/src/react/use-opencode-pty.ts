@@ -5,7 +5,7 @@ import { stripTrailingSlashes } from '../platform/strings';
 import { getClient } from '../opencode/client';
 import { getActiveOpenCodeUrl } from '../state/server-store';
 import { getAuthToken } from '../platform/auth';
-import type { Pty } from '@opencode-ai/sdk/v2/client';
+import type { Pty } from '../runtime/wire-types';
 import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
 
 export type { Pty };

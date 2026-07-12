@@ -1,11 +1,11 @@
 # @kortix/sdk
 
 The **single, opinionated data layer** for the Kortix agent platform. One typed
-client wraps both the **Kortix REST API** and the **OpenCode v2 runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
-below is the target state, not yet fully true of apps/web — see Rules of the
-road.)
+client wraps the **Kortix REST API**, session-scoped **ACP** conversation
+endpoints, and the provider-neutral daemon/runtime helpers so a host app — web,
+mobile, reference — imports **only `@kortix/sdk`** and never the native SDK for a
+specific harness. (The no-raw-`backendApi`/`authenticatedFetch` rule below is
+the target state, not yet fully true of apps/web — see Rules of the road.)
 
 > Philosophy: **one Kortix token, one client, every action a method.** Keys never
 > leave the server; mutations own their side-effects there; the host states intent.
@@ -37,9 +37,9 @@ const s = kortix.session(pid, sid);
 await s.send('Build me a widget');   // provisions/resumes if needed, then prompts
 await s.previews();
 
-// Lower level: the typed opencode client for THIS session's runtime.
+// Lower level: the structural daemon/runtime client for THIS session's runtime.
 // `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
+// the harness session id (NOT the Kortix `sid`) — resolve both via ensureReady.
 const { opencodeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
 ```
@@ -57,8 +57,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.playground`), `.channels`, `.apps`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
-| `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the structural daemon/runtime client) |
+| `kortix.runtime()` | the structural daemon/runtime client for the active session runtime (escape hatch) |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -191,7 +191,7 @@ chat UI actually dispatches on.
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
 platform client's `platformFetch`, `authenticatedFetch`, the files client, the
-opencode client, and `ensureReady()` all throw/return the same classes (from
+daemon/runtime client, and `ensureReady()` all throw/return the same classes (from
 the root barrel or `@kortix/sdk/api-client`; `@kortix/sdk/react` re-exports
 them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
@@ -249,7 +249,8 @@ Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 | `@kortix/sdk/turns` | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers) |
 | `@kortix/sdk/files` | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, … |
 | `@kortix/sdk/session` | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
-| `@kortix/sdk/opencode-client` | `getClient`, `getClientForUrl` + the **full opencode v2 type surface** (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …) |
+| `@kortix/sdk/acp` | ACP client helpers, protocol types, project-session endpoint helpers, and transcript projection utilities |
+| `@kortix/sdk/runtime-client` | `getRuntimeClient`, `getRuntimeClientForUrl` + the structural daemon/runtime type surface (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …) |
 | `@kortix/sdk/projects-client` | the raw REST functions (the facade wraps these) |
 | `@kortix/sdk/auth` | `authenticatedFetch`, token accessors |
 | `@kortix/sdk/api-client` | the raw `backendApi` primitive — host code should go through the facade or another subpath module instead of calling this directly |
@@ -286,9 +287,9 @@ than `@kortix/sdk/react`.
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk/opencode-client`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No native harness SDKs in host code.** Host apps and `@kortix/sdk` do not
+  depend on `@opencode-ai/sdk`. Conversation traffic is ACP-first; remaining
+  daemon helpers go through `@kortix/sdk/runtime-client`.
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel
@@ -308,6 +309,6 @@ pnpm --filter @kortix/sdk typecheck  # package + examples/ (examples/tsconfig.js
 pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript, session url/health, projects-client domains
 ```
 
-See **`API-MAP.md`** for the complete endpoint catalogue (REST + opencode runtime)
+See **`API-MAP.md`** for the complete endpoint catalogue (REST + ACP/runtime)
 and per-domain SDK coverage status, and **`CHANGELOG.md`** for what changed per
 release.

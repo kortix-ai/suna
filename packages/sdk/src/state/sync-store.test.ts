@@ -5,7 +5,7 @@ import type {
 	Part,
 	TextPart,
 	UserMessage,
-} from "@opencode-ai/sdk/v2/client";
+} from "../runtime/wire-types";
 import { ascendingId, Binary, useSyncStore } from "./sync-store";
 
 // ============================================================================

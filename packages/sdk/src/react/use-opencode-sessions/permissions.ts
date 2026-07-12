@@ -1,4 +1,4 @@
-import type { PermissionRuleset } from '@opencode-ai/sdk/v2/client';
+import type { PermissionRuleset } from '../../runtime/wire-types';
 import { getClient } from '../../opencode/client';
 import { unwrap } from './shared';
 

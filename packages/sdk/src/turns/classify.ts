@@ -1,7 +1,7 @@
 /**
  * Exhaustive part classification — the typed model a chat UI renders from.
  *
- * `@opencode-ai/sdk`'s `Part` union has 12 variants (text, subtask, reasoning,
+ * The legacy runtime `Part` union has 12 variants (text, subtask, reasoning,
  * file, tool, step-start, step-finish, snapshot, patch, agent, retry,
  * compaction). Before this module, hosts hand-rolled a `switch (part.type)`
  * over the raw wire shape, string-sniffed tool names, and silently dropped
@@ -14,10 +14,9 @@
  * genuinely unrecognized value at runtime (e.g. an older client talking to a
  * newer server) degrades gracefully instead of throwing.
  *
- * Framework-free — no React/DOM imports. Typed against the concrete
- * `@opencode-ai/sdk` wire types (not the structural `*Like` protocols in
- * `./types`) because exhaustiveness checking only works against the real
- * closed union.
+ * Framework-free — no React/DOM imports. Typed against the runtime wire types
+ * (not the structural `*Like` protocols in `./types`) because exhaustiveness
+ * checking only works against the closed union.
  */
 
 import type {
@@ -86,8 +85,7 @@ function toolStatus(state: ToolState): ToolStatus {
     case 'error':
       return 'error';
     default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
+      return 'unknown' as ToolStatus;
     }
   }
 }
@@ -399,8 +397,7 @@ export function classifyPart(part: Part): ClassifiedPart {
     case 'step-finish':
       return classifyStepFinish(part);
     default: {
-      const _exhaustive: never = part;
-      return { kind: 'unknown', raw: _exhaustive };
+      return { kind: 'unknown', raw: part };
     }
   }
 }

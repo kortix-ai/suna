@@ -34,7 +34,7 @@
  *    pure functions directly instead, as apps/web's `session-chat.tsx` does.
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../runtime/wire-types';
 import { useCallback, useState } from 'react';
 import { getClient } from '../opencode/client';
 import { ascendingId, useSyncStore } from '../state/sync-store';

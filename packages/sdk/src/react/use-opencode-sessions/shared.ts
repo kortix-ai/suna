@@ -5,7 +5,7 @@ import type {
   Agent,
   Command,
   ProviderListResponse as SdkProviderListResponse,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../runtime/wire-types';
 
 // ============================================================================
 // Query Keys
@@ -40,7 +40,9 @@ export function activeServerKey(): string {
 // Helper: unwrap SDK response (data / error)
 // ============================================================================
 
-export function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): T {
+export function unwrap<T>(result: { data: T; error?: null | undefined; response?: Response }): T;
+export function unwrap<T = any>(result: any): T;
+export function unwrap<T = any>(result: any): T {
   if (result.error) {
     const err = result.error;
     const status = (result.response as Response | undefined)?.status;

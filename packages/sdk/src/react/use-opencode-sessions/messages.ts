@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { getClient } from '../../opencode/client';
 import { logger } from '../../platform/logger';
 import { useSyncStore } from '../../state/sync-store';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../../runtime/wire-types';
 import type { MessageWithParts, PromptPart, SendMessageOptions } from './keys';
 import { unwrap } from './shared';
 
