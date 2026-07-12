@@ -57,6 +57,11 @@ import {
   useSlackManifest,
   useSlackMode,
 } from '@/hooks/channels/use-channels-installations';
+import {
+  useDisconnectTeams,
+  useTeamsInstall,
+  useTeamsMode,
+} from '@/hooks/channels/use-teams-installations';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import {
   type Agent,
@@ -190,6 +195,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                     canWrite={canWrite}
                   />
                 ) : null}
+                <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
               </TableBody>
             </Table>
 
@@ -556,6 +562,95 @@ function SlackChannelRow({
         ) : oauthInstallUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
+              Install
+            </Link>
+          </Button>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const { data: install } = useTeamsInstall(projectId);
+  const { data: mode } = useTeamsMode(projectId);
+  const disconnect = useDisconnectTeams();
+  const [confirming, setConfirming] = useState(false);
+
+  if (mode && !mode.enabled) return null;
+
+  const connected = Boolean(install);
+  const installUrl = mode?.orgConsentUrl ?? null;
+  const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
+
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell>
+        <div className="flex items-center gap-2.5">
+          <Icon.MicrosoftTeams className="size-5 shrink-0" />
+          <span className="text-sm font-medium">Microsoft Teams</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {connected ? (
+          <Badge variant="success" size="sm">
+            Connected
+          </Badge>
+        ) : (
+          <Badge variant="outline" size="sm" className="text-muted-foreground">
+            Not connected
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground text-sm">
+        {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
+      </TableCell>
+      <TableCell>
+        {!canWrite ? null : connected ? (
+          confirming ? (
+            <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => setConfirming(false),
+                  })
+                }
+              >
+                {disconnect.isPending ? (
+                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-1">
+              {deepLinkUrl ? (
+                <Button size="sm" variant="secondary" asChild>
+                  <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                    Add to Teams
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setConfirming(true)}
+              >
+                <X className="size-3.5 shrink-0" />
+                Disconnect
+              </Button>
+            </div>
+          )
+        ) : installUrl ? (
+          <Button size="sm" variant="secondary" asChild>
+            <Link href={installUrl} target="_blank" rel="noopener noreferrer">
               Install
             </Link>
           </Button>
