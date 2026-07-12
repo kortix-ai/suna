@@ -48,6 +48,30 @@ const RUNTIME_NOT_READY_NOISE_PATTERNS = [
   'opencode not ready',
 ] as const;
 
+// Expected billing-gate HTTP 402 messages. The API billing gate
+// (`apps/api/src/billing/services/billing-gate.ts:assertBillingActive`) throws
+// a 402 carrying one of these exact strings in the response body
+// (`{ error: <message>, code, balance, account_id }`); the SDK surfaces them as
+// an `ApiError` (message === the body's `error` field). They are EXPECTED,
+// user-facing business states — `apps/web/src/lib/error-handler.tsx:handleApiError`
+// already routes a structured 402 to a top-up toast / upgrade dialog and
+// intentionally only reports 5xx/network/timeout to Sentry. But the `ApiError`
+// can leak through capture paths that bypass that guard
+// (`route-error`/`system-fault`/`app/error`/`<ClientErrorBoundary>` and the
+// Sentry SDK's own `onunhandledrejection`), so the exact billing-gate strings
+// are dropped here at the telemetry gate regardless of which path delivered
+// them. Real `ApiError`s ("Internal server error", "HTTP 500: …", …) keep
+// reporting — only exact matches for these messages (plus the explicit
+// canonical wrappers below) are suppressed.
+const BILLING_GATE_EXPECTED_MESSAGES = [
+  // `insufficient_credits` — wallet ran dry on an active plan.
+  'Out of credits. Top up to continue.',
+  // `no_account` — no credit account found.
+  'No credit account found. Complete account setup first.',
+  // `subscription_required` — per-seat account with no active subscription.
+  'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -128,6 +152,26 @@ export function isRuntimeNotReadyNoiseMessage(message: unknown): boolean {
   );
 }
 
+/**
+ * Whether a message is an EXPECTED billing-gate HTTP 402 outcome (insufficient
+ * credits / no account / subscription required). These are user-facing business
+ * states already handled by a top-up toast or upgrade dialog in
+ * `error-handler.tsx`; they must NEVER page Better Stack, but the SDK's
+ * `ApiError` can leak to Sentry through capture paths that bypass
+ * `handleApiError`'s 402 guard. Match is exact after trimming, with only the
+ * canonical browser/Sentry wrappers we explicitly support, so a longer real
+ * `ApiError` that merely contains the billing phrase is never matched.
+ */
+export function isExpectedBillingGateMessage(message: unknown): boolean {
+  const normalized = normalizeString(message).trim();
+  return BILLING_GATE_EXPECTED_MESSAGES.some(
+    (expected) => normalized === expected
+      || normalized === `ApiError: ${expected}`
+      || normalized === `Unhandled promise rejection: ${expected}`
+      || normalized === `Unhandled promise rejection: ApiError: ${expected}`,
+  );
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -154,6 +198,14 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   if (isRuntimeNotReadyNoiseMessage(message)) {
+    return true;
+  }
+
+  // Expected billing-gate 402 outcomes are user-facing business states handled
+  // by a toast/upgrade dialog — never page Better Stack for them, even when the
+  // SDK's `ApiError` reaches window.onerror / unhandledrejection before
+  // `handleApiError` can gate it.
+  if (isExpectedBillingGateMessage(message)) {
     return true;
   }
 
@@ -201,6 +253,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // switch/provisioning window, self-heals in ~1s, never an error. Drop it
   // before it pages Better Stack, no matter which capture path delivered it.
   if (isRuntimeNotReadyNoiseMessage(message)) {
+    return true;
+  }
+
+  // Expected billing-gate 402 outcomes (insufficient credits / no account /
+  // subscription required) are user-facing business states handled by a toast
+  // or upgrade dialog. The SDK's `ApiError` can leak to Sentry through capture
+  // paths that bypass `handleApiError`'s 402 guard (route/system-fault
+  // boundaries, `<ClientErrorBoundary>`, and the Sentry SDK's own
+  // `onunhandledrejection`); drop them here so an expected billing state never
+  // pages Better Stack. Real `ApiError`s are never matched — only the exact
+  // strings the billing gate emits are.
+  if (isExpectedBillingGateMessage(message)) {
     return true;
   }
 

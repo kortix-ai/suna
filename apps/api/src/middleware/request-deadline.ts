@@ -127,13 +127,34 @@ export function isExempt(c: Context): boolean {
 }
 
 // Built once — duration is constant for the process lifetime.
-const bounded = timeout(
-  Math.max(DEADLINE_MS, 1),
-  () =>
-    new HTTPException(503, {
+const bounded = timeout(Math.max(DEADLINE_MS, 1), () => new RequestDeadlineHTTPException());
+
+/**
+ * Dedicated HTTPException subclass for the request-deadline 503.
+ *
+ * The deadline 503 is an *expected, typed, retryable* degradation — the net is
+ * doing its job (bounding a slow downstream / pool-saturated request) and the
+ * global onError adds `Retry-After: 10`. It is already recorded per-route in
+ * metrics and as a structured warn log, so reporting it to Sentry/Better Stack
+ * as an error is pure noise (it was the Better Stack pattern
+ * `29af03…` "Request exceeded the 25s server processing deadline"). The global
+ * Sentry `ignoreErrors: ['HTTPException']` filter does NOT catch it because the
+ * exception *message* is the deadline string, not the literal "HTTPException".
+ *
+ * Exposing a typed guard lets `onError` classify it out of `captureException`
+ * without brittle string-matching, while keeping the 503 response + log intact.
+ */
+export class RequestDeadlineHTTPException extends HTTPException {
+  constructor() {
+    super(503, {
       message: `Request exceeded the ${Math.round(DEADLINE_MS / 1000)}s server processing deadline`,
-    }),
-);
+    });
+  }
+}
+
+export function isRequestDeadlineHTTPException(err: unknown): boolean {
+  return err instanceof RequestDeadlineHTTPException;
+}
 
 export async function requestDeadline(c: Context, next: Next): Promise<void | Response> {
   if (!ENABLED || isExempt(c)) {

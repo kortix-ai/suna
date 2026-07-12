@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
@@ -351,4 +352,132 @@ test('does NOT suppress a same-worded server exception without a browser frame',
     }),
     false,
   )
+})
+
+// Reproduces Better Stack error 140195488...4f7255 (4 occurrences) + sibling
+// 50c1919a...0bf1cd (2 occurrences), Kortix Frontend (prod), application_id
+// 2346967: an `ApiError` with message "Out of credits. Top up to continue."
+// (the exact body the API billing gate emits for an `insufficient_credits`
+// HTTP 402 — apps/api/src/billing/services/billing-gate.ts:assertBillingActive).
+//
+// `apps/web/src/lib/error-handler.tsx:handleApiError` already routes a
+// structured 402 `insufficient_credits` to a top-up toast and intentionally
+// only reports 5xx/network/timeout to Sentry. But the SDK's `ApiError` can
+// reach Sentry through capture paths that bypass that guard —
+// `route-error`/`system-fault`/`app/error`/`<ClientErrorBoundary>`'s
+// unconditional `Sentry.captureException`, and the Sentry SDK's own
+// `onunhandledrejection` auto-capture. An expected, user-facing billing state
+// must never page Better Stack; drop it at the telemetry gate regardless of
+// which capture path delivered it. The exact messages are the only strings the
+// billing gate emits for a 402 — real `ApiError`s ("Internal server error",
+// "HTTP 500: …", etc.) keep reporting.
+const BILLING_GATE_EXPECTED_EVENTS = [
+  // The assigned error + sibling share this exact message.
+  'Out of credits. Top up to continue.',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: ApiError: Out of credits. Top up to continue.',
+  // The other two billing-gate 402 reasons — same expected business state,
+  // same leak paths, same fix (prevents the next noise pattern).
+  'No credit account found. Complete account setup first.',
+  'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+]
+
+test('classifies every billing-gate 402 message as an expected business state', () => {
+  for (const message of BILLING_GATE_EXPECTED_EVENTS) {
+    assert.equal(
+      isExpectedBillingGateMessage(message),
+      true,
+      `expected ${message} to be classified as an expected billing-gate message`,
+    )
+  }
+})
+
+test('suppresses a billing-gate 402 Sentry event regardless of capture path', () => {
+  for (const value of BILLING_GATE_EXPECTED_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/sdk.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a billing-gate 402 unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Unhandled promise rejection: Out of credits. Top up to continue.',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real ApiError / internal server error', () => {
+  for (const value of [
+    'Internal server error',
+    'HTTP 500: Internal Server Error',
+    'TypeError: Cannot read properties of undefined (reading id)',
+  ]) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected real error "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress an unrelated message that merely mentions "credits"', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: 'Failed to deduct credits for the run' }],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a longer real error containing the billing-gate phrase', () => {
+  for (const value of [
+    'Failed to retry run: Out of credits. Top up to continue.',
+    'Out of credits. Top up to continue. Database reconciliation failed',
+    'ApiError: Out of credits. Top up to continue. while starting sandbox',
+    'Unhandled promise rejection: Something else: Out of credits. Top up to continue.',
+  ]) {
+    assert.equal(
+      isExpectedBillingGateMessage(value),
+      false,
+      `expected longer message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected longer Sentry event "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected longer runtime error "${value}" to keep reporting`,
+    )
+  }
 })

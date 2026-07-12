@@ -33,7 +33,12 @@ export function useFileList(
     gcTime: 2 * 60_000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error: Error) => {
-      if (error.message.includes('404') || error.message.includes('403')) return false;
+      // `error` is whatever the queryFn rejected with — React Query does not
+      // guarantee it's an `Error` with a string `message`, so guard before
+      // calling `.includes` (a non-string `message` previously crashed here
+      // with `TypeError: t.message.includes is not a function`).
+      const msg = typeof error?.message === 'string' ? error.message : '';
+      if (msg.includes('404') || msg.includes('403')) return false;
       return failureCount < 3;
     },
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),

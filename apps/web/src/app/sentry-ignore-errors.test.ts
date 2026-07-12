@@ -22,3 +22,14 @@ test('sentry.client.config ignores the transient runtime-not-ready markers', asy
   // classifies runtime-not-ready via shouldIgnoreSentryNoiseEvent).
   expect(source).toContain('shouldIgnoreSentryNoiseEvent');
 });
+
+test('sentry.client.config anchors expected billing-gate 402 markers', async () => {
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain(
+    '/^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\\. Top up to continue\\.$/',
+  );
+  // Guard against reintroducing a bare string entry: Sentry treats string
+  // ignoreErrors values as contains-matches, which would hide longer real
+  // errors that merely mention the billing-gate phrase.
+  expect(source).not.toContain("'Out of credits. Top up to continue.'");
+});

@@ -42,6 +42,10 @@ import {
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import {
+  shouldBeginSessionSwitch,
+  useSessionSwitchStore,
+} from '@/stores/session-switch-store';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -103,6 +107,9 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeRuntimeSessionId = searchParams.get('oc');
+  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
+  const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
@@ -209,13 +216,29 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         {visibleSessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+          const isSwitchTarget = switchingToSessionId === session.session_id;
           const children = directSubsessions(session);
           return (
             <div key={session.session_id} className="space-y-px">
               <ProjectSessionRow
                 session={session}
                 href={href}
-                isActive={!!isActive && !activeRuntimeSessionId}
+                isActive={
+                  (!!isActive && !activeRuntimeSessionId && !switchingToSessionId) ||
+                  isSwitchTarget
+                }
+                isSwitching={isSwitchTarget}
+                onNavigate={(event) => {
+                  if (
+                    shouldBeginSessionSwitch(
+                      event,
+                      session.session_id,
+                      activeSessionId,
+                    )
+                  ) {
+                    beginSessionSwitch(session.session_id);
+                  }
+                }}
                 displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
                 reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
@@ -285,6 +308,8 @@ interface ProjectSessionRowProps {
   session: ProjectSession;
   href: string;
   isActive: boolean;
+  isSwitching: boolean;
+  onNavigate: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   displayTitle: string;
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
@@ -302,6 +327,8 @@ function ProjectSessionRow({
   session,
   href,
   isActive,
+  isSwitching,
+  onNavigate,
   displayTitle,
   onDelete,
   onShare,
@@ -342,8 +369,17 @@ function ProjectSessionRow({
             : 'text-muted-foreground hover:text-sidebar-foreground',
         )}
       >
-        <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 self-stretch">
-          <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+        <Link
+          href={href}
+          onClick={onNavigate}
+          aria-busy={isSwitching || undefined}
+          className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+        >
+          {isSwitching ? (
+            <Loading className="text-kortix-green size-3 shrink-0" />
+          ) : (
+            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          )}
 
           <span
             title={displayTitle}

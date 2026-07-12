@@ -1,15 +1,19 @@
 import { describe, expect, it, beforeAll } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-
 // DEADLINE_MS is read from env at module load, and static imports are hoisted
 // above top-level code — so we must set the env var and then *dynamically*
 // import the middleware, otherwise it captures the default 28s budget.
 let requestDeadline: typeof import('../middleware/request-deadline').requestDeadline;
+let isRequestDeadlineHTTPException: typeof import('../middleware/request-deadline').isRequestDeadlineHTTPException;
+let RequestDeadlineHTTPException: typeof import('../middleware/request-deadline').RequestDeadlineHTTPException;
 
 beforeAll(async () => {
   process.env.REQUEST_DEADLINE_MS = '50';
-  ({ requestDeadline } = await import('../middleware/request-deadline'));
+  const mod = await import('../middleware/request-deadline');
+  requestDeadline = mod.requestDeadline;
+  isRequestDeadlineHTTPException = mod.isRequestDeadlineHTTPException;
+  RequestDeadlineHTTPException = mod.RequestDeadlineHTTPException;
 });
 
 function makeApp() {
@@ -102,5 +106,54 @@ describe('requestDeadline', () => {
     expect(post.status).toBe(200);
     const get = await makeApp().request('/v1/projects');
     expect(get.status).toBe(503);
+  });
+});
+
+describe('requestDeadline Sentry classification', () => {
+  // Regression for Better Stack pattern 29af03… "Request exceeded the 25s
+  // server processing deadline": the deadline 503 must be identifiable so the
+  // global onError can skip captureException (it's an expected, retryable
+  // degradation, not a crash) while still surfacing as a 503 response.
+  it('throws a RequestDeadlineHTTPException (identifiable, not a bare HTTPException)', async () => {
+    const app = makeApp();
+    const res = await app.request('/v1/projects/x/change-requests');
+    expect(res.status).toBe(503);
+    // The handler in makeApp returns the raw HTTPException; pull it out via a
+    // spy that captures the thrown error before it is serialized.
+    let thrown: unknown;
+    const app2 = new Hono();
+    app2.use('/v1/*', (c, next) => requestDeadline(c, next));
+    app2.get('/v1/projects/x/change-requests', async (c) => {
+      await new Promise((r) => setTimeout(r, 500));
+      return c.json({ ok: true });
+    });
+    app2.onError((err, c) => {
+      thrown = err;
+      if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+      return c.json({ error: String(err) }, 500);
+    });
+    await app2.request('/v1/projects/x/change-requests');
+    expect(isRequestDeadlineHTTPException(thrown)).toBe(true);
+    expect(thrown).toBeInstanceOf(RequestDeadlineHTTPException);
+    expect(thrown).toBeInstanceOf(HTTPException);
+    expect((thrown as HTTPException).status).toBe(503);
+  });
+
+  it('isRequestDeadlineHTTPException is false for an unrelated 503 HTTPException', () => {
+    const other = new HTTPException(503, { message: 'sandbox waking up' });
+    expect(isRequestDeadlineHTTPException(other)).toBe(false);
+  });
+
+  it('isRequestDeadlineHTTPException is false for non-errors', () => {
+    expect(isRequestDeadlineHTTPException(null)).toBe(false);
+    expect(isRequestDeadlineHTTPException(undefined)).toBe(false);
+    expect(isRequestDeadlineHTTPException(new Error('boom'))).toBe(false);
+  });
+
+  it('the deadline message reflects the configured budget', () => {
+    const err = new RequestDeadlineHTTPException();
+    // REQUEST_DEADLINE_MS=50 → Math.round(50/1000) = 0s; just assert shape + 503.
+    expect(err.status).toBe(503);
+    expect(err.message).toContain('server processing deadline');
   });
 });
