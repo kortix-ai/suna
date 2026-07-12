@@ -11,11 +11,11 @@ import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FlaskConical } from 'lucide-react';
 
-import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { getEnterpriseDemo, setEnterpriseDemo } from '@/lib/iam-client';
 
@@ -26,6 +26,7 @@ interface EnterpriseDemoCardProps {
 
 export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardProps) {
   const queryClient = useQueryClient();
+  const openDemo = useRequestDemo();
 
   const stateQuery = useQuery({
     queryKey: ['iam-enterprise-demo', accountId],
@@ -89,10 +90,13 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
             For real enterprise use — production SLA, DPA, and support — you must talk to us to
             upgrade to the Enterprise plan.
           </p>
-          <Button asChild variant="outline" size="sm" className="mt-3">
-            <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
-              Request enterprise access
-            </a>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => openDemo({ source: 'accounts-enterprise-access' })}
+          >
+            Request enterprise access
           </Button>
         </div>
       </header>

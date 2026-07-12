@@ -106,7 +106,8 @@ async function handlePickProject(
   const convo = convoOf(activity);
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
-  await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
+  const switched = await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
+  if (!switched) return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
   return cardResponse(buildNoticeCard('This conversation now runs the selected project.', '✅'));
 }
 

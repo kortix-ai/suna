@@ -58,7 +58,7 @@ export async function handleTeamsCommand(input: {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return false;
   const { verb, arg } = input.command;
-  const conversationId = input.activity.conversation!.id!;
+  const conversationId = ref.conversationId;
   const ctx = teamsChannelCtx(input.tenantId, conversationId);
   const userId = teamsUserId(input.activity);
 

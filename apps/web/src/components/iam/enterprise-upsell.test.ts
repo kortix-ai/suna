@@ -1,7 +1,9 @@
 // The IAM surfaces (Groups, Roles, Audit, SSO/SCIM) are enterprise-gated:
-// non-entitled accounts must see the upsell card — with the kortix.com
-// enterprise CTA — instead of the feature, on every one of the four surfaces.
-// Guards the page wiring so a refactor can't silently un-gate a tab.
+// non-entitled accounts must see the upsell card — with the "Request a demo"
+// CTA — instead of the feature, on every one of the four surfaces. The CTA
+// opens the in-app demo-request modal (useRequestDemo) rather than navigating
+// out to the marketing page. Guards the page wiring so a refactor can't
+// silently un-gate a tab.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,8 +16,9 @@ const pageSource = readFileSync(
 );
 
 describe('EnterpriseUpsell component', () => {
-  test('CTA points at the enterprise page and opens a demo request', () => {
-    expect(upsellSource).toContain("ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise'");
+  test('CTA opens the in-app demo-request modal', () => {
+    expect(upsellSource).toContain('useRequestDemo');
+    expect(upsellSource).toContain('openDemo(');
     expect(upsellSource).toContain('Request a demo');
   });
 

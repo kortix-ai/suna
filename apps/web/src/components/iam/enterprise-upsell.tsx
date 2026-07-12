@@ -3,16 +3,21 @@
 // Upsell state for the enterprise-gated IAM surfaces (Groups, Roles, Audit,
 // SAML SSO + SCIM). Non-entitled accounts keep the tab/section visible for
 // discoverability, but its content is this card: what the feature does, and a
-// "Request a demo" CTA to the enterprise page. Mirrors the server-side gate —
-// the create/update routes 402 without the entitlement (requireEntitlement),
-// so we never render controls the backend would reject.
+// "Request a demo" CTA that opens the demo-request modal directly (no detour to
+// the marketing page). Mirrors the server-side gate — the create/update routes
+// 402 without the entitlement (requireEntitlement), so we never render controls
+// the backend would reject.
 
-import { ArrowUpRight, Check, FileClock, KeyRound, Lock, ShieldCheck, Users } from 'lucide-react';
+import { Check, FileClock, KeyRound, Lock, ShieldCheck, Users } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 
+// The marketing enterprise page. CTAs no longer navigate here — they open the
+// in-app demo-request modal — but keep the constant exported for any surface
+// that still wants to link out.
 export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
 
 type UpsellFeature = 'groups' | 'roles' | 'audit' | 'identity';
@@ -79,6 +84,7 @@ interface EnterpriseUpsellProps {
 export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
   const copy = FEATURE_COPY[feature];
   const Icon = copy.icon;
+  const openDemo = useRequestDemo();
 
   return (
     <section className="border-border/70 bg-card rounded-md border">
@@ -104,11 +110,12 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
           ))}
         </ul>
 
-        <Button asChild size="sm" className="mt-6 gap-1.5">
-          <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
-            Request a demo
-            <ArrowUpRight className="size-3.5 shrink-0" />
-          </a>
+        <Button
+          size="sm"
+          className="mt-6 gap-1.5"
+          onClick={() => openDemo({ source: `accounts-${feature}` })}
+        >
+          Request a demo
         </Button>
         <p className="text-muted-foreground mt-2 text-xs">
           Talk to us about the Enterprise plan — SSO, SCIM, RBAC, audit, SLA, and DPA.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sendDemoRequestNotification, type DemoRequestLead } from './notify-email';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -40,11 +41,31 @@ export async function POST(request: NextRequest) {
   }
 
   // Store the whole submission verbatim, plus a couple of server-side fields.
+  const userAgent = request.headers.get('user-agent')?.slice(0, 500) ?? null;
   const data = {
     ...body,
     form: body.source ?? 'contact',
-    user_agent: request.headers.get('user-agent')?.slice(0, 500) ?? null,
+    user_agent: userAgent,
   };
+
+  // Notify us of every submission — the first-step details, before/whether or
+  // not the lead goes on to book a Cal slot. Awaited (never throws, 10s cap) so
+  // the send actually runs in the serverless function; a skipped/failed email
+  // must not fail the user's flow, so we only log it.
+  const lead: DemoRequestLead = {
+    name: typeof body.name === 'string' ? body.name : undefined,
+    email: String(body.email).trim(),
+    company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+    company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+    goal: typeof body.goal === 'string' ? body.goal : undefined,
+    qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+    source: typeof body.source === 'string' ? body.source : undefined,
+    user_agent: userAgent,
+  };
+  const notify = await sendDemoRequestNotification(lead);
+  if (!notify.ok && !('skipped' in notify && notify.skipped)) {
+    console.error('[api/demo-request] notification not sent:', notify);
+  }
 
   const supabase = anonClient();
   if (!supabase) {
