@@ -73,11 +73,11 @@ async function handleSetModel(
   const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
   if (!model) {
     await setChannelModel(ctx, null);
-    return cardResponse(buildNoticeCard('Model reset to the project default.'));
+    return cardResponse(buildNoticeCard('Model reset to the project default.', '✅'));
   }
   const stored = toOpencodeModelRef(model);
   await setChannelModel(ctx, stored);
-  return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`));
+  return cardResponse(buildNoticeCard(`Model set to ${labelForModelRef(stored)}.`, '✅'));
 }
 
 async function handleSetAgent(
@@ -90,13 +90,13 @@ async function handleSetAgent(
   const ctx = teamsChannelCtx(convo.tenantId, convo.conversationId);
   if (!agent) {
     await setChannelAgent(ctx, null);
-    return cardResponse(buildNoticeCard('Agent reset to the project default.'));
+    return cardResponse(buildNoticeCard('Agent reset to the project default.', '✅'));
   }
   const res = await setChannelAgent(ctx, agent);
   if (!res.ok && res.reason === 'unknown_agent') {
     return cardResponse(buildNoticeCard(`\`${agent}\` isn't a declared agent in this project.`));
   }
-  return cardResponse(buildNoticeCard(`Agent set to ${agent}.`));
+  return cardResponse(buildNoticeCard(`Agent set to ${agent}.`, '✅'));
 }
 
 async function handlePickProject(
@@ -107,7 +107,7 @@ async function handlePickProject(
   const projectId = typeof data.projectId === 'string' ? data.projectId : null;
   if (!convo || !projectId) return cardResponse(buildNoticeCard("I couldn't switch project."));
   await setConversationProject({ tenantId: convo.tenantId, conversationId: convo.conversationId, projectId });
-  return cardResponse(buildNoticeCard('This conversation now runs the selected project.'));
+  return cardResponse(buildNoticeCard('This conversation now runs the selected project.', '✅'));
 }
 
 async function handleAnswer(
@@ -210,7 +210,7 @@ async function handleRequestAccess(
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,
       });
-      return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.'));
+      return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.', '✅'));
     case 'already-member':
       return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
     case 'no-identity':

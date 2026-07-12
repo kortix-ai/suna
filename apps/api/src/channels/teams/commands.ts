@@ -12,11 +12,12 @@ import {
 } from '../slack/selection';
 import { sendCard } from '../teams-api';
 import {
-  buildChoiceCard,
   buildConnectAccountCard,
   buildHelpCard,
   buildNoticeCard,
   buildPanelCard,
+  buildSelectCard,
+  type SelectOption,
 } from './cards';
 import {
   ensureTeamsConversationBinding,
@@ -63,57 +64,63 @@ export async function handleTeamsCommand(input: {
 
   const post = (card: unknown) => sendCard(ref, card as Record<string, unknown>);
 
-  switch (verb) {
-    case 'login':
-    case 'connect': {
-      if (userId) {
-        await post(buildConnectAccountCard(buildTeamsLoginUrl({ tenantId: input.tenantId, teamsUserId: userId })));
+  try {
+    switch (verb) {
+      case 'login':
+      case 'connect': {
+        if (userId) {
+          await post(buildConnectAccountCard(buildTeamsLoginUrl({ tenantId: input.tenantId, teamsUserId: userId })));
+        }
+        return true;
       }
-      return true;
+      case 'logout':
+      case 'disconnect': {
+        const revoked = userId ? await revokeTeamsIdentity(input.tenantId, userId) : false;
+        await post(buildNoticeCard(revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected.", revoked ? '✅' : ''));
+        return true;
+      }
+      case 'whoami':
+      case 'who':
+        await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId));
+        return true;
+      case 'help':
+        await post(helpCard());
+        return true;
+      case 'status':
+      case 'config':
+      case 'settings':
+        await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
+        return true;
+      case 'models':
+        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await post(await buildModelsCard(ctx));
+        return true;
+      case 'model':
+        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await post(await setModel(ctx, arg));
+        return true;
+      case 'agents':
+        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await post(await buildAgentsCard(ctx, input.projectId));
+        return true;
+      case 'agent':
+        await ensureBinding(input.tenantId, conversationId, input.projectId);
+        await post(await setAgent(ctx, arg));
+        return true;
+      case 'projects':
+        await post(await buildProjectsCard(input.tenantId, input.projectId));
+        return true;
+      case 'use':
+      case 'switch':
+        await post(await switchProject(input.tenantId, conversationId, arg));
+        return true;
+      default:
+        return false;
     }
-    case 'logout':
-    case 'disconnect': {
-      const revoked = userId ? await revokeTeamsIdentity(input.tenantId, userId) : false;
-      await post(buildNoticeCard(revoked ? 'Disconnected. Run `/login` to reconnect.' : "You weren't connected."));
-      return true;
-    }
-    case 'whoami':
-    case 'who':
-      await post(await buildWhoamiCard(ctx, input.tenantId, conversationId, userId, input.projectId));
-      return true;
-    case 'help':
-      await post(helpCard());
-      return true;
-    case 'status':
-    case 'config':
-    case 'settings':
-      await post(await buildStatusCard(ctx, input.tenantId, conversationId, input.projectId));
-      return true;
-    case 'models':
-      await ensureBinding(input.tenantId, conversationId, input.projectId);
-      await post(await buildModelsCard(ctx));
-      return true;
-    case 'model':
-      await ensureBinding(input.tenantId, conversationId, input.projectId);
-      await post(await setModel(ctx, arg));
-      return true;
-    case 'agents':
-      await ensureBinding(input.tenantId, conversationId, input.projectId);
-      await post(await buildAgentsCard(ctx, input.projectId));
-      return true;
-    case 'agent':
-      await ensureBinding(input.tenantId, conversationId, input.projectId);
-      await post(await setAgent(ctx, arg));
-      return true;
-    case 'projects':
-      await post(await buildProjectsCard(input.tenantId, input.projectId));
-      return true;
-    case 'use':
-    case 'switch':
-      await post(await switchProject(input.tenantId, conversationId, arg));
-      return true;
-    default:
-      return false;
+  } catch (err) {
+    console.error('[teams-command] failed', { verb, message: (err as Error)?.message });
+    await post(buildNoticeCard('Something went wrong running that command — give it a moment and try again.', '⚠️')).catch(() => {});
+    return true;
   }
 }
 
@@ -140,15 +147,19 @@ async function buildStatusCard(
   conversationId: string,
   projectId: string,
 ) {
-  const selection = await currentChannelSelection(ctx);
-  const rows = [
-    { label: 'Project', value: projectId },
-    { label: 'Agent', value: selection?.agentName || 'default' },
-    { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
-  ];
+  const [selection, projects] = await Promise.all([
+    currentChannelSelection(ctx),
+    listTenantProjects(tenantId).catch(() => []),
+  ]);
+  const projectName = projects.find((p) => p.projectId === projectId)?.name ?? projectId;
   return buildPanelCard({
+    emoji: '⚙️',
     title: 'This conversation',
-    rows,
+    rows: [
+      { label: 'Project', value: projectName },
+      { label: 'Agent', value: selection?.agentName || 'default' },
+      { label: 'Model', value: selection?.opencodeModel ? labelForModelRef(selection.opencodeModel) : 'project default' },
+    ],
     url: `${dashboardBase()}/projects/${projectId}`,
   });
 }
@@ -168,6 +179,7 @@ async function buildWhoamiCard(
   }
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   return buildPanelCard({
+    emoji: '👤',
     title: 'You',
     rows: [
       { label: 'Connected as', value: email || identity.userId },
@@ -179,7 +191,7 @@ async function buildWhoamiCard(
 
 async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
   const gate = await channelModelContext(ctx);
-  if (!gate) return buildNoticeCard('Connect a project to this conversation first.');
+  if (!gate) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const selection = await currentChannelSelection(ctx);
   const current = selection?.opencodeModel ?? null;
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
@@ -192,22 +204,23 @@ async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
     agentName: selection?.agentName ?? null,
   });
 
-  const choices = [
-    {
-      title: `${current ? '' : '✓ '}Project default${projectDefault.label ? ` · ${projectDefault.label}` : ''}`,
-      data: { model: '' },
-    },
-    ...models.slice(0, 5).map((m) => ({
-      title: `${isCurrent(m.id) ? '✓ ' : ''}${m.label}`,
+  const options: SelectOption[] = [
+    { label: 'Project default', hint: projectDefault.label ?? undefined, current: !current, data: { model: '' } },
+    ...models.slice(0, 6).map((m) => ({
+      label: m.label,
+      hint: m.id,
+      current: isCurrent(m.id),
       data: { model: m.id },
     })),
   ];
 
-  return buildChoiceCard({
-    title: 'Model for this conversation',
+  return buildSelectCard({
+    emoji: '🧠',
+    title: 'Model',
+    subtitle: current ? `Currently ${labelForModelRef(current)}` : 'Currently the project default',
     verb: 'teams_set_model',
-    body: current ? `Currently ${labelForModelRef(current)}.` : 'Currently the project default.',
-    choices,
+    options,
+    footer: 'Or set any provider/model-id you have connected in Kortix: `/model anthropic/claude-sonnet-4.6`.',
   });
 }
 
@@ -236,20 +249,33 @@ async function setModel(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
 }
 
 async function buildAgentsCard(ctx: ReturnType<typeof teamsChannelCtx>, projectId: string) {
-  const governance = await loadProjectAgentGovernance(projectId);
-  const selection = await currentChannelSelection(ctx);
+  const [governance, selection] = await Promise.all([
+    loadProjectAgentGovernance(projectId),
+    currentChannelSelection(ctx),
+  ]);
   const current = selection?.agentName ?? null;
   if (governance.agents.length === 0) {
-    return buildNoticeCard('This project has no declared agents — it runs the default agent.');
+    return buildNoticeCard(
+      'This project has no declared agents, so it runs the default agent. Declare agents in `kortix.yaml` to switch here.',
+      '🤖',
+    );
   }
-  const choices = [
-    { title: `${current ? '' : '✓ '}Default`, data: { agent: '' } },
-    ...governance.agents.slice(0, 5).map((a) => ({
-      title: `${current === a.name ? '✓ ' : ''}${a.name}`,
+  const options: SelectOption[] = [
+    { label: 'Default', current: !current, data: { agent: '' } },
+    ...governance.agents.slice(0, 6).map((a) => ({
+      label: a.name,
+      hint: a.description ?? undefined,
+      current: current === a.name,
       data: { agent: a.name },
     })),
   ];
-  return buildChoiceCard({ title: 'Agent for this conversation', verb: 'teams_set_agent', choices });
+  return buildSelectCard({
+    emoji: '🤖',
+    title: 'Agent',
+    subtitle: current ? `Currently ${current}` : 'Currently the default agent',
+    verb: 'teams_set_agent',
+    options,
+  });
 }
 
 async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
@@ -269,16 +295,20 @@ async function setAgent(ctx: ReturnType<typeof teamsChannelCtx>, arg: string) {
 
 async function buildProjectsCard(tenantId: string, currentProjectId: string) {
   const projects = await listTenantProjects(tenantId);
-  if (projects.length === 0) return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.');
-  const choices = projects.slice(0, 6).map((p) => ({
-    title: `${p.projectId === currentProjectId ? '✓ ' : ''}${p.name}`,
+  if (projects.length === 0) {
+    return buildNoticeCard('No Kortix projects are connected to this Teams tenant yet.', '📁');
+  }
+  const options: SelectOption[] = projects.slice(0, 8).map((p) => ({
+    label: p.name,
+    current: p.projectId === currentProjectId,
     data: { projectId: p.projectId },
   }));
-  return buildChoiceCard({
+  return buildSelectCard({
+    emoji: '📁',
     title: 'Connected projects',
+    subtitle: 'Pick which project this conversation runs.',
     verb: 'teams_pick_project',
-    body: 'Pick which project this conversation runs.',
-    choices,
+    options,
   });
 }
 
