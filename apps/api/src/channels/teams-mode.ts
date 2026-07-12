@@ -6,18 +6,25 @@ export interface TeamsMode {
   appId: string | null;
   messagingEndpoint: string | null;
   adminConsentUrl: string | null;
+  byo: boolean;
 }
 
-export function teamsMode(baseUrl: string): TeamsMode {
-  const appId = config.MICROSOFT_APP_ID || null;
-  if (!teamsConfigured() || !appId) {
-    return { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null };
+export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId?: string | null }): TeamsMode {
+  const byo = Boolean(opts?.byoAppId);
+  const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
+  if ((!byo && !teamsConfigured()) || !appId) {
+    return { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, byo };
   }
   const base = baseUrl.replace(/\/$/, '');
+  const messagingEndpoint =
+    byo && opts?.projectId
+      ? `${base}/v1/webhooks/teams/${opts.projectId}/messages`
+      : `${base}/v1/webhooks/teams/messages`;
   return {
     available: true,
     appId,
-    messagingEndpoint: `${base}/v1/webhooks/teams/messages`,
+    messagingEndpoint,
     adminConsentUrl: `https://login.microsoftonline.com/organizations/adminconsent?client_id=${encodeURIComponent(appId)}`,
+    byo,
   };
 }

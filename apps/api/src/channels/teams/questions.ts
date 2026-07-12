@@ -34,6 +34,7 @@ export async function postTeamsQuestion(
     botId: handle.botId,
     fromId: handle.fromId,
     tenantId: handle.tenantId,
+    projectId: handle.projectId,
   };
 
   const posted = await sendCard(ref, buildQuestionCard(questions));

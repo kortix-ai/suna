@@ -1,3 +1,4 @@
+import { loadTeamsBotCredentials } from './install-store';
 import { botConnectorToken } from './teams-auth';
 import type { TeamsConversationRef } from './teams/types';
 
@@ -17,9 +18,11 @@ async function connectorFetch(
   method: 'POST' | 'PUT',
   url: string,
   body: unknown,
+  projectId?: string,
 ): Promise<{ ok: boolean; status: number; id: string | null; error?: string }> {
   try {
-    const token = await botConnectorToken();
+    const creds = projectId ? await loadTeamsBotCredentials(projectId) : null;
+    const token = await botConnectorToken(creds);
     const res = await fetch(url, {
       method,
       headers: {
@@ -55,7 +58,7 @@ export function cardActivity(card: unknown): OutboundActivity {
 
 export async function sendActivity(ref: TeamsConversationRef, activity: OutboundActivity): Promise<string | null> {
   const url = joinUrl(ref.serviceUrl, `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities`);
-  const r = await connectorFetch('POST', url, activity);
+  const r = await connectorFetch('POST', url, activity, ref.projectId);
   return r.ok ? r.id : null;
 }
 
@@ -68,7 +71,7 @@ export async function updateActivity(
     ref.serviceUrl,
     `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities/${encodeURIComponent(activityId)}`,
   );
-  const r = await connectorFetch('PUT', url, activity);
+  const r = await connectorFetch('PUT', url, activity, ref.projectId);
   return r.ok;
 }
 

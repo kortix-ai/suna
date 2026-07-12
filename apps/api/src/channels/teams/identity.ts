@@ -19,7 +19,7 @@ export function teamsUserId(activity: TeamsActivity): string | null {
   return activity.from?.aadObjectId ?? activity.from?.id ?? null;
 }
 
-function conversationRef(activity: TeamsActivity): TeamsConversationRef | null {
+function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConversationRef | null {
   if (!activity.serviceUrl || !activity.conversation?.id) return null;
   return {
     serviceUrl: activity.serviceUrl,
@@ -27,6 +27,7 @@ function conversationRef(activity: TeamsActivity): TeamsConversationRef | null {
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: activity.conversation.tenantId ?? activity.channelData?.tenant?.id,
+    projectId,
   };
 }
 
@@ -134,7 +135,7 @@ export async function postTeamsIdentityPrompt(input: {
   activity: TeamsActivity;
   reason: 'unlinked' | 'not_member';
 }): Promise<void> {
-  const ref = conversationRef(input.activity);
+  const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return;
   const userId = teamsUserId(input.activity);
   if (!userId) return;

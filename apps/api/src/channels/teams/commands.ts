@@ -65,7 +65,7 @@ export function parseTeamsCommand(text: string | undefined): TeamsCommand | null
   return { verb, arg: rest.join(' ').trim() };
 }
 
-function conversationRef(activity: TeamsActivity): TeamsConversationRef | null {
+function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConversationRef | null {
   if (!activity.serviceUrl || !activity.conversation?.id) return null;
   return {
     serviceUrl: activity.serviceUrl,
@@ -73,6 +73,7 @@ function conversationRef(activity: TeamsActivity): TeamsConversationRef | null {
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: activity.conversation.tenantId ?? activity.channelData?.tenant?.id,
+    projectId,
   };
 }
 
@@ -86,7 +87,7 @@ export async function handleTeamsCommand(input: {
   tenantId: string;
   projectId: string;
 }): Promise<boolean> {
-  const ref = conversationRef(input.activity);
+  const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return false;
   const { verb, arg } = input.command;
   const conversationId = input.activity.conversation!.id!;

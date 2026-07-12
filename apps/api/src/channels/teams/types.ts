@@ -50,6 +50,7 @@ export interface TeamsConversationRef {
   botId?: string;
   fromId?: string;
   tenantId?: string;
+  projectId?: string;
 }
 
 export interface TeamsChannelRef {

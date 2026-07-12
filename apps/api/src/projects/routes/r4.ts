@@ -30,6 +30,7 @@ import {
   deleteTeamsInstall,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadTeamsAppIdForProject,
   loadTeamsInstall,
   normalizeSenderPolicy,
   saveAgentMailInstall,
@@ -904,7 +905,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    return c.json(teamsMode(resolveBaseUrl(new URL(c.req.url))));
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    return c.json(teamsMode(resolveBaseUrl(new URL(c.req.url)), { projectId, byoAppId }));
   },
 );
 
@@ -922,7 +924,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const mode = teamsMode(resolveBaseUrl(new URL(c.req.url)));
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    const mode = teamsMode(resolveBaseUrl(new URL(c.req.url)), { projectId, byoAppId });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -948,9 +951,9 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-    let body: { tenant_id?: string; team_name?: string };
+    let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
-      body = (await c.req.json()) as { tenant_id?: string; team_name?: string };
+      body = (await c.req.json()) as typeof body;
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
@@ -961,10 +964,21 @@ projectsApp.openapi(
       return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
     }
 
+    const appId = body.app_id?.trim() || null;
+    const appPassword = body.app_password?.trim() || null;
+    if ((appId && !appPassword) || (!appId && appPassword)) {
+      return c.json({ error: 'app_id and app_password must be provided together for a bring-your-own bot' }, 400);
+    }
+    if (appId && !isGuid(appId)) {
+      return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
+    }
+
     const summary = await saveTeamsInstall({
       projectId,
       tenantId,
       teamName: body.team_name?.trim() || null,
+      appId,
+      appPassword,
     });
     void reconcileChannelConnectors(projectId);
     return c.json(summary);

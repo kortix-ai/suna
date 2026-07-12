@@ -21,6 +21,7 @@ export async function postTeamsReviewCard(
     botId: handle.botId,
     fromId: handle.fromId,
     tenantId: handle.tenantId,
+    projectId: handle.projectId,
   };
   const viewUrl = handle.projectId
     ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${handle.projectId}/review`

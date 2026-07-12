@@ -16,25 +16,37 @@ export function teamsConfigured(): boolean {
   return Boolean(config.MICROSOFT_APP_ID && config.MICROSOFT_APP_PASSWORD);
 }
 
+export interface TeamsBotCreds {
+  appId: string;
+  appPassword: string;
+}
+
 interface MintOpts {
   scope: string;
   tenantId?: string;
+  creds?: TeamsBotCreds | null;
 }
 
-export async function mintTeamsToken({ scope, tenantId }: MintOpts): Promise<string> {
+function resolveCreds(creds?: TeamsBotCreds | null): TeamsBotCreds {
+  if (creds?.appId && creds.appPassword) return creds;
   if (!teamsConfigured()) {
     throw new Error('Microsoft Teams is not configured (MICROSOFT_APP_ID / MICROSOFT_APP_PASSWORD)');
   }
+  return { appId: config.MICROSOFT_APP_ID, appPassword: config.MICROSOFT_APP_PASSWORD };
+}
+
+export async function mintTeamsToken({ scope, tenantId, creds }: MintOpts): Promise<string> {
+  const resolved = resolveCreds(creds);
   const tenant = tenantId || config.MICROSOFT_APP_TENANT;
-  const cacheKey = `${tenant}|${scope}`;
+  const cacheKey = `${resolved.appId}|${tenant}|${scope}`;
 
   const cached = tokenCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.token;
 
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
-    client_id: config.MICROSOFT_APP_ID,
-    client_secret: config.MICROSOFT_APP_PASSWORD,
+    client_id: resolved.appId,
+    client_secret: resolved.appPassword,
     scope,
   });
 
@@ -67,12 +79,12 @@ export async function mintTeamsToken({ scope, tenantId }: MintOpts): Promise<str
   return parsed.access_token;
 }
 
-export function botConnectorToken(): Promise<string> {
-  return mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE });
+export function botConnectorToken(creds?: TeamsBotCreds | null): Promise<string> {
+  return mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE, creds });
 }
 
-export function graphToken(tenantId: string): Promise<string> {
-  return mintTeamsToken({ scope: GRAPH_SCOPE, tenantId });
+export function graphToken(tenantId: string, creds?: TeamsBotCreds | null): Promise<string> {
+  return mintTeamsToken({ scope: GRAPH_SCOPE, tenantId, creds });
 }
 
 export function clearTeamsTokenCache(): void {

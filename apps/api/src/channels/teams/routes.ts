@@ -1,14 +1,14 @@
+import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
 import { teamsConfigured } from '../teams-auth';
+import { loadTeamsAppIdForProject } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
 import { handleAdaptiveCardAction } from './interactivity';
 import type { TeamsActivity } from './types';
 
-teamsWebhookApp.post('/messages', async (c) => {
-  if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
-
+async function processActivity(c: Context, expectedAppId?: string | null): Promise<Response> {
   let activity: TeamsActivity;
   try {
     activity = (await c.req.json()) as TeamsActivity;
@@ -17,7 +17,7 @@ teamsWebhookApp.post('/messages', async (c) => {
   }
 
   const authHeader = c.req.header('Authorization');
-  const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl);
+  const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, expectedAppId);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
 
   if (activity.type === 'invoke') {
@@ -46,4 +46,15 @@ teamsWebhookApp.post('/messages', async (c) => {
   }
 
   return c.body(null, 200);
+}
+
+teamsWebhookApp.post('/messages', async (c) => {
+  if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
+  return processActivity(c);
+});
+
+teamsWebhookApp.post('/:projectId/messages', async (c) => {
+  const appId = await loadTeamsAppIdForProject(c.req.param('projectId'));
+  if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);
+  return processActivity(c, appId);
 });

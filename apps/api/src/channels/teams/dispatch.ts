@@ -62,6 +62,7 @@ export async function handleTeamsConversationUpdate(activity: TeamsActivity): Pr
       botId: activity.recipient?.id,
       fromId: activity.from?.id,
       tenantId,
+      projectId,
     },
     buildWelcomeCard({ projectUrl }),
   );

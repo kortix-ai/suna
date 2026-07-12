@@ -21,14 +21,16 @@ async function resolveJwks(): Promise<ReturnType<typeof createRemoteJWKSet>> {
 export async function validateInboundActivityJwt(
   authHeader: string | undefined,
   serviceUrl?: string,
+  expectedAppId?: string | null,
 ): Promise<boolean> {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token || !config.MICROSOFT_APP_ID) return false;
+  const audience = expectedAppId || config.MICROSOFT_APP_ID;
+  if (!token || !audience) return false;
   try {
     const jwks = await resolveJwks();
     const { payload } = await jwtVerify(token, jwks, {
       issuer: BOT_FRAMEWORK_ISSUERS,
-      audience: config.MICROSOFT_APP_ID,
+      audience,
     });
     const claimedServiceUrl = typeof payload.serviceurl === 'string' ? payload.serviceurl : null;
     if (serviceUrl && claimedServiceUrl && claimedServiceUrl.replace(/\/+$/, '') !== serviceUrl.replace(/\/+$/, '')) {

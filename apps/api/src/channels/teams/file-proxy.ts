@@ -3,7 +3,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { teamsPendingUploads } from '@kortix/db';
 import { db } from '../../shared/db';
 import { graphToken } from '../teams-auth';
-import { loadTeamsTenantForProject } from '../install-store';
+import { loadTeamsBotCredentials, loadTeamsTenantForProject } from '../install-store';
 import { sendActivity } from '../teams-api';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -32,7 +32,8 @@ export async function downloadTeamsFile(
   if (/(^|\.)graph\.microsoft\.com$/i.test(parsed.hostname)) {
     const tenant = await loadTeamsTenantForProject(projectId);
     if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
-    const token = await graphToken(tenant).catch(() => null);
+    const creds = await loadTeamsBotCredentials(projectId);
+    const token = await graphToken(tenant, creds).catch(() => null);
     if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
     headers.Authorization = `Bearer ${token}`;
   }
@@ -84,7 +85,7 @@ export async function initiateTeamsUpload(
     expiresAt: new Date(Date.now() + UPLOAD_TTL_MS),
   });
 
-  const ref: TeamsConversationRef = { serviceUrl: args.serviceUrl, conversationId: args.conversationId, botId: args.botId };
+  const ref: TeamsConversationRef = { serviceUrl: args.serviceUrl, conversationId: args.conversationId, botId: args.botId, projectId };
   const posted = await sendActivity(ref, {
     type: 'message',
     attachments: [
@@ -128,6 +129,7 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     serviceUrl: activity.serviceUrl ?? row?.serviceUrl ?? '',
     conversationId: activity.conversation?.id ?? row?.conversationId ?? '',
     botId: activity.recipient?.id ?? row?.botId ?? undefined,
+    projectId: row?.projectId,
   };
 
   if (value.action !== 'accept') {

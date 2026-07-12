@@ -28,6 +28,7 @@ import {
   loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
+  loadTeamsBotCredentials,
   loadTeamsInstall,
   loadTeamsTenantForProject,
 } from '../channels/install-store';
@@ -313,7 +314,8 @@ async function channelToken(
   if (platform === 'teams') {
     const tenant = await loadTeamsTenantForProject(projectId);
     if (!tenant) return null;
-    return graphToken(tenant).catch(() => null);
+    const creds = await loadTeamsBotCredentials(projectId);
+    return graphToken(tenant, creds).catch(() => null);
   }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));

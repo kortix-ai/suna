@@ -20,6 +20,7 @@ function refOf(handle: TeamsLiveTurn): TeamsConversationRef {
     botId: handle.botId,
     fromId: handle.fromId,
     tenantId: handle.tenantId,
+    projectId: handle.projectId,
   };
 }
 
@@ -116,6 +117,7 @@ export async function startTurn(
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId,
+    projectId,
   };
   await sendTyping(ref);
 
