@@ -2,6 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { createAcpHarnessRegistry } from '../acp/harness-registry';
 
 describe('ACP harness registry', () => {
+  test('uses image-stable absolute paths for installed ACP adapters', () => {
+    const registry = createAcpHarnessRegistry({});
+    expect(registry.get('claude')?.launch.command).toBe('/usr/local/bin/claude-agent-acp');
+    expect(registry.get('codex')?.launch.command).toBe('/usr/local/bin/codex-acp');
+    expect(registry.get('pi')?.launch.command).toBe('/usr/local/bin/pi-acp');
+  });
+
   test('routes Claude through the scoped Kortix Anthropic gateway by default', () => {
     const registry = createAcpHarnessRegistry({
       KORTIX_API_URL: 'https://api.example.test/v1/',
