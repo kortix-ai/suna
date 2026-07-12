@@ -1,6 +1,0 @@
-{
-  "title": "Support Agent Kit",
-  "description": "A ready-to-run customer support agent that triages incoming tickets and drafts on-brand replies from a canned-response library.",
-  "categories": ["support", "customer-service"],
-  "dependencies": ["canned-responses", "ticket-triage"]
-}

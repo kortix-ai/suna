@@ -8,7 +8,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { useInstalledItems, useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
-import CustomizeSectionWrapper from '../workspace/customize/sections/component/section-wrapper';
 import { MarketplaceDetail } from './marketplace-detail';
 import { MarketplaceExplore } from './marketplace-explore';
 import { MarketplaceInstalledPanel } from './marketplace-installed-panel';
@@ -42,10 +41,8 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
   return (
     <MarketplaceSurfaceProvider surface={surface}>
       {openId ? (
-        <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-          <div className="mx-auto w-full max-w-5xl px-4 py-4">
-            <MarketplaceDetailOverlay onBack={closeDetail} />
-          </div>
+        <div className="h-full min-h-0 px-4 py-4">
+          <MarketplaceDetailOverlay onBack={closeDetail} />
         </div>
       ) : (
         <Tabs
@@ -53,24 +50,25 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
           onValueChange={(v) => setTab(v as 'explore' | 'installed')}
           className="flex h-full min-h-0 flex-col"
         >
-          <CustomizeSectionWrapper
-            title="Marketplace"
-            className="max-w-5xl p-4 px-4 py-2 lg:py-4"
-            scrollContainerRef={browseScrollContainerRef}
-            action={
-              <TabsListCompact>
-                <TabsTriggerCompact value="explore">Explore</TabsTriggerCompact>
-                <TabsTriggerCompact value="installed">Installed</TabsTriggerCompact>
-              </TabsListCompact>
-            }
-          >
-            <TabsContent value="explore" className="mt-0">
+          {/* Fixed top bar — the tabs stay put; the tab panels below scroll. */}
+          <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
+            <h2 className="text-foreground text-sm font-medium">Marketplace</h2>
+            <TabsListCompact>
+              <TabsTriggerCompact value="explore">Explore</TabsTriggerCompact>
+              <TabsTriggerCompact value="installed">Installed</TabsTriggerCompact>
+            </TabsListCompact>
+          </div>
+
+          <TabsContent value="explore" className="mt-0 min-h-0 flex-1 outline-none">
+            <div className="h-full px-4 py-4">
               <MarketplaceExploreTab scrollContainerRef={browseScrollContainerRef} />
-            </TabsContent>
-            <TabsContent value="installed" className="mt-0">
+            </div>
+          </TabsContent>
+          <TabsContent value="installed" className="mt-0 min-h-0 flex-1 overflow-y-auto outline-none">
+            <div className="mx-auto max-w-3xl px-4 py-4">
               <MarketplaceInstalledPanel projectId={projectId} onBrowse={() => setTab('explore')} />
-            </TabsContent>
-          </CustomizeSectionWrapper>
+            </div>
+          </TabsContent>
         </Tabs>
       )}
     </MarketplaceSurfaceProvider>

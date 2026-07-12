@@ -1,6 +1,0 @@
-{
-  "title": "Research Analyst",
-  "description": "A research analyst agent that investigates topics end-to-end and delivers cited, evidence-based reports.",
-  "categories": ["research", "analysis"],
-  "dependencies": ["deep-research", "research-report", "openalex-paper-search"]
-}

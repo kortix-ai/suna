@@ -30,7 +30,7 @@ import {
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
-import { MarketplaceShell } from './marketplace-shell';
+import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
 
 // Only skills are browseable alongside Projects today (agents/commands/
 // bundles are hidden from browse — see MARKETPLACE_VISIBLE_TYPES on the API).
@@ -261,8 +261,13 @@ export function MarketplaceExplore({
       });
   }, [componentItems, typeCounts]);
 
-  const crumbs = isAll
-    ? [{ label: 'Marketplace' }]
+  // Embedded: the fixed top bar already says "Marketplace", so the lone
+  // "Marketplace" crumb on the all-sources view is redundant — drop it. A
+  // selected source still gets a crumb for the back-to-all affordance.
+  const crumbs: MarketplaceCrumb[] = isAll
+    ? embedded
+      ? []
+      : [{ label: 'Marketplace' }]
     : [
         embedded
           ? { label: 'Marketplace', onClick: () => selectSource(ALL_SOURCES) }
@@ -273,13 +278,11 @@ export function MarketplaceExplore({
   return (
     <MarketplaceShell
       embedded={embedded}
+      scrollRef={scrollContainerRef}
       crumbs={crumbs}
       sidebar={
         <>
           <div className="space-y-2">
-            <span className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
-              Marketplace
-            </span>
             <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
               Clone a project, or add a skill
             </h1>

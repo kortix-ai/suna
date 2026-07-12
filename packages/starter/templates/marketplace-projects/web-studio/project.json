@@ -1,0 +1,6 @@
+{
+  "title": "Website Studio",
+  "description": "An email-first web studio that runs itself: a client emails in, it designs and deploys their website, sends a Stripe link to go live, then makes every future change by email for a small fee — all on a heartbeat.",
+  "categories": ["business", "web", "automation"],
+  "dependencies": ["website-building", "design-foundations", "domain-research"]
+}
