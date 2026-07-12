@@ -92,6 +92,31 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
   'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
 ] as const;
 
+// Stale Next.js webpack runtime chunk after a deploy. A long-lived tab (or
+// cached HTML) holds app chunks from one Vercel deployment (`?dpl=dpl_…`) while
+// the webpack runtime chunk is served from a different deployment, so
+// `__webpack_require__(moduleId)` (minified to function `c`) looks up a module
+// id that isn't registered in this runtime's `__webpack_modules__` map →
+// `undefined` → `__webpack_modules__[moduleId].call(...)` throws
+// `TypeError: Cannot read properties of undefined (reading 'call')`. It is a
+// one-off, self-healing-on-reload browser state (single occurrence, 0
+// identified users across the four sibling patterns 83e0c2af…/5d02255f…/
+// e77f06d4…/1cb3009d…, all last_seen 2026-07-12 08:44 UTC), not an app defect.
+// Suppress ONLY when the throwing frame (Sentry's oldest-first stack ordering
+// → last frame) is the Next.js webpack runtime chunk, so a genuine app
+// TypeError with the same message text — e.g. calling `.call(...)` on an
+// `undefined` value inside app code — still reports normally.
+const STALE_WEBPACK_RUNTIME_CALL_MESSAGE =
+  "Cannot read properties of undefined (reading 'call')";
+
+function isWebpackRuntimeChunkFilename(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return (
+    /^app:\/\/\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
+    || /^https?:\/\/[^/]+\/_next\/static\/chunks\/webpack-[^/]*\.js/.test(normalized)
+  );
+}
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -202,6 +227,31 @@ export function isExpectedBillingGateMessage(message: unknown): boolean {
       || normalized === `Unhandled promise rejection: ${expected}`
       || normalized === `Unhandled promise rejection: ApiError: ${expected}`,
   );
+}
+
+/**
+ * Whether a Sentry exception is the stale-deploy webpack-runtime
+ * `… (reading 'call')` TypeError. Requires BOTH the exact webpack
+ * module-loader message AND the throwing frame (the last stack frame, per
+ * Sentry's oldest-first ordering) to be the Next.js webpack runtime chunk
+ * (`_next/static/chunks/webpack-*.js`). A real app TypeError that calls
+ * `.call(...)` on an `undefined` value throws inside an app chunk, not the
+ * runtime, so it is never hidden. Returns false when there are no frames
+ * (can't confirm the runtime scope — keep reporting).
+ */
+export function isStaleWebpackRuntimeCallNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  if (normalizeString(input.message) !== STALE_WEBPACK_RUNTIME_CALL_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  const throwingFrame = frames[frames.length - 1];
+  return isWebpackRuntimeChunkFilename(throwingFrame?.filename);
 }
 
 export function shouldIgnoreBrowserRuntimeNoise(input: {
@@ -315,6 +365,16 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (environment === 'test' || environment.startsWith('e2e')) {
+    return true;
+  }
+
+  // Stale webpack runtime chunk after a deploy — the throwing frame (last
+  // stack frame) is the Next.js webpack runtime (`__webpack_require__`,
+  // minified `c`) looking up a module id that isn't registered in a
+  // mismatched deployment's module map. One-off, self-heals on reload;
+  // suppress only when the throwing frame is the runtime chunk so a real app
+  // `.call` TypeError keeps reporting. See `isStaleWebpackRuntimeCallNoise`.
+  if (isStaleWebpackRuntimeCallNoise({ message, frames })) {
     return true;
   }
 

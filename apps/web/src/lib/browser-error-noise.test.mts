@@ -7,6 +7,7 @@ import {
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
   isRuntimeNotReadyNoiseMessage,
+  isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
@@ -522,4 +523,139 @@ test('does NOT suppress a real null-access error on a non-storage method', () =>
     }),
     false,
   )
+})
+
+// Reproduces Better Stack error 83e0c2af...189c3b17 (Kortix Frontend prod,
+// application_id 2346967) + siblings 5d02255f…, e77f06d4…, 1cb3009d… — all
+// `TypeError: Cannot read properties of undefined (reading 'call')`, count 1,
+// 0 identified users, last_seen 2026-07-12 08:44 UTC. The raw stack's throwing
+// frame (last frame, Sentry oldest-first ordering) is the Next.js webpack
+// runtime chunk `webpack-<hash>.js` function `c` (= `__webpack_require__`), and
+// the webpack runtime chunk carries a *different* Vercel `?dpl=` deployment id
+// than the app chunks in the same stack — the stale-deploy-chunk signature:
+// a long-lived tab holds app chunks/module ids from one deploy while the
+// runtime chunk is served from another, so `__webpack_modules__[moduleId]` is
+// `undefined` and `.call(...)` throws. One-off, self-heals on reload; not an
+// app defect. Suppressed ONLY when the throwing frame is the runtime chunk, so
+// a real app `.call` TypeError (which throws inside an app chunk, not the
+// runtime) still reports.
+const WEBPACK_RUNTIME_FRAME = {
+  filename:
+    'app:///_next/static/chunks/webpack-35676c5ce2292e1c.js?dpl=dpl_CTqmc8S7CG7w9gkCs2ySzURsbhxm',
+  function: 'c',
+}
+const APP_CHUNK_FRAME = {
+  filename:
+    'app:///_next/static/chunks/app/(app)/projects/[id]/not-found-c7f03e853940d826.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+  function: '81761',
+}
+
+test('suppresses the stale-deploy webpack-runtime call TypeError (assigned pattern)', () => {
+  // The exact frame chain from the raw 83e0c2af… event: webpack `c` recurses
+  // through app chunks, and the throwing frame (last) is the runtime `c`.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'call')",
+            stacktrace: {
+              frames: [
+                WEBPACK_RUNTIME_FRAME,
+                APP_CHUNK_FRAME,
+                WEBPACK_RUNTIME_FRAME,
+                {
+                  filename:
+                    'app:///_next/static/chunks/65820-89cc54263b2034da.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+                  function: '65820',
+                },
+                WEBPACK_RUNTIME_FRAME,
+                {
+                  filename:
+                    'app:///_next/static/chunks/27594-5ca3ed0a68bbd353.js?dpl=dpl_GnR22QKUwZLPkRykUCM8KBxZmy8o',
+                  function: '36735',
+                },
+                WEBPACK_RUNTIME_FRAME,
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses a minimal stale-webpack-runtime call event', () => {
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [APP_CHUNK_FRAME, WEBPACK_RUNTIME_FRAME],
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress the same message when the throwing frame is an app chunk', () => {
+  // A real app TypeError calling `.call(...)` on an `undefined` value throws
+  // inside the app chunk, not the runtime — keep reporting it.
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [WEBPACK_RUNTIME_FRAME, APP_CHUNK_FRAME],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'call')",
+            stacktrace: { frames: [WEBPACK_RUNTIME_FRAME, APP_CHUNK_FRAME] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress the webpack-call message when there are no frames', () => {
+  // Can't confirm the runtime scope — keep reporting rather than guess.
+  assert.equal(
+    isStaleWebpackRuntimeCallNoise({
+      message: "Cannot read properties of undefined (reading 'call')",
+      frames: [],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: "Cannot read properties of undefined (reading 'call')" }],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a same-shaped message reading a different property', () => {
+  // `reading id` / `reading src` are the existing real-app TypeError fixtures;
+  // the exact-message match must not catch them.
+  for (const value of [
+    'Cannot read properties of undefined (reading id)',
+    'Cannot read properties of undefined (reading src)',
+    'TypeError: Cannot read properties of undefined (reading call)',
+  ]) {
+    assert.equal(
+      isStaleWebpackRuntimeCallNoise({
+        message: value,
+        frames: [WEBPACK_RUNTIME_FRAME],
+      }),
+      false,
+      `expected "${value}" to keep reporting`,
+    )
+  }
 })
