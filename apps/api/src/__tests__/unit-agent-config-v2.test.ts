@@ -20,6 +20,7 @@ import {
   applyAgentBlockV2,
   applyAgentBlockV3,
   applyDefaultAgentV2,
+  migrateManifestV2ToV3,
   readAgentBlockV2,
   readAgentBlockV3,
 } from '../projects/lib/agent-config-v2';
@@ -58,7 +59,6 @@ runtimes:
 agents:
   reviewer:
     runtime: codex
-    agent: strict
     connectors: [github]
   helper:
     runtime: claude
@@ -228,11 +228,31 @@ agents:
 });
 
 describe('v3 ACP logical agent routing', () => {
+  test('upgrades v2 governance without changing its initial OpenCode behavior binding', () => {
+    const applied = migrateManifestV2ToV3(v2Manifest());
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.raw.kortix_version).toBe(3);
+    expect(applied.raw).not.toHaveProperty('opencode');
+    expect(applied.raw.runtimes).toEqual({
+      opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+      claude: { harness: 'claude', config_dir: '.claude' },
+      codex: { harness: 'codex', config_dir: '.codex' },
+      pi: { harness: 'pi', config_dir: '.pi' },
+    });
+    expect((applied.raw.agents as any).support).toMatchObject({
+      runtime: 'opencode',
+      agent: 'support',
+      connectors: ['github'],
+      secrets: ['STRIPE_KEY'],
+    });
+  });
+
   test('reads runtime profiles and the native agent id without behavior translation', () => {
     const read = readAgentBlockV3(parseManifestString(V3, 'yaml', 'kortix.yaml'), 'reviewer');
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.block).toEqual({ runtime: 'codex', agent: 'strict', connectors: ['github'] });
+    expect(read.block).toEqual({ runtime: 'codex', connectors: ['github'] });
     expect(read.runtimes).toMatchObject({
       claude: { harness: 'claude', config_dir: '.claude' },
       codex: { harness: 'codex' },
@@ -243,7 +263,6 @@ describe('v3 ACP logical agent routing', () => {
     const manifest = parseManifestString(V3, 'yaml', 'kortix.yaml');
     const applied = applyAgentBlockV3(manifest, 'reviewer', {
       runtime: 'claude',
-      agent: 'security-reviewer',
       connectors: ['github'],
       secrets: 'none',
     });
@@ -251,7 +270,6 @@ describe('v3 ACP logical agent routing', () => {
     if (!applied.ok) return;
     expect((applied.raw.agents as any).reviewer).toEqual({
       runtime: 'claude',
-      agent: 'security-reviewer',
       connectors: ['github'],
       secrets: 'none',
     });

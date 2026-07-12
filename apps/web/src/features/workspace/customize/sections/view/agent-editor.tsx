@@ -226,7 +226,8 @@ function AgentEditorModal({
                     <SelectContent>
                       {Object.entries(runtimes).map(([name, profile]) => (
                         <SelectItem key={name} value={name}>
-                          {name} · {profile.harness}
+                          {profile.harness === 'claude' ? 'Claude Code' : profile.harness === 'codex' ? 'Codex' : profile.harness === 'opencode' ? 'OpenCode' : 'Pi'}
+                          {name !== profile.harness ? ` · ${name}` : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>

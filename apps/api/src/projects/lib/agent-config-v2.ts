@@ -81,6 +81,44 @@ export type RuntimeProfileV3 = {
   config_dir?: string;
 };
 
+export const DEFAULT_RUNTIME_PROFILES_V3: Record<string, RuntimeProfileV3> = {
+  opencode: { harness: 'opencode', config_dir: '.kortix/opencode' },
+  claude: { harness: 'claude', config_dir: '.claude' },
+  codex: { harness: 'codex', config_dir: '.codex' },
+  pi: { harness: 'pi', config_dir: '.pi' },
+};
+
+/** Losslessly promote v2 governance to ACP-native v3 routing. Native OpenCode
+ * behavior files remain untouched; every existing logical agent initially
+ * keeps OpenCode while the other official harnesses become selectable. */
+export function migrateManifestV2ToV3(manifest: ParsedManifest): ApplyAgentBlockResult {
+  if (manifest.schemaVersion !== 2) {
+    return { ok: false, error: 'Only a kortix_version 2 manifest can be upgraded to v3.' };
+  }
+  const rawAgents = manifest.raw.agents;
+  if (!rawAgents || typeof rawAgents !== 'object' || Array.isArray(rawAgents)) {
+    return { ok: false, error: '`agents` is malformed in this manifest (expected a map).' };
+  }
+  const agents = Object.fromEntries(
+    Object.entries(rawAgents as Record<string, unknown>).map(([name, value]) => [
+      name,
+      { ...(value as Record<string, unknown>), runtime: 'opencode', agent: name },
+    ]),
+  );
+  const { opencode: _legacyRuntime, ...rest } = manifest.raw;
+  const nextRaw = {
+    ...rest,
+    kortix_version: 3,
+    runtimes: DEFAULT_RUNTIME_PROFILES_V3,
+    agents,
+  };
+  const result = validateManifest(nextRaw, manifest.format);
+  const errorIssues = result.issues.filter((issue) => issue.severity === 'error');
+  return errorIssues.length
+    ? { ok: false, error: errorIssues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), issues: errorIssues }
+    : { ok: true, raw: nextRaw };
+}
+
 /** Replace the complete v3 runtime-profile map and validate every agent
  * reference against it before the caller commits the manifest. */
 export function applyRuntimeProfilesV3(

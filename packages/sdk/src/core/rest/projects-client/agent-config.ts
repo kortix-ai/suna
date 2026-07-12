@@ -99,6 +99,13 @@ export async function updateRuntimeProfiles(projectId: string, runtimes: Record<
   return unwrap(await backendApi.put<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles`, { runtimes }));
 }
 
+/** Promote a legacy v2 project to ACP-native v3 and declare every official harness. */
+export async function enableAcpRuntimeProfiles(projectId: string) {
+  return unwrap(
+    await backendApi.post<RuntimeProfilesResponse>(`/projects/${projectId}/runtime-profiles/enable`),
+  );
+}
+
 export async function getAgentConfig(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.get<AgentConfigResponse>(

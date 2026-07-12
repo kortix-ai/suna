@@ -47,6 +47,7 @@ import {
   applyAgentBlockV3,
   applyDefaultAgentV2,
   applyRuntimeProfilesV3,
+  migrateManifestV2ToV3,
   readAgentBlockV2,
   readAgentBlockV3,
 } from '../lib/agent-config-v2';
@@ -176,6 +177,44 @@ projectsApp.openapi(
       return c.json({ error: '`runtimes` is malformed', code: 'manifest_malformed' }, 400);
     }
     return c.json({ schema_version: 3, editable: true, runtimes });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/runtime-profiles/enable',
+    tags: ['projects'],
+    summary: 'Upgrade a v2 project and enable every official ACP harness',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'Enabled ACP runtime profiles'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+    const manifest = await loadManifestForEdit(loaded.row).catch(() => null);
+    if (!manifest) return c.json({ error: 'failed to read manifest', code: 'manifest_read' }, 400);
+    if (manifest.schemaVersion === 3) {
+      return c.json({ schema_version: 3, editable: true, runtimes: manifest.raw.runtimes });
+    }
+    const applied = migrateManifestV2ToV3(manifest);
+    if (!applied.ok) return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+    manifest.raw = applied.raw;
+    const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      await commitMultipleFilesToBranch(gitProject, {
+        files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+        message: 'chore: enable ACP harness profiles',
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (error) {
+      return c.json({ error: `Failed to enable ACP harnesses: ${(error as Error).message || String(error)}` }, 502);
+    }
+    return c.json({ schema_version: 3, editable: true, runtimes: applied.raw.runtimes });
   },
 );
 

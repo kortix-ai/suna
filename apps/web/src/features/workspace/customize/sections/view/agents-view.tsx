@@ -17,6 +17,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { AgentConfigEditor } from '@/features/workspace/customize/sections/view/agent-editor';
+import { ACP_HARNESSES, ACP_HARNESS_CONFIG_DIRS, ACP_HARNESS_LABELS, withAllAcpHarnesses } from '@/features/workspace/customize/sections/view/runtime-profile-options';
 import { ConfigEntityView } from '@/features/workspace/customize/sections/component/config-entity-view';
 import {
   detectManifestVersion,
@@ -31,6 +32,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type AgentGrantSet,
+  enableAcpRuntimeProfiles,
   type ProjectConfigSummary,
   listConnectors,
   listProjectAccess,
@@ -136,8 +138,6 @@ export function AgentsView({ projectId }: { projectId: string }) {
   );
 }
 
-const HARNESSES = ['claude', 'codex', 'opencode', 'pi'] as const;
-
 function RuntimeProfilesEditor({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -160,6 +160,18 @@ function RuntimeProfilesEditor({ projectId, canWrite }: { projectId: string; can
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to save runtime profiles'),
   });
+  const enableMutation = useMutation({
+    mutationFn: () => enableAcpRuntimeProfiles(projectId),
+    onSuccess: async () => {
+      successToast('Claude Code, Codex, OpenCode, and Pi are ready to select');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['runtime-profiles', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
+      ]);
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to enable ACP harnesses'),
+  });
 
   const beginEdit = () => {
     setDraft(query.data?.runtimes ?? {});
@@ -171,6 +183,7 @@ function RuntimeProfilesEditor({ projectId, canWrite }: { projectId: string; can
     while (draft[name]) name = `runtime-${++index}`;
     setDraft((current) => ({ ...current, [name]: { harness: 'opencode' } }));
   };
+  const addMissingHarnesses = () => setDraft(withAllAcpHarnesses);
   const rename = (from: string, toRaw: string) => {
     const to = toRaw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
     if (!to || to === from || draft[to]) return;
@@ -182,7 +195,24 @@ function RuntimeProfilesEditor({ projectId, canWrite }: { projectId: string; can
   };
 
   if (query.isLoading) return <div className="h-16 rounded-md border bg-popover" />;
-  if (!query.data?.editable) return null;
+  if (!query.data?.editable) {
+    return (
+      <div className="bg-popover rounded-md border px-4 py-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Enable all ACP harnesses</p>
+            <p className="text-muted-foreground mt-1 text-xs text-pretty">
+              Upgrade this project to ACP-native configuration so agents can run with Claude Code, Codex, OpenCode, or Pi.
+            </p>
+          </div>
+          <Button size="sm" variant="secondary" className="shrink-0 active:scale-[0.96] transition-transform" disabled={!canWrite || enableMutation.isPending} onClick={() => enableMutation.mutate()}>
+            {enableMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            Enable harnesses
+          </Button>
+        </div>
+      </div>
+    );
+  }
   const profiles = Object.entries(query.data.runtimes);
 
   return (
@@ -228,17 +258,20 @@ function RuntimeProfilesEditor({ projectId, canWrite }: { projectId: string; can
                   <label className="space-y-1.5 text-xs font-medium">Harness
                     <Select value={profile.harness} onValueChange={(harness) => setDraft((current) => ({ ...current, [name]: { ...profile, harness: harness as RuntimeProfile['harness'] } }))}>
                       <SelectTrigger variant="popover"><SelectValue /></SelectTrigger>
-                      <SelectContent>{HARNESSES.map((harness) => <SelectItem key={harness} value={harness}>{harness}</SelectItem>)}</SelectContent>
+                      <SelectContent>{ACP_HARNESSES.map((harness) => <SelectItem key={harness} value={harness}>{ACP_HARNESS_LABELS[harness]}</SelectItem>)}</SelectContent>
                     </Select>
                   </label>
                   <label className="space-y-1.5 text-xs font-medium">Config directory
-                    <Input variant="popover" value={profile.config_dir ?? ''} placeholder={`.${profile.harness}`} onChange={(event) => setDraft((current) => ({ ...current, [name]: { ...profile, config_dir: event.target.value || undefined } }))} />
+                    <Input variant="popover" value={profile.config_dir ?? ''} placeholder={ACP_HARNESS_CONFIG_DIRS[profile.harness]} onChange={(event) => setDraft((current) => ({ ...current, [name]: { ...profile, config_dir: event.target.value || undefined } }))} />
                   </label>
                   <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${name}`} onClick={() => setRemoveName(name)}><Trash2 className="size-4" /></Button>
                 </div>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" className="active:scale-[0.96] transition-transform" onClick={addProfile}><Plus className="size-4 shrink-0" />Add profile</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" className="active:scale-[0.96] transition-transform" onClick={addMissingHarnesses}>Enable all harnesses</Button>
+              <Button type="button" variant="outline" size="sm" className="active:scale-[0.96] transition-transform" onClick={addProfile}><Plus className="size-4 shrink-0" />Add custom profile</Button>
+            </div>
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => setOpen(false)}>Cancel</Button>
