@@ -8,6 +8,43 @@ export type AcpStoredEnvelope = {
   createdAt?: string;
 };
 
+export type AcpChatItem =
+  | { kind: 'message'; role: 'user' | 'assistant' | 'thought'; text: string }
+  | { kind: 'tool'; title: string; data: unknown }
+  | { kind: 'permission'; id: string | number; method: string; params: Record<string, unknown> }
+  | { kind: 'raw'; method: string; data: unknown };
+
+export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChatItem[] {
+  const items: AcpChatItem[] = [];
+  for (const row of rows) {
+    const envelope = row.envelope as Record<string, any>;
+    if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
+      const text = contentText(envelope.params?.prompt);
+      if (text) items.push({ kind: 'message', role: 'user', text });
+      continue;
+    }
+    if (row.direction !== 'agent_to_client' || typeof envelope.method !== 'string') continue;
+    if (envelope.method === 'session/update') {
+      const update = envelope.params?.update ?? {};
+      const kind = update.sessionUpdate ?? update.type;
+      const text = update.content?.type === 'text' ? update.content.text : '';
+      if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && text) {
+        const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
+        const previous = items.at(-1);
+        if (previous?.kind === 'message' && previous.role === role) previous.text += text;
+        else items.push({ kind: 'message', role, text });
+      } else if (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan') {
+        items.push({ kind: 'tool', title: String(update.title ?? kind), data: update });
+      } else items.push({ kind: 'raw', method: String(kind ?? envelope.method), data: update });
+      continue;
+    }
+    if ('id' in envelope && (envelope.method.includes('permission') || envelope.method.includes('request'))) {
+      items.push({ kind: 'permission', id: envelope.id, method: envelope.method, params: envelope.params ?? {} });
+    } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
+  }
+  return items;
+}
+
 export type AcpTranscriptMessage = {
   role: 'user' | 'assistant';
   created: string | null;

@@ -16,6 +16,7 @@ export {
   type KortixSendErrorKind,
   type SendState,
 } from './use-session';
+export { useAcpSession, type AcpStoredSessionEnvelope } from './use-acp-session';
 
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —

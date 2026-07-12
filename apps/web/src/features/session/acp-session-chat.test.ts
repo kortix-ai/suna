@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { projectAcpEnvelopes } from './acp-session-chat';
+import { projectAcpChatItems as projectAcpEnvelopes } from '@kortix/sdk';
 
 describe('ACP-native chat projection', () => {
   test('keeps user prompts, assistant chunks, thoughts, tools, and permissions protocol-native', () => {

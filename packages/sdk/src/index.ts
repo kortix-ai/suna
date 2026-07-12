@@ -53,6 +53,8 @@ export {
   acpTranscriptHtml,
   acpTranscriptJsonl,
   acpTranscriptMarkdown,
+  projectAcpChatItems,
+  projectAcpTranscript,
   type AcpClientOptions,
   type AcpContentBlock,
   type AcpEnvelope,
@@ -62,6 +64,9 @@ export {
   type AcpResponse,
   type AcpStreamEvent,
   type AcpStreamHandle,
+  type AcpChatItem,
+  type AcpStoredEnvelope,
+  type AcpTranscriptMessage,
 } from './acp';
 
 /**
