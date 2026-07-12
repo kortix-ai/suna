@@ -18,10 +18,23 @@ export interface TeamsManifest {
     scopes: string[];
     supportsFiles: boolean;
     isNotificationOnly: boolean;
+    commandLists?: Array<{
+      scopes: string[];
+      commands: Array<{ title: string; description: string }>;
+    }>;
   }>;
   permissions: string[];
   validDomains: string[];
 }
+
+const BOT_COMMANDS = [
+  { title: '/help', description: 'Show what Kortix can do' },
+  { title: '/status', description: 'Show the effective project, agent and model' },
+  { title: '/login', description: 'Connect your Kortix account' },
+  { title: '/models', description: 'Pick the model for this conversation' },
+  { title: '/agents', description: 'Pick the agent for this conversation' },
+  { title: '/projects', description: 'List connected projects' },
+];
 
 export interface BuildTeamsManifestConfig {
   appId: string;
@@ -72,6 +85,7 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
         scopes: ['personal', 'team', 'groupchat'],
         supportsFiles: true,
         isNotificationOnly: false,
+        commandLists: [{ scopes: ['personal', 'team', 'groupchat'], commands: BOT_COMMANDS }],
       },
     ],
     permissions: ['identity', 'messageTeamMembers'],
