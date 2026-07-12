@@ -301,6 +301,28 @@ describe("gateway.chatCompletions", () => {
     });
   });
 
+  test("reports the last attempted descriptor when every upstream fails", async () => {
+    const candidates: UpstreamDescriptor[] = [
+      { ...managed, provider: "first", resolvedModel: "first/model" },
+      { ...managed, provider: "last", resolvedModel: "last/model" },
+    ];
+    const { hooks } = makeHooks({ resolveUpstream: async () => candidates });
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl: async () => new Response("boom", { status: 500 }) },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      provider: "last",
+      resolved_model: "last/model",
+    });
+  });
+
   test("returns 503 once the provider circuit opens", async () => {
     const fetchImpl: FetchImpl = async () =>
       new Response("boom", { status: 500 });
