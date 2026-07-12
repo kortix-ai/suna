@@ -67,4 +67,15 @@ describe('ACP harness registry', () => {
     });
     expect(registry.get('codex')?.launch.env).toBeUndefined();
   });
+
+  test('maps the compiled runtime config directory to each harness native environment', () => {
+    const registry = createAcpHarnessRegistry({
+      KORTIX_RUNTIME_CONFIG_DIR: '.config/agent',
+      KORTIX_WORKSPACE: '/workspace',
+    });
+    expect(registry.get('claude')?.launch.env).toEqual({ CLAUDE_CONFIG_DIR: '/workspace/.config/agent' });
+    expect(registry.get('codex')?.launch.env).toEqual({ CODEX_HOME: '/workspace/.config/agent' });
+    expect(registry.get('opencode')?.launch.env).toEqual({ OPENCODE_CONFIG_DIR: '/workspace/.config/agent' });
+    expect(registry.get('pi')?.launch.env).toEqual({ PI_CODING_AGENT_DIR: '/workspace/.config/agent' });
+  });
 });

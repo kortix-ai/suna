@@ -6,8 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import type { Config } from '../config'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
+import { buildAcpApp } from '../proxy'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
@@ -39,17 +38,6 @@ function baseConfig(): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
   }
-}
-
-// opencode that always reports "ok" but points at a dead port — proves the
-// file write routes never touch opencode (they're handled by the daemon).
-function fakeOpencode(): Opencode {
-  return {
-    getState: () => 'ok',
-    getPid: () => 123,
-    getInternalUrl: () => 'http://127.0.0.1:1',
-    restart: async () => {},
-  } as unknown as Opencode
 }
 
 function b64url(s: string): string {
@@ -84,7 +72,7 @@ describe('daemon file write routes', () => {
 
   beforeAll(async () => {
     WORKSPACE = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-files-test-'))
-    const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
+    const app = buildAcpApp(baseConfig(), Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })
@@ -285,7 +273,7 @@ describe('daemon file read + list + status + find routes', () => {
     await fs.writeFile(`${WS}/ignored.txt`, 'do not track\n') // gitignored
 
     const cfg: Config = { ...baseConfig(), workspace: WS, projectTarget: WS }
-    const app = buildOpencodeApp(cfg, fakeOpencode(), Date.now())
+    const app = buildAcpApp(cfg, Date.now())
     server = Bun.serve({ port: 0, fetch: app.fetch })
     base = `http://127.0.0.1:${server.port}`
   })

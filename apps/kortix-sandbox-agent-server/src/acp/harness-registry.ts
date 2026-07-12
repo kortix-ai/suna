@@ -17,6 +17,17 @@ export type AcpHarnessDescriptor = {
 
 export type AcpHarnessRegistry = ReadonlyMap<AcpHarnessId, AcpHarnessDescriptor>
 
+function nativeConfigEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> {
+  const raw = env.KORTIX_RUNTIME_CONFIG_DIR?.trim()
+  if (!raw) return {}
+  const workspace = env.KORTIX_WORKSPACE?.replace(/\/$/, '') || '/workspace'
+  const dir = raw.startsWith('/') ? raw : `${workspace}/${raw.replace(/^\.\//, '')}`
+  if (id === 'claude') return { CLAUDE_CONFIG_DIR: dir }
+  if (id === 'codex') return { CODEX_HOME: dir }
+  if (id === 'opencode') return { OPENCODE_CONFIG_DIR: dir }
+  return { PI_CODING_AGENT_DIR: dir }
+}
+
 const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
     displayName: 'Claude Code',
@@ -64,12 +75,14 @@ function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEn
 }
 
 function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
+  const native = nativeConfigEnv(id, env)
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
   if (id === 'codex') {
-    if (env.CODEX_API_KEY || env.OPENAI_API_KEY || env.CODEX_AUTH_JSON) return undefined
-    if (!apiUrl || !token) return undefined
+    if (env.CODEX_API_KEY || env.OPENAI_API_KEY || env.CODEX_AUTH_JSON) return Object.keys(native).length ? native : undefined
+    if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
     return {
+      ...native,
       NO_BROWSER: '1',
       CODEX_CONFIG: JSON.stringify({ model: 'openai/gpt-5.4' }),
       DEFAULT_AUTH_REQUEST: JSON.stringify({
@@ -84,9 +97,11 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
       }),
     }
   }
-  if (id !== 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return undefined
-  if (!apiUrl || !token) return undefined
+  if (id !== 'claude') return Object.keys(native).length ? native : undefined
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return Object.keys(native).length ? native : undefined
+  if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
   return {
+    ...native,
     ANTHROPIC_BASE_URL: `${apiUrl}/router`,
     ANTHROPIC_AUTH_TOKEN: token,
     // Claude Code's release-channel default can be newer than the model exposed

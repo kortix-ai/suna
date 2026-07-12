@@ -6,8 +6,7 @@ import type { AcpHarnessRegistry } from '../acp/harness-registry'
 import { AcpRuntime } from '../acp/runtime'
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import type { Opencode } from '../opencode'
-import { buildOpencodeApp } from '../proxy'
+import { buildAcpApp } from '../proxy'
 
 const TOKEN = 'acp-http-test-token'
 
@@ -52,14 +51,6 @@ function config(cwd: string): Config {
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
   }
-}
-
-function fakeOpencode(): Opencode {
-  return {
-    getState: () => 'starting',
-    getPid: () => null,
-    getInternalUrl: () => 'http://127.0.0.1:1',
-  } as unknown as Opencode
 }
 
 async function readSseEnvelope(
@@ -113,9 +104,8 @@ describe('ACP HTTP bridge', () => {
       }],
     ])
     const runtime = new AcpRuntime({ registry, cwd })
-    const app = buildOpencodeApp(
+    const app = buildAcpApp(
       config(cwd),
-      fakeOpencode(),
       Date.now(),
       { repoMaterializationError: null, timeline: [] },
       undefined,
