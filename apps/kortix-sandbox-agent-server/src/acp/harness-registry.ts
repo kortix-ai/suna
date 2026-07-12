@@ -54,6 +54,17 @@ function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEn
   return parsed
 }
 
+function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
+  if (id !== 'claude' || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return undefined
+  const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
+  const token = env.KORTIX_TOKEN?.trim()
+  if (!apiUrl || !token) return undefined
+  return {
+    ANTHROPIC_BASE_URL: `${apiUrl}/router`,
+    ANTHROPIC_AUTH_TOKEN: token,
+  }
+}
+
 export function createAcpHarnessRegistry(
   env: NodeJS.ProcessEnv = process.env,
 ): AcpHarnessRegistry {
@@ -67,6 +78,7 @@ export function createAcpHarnessRegistry(
         launch: {
           command: env[`${envPrefix(id)}_PATH`]?.trim() || defaults.launch.command,
           args: argsFromEnv(id, defaults.launch.args, env),
+          env: defaultLaunchEnv(id, env),
         },
       }
       return [id, descriptor]
