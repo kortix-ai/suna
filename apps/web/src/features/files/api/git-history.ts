@@ -6,7 +6,7 @@
  * via WebSocket, parse it, and return structured data.
  */
 
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { getPtyWebSocketUrl } from '@/hooks/opencode/use-opencode-pty';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 

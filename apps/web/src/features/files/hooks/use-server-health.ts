@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { requestRuntimeReconnect, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';

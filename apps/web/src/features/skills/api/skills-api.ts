@@ -10,7 +10,7 @@
  * server to rescan skill directories (the skill list is cached at startup).
  */
 
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { uploadFile, mkdir, deleteFile } from '@kortix/sdk/files';
 import type {
   Skill,

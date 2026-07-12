@@ -53,7 +53,7 @@ import {
 import { configKeys } from '@/hooks/opencode/use-opencode-config';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 const FALLBACK_PROVIDER_CARDS: Array<{ id: string; name: string }> = [];

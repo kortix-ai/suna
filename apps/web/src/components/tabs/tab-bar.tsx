@@ -39,7 +39,7 @@ import {
   useOpenCodeSessions,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { childMapByParent } from '@/ui';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import { normalizeAppPathname, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
 import {

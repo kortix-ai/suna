@@ -25,7 +25,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Loader2, Plus, Unplug } from 'lucide-react';
 import { useCallback, useState } from 'react';

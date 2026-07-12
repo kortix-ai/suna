@@ -14,7 +14,7 @@ import { formatModelString } from '@/hooks/opencode/use-opencode-local';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
 import { useIsMobile } from '@/hooks/utils';
-import { getClient } from '@/lib/opencode-sdk';
+import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
