@@ -53,23 +53,48 @@ export function registerDisposableKey(key: string): void {
   disposableKeys.add(key);
 }
 
-function hasWindow(): boolean {
-  // typeof does NOT swallow a throwing accessor: with third-party storage
-  // blocked (iframe partitioning, Safari private mode) reading `localStorage`
-  // itself throws SecurityError, and this runs OUTSIDE the safe* try blocks -
-  // so the probe must catch.
+/**
+ * Resolve the `localStorage` object, or `null` when it is unavailable.
+ *
+ * Browsers expose `localStorage` as an accessor on `window`. In most contexts
+ * where storage is blocked (iframe partitioning, Safari private mode) reading
+ * the accessor THROWS `SecurityError`. But in some embedded in-app WebViews
+ * (e.g. third-party Android `wv` browsers such as the Dola app) the accessor
+ * resolves to `null` instead of throwing — `typeof localStorage` is then
+ * `'object'` (because `typeof null === 'object'`), so the old `typeof … !==
+ * 'undefined'` probe incorrectly reported storage as available. The next direct
+ * `localStorage.getItem(...)` / `.length` / `.key(i)` then threw `TypeError:
+ * Cannot read properties of null (reading 'getItem')`, crashing rendering and
+ * cascading into a generic error captured at the global-error boundary.
+ *
+ * This helper is the single null/throw-safe probe every accessor below routes
+ * through, so a null-storage WebView degrades to "preferences didn't save"
+ * instead of crashing.
+ */
+function getLocalStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
   try {
-    return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+    const storage = window.localStorage;
+    // `typeof null === 'object'` — explicitly reject a null accessor so a
+    // storage-disabled WebView is treated as "no storage", not "storage
+    // available". A real Storage object is never null.
+    return storage === null ? null : storage;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function hasWindow(): boolean {
+  return getLocalStorage() !== null;
 }
 
 /** Every localStorage key currently present (snapshot — safe to mutate during). */
 function allKeys(): string[] {
+  const storage = getLocalStorage();
+  if (!storage) return [];
   const keys: string[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
+  for (let i = 0; i < storage.length; i++) {
+    const k = storage.key(i);
     if (k !== null) keys.push(k);
   }
   return keys;
@@ -99,6 +124,8 @@ function entryTimestamp(raw: string | null): number {
  * under-pressure reclaim and as the eviction order for any single family.
  */
 function disposableEntriesOldestFirst(): Array<{ key: string; t: number }> {
+  const storage = getLocalStorage();
+  if (!storage) return [];
   const entries: Array<{ key: string; t: number }> = [];
   for (const key of allKeys()) {
     if (disposableKeys.has(key)) {
@@ -108,7 +135,7 @@ function disposableEntriesOldestFirst(): Array<{ key: string; t: number }> {
     }
     for (const family of disposableFamilies) {
       if (keyBelongsToFamily(key, family)) {
-        entries.push({ key, t: entryTimestamp(localStorage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(storage.getItem(key)) });
         break;
       }
     }
@@ -160,6 +187,64 @@ export function safeRemoveItem(key: string): void {
   if (!hasWindow()) return;
   try {
     localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Resolve `window.sessionStorage`, or `null` when unavailable. See
+ * `getLocalStorage()` for why a null accessor must be rejected explicitly —
+ * some in-app WebViews resolve the storage accessor to `null` rather than
+ * throwing, which the `typeof … !== 'undefined'` probe most call sites use
+ * does NOT catch (`typeof null === 'object'`).
+ */
+function getSessionStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const storage = window.sessionStorage;
+    return storage === null ? null : storage;
+  } catch {
+    return null;
+  }
+}
+
+// --- sessionStorage -----------------------------------------------------------
+//
+// The marketing site's analytics (GTM route-change tracking) reads/writes
+// `sessionStorage` directly. In storage-disabled in-app WebViews (e.g. the
+// Dola Android `wv` browser) `sessionStorage` is `null`, so a bare
+// `sessionStorage.getItem(...)` throws `TypeError: Cannot read properties of
+// null (reading 'getItem')`, crashing the route-change effect and cascading
+// into a generic error at the global-error boundary. These accessors give the
+// analytics path the same never-throw guarantee the localStorage accessors
+// give the zustand persist stores.
+export function safeSessionGetItem(key: string): string | null {
+  const storage = getSessionStorage();
+  if (!storage) return null;
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function safeSessionSetItem(key: string, value: string): boolean {
+  const storage = getSessionStorage();
+  if (!storage) return false;
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function safeSessionRemoveItem(key: string): void {
+  const storage = getSessionStorage();
+  if (!storage) return;
+  try {
+    storage.removeItem(key);
   } catch {
     /* ignore */
   }
@@ -231,11 +316,12 @@ export class ScopedCache<T> {
 
   /** Drop all but the `maxScopes` most-recently-written scopes in this family. */
   prune(): void {
-    if (!hasWindow()) return;
+    const storage = getLocalStorage();
+    if (!storage) return;
     const entries: Array<{ key: string; t: number }> = [];
     for (const key of allKeys()) {
       if (keyBelongsToFamily(key, this.family)) {
-        entries.push({ key, t: entryTimestamp(localStorage.getItem(key)) });
+        entries.push({ key, t: entryTimestamp(storage.getItem(key)) });
       }
     }
     if (entries.length <= this.maxScopes) return;

@@ -14,6 +14,26 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'Cannot assign to read only property',
 ] as const;
 
+// Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser, UA
+// `… wv … cici;AppName/Dola`) resolve `window.localStorage` / `window.sessionStorage`
+// to `null` instead of throwing. Any call site that still reaches for storage
+// directly then throws `TypeError: Cannot read properties of null (reading
+// 'getItem')` (V8) / `Cannot read property 'getItem' of null` (JSC). The
+// managed-storage layer + the analytics route-change path route through
+// never-throw accessors now, but residual direct call sites elsewhere can still
+// surface this as a breadcrumb/cascade on the marketing site. These are
+// browser-environment failures (storage genuinely unavailable in that WebView),
+// not app defects — `getItem` / `setItem` / `removeItem` are Web Storage API
+// method names, so matching them on a `null` access is safe and specific.
+const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
+  "Cannot read properties of null (reading 'getItem')",
+  "Cannot read properties of null (reading 'setItem')",
+  "Cannot read properties of null (reading 'removeItem')",
+  "Cannot read property 'getItem' of null",
+  "Cannot read property 'setItem' of null",
+  "Cannot read property 'removeItem' of null",
+] as const;
+
 const KNOWN_TEST_NOISE_MESSAGES = [
   'E2E FINAL:',
   'E2E test:',
@@ -118,6 +138,18 @@ export function isKnownBrowserNoiseMessage(message: unknown): boolean {
   return containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES);
 }
 
+/**
+ * Whether a message is the storage-disabled-WebView crash class: a
+ * `null.getItem/setItem/removeItem` `TypeError` from `window.localStorage` /
+ * `window.sessionStorage` being `null` in an embedded in-app browser. These are
+ * browser-environment failures, not app defects (see
+ * `STORAGE_NULL_ACCESS_NOISE_PATTERNS`), so they must never page Better Stack.
+ */
+export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
+}
+
 export function isExtensionSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
@@ -185,6 +217,13 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Storage-disabled in-app WebViews (storage accessor resolves to `null`)
+  // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
+  // noise, never an app defect — drop it.
+  if (isStorageDisabledWebViewNoiseMessage(message)) {
+    return true;
+  }
+
   // Browser-native <img> / next/image load failures can surface as this exact
   // message through window.onerror. Keep this exact: pptx-react-viewer throws
   // actionable errors such as "Failed to load image for colour change
@@ -233,6 +272,13 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   const environment = normalizeString((event as { environment?: unknown }).environment);
 
   if (isKnownBrowserNoiseMessage(message)) {
+    return true;
+  }
+
+  // Storage-disabled in-app WebViews (storage accessor resolves to `null`)
+  // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
+  // noise, never an app defect — drop it at the Sentry gate too.
+  if (isStorageDisabledWebViewNoiseMessage(message)) {
     return true;
   }
 
