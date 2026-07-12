@@ -22,7 +22,6 @@ import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, Ses
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
-import { syncOpenCodeTitlesForSessions } from '../opencode-title-sync';
 import {
   createSession,
   deleteSession,
@@ -497,7 +496,7 @@ projectsApp.openapi(
   const grantsBySession = await loadSessionGrants(
     listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  let visible = listableRows.filter((r) =>
+  const visible = listableRows.filter((r) =>
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,
@@ -505,12 +504,6 @@ projectsApp.openapi(
       subject,
     ),
   );
-  visible = await syncOpenCodeTitlesForSessions({
-    rows: visible,
-    projectId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-  });
   // Owner emails only for sessions someone else owns (for the "shared by" label).
   const ownerIds = [...new Set(visible.map((r) => r.createdBy).filter((id): id is string => !!id && id !== loaded.userId))];
   const emails = await lookupEmailsByUserIds(ownerIds);
@@ -556,17 +549,10 @@ projectsApp.openapi(
 
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
-  const [row] = await syncOpenCodeTitlesForSessions({
-    rows: [visible.row],
-    projectId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-  });
-
   const ownerEmail = visible.row.createdBy && !visible.isOwner
     ? (await lookupEmailsByUserIds([visible.row.createdBy])).get(visible.row.createdBy) ?? null
     : null;
-  return c.json(serializeSession(row ?? visible.row, {
+  return c.json(serializeSession(visible.row, {
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,

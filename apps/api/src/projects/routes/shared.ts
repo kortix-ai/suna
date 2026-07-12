@@ -588,7 +588,6 @@ export async function openSession(args: {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };

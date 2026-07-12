@@ -59,9 +59,6 @@ export function serializeSession(
     ownerEmail?: string | null;
   },
 ): ProjectSession {
-  const runtimeSessions = Array.isArray(row.metadata?.opencode_sessions)
-    ? row.metadata.opencode_sessions
-    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from the runtime server-side
@@ -91,7 +88,7 @@ export function serializeSession(
     status: row.status,
     error: row.error,
     metadata: row.metadata ?? {},
-    runtime_sessions: runtimeSessions,
+    runtime_sessions: [],
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,

@@ -192,7 +192,6 @@ export async function startSession(command: StartSessionCommand) {
           sandboxProvider: projectSessions.sandboxProvider,
           baseRef: projectSessions.baseRef,
           agentName: projectSessions.agentName,
-          opencodeSessionId: projectSessions.opencodeSessionId,
           accountId: projectSessions.accountId,
           metadata: projectSessions.metadata,
         })
@@ -269,7 +268,6 @@ export async function continueSession(
         sandboxProvider: projectSessions.sandboxProvider,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
-        opencodeSessionId: projectSessions.opencodeSessionId,
         accountId: projectSessions.accountId,
         metadata: projectSessions.metadata,
       })

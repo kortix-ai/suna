@@ -119,7 +119,6 @@ export async function restartSession(input: {
     sandboxProvider: string;
     baseRef: string | null;
     agentName: string | null;
-    opencodeSessionId: string | null;
     metadata?: Record<string, unknown> | null;
   };
   projectId: string;
@@ -143,7 +142,8 @@ export async function restartSession(input: {
     .limit(1);
 
   const provisionReplacementRuntime = async () => {
-    const initialPrompt = session.opencodeSessionId
+    const hasRuntimeConversation = typeof session.metadata?.acp_session_id === 'string';
+    const initialPrompt = hasRuntimeConversation
       ? null
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)
