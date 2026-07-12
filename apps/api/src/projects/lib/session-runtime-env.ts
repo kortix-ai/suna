@@ -37,9 +37,9 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // V1/v2 compatibility keeps the old root bootstrap. V3 is ACP-native and
     // must never create a parallel OpenCode HTTP session.
-    ...(compiled?.kind !== 'acp' ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
+    ...(!compiled ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(input.runtimeModel && compiled?.kind !== 'acp'
+    ...(input.runtimeModel && !compiled
       ? { KORTIX_OPENCODE_MODEL: input.runtimeModel }
       : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
@@ -48,9 +48,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // model overrides (KORTIX_OPENCODE_MODEL above, or an explicit model on a
     // prompt request) still win over whatever default model this bakes in —
     // this only sets the manifest agent's/DEFAULT agent's fallback.
-    ...(compiled?.kind === 'opencode-legacy'
-      ? { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(compiled.config) }
-      : {}),
     ...(compiled?.kind === 'acp'
       ? {
           KORTIX_COMPILED_RUNTIME_PLAN: JSON.stringify(compiled),

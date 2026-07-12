@@ -21,24 +21,30 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
   });
 
-  test('carries the compiled JSON through verbatim for a v2 project', () => {
-    const config = { agent: { support: { mode: 'primary' as const } } };
+  test('v2 is launched through the OpenCode ACP adapter', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      compiledRuntimeConfig: { kind: 'opencode-legacy', version: 2, config },
+      compiledRuntimeConfig: {
+        kind: 'acp', version: 2, defaultAgent: 'default',
+        runtimes: { opencode: { name: 'opencode', harness: 'opencode', configDir: '.kortix/opencode' } },
+        agents: { default: { name: 'default', runtime: 'opencode', harness: 'opencode', nativeAgent: 'default', enabled: true, connectors: 'none', secrets: 'none', skills: 'none', kortixCli: 'none', workspace: 'runtime' } },
+      },
     });
-    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(JSON.stringify(config));
+    expect(env.KORTIX_RUNTIME_HARNESS).toBe('opencode');
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
   });
 
-  test('coexists with KORTIX_OPENCODE_MODEL — the per-session override key is unaffected', () => {
-    const config = { agent: {} };
+  test('does not leak the legacy model override into an ACP v2 launch', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
-      compiledRuntimeConfig: { kind: 'opencode-legacy', version: 2, config },
+      compiledRuntimeConfig: {
+        kind: 'acp', version: 2, defaultAgent: 'default',
+        runtimes: { opencode: { name: 'opencode', harness: 'opencode', configDir: '.kortix/opencode' } },
+        agents: { default: { name: 'default', runtime: 'opencode', harness: 'opencode', nativeAgent: 'default', enabled: true, connectors: 'none', secrets: 'none', skills: 'none', kortixCli: 'none', workspace: 'runtime' } },
+      },
       runtimeModel: 'anthropic/claude-opus-4-8',
     });
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
-    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(JSON.stringify(config));
+    expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
   });
 
   test('v3 emits only the selected ACP runtime contract and no OpenCode bootstrap', () => {

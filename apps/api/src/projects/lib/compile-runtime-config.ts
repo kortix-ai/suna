@@ -1,9 +1,9 @@
 /**
  * The single manifest runtime compiler entrypoint.
  *
- * v2 remains a compatibility input and produces the existing OpenCode-native
- * config. v3 produces an ACP launch plan without reading or translating any
- * harness-native behavior files.
+ * Both v2 and v3 produce an ACP launch plan. V2 is mapped to one OpenCode ACP
+ * runtime so existing projects keep their native files without reviving the
+ * removed OpenCode HTTP session protocol.
  */
 
 import {
@@ -19,12 +19,7 @@ import {
   type WorkspaceModeV2,
 } from '@kortix/manifest-schema';
 
-import {
-  agentMarkdownPath,
-  compileAgentConfig,
-  type OpencodeConfig,
-} from './compile-agent-config';
-import { type GitBackedProject, readManifestFromRepo, readRepoFile } from '../git';
+import { type GitBackedProject, readManifestFromRepo } from '../git';
 
 export type RuntimeProfileLaunchPlan = {
   name: string;
@@ -47,19 +42,13 @@ export type LogicalAgentLaunchPlan = {
 
 export type AcpRuntimeLaunchPlan = {
   kind: 'acp';
-  version: 3;
+  version: 2 | 3;
   defaultAgent: string;
   runtimes: Record<string, RuntimeProfileLaunchPlan>;
   agents: Record<string, LogicalAgentLaunchPlan>;
 };
 
-export type LegacyOpenCodeLaunchPlan = {
-  kind: 'opencode-legacy';
-  version: 2;
-  config: OpencodeConfig;
-};
-
-export type CompiledRuntimeConfig = AcpRuntimeLaunchPlan | LegacyOpenCodeLaunchPlan;
+export type CompiledRuntimeConfig = AcpRuntimeLaunchPlan;
 
 const DEFAULT_CONFIG_DIR: Record<HarnessV3, string> = {
   claude: '.claude',
@@ -110,12 +99,40 @@ function compileLogicalAgent(
 
 export function compileRuntimeConfig(
   manifest: Record<string, unknown>,
-  nativeAgentFiles: Record<string, string> = {},
+  _nativeAgentFiles: Record<string, string> = {},
 ): CompiledRuntimeConfig | null {
   const version = schemaVersion(manifest);
   if (version === 2) {
-    const config = compileAgentConfig(manifest, 'opencode', nativeAgentFiles);
-    return config ? { kind: 'opencode-legacy', version: 2, config } : null;
+    const runtimeName = 'opencode';
+    const configDir = typeof (manifest.opencode as Record<string, unknown> | undefined)?.config_dir === 'string'
+      ? String((manifest.opencode as Record<string, unknown>).config_dir)
+      : DEFAULT_CONFIG_DIR.opencode;
+    const runtimes = {
+      [runtimeName]: { name: runtimeName, harness: 'opencode' as const, configDir },
+    };
+    const rawAgents = manifest.agents && typeof manifest.agents === 'object' && !Array.isArray(manifest.agents)
+      ? manifest.agents as Record<string, Record<string, unknown>>
+      : {};
+    const agents: Record<string, LogicalAgentLaunchPlan> = {};
+    for (const [name, block] of Object.entries(rawAgents)) {
+      agents[name] = {
+        name,
+        runtime: runtimeName,
+        harness: 'opencode',
+        nativeAgent: name,
+        enabled: block.enabled !== false,
+        connectors: resolveGrantSet(block.connectors as never, 'none'),
+        secrets: resolveGrantSet(block.secrets as never, 'none'),
+        skills: resolveGrantSet(block.skills as never, 'none'),
+        kortixCli: resolveGrantSet(block.kortix_cli as never, 'none'),
+        workspace: (block.workspace as WorkspaceModeV2 | undefined) ?? 'runtime',
+      };
+    }
+    const defaultAgent = typeof manifest.default_agent === 'string' ? manifest.default_agent : 'kortix';
+    if (!agents[defaultAgent] || !agents[defaultAgent].enabled) {
+      throw new CompileRuntimeConfigError(`Default agent "${defaultAgent}" is not declared and enabled.`);
+    }
+    return { kind: 'acp', version: 2, defaultAgent, runtimes, agents };
   }
   if (version !== 3) return null;
 
@@ -145,9 +162,8 @@ export function compileRuntimeConfig(
 
 /**
  * Read and compile the runtime contract for a session directly from the
- * project's git source of truth. V2 alone reads OpenCode agent markdown;
- * v3 deliberately compiles only logical routing/governance and leaves every
- * harness-native config directory untouched.
+ * project's git source of truth. Native behavior files are never translated;
+ * the selected ACP adapter reads its harness-native config directory directly.
  */
 export async function resolveCompiledRuntimeConfigForSession(
   project: GitBackedProject,
@@ -161,29 +177,10 @@ export async function resolveCompiledRuntimeConfigForSession(
     const version = schemaVersion(raw);
     if (version !== 2 && version !== 3) return null;
 
-    const nativeAgentFiles: Record<string, string> = {};
-    if (version === 2) {
-      const agents = raw.agents;
-      if (agents && typeof agents === 'object' && !Array.isArray(agents)) {
-        await Promise.all(
-          Object.keys(agents).map(async (name) => {
-            const path = agentMarkdownPath(raw, name);
-            try {
-              nativeAgentFiles[path] = await readRepoFile(project, path, project.defaultBranch);
-            } catch (error) {
-              console.warn(
-                `[compile-runtime-config] project ${project.projectId}: failed to read v2 OpenCode agent file "${path}": ${(error as Error).message}`,
-              );
-            }
-          }),
-        );
-      }
-    }
-
-    return compileRuntimeConfig(raw, nativeAgentFiles);
+    return compileRuntimeConfig(raw);
   } catch (error) {
     console.warn(
-      `[compile-runtime-config] project ${project.projectId}: compile failed; session will use the legacy runtime path: ${(error as Error).message}`,
+      `[compile-runtime-config] project ${project.projectId}: compile failed: ${(error as Error).message}`,
     );
     return null;
   }

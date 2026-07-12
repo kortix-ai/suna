@@ -87,14 +87,18 @@ agents:
     });
   });
 
-  test('keeps v2 as an explicit legacy OpenCode compiler result', () => {
+  test('maps v2 to an OpenCode ACP launch plan', () => {
     const plan = compileRuntimeConfig(parseYaml(`
 kortix_version: 2
 default_agent: kortix
 agents:
   kortix: {}
 `) as Record<string, unknown>);
-    expect(plan).toMatchObject({ kind: 'opencode-legacy', version: 2, config: { agent: { kortix: {} } } });
+    expect(plan).toMatchObject({
+      kind: 'acp', version: 2, defaultAgent: 'kortix',
+      runtimes: { opencode: { harness: 'opencode', configDir: '.kortix/opencode' } },
+      agents: { kortix: { runtime: 'opencode', harness: 'opencode', nativeAgent: 'kortix' } },
+    });
   });
 
   test('rejects broken v3 cross references even if a caller skipped validation', () => {
