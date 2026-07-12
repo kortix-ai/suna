@@ -165,6 +165,41 @@ export async function resumeStoppedSandbox(row: {
   return true;
 }
 
+/**
+ * Resume a stopped box addressed by its provider `external_id` (the id in proxy
+ * URLs, `/v1/p/<externalId>/<port>`). Fetches the full row — crucially including
+ * `metadata`, which {@link resumeStoppedSandbox} rewrites — so the sandbox-proxy
+ * data path can wake a hibernated box the SAME way `/start` does when a real user
+ * actively hits the OpenCode runtime. Idempotent: the conditional stopped→active
+ * lock inside `resumeStoppedSandbox` de-dupes the concurrent session.list retries,
+ * so at most one provider start is kicked. Returns true when THIS call won the
+ * resume (false if it wasn't stopped, isn't resumable, or a concurrent call won).
+ */
+export async function resumeStoppedSandboxByExternalId(externalId: string): Promise<boolean> {
+  const [row] = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  if (!row || row.status !== 'stopped' || !row.externalId) return false;
+  return resumeStoppedSandbox({
+    sandboxId: row.sandboxId,
+    sessionId: row.sessionId,
+    accountId: row.accountId,
+    provider: row.provider,
+    externalId: row.externalId,
+    metadata: row.metadata,
+  });
+}
+
 // ── Pre-resume on presence ───────────────────────────────────────────────────
 // Throttle pre-resume per project so portal activity doesn't re-kick on every
 // request. The resume itself is idempotent (resumeStoppedSandbox only acts on a
