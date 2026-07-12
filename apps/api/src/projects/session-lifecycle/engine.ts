@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { executorExecutions, projects, projectSessions } from '@kortix/db';
+import { acpSessionEnvelopes, executorExecutions, projects, projectSessions } from '@kortix/db';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
@@ -8,6 +8,7 @@ import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
 import { awaitTerminalStage } from './await-stage';
 import { deliverWithRetry, type DeliveryTarget } from './deliver';
+import { consumeHeadlessAcpSse, selectHeadlessPermissionOption } from './headless-acp';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -618,8 +619,22 @@ async function postAcpPrompt(input: {
   userId: string;
 }): Promise<boolean> {
   let rpcId = Date.now();
-  const call = async (method: string, params: unknown) => {
-    const request = { jsonrpc: '2.0', id: rpcId++, method, params };
+  const persist = async (
+    direction: 'client_to_agent' | 'agent_to_client',
+    envelope: Record<string, unknown>,
+    streamEventId: number | null = null,
+  ) => {
+    await db.insert(acpSessionEnvelopes).values({
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      runtimeId: input.runtimeId,
+      direction,
+      envelope,
+      streamEventId,
+    }).onConflictDoNothing();
+  };
+  const postEnvelope = async (request: Record<string, unknown>) => {
+    await persist('client_to_agent', request);
     const body = new TextEncoder().encode(JSON.stringify(request));
     const response = await forwardToSandbox(
       input.externalId,
@@ -632,8 +647,15 @@ async function postAcpPrompt(input: {
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );
-    if (!response.ok) throw new Error(`ACP ${method} returned HTTP ${response.status}`);
-    const envelope = await response.json() as { result?: any; error?: { message?: string } };
+    if (!response.ok) throw new Error(`ACP request returned HTTP ${response.status}`);
+    if (response.status === 202 || response.status === 204) return null;
+    const envelope = await response.json() as Record<string, any>;
+    await persist('agent_to_client', envelope);
+    return envelope;
+  };
+  const call = async (method: string, params: unknown) => {
+    const envelope = await postEnvelope({ jsonrpc: '2.0', id: rpcId++, method, params });
+    if (!envelope) throw new Error(`ACP ${method} returned no response`);
     if (envelope.error) throw new Error(envelope.error.message || `ACP ${method} failed`);
     return envelope.result;
   };
@@ -665,10 +687,61 @@ async function postAcpPrompt(input: {
         updatedAt: new Date(),
       }).where(eq(projectSessions.sessionId, input.sessionId));
     }
-    await call('session/prompt', {
-      sessionId: acpSessionId,
-      prompt: [{ type: 'text', text: input.text }],
+    const stream = await forwardToSandbox(
+      input.externalId,
+      DAEMON_PORT,
+      { kind: 'principal', userId: input.userId },
+      'GET',
+      `/acp/${encodeURIComponent(input.runtimeId)}`,
+      '',
+      new Headers({ Accept: 'text/event-stream' }),
+      undefined,
+      config.KORTIX_URL ?? '',
+    );
+    if (!stream.ok || !stream.body) throw new Error(`ACP stream returned HTTP ${stream.status}`);
+    const streamAbort = new AbortController();
+    const streamTask = consumeHeadlessAcpSse(stream.body, async (eventId, envelope) => {
+      await persist('agent_to_client', envelope, eventId);
+      if (!Object.prototype.hasOwnProperty.call(envelope, 'id') || typeof envelope.method !== 'string') return;
+      if (envelope.method === 'session/request_permission') {
+        const optionId = selectHeadlessPermissionOption(envelope.params);
+        await postEnvelope({
+          jsonrpc: '2.0',
+          id: envelope.id,
+          result: {
+            outcome: optionId
+              ? { outcome: 'selected', optionId }
+              : { outcome: 'cancelled' },
+          },
+        });
+        return;
+      }
+      // Headless channels cannot truthfully invent answers to agent
+      // elicitation requests. Fail closed so the turn can terminate cleanly.
+      await postEnvelope({
+        jsonrpc: '2.0',
+        id: envelope.id,
+        error: { code: -32601, message: 'Interactive request unavailable in this headless run' },
+      });
+    }, streamAbort.signal).catch((error) => {
+      if (!streamAbort.signal.aborted) throw error;
     });
+    try {
+      const promptTask = call('session/prompt', {
+        sessionId: acpSessionId,
+        prompt: [{ type: 'text', text: input.text }],
+      });
+      const completed = await Promise.race([
+        promptTask,
+        streamTask.then(() => {
+          throw new Error('ACP event stream closed before the prompt completed');
+        }),
+      ]);
+      if (typeof completed?.stopReason !== 'string') throw new Error('ACP prompt returned no stopReason');
+    } finally {
+      streamAbort.abort();
+      await streamTask;
+    }
     return true;
   } catch (error) {
     console.warn('[session-lifecycle] ACP prompt delivery failed (will retry)', {
