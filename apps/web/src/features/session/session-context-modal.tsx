@@ -19,12 +19,17 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
-import type { MessageWithParts } from '@/ui/types';
+import type {
+  AssistantMessage,
+  Message,
+  MessageWithParts,
+  Part,
+  Session,
+} from '@/ui/types';
 import { childMapByParent, allDescendantIds, getSessionCost, formatCost } from '@kortix/sdk/turns';
 import type { ModelPricingLookup } from '@kortix/sdk/turns';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import type { Session, AssistantMessage, Message, Part } from '@kortix/sdk/opencode-client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 
 // ============================================================================

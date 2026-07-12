@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Part } from '@kortix/sdk/opencode-client';
-
-import { hasUnsettledToolPart } from './idle-reconcile';
+import { hasUnsettledToolPart, type IdleReconcilePart as Part } from './idle-reconcile';
 
 // Minimal tool-part factory — only the fields the predicate reads.
 function toolPart(

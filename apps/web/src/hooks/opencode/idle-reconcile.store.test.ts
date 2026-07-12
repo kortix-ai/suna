@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import type { Message, Part } from '@kortix/sdk/opencode-client';
+import type { Message, Part } from '@/ui/types';
 
 import { useSyncStore } from '@/stores/opencode-sync-store';
 
