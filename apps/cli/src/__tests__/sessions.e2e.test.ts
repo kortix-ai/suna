@@ -241,12 +241,24 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: runningId,
         sandbox_url: `http://127.0.0.1/v1/p/external-${runningId}/8000`,
-        opencode_session_id: 'ses_test',
+        runtime_session_id: 'ses_test',
+        runtime_protocol: 'acp',
         name: 'Digest target',
         agent_name: 'memory-reflector',
         status: 'running',
         error: null,
-        metadata: { opencode_sessions: [{ title: 'Digest target' }] },
+        metadata: {},
+        runtime_sessions: [
+          {
+            id: 'ses_test',
+            title: 'Digest target',
+            parent_id: null,
+            project_id: null,
+            created_at: 0,
+            updated_at: 0,
+            archived_at: null,
+          },
+        ],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:05:00.000Z',
       },
@@ -259,12 +271,14 @@ describe('sessions new CLI flow', () => {
         sandbox_provider: 'daytona',
         sandbox_id: stoppedId,
         sandbox_url: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
+        runtime_protocol: 'acp',
         name: 'Stopped target',
         agent_name: 'default',
         status: 'stopped',
         error: null,
         metadata: {},
+        runtime_sessions: [],
         created_at: '2026-06-20T00:00:00.000Z',
         updated_at: '2026-06-20T00:03:00.000Z',
       },
@@ -280,9 +294,13 @@ describe('sessions new CLI flow', () => {
     expect(transcriptRequests[0]!.searchParams.get('chars')).toBe('120');
 
     const parsed = JSON.parse(stdout) as {
-      sessions: Array<{ transcript: { available: boolean; messages: Array<{ tools: unknown[] }> } }>;
+      sessions: Array<{
+        session: { runtime_titles: string[] };
+        transcript: { available: boolean; messages: Array<{ tools: unknown[] }> };
+      }>;
     };
     expect(parsed.sessions).toHaveLength(2);
+    expect(parsed.sessions[0]!.session.runtime_titles).toEqual(['Digest target']);
     expect(parsed.sessions[0]!.transcript.available).toBe(true);
     expect(parsed.sessions[1]!.transcript.available).toBe(false);
     expect(JSON.stringify(parsed)).not.toContain('must not leak');

@@ -210,7 +210,7 @@ export async function loadOpenCodeSession(
     ...resolved,
     oc,
     proxyId,
-    opencodeSessionId: resolved.session.opencode_session_id,
+    opencodeSessionId: resolved.session.opencode_session_id ?? null,
   };
 }
 

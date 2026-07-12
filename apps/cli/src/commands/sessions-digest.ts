@@ -345,13 +345,10 @@ function summarizeTools(tools: CompactToolCall[]): string {
 }
 
 function runtimeTitles(s: ProjectSession): string[] {
-  const raw = s.metadata?.opencode_sessions;
-  if (!Array.isArray(raw)) return [];
-  return raw
+  return (s.runtime_sessions ?? [])
     .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const title = (entry as { title?: unknown }).title;
-      return typeof title === 'string' && title.trim() ? title.trim() : null;
+      const title = entry.title;
+      return title?.trim() ? title.trim() : null;
     })
     .filter((t): t is string => Boolean(t));
 }

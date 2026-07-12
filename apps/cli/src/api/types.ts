@@ -103,6 +103,16 @@ export type OauthPollResponse =
 
 // ── Sessions ──────────────────────────────────────────────────────────────
 
+export interface ProjectRuntimeSession {
+  id: string;
+  title: string | null;
+  parent_id: string | null;
+  project_id: string | null;
+  created_at: number | null;
+  updated_at: number | null;
+  archived_at: number | null;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -112,12 +122,13 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
-  opencode_session_id: string | null;
+  /** @deprecated Internal compatibility pin for explicit legacy OpenCode attach/shell commands. */
+  opencode_session_id?: string | null;
   runtime_session_id: string | null;
   runtime_protocol?: 'acp' | 'opencode' | null;
   runtime_id?: string | null;
   acp_session_id?: string | null;
-  /** Resolved display name: user-set custom_name, else the auto opencode title. */
+  /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
@@ -132,6 +143,7 @@ export interface ProjectSession {
     | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
+  runtime_sessions?: ProjectRuntimeSession[];
   created_at: string;
   updated_at: string;
 }
