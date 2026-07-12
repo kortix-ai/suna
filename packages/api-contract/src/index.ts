@@ -303,8 +303,6 @@ export const SessionCreateInputSchema = z
     initial_prompt: z.string().optional(),
     model: z.string().min(1).optional(),
     runtime_model: z.string().min(1).optional(),
-    /** @deprecated Use `model`. */
-    opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     session_id: z
       .string()
@@ -324,8 +322,6 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
-    /** @deprecated Use `model`. */
-    opencodeModel: z.string().min(1).optional(),
     sessionId: z
       .string()
       .regex(

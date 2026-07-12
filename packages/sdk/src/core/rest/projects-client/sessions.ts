@@ -75,8 +75,6 @@ export interface CreateProjectSessionInput {
   initial_prompt?: string;
   model?: string;
   runtime_model?: string;
-  /** @deprecated Use `model`. */
-  opencode_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;

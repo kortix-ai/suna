@@ -432,7 +432,7 @@ describe('SessionCreateInputSchema runtime_context', () => {
     ).toBe(false);
   });
 
-  test('retains deprecated camelCase inputs already accepted by the route', () => {
+  test('retains deprecated camelCase inputs already accepted by the route except model', () => {
     expect(
       SessionCreateInputSchema.safeParse({
       baseRef: 'main',
@@ -440,11 +440,12 @@ describe('SessionCreateInputSchema runtime_context', () => {
       sandboxSlug: 'default',
       initialPrompt: 'hello',
       model: 'kortix/auto',
-      opencodeModel: 'kortix/auto',
       sessionId: '11111111-1111-4111-a111-111111111111',
       branchAlreadyCreated: true,
       }).success,
     ).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ opencodeModel: 'kortix/auto' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ opencode_model: 'kortix/auto' }).success).toBe(false);
   });
 });
 
