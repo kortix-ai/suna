@@ -143,8 +143,10 @@ mock.module('../../shared/db', () => ({
             updates.status === 'provisioning' &&
             'config' in updates;
           if (isRecoveryClaim) {
+            const claimed = recoveryPlaceholder;
+            recoveryPlaceholder = false;
             return updateResult(
-              recoveryPlaceholder
+              claimed
                 ? [{
                     sandboxId: SANDBOX_ID,
                     sessionId: SANDBOX_ID,
@@ -318,6 +320,26 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     expect(providerCreateCalls).toBe(1);
     expect(removedIds).toEqual([]);
+    expect(computeSessionsOpened).toHaveLength(1);
+  });
+
+  test('legacy recovery placeholder authorization is single-use under concurrent allocation', async () => {
+    identityConflict = true;
+    recoveryPlaceholder = true;
+    const opened = waitFor((resolve) => { onComputeOpened = resolve; });
+
+    const results = await Promise.allSettled([
+      provisionSessionSandbox(baseOpts()),
+      provisionSessionSandbox(baseOpts()),
+    ]);
+    await opened;
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+      reason: { name: 'RuntimeIdentityConflictError' },
+    });
+    expect(providerCreateCalls).toBe(1);
     expect(computeSessionsOpened).toHaveLength(1);
   });
 

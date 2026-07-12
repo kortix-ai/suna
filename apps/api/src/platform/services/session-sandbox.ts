@@ -283,6 +283,11 @@ export async function provisionSessionSandbox(opts: {
         status: 'provisioning',
         baseUrl: null,
         config: {},
+        // Legacy recovery placeholders may still exist while this release rolls
+        // out. Consume their authorization marker atomically so at most one
+        // allocator can claim the row and call provider.create(). New code never
+        // creates this marker because established identities are fail-closed.
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
         updatedAt: new Date(),
       })
       .where(

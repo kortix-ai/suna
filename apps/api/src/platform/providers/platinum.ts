@@ -25,6 +25,7 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
+  InPlaceRecoveryStatus,
 } from './index';
 import { providerAutoStopBackstopMinutes } from './index';
 
@@ -33,6 +34,8 @@ const AGENT_PORT = 8000;
 interface PlatinumSandbox {
   id: string;
   state?: string;
+  backupState?: string | null;
+  backup_state?: string | null;
 }
 type PlatinumExposedPort = { port: number; url: string; token?: string; public: boolean };
 
@@ -236,6 +239,40 @@ export class PlatinumProvider implements SandboxProvider {
       if (isMissingSandboxError(err)) return 'removed';
       return 'unknown';
     }
+  }
+
+  async recoverInPlace(externalId: string): Promise<InPlaceRecoveryStatus> {
+    let sandbox: PlatinumSandbox;
+    try {
+      sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
+    } catch (err) {
+      return isMissingSandboxError(err) ? 'unavailable' : 'recovering';
+    }
+
+    const state = String(sandbox.state ?? '').toLowerCase();
+    if (state === 'running') return 'running';
+
+    if (state === 'stopped' || state === 'stopping' || state.includes('archiv')) {
+      await this.start(externalId);
+      return 'recovering';
+    }
+
+    // A terminal VM state is not proof of data loss. Platinum continuously
+    // backs up data-bearing disks and can restore that backup onto a healthy
+    // host while retaining the exact sandbox id.
+    if (
+      ['failed-start', 'lost', 'deleted'].includes(state) &&
+      String(sandbox.backupState ?? sandbox.backup_state ?? '').toLowerCase() === 'completed'
+    ) {
+      await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(120_000),
+      });
+      return 'recovering';
+    }
+
+    if (['failed-start', 'lost', 'deleted'].includes(state)) return 'unavailable';
+    return 'recovering';
   }
 
   async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
