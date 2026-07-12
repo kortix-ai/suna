@@ -89,7 +89,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
             <Badge variant="outline" size="sm" className="text-muted-foreground font-mono">
               {agent.source === 'opencode'
                 ? 'OpenCode'
-                : detectManifestVersion(config.manifest_raw) === 2
+                : detectManifestVersion(config.manifest_raw) >= 2
                   ? 'kortix.yaml'
                   : 'kortix.toml'}
             </Badge>

@@ -187,7 +187,7 @@ function AgentEditorModal({
               icon={Layers}
               label="Kortix"
               tone="kortix"
-              description="Identity, model, and platform-enforced governance. Works the same no matter what runtime executes this agent."
+              description="Identity and platform-enforced governance. Works the same no matter what runtime executes this agent."
             />
             <KortixLayerFields
               draft={draft}
