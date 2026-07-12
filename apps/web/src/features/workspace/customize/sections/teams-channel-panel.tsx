@@ -22,6 +22,8 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
   const { data: install, isLoading: loadingInstall } = useTeamsInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useTeamsMode(projectId);
 
+  if (!loadingMode && mode && !mode.enabled) return null;
+
   return (
     <section className="space-y-3">
       <header className="flex items-center gap-2">

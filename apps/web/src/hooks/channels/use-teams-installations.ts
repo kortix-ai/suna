@@ -16,6 +16,7 @@ export interface TeamsInstallation {
 }
 
 export interface TeamsMode {
+  enabled: boolean;
   available: boolean;
   appId: string | null;
   messagingEndpoint: string | null;
@@ -57,6 +58,7 @@ export function useTeamsMode(projectId: string | null) {
     staleTime: 60_000,
     queryFn: async () => {
       const fallback: TeamsMode = {
+        enabled: false,
         available: false,
         appId: null,
         messagingEndpoint: null,

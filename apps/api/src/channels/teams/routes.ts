@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { teamsWebhookApp } from './app';
-import { teamsConfigured } from '../teams-auth';
+import { teamsChannelEnabled, teamsConfigured } from '../teams-auth';
 import { loadTeamsAppIdForProject } from '../install-store';
 import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
@@ -49,11 +49,13 @@ async function processActivity(c: Context, expectedAppId?: string | null): Promi
 }
 
 teamsWebhookApp.post('/messages', async (c) => {
+  if (!teamsChannelEnabled()) return c.json({ error: 'teams channel disabled' }, 404);
   if (!teamsConfigured()) return c.json({ error: 'teams not configured' }, 503);
   return processActivity(c);
 });
 
 teamsWebhookApp.post('/:projectId/messages', async (c) => {
+  if (!teamsChannelEnabled()) return c.json({ error: 'teams channel disabled' }, 404);
   const appId = await loadTeamsAppIdForProject(c.req.param('projectId'));
   if (!appId) return c.json({ error: 'teams not configured for this project' }, 503);
   return processActivity(c, appId);

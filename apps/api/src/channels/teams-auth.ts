@@ -12,6 +12,10 @@ interface CachedToken {
 
 const tokenCache = new Map<string, CachedToken>();
 
+export function teamsChannelEnabled(): boolean {
+  return config.TEAMS_CHANNEL_ENABLED === true;
+}
+
 export function teamsConfigured(): boolean {
   return Boolean(config.MICROSOFT_APP_ID && config.MICROSOFT_APP_PASSWORD);
 }

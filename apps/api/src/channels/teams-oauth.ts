@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../executor/sync';
+import { teamsChannelEnabled } from './teams-auth';
 import { saveTeamsInstall, setTeamsCatalogAppId, setTeamsOrgInstalled } from './install-store';
 import { publishTeamsAppToCatalog } from './teams/catalog';
 
@@ -45,7 +46,7 @@ function verifyState(token: string | undefined): OauthState | null {
 
 export function teamsOrgConsentUrl(input: { projectId: string; baseUrl: string }): string | null {
   const appId = config.MICROSOFT_APP_ID;
-  if (!appId) return null;
+  if (!appId || !teamsChannelEnabled()) return null;
   const redirect = `${input.baseUrl.replace(/\/+$/, '')}/v1/webhooks/teams/oauth/callback`;
   const url = new URL('https://login.microsoftonline.com/organizations/v2.0/adminconsent');
   url.searchParams.set('client_id', appId);
@@ -59,6 +60,7 @@ export const teamsOauthApp = makeOpenApiApp();
 
 teamsOauthApp.get('/callback', async (c: any) => {
   const frontend = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  if (!teamsChannelEnabled()) return c.redirect(`${frontend}/?teams_error=disabled`, 302);
   const state = verifyState(c.req.query('state'));
   if (!state) return c.redirect(`${frontend}/?teams_error=expired`, 302);
 

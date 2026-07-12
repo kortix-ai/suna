@@ -7,6 +7,7 @@ import {
   loadTeamsInstall,
 } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
+import { teamsChannelEnabled } from '../channels/teams-auth';
 /**
  * Auto-materialize channel connectors from platform installs.
  *
@@ -86,10 +87,12 @@ export async function synthesizeChannelConnectors(
     if (install) specs.push(channelSpec('slack', slackSlug));
   }
 
-  const teamsSlug = channelDefaultSlug('teams');
-  if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
-    const install = await loadTeamsInstall(projectId).catch(() => null);
-    if (install) specs.push(channelSpec('teams', teamsSlug));
+  if (teamsChannelEnabled()) {
+    const teamsSlug = channelDefaultSlug('teams');
+    if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
+      const install = await loadTeamsInstall(projectId).catch(() => null);
+      if (install) specs.push(channelSpec('teams', teamsSlug));
+    }
   }
 
   const [project] = await db

@@ -54,6 +54,7 @@ import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { type QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
+import { teamsChannelEnabled } from '../../channels/teams-auth';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
@@ -960,6 +961,7 @@ projectsApp.openapi(
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
   }),
   async (c: any) => {
+    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'manage');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

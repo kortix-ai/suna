@@ -235,6 +235,7 @@ const envSchema = z.object({
   // (the Teams analog of Slack signature verification).
   MICROSOFT_BOT_OPENID_METADATA: optUrl('https://login.botframework.com/v1/.well-known/openidconfiguration'),
   TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
+  TEAMS_CHANNEL_ENABLED: optBoolFalse,
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
@@ -662,6 +663,7 @@ export const config = {
   MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
   MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
   TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
+  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

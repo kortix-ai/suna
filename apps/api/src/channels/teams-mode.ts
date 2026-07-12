@@ -1,7 +1,8 @@
 import { config } from '../config';
-import { teamsConfigured } from './teams-auth';
+import { teamsChannelEnabled, teamsConfigured } from './teams-auth';
 
 export interface TeamsMode {
+  enabled: boolean;
   available: boolean;
   appId: string | null;
   messagingEndpoint: string | null;
@@ -11,10 +12,11 @@ export interface TeamsMode {
 }
 
 export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId?: string | null }): TeamsMode {
+  const enabled = teamsChannelEnabled();
   const byo = Boolean(opts?.byoAppId);
   const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
-  if ((!byo && !teamsConfigured()) || !appId) {
-    return { available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, deepLinkUrl: null, byo };
+  if (!enabled || (!byo && !teamsConfigured()) || !appId) {
+    return { enabled, available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, deepLinkUrl: null, byo };
   }
   const base = baseUrl.replace(/\/$/, '');
   const messagingEndpoint =
@@ -22,6 +24,7 @@ export function teamsMode(baseUrl: string, opts?: { projectId?: string; byoAppId
       ? `${base}/v1/webhooks/teams/${opts.projectId}/messages`
       : `${base}/v1/webhooks/teams/messages`;
   return {
+    enabled,
     available: true,
     appId,
     messagingEndpoint,
