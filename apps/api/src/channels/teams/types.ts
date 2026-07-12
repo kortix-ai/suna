@@ -17,6 +17,8 @@ export interface TeamsActivity {
   replyToId?: string;
   entities?: Array<Record<string, unknown>>;
   name?: string;
+  action?: string;
+  membersAdded?: Array<{ id?: string; aadObjectId?: string }>;
   value?: unknown;
   attachments?: Array<{
     contentType?: string;

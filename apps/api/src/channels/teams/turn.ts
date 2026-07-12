@@ -2,6 +2,7 @@ import { and, eq, lt, sql } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
+import { classifyTurnError, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import type { StreamTaskChunk } from '../slack-api';
 import { sendCard, sendTyping, updateCard } from '../teams-api';
@@ -212,26 +213,32 @@ export async function relayTurnAnswer(sessionId: string, text: string): Promise<
   return true;
 }
 
-export async function relayTurnEnd(sessionId: string, status: 'idle' | 'error' = 'idle'): Promise<boolean> {
+export async function relayTurnEnd(
+  sessionId: string,
+  status: 'idle' | 'error' = 'idle',
+  errorInfo?: TurnErrorInfo,
+): Promise<boolean> {
   const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(
-    handle,
-    status === 'error' ? { error: '_The run hit an error — open the session for details._' } : {},
-  );
+  if (status === 'error') {
+    const classified = classifyTurnError(errorInfo);
+    await finalizeTurn(handle, classified.aborted ? {} : { error: classified.text, title: classified.title });
+  } else {
+    await finalizeTurn(handle, {});
+  }
   await deleteTurn(sessionId);
   return true;
 }
 
 export async function finalizeTurn(
   handle: TeamsLiveTurn,
-  opts: { answer?: string; error?: string },
+  opts: { answer?: string; error?: string; title?: string },
 ): Promise<void> {
   if (handle.finalized && handle.messageActivityId === '' && !opts.answer && !opts.error) return;
   const hasContent = Boolean(opts.answer || opts.error);
   const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
-  const title = opts.error ? 'Run failed' : 'Task complete';
+  const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
   const sessionUrl =
     handle.projectId && handle.sessionId
       ? sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId)

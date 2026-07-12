@@ -1,8 +1,11 @@
 import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
+import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { resolveConversationProject } from './binding';
+import { buildWelcomeCard } from './cards';
 import { handleTeamsCommand, parseTeamsCommand } from './commands';
 import { createOrJoinTeamsConversationSession } from './session';
 import type { TeamsActivity } from './types';
@@ -32,7 +35,43 @@ async function alreadyHandled(activityId: string): Promise<boolean> {
   }
 }
 
+function botWasAdded(activity: TeamsActivity): boolean {
+  const botId = activity.recipient?.id;
+  if (activity.type === 'installationUpdate') return activity.action === 'add';
+  if (activity.type === 'conversationUpdate') {
+    return Boolean(botId && activity.membersAdded?.some((m) => m.id === botId));
+  }
+  return false;
+}
+
+export async function handleTeamsConversationUpdate(activity: TeamsActivity): Promise<void> {
+  if (!botWasAdded(activity)) return;
+  const tenantId = tenantOf(activity);
+  const conversationId = activity.conversation?.id;
+  if (!tenantId || !conversationId || !activity.serviceUrl) return;
+  if (await alreadyHandled(`welcome:${conversationId}`)) return;
+
+  const projectId = await resolveConversationProject(tenantId, conversationId);
+  if (!projectId) return;
+
+  const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
+  await sendCard(
+    {
+      serviceUrl: activity.serviceUrl,
+      conversationId,
+      botId: activity.recipient?.id,
+      fromId: activity.from?.id,
+      tenantId,
+    },
+    buildWelcomeCard({ projectUrl }),
+  );
+}
+
 export async function handleTeamsActivity(activity: TeamsActivity): Promise<void> {
+  if (activity.type === 'conversationUpdate' || activity.type === 'installationUpdate') {
+    await handleTeamsConversationUpdate(activity);
+    return;
+  }
   if (!isActionableMessage(activity)) return;
 
   const tenantId = tenantOf(activity);

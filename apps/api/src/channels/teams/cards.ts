@@ -156,6 +156,15 @@ export function buildPanelCard(opts: {
   return card(elements, actions);
 }
 
+export function buildWelcomeCard(opts: { projectUrl?: string }): Record<string, unknown> {
+  const elements: CardElement[] = [
+    text('Kortix is connected here', { weight: 'bolder', size: 'medium' }),
+    text('@-mention me with a task and an agent gets on it, replying right here with live progress. Type `/help` to see what I can do.'),
+  ];
+  const actions = opts.projectUrl ? [openUrlAction('Open in Kortix', opts.projectUrl)] : undefined;
+  return card(elements, actions);
+}
+
 export function buildHelpCard(commands: Array<{ cmd: string; desc: string }>): Record<string, unknown> {
   const elements: CardElement[] = [text('Kortix commands', { weight: 'bolder', size: 'medium' })];
   for (const c of commands) {

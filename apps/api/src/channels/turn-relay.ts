@@ -39,6 +39,6 @@ export async function relayTurnEnd(
   errorInfo?: TurnErrorInfo,
 ): Promise<boolean> {
   return (await platformFor(sessionId)) === 'teams'
-    ? teams.relayTurnEnd(sessionId, status)
+    ? teams.relayTurnEnd(sessionId, status, errorInfo)
     : slack.relayTurnEnd(sessionId, status, errorInfo);
 }
