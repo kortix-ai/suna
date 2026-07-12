@@ -121,7 +121,7 @@ describe('getPublicSessionMessages', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.transcript.runtime_protocol).toBe('acp');
-    expect(result.transcript.opencode_session_id).toBeNull();
+    expect(result.transcript.runtime_session_id).toBeNull();
     expect(result.transcript.messages.map((message) => [message.role, message.text])).toEqual([
       ['user', 'Hello'],
       ['assistant', 'Hi'],
@@ -144,7 +144,7 @@ describe('getPublicSessionMessages', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
-      expect(result.transcript.opencode_session_id).toBeNull();
+      expect(result.transcript.runtime_session_id).toBeNull();
     }
   });
 

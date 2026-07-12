@@ -96,7 +96,7 @@ export interface CompactPublicMessage {
 export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   runtime_protocol?: 'acp' | 'opencode';
   message_count: number;
   messages: CompactPublicMessage[];
@@ -165,8 +165,8 @@ function compactMessage(msg: RawMessage): CompactPublicMessage {
   };
 }
 
-function unavailable(reason: string, opencodeSessionId: string | null = null): PublicSessionTranscript {
-  return { available: false, reason, opencode_session_id: opencodeSessionId, message_count: 0, messages: [] };
+function unavailable(reason: string, runtimeSessionId: string | null = null): PublicSessionTranscript {
+  return { available: false, reason, runtime_session_id: runtimeSessionId, message_count: 0, messages: [] };
 }
 
 /**
@@ -213,7 +213,7 @@ export async function getPublicSessionMessages(
         available: true,
         reason: null,
         runtime_protocol: 'acp',
-        opencode_session_id: null,
+        runtime_session_id: typeof metadata.acp_session_id === 'string' ? metadata.acp_session_id : null,
         message_count: messages.length,
         messages,
       },
@@ -266,7 +266,7 @@ export async function getPublicSessionMessages(
       transcript: {
         available: true,
         reason: null,
-        opencode_session_id: opencodeSessionId,
+        runtime_session_id: opencodeSessionId,
         message_count: rawMessages.length,
         messages: rawMessages.map(compactMessage),
       },

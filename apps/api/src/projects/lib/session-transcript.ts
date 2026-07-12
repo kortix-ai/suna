@@ -31,7 +31,7 @@ export interface CompactMessage {
 export interface SessionTranscriptDigest {
   available: boolean;
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   message_count: number;
   messages: CompactMessage[];
 }
@@ -89,7 +89,7 @@ export async function buildSessionTranscriptDigest(input: {
     return {
       available: true,
       reason: null,
-      opencode_session_id: null,
+      runtime_session_id: typeof session.metadata?.acp_session_id === 'string' ? session.metadata.acp_session_id : null,
       message_count: messages.length,
       messages,
     };
@@ -97,7 +97,7 @@ export async function buildSessionTranscriptDigest(input: {
   const unavailable = (reason: string): SessionTranscriptDigest => ({
     available: false,
     reason,
-    opencode_session_id: session.opencodeSessionId,
+    runtime_session_id: session.opencodeSessionId,
     message_count: 0,
     messages: [],
   });
@@ -123,7 +123,7 @@ export async function buildSessionTranscriptDigest(input: {
   if (!opencodeSessionId) {
     return {
       ...unavailable(opencodeReason(ensured.reason)),
-      opencode_session_id: null,
+      runtime_session_id: null,
     };
   }
 
@@ -131,7 +131,7 @@ export async function buildSessionTranscriptDigest(input: {
   if (!endpoint) {
     return {
       ...unavailable('sandbox service key unavailable'),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: opencodeSessionId,
     };
   }
 
@@ -149,7 +149,7 @@ export async function buildSessionTranscriptDigest(input: {
     if (!res.ok) {
       return {
         ...unavailable(await messageReadReason(res)),
-        opencode_session_id: opencodeSessionId,
+        runtime_session_id: opencodeSessionId,
       };
     }
     const payload = (await res.json().catch(() => null)) as unknown;
@@ -157,7 +157,7 @@ export async function buildSessionTranscriptDigest(input: {
     return {
       available: true,
       reason: null,
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: opencodeSessionId,
       message_count: rawMessages.length,
       messages: rawMessages.map((m) => compactMessage(m, maxChars)),
     };
@@ -165,7 +165,7 @@ export async function buildSessionTranscriptDigest(input: {
     const message = err instanceof Error ? err.message : String(err);
     return {
       ...unavailable(`could not read sandbox transcript: ${message}`),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: opencodeSessionId,
     };
   }
 }
