@@ -309,6 +309,15 @@ export interface ChannelBindingEffectiveAgent {
   source: 'explicit' | 'project' | 'fallback';
 }
 
+/** Where an effective model came from — mirrors llm-gateway/resolution/effective.ts `ModelSource`. */
+export type ChannelBindingModelSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
+
+export interface ChannelBindingEffectiveModel {
+  /** A concrete gateway wire model id, or null when only the platform default applies (renders as "auto"). */
+  model: string | null;
+  source: ChannelBindingModelSource;
+}
+
 export interface ChannelBinding {
   bindingId: string;
   platform: string;
@@ -321,6 +330,7 @@ export interface ChannelBinding {
   conversationPolicy: ChannelConversationPolicy;
   installedAt: string;
   effectiveAgent: ChannelBindingEffectiveAgent;
+  effectiveModel: ChannelBindingEffectiveModel;
 }
 
 export interface ChannelBindingsResponse {
