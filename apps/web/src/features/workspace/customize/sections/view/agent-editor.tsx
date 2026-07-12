@@ -57,7 +57,7 @@ import {
   type AgentGrantSetV2,
   listConnectors,
   listProjectSecrets,
-  type OpencodeAgentConfig,
+  type OpencodeAgentConfig as RuntimeAgentBehaviorConfig,
   type ProjectConfigSummary,
 } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
@@ -144,15 +144,18 @@ function AgentEditorModal({
       return next;
     });
 
-  // Runtime-layer fields live nested under `draft.opencode` — same
-  // clear-on-empty semantics as `set`, folded into the sub-object.
-  const setOc = <K extends keyof OpencodeAgentConfig>(key: K, value: OpencodeAgentConfig[K]) =>
+  // Runtime-layer v2 behavior fields still live under the legacy `opencode`
+  // manifest key; keep the UI vocabulary runtime-neutral.
+  const setRuntimeBehavior = <K extends keyof RuntimeAgentBehaviorConfig>(
+    key: K,
+    value: RuntimeAgentBehaviorConfig[K],
+  ) =>
     setDraft((d) => {
-      const oc: OpencodeAgentConfig = { ...(d.opencode ?? {}) };
-      if (value === undefined || value === '') delete oc[key];
-      else oc[key] = value;
+      const behavior: RuntimeAgentBehaviorConfig = { ...(d.opencode ?? {}) };
+      if (value === undefined || value === '') delete behavior[key];
+      else behavior[key] = value;
       const next = { ...d };
-      if (Object.keys(oc).length > 0) next.opencode = oc;
+      if (Object.keys(behavior).length > 0) next.opencode = behavior;
       else delete next.opencode;
       return next;
     });
@@ -176,7 +179,7 @@ function AgentEditorModal({
             {schemaVersion === 3 ? (
               <>Logical runtime routing and governance saved to <span className="font-mono">kortix.yaml</span>.</>
             ) : (
-              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.</>
+              <>Governance saves to <span className="font-mono">kortix.yaml</span>; behavior saves to the legacy runtime file <span className="font-mono">.kortix/opencode/agents/{agentName}.md</span>.</>
             )}
           </ModalDescription>
         </ModalHeader>
@@ -248,7 +251,11 @@ function AgentEditorModal({
                 tone="outline"
                 description="Behavior this legacy runtime executes from its native Runtime agent file."
               />
-              <RuntimeLayerFields agentName={agentName} oc={draft.opencode ?? {}} setOc={setOc} />
+              <RuntimeLayerFields
+                agentName={agentName}
+                behavior={draft.opencode ?? {}}
+                setBehavior={setRuntimeBehavior}
+              />
             </div>
           )}
         </ModalBody>

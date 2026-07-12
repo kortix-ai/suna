@@ -17,7 +17,7 @@ import { flattenModels } from '@/features/session/session-chat-input';
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { cn } from '@/lib/utils';
 import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
-import type { OpencodeAgentConfig, PermissionConfig } from '@kortix/sdk/projects-client';
+import type { OpencodeAgentConfig as RuntimeAgentBehaviorConfig, PermissionConfig } from '@kortix/sdk/projects-client';
 import { Gauge, Sliders } from 'lucide-react';
 import { AGENT_MODE_HELP, AGENT_MODES, THEME_COLORS } from './agent-editor-catalog';
 import { FieldRow, SectionHeader, Segmented } from './agent-editor-primitives';
@@ -25,18 +25,18 @@ import { PermissionEditor } from './permission-editor';
 
 export function RuntimeLayerFields({
   agentName,
-  oc,
-  setOc,
+  behavior,
+  setBehavior,
 }: {
   agentName: string;
-  oc: OpencodeAgentConfig;
-  setOc: <K extends keyof OpencodeAgentConfig>(key: K, value: OpencodeAgentConfig[K]) => void;
+  behavior: RuntimeAgentBehaviorConfig;
+  setBehavior: <K extends keyof RuntimeAgentBehaviorConfig>(key: K, value: RuntimeAgentBehaviorConfig[K]) => void;
 }) {
   const { data: providers } = useRuntimeProviders();
   const models = flattenModels(providers);
-  const selectedModelKey = oc.model ? wireToModelKey(oc.model) : null;
+  const selectedModelKey = behavior.model ? wireToModelKey(behavior.model) : null;
   const permCount =
-    typeof oc.permission === 'string' ? 1 : oc.permission ? Object.keys(oc.permission).length : 0;
+    typeof behavior.permission === 'string' ? 1 : behavior.permission ? Object.keys(behavior.permission).length : 0;
 
   return (
     <>
@@ -44,13 +44,13 @@ export function RuntimeLayerFields({
         <SectionHeader icon={Gauge} title="Behavior" />
         <FieldRow
           label="Description"
-          hint={oc.mode === 'subagent' ? 'required for subagents' : 'shown to other agents when picking a subagent'}
+          hint={behavior.mode === 'subagent' ? 'required for subagents' : 'shown to other agents when picking a subagent'}
         >
           <Textarea
-            value={oc.description ?? ''}
+            value={behavior.description ?? ''}
             placeholder="What this agent is for"
             minHeight={44}
-            onChange={(e) => setOc('description', e.target.value)}
+            onChange={(e) => setBehavior('description', e.target.value)}
           />
         </FieldRow>
         <FieldRow label="Model" hint="declarative default; runtime prefs can override">
@@ -59,15 +59,15 @@ export function RuntimeLayerFields({
               models={models}
               providers={providers}
               selectedModel={selectedModelKey}
-              onSelect={(m) => setOc('model', m ? modelKeyToWire(m) : undefined)}
+              onSelect={(m) => setBehavior('model', m ? modelKeyToWire(m) : undefined)}
             />
-            {oc.model ? (
+            {behavior.model ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => setOc('model', undefined)}
+                onClick={() => setBehavior('model', undefined)}
               >
                 Clear
               </Button>
@@ -78,30 +78,30 @@ export function RuntimeLayerFields({
           <div className="space-y-1.5">
             <Segmented
               options={AGENT_MODES.map((m) => ({ value: m, label: m }))}
-              value={oc.mode}
-              onChange={(v) => setOc('mode', v)}
+              value={behavior.mode}
+              onChange={(v) => setBehavior('mode', v)}
               allowUnset
             />
             <p className="text-muted-foreground/60 text-[11px]">
-              {oc.mode ? AGENT_MODE_HELP[oc.mode] : 'Inherits the project default.'}
+              {behavior.mode ? AGENT_MODE_HELP[behavior.mode] : 'Inherits the project default.'}
             </p>
           </div>
         </FieldRow>
         <FieldRow label="Variant" hint="optional model variant">
           <Input
-            value={oc.variant ?? ''}
+            value={behavior.variant ?? ''}
             placeholder="e.g. thinking"
             variant="popover"
             className="h-8 max-w-[240px] text-xs"
-            onChange={(e) => setOc('variant', e.target.value)}
+            onChange={(e) => setBehavior('variant', e.target.value)}
           />
         </FieldRow>
         <FieldRow
           label={
             <>
               Temperature
-              {oc.temperature !== undefined ? (
-                <span className="tabular-nums"> — {oc.temperature}</span>
+              {behavior.temperature !== undefined ? (
+                <span className="tabular-nums"> — {behavior.temperature}</span>
               ) : null}
             </>
           }
@@ -109,20 +109,20 @@ export function RuntimeLayerFields({
         >
           <div className="flex items-center gap-3">
             <Slider
-              value={[oc.temperature ?? 0]}
+              value={[behavior.temperature ?? 0]}
               min={0}
               max={2}
               step={0.05}
               className="max-w-[240px]"
-              onValueChange={([v]) => setOc('temperature', v)}
+              onValueChange={([v]) => setBehavior('temperature', v)}
             />
-            {oc.temperature !== undefined ? (
+            {behavior.temperature !== undefined ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs"
-                onClick={() => setOc('temperature', undefined)}
+                onClick={() => setBehavior('temperature', undefined)}
               >
                 Reset
               </Button>
@@ -133,27 +133,27 @@ export function RuntimeLayerFields({
           label={
             <>
               Top-p
-              {oc.top_p !== undefined ? <span className="tabular-nums"> — {oc.top_p}</span> : null}
+              {behavior.top_p !== undefined ? <span className="tabular-nums"> — {behavior.top_p}</span> : null}
             </>
           }
           hint="nucleus sampling cutoff; leave at 1 unless tuning"
         >
           <div className="flex items-center gap-3">
             <Slider
-              value={[oc.top_p ?? 1]}
+              value={[behavior.top_p ?? 1]}
               min={0}
               max={1}
               step={0.01}
               className="max-w-[240px]"
-              onValueChange={([v]) => setOc('top_p', v)}
+              onValueChange={([v]) => setBehavior('top_p', v)}
             />
-            {oc.top_p !== undefined ? (
+            {behavior.top_p !== undefined ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 className="h-6 px-2 text-xs"
-                onClick={() => setOc('top_p', undefined)}
+                onClick={() => setBehavior('top_p', undefined)}
               >
                 Reset
               </Button>
@@ -164,12 +164,12 @@ export function RuntimeLayerFields({
           <Input
             type="number"
             min={1}
-            value={oc.steps ?? ''}
+            value={behavior.steps ?? ''}
             placeholder="unset"
             variant="popover"
             className="h-8 max-w-[140px] text-xs"
             onChange={(e) =>
-              setOc('steps', e.target.value ? Math.max(1, Number(e.target.value)) : undefined)
+              setBehavior('steps', e.target.value ? Math.max(1, Number(e.target.value)) : undefined)
             }
           />
         </FieldRow>
@@ -177,12 +177,12 @@ export function RuntimeLayerFields({
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex flex-wrap gap-1">
               {THEME_COLORS.map((c) => {
-                const active = oc.color === c;
+                const active = behavior.color === c;
                 return (
                   <button
                     key={c}
                     type="button"
-                    onClick={() => setOc('color', active ? undefined : c)}
+                    onClick={() => setBehavior('color', active ? undefined : c)}
                     className={cn(
                       'rounded-full border px-2 py-1 text-[11px] capitalize transition-[color,background-color,transform] active:scale-[0.96]',
                       active
@@ -198,15 +198,15 @@ export function RuntimeLayerFields({
             <Hint label="Custom hex color">
               <input
                 type="color"
-                value={/^#[0-9a-fA-F]{6}$/.test(oc.color ?? '') ? oc.color : '#7c5cff'}
-                onChange={(e) => setOc('color', e.target.value)}
+                value={/^#[0-9a-fA-F]{6}$/.test(behavior.color ?? '') ? behavior.color : '#7c5cff'}
+                onChange={(e) => setBehavior('color', e.target.value)}
                 className="border-border/70 size-7 shrink-0 cursor-pointer rounded-full border bg-transparent transition-transform active:scale-[0.96]"
                 aria-label="Custom hex color"
               />
             </Hint>
-            {oc.color ? (
+            {behavior.color ? (
               <Badge variant="outline" size="xs" className="font-mono">
-                {oc.color}
+                {behavior.color}
               </Badge>
             ) : null}
           </div>
@@ -218,18 +218,18 @@ export function RuntimeLayerFields({
               Keep this agent out of pickers.
             </p>
           </div>
-          <Switch checked={!!oc.hidden} onCheckedChange={(v) => setOc('hidden', v || undefined)} />
+          <Switch checked={!!behavior.hidden} onCheckedChange={(v) => setBehavior('hidden', v || undefined)} />
         </div>
         <FieldRow
           label="System prompt"
           hint={`saved to .kortix/opencode/agents/${agentName}.md`}
         >
           <Textarea
-            value={oc.prompt ?? ''}
+            value={behavior.prompt ?? ''}
             placeholder="You are..."
             minHeight={160}
             className="font-mono text-xs"
-            onChange={(e) => setOc('prompt', e.target.value)}
+            onChange={(e) => setBehavior('prompt', e.target.value)}
           />
         </FieldRow>
       </section>
@@ -254,8 +254,8 @@ export function RuntimeLayerFields({
           <DisclosureContent variant="outline" contentClassName="border-border border-t">
             <div className="px-3 py-3">
               <PermissionEditor
-                permission={oc.permission}
-                onChange={(next: PermissionConfig | undefined) => setOc('permission', next)}
+                permission={behavior.permission}
+                onChange={(next: PermissionConfig | undefined) => setBehavior('permission', next)}
               />
             </div>
           </DisclosureContent>
