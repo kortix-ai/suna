@@ -802,7 +802,7 @@ export const chatChannelBindings = kortixSchema.table(
     }),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
+    channelId: text('channel_id').notNull(),
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
     pickerTs: varchar('picker_ts', { length: 64 }),
@@ -842,7 +842,7 @@ export const chatThreads = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
@@ -891,7 +891,7 @@ export const chatThreadParticipants = kortixSchema.table(
     participantId: uuid('participant_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
