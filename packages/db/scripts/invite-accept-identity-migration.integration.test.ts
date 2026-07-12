@@ -44,6 +44,8 @@ function dockerPsql(sql: string, allowFailure = false) {
       'testdb',
       '-v',
       'ON_ERROR_STOP=1',
+      '-t',
+      '-A',
     ],
     { stdin: Buffer.from(sql), stdout: 'pipe', stderr: 'pipe' },
   );
@@ -170,8 +172,9 @@ describe.skipIf(!dockerAvailable)('invite_accept_identity migration — real Pos
     expect(result.output).toContain('|');
   });
 
-  test('accept stamps accepted_by_user_id, and a different identity is rejected', () => {
-    // Mirrors the accept handler's stamp + the 409 guard in accounts/invites.ts.
+  test('accept stamps accepted_by_user_id', () => {
+    // Mirrors the accept handler's persisted identity stamp. The API-level 409
+    // guard for a different identity is covered by the accounts contract tests.
     dockerPsql(`
       UPDATE kortix.account_invitations
          SET accepted_at = now(), accepted_by_user_id = '00000000-0000-4000-a000-0000000000aa'
