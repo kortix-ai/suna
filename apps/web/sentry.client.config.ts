@@ -59,6 +59,19 @@ if (SENTRY_DSN) {
       'Server URL not ready',
       'sandbox is still loading',
       'opencode not ready',
+      // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
+      // account / subscription required — the exact strings emitted by
+      // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).
+      // They are user-facing business states handled by a top-up toast / upgrade
+      // dialog (`error-handler.tsx`), but the SDK's `ApiError` can leak to
+      // Sentry through capture paths that bypass `handleApiError`'s 402 guard
+      // (route/system-fault boundaries, `<ClientErrorBoundary>`, and the Sentry
+      // SDK's own `onunhandledrejection`). Drop them at the SDK level too so an
+      // expected billing state never pages Better Stack. Real `ApiError`s keep
+      // reporting — only these exact strings are matched.
+      'Out of credits. Top up to continue.',
+      'No credit account found. Complete account setup first.',
+      'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
