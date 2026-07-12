@@ -1,4 +1,4 @@
-import { platformConfig } from '../platform/config';
+import { platformConfig } from '../core/http/config';
 import { createAcpClient } from './client';
 import type { AcpContentBlock } from './types';
 

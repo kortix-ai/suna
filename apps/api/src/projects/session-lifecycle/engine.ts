@@ -1,24 +1,25 @@
+import { acpSessionEnvelopes, executorExecutions, projectSessions, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { acpSessionEnvelopes, executorExecutions, projects, projectSessions } from '@kortix/db';
 import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { db } from '../../shared/db';
+import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { openSession } from '../routes/shared';
-import { awaitTerminalStage } from './await-stage';
-import { deliverWithRetry, type DeliveryTarget } from './deliver';
 import { consumeHeadlessAcpSse, selectHeadlessPermissionOption } from './headless-acp';
 import { resolveProjectAutomationActor } from './actor';
+import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
+import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
   markCommandFailed,
   markCommandQueued,
   markCommandSucceeded,
   resultFromExistingCommand,
-  type SessionLifecycleCommandRow,
 } from './store';
 import type { QueuedContinueSessionPayload } from './store';
 import type {
@@ -39,7 +40,9 @@ const POLL_INTERVAL_MS = 3_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function createSession(command: CreateSessionCommand): Promise<SessionLifecycleResult> {
+export async function createSession(
+  command: CreateSessionCommand,
+): Promise<SessionLifecycleResult> {
   const queuePolicy = command.queuePolicy ?? 'never';
   const backpressure =
     queuePolicy === 'never'
@@ -47,7 +50,7 @@ export async function createSession(command: CreateSessionCommand): Promise<Sess
       : await sessionBackpressureState(command.project.accountId, command.project.projectId);
   const shouldQueue =
     queuePolicy === 'always' || (queuePolicy === 'on_backpressure' && backpressure?.shouldQueue);
-  const reason = shouldQueue ? backpressure?.reason ?? 'queued by policy' : null;
+  const reason = shouldQueue ? (backpressure?.reason ?? 'queued by policy') : null;
 
   if (!command.idempotencyKey && !shouldQueue) {
     const result = await executeCreateSession(command);
@@ -75,6 +78,30 @@ export async function createSession(command: CreateSessionCommand): Promise<Sess
     reason,
   });
   if (claimed.existing) {
+    const existingPayload = (claimed.row.payload ?? {}) as Record<string, unknown>;
+    const existingBody =
+      existingPayload.body && typeof existingPayload.body === 'object'
+        ? (existingPayload.body as Record<string, unknown>)
+        : {};
+    if (
+      connectorBindingPayloadConflicts(
+        existingBody.connector_bindings,
+        command.body.connector_bindings,
+      )
+    ) {
+      return {
+        status: 'failed',
+        commandId: claimed.row.commandId,
+        retryable: false,
+        error: {
+          status: 409,
+          body: {
+            error: 'Idempotency key was already used with different connector bindings',
+            code: 'IDEMPOTENCY_BINDING_CONFLICT',
+          },
+        },
+      };
+    }
     const existingResult = resultFromExistingCommand(claimed.row);
     if (existingResult.sessionId) {
       const [row] = await db
@@ -214,7 +241,7 @@ export async function continueSession(
   const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
 
-  const userId = command.userId ?? await resolveProjectAutomationActor(session.accountId);
+  const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
@@ -280,9 +307,7 @@ export async function continueSession(
   // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
   // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
   // the old code gave up on the first hiccup and dropped the user's message.
-  const toTarget = (
-    o: NonNullable<Awaited<ReturnType<typeof openOnce>>>,
-  ): DeliveryTarget => ({
+  const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
     opencodeSessionId: o.opencode_session_id,
@@ -313,10 +338,12 @@ export async function continueSession(
   });
 }
 
-export async function drainSessionLifecycleQueue(input: {
+export async function drainSessionLifecycleQueue(
+  input: {
   workerId?: string;
   limit?: number;
-} = {}): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
+  } = {},
+): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   const rows = await claimDueLifecycleCommands({ workerId, limit: input.limit ?? 10 });
   const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
@@ -364,7 +391,9 @@ export async function drainSessionLifecycleQueue(input: {
       );
       out.succeeded += 1;
     } else {
-      const message = String(result.error?.body?.error ?? result.reason ?? 'Failed to create queued session');
+      const message = String(
+        result.error?.body?.error ?? result.reason ?? 'Failed to create queued session',
+      );
       const retryable = result.retryable ?? isRetryableCreateError(result.error?.status);
       await markCommandFailed(row.commandId, message, { retryable, attempts: row.attempts });
       if (retryable) out.queued += 1;
@@ -441,7 +470,9 @@ async function executeQueuedContinue(
   }
 }
 
-async function executeQueuedCreate(row: SessionLifecycleCommandRow): Promise<SessionLifecycleResult> {
+async function executeQueuedCreate(
+  row: SessionLifecycleCommandRow,
+): Promise<SessionLifecycleResult> {
   const payload = row.payload as unknown as QueuedCreateSessionPayload;
   if (row.sessionId) {
     const [session] = await db
@@ -473,7 +504,7 @@ async function executeQueuedCreate(row: SessionLifecycleCommandRow): Promise<Ses
       error: { status: 404, body: { error: 'Project not found' } },
     };
   }
-  const userId = row.actorUserId ?? await resolveProjectAutomationActor(project.accountId);
+  const userId = row.actorUserId ?? (await resolveProjectAutomationActor(project.accountId));
   if (!userId) {
     return {
       status: 'failed',
@@ -496,7 +527,9 @@ async function executeQueuedCreate(row: SessionLifecycleCommandRow): Promise<Ses
   });
 }
 
-async function executeCreateSession(command: CreateSessionCommand): Promise<SessionLifecycleResult> {
+async function executeCreateSession(
+  command: CreateSessionCommand,
+): Promise<SessionLifecycleResult> {
   const metadata = {
     source: command.source,
     ...(command.metadata ?? {}),
@@ -598,7 +631,8 @@ async function postPrompt(
       config.KORTIX_URL ?? '',
     );
     if (res.ok || res.status === 204) return true;
-    if (res.status !== 404) console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+    if (res.status !== 404)
+      console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
     return false;
   } catch (err) {
     // A connection refused/reset while the sandbox finishes resuming — treat as a

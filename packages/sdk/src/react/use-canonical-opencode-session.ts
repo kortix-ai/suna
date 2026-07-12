@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { getProjectSession } from '../platform/projects-client';
+import { getProjectSession } from '../core/rest/projects-client';
 
 import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
 

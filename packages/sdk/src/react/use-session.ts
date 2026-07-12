@@ -3,17 +3,17 @@
 /** Canonical ACP-only Kortix project-session lifecycle hook. */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { BillingError, parseBillingError } from '../platform/api/errors';
-import { isSessionFresh } from '../platform/fresh-sessions';
+import { BillingError, parseBillingError } from '../core/http/api/errors';
+import { isSessionFresh } from '../core/http/fresh-sessions';
 import {
   isSessionStartError,
   type SessionStartResult,
   sessionStartKey,
   startProjectSession,
-} from '../platform/projects-client';
-import { setCurrentRuntime } from '../state/current-runtime';
-import { getSandboxUrlForExternalId } from '../state/server-store';
-import { setOpenCodeHealth, setSandboxStatus } from '../state/sandbox-connection-store';
+} from '../core/rest/projects-client';
+import { setCurrentRuntime } from '../core/session/current-runtime';
+import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
+import { setOpenCodeHealth, setSandboxStatus } from '../browser/stores/sandbox-connection-store';
 import { useAcpSession } from './use-acp-session';
 import { useRuntimePhase } from './use-runtime-phase';
 

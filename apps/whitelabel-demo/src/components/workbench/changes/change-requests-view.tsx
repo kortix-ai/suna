@@ -25,7 +25,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
-import type { ChangeRequest } from '@kortix/sdk/projects-client';
+import type { ChangeRequest } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, GitMerge, GitPullRequest, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { useState } from 'react';

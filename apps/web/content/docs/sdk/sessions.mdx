@@ -1,6 +1,6 @@
 ---
 title: Sessions
-description: The session handle — lifecycle, ACP conversation flow, and the session-owned runtime (health & previews).
+description: The session handle — lifecycle, the session-owned runtime (health & previews), and the typed opencode runtime.
 ---
 
 A **session** is one agent run, in its own disposable sandbox, on its own git
@@ -12,21 +12,20 @@ const s = kortix.session(projectId, sessionId);
 ```
 
 <Callout>
-**Session-scoped, by design.** A session owns its runtime, so you ask the *session*
-about health and previews — never a global "sandbox." The sandbox is plumbing the
-SDK resolves for you.
+  **Session-scoped, by design.** A session owns its runtime, so you ask the *session* about health
+  and previews — never a global "sandbox." The sandbox is plumbing the SDK resolves for you.
 </Callout>
 
 ## Lifecycle
 
 ```ts
-await s.get();                 // session detail
-await s.update({ /* … */ });   // rename, settings
-await s.start();               // provision + boot the runtime
-await s.restart();             // restart the same runtime in place
-await s.stop();                // stop the runtime without deleting the session
-await s.commit();              // commit the agent's work
-await s.setSharing(intent);    // sharing / visibility
+await s.get(); // session detail
+await s.update({/* … */}); // rename, settings
+await s.start(); // provision + boot the runtime
+await s.restart(); // restart the same runtime in place
+await s.stop(); // stop the runtime without deleting the session
+await s.commit(); // commit the agent's work
+await s.setSharing(intent); // sharing / visibility
 await s.delete();
 ```
 
@@ -39,7 +38,7 @@ session itself.
 ### Previews & public shares
 
 ```ts
-await s.previews();            // candidate preview ports the runtime exposes
+await s.previews(); // candidate preview ports the runtime exposes
 await s.publicShares.list();
 await s.publicShares.create(input);
 await s.publicShares.revoke(shareId);
@@ -60,17 +59,17 @@ right read for a scoped/embedded host that only has a session token.
 The session owns its runtime, so these resolve the active sandbox for you — you
 pass a port or a URL, never a sandbox id.
 
-| method | returns | what |
-|---|---|---|
-| `s.health(init?)` | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready |
-| `s.previewUrl(port, path?)` | `string` | proxy/preview URL for a port the agent exposed |
-| `s.proxyUrl(url?)` | `string \| undefined` | rewrite a localhost URL the agent printed into a reachable proxy URL |
+| method                      | returns                        | what                                                                 |
+| --------------------------- | ------------------------------ | -------------------------------------------------------------------- |
+| `s.health(init?)`           | `{ status, ok, health, body }` | runtime liveness + whether OpenCode is ready                         |
+| `s.previewUrl(port, path?)` | `string`                       | proxy/preview URL for a port the agent exposed                       |
+| `s.proxyUrl(url?)`          | `string \| undefined`          | rewrite a localhost URL the agent printed into a reachable proxy URL |
 
 ```ts
 const { ok, health } = await s.health();
 // health?.runtimeReady · health?.status · health?.version …
 
-const url = s.previewUrl(3000, '/docs');       // → the live preview URL
+const url = s.previewUrl(3000, '/docs'); // → the live preview URL
 const fixed = s.proxyUrl('http://localhost:8080');
 ```
 
@@ -80,9 +79,9 @@ do require a resolved runtime; call `s.ensureReady()` first (or `s.send()` /
 `s.abort()`, which call it internally).
 
 <Callout>
-Stateless URL helpers — detecting localhost URLs in agent output, parsing preview
-URLs — live at [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The
-session handle wraps them with the sandbox context already resolved.
+  Stateless URL helpers — detecting localhost URLs in agent output, parsing preview URLs — live at
+  [`@kortix/sdk/session`](/docs/sdk/modules#kortix-sdk-session). The session handle wraps them with
+  the sandbox context already resolved.
 </Callout>
 
 ## Talking to the agent
@@ -95,13 +94,13 @@ whatever sandbox happens to be globally "active" — so two handles on two
 different sessions never cross wires.
 
 ```ts
-await s.ensureReady();                 // provision/resume the runtime; idempotent
-s.setModel({ providerID, modelID });   // sticky model for subsequent send()s
-s.setAgent('build');                   // sticky agent for subsequent send()s
+await s.ensureReady(); // provision/resume the runtime; idempotent
+s.setModel({ providerID, modelID }); // sticky model for subsequent send()s
+s.setAgent('build'); // sticky agent for subsequent send()s
 
-await s.send('Refactor the auth module');           // prompt the agent
-await s.send('One-off task', { model, agent });     // per-call override
-await s.abort();                                     // abort the current run
+await s.send('Refactor the auth module'); // prompt the agent
+await s.send('One-off task', { model, agent }); // per-call override
+await s.abort(); // abort the current run
 ```
 
 Call `s.ensureReady()` (or `send`/`abort`, which call it internally) before
@@ -129,35 +128,34 @@ In a React app, prefer [`useSession(projectId, sessionId)`](/docs/sdk/react#uses
 instead — the hook that owns the whole runtime (start, SSE, readiness) and
 returns the thread, `send`, and the boot `phase`.
 
-### The daemon/runtime escape hatch — `s.runtime`
+### The typed runtime — `s.runtime`
 
-`s.runtime` is the structural daemon/runtime client, scoped to this session and
-reached only through the SDK — the escape hatch for anything not covered by the
-ACP-first `send`/`abort`/`stream` facade. It requires a resolved runtime (call
-`s.ensureReady()` first, or use it after `send`/`abort`/`stream` have run).
+`s.runtime` is the typed **OpenCode v2 client**, scoped to this session and reached
+only through the SDK — the escape hatch for anything not covered by
+`send`/`abort`/`stream`. It requires a resolved runtime (call `s.ensureReady()`
+first, or use it after `send`/`abort`/`stream` have run).
 
 ```ts
 await s.ensureReady();
 
 // Prefer s.send() for conversation prompts; raw daemon calls are escape hatches.
 await s.runtime.session.prompt({
-  sessionID: (await s.ensureReady()).opencodeSessionId,
+  sessionID: (await s.ensureReady()).runtimeSessionId,
   parts: [{ type: 'text', text: 'Refactor the auth module' }],
 });
 ```
 
 <Callout type="warn">
-The OpenCode `sessionID` the runtime expects is **not** the Kortix `sessionId`
-passed to `kortix.session(projectId, sessionId)` — it's resolved server-side at
-`/start` and cached on the handle. Prefer `s.send()` / `s.abort()`, which
-resolve it for you; only reach for raw `s.runtime` calls when you need
-something those wrappers don't cover.
+  The runtime `sessionID` is **not** the Kortix `sessionId` passed to
+  `kortix.session(projectId, sessionId)` — it's resolved server-side through ACP and cached on the
+  handle. Prefer `s.send()` / `s.abort()`, which resolve it for you; only reach for raw runtime
+  calls when you need something those wrappers don't cover.
 </Callout>
 
 <Callout type="warn">
-Never import a native harness SDK directly. ACP is the app/client protocol;
-remaining daemon helpers and structural wire types are owned by
-[`@kortix/sdk/runtime-client`](/docs/sdk/modules#kortix-sdk-runtime-client).
+  Never import a native harness SDK directly. ACP is the app/client protocol; remaining daemon
+  helpers and structural wire types are owned by
+  [`@kortix/sdk/runtime-client`](/docs/sdk/modules#kortix-sdk-runtime-client).
 </Callout>
 
 ## Files — `s.files`

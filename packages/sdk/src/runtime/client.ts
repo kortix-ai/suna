@@ -1,10 +1,7 @@
 /** Provider-neutral sandbox daemon operations. Agent conversations use ACP. */
-export { listEnv, setEnv, deleteEnv, env } from '../opencode/env';
-export { triggersRequest } from '../opencode/triggers';
-export * from '../opencode/kortix-master';
-// Non-conversation daemon APIs (files, git, PTY, provider setup) still share
-// the generated daemon transport while conversations move through ACP.
-// Keep that transport behind this provider-neutral runtime boundary.
+export { listEnv, setEnv, deleteEnv, env } from '../core/runtime/env';
+export { triggersRequest } from '../core/runtime/triggers';
+export * from '../core/runtime/kortix-master';
 export {
   dropClientForUrl as dropRuntimeClientForUrl,
   dropPublicClientForUrl as dropPublicRuntimeClientForUrl,
@@ -17,5 +14,5 @@ export {
   type OpencodeClient as RuntimeClient,
   type SystemReloadMode,
   type SystemReloadResult,
-} from '../opencode/client';
-export type * from './wire-types';
+} from '../core/runtime/client';
+export type * from '../core/runtime/wire-types';

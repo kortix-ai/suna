@@ -1,8 +1,8 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
-import type { Part } from '../../runtime/wire-types';
+import { getClient } from '../../core/runtime/client';
+import type { Part } from '../../core/runtime/wire-types';
 import { unwrap } from './shared';
 
 // ============================================================================

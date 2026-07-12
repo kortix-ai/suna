@@ -15,10 +15,8 @@ import {
   isMissingRuntimeError,
 } from '../routes/shared';
 import {
-  preserveEstablishedRuntime,
+  retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
-  RUNTIME_IDENTITY_UNAVAILABLE,
-  RUNTIME_IDENTITY_ERROR,
 } from '../runtime-identity';
 
 export async function deleteSession(input: {
@@ -205,15 +203,18 @@ export async function restartSession(input: {
     const provider = getProvider(existingSandbox.provider as SandboxProviderName);
     const providerStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
     if (providerStatus === 'removed') {
-      await preserveEstablishedRuntime(existingSandbox, 'restart_removed_runtime');
+      const retired = await retireConfirmedMissingRuntime(
+        existingSandbox,
+        'restart_removed_runtime',
+      );
+      if (retired) await provisionReplacementRuntime();
       return {
-        status: 409,
+        status: 202,
         body: {
-          error: RUNTIME_IDENTITY_ERROR,
-          code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+          ok: true,
           session_id: sessionId,
-          external_id: externalId,
-          reason: RUNTIME_IDENTITY_UNAVAILABLE,
+          status: 'provisioning',
+          reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
         },
       };
     }
@@ -236,6 +237,28 @@ export async function restartSession(input: {
       try {
         await provider.stop(externalId).catch(() => {});
         await provider.start(externalId);
+        // A provider may acknowledge start before discovering that the backing
+        // runtime is gone (observed live with Platinum: POST start succeeded,
+        // the next GET returned removed). Never mark the DB running from command
+        // acceptance alone; verify provider truth first.
+        let verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        for (let attempt = 1; verifiedStatus !== 'running' && verifiedStatus !== 'removed' && attempt < 15; attempt += 1) {
+          await Bun.sleep(1_000);
+          verifiedStatus = await provider.getStatus(externalId).catch(() => 'unknown' as const);
+        }
+        if (verifiedStatus === 'removed') {
+          const retired = await retireConfirmedMissingRuntime(
+            existingSandbox,
+            'restart_post_start_removed',
+          ).catch(() => false);
+          if (retired) await provisionReplacementRuntime();
+          return;
+        }
+        if (verifiedStatus !== 'running') {
+          throw new Error(
+            `Sandbox ${externalId} did not reach running after restart (provider status: ${verifiedStatus})`,
+          );
+        }
         await db
           .update(sessionSandboxes)
           .set({ status: 'active', updatedAt: new Date() })
@@ -247,7 +270,11 @@ export async function restartSession(input: {
       } catch (err) {
         console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
         if (isMissingRuntimeError(err)) {
-          await preserveEstablishedRuntime(existingSandbox, 'restart_missing_runtime').catch(() => {});
+          const retired = await retireConfirmedMissingRuntime(
+            existingSandbox,
+            'restart_missing_runtime',
+          ).catch(() => false);
+          if (retired) await provisionReplacementRuntime();
           return;
         }
         await db

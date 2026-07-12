@@ -663,34 +663,3 @@ export async function sandboxRuntimeReload(
 export async function stopSandboxService(sandboxUrl: string, serviceId: string): Promise<boolean> {
   return sandboxServiceAction(sandboxUrl, serviceId, 'stop');
 }
-
-export interface PtySession {
-  id: string;
-  running: boolean;
-  command?: string;
-  args?: string[];
-  createdAt?: string;
-}
-
-export async function getPtySessions(sandboxUrl: string): Promise<PtySession[]> {
-  try {
-    const token = await getAuthToken();
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`${sandboxUrl}/pty`, { headers, signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!res.ok) return [];
-    const data = await res.json();
-    // Response could be array directly or wrapped
-    if (Array.isArray(data)) return data;
-    if (data?.ptys && Array.isArray(data.ptys)) return data.ptys;
-    if (data?.data && Array.isArray(data.data)) return data.data;
-    return [];
-  } catch {
-    return [];
-  }
-}

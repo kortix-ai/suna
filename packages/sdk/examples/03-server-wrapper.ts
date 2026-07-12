@@ -24,7 +24,7 @@
  * As an npm consumer:
  *   import { createScopedKortix } from '@kortix/sdk/server';
  */
-import { createScopedKortix } from '../src/server';
+import { createScopedKortix } from '../src/node/server';
 
 const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
 const upstreamApiKey = process.env.KORTIX_API_KEY;

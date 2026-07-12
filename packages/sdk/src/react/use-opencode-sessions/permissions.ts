@@ -1,5 +1,5 @@
-import type { PermissionRuleset } from '../../runtime/wire-types';
-import { getClient } from '../../opencode/client';
+import type { PermissionRuleset } from '../../core/runtime/wire-types';
+import { getClient } from '../../core/runtime/client';
 import { unwrap } from './shared';
 
 // ============================================================================

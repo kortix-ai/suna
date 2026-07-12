@@ -1,8 +1,8 @@
 'use client';
 
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
-import type { Command } from '../../runtime/wire-types';
+import { getClient } from '../../core/runtime/client';
+import type { Command } from '../../core/runtime/wire-types';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_COMMANDS } from './shared';
 

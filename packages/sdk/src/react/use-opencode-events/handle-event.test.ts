@@ -44,8 +44,8 @@ mock.module('../../platform/ui', () => ({
 }));
 
 const { createEventHandler } = await import('./handle-event');
-const { useSyncStore } = await import('../../state/sync-store');
-const { useDiagnosticsStore } = await import('../../state/diagnostics-store');
+const { useSyncStore } = await import('../../browser/stores/sync-store');
+const { useDiagnosticsStore } = await import('../../browser/stores/diagnostics-store');
 const { opencodeKeys } = await import('../use-opencode-sessions');
 const { fileListKeys, gitStatusKeys, fileContentKeys } = await import('../file-keys');
 const { ptyKeys } = await import('../use-opencode-pty');
@@ -75,7 +75,7 @@ function buildHandler(overrides: { messagesImpl?: () => Promise<{ data?: unknown
   const fetchLspDiagnosticsDebounced = makeCalls<[]>();
   // `applySyncEvent` is a spy, NOT the real `useSyncStore.getState().applyEvent`
   // — the sync store's OWN reducer behavior is already covered end-to-end in
-  // `../../state/sync-store.test.ts`. Keeping it a spy here means tests below
+  // `../../browser/stores/sync-store.test.ts`. Keeping it a spy here means tests below
   // can seed `useSyncStore` state directly (e.g. a prior `sessionStatus`) to
   // exercise `handle-event.ts`'s OWN branching logic (transition detection,
   // cache writes, notifications) in isolation, instead of that logic being

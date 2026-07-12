@@ -36,9 +36,9 @@
 
 import type { Message, Part } from '../runtime/wire-types';
 import { useCallback, useState } from 'react';
-import { getClient } from '../opencode/client';
-import { ascendingId, useSyncStore } from '../state/sync-store';
-import type { MessageError } from '../state/sync-store/types';
+import { getClient } from '../core/runtime/client';
+import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
+import type { MessageError } from '../browser/stores/sync-store/types';
 import { classifySendError, type KortixSendError } from './use-session';
 import {
   promptOpenCodeMessage,

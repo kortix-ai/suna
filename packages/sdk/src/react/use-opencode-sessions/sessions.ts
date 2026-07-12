@@ -1,10 +1,10 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
-import { isOpenCodeConfigInvalidError } from '../../platform/opencode-errors';
-import { markSessionFresh } from '../../platform/fresh-sessions';
-import { useOpenCodeCompactionStore } from '../../state/opencode-compaction-store';
+import { getClient } from '../../core/runtime/client';
+import { isOpenCodeConfigInvalidError } from '../../core/http/opencode-errors';
+import { markSessionFresh } from '../../core/http/fresh-sessions';
+import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '../../runtime/wire-types';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';

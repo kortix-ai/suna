@@ -26,6 +26,33 @@ Carve-outs where you don't need to ask — just proceed: read-only
 investigation/questions, and trivial single-file typo/comment fixes on the
 current branch.
 
+## Default delivery: PR, merge to main, then prove it on dev
+
+Unless the user explicitly asks for a different delivery path, complete every
+non-trivial change through this full lifecycle:
+
+1. Work on a dedicated branch in an isolated worktree and keep the commit scoped
+   to that change.
+2. Run the relevant local unit, type, integration, and end-to-end checks with
+   real inputs and outputs.
+3. Push the branch, open a PR against `main`, wait for required checks, and merge
+   it. Do not leave finished work only on a branch or stop after opening the PR.
+4. Follow the resulting **Deploy Dev** workflow through completion. Confirm the
+   deployed artifact contains the merged SHA; a successful `/health` response
+   alone is not deployment proof. If a newer push cancels or supersedes the run,
+   verify its path filters still rebuild every affected artifact. Manually
+   dispatch the workflow when necessary to avoid a skipped component.
+5. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
+   `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
+   dev API for CLI/project/session flows, and direct authenticated HTTP calls for
+   API contracts. For web behavior, drive the deployed UI and assert its network
+   request plus visible result.
+
+Local verification and dev verification are both required. A local pass does
+not replace the deployed check, and a dev smoke test does not replace focused
+local tests. Record the PR, merge SHA, deploy run, deployed SHA evidence, and
+exact dev command or interaction in the final response.
+
 ## Architecture: `@kortix/sdk` is the source of truth
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
@@ -33,6 +60,17 @@ Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
 OpenCode runtime, SSE streaming, model state, and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
+
+> **Editing `packages/sdk` itself? Read `packages/sdk/PROGRESS.md` (current state,
+> claim your task) and `packages/sdk/AGENTS.md` (the rules) first.** It is a
+> **published npm package** with its own hard rules that have no analogue
+> elsewhere in this repo: **TDD is mandatory** (failing test first — invoke the
+> `tdd` skill — and every turn ends with the gates run, the real output pasted,
+> and an explicit shippable YES/NO/NOT YET); exported names (including *types*)
+> are a public API contract and renaming one is a breaking change; the `version`
+> field is inert and must never be bumped by hand; adding an export requires
+> three synchronized edits; and the framework-free core is enforced by a static
+> import-graph tripwire.
 
 - **Logic lives in the SDK, never in a host.** No raw `fetch` to the Kortix API,
   no `@opencode-ai/sdk` imports, no transport / runtime / data-state code written

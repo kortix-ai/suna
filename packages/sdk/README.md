@@ -17,13 +17,62 @@ The REST API has an auto-generated reference at
 
 ---
 
+## Install
+
+```bash
+npm install @kortix/sdk
+```
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+await kortix.projects.list();
+```
+
+## No bundler, no framework
+
+The published package ships a browser IIFE bundle alongside its ESM `dist/` —
+no build step required:
+
+```html
+<script src="https://unpkg.com/@kortix/sdk"></script>
+<script>
+  const kortix = Kortix.createKortix({ backendUrl, getToken });
+</script>
+```
+
+> **CORS:** a `<script>` page calls the API from its own origin, so that origin
+> must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
+> are allowed out of the box; any third-party origin (or a local page on another
+> port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
+> blocks the request before it leaves the page.
+
+## Entry points
+
+`@kortix/sdk` is the canonical entry — everything framework-free lives there.
+Three others exist, each for a reason that fits in one sentence:
+
+| Entry | Why it can't live at root |
+|---|---|
+| `@kortix/sdk/react` | React is a peer dependency |
+| `@kortix/sdk/server` | imports `node:async_hooks` |
+| `@kortix/sdk/internal/*` | unsupported, outside semver |
+
+Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
+`@deprecated`. Import from the root instead — see **API-MAP.md**'s Stability
+table for the full list (20 of them).
+
+> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
+> no `response.body`. Tracked; do not depend on it yet.
+
 ## Quick start
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.ai/v1',
+  backendUrl: 'https://api.kortix.com/v1',
   getToken: () => supabase.auth.getSession().then(s => s.data.session?.access_token ?? null),
 });
 
@@ -66,6 +115,47 @@ multi-tenant server-wrapper pattern, headless transcript rendering, cost
 pass-through / re-billing, and session files + project secrets. Each file's
 header comment states the env vars and the exact `bun run examples/….ts`
 invocation.
+
+Wrapper backends can attach bounded, non-secret scalar context when creating a
+session. It is persisted across cold recovery/replacement restart and exposed
+to the agent only as one `KORTIX_SESSION_CONTEXT` JSON envelope:
+
+```ts
+await kortix.project(projectId).sessions.create({
+  runtime_context: { workspace_id: 'org_123', locale: 'de' },
+});
+```
+
+Do not put credentials in this map. For a white-label/backend wrapper, create a
+server-owned connection profile, store its credential through the dedicated
+credential endpoint, and pass only the non-secret profile id at session create:
+
+```ts
+const project = kortix.project(projectId);
+const profile = await project.connectors.profiles.reconcile({
+  connector_alias: 'customer-data',
+  owner_type: 'external',
+  owner_id: wrapperUserId,
+  label: 'Customer data',
+  metadata: { tenant_ref: wrapperTenantReference },
+});
+await project.connectors.profiles.updateCredential(profile.profile_id, {
+  value: shortLivedCapability,
+  kind: 'secret',
+});
+await project.sessions.create({
+  runtime_context: { locale: 'de' },
+  connector_bindings: {
+    'customer-data': { profile_id: profile.profile_id },
+  },
+});
+```
+
+Profiles are project/connector scoped, manager-authorized, and resolved on
+every Executor request. Revocation therefore takes effect without restarting
+the session. The credential is encrypted server-side and is never returned,
+placed in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment.
+Raw env and MCP configuration are not session-create inputs.
 
 `session.stream()` is a thin facade over the framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client

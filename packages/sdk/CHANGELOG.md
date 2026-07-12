@@ -3,6 +3,43 @@
 All notable changes to `@kortix/sdk` are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+- The root entry `@kortix/sdk` is now canonical: it exports the whole
+  framework-free surface (client, session, turns, files, event stream, errors).
+- CDN builds: a minified ESM bundle (`dist/kortix.esm.min.js`) and an IIFE
+  exposing `window.Kortix` (`dist/kortix.global.js`), wired via
+  `publishConfig`'s `browser`/`unpkg`/`jsdelivr` fields. Usable from a
+  `<script>` tag with no bundler.
+- `KortixMasterProject` — the kortix-master daemon's board project.
+- `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
+
+### Deprecated
+- The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
+  `/event-stream`, the stores, …). They still work. Import from the root.
+- The daemon-project `KortixProject` alias — renamed to `KortixMasterProject`.
+  The platform's `KortixProject` (from the root) is unchanged and keeps its name.
+
+### Fixed
+- `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
+  `ReferenceError` in a browser `<script>` bundle and on React Native.
+
+### Internal
+- `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
+  A file's directory declares what it may import, enforced by the tripwire.
+- A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
+  `sessionStorage`) now runs over `core/`, with `safeEnv()` extracted to
+  `core/http/env.ts` as the one sanctioned way to read an env var from
+  isomorphic code.
+- `turns/index.ts` (1434 loc) split into `parts`/`grouping`/`shell`/`state`.
+- CI now packs, installs, and imports the tarball, and asserts the two export
+  maps agree.
+- The install smoke test (`pnpm run smoke:install`) packs `@kortix/llm-catalog`
+  alongside the SDK at a synthetic version and installs both tarballs
+  hermetically, since the `workspace:*` dependency between them gets pinned to
+  the release version at publish time.
+
 ## 0.2.0
 
 Headline: **"Kortix as a Backend"** — everything a third-party server needs to

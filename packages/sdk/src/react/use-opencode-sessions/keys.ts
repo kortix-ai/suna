@@ -1,7 +1,7 @@
 'use client';
 
-import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
-import { getActiveOpenCodeUrl } from '../../state/server-store/active';
+import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
+import { getActiveOpenCodeUrl } from '../../core/session/server-store/active';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { activeServerKey } from './shared';
 import type {

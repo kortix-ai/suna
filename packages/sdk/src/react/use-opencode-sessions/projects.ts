@@ -1,8 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
-import type { Project, Path as PathInfo } from '../../runtime/wire-types';
+import { getClient } from '../../core/runtime/client';
+import type { Project, Path as PathInfo } from '../../core/runtime/wire-types';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap } from './shared';
 

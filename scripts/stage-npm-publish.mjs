@@ -34,8 +34,14 @@ pkg.version = version;
 // 2) Promote the publishConfig layout (dist-pointing) onto the top-level fields
 //    npm reads from the tarball, then drop the now-applied overrides (the rest
 //    of publishConfig — e.g. `access` — stays so npm still honours it).
+//
+//    `browser`/`unpkg`/`jsdelivr` are promoted the same way, if present: npm,
+//    unpkg, and jsDelivr all read these from the TOP-LEVEL manifest only —
+//    nothing consults `publishConfig` for them. A package with no CDN bundle
+//    (e.g. @kortix/llm-catalog) simply has none of these keys in publishConfig,
+//    so the promotion is a no-op for it — if-present, never assumed.
 const pc = pkg.publishConfig ?? {};
-for (const field of ['type', 'main', 'types', 'exports', 'files', 'bin']) {
+for (const field of ['type', 'main', 'types', 'exports', 'files', 'bin', 'browser', 'unpkg', 'jsdelivr']) {
   if (pc[field] !== undefined) {
     pkg[field] = pc[field];
     delete pc[field];
@@ -66,6 +72,9 @@ const add = (v) => {
 };
 add(pkg.main);
 add(pkg.types);
+add(pkg.browser);
+add(pkg.unpkg);
+add(pkg.jsdelivr);
 const walkExports = (entry) => {
   if (typeof entry === 'string') add(entry);
   else if (entry && typeof entry === 'object') for (const v of Object.values(entry)) walkExports(v);
@@ -83,6 +92,9 @@ writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
 console.log(`staged ${pkg.name}@${version} for publish`);
 console.log(`  main:   ${pkg.main ?? '(none)'}`);
 console.log(`  types:  ${pkg.types ?? '(none)'}`);
+if (pkg.browser || pkg.unpkg || pkg.jsdelivr) {
+  console.log(`  browser:${pkg.browser ?? '(none)'}  unpkg:${pkg.unpkg ?? '(none)'}  jsdelivr:${pkg.jsdelivr ?? '(none)'}`);
+}
 console.log(`  files:  ${JSON.stringify(pkg.files ?? [])}`);
 console.log(`  exports:${Object.keys(pkg.exports ?? {}).length} entrypoint(s), all present in dist/`);
 if (pinned.length) console.log(`  pinned: ${pinned.join(', ')}`);

@@ -2,15 +2,15 @@
 
 import type { Event as OpenCodeSdkEvent } from '../../runtime/wire-types';
 import { clearConfigOverrides } from '../use-opencode-config';
-import { saveSessionToIDB } from '../../state/idb-sync-cache';
-import { logger } from '../../platform/logger';
-import { getClient, resetClient } from '../../opencode/client';
-import { useDiagnosticsStore } from '../../state/diagnostics-store';
-import { useOpenCodeCompactionStore } from '../../state/opencode-compaction-store';
-import { useOpenCodePendingStore } from '../../state/opencode-pending-store';
-import { useSyncStore } from '../../state/sync-store';
-import { useSandboxConnectionStore } from '../../state/sandbox-connection-store';
-import { useServerStore } from '../../state/server-store';
+import { saveSessionToIDB } from '../../browser/cache/idb-sync-cache';
+import { logger } from '../../core/http/logger';
+import { getClient, resetClient } from '../../core/runtime/client';
+import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
+import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
+import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
+import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
@@ -19,7 +19,7 @@ import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
 import { releaseMessageRehydrate, reserveMessageRehydrate } from './helpers';
 import { useEventStreamRefs } from './use-event-stream-refs';
-import { openEventStream } from '../../state/event-stream';
+import { openEventStream } from '../../core/stream/event-stream';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and

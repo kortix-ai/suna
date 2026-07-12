@@ -1,8 +1,8 @@
 'use client';
 
-// @kortix/sdk/react — the complete OpenCode React hook surface, relocated
-// verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
-// and type). This is the single source of truth the web UI binds to.
+// @kortix/sdk/react — the complete Kortix React hook surface. Legacy
+// useOpenCode* exports remain only as deprecated compatibility aliases while
+// the implementation moves to ACP/runtime-neutral hooks.
 export * from './opencode';
 
 // ACP session lifecycle and shared runtime error classification.
@@ -24,10 +24,10 @@ export {
   isBillingError,
   formatBillingErrorForUI,
   type BillingErrorUI,
-} from '../platform/api/errors';
+} from '../core/http/api/errors';
 
-// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
-// (exported above via `./opencode`) wraps. Re-exported here too so a host
+// The framework-free SSE event-stream primitive that the session runtime hooks
+// wrap. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
 // (e.g. a non-QueryClient consumer) without a second import from
 // `@kortix/sdk/event-stream`.
@@ -38,7 +38,7 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from '../state/event-stream';
+} from '../core/stream/event-stream';
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six

@@ -82,7 +82,13 @@ export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
  *  (from the reverted daytona→managed rename) — a DB-derived provider can read
  *  back 'managed', and the dual-accept guards resolve it to the Daytona adapter.
  *  Nothing DEFAULTS to or normalizes toward 'managed'. */
-export const SANDBOX_PROVIDERS = ['daytona', 'managed', 'local_docker', 'justavps', 'platinum'] as const;
+export const SANDBOX_PROVIDERS = [
+  'daytona',
+  'managed',
+  'local_docker',
+  'justavps',
+  'platinum',
+] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
 
@@ -146,6 +152,187 @@ export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 export const SESSION_VISIBILITIES = ['private', 'project', 'restricted'] as const;
 export const SessionVisibilitySchema = z.enum(SESSION_VISIBILITIES);
 export type SessionVisibility = z.infer<typeof SessionVisibilitySchema>;
+
+/**
+ * Non-secret, wrapper-supplied context attached durably to one Kortix session.
+ * This is not an environment-variable map: the server serializes the whole
+ * object into one server-owned `KORTIX_SESSION_CONTEXT` JSON envelope.
+ */
+export const SESSION_RUNTIME_CONTEXT_MAX_KEYS = 64;
+export const SESSION_RUNTIME_CONTEXT_MAX_BYTES = 16 * 1024;
+export const SESSION_RUNTIME_CONTEXT_KEY_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
+const SESSION_RUNTIME_CONTEXT_SENSITIVE_KEY_PATTERN =
+  /(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/;
+
+export const SessionRuntimeContextScalarSchema = z.union([
+  z.string().max(4096),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+export type SessionRuntimeContextScalar = z.infer<typeof SessionRuntimeContextScalarSchema>;
+
+export const SessionRuntimeContextSchema = z
+  .record(
+    z
+      .string()
+      .regex(
+        SESSION_RUNTIME_CONTEXT_KEY_PATTERN,
+        'runtime_context keys must start with a lower-case letter and contain only lower-case letters, numbers, dots, dashes, or underscores (max 64 characters)',
+      )
+      .refine(
+        (key) => !SESSION_RUNTIME_CONTEXT_SENSITIVE_KEY_PATTERN.test(key),
+        'runtime_context is non-secret and cannot contain credential-like keys',
+      ),
+    SessionRuntimeContextScalarSchema,
+  )
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > SESSION_RUNTIME_CONTEXT_MAX_KEYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `runtime_context may contain at most ${SESSION_RUNTIME_CONTEXT_MAX_KEYS} entries`,
+      });
+    }
+    const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    if (bytes > SESSION_RUNTIME_CONTEXT_MAX_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `runtime_context must be at most ${SESSION_RUNTIME_CONTEXT_MAX_BYTES} UTF-8 bytes`,
+      });
+    }
+  });
+export type SessionRuntimeContext = z.infer<typeof SessionRuntimeContextSchema>;
+
+export const SESSION_CONNECTOR_BINDINGS_MAX_KEYS = 64;
+export const SessionConnectorBindingSchema = z
+  .object({
+    profile_id: z.string().uuid(),
+  })
+  .strict();
+export type SessionConnectorBinding = z.infer<typeof SessionConnectorBindingSchema>;
+
+export const SessionConnectorBindingsSchema = z
+  .record(
+    z
+      .string()
+      .regex(
+        /^[a-z][a-z0-9_-]{0,127}$/,
+        'connector binding aliases must be lower-case connector slugs',
+      ),
+    SessionConnectorBindingSchema,
+  )
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > SESSION_CONNECTOR_BINDINGS_MAX_KEYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `connector_bindings may contain at most ${SESSION_CONNECTOR_BINDINGS_MAX_KEYS} entries`,
+      });
+    }
+  });
+export type SessionConnectorBindings = z.infer<typeof SessionConnectorBindingsSchema>;
+
+export const ConnectionProfileOwnerTypeSchema = z.enum(['agent', 'member', 'subject', 'external']);
+export const ConnectionProfileStatusSchema = z.enum(['active', 'revoked', 'error']);
+export const ConnectionProfileMetadataSchema = z
+  .record(
+    z
+      .string()
+      .regex(/^[a-z][a-z0-9_.-]{0,63}$/)
+      .refine(
+        (key) =>
+          !/(^|[._-])(token|secret|password|credential|api[_-]?key|private[_-]?key|authorization|cookie)([._-]|$)/.test(
+            key,
+          ),
+        'connection profile metadata is non-secret',
+      ),
+    SessionRuntimeContextScalarSchema,
+  )
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > 64) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'metadata may contain at most 64 entries',
+      });
+    }
+    if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 16 * 1024) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'metadata must be at most 16384 UTF-8 bytes',
+      });
+    }
+  });
+export const ConnectionProfileSchema = z.object({
+  profile_id: z.string().uuid(),
+  connector_alias: z.string(),
+  owner_type: z.enum(['project', 'agent', 'member', 'subject', 'external']),
+  owner_id: z.string().nullable(),
+  label: z.string(),
+  status: ConnectionProfileStatusSchema,
+  is_default: z.boolean(),
+  metadata: ConnectionProfileMetadataSchema,
+});
+export type ConnectionProfile = z.infer<typeof ConnectionProfileSchema>;
+
+export const ReconcileConnectionProfileInputSchema = z
+  .object({
+    connector_alias: z.string().regex(/^[a-z][a-z0-9_-]{0,127}$/),
+    owner_type: ConnectionProfileOwnerTypeSchema,
+    owner_id: z.string().trim().min(1).max(512),
+    label: z.string().trim().min(1).max(255),
+    metadata: ConnectionProfileMetadataSchema.optional(),
+  })
+  .strict();
+export type ReconcileConnectionProfileInput = z.infer<typeof ReconcileConnectionProfileInputSchema>;
+
+export const UpdateConnectionProfileCredentialInputSchema = z
+  .object({
+    value: z.string().min(1).max(65536),
+    kind: z.enum(['secret', 'connection']).optional(),
+  })
+  .strict();
+export type UpdateConnectionProfileCredentialInput = z.infer<
+  typeof UpdateConnectionProfileCredentialInputSchema
+>;
+
+/** Authoritative public body for POST /v1/projects/:projectId/sessions. */
+export const SessionCreateInputSchema = z
+  .object({
+    base_ref: z.string().min(1).optional(),
+    agent_name: z.string().min(1).optional(),
+    sandbox_slug: z.string().min(1).optional(),
+    initial_prompt: z.string().optional(),
+    opencode_model: z.string().min(1).optional(),
+    name: z.string().optional(),
+    session_id: z
+      .string()
+      .regex(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'session_id must be an RFC 4122 v4 UUID',
+      )
+      .optional(),
+    provider: SandboxProviderSchema.optional(),
+    branch_already_created: z.boolean().optional(),
+    metadata: JsonObjectSchema.optional(),
+    runtime_context: SessionRuntimeContextSchema.optional(),
+    connector_bindings: SessionConnectorBindingsSchema.optional(),
+    // Deprecated camelCase compatibility accepted by the pre-contract route.
+    // New SDK/API consumers use the snake_case fields above.
+    baseRef: z.string().min(1).optional(),
+    agentName: z.string().min(1).optional(),
+    sandboxSlug: z.string().min(1).optional(),
+    initialPrompt: z.string().optional(),
+    opencodeModel: z.string().min(1).optional(),
+    sessionId: z
+      .string()
+      .regex(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'sessionId must be an RFC 4122 v4 UUID',
+      )
+      .optional(),
+    branchAlreadyCreated: z.boolean().optional(),
+  })
+  .strict();
+export type SessionCreateInput = z.infer<typeof SessionCreateInputSchema>;
 
 /** A project session as serialized by `serializeSession`. */
 export const ProjectSessionSchema = z.object({

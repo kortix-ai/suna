@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import type { Agent } from '../runtime/wire-types';
 import { useOpenCodeAgents } from './use-opencode-sessions';
-import { featureFlags } from '../platform/feature-flags';
+import { featureFlags } from '../core/http/feature-flags';
 
 /**
  * Project-only agents — surfaced only when the project paradigm is on.

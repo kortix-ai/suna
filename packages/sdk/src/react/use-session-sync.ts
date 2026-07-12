@@ -8,7 +8,7 @@ import type {
 	Todo,
 } from "../runtime/wire-types";
 import { useEffect, useRef } from "react";
-import { getClient } from "../opencode/client";
+import { getClient } from "../core/runtime/client";
 // Inlined verbatim from web's `@/ui/types` — FileDiff is a derived type, NOT
 // exported by ../runtime/wire-types. SDK-port: keep type shape identical.
 type FileDiff = Omit<SnapshotFileDiff, 'patch'> & {
@@ -19,9 +19,9 @@ type FileDiff = Omit<SnapshotFileDiff, 'patch'> & {
 import {
 	type MessageWithParts,
 	useSyncStore,
-} from "../state/sync-store";
-import { useSandboxConnectionStore } from "../state/sandbox-connection-store";
-import { loadSessionFromIDB, saveSessionToIDB } from "../state/idb-sync-cache";
+} from "../browser/stores/sync-store";
+import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
+import { loadSessionFromIDB, saveSessionToIDB } from "../browser/cache/idb-sync-cache";
 import { canQueryOpenCodeSession } from "./use-opencode-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];

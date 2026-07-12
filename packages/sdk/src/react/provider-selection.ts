@@ -1,7 +1,7 @@
 import type { ProviderListResponse as SdkProviderListResponse } from '../runtime/wire-types';
 import { CATALOG } from '@kortix/llm-catalog';
 
-import type { ProjectLlmCatalogResponse } from '../platform/projects-client';
+import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 
 export type ProviderListResponse = SdkProviderListResponse;
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { BillingError } from '../platform/api/errors';
-import { clearSessionFresh, markSessionFresh } from '../platform/fresh-sessions';
-import { SessionStartError } from '../platform/projects-client';
+import { BillingError } from '../core/http/api/errors';
+import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
+import { SessionStartError } from '../core/rest/projects-client';
 import {
   classifySendError,
   sendStateOnError,

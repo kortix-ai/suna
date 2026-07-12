@@ -1,4 +1,4 @@
-import { authenticatedFetch } from '../platform/auth';
+import { authenticatedFetch } from '../core/http/auth';
 import type {
   AcpContentBlock,
   AcpEnvelope,

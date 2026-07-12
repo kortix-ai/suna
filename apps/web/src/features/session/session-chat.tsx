@@ -776,6 +776,14 @@ interface SystemNotification {
   body: string;
 }
 
+/** A message typed while the agent was busy, held client-side until a safe boundary. */
+interface QueuedMessage {
+  id: string;
+  text: string;
+  files?: AttachedFile[];
+  mentions?: TrackedMention[];
+}
+
 /** Parse all remaining XML blocks from text as system notifications. */
 function parseSystemNotifications(text: string): {
   cleanText: string;
@@ -3972,9 +3980,34 @@ export function SessionChat({
     } as any);
   }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
-  // No client-side message queue: sends go straight to the server, which
-  // serializes concurrent prompt_async calls per-session (so sending while the
-  // agent is busy is safe). See SessionChatInput.handleSubmit → onSend.
+  // Client-side message queue — mirrors Claude Code / Codex: a message typed
+  // while the agent is mid-turn is held here instead of being sent straight
+  // through (the OpenCode server would happily accept it immediately, but
+  // interleaving it into a live turn reads badly). It's flushed one at a time
+  // at the next safe boundary: either a tool call finishing, or the turn
+  // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
+  // drain effect below.
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
+  useEffect(() => {
+    queuedMessagesRef.current = queuedMessages;
+  }, [queuedMessages]);
+  // Local, never-sent-to-server counter — separate from `ascendingId`, whose
+  // prefix union ('msg' | 'prt') is meaningful for server-compatible message
+  // ordering and shouldn't grow a prefix for a purely client-side draft id.
+  const queuedIdCounterRef = useRef(0);
+
+  const handleQueueMessage = useCallback(
+    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
+      const id = `queued-${++queuedIdCounterRef.current}`;
+      setQueuedMessages((prev) => [...prev, { id, text, files, mentions }]);
+    },
+    [],
+  );
+
+  const handleRemoveQueuedMessage = useCallback((id: string) => {
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
 
   // Stop polling when session goes idle (via SSE or polling fallback).
   // Grace period: if we sent a message recently (within 5s), don't stop polling
@@ -4674,6 +4707,57 @@ export function SessionChat({
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
 
+  // Drain the ENTIRE queue at once at the next safe boundary — a tool call
+  // finishing (status flips to 'completed' or 'error'), or the turn going
+  // idle (covers the case where a message was queued during what turns out
+  // to be the LAST tool call, with nothing after it to hit). Everything
+  // queued goes out together as soon as one boundary is hit; it does NOT
+  // trickle out one message per subsequent boundary. Tracks tool completions
+  // it's already reacted to in a ref so re-renders don't re-fire.
+  const seenCompletedToolIdsRef = useRef<Set<string>>(new Set());
+  const wasBusyForDrainRef = useRef(isBusy);
+  useEffect(() => {
+    let hitToolBoundary = false;
+    if (messages) {
+      const seen = seenCompletedToolIdsRef.current;
+      for (const m of messages) {
+        if (m.info.role !== 'assistant') continue;
+        for (const part of m.parts) {
+          if (part.type !== 'tool') continue;
+          const status = (part as ToolPart).state?.status;
+          if ((status === 'completed' || status === 'error') && !seen.has(part.id)) {
+            seen.add(part.id);
+            hitToolBoundary = true;
+          }
+        }
+      }
+    }
+
+    const wasBusy = wasBusyForDrainRef.current;
+    wasBusyForDrainRef.current = isBusy;
+    const hitIdleBoundary = wasBusy && !isBusy;
+
+    if (!hitToolBoundary && !hitIdleBoundary) return;
+
+    const queue = queuedMessagesRef.current;
+    if (queue.length === 0) return;
+
+    setQueuedMessages([]);
+    void (async () => {
+      const failed: QueuedMessage[] = [];
+      for (const item of queue) {
+        try {
+          await handleSend(item.text, item.files, item.mentions);
+        } catch {
+          failed.push(item);
+        }
+      }
+      // Send failures are already surfaced via commandError — put any back
+      // so the user doesn't silently lose the queued draft.
+      if (failed.length > 0) setQueuedMessages((cur) => [...failed, ...cur]);
+    })();
+  }, [messages, isBusy, handleSend]);
+
   // NOTE: no client-side "auto-continue after approval" here — resuming the
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
   // (server-side continueSession delivery in r7.ts), so it works with zero
@@ -5276,6 +5360,9 @@ export function SessionChat({
             await handleSend(text, files, mentions);
           }}
           isBusy={isBusy}
+          queuedMessages={queuedMessages}
+          onQueueMessage={handleQueueMessage}
+          onRemoveQueuedMessage={handleRemoveQueuedMessage}
           onStop={handleStop}
           escCount={escCount}
           agents={local.agent.list}
