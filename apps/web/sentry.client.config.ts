@@ -48,6 +48,17 @@ if (SENTRY_DSN) {
       'The operation was aborted',
       // Ad-blocker blocked requests
       'ERR_BLOCKED_BY_CLIENT',
+      // Transient "session runtime not ready" — `RuntimeNotReadyError`
+      // (`[opencode-sdk] Server URL not ready — sandbox is still loading`) from
+      // `getClient()` for the ~1s window before a session's runtime URL pins.
+      // Expected + self-healing on every session switch/provisioning; never an
+      // error. `app/error.tsx` already suppresses the render-path case, but the
+      // throw can also surface via `<ClientErrorBoundary>`, `route-error`/
+      // `system-fault`, the network branch of `error-handler`, and unhandled
+      // promise rejections — drop them all here.
+      'Server URL not ready',
+      'sandbox is still loading',
+      'opencode not ready',
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",

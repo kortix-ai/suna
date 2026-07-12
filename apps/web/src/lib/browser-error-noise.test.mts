@@ -5,6 +5,7 @@ import {
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
+  isRuntimeNotReadyNoiseMessage,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -192,4 +193,84 @@ test('suppresses the Better Stack Promise.then incident event', () => {
 test('flags the injected embed widget source as third-party noise', () => {
   assert.equal(isInjectedAppSource('app:///embed/embed.js'), true)
   assert.equal(isInjectedAppSource('app:///_next/static/chunks/main.js'), false)
+})
+
+// Reproduces the Kortix Frontend (prod) RuntimeNotReadyError cluster (patterns
+// 1a9acfd0…, 4c20d52d…, 7e2697b4…, a58cd1cb…, …). `getClient()` throws
+// `RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is
+// still loading` for the ~1s window before a session's runtime URL pins — an
+// expected, self-healing state on every session switch/provisioning. The
+// render-path UI handling lives in `app/error.tsx` + `SandboxLoadingBoundary`,
+// but the throw can also reach Sentry through `<ClientErrorBoundary>`,
+// `route-error`/`system-fault`, the network branch of `error-handler`, and
+// unhandled promise rejections. The filter below is the telemetry-side
+// backstop that drops it regardless of capture path.
+const RUNTIME_NOT_READY_EVENTS = [
+  // The canonical SDK throw (RuntimeNotReadyError).
+  'RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is still loading',
+  // The bare message (env.ts path / re-wrapped).
+  '[opencode-sdk] Server URL not ready — sandbox is still loading',
+  // The pty guard variant.
+  '[kortix-pty] Server URL not ready — sandbox is still loading',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: Server URL not ready — sandbox is still loading',
+  // The "opencode not ready" sibling wording used by env/pty guards.
+  'opencode not ready — sandbox is still starting',
+]
+
+test('classifies every runtime-not-ready variant as transient noise', () => {
+  for (const message of RUNTIME_NOT_READY_EVENTS) {
+    assert.equal(
+      isRuntimeNotReadyNoiseMessage(message),
+      true,
+      `expected ${message} to be classified as runtime-not-ready noise`,
+    )
+  }
+})
+
+test('suppresses a runtime-not-ready Sentry event regardless of capture path', () => {
+  for (const value of RUNTIME_NOT_READY_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects/p/sessions/s' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [{ filename: 'app:///_next/static/chunks/sdk.js' }],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a runtime-not-ready unhandled rejection from the browser', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        'Unhandled promise rejection: [opencode-sdk] Server URL not ready — sandbox is still loading',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a genuine runtime/server error that is not the transient not-ready state', () => {
+  assert.equal(
+    isRuntimeNotReadyNoiseMessage('Error: the OpenCode daemon crashed mid-turn (exit code 1)'),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [{ value: 'TypeError: Cannot read properties of undefined (reading id)' }],
+      },
+    }),
+    false,
+  )
 })

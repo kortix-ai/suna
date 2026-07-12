@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from 'next-intl';
 import type { ErrorInfo } from 'react';
@@ -59,6 +60,15 @@ class ErrorBoundaryInner extends Component<InnerProps, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // Transient "session runtime not ready" is an expected, self-healing info
+    // state (every session switch/provisioning window) — never an error. The
+    // global `app/error.tsx` boundary already suppresses it for the route
+    // segment; mirror that here so a subtree wrapped in this boundary doesn't
+    // page Better Stack for the same transient throw. The Sentry `ignoreErrors`
+    // list + `beforeSend` filter back this up at the SDK level.
+    if (isRuntimeNotReadyNoiseMessage(error?.message)) {
+      return;
+    }
     Sentry.captureException(error, {
       extra: { componentStack: info.componentStack },
     });
