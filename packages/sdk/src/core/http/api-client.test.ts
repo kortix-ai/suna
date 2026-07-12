@@ -64,3 +64,63 @@ describe('makeRequest admin-bypass header', () => {
     }
   });
 });
+
+// Regression for prod TypeError "t.message.includes is not a function": a
+// backend 4xx body whose `message` (or `detail.message`) is a non-string
+// value used to flow straight into `new ApiError(message, …)`, and from there
+// into `error.message.includes(...)` call sites (file-list retry callbacks,
+// provider disconnect, error-handler) which crashed. `errorMessage` must stay
+// a string regardless of the response body shape.
+describe('makeRequest keeps ApiError.message a string for non-string body fields', () => {
+  function stubErrorBody(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a non-string top-level `message` (object) does not become ApiError.message', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(403, { message: { code: 'FORBIDDEN' } });
+    try {
+      const res = await backendApi.get('/projects/abc/files');
+      expect(res.success).toBe(false);
+      expect(typeof res.error?.message).toBe('string');
+      // The default fallback (`HTTP 403: …`) is used instead of the object.
+      expect(res.error?.message.includes('403')).toBe(true);
+      expect(() => res.error?.message.includes('404')).not.toThrow();
+    } finally {
+      restore();
+    }
+  });
+
+  test('a non-string `detail.message` (number) does not become ApiError.message', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(404, { detail: { message: 404 } });
+    try {
+      const res = await backendApi.get('/projects/abc/files');
+      expect(res.success).toBe(false);
+      expect(typeof res.error?.message).toBe('string');
+      expect(res.error?.message.includes('404')).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a real string `message` is still used verbatim', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const restore = stubErrorBody(403, { message: 'Not allowed to read project files' });
+    try {
+      const res = await backendApi.get('/projects/abc/files');
+      expect(res.success).toBe(false);
+      expect(res.error?.message).toBe('Not allowed to read project files');
+    } finally {
+      restore();
+    }
+  });
+});
