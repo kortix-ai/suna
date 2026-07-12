@@ -27,13 +27,11 @@
 
 export interface SessionRuntimeEntry {
   /** Canonical transport selected by the project manifest/runtime daemon. */
-  runtimeProtocol?: 'acp' | 'opencode';
+  runtimeProtocol: 'acp';
   /** Runtime process/server id used to address the ACP HTTP bridge. */
   runtimeId?: string;
   /** Runtime conversation id. Null until ACP session/new succeeds. */
   runtimeSessionId?: string | null;
-  /** Temporary v1/v2 compatibility alias. Null for ACP sessions. */
-  opencodeSessionId: string | null;
   /** This session's resolved runtime proxy URL (`${backendUrl}/p/{externalId}/8000`). */
   runtimeUrl: string;
   /** The sandbox's provider external id (Daytona id). */

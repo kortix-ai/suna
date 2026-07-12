@@ -1,4 +1,3 @@
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import { AcpClient, createAcpClient, type AcpStreamHandle } from './acp';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
@@ -18,7 +17,6 @@ import { AcpClient, createAcpClient, type AcpStreamHandle } from './acp';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from './files/client';
-import { getClient, getClientForUrl } from './opencode/client';
 import { ApiError } from './platform/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from './platform/config';
 import * as P from './platform/projects-client';
@@ -31,19 +29,6 @@ import {
   type SessionRuntimeEntry,
 } from './state/session-runtime-registry';
 import { getSandboxUrlForExternalId } from './state/server-store/url-helpers';
-import {
-  openEventStream,
-  type EventStreamHandle,
-  type OpenCodeEvent,
-} from './state/event-stream';
-
-/** A model the agent can run, as the opencode runtime identifies it. */
-export type SessionModel = { providerID: string; modelID: string };
-
-/** The opencode runtime client for the currently-active sandbox (set by the host). */
-function runtime(): OpencodeClient {
-  return getClient();
-}
 
 /**
  * Thrown by a session handle's runtime-scoped operations (`.runtime`,
@@ -631,8 +616,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     // record — never the module-global "currently active" runtime — so two
     // session handles pointed at two different sandboxes never cross wires.
     let _ready: SessionRuntimeEntry | null = null;
-    let _model: SessionModel | undefined;
-    let _agent: string | undefined;
     let _acpClient: AcpClient | null = null;
     let _acpSessionId: string | null = null;
 
@@ -678,10 +661,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       const startPromise = (async (): Promise<SessionRuntimeEntry> => {
         const started = await P.startProjectSession(projectId, sessionId, 30_000);
-        const runtimeProtocol = started?.runtime_protocol ?? (started?.opencode_session_id ? 'opencode' : null);
-        const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id ?? null;
+        const runtimeProtocol = started?.runtime_protocol ?? null;
+        const runtimeSessionId = started?.runtime_session_id ?? null;
         const runtimeId = started?.runtime_id ?? runtimeSessionId;
-        if (!started || started.stage !== 'ready' || !started.sandbox || !runtimeProtocol || !runtimeId) {
+        if (!started || started.stage !== 'ready' || !started.sandbox || runtimeProtocol !== 'acp' || !runtimeId) {
           throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
             code: 'RUNTIME_UNAVAILABLE',
           });
@@ -701,7 +684,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           runtimeProtocol,
           runtimeId,
           runtimeSessionId,
-          opencodeSessionId: started.opencode_session_id,
           runtimeUrl,
           sandboxId: externalId,
         };
@@ -739,8 +721,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ready: SessionRuntimeEntry;
     }> {
       const ready = await ensureReady();
-      if ((ready.runtimeProtocol ?? 'opencode') !== 'acp') {
-        throw new ApiError('Session uses the legacy OpenCode runtime, not ACP', {
+      if (ready.runtimeProtocol !== 'acp') {
+        throw new ApiError('Session did not start an ACP runtime', {
           code: 'RUNTIME_PROTOCOL_MISMATCH',
         });
       }
@@ -840,50 +822,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
       // the runtime is up, resolve the OpenCode session id, and act through a
-      // client bound to THIS handle's own runtime URL (never the module-global
-      // "active" one, so parallel handles on different sandboxes never cross
-      // wires). React hosts use `@kortix/sdk/react` hooks instead, which bind to
-      // the same resolved id reactively (see the white-label reference app).
-      /** Pick the model `send` will use for subsequent prompts (until changed). */
-      setModel: (model: SessionModel | undefined) => {
-        _model = model;
-      },
-      /** Pick the agent `send` will use for subsequent prompts (until changed). */
-      setAgent: (agent: string | undefined) => {
-        _agent = agent;
-      },
-      /**
-       * Provision/resume if needed, then send a text prompt to the agent. A
-       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
-       * choices for this message only.
-       */
-      send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const ready = await ensureReady();
-        if (ready.runtimeProtocol === 'acp') {
-          const { client, acpSessionId } = await ensureAcpSession();
-          return client.prompt(acpSessionId, [{ type: 'text', text }]);
-        }
-        const { opencodeSessionId, runtimeUrl } = ready;
-        if (!opencodeSessionId) throw new ApiError('Legacy OpenCode session id is missing');
-        const model = opts?.model ?? _model;
-        const agent = opts?.agent ?? _agent;
-        return getClientForUrl(runtimeUrl).session.prompt({
-          sessionID: opencodeSessionId,
-          parts: [{ type: 'text', text }],
-          ...(model ? { model } : {}),
-          ...(agent ? { agent } : {}),
-        });
+      // ACP is the sole client-to-agent contract. Harness-native model and
+      // agent selection live in the selected runtime's own config directory.
+      send: async (text: string) => {
+        const { client, acpSessionId } = await ensureAcpSession();
+        return client.prompt(acpSessionId, [{ type: 'text', text }]);
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const ready = await ensureReady();
-        if (ready.runtimeProtocol === 'acp') {
-          const { client, acpSessionId } = await ensureAcpSession();
-          return client.cancel(acpSessionId);
-        }
-        const { opencodeSessionId, runtimeUrl } = ready;
-        if (!opencodeSessionId) throw new ApiError('Legacy OpenCode session id is missing');
-        return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
+        const { client, acpSessionId } = await ensureAcpSession();
+        return client.cancel(acpSessionId);
       },
       /**
        * Live SSE stream of THIS session's runtime events (message/part
@@ -905,17 +853,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *   handle.close();
        */
       stream: async (opts: {
-        onEvent: (event: OpenCodeEvent) => void;
-        onGapRehydrate?: (gapMs: number) => void;
+        onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
+        onError?: Parameters<AcpClient['connect']>[0]['onError'];
         signal?: AbortSignal;
-      }): Promise<EventStreamHandle> => {
-        const { runtimeUrl } = await ensureReady();
-        return openEventStream({
-          client: getClientForUrl(runtimeUrl),
-          onEvent: opts.onEvent,
-          onGapRehydrate: opts.onGapRehydrate,
-          signal: opts.signal,
-        });
+        lastEventId?: number;
+      }): Promise<AcpStreamHandle> => {
+        const { client } = await ensureAcpSession();
+        return client.connect(opts);
       },
 
       /** ACP-native runtime transport for v3 sessions. */
@@ -933,14 +877,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         sessionId: async () => (await ensureAcpSession()).acpSessionId,
         respond: async (...args: Parameters<AcpClient['respond']>) =>
           (await ensureAcpSession()).client.respond(...args),
-      },
-
-      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
-      // The typed opencode client, reached ONLY through the SDK. The host never
-      // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
-      // with server-owned side-effects) layer on top of this as they land.
-      get runtime(): OpencodeClient {
-        return getClientForUrl(requireReady('runtime').runtimeUrl);
       },
 
       /**
@@ -1000,8 +936,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     marketplace,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
-    /** Escape hatch: the typed opencode client for the active sandbox. */
-    runtime,
   };
 }
 

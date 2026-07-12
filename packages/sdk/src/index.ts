@@ -35,7 +35,6 @@ export {
   type Kortix,
   type ProjectHandle,
   type SessionHandle,
-  type SessionModel,
 } from './kortix';
 
 /** Workspace file operations (daemon `/file` + `/find`), owned by the SDK. */

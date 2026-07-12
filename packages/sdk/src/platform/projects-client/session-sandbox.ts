@@ -130,15 +130,14 @@ export async function startProjectSession(
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  const runtimeSessionId = result.runtime_session_id ?? result.opencode_session_id;
+  const runtimeSessionId = result.runtime_session_id;
   const runtimeId = result.runtime_id ?? runtimeSessionId;
-  const runtimeProtocol = result.runtime_protocol ?? (result.opencode_session_id ? 'opencode' : null);
-  if (result.stage === 'ready' && externalId && runtimeId && runtimeProtocol) {
+  const runtimeProtocol = result.runtime_protocol;
+  if (result.stage === 'ready' && externalId && runtimeId && runtimeProtocol === 'acp') {
     setSessionRuntime(projectId, sessionId, {
       runtimeProtocol,
       runtimeId,
       runtimeSessionId,
-      opencodeSessionId: result.opencode_session_id,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
     });

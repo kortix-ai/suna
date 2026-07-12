@@ -145,7 +145,7 @@ test('startProjectSession returns the parsed result even when stage is not ready
   expect(getSessionRuntime(PROJECT, SESSION)).toBeUndefined();
 });
 
-test('startProjectSession populates the shared session-runtime registry once stage is ready with a sandbox external_id + opencode_session_id', async () => {
+test('startProjectSession populates the shared session-runtime registry for an ACP runtime', async () => {
   nextResponse = {
     status: 200,
     body: {
@@ -153,7 +153,9 @@ test('startProjectSession populates the shared session-runtime registry once sta
       agent_name: 'default',
       retriable: false,
       sandbox: readySandbox({ external_id: 'ext-ready-1' }),
-      opencode_session_id: 'ocs-ready-1',
+      runtime_protocol: 'acp',
+      runtime_id: 'runtime-ready-1',
+      runtime_session_id: 'acp-ready-1',
     },
   };
   const result = await startProjectSession(PROJECT, SESSION);
@@ -161,7 +163,7 @@ test('startProjectSession populates the shared session-runtime registry once sta
 
   const entry = getSessionRuntime(PROJECT, SESSION);
   expect(entry).toBeDefined();
-  expect(entry?.opencodeSessionId).toBe('ocs-ready-1');
+  expect(entry?.runtimeSessionId).toBe('acp-ready-1');
   expect(entry?.sandboxId).toBe('ext-ready-1');
   expect(entry?.runtimeUrl).toBe('http://test.local/v1/p/ext-ready-1/8000');
 });
