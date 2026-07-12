@@ -3628,6 +3628,11 @@ export function SessionChat({
     description?: string;
   } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
+  const [failedStartDraft, setFailedStartDraft] = useState<{
+    text: string;
+    files: AttachedFile[];
+    id: number;
+  } | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -3758,14 +3763,21 @@ export function SessionChat({
           },
         };
       },
-      onFailure: (_stash, _err, classified) => {
+      onFailure: (stash, _err, classified) => {
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
         setCommandError(classified);
         usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
-        pendingPromptHandled.current = false;
+        // replayStartStash restores durable sessionStorage itself. Rehydrate the
+        // visible composer too, so the user can retry immediately without a
+        // reload and without losing either the prompt or local File objects.
+        setFailedStartDraft({
+          text: stash.prompt,
+          files: filesToRestoreOnFailure,
+          id: Date.now(),
+        });
       },
     });
 
@@ -5357,7 +5369,22 @@ export function SessionChat({
         <SessionChatInput
           onSend={async (text, files, mentions) => {
             await handleSend(text, files, mentions);
+            if (failedStartDraft) {
+              clearStartStash(sessionId);
+              usePendingFilesStore.getState().consumePendingFiles();
+              setFailedStartDraft(null);
+            }
           }}
+          prefill={
+            failedStartDraft
+              ? {
+                  text: failedStartDraft.text,
+                  files: failedStartDraft.files,
+                  id: failedStartDraft.id,
+                  mode: 'merge',
+                }
+              : null
+          }
           isBusy={isBusy}
           queuedMessages={queuedMessages}
           onQueueMessage={handleQueueMessage}
