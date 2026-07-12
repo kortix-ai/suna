@@ -360,7 +360,7 @@ export async function handleChatCompletions(
       const message = lastErrorFrame
         ? lastErrorFrame.message
         : 'All upstream candidates returned an empty completion';
-      const failedDescriptor = candidates.findLast((candidate) =>
+      const failedDescriptor = [...candidates].reverse().find((candidate) =>
         emptyProviders.has(candidate.provider),
       );
       emit({
