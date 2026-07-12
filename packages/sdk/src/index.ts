@@ -72,6 +72,8 @@ export {
   type AcpStreamEvent,
   type AcpStreamHandle,
   type AcpChatItem,
+  type AcpToolCall,
+  type AcpPlan,
   type AcpStoredEnvelope,
   type AcpTranscriptMessage,
 } from './acp';

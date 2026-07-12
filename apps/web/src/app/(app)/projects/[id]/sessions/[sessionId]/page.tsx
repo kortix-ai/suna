@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -12,6 +12,7 @@ import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { AcpSessionChat } from '@/features/session/acp-session-chat';
+import { SessionLayout } from '@/features/session/session-layout';
 import { ProjectShell } from '@/features/workspace/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
@@ -23,6 +24,7 @@ import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { readStartStash, useSession } from '@kortix/sdk/react';
+import { projectAcpChatItems } from '@kortix/sdk';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -75,6 +77,7 @@ export default function ProjectSessionPage() {
     replayStartStash: false,
     chatEngine: false,
   });
+  const acpItems = useMemo(() => projectAcpChatItems(session.acp.envelopes), [session.acp.envelopes]);
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
 
@@ -255,7 +258,15 @@ export default function ProjectSessionPage() {
 
   return (
     <ProjectShell projectId={projectId}>
-      <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      <SessionLayout
+        sessionId={session.runtimeId ?? sessionId}
+        projectId={projectId}
+        projectSessionId={sessionId}
+        bootStage={session.phase === 'ready' ? null : startStage}
+        acpItems={acpItems}
+      >
+        <SandboxLoadingBoundary>{inner}</SandboxLoadingBoundary>
+      </SessionLayout>
     </ProjectShell>
   );
 }

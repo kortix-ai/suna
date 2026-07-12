@@ -8,7 +8,6 @@ import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { SessionLayout } from '@/features/session/session-layout';
 import { SessionBootChecklistInline } from '@/features/session/session-starting-loader';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
@@ -255,20 +254,7 @@ export function InstantSessionShell({
     </div>
   );
 
-  return (
-    <SessionLayout
-      sessionId={sessionId}
-      projectId={projectId}
-      projectSessionId={sessionId}
-      transient
-      // Side-panel content: the boot checklist while still coming up, then the
-      // real (empty) Actions view once ready — so an open panel is never stuck on
-      // "Connecting". Visibility stays user-controlled (no auto-open).
-      bootStage={ready ? null : stage}
-    >
-      {column}
-    </SessionLayout>
-  );
+  return column;
 }
 
 /**

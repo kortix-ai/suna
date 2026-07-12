@@ -6,6 +6,9 @@ import type {
   AcpResponse,
   AcpStreamEvent,
   AcpStreamHandle,
+  AcpInitializeResult,
+  AcpSessionResult,
+  AcpNewSessionResult,
 } from './types';
 import { AcpRpcError } from './types';
 
@@ -58,18 +61,18 @@ export class AcpClient {
     clientCapabilities?: Record<string, unknown>;
     clientInfo?: { name: string; title?: string; version: string };
   }) {
-    return this.request<Record<string, unknown>>('initialize', params);
+    return this.request<AcpInitializeResult>('initialize', params);
   }
 
   newSession(params: { cwd: string; mcpServers?: unknown[] }) {
-    return this.request<{ sessionId: string }>('session/new', {
+    return this.request<AcpNewSessionResult>('session/new', {
       cwd: params.cwd,
       mcpServers: params.mcpServers ?? [],
     });
   }
 
   loadSession(params: { sessionId: string; cwd: string; mcpServers?: unknown[] }) {
-    return this.request<Record<string, unknown>>('session/load', {
+    return this.request<AcpSessionResult>('session/load', {
       ...params,
       mcpServers: params.mcpServers ?? [],
     });

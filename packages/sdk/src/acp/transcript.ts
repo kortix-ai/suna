@@ -8,9 +8,24 @@ export type AcpStoredEnvelope = {
   createdAt?: string;
 };
 
+export type AcpToolCall = {
+  id: string;
+  title: string;
+  toolKind: string | null;
+  status: string | null;
+  content: unknown[];
+  locations: unknown[];
+  rawInput: unknown;
+  rawOutput: unknown;
+  data: Record<string, unknown>;
+};
+
+export type AcpPlan = { entries: unknown[]; data: Record<string, unknown> };
+
 export type AcpChatItem =
-  | { kind: 'message'; role: 'user' | 'assistant' | 'thought'; text: string }
-  | { kind: 'tool'; title: string; data: unknown }
+  | { kind: 'message'; id: string; role: 'user' | 'assistant' | 'thought'; text: string }
+  | ({ kind: 'tool' } & AcpToolCall)
+  | ({ kind: 'plan' } & AcpPlan)
   | { kind: 'permission'; id: string | number; method: string; params: Record<string, unknown> }
   | { kind: 'question'; id: string | number; method: string; questions: AcpPendingQuestionItem[]; params: Record<string, unknown> }
   | { kind: 'raw'; method: string; data: unknown };
@@ -62,7 +77,7 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
     const envelope = row.envelope as Record<string, any>;
     if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
       const text = contentText(envelope.params?.prompt);
-      if (text) items.push({ kind: 'message', role: 'user', text });
+      if (text) items.push({ kind: 'message', id: `prompt-${row.ordinal}`, role: 'user', text });
       continue;
     }
     if (row.direction !== 'agent_to_client' || typeof envelope.method !== 'string') continue;
@@ -74,9 +89,18 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
         const previous = items.at(-1);
         if (previous?.kind === 'message' && previous.role === role) previous.text += text;
-        else items.push({ kind: 'message', role, text });
-      } else if (kind === 'tool_call' || kind === 'tool_call_update' || kind === 'plan') {
-        items.push({ kind: 'tool', title: String(update.title ?? kind), data: update });
+        else items.push({ kind: 'message', id: `${role}-${row.ordinal}`, role, text });
+      } else if (kind === 'tool_call' || kind === 'tool_call_update') {
+        const id = String(update.toolCallId ?? update.id ?? `tool-${row.ordinal}`);
+        const existing = items.find((item): item is Extract<AcpChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.id === id);
+        const projected = projectToolCall(id, update);
+        if (existing) Object.assign(existing, mergeToolCall(existing, projected));
+        else items.push({ kind: 'tool', ...projected });
+      } else if (kind === 'plan') {
+        const plan = { entries: Array.isArray(update.entries) ? update.entries : [], data: update as Record<string, unknown> };
+        const existing = items.find((item): item is Extract<AcpChatItem, { kind: 'plan' }> => item.kind === 'plan');
+        if (existing) Object.assign(existing, plan);
+        else items.push({ kind: 'plan', ...plan });
       } else items.push({ kind: 'raw', method: String(kind ?? envelope.method), data: update });
       continue;
     }
@@ -89,6 +113,35 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
     } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
   }
   return items;
+}
+
+function projectToolCall(id: string, update: Record<string, unknown>): AcpToolCall {
+  return {
+    id,
+    title: firstString(update.title, update.name, update.kind, id) ?? id,
+    toolKind: firstString(update.kind) ?? null,
+    status: firstString(update.status) ?? null,
+    content: Array.isArray(update.content) ? update.content : [],
+    locations: Array.isArray(update.locations) ? update.locations : [],
+    rawInput: update.rawInput,
+    rawOutput: update.rawOutput,
+    data: update,
+  };
+}
+
+function mergeToolCall(previous: AcpToolCall, next: AcpToolCall): AcpToolCall {
+  return {
+    ...previous,
+    ...next,
+    title: next.title === next.id ? previous.title : next.title || previous.title,
+    toolKind: next.toolKind ?? previous.toolKind,
+    status: next.status ?? previous.status,
+    content: next.content.length ? next.content : previous.content,
+    locations: next.locations.length ? next.locations : previous.locations,
+    rawInput: next.rawInput ?? previous.rawInput,
+    rawOutput: next.rawOutput ?? previous.rawOutput,
+    data: { ...previous.data, ...next.data },
+  };
 }
 
 export function projectAcpPendingPrompts(rows: readonly AcpStoredEnvelope[]): AcpPendingPrompts {

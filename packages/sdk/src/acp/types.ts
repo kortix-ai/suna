@@ -39,6 +39,32 @@ export type AcpStreamHandle = {
   readonly lastEventId: number;
 };
 
+export type AcpInitializeResult = {
+  protocolVersion?: number;
+  agentCapabilities?: Record<string, unknown>;
+  authMethods?: Array<Record<string, unknown>>;
+  agentInfo?: { name?: string; title?: string; version?: string; [key: string]: unknown };
+  [key: string]: unknown;
+};
+
+export type AcpSessionConfigOption = {
+  id: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  type?: string;
+  currentValue?: unknown;
+  options?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+export type AcpSessionResult = {
+  sessionId?: string;
+  configOptions?: AcpSessionConfigOption[];
+  [key: string]: unknown;
+};
+export type AcpNewSessionResult = AcpSessionResult & { sessionId: string };
+
 export class AcpRpcError extends Error {
   constructor(
     message: string,

@@ -21,6 +21,7 @@ import {
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
+import type { AcpChatItem } from '@kortix/sdk';
 import { X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -50,6 +51,7 @@ interface SessionLayoutProps {
    * SessionLayout that crossfades in over it.
    */
   transient?: boolean;
+  acpItems?: AcpChatItem[];
 }
 
 export const SessionLayout = memo(function SessionLayout({
@@ -59,6 +61,7 @@ export const SessionLayout = memo(function SessionLayout({
   children,
   bootStage = null,
   transient = false,
+  acpItems,
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
   const booting = !!bootStage;
@@ -313,7 +316,7 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <SessionActionsPanel sessionId={sessionId} messages={undefined} />
+    <SessionActionsPanel sessionId={sessionId} messages={undefined} acpItems={acpItems} />
   );
   const panelBody = (
     <div className="relative h-full w-full">

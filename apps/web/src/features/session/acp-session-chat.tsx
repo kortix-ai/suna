@@ -8,6 +8,7 @@ import type { useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
 import { Bot, Brain, ShieldCheck, Square, Terminal, User } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
 
 export function AcpSessionChat({
   acp,
@@ -55,12 +56,14 @@ export function AcpSessionChat({
             if (item.kind === 'message') {
               const Icon = item.role === 'user' ? User : item.role === 'thought' ? Brain : Bot;
               return (
-                <div key={index} className="bg-popover rounded-md border px-4 py-3">
+                <div key={item.id} className="bg-popover rounded-md border px-4 py-3">
                   <div className="mb-2 flex items-center gap-2 text-xs font-medium capitalize"><Icon className="size-3.5" />{item.role}</div>
                   <div className="text-sm whitespace-pre-wrap text-pretty">{item.text}</div>
                 </div>
               );
             }
+            if (item.kind === 'tool') return <AcpToolCallCard key={item.id} tool={item} />;
+            if (item.kind === 'plan') return <AcpPlanCard key={`plan-${index}`} plan={item} />;
             if (item.kind === 'permission') {
               const options = Array.isArray(item.params.options) ? item.params.options as Array<any> : [];
               return (
@@ -113,7 +116,7 @@ export function AcpSessionChat({
             }
             return (
               <details key={index} className="bg-popover rounded-md border px-4 py-3">
-                <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium"><Terminal className="size-4" />{item.kind === 'tool' ? item.title : item.method}</summary>
+                <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium"><Terminal className="size-4" />{item.method}</summary>
                 <pre className="text-muted-foreground mt-3 overflow-x-auto text-xs">{JSON.stringify(item.data, null, 2)}</pre>
               </details>
             );

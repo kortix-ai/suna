@@ -88,6 +88,16 @@ describe('projectAcpPendingPrompts', () => {
 });
 
 describe('projectAcpChatItems', () => {
+  test('merges tool call updates into one canonical tool item', () => {
+    const items = projectAcpChatItems([
+      { ordinal: 1, direction: 'agent_to_client', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Read file', kind: 'read', status: 'pending', rawInput: { path: 'a.ts' } } } } },
+      { ordinal: 2, direction: 'agent_to_client', envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed', rawOutput: 'ok' } } } },
+    ]);
+    expect(items).toEqual([
+      expect.objectContaining({ kind: 'tool', id: 'call-1', title: 'Read file', toolKind: 'read', status: 'completed', rawInput: { path: 'a.ts' }, rawOutput: 'ok' }),
+    ]);
+  });
+
   test('renders ACP elicitation as a question item, not raw JSON', () => {
     const items = projectAcpChatItems([
       {
