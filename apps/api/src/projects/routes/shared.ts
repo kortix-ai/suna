@@ -816,6 +816,22 @@ export async function openSession(args: {
   // Box is provider-running. Inspect the daemon-owned runtime mode. Every
   // supported harness, including OpenCode, is ready only through ACP.
   const runtimeHealth = await inspectSandboxRuntime(runningExternalId, loaded.userId);
+  if (!runtimeHealth) {
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      runtime_protocol: 'acp',
+      runtime_id: null,
+      runtime_session_id:
+        typeof visible.row.metadata?.acp_session_id === 'string'
+          ? visible.row.metadata.acp_session_id
+          : null,
+      runtime_url: sessionRuntimeUrlPath(runningExternalId),
+      reason: 'acp_starting',
+    };
+  }
   if (runtimeHealth?.runtime === 'acp') {
     const ready = runtimeHealth.runtimeReady && !!runtimeHealth.acpServerId;
     return {
