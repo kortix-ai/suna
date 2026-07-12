@@ -45,3 +45,16 @@ test('sentry.client.config ignores storage-disabled WebView null-access TypeErro
   // JSC variant (older Safari/iOS WebView).
   expect(source).toContain("Cannot read property 'getItem' of null");
 });
+
+test('sentry.client.config drops the old-WebKit lookbehind parse failure', async () => {
+  // Reproduces Better Stack error 6d987ab4...34e7ed (Kortix Frontend prod):
+  // Safari/iOS < 16.4 cannot parse lookbehind assertions and throws
+  // `SyntaxError: Invalid regular expression: invalid group specifier name`
+  // at chunk parse time. The lookbehind lives in bundled third-party deps
+  // (`mdast-util-gfm-autolink-literal`, `@pierre/diffs`), the wording is
+  // WebKit-specific, and only old Safari/iOS visitors hit it. Sentry's
+  // `ignoreErrors` list is checked before an event is sent (covers every
+  // capture path, including frameless onerror), so the marker MUST live here.
+  const source = await Bun.file(`${import.meta.dir}/../../sentry.client.config.ts`).text();
+  expect(source).toContain("'invalid group specifier name'");
+});
