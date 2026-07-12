@@ -1433,15 +1433,14 @@ export default function ProjectSessionScreen() {
     [navigateToSession]
   );
 
-  // Composer prompts awaiting their session's OpenCode root, keyed by session id.
+  // Composer prompts awaiting their ACP runtime, keyed by Kortix session id.
   const pendingPromptsRef = useRef<Record<string, string>>({});
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
-  // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
+  // both the sandbox URL and the resolved ACP runtime id.
   const connectToProjectSession = useCallback(
     (ps: ProjectSession) => {
-      const isAcp = ps.runtime_protocol === 'acp';
-      if (!ps.sandbox_url || (isAcp ? !ps.runtime_id : !ps.opencode_session_id)) return false;
+      if (!ps.sandbox_url || ps.runtime_protocol !== 'acp' || !ps.runtime_id) return false;
       const externalId =
         ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
       switchSandbox({
@@ -1458,13 +1457,7 @@ export default function ProjectSessionScreen() {
       setConnectError(null);
       erroredSessionRef.current = null;
       setActiveProjectSessionId(ps.session_id);
-      navigateToSession(isAcp ? ps.session_id : ps.opencode_session_id!);
-      // Deliver the composer's first prompt now that the OpenCode root exists.
-      const pending = pendingPromptsRef.current[ps.session_id];
-      if (pending && !isAcp) {
-        delete pendingPromptsRef.current[ps.session_id];
-        void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id!, pending);
-      }
+      navigateToSession(ps.session_id);
       return true;
     },
     [switchSandbox, navigateToSession]
@@ -1481,7 +1474,7 @@ export default function ProjectSessionScreen() {
     setConnectError(err);
   }, []);
   // Bring a project session online and open it. POST /start is the only open
-  // driver: it provisions/resumes runtime, resolves opencode_session_id, and
+  // driver: it provisions/resumes the selected ACP runtime and
   // returns a readiness payload. The client only polls that one contract.
   // A cold boot can take minutes, so we poll patiently and fail only on a
   // definitive error/timeout.
@@ -1498,8 +1491,8 @@ export default function ProjectSessionScreen() {
           attempt += 1;
 
           // ONE server call: POST /start idempotently provisions/resumes the
-          // sandbox AND resolves the OpenCode pin server-side. We just poll it until
-          // stage='ready'; provisioning, resume, and OpenCode pinning are server-side.
+          // sandbox and resolves the ACP conversation server-side. We only poll
+          // until stage='ready'.
           const start = await startProjectSession(projectId, sessionId);
           const sandbox = start?.sandbox ?? null;
 
@@ -1522,7 +1515,7 @@ export default function ProjectSessionScreen() {
             // is null during a normal boot, so this never false-positives.
             if (health.bootError) {
               failConnect(sessionId, {
-                title: 'OpenCode runtime is not ready',
+                title: 'Agent runtime is not ready',
                 message: 'The sandbox booted, but the project runtime did not become usable.',
                 detail: health.bootError,
               });
@@ -1530,7 +1523,7 @@ export default function ProjectSessionScreen() {
             }
 
             log.log(
-              `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`
+              `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} acp=${start?.runtime_id ? 'ok' : '-'}`
             );
 
             if (start?.stage === 'ready' && start.runtime_protocol === 'acp' && start.runtime_id) {
@@ -1548,16 +1541,11 @@ export default function ProjectSessionScreen() {
               } as ProjectSession);
               return;
             }
-            if (start?.stage === 'ready' && start.opencode_session_id) {
-              connectToProjectSession({
-                session_id: sessionId,
-                sandbox_id: sandbox.sandbox_id,
-                sandbox_url: sandboxUrl,
-                opencode_session_id: start.opencode_session_id,
-                sandbox_provider: sandbox.provider ?? 'daytona',
-                created_at: sandbox.created_at,
-                updated_at: sandbox.updated_at,
-              } as ProjectSession);
+            if (start?.stage === 'ready') {
+              failConnect(sessionId, {
+                title: 'ACP runtime is not ready',
+                message: 'The session started without an ACP runtime.',
+              });
               return;
             }
           } else {
@@ -1670,17 +1658,12 @@ export default function ProjectSessionScreen() {
   // connectingProjectSessionId so the auto-connect effect doesn't race the
   // restart; it's cleared once re-provision resolves so ensureAndOpen runs.
   // The active tab's project-session row. The tab store's activeSessionId is
-  // the OPENCODE root id (connectToProjectSession navigates with
-  // ps.opencode_session_id), so resolve back to the Kortix row through the pin
-  // — every /projects/:id/sessions/:sid API call needs the Kortix UUID. The
-  // session_id fallback covers the brief pre-connect window where a tab can
-  // still carry the Kortix id (the two id shapes can't collide).
+  // the canonical Kortix session id; ACP's native conversation id stays an
+  // internal lifecycle field.
   const activeProjectSession = useMemo(
     () =>
       activeSessionId
-        ? (projectSessions.find(
-            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId
-          ) ?? null)
+        ? (projectSessions.find((s) => s.session_id === activeSessionId) ?? null)
         : null,
     [projectSessions, activeSessionId]
   );
@@ -1688,7 +1671,7 @@ export default function ProjectSessionScreen() {
   const handleOpenChangeRequest = useCallback(async () => {
     const ps = activeProjectSession;
     const targetSandboxUrl = ps?.sandbox_url || sandboxUrl;
-    const targetSessionId = ps?.runtime_protocol === 'acp' ? ps.acp_session_id : ps?.opencode_session_id || activeSessionId;
+    const targetSessionId = ps?.acp_session_id;
 
     if (!ps || !targetSandboxUrl || !targetSessionId) {
       Alert.alert(
@@ -1701,14 +1684,12 @@ export default function ProjectSessionScreen() {
     haptics.tap();
     const baseRef = ps.base_ref || 'main';
     const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
-    const sent = ps.runtime_protocol === 'acp'
-      ? await promptProjectAcpSession({
-          projectId: ps.project_id,
-          sessionId: ps.session_id,
-          runtimeSessionId: targetSessionId,
-          prompt: [{ type: 'text', text: prompt }],
-        }).then(() => true, () => false)
-      : await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
+    const sent = await promptProjectAcpSession({
+      projectId: ps.project_id,
+      sessionId: ps.session_id,
+      runtimeSessionId: targetSessionId,
+      prompt: [{ type: 'text', text: prompt }],
+    }).then(() => true, () => false);
 
     if (sent) {
       Alert.alert('Open change request', 'Asked your agent to commit and open a change request.');
@@ -2869,9 +2850,8 @@ export default function ProjectSessionScreen() {
               ) : /* Active session */
               activeSessionId && !showTabsOverview ? (
                 <SessionPage
-                  sessionId={activeProjectSession?.runtime_protocol === 'acp' ? activeProjectSession.session_id : activeSessionId}
+                  sessionId={activeSessionId}
                   projectId={projectId}
-                  runtimeProtocol={activeProjectSession?.runtime_protocol}
                   runtimeSessionId={activeProjectSession?.acp_session_id}
                   onBack={handleBack}
                   onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
