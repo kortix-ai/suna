@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount } from '../../llm-gateway/resolution/default-model';
 import { toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
@@ -165,7 +166,15 @@ async function buildWhoamiCard(
       buildTeamsLoginUrl({ tenantId, teamsUserId: userId ?? '' }),
     );
   }
-  return buildStatusCard(ctx, tenantId, conversationId, projectId);
+  const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
+  return buildPanelCard({
+    title: 'You',
+    rows: [
+      { label: 'Connected as', value: email || identity.userId },
+      { label: 'Runs act as', value: 'you — your credentials & secrets' },
+    ],
+    url: `${dashboardBase()}/projects/${projectId}`,
+  });
 }
 
 async function buildModelsCard(ctx: ReturnType<typeof teamsChannelCtx>) {
