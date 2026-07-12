@@ -5,12 +5,8 @@
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 
-// `useSession`'s reply/error-classification surface — not (yet) re-exported by
-// `./opencode`'s explicit barrel list, so re-exported directly here.
+// ACP session lifecycle and shared runtime error classification.
 export {
-  answerQuestion,
-  answerPermission,
-  rejectQuestion,
   classifySendError,
   type KortixSendError,
   type KortixSendErrorKind,
