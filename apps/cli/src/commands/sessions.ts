@@ -239,7 +239,7 @@ async function sessionsNew(
   }
 
   // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before OpenCode is actually ready.
+  // polls. Row status alone can say "running" before the runtime is ready.
   if (wait) {
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);

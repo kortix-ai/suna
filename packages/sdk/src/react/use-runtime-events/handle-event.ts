@@ -141,7 +141,7 @@ export function createEventHandler(deps: {
             const idx = old.findIndex((s) => s.id === info.id);
             if (idx < 0) return old;
             // Shallow check: skip only if BOTH the timestamp and the title are
-            // unchanged. Title alone can flip (opencode auto-titles) without a
+            // unchanged. Title alone can flip (the runtime auto-titles) without a
             // perceptible time bump, and dropping that would keep the tab stale.
             if (
               old[idx].time.updated === info.time.updated &&

@@ -94,7 +94,7 @@ const PAGES: Record<
   agents: {
     label: 'Agents',
     Icon: RiRobot3Fill,
-    context: 'Each agent is its own worker \u2014 defined in .kortix/opencode/agents.',
+    context: 'Each agent is its own worker \u2014 routed by kortix.yaml to an ACP runtime.',
     render: () => <AgentsPage />,
   },
   skills: {

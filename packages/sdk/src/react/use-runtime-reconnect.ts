@@ -132,7 +132,7 @@ export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean 
   if (status === 'connected' && healthy === false) return POLL_FAILING;
   if (status === 'connected') return POLL_CONNECTED;
   if (status === 'unreachable') return POLL_UNREACHABLE;
-  // Initial "connecting" phase (sandbox just went active, opencode still
+  // Initial "connecting" phase (sandbox just went active, runtime still
   // booting) — poll fast so the runtime appears the moment it's healthy
   // instead of waiting out a long interval.
   return POLL_FAILING;
@@ -140,7 +140,7 @@ export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean 
 
 /**
  * useRuntimeReconnect — monitors the active session's runtime reachability
- * mid-session (see `react/opencode.ts` for how this fits alongside the
+ * mid-session (see `use-session` / runtime hooks for how this fits alongside the
  * server-truth boot readiness and the SSE heartbeat).
  *
  * Probes `getSessionHealth` (the SDK's `/kortix/health`) and maps the result

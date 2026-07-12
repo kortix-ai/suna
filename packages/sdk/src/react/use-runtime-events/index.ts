@@ -86,7 +86,7 @@ export function useRuntimeEventStream(enabled = true) {
       resetClient();
       clearConfigOverrides();
       clearPending();
-      // NOTE: we intentionally do NOT wipe the sync store or the opencode
+      // NOTE: we intentionally do NOT wipe the sync store or the runtime
       // query cache here anymore. Those are now scoped per-sandbox (see
       // runtimeKeys.activeServerKey + the sync store's session-id keying),
       // so each sandbox's data coexists safely. Wiping them was what made

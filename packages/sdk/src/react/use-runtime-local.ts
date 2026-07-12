@@ -398,7 +398,7 @@ export function useRuntimeLocal({
 
   // ---- Fallback model (matching SolidJS local.tsx:94-126) ----
   const fallbackModel = useMemo<ModelKey | undefined>(() => {
-    // Priority 1: Config model (from opencode.json)
+    // Priority 1: Config model (from the runtime config)
     if (config?.model) {
       const parts = config.model.split('/');
       if (parts.length >= 2) {
@@ -500,7 +500,7 @@ export function useRuntimeLocal({
   // resolved default with a "Default" badge and the client sends `auto`.
   const onDefaultModel = !explicitModelKey;
 
-  // Wire key actually SENT to opencode/the gateway. On default we send `auto`
+  // Wire key actually SENT to the runtime/gateway. On default we send `auto`
   // (when the catalog offers it) so the gateway resolves the account/agent
   // default server-side; otherwise the concrete display key.
   const sendModelKey = useMemo<ModelKey | undefined>(() => {

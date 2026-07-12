@@ -87,7 +87,7 @@ describe('nextPollDelay', () => {
     expect(nextPollDelay('connected', true)).toBe(POLL_CONNECTED);
   });
 
-  test('polls fast when connected but not yet healthy (opencode still booting)', () => {
+  test('polls fast when connected but not yet healthy (runtime still booting)', () => {
     expect(nextPollDelay('connected', false)).toBe(POLL_FAILING);
   });
 

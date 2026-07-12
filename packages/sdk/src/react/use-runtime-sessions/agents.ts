@@ -49,7 +49,7 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
       const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
-      // Agents are defined in the project repo (.kortix/opencode/agents), so the
+      // Agents are defined in the project repo through the selected runtime, so the
       // roster is stable across every session that shares a working directory.
       // Cache under a directory-scoped (or global) STABLE key — not the
       // ephemeral per-sandbox server id — so a new session's picker paints from

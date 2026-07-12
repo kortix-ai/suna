@@ -58,8 +58,8 @@ export interface SendMessageOptions {
   model?: { providerID: string; modelID: string };
   agent?: string;
   variant?: string;
-  /** Session's working directory — lets opencode resolve project-scoped
-   * (`.opencode/agent/*.md`) agents when `agent` names one of them. */
+  /** Session's working directory — lets the runtime resolve project-scoped
+   * native agents when `agent` names one of them. */
   directory?: string;
 }
 
