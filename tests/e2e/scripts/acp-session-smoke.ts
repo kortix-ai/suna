@@ -39,7 +39,7 @@ async function api(method: string, path: string, body?: unknown) {
 }
 
 async function main() {
-  const email = `acp-smoke-${Date.now()}@example.test`;
+  const email = `acp-smoke-${HARNESS}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}@example.test`;
   const password = "TestPass123!acp";
   const created = await fetch(`${SUPABASE}/auth/v1/admin/users`, {
     method: "POST",
