@@ -32,6 +32,7 @@
     "./server": "./src/server.ts",
     "./react": "./src/react/index.ts",
     "./acp": "./src/acp/index.ts",
+    "./acp/transcript": "./src/acp/transcript.ts",
     "./opencode-client": "./src/opencode/client.ts",
     "./config": "./src/platform/config.ts",
     "./auth": "./src/platform/auth.ts",

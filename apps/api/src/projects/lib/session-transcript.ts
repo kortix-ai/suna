@@ -1,5 +1,6 @@
-import { sessionSandboxes } from '@kortix/db';
-import { and, desc, eq } from 'drizzle-orm';
+import { acpSessionEnvelopes, sessionSandboxes } from '@kortix/db';
+import { projectAcpTranscript } from '@kortix/sdk/acp/transcript';
+import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
 import {
@@ -34,6 +35,10 @@ export interface SessionTranscriptDigest {
   messages: CompactMessage[];
 }
 
+function isAcpSession(session: ProjectSessionRow): boolean {
+  return (session.metadata as Record<string, unknown> | null)?.runtime_protocol === 'acp';
+}
+
 type RawOpencodeMessage = {
   info?: {
     role?: string;
@@ -65,6 +70,29 @@ export async function buildSessionTranscriptDigest(input: {
   maxChars: number;
 }): Promise<SessionTranscriptDigest> {
   const { session, projectId, accountId, userId, limit, maxChars } = input;
+  if (isAcpSession(session)) {
+    const rows = await db.select({
+      ordinal: acpSessionEnvelopes.ordinal,
+      direction: acpSessionEnvelopes.direction,
+      streamEventId: acpSessionEnvelopes.streamEventId,
+      envelope: acpSessionEnvelopes.envelope,
+      createdAt: acpSessionEnvelopes.createdAt,
+    }).from(acpSessionEnvelopes).where(and(
+      eq(acpSessionEnvelopes.projectId, projectId),
+      eq(acpSessionEnvelopes.sessionId, session.sessionId),
+    )).orderBy(asc(acpSessionEnvelopes.ordinal));
+    const messages = projectAcpTranscript(rows.map((row) => ({
+      ...row,
+      createdAt: row.createdAt.toISOString(),
+    })), { limit, maxChars });
+    return {
+      available: true,
+      reason: null,
+      opencode_session_id: null,
+      message_count: messages.length,
+      messages,
+    };
+  }
   const unavailable = (reason: string): SessionTranscriptDigest => ({
     available: false,
     reason,

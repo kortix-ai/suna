@@ -23,8 +23,9 @@
  * (anonymous/public surface vs. the authenticated project routes).
  */
 
-import { eq } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
+import { asc, eq } from 'drizzle-orm';
+import { acpSessionEnvelopes, projectSessions } from '@kortix/db';
+import { projectAcpTranscript } from '@kortix/sdk/acp/transcript';
 import { db } from './db';
 import { sandboxOpencodeEndpoint, listSandboxOpencodeSessions, resolveRootSessionId } from '../projects/opencode-mapping';
 import type { PublicShareRow } from './session-public-shares';
@@ -96,6 +97,7 @@ export interface PublicSessionTranscript {
   available: boolean;
   reason: string | null;
   opencode_session_id: string | null;
+  runtime_protocol?: 'acp' | 'opencode';
   message_count: number;
   messages: CompactPublicMessage[];
 }
@@ -185,11 +187,38 @@ export async function getPublicSessionMessages(
   }
 
   const [sessionRow] = await db
-    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+    .select({ opencodeSessionId: projectSessions.opencodeSessionId, metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, row.sessionId))
     .limit(1);
   const pinnedRootId = sessionRow?.opencodeSessionId ?? null;
+  const metadata = (sessionRow?.metadata ?? {}) as Record<string, unknown>;
+  if (metadata.runtime_protocol === 'acp') {
+    const rows = await db.select({
+      ordinal: acpSessionEnvelopes.ordinal,
+      direction: acpSessionEnvelopes.direction,
+      streamEventId: acpSessionEnvelopes.streamEventId,
+      envelope: acpSessionEnvelopes.envelope,
+      createdAt: acpSessionEnvelopes.createdAt,
+    }).from(acpSessionEnvelopes)
+      .where(eq(acpSessionEnvelopes.sessionId, row.sessionId))
+      .orderBy(asc(acpSessionEnvelopes.ordinal));
+    const messages = projectAcpTranscript(rows.map((entry) => ({
+      ...entry,
+      createdAt: entry.createdAt.toISOString(),
+    })), { limit: MAX_MESSAGES, maxChars: MAX_MESSAGE_CHARS });
+    return {
+      ok: true,
+      transcript: {
+        available: true,
+        reason: null,
+        runtime_protocol: 'acp',
+        opencode_session_id: null,
+        message_count: messages.length,
+        messages,
+      },
+    };
+  }
 
   const listed = await listSandboxOpencodeSessions(row.externalId, undefined);
   if (!listed.ok) {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 let sessionRows: Array<Record<string, unknown>> = [];
+let orderedRows: Array<Record<string, unknown>> = [];
 
 mock.module('./db', () => ({
   db: {
@@ -8,6 +9,7 @@ mock.module('./db', () => ({
       from: () => ({
         where: () => ({
           limit: async () => sessionRows,
+          orderBy: async () => orderedRows,
         }),
       }),
     }),
@@ -34,6 +36,7 @@ const { getPublicSessionInfo, getPublicSessionMessages } = await import('./publi
 
 beforeEach(() => {
   sessionRows = [];
+  orderedRows = [];
   listResult = { ok: true, sessions: [] };
   endpointResult = { url: 'http://daemon.local', headers: {} };
   resolvedRootId = 'oc-root-1';
@@ -103,6 +106,26 @@ describe('getPublicSessionMessages', () => {
   test('503s when the sandbox is not active — never touches the daemon', async () => {
     const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' });
     expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
+  });
+
+  test('reads ACP envelopes from persistence without touching OpenCode', async () => {
+    sessionRows = [{ opencodeSessionId: null, metadata: { runtime_protocol: 'acp' } }];
+    orderedRows = [
+      { ordinal: 1, direction: 'client_to_agent', streamEventId: null, createdAt: new Date('2026-01-01'), envelope: { jsonrpc: '2.0', id: 1, method: 'session/prompt', params: { prompt: [{ type: 'text', text: 'Hello' }] } } },
+      { ordinal: 2, direction: 'agent_to_client', streamEventId: 1, createdAt: new Date('2026-01-01'), envelope: { jsonrpc: '2.0', method: 'session/update', params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Hi' } } } } },
+    ];
+    listResult = { ok: false, reason: 'unreachable' };
+
+    const result = await getPublicSessionMessages(activeShare);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.transcript.runtime_protocol).toBe('acp');
+    expect(result.transcript.opencode_session_id).toBeNull();
+    expect(result.transcript.messages.map((message) => [message.role, message.text])).toEqual([
+      ['user', 'Hello'],
+      ['assistant', 'Hi'],
+    ]);
   });
 
   test('degrades to an unavailable digest (still 200) when the daemon reports not_ready', async () => {
