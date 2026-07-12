@@ -21,12 +21,18 @@ const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   claude: {
     displayName: 'Claude Code',
     adapter: '@agentclientprotocol/claude-agent-acp',
-    launch: { command: '/usr/local/bin/claude-agent-acp', args: [] },
+    launch: {
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js'],
+    },
   },
   codex: {
     displayName: 'Codex',
     adapter: '@agentclientprotocol/codex-acp',
-    launch: { command: '/usr/local/bin/codex-acp', args: [] },
+    launch: {
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/@agentclientprotocol/codex-acp/dist/index.js'],
+    },
   },
   opencode: {
     displayName: 'OpenCode',
@@ -36,7 +42,10 @@ const DEFAULTS: Record<AcpHarnessId, Omit<AcpHarnessDescriptor, 'id'>> = {
   pi: {
     displayName: 'Pi',
     adapter: 'pi-acp',
-    launch: { command: '/usr/local/bin/pi-acp', args: [] },
+    launch: {
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/pi-acp/dist/index.js'],
+    },
   },
 }
 
@@ -88,13 +97,14 @@ export function createAcpHarnessRegistry(
   return new Map(
     ACP_HARNESS_IDS.map((id) => {
       const defaults = DEFAULTS[id]
+      const commandOverride = env[`${envPrefix(id)}_PATH`]?.trim()
       const descriptor: AcpHarnessDescriptor = {
         id,
         displayName: defaults.displayName,
         adapter: defaults.adapter,
         launch: {
-          command: env[`${envPrefix(id)}_PATH`]?.trim() || defaults.launch.command,
-          args: argsFromEnv(id, defaults.launch.args, env),
+          command: commandOverride || defaults.launch.command,
+          args: argsFromEnv(id, commandOverride ? [] : defaults.launch.args, env),
           env: defaultLaunchEnv(id, env),
         },
       }

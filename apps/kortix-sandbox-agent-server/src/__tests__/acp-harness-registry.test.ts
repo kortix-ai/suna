@@ -4,9 +4,18 @@ import { createAcpHarnessRegistry } from '../acp/harness-registry';
 describe('ACP harness registry', () => {
   test('uses image-stable absolute paths for installed ACP adapters', () => {
     const registry = createAcpHarnessRegistry({});
-    expect(registry.get('claude')?.launch.command).toBe('/usr/local/bin/claude-agent-acp');
-    expect(registry.get('codex')?.launch.command).toBe('/usr/local/bin/codex-acp');
-    expect(registry.get('pi')?.launch.command).toBe('/usr/local/bin/pi-acp');
+    expect(registry.get('claude')?.launch).toMatchObject({
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js'],
+    });
+    expect(registry.get('codex')?.launch).toMatchObject({
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/@agentclientprotocol/codex-acp/dist/index.js'],
+    });
+    expect(registry.get('pi')?.launch).toMatchObject({
+      command: '/usr/local/bin/node',
+      args: ['/usr/local/lib/node_modules/pi-acp/dist/index.js'],
+    });
   });
 
   test('routes Claude through the scoped Kortix Anthropic gateway by default', () => {
