@@ -15,7 +15,7 @@
  * site.
  */
 
-import type { ClassifiedPart } from '../../turns';
+import type { ClassifiedPart } from '../../core/turns';
 
 type PartOfKind<K extends ClassifiedPart['kind']> = Extract<ClassifiedPart, { kind: K }>;
 

@@ -2,13 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
+import { MailCheck } from 'lucide-react';
 import { FormEvent, Suspense, useState } from 'react';
-import { AlertCircle, MailCheck } from 'lucide-react';
 
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AuthCardShell, BackToSignIn } from '@/components/auth/auth-card-shell';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { errorToast } from '@/components/ui/toast';
 import { forgotPassword } from '../actions';
 
 function ForgotPasswordContent() {
@@ -32,9 +33,13 @@ function ForgotPasswordContent() {
         setSentTo(email);
         return;
       }
-      setErrorMessage((result as any)?.message || 'Could not send reset link');
+      const msg = (result as any)?.message || 'Could not send reset link';
+      setErrorMessage(msg);
+      errorToast(msg);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'An unexpected error occurred');
+      const msg = err?.message || 'An unexpected error occurred';
+      setErrorMessage(msg);
+      errorToast(msg);
     } finally {
       setPending(false);
     }
@@ -44,12 +49,16 @@ function ForgotPasswordContent() {
     return (
       <AuthCardShell
         title={tHardcodedUi.raw('appAuthForgotPasswordPage.line43JsxAttrTitleCheckYourEmail')}
-        description={tHardcodedUi.raw('appAuthForgotPasswordPage.line44JsxAttrDescriptionWeVeSentYouAPasswordResetLink')}
+        description={tHardcodedUi.raw(
+          'appAuthForgotPasswordPage.line44JsxAttrDescriptionWeVeSentYouAPasswordResetLink',
+        )}
         footer={<BackToSignIn />}
       >
-        <div className="p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
-          <MailCheck className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm truncate">{tHardcodedUi.raw('appAuthForgotPasswordPage.line50JsxTextResetLinkSentTo')}<span className="text-foreground/95">{sentTo}</span>
+        <div className="border-border bg-muted/60 text-foreground/80 flex items-center gap-2 rounded-md border px-3 py-2.5">
+          <MailCheck className="size-4 shrink-0" />
+          <span className="truncate text-sm">
+            {tHardcodedUi.raw('appAuthForgotPasswordPage.line50JsxTextResetLinkSentTo')}
+            <span className="text-foreground">{sentTo}</span>
           </span>
         </div>
       </AuthCardShell>
@@ -59,32 +68,30 @@ function ForgotPasswordContent() {
   return (
     <AuthCardShell
       title={tHardcodedUi.raw('appAuthForgotPasswordPage.line59JsxAttrTitleResetYourPassword')}
-      description={tHardcodedUi.raw('appAuthForgotPasswordPage.line60JsxAttrDescriptionEnterYourEmailAndWeLlSendYou')}
+      description={tHardcodedUi.raw(
+        'appAuthForgotPasswordPage.line60JsxAttrDescriptionEnterYourEmailAndWeLlSendYou',
+      )}
       footer={<BackToSignIn />}
     >
-      {errorMessage && (
-        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">{errorMessage}</span>
-        </div>
-      )}
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          placeholder={tHardcodedUi.raw('appAuthForgotPasswordPage.line75JsxAttrPlaceholderEmailAddress')}
-          required
-          autoComplete="email"
-          className="text-sm"
-        />
-        <Button
-          type="submit"
-          size="lg"
-          disabled={pending}
-          className="w-full text-sm"
-        >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-3">
+          <label htmlFor="email" className="text-muted-foreground text-sm font-medium">
+            Email
+          </label>
+          <Input
+            id="email"
+            aria-invalid={!!errorMessage || undefined}
+            name="email"
+            type="email"
+            size="md"
+            placeholder="Your email address"
+            required
+            autoComplete="email"
+            autoFocus
+          />
+        </div>
+        <Button type="submit" size="lg" disabled={pending} className="w-full">
           {pending ? 'Sending link…' : 'Send reset link'}
         </Button>
       </form>

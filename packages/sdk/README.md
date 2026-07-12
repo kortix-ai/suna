@@ -17,13 +17,62 @@ The REST API has an auto-generated reference at
 
 ---
 
+## Install
+
+```bash
+npm install @kortix/sdk
+```
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+await kortix.projects.list();
+```
+
+## No bundler, no framework
+
+The published package ships a browser IIFE bundle alongside its ESM `dist/` —
+no build step required:
+
+```html
+<script src="https://unpkg.com/@kortix/sdk"></script>
+<script>
+  const kortix = Kortix.createKortix({ backendUrl, getToken });
+</script>
+```
+
+> **CORS:** a `<script>` page calls the API from its own origin, so that origin
+> must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
+> are allowed out of the box; any third-party origin (or a local page on another
+> port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
+> blocks the request before it leaves the page.
+
+## Entry points
+
+`@kortix/sdk` is the canonical entry — everything framework-free lives there.
+Three others exist, each for a reason that fits in one sentence:
+
+| Entry | Why it can't live at root |
+|---|---|
+| `@kortix/sdk/react` | React is a peer dependency |
+| `@kortix/sdk/server` | imports `node:async_hooks` |
+| `@kortix/sdk/internal/*` | unsupported, outside semver |
+
+Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
+`@deprecated`. Import from the root instead — see **API-MAP.md**'s Stability
+table for the full list (20 of them).
+
+> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
+> no `response.body`. Tracked; do not depend on it yet.
+
 ## Quick start
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.ai/v1',
+  backendUrl: 'https://api.kortix.com/v1',
   getToken: () => supabase.auth.getSession().then(s => s.data.session?.access_token ?? null),
 });
 

@@ -11,7 +11,7 @@ import {
   setLSCache,
   unwrap,
 } from './shared';
-import { setCurrentRuntime } from '../../state/current-runtime';
+import { setCurrentRuntime } from '../../core/session/current-runtime';
 
 // ============================================================================
 // unwrap — the SDK-response { data, error } → value-or-throw helper shared by

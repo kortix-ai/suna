@@ -1,14 +1,14 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
   type ProjectConfigSummary,
-} from '../../platform/projects-client';
+} from '../../core/rest/projects-client';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';

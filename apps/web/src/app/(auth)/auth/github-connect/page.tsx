@@ -3,8 +3,11 @@
 import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
+
+import { KortixLogo } from '@/components/ui/kortix-logo';
+import Loading from '@/components/ui/loading';
+import { ErrorStrip } from '@/features/auth/auth-primitives';
 import { createClient } from '@/lib/supabase/client';
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 
 type ConnectMessage =
   | { type: 'github-connect-success'; provider_token: string; github_login?: string }
@@ -104,24 +107,23 @@ export default function GitHubConnectPopup() {
     handle();
   }, []);
 
-  const statusMessage =
-    status === 'error'
-      ? errorMessage || 'Authentication failed'
-      : status === 'processing'
-        ? 'Finishing up…'
-        : 'Redirecting to GitHub…';
-
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
-      <div className="flex max-w-sm flex-col items-center gap-4 text-center">
-        {status !== 'error' && (
-          <KortixHyperLogo size={64} startOnView={false} loop className="text-foreground" />
-        )}
-        <div className="space-y-1">
-          <h1 className="text-base font-medium">{tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}</h1>
-          <p className={status === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
-            {statusMessage}
-          </p>
+    <main className="bg-background flex min-h-svh flex-col items-center justify-center px-6">
+      <div className="w-full max-w-[320px]">
+        <KortixLogo variant="icon" size={22} className="text-foreground" />
+        <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight">
+          {tHardcodedUi.raw('appAuthGithubConnectPage.line116JsxTextConnectGithub')}
+        </h1>
+
+        <div className="mt-6">
+          {status === 'error' ? (
+            <ErrorStrip message={errorMessage || 'Authentication failed'} />
+          ) : (
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Loading className="text-muted-foreground size-4 shrink-0" />
+              <span>{status === 'processing' ? 'Finishing up…' : 'Redirecting to GitHub…'}</span>
+            </div>
+          )}
         </div>
       </div>
     </main>

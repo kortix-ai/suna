@@ -13,6 +13,29 @@ Legend: **✅ in SDK** · **🟡 partial** (client fn in SDK, hook not) · **❌
 
 ---
 
+## Stability
+
+Package-shape guarantees — orthogonal to the domain-coverage legend above,
+which tracks how much of the REST + runtime surface is wrapped, not how stable
+a given import path is:
+
+| Tier | Entries | Guarantee |
+|---|---|---|
+| Stable | `.`, `./react`, `./server` | semver |
+| Deprecated | the 20 legacy subpaths | works; removed on the next major |
+| Internal | `./internal/*` | **no guarantee**, may change in any release |
+
+`.` is the canonical entry — everything framework-free lives there. `./react`
+and `./server` exist because React is a peer dependency and `./server` statically
+imports `node:async_hooks`, respectively. The 20 legacy subpaths
+(`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
+the zustand stores, …) are `@deprecated` aliases that still resolve — import from
+the root instead. `./internal/*` backs `apps/web`'s zustand stores and is not
+reachable from `window.Kortix`; treat it as visible implementation detail, not
+designed API.
+
+---
+
 ## IN SCOPE — the agent product (what the SDK needs)
 
 ### 1. Auth / session token  ✅

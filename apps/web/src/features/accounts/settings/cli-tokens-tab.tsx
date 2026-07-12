@@ -2,7 +2,6 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -19,18 +18,19 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCopy } from '@/hooks/use-copy';
 import {
   accountTokensApi,
   type AccountToken,
   type CreatedAccountToken,
 } from '@/lib/api/account-tokens';
-import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk/projects-client';
 import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Loader2, X } from 'lucide-react';
+import { Check, Copy, KeyRound, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -209,6 +209,30 @@ function TokenRow({
   );
 }
 
+export function CreateApiKeyAction({
+  creating,
+  loading,
+  error,
+  tokenCount,
+  onStartCreate,
+}: {
+  creating: boolean;
+  loading: boolean;
+  error: boolean;
+  tokenCount: number;
+  onStartCreate: () => void;
+}) {
+  if (creating || loading || error || tokenCount === 0) return null;
+  return (
+    <div className="flex justify-end">
+      <Button size="sm" variant="secondary" onClick={onStartCreate}>
+        <Icon.Plus className="size-4 shrink-0" />
+        Create API key
+      </Button>
+    </div>
+  );
+}
+
 export function CliTokensTab() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -237,6 +261,13 @@ export function CliTokensTab() {
 
   return (
     <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
+      <CreateApiKeyAction
+        creating={creating}
+        loading={tokensQuery.isLoading}
+        error={!!tokensQuery.error}
+        tokenCount={tokens.length}
+        onStartCreate={() => setCreating(true)}
+      />
       {creating && (
         <div className="mb-4">
           <InlineCreate
@@ -446,7 +477,7 @@ function InlineCreate({
           Cancel
         </Button>
         <Button type="submit" disabled={!name.trim() || mutation.isPending}>
-          {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Create API key'}
+          {mutation.isPending ? <Loading className="size-4 shrink-0" /> : 'Create API key'}
         </Button>
       </div>
     </form>

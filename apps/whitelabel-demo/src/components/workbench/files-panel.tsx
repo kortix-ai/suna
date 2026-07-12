@@ -26,7 +26,7 @@ import type {
   ProjectCommit,
   ProjectFileEntry,
   ProjectFileSearchMatch,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Download,

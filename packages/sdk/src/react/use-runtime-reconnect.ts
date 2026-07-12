@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { getSupabaseAccessToken } from '../platform/auth';
-import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../session';
+import { getSupabaseAccessToken } from '../core/http/auth';
+import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../core/session';
 import {
   incrementSandboxFail,
   markInitialCheckDone,
@@ -13,8 +13,8 @@ import {
   setSandboxVersion,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-} from '../state/sandbox-connection-store';
-import { useServerStore } from '../state/server-store';
+} from '../browser/stores/sandbox-connection-store';
+import { useServerStore } from '../browser/stores/server-store';
 
 /**
  * Number of consecutive failures before marking as unreachable

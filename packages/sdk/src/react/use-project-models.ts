@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getProjectLlmCatalog } from '../platform/projects-client';
+import { getProjectLlmCatalog } from '../core/rest/projects-client';
 import { type FlatModel, flattenModels } from './model-flatten';
 import { projectLlmCatalogToProviderList } from './provider-selection';
 

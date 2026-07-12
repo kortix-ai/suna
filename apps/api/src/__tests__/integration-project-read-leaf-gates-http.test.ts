@@ -154,6 +154,19 @@ describe('HTTP enforcement — project read-leaf gates (agent-grant fold now rea
   }
 });
 
+describe('HTTP enforcement — gateway playground spend gate', () => {
+  test('agent granted an UNRELATED capability → 403 before upstream dispatch', async () => {
+    const secret = await mintToken({ agent: 'scoped-bot', kortixCli: ['project.trigger.fire'], connectors: [] });
+    const res = await postReq(`/v1/projects/${PROJECT}/gateway/playground`, secret, {
+      prompt: 'hello',
+      models: ['not-a-real-model'],
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json().catch(() => ({}));
+    expect(JSON.stringify(body)).toContain(PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ);
+  });
+});
+
 describe('HTTP enforcement — editor-tier read gates (file.read / secret.read moved off member)', () => {
   for (const c of EDITOR_TIER_READ_CASES) {
     describe(c.name, () => {

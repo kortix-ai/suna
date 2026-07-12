@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
 import { gatewayBudgets, gatewayRequestLogs, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
-import { callUpstream, type AuthedPrincipal } from '@kortix/llm-gateway';
+import { calculateCost, callUpstream, type AuthedPrincipal } from '@kortix/llm-gateway';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { db } from '../../shared/db';
 import { auth, errors, json } from '../../openapi';
@@ -12,6 +12,11 @@ import { assertProjectCapability, loadProjectForUser, lookupEmailsByUserIds } fr
 import { projectsApp } from '../lib/app';
 import { UUID_V4_REGEX } from '../lib/serializers';
 import { createGatewayKey, listGatewayKeys, revokeGatewayKey } from '../../llm-gateway/gateway-keys';
+import {
+  assertGatewayBudget,
+  persistGatewayTrace,
+  recordGatewayUsage,
+} from '../../llm-gateway/hooks';
 import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import { config } from '../../config';
 
@@ -799,6 +804,13 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
 
     const body = await c.req.json();
     const prompt = typeof body.prompt === 'string' ? body.prompt : '';
@@ -812,26 +824,80 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
     };
+    await assertGatewayBudget(principal);
 
     const results = await Promise.all(
       models.map(async (model) => {
+        const requestId = crypto.randomUUID();
+        const request = {
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+          max_tokens: 512,
+        };
         try {
           const candidates = await resolveCandidates(principal, model);
           if (candidates.length === 0) {
             return { model, ok: false, error: 'No upstream configured for this model' };
           }
+          const descriptor = candidates[0]!;
           const start = Date.now();
-          const res = await callUpstream(
-            {
-              model,
-              messages: [{ role: 'user', content: prompt }],
-              stream: false,
-              max_tokens: 512,
-            },
-            candidates[0]!,
-          );
+          const res = await callUpstream(request, descriptor);
           const latencyMs = Date.now() - start;
           const data = (await res.json()) as any;
+          const usage = data?.usage ?? {};
+          const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0) || 0;
+          const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0) || 0;
+          const cachedTokens = Number(usage.cached_tokens ?? 0) || 0;
+          const resolvedModel = String(data?.model ?? descriptor.resolvedModel ?? model);
+          const { upstreamCost, finalCost } = calculateCost(
+            resolvedModel,
+            { promptTokens, completionTokens, cachedTokens },
+            descriptor.billingMode === 'none' ? 0 : descriptor.markup,
+            typeof usage.cost === 'number' ? usage.cost : undefined,
+            descriptor.pricing,
+          );
+          await persistGatewayTrace({
+            requestId,
+            startedAt: new Date(start).toISOString(),
+            accountId: principal.accountId,
+            actorUserId: principal.userId,
+            projectId,
+            requestedModel: model,
+            resolvedModel,
+            provider: descriptor.provider,
+            billingMode: descriptor.billingMode,
+            streaming: false,
+            status: res.status,
+            ok: res.ok,
+            errorMessage: res.ok ? undefined : data?.error?.message ?? data?.message ?? `HTTP ${res.status}`,
+            latencyMs,
+            attempts: 1,
+            candidatesTried: [descriptor.provider],
+            usage: { promptTokens, completionTokens, cachedTokens },
+            upstreamCost,
+            finalCost,
+            request,
+            response: data,
+            metadata: { surface: 'gateway_playground' },
+          });
+          if (promptTokens + completionTokens > 0) {
+            await recordGatewayUsage({
+              promptTokens,
+              completionTokens,
+              cachedTokens,
+              accountId: principal.accountId,
+              actorUserId: principal.userId,
+              projectId,
+              provider: descriptor.provider,
+              model: resolvedModel,
+              upstreamCost,
+              finalCost,
+              billingMode: descriptor.billingMode,
+              streaming: false,
+              requestId,
+            });
+          }
           if (!res.ok) {
             return {
               model,
@@ -845,8 +911,8 @@ projectsApp.openapi(
             ok: true,
             latency_ms: latencyMs,
             output: data?.choices?.[0]?.message?.content ?? '',
-            input_tokens: data?.usage?.prompt_tokens ?? 0,
-            output_tokens: data?.usage?.completion_tokens ?? 0,
+            input_tokens: promptTokens,
+            output_tokens: completionTokens,
           };
         } catch (err) {
           return { model, ok: false, error: err instanceof Error ? err.message : 'Request failed' };

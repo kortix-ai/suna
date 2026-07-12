@@ -25,7 +25,6 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   ArrowUp,
   ArrowUpLeft,
@@ -45,12 +44,15 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { resolveComposerResetOnSend } from './composer-reset';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
+import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
 import {
@@ -1153,6 +1155,10 @@ export interface SessionChatInputProps {
   clearOnSend?: boolean;
   /** If true, a concrete model must be selected before a chat/command send. */
   modelRequired?: boolean;
+  /** True while the provider/model catalog is still being fetched — suppresses
+   *  the full-block "connect a model" gate so it doesn't flash for accounts
+   *  that do have models but are mid-load (e.g. sandbox still warming up). */
+  modelsLoading?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1231,6 +1237,7 @@ export function SessionChatInput({
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
+  modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1669,6 +1676,26 @@ export function SessionChatInput({
     selectedModel,
     lockForQuestion,
   });
+  // Drives the "connect a model" bar under the input. Two distinct dead-end
+  // states both surface it — either way the composer cannot send and needs to
+  // say why:
+  //  1. Nothing SELECTED (`!selectedModel`, i.e. `modelUnavailable`) — the
+  //     send button is hard-disabled with only a tooltip explaining it.
+  //  2. Nothing USABLE (`!hasSelectableModels`) — entitlement check: NOT
+  //     `models.length === 0`, because the gateway bakes its whole catalog
+  //     into every project regardless of plan or connected keys; this accounts
+  //     for free-tier gating and which providers are actually connected.
+  // Both are only consulted after every input settles (`modelsLoading` for the
+  // provider catalog, `entitlementsPending` for account/secrets/project), so
+  // the bar renders exactly once with the final answer instead of flashing in
+  // on half-loaded data and vanishing when the account state arrives.
+  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const noModelsConnected =
+    modelRequired &&
+    !lockForQuestion &&
+    !modelsLoading &&
+    !entitlementsPending &&
+    (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -2415,6 +2442,7 @@ export function SessionChatInput({
           </div>
         </div>
       </div>
+      <ModelConnectionBar show={noModelsConnected} />
     </div>
   );
 }

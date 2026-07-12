@@ -3,30 +3,28 @@ title: Turns
 description: Framework-free turn grouping, part classification, and view-model helpers for building a chat UI on raw session messages.
 ---
 
-`@kortix/sdk/turns` is the pure, framework-free engine behind the web and
+The turns module is the pure, framework-free engine behind the web and
 mobile chat renderers: grouping raw session messages into **turns**,
 classifying every message **part** into a typed shape, mapping tool parts to
 per-tool **view models**, and aggregating cost/token totals. No React, no DOM
 — every export is a plain function or type, safe to call from any host.
 
 ```ts
-import { classifyPart, classifyTurn, toolInfo, toolViewModel } from '@kortix/sdk/turns';
+import { classifyPart, classifyTurn, toolInfo, toolViewModel } from '@kortix/sdk';
 ```
 
 <Callout>
-**When to use this.** The [React hooks](/docs/sdk/react) (`useSessionSync`,
-`useSession`) already give you a live thread of messages. Reach for `@kortix/sdk/turns`
-when you're **rendering** that thread — grouping it into turns, deciding what a
-tool part means, or building a custom message/tool renderer instead of using
-the reference one in `apps/web`.
+  **When to use this.** The [React hooks](/docs/sdk/react) (`useSessionSync`, `useSession`) already
+  give you a live thread of messages. Reach for the turns helpers when you're **rendering** that
+  thread — grouping it into turns, deciding what a tool part means, or building a custom
+  message/tool renderer instead of using the reference one in `apps/web`.
 </Callout>
 
-A handful of the most useful exports — `classifyPart`, `classifyTurn`,
-`toolInfo`, `toolViewModel`, and their types — are also re-exported from the
-root `@kortix/sdk` entry, since they're the primary building blocks for a
-custom chat renderer. Everything else (grouping, cost/token aggregation,
-formatting, session-list helpers) is only available from the `@kortix/sdk/turns`
-subpath. See [what's on the root export](#whats-re-exported-from-kortixsdk) below.
+Since v2, **every turns export lives on the root `@kortix/sdk` entry** —
+classification, grouping, cost/token aggregation, formatting, and the
+session-list helpers alike. The old `@kortix/sdk/turns` subpath still works as
+a deprecated alias; new code imports from the root. See
+[Distribution](/docs/sdk/distribution#entry-points-and-their-stability-tiers).
 
 ## Part classification — `classifyPart` / `classifyTurn`
 
@@ -38,7 +36,7 @@ keyed by `kind`, with the fields a renderer actually needs already resolved
 (tool status, parsed JSON output, image/PDF detection, …).
 
 ```ts
-import { classifyPart, type ClassifiedPart } from '@kortix/sdk/turns';
+import { classifyPart, type ClassifiedPart } from '@kortix/sdk';
 
 for (const part of message.parts) {
   const classified: ClassifiedPart = classifyPart(part);
@@ -55,20 +53,20 @@ for (const part of message.parts) {
 }
 ```
 
-| `kind` | shape |
-|---|---|
-| `text` | `{ id, text, synthetic }` — `synthetic` marks shell-mode's synthetic user prompt (skip rendering as a bubble) |
-| `reasoning` | `{ id, text }` |
-| `tool` | `{ id, tool: ToolView }` — see below |
-| `file` | `{ id, filename?, mime, url, isImage, isPdf }` |
-| `subtask` | `{ id, description, agent, prompt, model? }` |
-| `patch` | `{ id, hash, files, fileCount }` |
-| `snapshot` | `{ id, snapshot }` |
-| `agent` | `{ id, name }` |
-| `retry` | `{ id, attempt, message, createdAt }` |
-| `compaction` | `{ id, auto, overflow, tailStartId? }` |
-| `step` | `{ id, phase: 'start' \| 'finish', snapshot?, reason?, cost?, tokens? }` |
-| `unknown` | `{ raw }` — forward-compat fallback for a part type this SDK version doesn't know about |
+| `kind`       | shape                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| `text`       | `{ id, text, synthetic }` — `synthetic` marks shell-mode's synthetic user prompt (skip rendering as a bubble) |
+| `reasoning`  | `{ id, text }`                                                                                                |
+| `tool`       | `{ id, tool: ToolView }` — see below                                                                          |
+| `file`       | `{ id, filename?, mime, url, isImage, isPdf }`                                                                |
+| `subtask`    | `{ id, description, agent, prompt, model? }`                                                                  |
+| `patch`      | `{ id, hash, files, fileCount }`                                                                              |
+| `snapshot`   | `{ id, snapshot }`                                                                                            |
+| `agent`      | `{ id, name }`                                                                                                |
+| `retry`      | `{ id, attempt, message, createdAt }`                                                                         |
+| `compaction` | `{ id, auto, overflow, tailStartId? }`                                                                        |
+| `step`       | `{ id, phase: 'start' \| 'finish', snapshot?, reason?, cost?, tokens? }`                                      |
+| `unknown`    | `{ raw }` — forward-compat fallback for a part type this SDK version doesn't know about                       |
 
 The switch's `default` branch has a compile-time exhaustiveness check, so a
 new opencode part variant fails **this file's** build instead of silently
@@ -86,8 +84,8 @@ interface ToolView {
   input?: Record<string, unknown>;
   output?: string;
   error?: string;
-  outputParsed?: unknown;   // JSON.parse(output) when it parses (capped at 256KB)
-  outputText?: string;      // the raw output text, always
+  outputParsed?: unknown; // JSON.parse(output) when it parses (capped at 256KB)
+  outputText?: string; // the raw output text, always
 }
 ```
 
@@ -99,7 +97,7 @@ successful call with raw JSON inside. `ToolView.status` is `'error'` in that
 case too.
 
 ```ts
-import { classifyTurn, type ClassifiedTurn } from '@kortix/sdk/turns';
+import { classifyTurn, type ClassifiedTurn } from '@kortix/sdk';
 
 const turn: ClassifiedTurn = classifyTurn(assistantMessage);
 // turn.parts       — every part, classified
@@ -121,10 +119,10 @@ derived from the tool's input (a file path, a query, an agent description, …).
 </Callout>
 
 ```ts
-import { toolInfo, humanizeToolName, type ToolCategory } from '@kortix/sdk/turns';
+import { toolInfo, humanizeToolName, type ToolCategory } from '@kortix/sdk';
 
-toolInfo('bash');           // { label: 'Shell', category: 'shell' }
-toolInfo('agent_spawn');    // prefix-matched: { label: 'Agent Spawn', category: 'task' }
+toolInfo('bash'); // { label: 'Shell', category: 'shell' }
+toolInfo('agent_spawn'); // prefix-matched: { label: 'Agent Spawn', category: 'task' }
 humanizeToolName('session_spawn'); // 'Session Spawn'
 ```
 
@@ -137,7 +135,7 @@ update); anything else falls back to `humanizeToolName(name)` with category
 `'other'`.
 
 ```ts
-import { getToolInfo, type ToolInfo } from '@kortix/sdk/turns';
+import { getToolInfo, type ToolInfo } from '@kortix/sdk';
 
 const info: ToolInfo = getToolInfo('write', { filePath: '/workspace/main.go' });
 // { icon: 'file-pen', title: 'Write', subtitle: 'main.go /workspace' }
@@ -155,7 +153,7 @@ A layer on top of `ToolView` for product UIs that want to render specific
 tool families specially instead of a generic JSON blob:
 
 ```ts
-import { toolViewModel, type ToolViewModel } from '@kortix/sdk/turns';
+import { toolViewModel, type ToolViewModel } from '@kortix/sdk';
 
 const vm: ToolViewModel = toolViewModel(classifiedTool);
 if (vm.kind === 'shell') {
@@ -163,18 +161,18 @@ if (vm.kind === 'shell') {
 }
 ```
 
-| `kind` | shape | tools |
-|---|---|---|
-| `web-search` | `{ query, results?, answer?, error? }` | `web_search`, `websearch`, `image_search` |
-| `shell` | `{ command, stdout?, exitCode? }` | `bash` — strips `<bash_metadata>`/ANSI tags |
-| `file-read` | `{ path, preview? }` | `read` |
-| `file-write` | `{ path, preview? }` | `write` |
-| `file-edit` | `{ path, diff?: DiffLine[] }` | `edit`, `morph_edit` — O(n) prefix/suffix line diff |
-| `search` | `{ pattern, matches?: SearchMatch[] }` | `grep`, `glob` |
-| `task` | `{ description, agent? }` | `task` |
-| `todo` | `{ items: TodoItem[] }` | `todowrite` |
-| `question` | `{ questions: QuestionItem[], answers? }` | `question`, `ask` |
-| `generic` | `{ label, inputPretty?, outputPretty? }` | everything else (`webfetch`, `image_gen`, `session_*`, `agent_*`, `project_*`, `trigger_*`, `pty_*`, …) — always safe to render |
+| `kind`       | shape                                     | tools                                                                                                                           |
+| ------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `web-search` | `{ query, results?, answer?, error? }`    | `web_search`, `websearch`, `image_search`                                                                                       |
+| `shell`      | `{ command, stdout?, exitCode? }`         | `bash` — strips `<bash_metadata>`/ANSI tags                                                                                     |
+| `file-read`  | `{ path, preview? }`                      | `read`                                                                                                                          |
+| `file-write` | `{ path, preview? }`                      | `write`                                                                                                                         |
+| `file-edit`  | `{ path, diff?: DiffLine[] }`             | `edit`, `morph_edit` — O(n) prefix/suffix line diff                                                                             |
+| `search`     | `{ pattern, matches?: SearchMatch[] }`    | `grep`, `glob`                                                                                                                  |
+| `task`       | `{ description, agent? }`                 | `task`                                                                                                                          |
+| `todo`       | `{ items: TodoItem[] }`                   | `todowrite`                                                                                                                     |
+| `question`   | `{ questions: QuestionItem[], answers? }` | `question`, `ask`                                                                                                               |
+| `generic`    | `{ label, inputPretty?, outputPretty? }`  | everything else (`webfetch`, `image_gen`, `session_*`, `agent_*`, `project_*`, `trigger_*`, `pty_*`, …) — always safe to render |
 
 `DiffLine` is `{ type: 'added' | 'removed' | 'unchanged', text }`. All string
 fields are capped (4000 chars for pretty-printed JSON, 256KB before a diff is
@@ -186,7 +184,7 @@ A **turn** pairs one user message with the assistant messages that answered
 it — the unit a chat UI actually renders as one exchange.
 
 ```ts
-import { groupMessagesIntoTurns, collectTurnParts, type TurnLike } from '@kortix/sdk/turns';
+import { groupMessagesIntoTurns, collectTurnParts, type TurnLike } from '@kortix/sdk';
 
 const turns: TurnLike[] = groupMessagesIntoTurns(messages);
 for (const turn of turns) {
@@ -213,9 +211,11 @@ user message's parts into image/PDF attachments vs sticky text/other parts).
 Narrow a `PartLike` by `type`, generic over your own part union:
 
 ```ts
-import { isTextPart, isToolPart, getPartText } from '@kortix/sdk/turns';
+import { isTextPart, isToolPart, getPartText } from '@kortix/sdk';
 
-if (isTextPart(part)) { /* part.type narrowed to 'text' */ }
+if (isTextPart(part)) {
+  /* part.type narrowed to 'text' */
+}
 const text = getPartText(part); // works for both 'text' and 'reasoning' parts
 ```
 
@@ -232,7 +232,7 @@ import {
   getTurnStatus,
   formatDuration,
   shouldHideResponsePart,
-} from '@kortix/sdk/turns';
+} from '@kortix/sdk';
 
 const working = getWorkingState(sessionStatus, isLastUserMessage(msg.info.id, allMessages));
 const status = getTurnStatus(parts, childMessages); // "Running commands..." etc.
@@ -252,11 +252,11 @@ the steps list and show it in a dedicated "Response" section.
 ## Errors
 
 ```ts
-import { getTurnError, getChildSessionError, unwrapError } from '@kortix/sdk/turns';
+import { getTurnError, getChildSessionError, unwrapError } from '@kortix/sdk';
 
-getTurnError(turn);                    // the first assistant error in a turn, unwrapped
-getChildSessionError(childMessages);   // newest-first scan of a sub-agent's own messages
-unwrapError(rawError);                 // deep JSON-unwrapping error normalizer both use
+getTurnError(turn); // the first assistant error in a turn, unwrapped
+getChildSessionError(childMessages); // newest-first scan of a sub-agent's own messages
+unwrapError(rawError); // deep JSON-unwrapping error normalizer both use
 ```
 
 `unwrapError` handles the router/executor error shapes this SDK actually
@@ -270,15 +270,15 @@ from.
 ## Cost & token aggregation
 
 ```ts
-import { getTurnCost, getSessionCost, formatCost, formatTokens, COST_MARKUP } from '@kortix/sdk/turns';
+import { getTurnCost, getSessionCost, formatCost, formatTokens, COST_MARKUP } from '@kortix/sdk';
 
 const info = getTurnCost(partsWithMessage, modelPricingLookup); // undefined if no cost data
 // info?.cost · info?.tokens.{input,output,reasoning,cacheRead,cacheWrite}
 
 const sessionCost = getSessionCost(messages, modelPricingLookup);
 
-formatCost(0.0032);   // "$0.003"
-formatTokens(12345);  // "12k"
+formatCost(0.0032); // "$0.003"
+formatTokens(12345); // "12k"
 ```
 
 Both aggregate from `step-finish` parts' reported `cost`/`tokens`, falling
@@ -296,10 +296,10 @@ session** — these helpers bridge a parent turn's rendering to that child's
 own message stream.
 
 ```ts
-import { getChildSessionId, getChildSessionToolParts, shouldShowToolPart } from '@kortix/sdk/turns';
+import { getChildSessionId, getChildSessionToolParts, shouldShowToolPart } from '@kortix/sdk';
 
-const childId = getChildSessionId(taskToolPart);       // from metadata, title, or output text
-const steps = getChildSessionToolParts(childMessages);  // child's tool parts, filtered
+const childId = getChildSessionId(taskToolPart); // from metadata, title, or output text
+const steps = getChildSessionToolParts(childMessages); // child's tool parts, filtered
 ```
 
 `getChildSessionToolParts` filters through `shouldShowToolPart`, which hides
@@ -317,11 +317,13 @@ import {
   getHiddenToolParts,
   isToolPartHidden,
   getAnsweredQuestionParts,
-} from '@kortix/sdk/turns';
+} from '@kortix/sdk';
 
 const permission = getPermissionForTool(permissions, callID);
 const hidden = getHiddenToolParts(activePermission, activeQuestion);
-if (isToolPartHidden(part, messageId, hidden)) { /* skip in the step list */ }
+if (isToolPartHidden(part, messageId, hidden)) {
+  /* skip in the step list */
+}
 ```
 
 `getAnsweredQuestionParts(turn, stepsExpanded, hasActiveQuestion)` collects
@@ -333,13 +335,13 @@ with the live one.
 ## Path & label formatting
 
 ```ts
-import { getFilename, getFileWithDir, getDirectory, relativizePath, stripAnsi } from '@kortix/sdk/turns';
+import { getFilename, getFileWithDir, getDirectory, relativizePath, stripAnsi } from '@kortix/sdk';
 
-getFilename('/workspace/src/main.go');           // "main.go"
-getFileWithDir('/workspace/src/main.go');         // "main.go /src"
-getDirectory('/workspace/src/main.go');           // "/workspace/src"
+getFilename('/workspace/src/main.go'); // "main.go"
+getFileWithDir('/workspace/src/main.go'); // "main.go /src"
+getDirectory('/workspace/src/main.go'); // "/workspace/src"
 relativizePath('/workspace/src/main.go', '/workspace'); // "src/main.go"
-stripAnsi(rawTerminalOutput);                     // strips ANSI escape codes, linear-time
+stripAnsi(rawTerminalOutput); // strips ANSI escape codes, linear-time
 ```
 
 Also `getAgentCardLabel(input)` (a one-line label for a task/agent card, with
@@ -353,19 +355,19 @@ Sidebar/tab helpers, not turn-scoped, but shipped here since they operate on
 the same session data shape:
 
 ```ts
-import { sortSessions, childMapByParent, allDescendantIds } from '@kortix/sdk/turns';
+import { sortSessions, childMapByParent, allDescendantIds } from '@kortix/sdk';
 
 sessions.sort(sortSessions(Date.now())); // pins sessions updated in the last 60s to the top
-const childMap = childMapByParent(sessions);           // parentID -> child session ids
+const childMap = childMapByParent(sessions); // parentID -> child session ids
 const descendants = allDescendantIds(childMap, sessionId); // full sub-agent tree, recursive
 ```
 
 ## Retry helpers
 
 ```ts
-import { getRetryInfo, getRetryMessage } from '@kortix/sdk/turns';
+import { getRetryInfo, getRetryMessage } from '@kortix/sdk';
 
-getRetryInfo(sessionStatus);    // { attempt, message, next } if status.type === 'retry', message capped to 60 chars
+getRetryInfo(sessionStatus); // { attempt, message, next } if status.type === 'retry', message capped to 60 chars
 getRetryMessage(sessionStatus); // the full, un-truncated retry error message
 ```
 
@@ -383,29 +385,26 @@ of widening it to the SDK's own. `classifyPart` / `classifyTurn` are the
 exception — they're typed against the real `@opencode-ai/sdk` `Part` union on
 purpose, so the exhaustiveness check is meaningful.
 
-## What's re-exported from `@kortix/sdk`
+## Everything is on the root entry
 
-| from root `@kortix/sdk` | from `@kortix/sdk/turns` only |
-|---|---|
-| `classifyPart`, `classifyTurn`, all `Classified*Part` types, `ClassifiedPart`, `ClassifiedTurn`, `TurnError`, `ToolView`, `ToolStatus` | `groupMessagesIntoTurns`, `collectTurnParts`, `findLastTextPart`, `turnHasSteps`, `isShellMode`, `getShellModePart`, `splitUserParts`, `isAttachment` |
-| `toolInfo`, `humanizeToolName`, `ToolCategory`, `ToolInfoEntry` | `getToolInfo`, `normalizeToolName`, all type guards (`isTextPart`, …), `getPartText` |
-| `toolViewModel`, `ToolViewModel`, `DiffLine`, `DiffLineType`, `WebSearchResultItem`, `SearchMatch`, `TodoItem`, `QuestionItem`, `QuestionOption` | `getWorkingState`, `isLastUserMessage`, `computeStatusFromPart`, `getTurnStatus`, `formatDuration`, `shouldHideResponsePart` |
-| | `getTurnError`, `getChildSessionError`, `unwrapError` |
-| | `getTurnCost`, `getSessionCost`, `formatCost`, `formatTokens`, `COST_MARKUP` |
-| | `getChildSessionId`, `getChildSessionToolParts`, `shouldShowToolPart` |
-| | `getHiddenToolParts`, `isToolPartHidden`, `getAnsweredQuestionParts`, `getPermissionForTool`, `getQuestionForTool` |
-| | `getFilename`, `getFileWithDir`, `getDirectory`, `relativizePath`, `getAgentCardLabel`, `getDiagnostics`, `stripAnsi` |
-| | `sortSessions`, `childMapByParent`, `allDescendantIds` |
-| | `getRetryInfo`, `getRetryMessage` |
-| | every structural type (`PartLike`, `MessageWithPartsLike`, `TurnLike`, `ToolInfo`, `TurnCostInfo`, `RetryInfo`, `Diagnostic`, `ModelCostRates`, `ModelPricingLookup`, …) |
+Since v2 the root `@kortix/sdk` export **is** the turns surface — every
+function and type on this page imports from it directly:
 
-If you only need the classification/tool-info/view-model primitives, importing
-from root `@kortix/sdk` is fine. Reach for the `@kortix/sdk/turns` subpath
-once you need grouping, cost, or any of the formatting/session-list helpers.
+```ts
+import {
+  classifyTurn,            // part classification
+  groupMessagesIntoTurns,  // turn grouping
+  getTurnCost,             // cost/token aggregation
+  formatCost,              // formatting
+  sortSessions,            // session-list helpers
+} from '@kortix/sdk';
+```
+
+The legacy `@kortix/sdk/turns` subpath re-exports the same names and remains
+only as a deprecated compatibility alias.
 
 ## Next
 
 - [React hooks](/docs/sdk/react) — `useSessionSync` / `useSession` give you the
   live message list this module groups and classifies.
 - [Modules](/docs/sdk/modules) — the other subpath imports.
-

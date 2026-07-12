@@ -11,11 +11,11 @@ let getClientImpl: () => { session: { promptAsync: (args: unknown) => Promise<un
   session: { promptAsync: (args: unknown) => promptImpl(args) },
 });
 
-mock.module('../../opencode/client', () => ({
+mock.module('../../core/runtime/client', () => ({
   getClient: () => getClientImpl(),
 }));
 
-mock.module('../../platform/logger', () => ({
+mock.module('../../core/http/logger', () => ({
   logger: { warn: () => {}, error: () => {}, info: () => {}, debug: () => {} },
 }));
 

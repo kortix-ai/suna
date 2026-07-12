@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { Skill, ToolListItem } from './keys';
 import { unwrap } from './shared';

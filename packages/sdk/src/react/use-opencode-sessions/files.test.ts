@@ -8,7 +8,7 @@ let clientImpl: {
   file: { list: (args: { path: string }) => Promise<{ data?: unknown }> };
 };
 
-mock.module('../../opencode/client', () => ({
+mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
 }));
 
