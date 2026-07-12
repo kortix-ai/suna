@@ -454,3 +454,30 @@ test('does NOT suppress an unrelated message that merely mentions "credits"', ()
     false,
   )
 })
+
+test('does NOT suppress a longer real error containing the billing-gate phrase', () => {
+  for (const value of [
+    'Failed to retry run: Out of credits. Top up to continue.',
+    'Out of credits. Top up to continue. Database reconciliation failed',
+    'ApiError: Out of credits. Top up to continue. while starting sandbox',
+    'Unhandled promise rejection: Something else: Out of credits. Top up to continue.',
+  ]) {
+    assert.equal(
+      isExpectedBillingGateMessage(value),
+      false,
+      `expected longer message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected longer Sentry event "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message: value }),
+      false,
+      `expected longer runtime error "${value}" to keep reporting`,
+    )
+  }
+})

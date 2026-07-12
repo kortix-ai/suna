@@ -68,10 +68,10 @@ if (SENTRY_DSN) {
       // (route/system-fault boundaries, `<ClientErrorBoundary>`, and the Sentry
       // SDK's own `onunhandledrejection`). Drop them at the SDK level too so an
       // expected billing state never pages Better Stack. Real `ApiError`s keep
-      // reporting — only these exact strings are matched.
-      'Out of credits. Top up to continue.',
-      'No credit account found. Complete account setup first.',
-      'Subscribe to activate your seat. $20/teammate per month includes wallet credits for compute and LLM usage.',
+      // reporting — these regexes are exact after optional canonical wrappers.
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
+      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$20\/teammate per month includes wallet credits for compute and LLM usage\.$/,
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",

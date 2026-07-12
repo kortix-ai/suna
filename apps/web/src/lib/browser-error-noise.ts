@@ -61,7 +61,8 @@ const RUNTIME_NOT_READY_NOISE_PATTERNS = [
 // Sentry SDK's own `onunhandledrejection`), so the exact billing-gate strings
 // are dropped here at the telemetry gate regardless of which path delivered
 // them. Real `ApiError`s ("Internal server error", "HTTP 500: …", …) keep
-// reporting — these exact strings are the only messages the billing gate emits.
+// reporting — only exact matches for these messages (plus the explicit
+// canonical wrappers below) are suppressed.
 const BILLING_GATE_EXPECTED_MESSAGES = [
   // `insufficient_credits` — wallet ran dry on an active plan.
   'Out of credits. Top up to continue.',
@@ -157,14 +158,17 @@ export function isRuntimeNotReadyNoiseMessage(message: unknown): boolean {
  * states already handled by a top-up toast or upgrade dialog in
  * `error-handler.tsx`; they must NEVER page Better Stack, but the SDK's
  * `ApiError` can leak to Sentry through capture paths that bypass
- * `handleApiError`'s 402 guard. Match is anchored on the exact strings the
- * billing gate emits, so a real `ApiError` ("Internal server error", …) is
- * never matched.
+ * `handleApiError`'s 402 guard. Match is exact after trimming, with only the
+ * canonical browser/Sentry wrappers we explicitly support, so a longer real
+ * `ApiError` that merely contains the billing phrase is never matched.
  */
 export function isExpectedBillingGateMessage(message: unknown): boolean {
-  const normalized = normalizeString(message);
-  return BILLING_GATE_EXPECTED_MESSAGES.some((expected) =>
-    normalized.includes(expected),
+  const normalized = normalizeString(message).trim();
+  return BILLING_GATE_EXPECTED_MESSAGES.some(
+    (expected) => normalized === expected
+      || normalized === `ApiError: ${expected}`
+      || normalized === `Unhandled promise rejection: ${expected}`
+      || normalized === `Unhandled promise rejection: ApiError: ${expected}`,
   );
 }
 
