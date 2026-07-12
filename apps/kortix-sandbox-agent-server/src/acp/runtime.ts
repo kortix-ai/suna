@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -69,7 +69,11 @@ export function ensureHarnessConfigDirs(env: NodeJS.ProcessEnv, cwd: string): vo
   if (piDir && managedModels) {
     const dir = isAbsolute(piDir) ? piDir : join(cwd, piDir)
     const file = join(dir, 'models.json')
-    if (!existsSync(file)) writeFileSync(file, `${managedModels}\n`, { mode: 0o600 })
+    try {
+      writeFileSync(file, `${managedModels}\n`, { flag: 'wx', mode: 0o600 })
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error
+    }
   }
 }
 

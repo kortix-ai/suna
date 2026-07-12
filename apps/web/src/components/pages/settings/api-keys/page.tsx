@@ -340,7 +340,7 @@ export default function APIKeysPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              const base = getActiveRuntimeUrl().replace(/\/+$/, '');
+              const base = stripTrailingSlashes(getActiveRuntimeUrl());
               const docsUrl = `${base}/docs`;
               window.open(docsUrl, '_blank', 'noopener,noreferrer');
             }}

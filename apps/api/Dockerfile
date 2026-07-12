@@ -123,6 +123,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared ./packages/shared
 COPY --from=deps /app/packages/llm-catalog ./packages/llm-catalog
 COPY --from=deps /app/packages/llm-gateway ./packages/llm-gateway
+COPY --from=deps /app/packages/sdk ./packages/sdk
 COPY --from=deps /app/packages/db/src ./packages/db/src
 COPY --from=deps /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
 COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
