@@ -20,9 +20,14 @@ Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your
 Kortix auth token, then runs \`opencode attach\` against it.
 
+Given a session id, resolves the right host/project on its own: tries the
+active/linked project first, then — unless you pin --host/--project — scans
+every logged-in host and account for the id. One command, no manual
+\`kortix projects use\` / \`kortix hosts use\` first.
+
   --port <N>       Local loopback proxy port (default: random free port).
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
+  --project <id>   Pin this project id (skips the cross-host scan).
+  --host <name>    Pin this Kortix host (skips the cross-host scan).
   -h, --help       Show this help.
 
 Examples:
@@ -65,7 +70,10 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   const sessionId = await resolveConnectSessionId(positional[0], opts);
   if (!sessionId) return 1;
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  // A session id may belong to a different project (or host) than the one
+  // currently active/linked — loadSessionForChat locates it on its own
+  // (--project/--host still pin it) instead of surfacing a bare "Not found".
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions connect');
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;

@@ -11,6 +11,7 @@ import { hasEnvTokenHost } from '../api/config.ts';
 import { loadLink } from '../project-link.ts';
 import {
   emitJson,
+  locateSessionAnywhere,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -36,27 +37,36 @@ export interface ResolvedSession {
 }
 
 /**
- * Common pre-flight for chat commands: resolve project ctx, fetch the
- * Kortix session, confirm the sandbox is reachable, return a bundle of
- * everything the caller needs.
+ * Common pre-flight for chat commands: locate which project (and host) the
+ * session lives in — trying the active/linked one first, then scanning
+ * every other logged-in host/account when it's not pinned by
+ * --host/--project — fetch the Kortix session, confirm the sandbox is
+ * reachable, and return a bundle of everything the caller needs.
+ *
+ * `cliCommand` (e.g. `"sessions chat"`) is used only to build the
+ * copy-pasteable retry hint printed when the session isn't found on any
+ * host you're logged into.
  *
  * Returns null on any failure (and prints a friendly message itself).
  */
 export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
+  cliCommand = 'sessions chat',
 ): Promise<ResolvedSession | null> {
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return null;
-
-  let session: ProjectSession;
-  try {
-    session = await ctx.client.get<ProjectSession>(
-      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+  const found = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix ${cliCommand} ${sessionId} --host ${host}`,
+  );
+  if (!found) return null;
+  const { client, projectId, auth, session, projectName, hostName } = found.located;
+  const ctx = { client, projectId, auth };
+  if (found.switched) {
+    process.stderr.write(
+      `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
+        `${C.dim}(host ${hostName}) — using it.${C.reset}\n`,
     );
-  } catch (err) {
-    surfaceApiError(err);
-    return null;
   }
 
   if (session.status !== 'running') {
@@ -81,17 +91,8 @@ export async function loadSessionForChat(
     return null;
   }
 
-  // Pick the same auth the project context resolved with so the sandbox
-  // proxy auth header matches the host the session lives on.
-  const hostFromLink =
-    !opts.hostArg && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
-  const hostName = opts.hostArg ?? hostFromLink;
-  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
-  if (!auth) {
-    process.stderr.write(`${status.err('Not logged in.')}\n`);
-    return null;
-  }
-
+  // Same auth `locateSessionAnywhere` resolved the session with, so the
+  // sandbox proxy auth header matches the host the session actually lives on.
   const oc = opencodeClient({ auth, sandboxId: proxyId });
   return {
     session,
@@ -293,7 +294,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
   if (!sessionId) return 1;
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
 
   const ocSessionId = await ensureOpencodeSession(resolved);
@@ -526,7 +527,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     sessionId = chosen.session_id;
   }
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions log');
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
