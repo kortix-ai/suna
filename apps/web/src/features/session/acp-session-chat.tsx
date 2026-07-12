@@ -4,24 +4,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
-import { useAcpSession } from '@kortix/sdk/react';
+import type { useSession } from '@kortix/sdk/react';
 import { projectAcpChatItems } from '@kortix/sdk';
 import { Bot, Brain, ShieldCheck, Square, Terminal, User } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 export function AcpSessionChat({
-  projectId,
-  sessionId,
-  runtimeSessionId,
+  acp,
   onReady,
 }: {
-  projectId: string;
-  sessionId: string;
-  runtimeSessionId?: string | null;
+  acp: NonNullable<ReturnType<typeof useSession>['acp']>;
   onReady?: () => void;
 }) {
   const [draft, setDraft] = useState('');
-  const { ready, busy, error, envelopes, runtimeSessionId: acpSessionId, send: sendPrompt, cancel, respondPermission } = useAcpSession({ projectId, sessionId, runtimeSessionId });
+  const { ready, busy, error, envelopes, runtimeSessionId: acpSessionId, send: sendPrompt, cancel, respondPermission } = acp;
   const items = useMemo(() => projectAcpChatItems(envelopes), [envelopes]);
   useEffect(() => { if (ready) onReady?.(); }, [onReady, ready]);
 

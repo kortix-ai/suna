@@ -43,6 +43,7 @@ import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import { useOpenCodeEventStream } from './use-opencode-events';
 import type { ModelKey } from './use-model-store';
 import { useProjectConfig } from './use-project-config';
+import { useAcpSession } from './use-acp-session';
 import { useProjectModels } from './use-project-models';
 import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
@@ -319,6 +320,12 @@ export function useSession(
     startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
   const runtimeProtocol = startData?.runtime_protocol ?? (startData?.opencode_session_id ? 'opencode' : null);
   const isAcp = runtimeProtocol === 'acp';
+  const acp = useAcpSession({
+    projectId,
+    sessionId,
+    runtimeSessionId: startData?.runtime_session_id ?? null,
+    enabled: isAcp && startReady,
+  });
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -477,6 +484,8 @@ export function useSession(
     runtimeProtocol,
     runtimeId: startData?.runtime_id ?? null,
     runtimeSessionId: startData?.runtime_session_id ?? null,
+    /** Canonical ACP conversation state/actions. Null for legacy sessions. */
+    acp: isAcp ? acp : null,
 
     // live data
     messages: sync.messages,
@@ -500,8 +509,8 @@ export function useSession(
     startError,
     /** Granular boot phase (connecting|booting|ready|unreachable) for detailed UI. */
     runtimePhase,
-    isBusy: sync.isBusy || !!pending,
-    isLoading: sync.isLoading,
+    isBusy: isAcp ? acp.busy : sync.isBusy || !!pending,
+    isLoading: isAcp ? !acp.ready : sync.isLoading,
     isError: terminal || !!startError,
     /** Whether there are open interactive prompts (questions/permissions). */
     hasPending: questions.length > 0 || permissions.length > 0,

@@ -11,10 +11,11 @@ export type AcpStoredSessionEnvelope = {
   createdAt?: string;
 };
 
-export function useAcpSession({ projectId, sessionId, runtimeSessionId }: {
+export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled = true }: {
   projectId: string;
   sessionId: string;
   runtimeSessionId?: string | null;
+  enabled?: boolean;
 }) {
   const client = useMemo(() => createAcpClient({
     endpoint: projectAcpEndpoint(projectId, sessionId),
@@ -30,6 +31,7 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId }: {
   }), []);
 
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     const stream = client.connect({
       onEvent: (event) => addEnvelope({ ordinal: Date.now() * 1000 + event.id, direction: 'agent_to_client', streamEventId: event.id, envelope: event.envelope }),
@@ -61,7 +63,7 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId }: {
       }
     })();
     return () => { active = false; stream.close(); };
-  }, [addEnvelope, client, runtimeSessionId, sessionId]);
+  }, [addEnvelope, client, enabled, runtimeSessionId, sessionId]);
 
   const send = useCallback(async (prompt: AcpContentBlock[]) => {
     if (!nativeId || busy) return false;

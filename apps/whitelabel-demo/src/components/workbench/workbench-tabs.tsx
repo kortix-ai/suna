@@ -18,6 +18,7 @@ import { kortix } from '@/lib/kortix';
 import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 import type { UseSessionResult } from '@kortix/sdk/react';
+import { projectAcpChatItems } from '@kortix/sdk';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, RotateCw, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -68,7 +69,47 @@ export function WorkbenchTabs({
  * optimistic send, interactive prompts, the model/agent picks, and the runtime
  * phase. No useChat, no useCanonicalOpenCodeSession, no sandbox wiring.
  */
-function Thread({ session: c }: { session: UseSessionResult }) {
+function Thread({ session }: { session: UseSessionResult }) {
+  if (session.acp) return <AcpThread acp={session.acp} />;
+  return <LegacyThread session={session} />;
+}
+
+function AcpThread({ acp }: { acp: NonNullable<UseSessionResult['acp']> }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const items = projectAcpChatItems(acp.envelopes);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [items.length, acp.busy]);
+  return (
+    <>
+      <div ref={scrollRef} className="scroll-fade flex-1 overflow-y-auto scrollbar-thin">
+        <div className="mx-auto max-w-3xl space-y-4 px-5 py-6">
+          {!items.length && <p className="py-16 text-center text-sm text-muted-foreground">Send a message to get the agent working.</p>}
+          {items.map((item, index) => item.kind === 'message' ? (
+            <Message key={index} align={item.role === 'user' ? 'end' : 'start'}>
+              <Bubble variant={item.role === 'user' ? 'secondary' : 'default'} align={item.role === 'user' ? 'end' : 'start'}><BubbleContent>{item.text}</BubbleContent></Bubble>
+            </Message>
+          ) : item.kind === 'permission' ? (
+            <div key={index} className="rounded-xl border border-border bg-muted/30 p-3">
+              <p className="mb-2 text-sm font-medium">Permission requested</p>
+              <div className="flex flex-wrap gap-2">
+                {(Array.isArray(item.params.options) ? item.params.options as Array<Record<string, unknown>> : []).map((option) => {
+                  const id = String(option.optionId ?? option.id);
+                  return <Button key={id} size="sm" onClick={() => void acp.respondPermission(item.id, id)}>{String(option.name ?? option.title ?? id)}</Button>;
+                })}
+                <Button size="sm" variant="secondary" onClick={() => void acp.respondPermission(item.id)}>Reject</Button>
+              </div>
+            </div>
+          ) : (
+            <div key={index} className="rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">{item.kind === 'tool' ? item.title : item.method}</div>
+          ))}
+          {acp.busy && <Marker><MarkerIcon><Loader2 className="animate-spin" /></MarkerIcon><MarkerContent>Agent is working…</MarkerContent></Marker>}
+        </div>
+      </div>
+      <div className="shrink-0 px-5 pb-5"><div className="mx-auto max-w-3xl"><Composer onSend={(text) => void acp.send([{ type: 'text', text }])} onStop={() => void acp.cancel()} busy={acp.busy} disabled={!acp.ready} /></div></div>
+    </>
+  );
+}
+
+function LegacyThread({ session: c }: { session: UseSessionResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

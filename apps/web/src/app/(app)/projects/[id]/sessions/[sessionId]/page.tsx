@@ -234,9 +234,7 @@ export default function ProjectSessionPage() {
               {mountChat && (
                 session.runtimeProtocol === 'acp' ? (
                   <AcpSessionChat
-                    projectId={projectId}
-                    sessionId={sessionId}
-                    runtimeSessionId={session.runtimeSessionId}
+                    acp={session.acp!}
                     onReady={() => setChatReady(true)}
                   />
                 ) : (
