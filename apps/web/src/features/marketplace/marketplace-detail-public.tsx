@@ -10,7 +10,7 @@ import type {
   MarketplaceSummary,
 } from '@/lib/marketplace-client';
 import { marketplaceItemHref } from '@/lib/marketplace-slug';
-import { MarketplaceDetail } from './marketplace-detail';
+import { MarketplaceDetail, useDetailNav } from './marketplace-detail';
 
 /**
  * Public detail page wrapper — the SSR page can't hand `MarketplaceDetail`
@@ -30,25 +30,9 @@ export function MarketplaceDetailPublic({
   const router = useRouter();
   const itemsQuery = useMarketplaceItems({ publicOnly: true });
   const ids = useMemo(() => (itemsQuery.data?.items ?? []).map((i) => i.id), [itemsQuery.data]);
-  const idx = ids.indexOf(data.id);
-  const prevId = idx > 0 ? ids[idx - 1] : undefined;
-  const nextId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : undefined;
+  const nav = useDetailNav(ids, data.id, (id) => router.push(marketplaceItemHref(id)));
 
   return (
-    <MarketplaceDetail
-      data={data}
-      company={company}
-      otherProjects={otherProjects}
-      nav={
-        ids.length && idx >= 0
-          ? {
-              index: idx + 1,
-              total: ids.length,
-              onPrev: prevId ? () => router.push(marketplaceItemHref(prevId)) : undefined,
-              onNext: nextId ? () => router.push(marketplaceItemHref(nextId)) : undefined,
-            }
-          : undefined
-      }
-    />
+    <MarketplaceDetail data={data} company={company} otherProjects={otherProjects} nav={nav} />
   );
 }

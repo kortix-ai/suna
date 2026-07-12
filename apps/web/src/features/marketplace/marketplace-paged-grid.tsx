@@ -145,6 +145,42 @@ export function MarketplacePagedGrid({
   );
 }
 
+/** The infinite-scroll sentinel shared by both virtualization strategies below
+ *  — an `IntersectionObserver` on a trailing 1px marker that fetches the next
+ *  page once it's within `rootMargin` of the given scroll root (`null` for
+ *  the window, an ancestor element for the in-panel grid). Returns the ref to
+ *  attach to the sentinel `<div>`. */
+function useInfiniteScrollSentinel({
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+  root,
+  rootMargin,
+}: {
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+  root: Element | null;
+  rootMargin: string;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (shouldFetchNextMarketplacePage(!!entry?.isIntersecting, { hasNextPage, isFetchingNextPage })) {
+          fetchNextPage();
+        }
+      },
+      { root, rootMargin },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [root, rootMargin, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  return sentinelRef;
+}
+
 /** Renders one virtualizer row — a plain grid of cards. (Headers are unused
  *  today since callers pass `grouped: false`, but handled for completeness.) */
 function GridRow({
@@ -209,21 +245,13 @@ function WindowVirtualGrid({
     getItemKey: (index) => marketplaceGridRowKey(rows[index], index),
   });
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node || !hasNextPage) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (shouldFetchNextMarketplacePage(!!entry?.isIntersecting, { hasNextPage, isFetchingNextPage })) {
-          fetchNextPage();
-        }
-      },
-      { rootMargin: '400px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinelRef = useInfiniteScrollSentinel({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    root: null,
+    rootMargin: '400px',
+  });
 
   return (
     <>
@@ -297,21 +325,13 @@ function AncestorVirtualGrid({
     getItemKey: (index) => marketplaceGridRowKey(rows[index], index),
   });
 
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node || !hasNextPage) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (shouldFetchNextMarketplacePage(!!entry?.isIntersecting, { hasNextPage, isFetchingNextPage })) {
-          fetchNextPage();
-        }
-      },
-      { root: scrollElement, rootMargin: '200px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [scrollElement, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinelRef = useInfiniteScrollSentinel({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    root: scrollElement,
+    rootMargin: '200px',
+  });
 
   return (
     <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>

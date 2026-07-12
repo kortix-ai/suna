@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import {
   Fragment,
-  type MutableRefObject,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -92,7 +91,7 @@ function EmbeddedShell({
   const setMainRef = useCallback(
     (node: HTMLDivElement | null) => {
       localRef.current = node;
-      if (scrollRef) (scrollRef as MutableRefObject<HTMLElement | null>).current = node;
+      if (scrollRef) scrollRef.current = node;
     },
     [scrollRef],
   );

@@ -40,8 +40,9 @@ export function flattenMarketplaceItems(pages: { items: MarketplaceItem[] }[]): 
 
 /** Groups items by their `TYPE_SECTIONS` label, preserving section order and
  *  bucketing anything unmatched into "Other". Extracted from the old
- *  `sections` useMemo so it's independently testable. */
-export function groupMarketplaceItemsByType(
+ *  `sections` useMemo so it's independently testable. Not exported — only
+ *  used internally by `buildMarketplaceGridRows`. */
+function groupMarketplaceItemsByType(
   items: MarketplaceItem[],
 ): { label: string; items: MarketplaceItem[] }[] {
   const byLabel = new Map<string, MarketplaceItem[]>();
@@ -86,16 +87,6 @@ export function marketplaceGridRowKey(row: MarketplaceGridRow, index: number): s
   return `items:${row.items.map((i) => i.id).join(',') || index}`;
 }
 
-/** Resolves the type filter to `'all'` if the current selection is no longer
- *  a valid option (e.g. it dropped out of `typeOptions` after a source
- *  change). Extracted from an inline expression for testability. */
-export function resolveEffectiveMarketplaceType(
-  type: string,
-  typeOptions: { value: string }[],
-): string {
-  return typeOptions.some((t) => t.value === type) ? type : 'all';
-}
-
 /** Decides whether the bottom sentinel intersecting should trigger
  *  `fetchNextPage()` — only when it's actually in view, there's a next page,
  *  and a fetch isn't already in flight. Extracted so the paging decision is
@@ -105,40 +96,6 @@ export function shouldFetchNextMarketplacePage(
   query: { hasNextPage: boolean; isFetchingNextPage: boolean },
 ): boolean {
   return isIntersecting && query.hasNextPage && !query.isFetchingNextPage;
-}
-
-/** The params passed to `useInfiniteMarketplaceItems` from the browser's
- *  search/type/source controls. Extracted so control changes re-scoping the
- *  query is testable as a pure mapping, independent of react-query. */
-export function resolveMarketplaceQueryParams(controls: {
-  debounced: string;
-  effectiveType: string;
-  source: string;
-  publicOnly: boolean;
-}): { query: string; type: string; source: string; publicOnly: boolean } {
-  return {
-    query: controls.debounced,
-    type: controls.effectiveType,
-    source: controls.source,
-    publicOnly: controls.publicOnly,
-  };
-}
-
-/** Top-level view the public explore landing renders (A4). An empty catalog
- *  wins even mid-search (nothing to search); otherwise a query in flight
- *  switches the whole page to the paged/virtualized search view instead of
- *  the grouped preview sections. "No results for this search" isn't decided
- *  here — it's only knowable once the paged query resolves, so it's handled
- *  by the paged grid itself. */
-export type MarketplaceExploreViewMode = 'empty' | 'search' | 'browse';
-
-export function resolveMarketplaceExploreViewMode(params: {
-  catalogEmpty: boolean;
-  searching: boolean;
-}): MarketplaceExploreViewMode {
-  if (params.catalogEmpty) return 'empty';
-  if (params.searching) return 'search';
-  return 'browse';
 }
 
 /** Sums a `MarketplaceSummary[]`'s per-type counts across all sources into a
@@ -167,25 +124,6 @@ export function sumMarketplaceTypeCounts(
  *  configured page size) to mount directly without windowing. */
 export function shouldVirtualizeMarketplacePagedGrid(pageCount: number): boolean {
   return pageCount > 1;
-}
-
-/** Whether an explore-landing type section should offer its "See all"
- *  affordance (routing into the paged/virtualized view). Gated on the section
- *  actually having a paged view (`hasPagedView` — the curated Featured rail
- *  doesn't) AND on a local under-count: the section renders `renderedCount`
- *  cards (its preview cap) but `total` items exist across the catalog, so
- *  whenever fewer are shown than exist — whether because the preview is capped
- *  or because the SSR-bounded landing sample itself truncated this type below
- *  its true total — a "See all" surfaces. Comparing the *rendered* count (not
- *  the raw local bucket) to the true total is what closes the gap where a
- *  bounded sample could otherwise silently show an incomplete set with no
- *  escape hatch. */
-export function shouldOfferMarketplaceSeeAll(params: {
-  hasPagedView: boolean;
-  renderedCount: number;
-  total: number;
-}): boolean {
-  return params.hasPagedView && params.renderedCount < params.total;
 }
 
 /** Resolves a type section's true item total from the summed type counts

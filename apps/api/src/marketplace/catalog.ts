@@ -310,7 +310,20 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
   const items: RegistryItem[] = [];
   for (const [slug, files] of [...bySlug.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     const metaFile = files.find((f) => f.path === "project.json");
-    const meta: ProjectTemplateMeta = metaFile ? JSON.parse(metaFile.content) : {};
+    let meta: ProjectTemplateMeta = {};
+    if (metaFile) {
+      try {
+        meta = JSON.parse(metaFile.content);
+      } catch (err) {
+        // One malformed project.json must not zero out the whole catalog
+        // (this runs deep inside getBaseCatalog(), uncaught up the chain) —
+        // skip just this template.
+        console.warn(
+          `[marketplace] skipping project template "${slug}": invalid project.json (${(err as Error).message})`,
+        );
+        continue;
+      }
+    }
     items.push({
       name: slug,
       type: "registry:project",

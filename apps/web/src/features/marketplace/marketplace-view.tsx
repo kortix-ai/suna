@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { useInstalledItems, useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
-import { MarketplaceDetail } from './marketplace-detail';
+import { MarketplaceDetail, useDetailNav } from './marketplace-detail';
 import { MarketplaceExplore } from './marketplace-explore';
 import { MarketplaceInstalledPanel } from './marketplace-installed-panel';
 import { MarketplaceSurfaceProvider, type MarketplaceSurface } from './marketplace-surface';
@@ -126,9 +126,7 @@ function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
   // renders. Clamped at the ends.
   const itemsQuery = useMarketplaceItems({ publicOnly: false });
   const ids = useMemo(() => (itemsQuery.data?.items ?? []).map((i) => i.id), [itemsQuery.data]);
-  const idx = openId ? ids.indexOf(openId) : -1;
-  const prevId = idx > 0 ? ids[idx - 1] : undefined;
-  const nextId = idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : undefined;
+  const nav = useDetailNav(ids, openId ?? undefined, openItem);
 
   if (query.isLoading) {
     return (
@@ -147,20 +145,5 @@ function MarketplaceDetailOverlay({ onBack }: { onBack: () => void }) {
       </div>
     );
   }
-  return (
-    <MarketplaceDetail
-      data={query.data}
-      onBack={onBack}
-      nav={
-        ids.length && idx >= 0
-          ? {
-              index: idx + 1,
-              total: ids.length,
-              onPrev: prevId ? () => openItem(prevId) : undefined,
-              onNext: nextId ? () => openItem(nextId) : undefined,
-            }
-          : undefined
-      }
-    />
-  );
+  return <MarketplaceDetail data={query.data} onBack={onBack} nav={nav} />;
 }

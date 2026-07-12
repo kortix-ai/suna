@@ -16,7 +16,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
 import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
-import { getCatalogEntry, getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
+import { getCatalogEntry, resolveOpencodeDir } from '../../marketplace/catalog';
 import {
   buildInstall,
   buildInstallBatch,
@@ -64,8 +64,18 @@ async function handleMarketplaceInstall(c: any) {
   const body = await readBody(c);
   const id = typeof body?.id === 'string' ? body.id.trim() : '';
   if (!id) return c.json({ error: 'id is required' }, 400);
-  const detail = await getCatalogItemDetail(id);
-  if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
+  // Existence check must NOT go through `getCatalogItemDetail` — it filters
+  // through `isBrowseableCatalogItem` (skill + project only, see catalog.ts's
+  // `MARKETPLACE_VISIBLE_TYPES`), which would 400 an otherwise-valid install of
+  // a registry:agent/command/bundle by id. `getCatalogEntry` is the ungated
+  // lookup; install itself is authorized per committed file path below
+  // (`assertCommitCapabilities`), not by browse visibility. Items explicitly
+  // marked hidden stay excluded (mirrors `isBrowseableCatalogItem`'s hidden check).
+  const entry = await getCatalogEntry(id);
+  if (!entry || entry.item.meta?.hidden === true) {
+    return c.json({ error: `Unknown item "${id}"` }, 400);
+  }
+  const detail = { type: entry.item.type, title: entry.item.title ?? entry.item.name };
   // registry:project items are whole-project scaffolds (kortix.yaml + agents) —
   // a deterministic file commit here would clobber this project's own
   // kortix.yaml. Cloning as a new project (POST /provision, source_item_id) or
@@ -143,6 +153,18 @@ function buildRegistryProjectInstallPrompt(
 ): string {
   const item = entry.item;
   const ownFiles = (item.files ?? []).filter((f) => typeof f.content === 'string');
+  // Today every registry:project item is a base (inline-content) item, so
+  // `files[].content` is always populated here. If an EXTERNAL project item
+  // ever lands in the catalog, its file content is fetched lazily and isn't
+  // present on `item.files` — silently falling through would produce a prompt
+  // with none of the template's actual files, i.e. a no-op merge. Fail loudly
+  // instead of degrading silently (a full fix would resolve content via
+  // `getCatalogItemFile` per file).
+  if ((item.files ?? []).length > 0 && ownFiles.length === 0) {
+    throw new Error(
+      `Project template "${item.name}" has no resolvable file content (likely an external registry item) — install-session merge only supports base project items today.`,
+    );
+  }
   const deps = item.registryDependencies ?? [];
 
   const lines: string[] = [
@@ -195,7 +217,12 @@ async function handleMarketplaceInstallSession(c: any) {
 
   const project = await loadGitProject(loaded);
   const manifestRaw = await manifestRawOrNull(project);
-  const prompt = buildRegistryProjectInstallPrompt(entry, manifestRaw);
+  let prompt: string;
+  try {
+    prompt = buildRegistryProjectInstallPrompt(entry, manifestRaw);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
 
   const result = await createProjectSession({
     project: loaded.row,

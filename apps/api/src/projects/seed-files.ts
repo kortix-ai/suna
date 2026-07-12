@@ -1,4 +1,4 @@
-import type { StarterTemplateId } from '@kortix/starter';
+import { interpolateVars, type StarterTemplateId } from '@kortix/starter';
 import { hashContent, parseLockContent, serializeLock } from '@kortix/registry';
 import { buildInstall, buildInstallBatch } from '../marketplace/install-service';
 import { buildStarterFiles } from './starter';
@@ -68,6 +68,23 @@ function starterSkillLockFile(files: Array<{ path: string; content: string }>, n
   return { path: 'registry-lock.json', content: serializeLock(lock) };
 }
 
+/** Shared skeleton every project-seeding path starts from: the starter's own
+ *  runtime files for `template`, plus a `registry-lock.json` recording the
+ *  baked-in base skills — computed together so the lock step can't be
+ *  forgotten by a caller that layers more files on top (see
+ *  `buildProjectSeedFilesFromItem`, which used to skip it). */
+function starterFilesWithLock(
+  projectName: string,
+  repoFullName: string,
+  template: StarterTemplateId,
+  now: string,
+): { files: Array<{ path: string; content: string }>; lockContent: string | null } {
+  let files = buildStarterFiles({ projectName, repoFullName, template });
+  const starterLockFile = starterSkillLockFile(files, now);
+  if (starterLockFile) files = mergeSeedFiles(files, [starterLockFile]);
+  return { files, lockContent: starterLockFile?.content ?? null };
+}
+
 export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promise<{
   files: Array<{ path: string; content: string }>;
   baseFiles: Array<{ path: string; content: string }>;
@@ -77,20 +94,19 @@ export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promi
     repoFullName: 'kortix/kortix-project',
     template: input.template,
   });
-  let files = buildStarterFiles({
-    projectName: input.projectName,
-    repoFullName: input.repoFullName,
-    template: input.template,
-  });
-
-  const starterLockFile = starterSkillLockFile(files, input.now);
-  if (starterLockFile) files = mergeSeedFiles(files, [starterLockFile]);
+  const { files: starterFiles, lockContent } = starterFilesWithLock(
+    input.projectName,
+    input.repoFullName,
+    input.template,
+    input.now,
+  );
+  let files = starterFiles;
 
   if (input.marketplaceItems.length > 0) {
     const marketplace = await buildInstallBatch({
       ids: input.marketplaceItems,
       configDir: '.kortix/opencode',
-      existingLockRaw: starterLockFile?.content ?? null,
+      existingLockRaw: lockContent,
       legacyLockRaw: null,
       now: input.now,
     });
@@ -107,18 +123,6 @@ export interface ProjectSeedFilesFromItemInput {
   repoFullName: string;
   extraMarketplaceItems: string[];
   now: string;
-}
-
-/** `{{var}}` substitution matching @kortix/starter's own convention (only
- *  `\w+` identifiers, unknown ones left intact). Project-item catalog
- *  content ships with placeholders unresolved (see
- *  `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts) so
- *  they can be resolved here against the real destination project's name
- *  instead of a generic catalog-display placeholder. */
-function interpolateProjectVars(content: string, vars: Record<string, string>): string {
-  return content.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
-    name in vars ? vars[name]! : match,
-  );
 }
 
 /**
@@ -139,23 +143,30 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
     repoFullName: 'kortix/kortix-project',
     template: 'minimal',
   });
-  let files = buildStarterFiles({
-    projectName: input.projectName,
-    repoFullName: input.repoFullName,
-    template: 'minimal',
-  });
+  const { files: starterFiles, lockContent } = starterFilesWithLock(
+    input.projectName,
+    input.repoFullName,
+    'minimal',
+    input.now,
+  );
+  let files = starterFiles;
 
   const built = await buildInstall({
     id: input.id,
     configDir: '.kortix/opencode',
-    existingLockRaw: null,
+    existingLockRaw: lockContent,
     legacyLockRaw: null,
     now: input.now,
   });
+  // Project-item catalog content ships with `{{var}}` placeholders unresolved
+  // (see `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts)
+  // so they can be resolved here against the real destination project's name
+  // instead of a generic catalog-display placeholder. Reuses @kortix/starter's
+  // own `{{var}}` convention rather than a local reimplementation.
   const vars = { projectName: input.projectName, repoFullName: input.repoFullName };
   const projectFiles = built.files.map((f) => ({
     path: f.path,
-    content: interpolateProjectVars(f.content, vars),
+    content: interpolateVars(f.content, vars),
   }));
   files = mergeSeedFiles(files, projectFiles);
 

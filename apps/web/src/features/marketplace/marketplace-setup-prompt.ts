@@ -20,18 +20,3 @@ export function buildTemplateSetupPrompt(title: string): string {
     "Follow the guardrails in the agent's own instructions, and don't push to main without a change request.",
   ].join('\n');
 }
-
-/**
- * The prompt for installing a skill/component into a project — used when the
- * install is worth a setup session (the item needs secrets/connectors) rather
- * than a silent file commit.
- */
-export function buildSkillSetupPrompt(title: string): string {
-  const name = title.replaceAll('-', ' ');
-  return [
-    `The "${name}" skill was just added to this project. Get it ready to use:`,
-    '1. Read its `SKILL.md` to see what it does and what it needs.',
-    '2. If it needs any secrets or connectors, mint a setup link with the `request_secret` / `connect` tools (or `kortix secrets request` / `kortix connectors link`) — never ask me to paste a raw key into chat.',
-    '3. Tell me in one line what it can now do and how to trigger it.',
-  ].join('\n');
-}

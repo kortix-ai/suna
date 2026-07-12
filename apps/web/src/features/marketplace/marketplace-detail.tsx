@@ -5,12 +5,14 @@ import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
+import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import Loading from '@/components/ui/loading';
+import { Portal } from '@/components/ui/portal';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { Icon } from '@/features/icon/icon';
@@ -71,7 +73,7 @@ function RowPanel({ children }: { children: React.ReactNode }) {
 /** A bundle/project member — navigates via the surface (route link on public,
  *  detail-store button in the in-project overlay). */
 function BundleMemberRow({ id, title, type }: { id: string; title: string; type: string | null }) {
-  const { itemHref, openItem } = useMarketplaceSurface();
+  const surface = useMarketplaceSurface();
   const body = (
     <>
       {type ? (
@@ -90,15 +92,15 @@ function BundleMemberRow({ id, title, type }: { id: string; title: string; type:
     </>
   );
   const rowClass = 'hover:bg-muted/50 flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors';
-  if (itemHref) {
+  if (surface.variant === 'public') {
     return (
-      <Link href={itemHref(id)} className={rowClass}>
+      <Link href={surface.itemHref(id)} className={rowClass}>
         {body}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={() => openItem(id)} className={rowClass}>
+    <button type="button" onClick={() => surface.openItem(id)} className={rowClass}>
       {body}
     </button>
   );
@@ -211,8 +213,8 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
   }
 
   // In-project surface — install into the fixed project, no picker.
-  const projectId = surface.projectId!;
-  const installed = surface.installedNames.has(data.name);
+  const { projectId, installedNames } = surface;
+  const installed = installedNames.has(data.name);
 
   const onRemove = async () => {
     try {
@@ -396,35 +398,72 @@ export interface DetailNav {
 }
 
 /**
+ * Derives the `DetailPager` nav from a sibling id list + the currently open
+ * id — 1-based position, and prev/next callbacks clamped at the ends.
+ * Shared by the public detail page (`MarketplaceDetailPublic`, which routes
+ * between item pages) and the in-project overlay (`MarketplaceView`, which
+ * drives the detail store instead) — they differ only in what `goTo` does.
+ */
+export function useDetailNav(
+  ids: string[],
+  currentId: string | undefined,
+  goTo: (id: string) => void,
+): DetailNav | undefined {
+  const idx = currentId ? ids.indexOf(currentId) : -1;
+  if (ids.length === 0 || idx < 0) return undefined;
+  const prevId = idx > 0 ? ids[idx - 1] : undefined;
+  const nextId = idx < ids.length - 1 ? ids[idx + 1] : undefined;
+  return {
+    index: idx + 1,
+    total: ids.length,
+    onPrev: prevId ? () => goTo(prevId) : undefined,
+    onNext: nextId ? () => goTo(nextId) : undefined,
+  };
+}
+
+/**
  * A floating pager over the item list — prev/next + "position / total",
  * hovering at the bottom-center of the screen like a lightbox control (so it
  * isn't tucked into the sidebar). ← / → drive the same actions.
+ *
+ * Portaled to the dedicated portal root (outside any transformed ancestor) so
+ * `fixed` resolves against the viewport even when this renders inside the
+ * Customize panel's `ModalContent` (a CSS-`transform`ed box would otherwise
+ * turn `fixed` into `absolute`-like containment). The z-index comes from the
+ * shared z-stack helper (not a bare Tailwind class) so it floats above
+ * whatever dialog depth it's nested in instead of a fixed `z-40`.
  */
 function DetailPager({ nav }: { nav: DetailNav }) {
+  const depth = useDialogDepth();
   return (
-    <div className="bg-background/85 fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-full border p-1 shadow-lg backdrop-blur-sm">
-      <button
-        type="button"
-        onClick={nav.onPrev}
-        disabled={!nav.onPrev}
-        aria-label="Previous item"
-        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+    <Portal>
+      <div
+        className="bg-background/85 fixed bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full border p-1 shadow-lg backdrop-blur-sm"
+        style={{ zIndex: floatingZ(depth) }}
       >
-        <ChevronLeft className="size-4" />
-      </button>
-      <span className="text-foreground min-w-[3.75rem] px-1 text-center text-xs font-medium tabular-nums">
-        {nav.index} <span className="text-muted-foreground/50">/</span> {nav.total}
-      </span>
-      <button
-        type="button"
-        onClick={nav.onNext}
-        disabled={!nav.onNext}
-        aria-label="Next item"
-        className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
-      >
-        <ChevronRight className="size-4" />
-      </button>
-    </div>
+        <button
+          type="button"
+          onClick={nav.onPrev}
+          disabled={!nav.onPrev}
+          aria-label="Previous item"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <span className="text-foreground min-w-[3.75rem] px-1 text-center text-xs font-medium tabular-nums">
+          {nav.index} <span className="text-muted-foreground/50">/</span> {nav.total}
+        </span>
+        <button
+          type="button"
+          onClick={nav.onNext}
+          disabled={!nav.onNext}
+          aria-label="Next item"
+          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 items-center justify-center rounded-full transition disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
+    </Portal>
   );
 }
 

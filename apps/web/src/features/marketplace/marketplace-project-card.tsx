@@ -26,7 +26,7 @@ export function MarketplaceProjectCard({
   item: MarketplaceItem;
   size?: 'default' | 'featured';
 }) {
-  const { itemHref, openItem } = useMarketplaceSurface();
+  const surface = useMarketplaceSurface();
   const featured = size === 'featured';
   const banner = projectBannerClass(item.name || item.id);
   const skillCount = item.dependencies.length;
@@ -75,15 +75,15 @@ export function MarketplaceProjectCard({
     </>
   );
 
-  if (itemHref) {
+  if (surface.variant === 'public') {
     return (
-      <Link href={itemHref(item.id)} className={className}>
+      <Link href={surface.itemHref(item.id)} className={className}>
         {body}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={() => openItem(item.id)} className={className}>
+    <button type="button" onClick={() => surface.openItem(item.id)} className={className}>
       {body}
     </button>
   );

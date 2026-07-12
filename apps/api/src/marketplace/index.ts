@@ -176,14 +176,6 @@ marketplaceApp.use('/sources/*', supabaseAuth);
 // explore it. Adding an ARBITRARY address stays admin-only (that's the injection
 // surface `assertAllowedSourceAddress` guards). DELETE stays admin-only.
 const FEATURED_SOURCE_ADDRESSES = new Set(FEATURED_MARKETPLACES.map((f) => f.address));
-marketplaceApp.use('/sources', async (c, next) => {
-  if (c.req.method !== 'POST') return next();
-  // Hono memoizes the parsed body, so the handler can re-read it safely.
-  const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
-  const address = String((body as { address?: unknown })?.address ?? '').trim();
-  if (FEATURED_SOURCE_ADDRESSES.has(address)) return next();
-  return requireAdmin(c, next);
-});
 marketplaceApp.use('/sources/*', async (c, next) => {
   if (c.req.method === 'DELETE') return requireAdmin(c, next);
   await next();
@@ -234,6 +226,16 @@ marketplaceApp.openapi(
   }),
   async (c: any) => {
     const body = await c.req.json().catch(() => ({}));
+    // Adding an arbitrary source is admin-only; the curated FEATURED_MARKETPLACES
+    // are vetted, public, read-only git repos (they resolve out of the box and
+    // carry no SSRF/LFI surface) so any signed-in user may enable one to explore
+    // it. See the module-level comment above for the full rationale.
+    const address = String((body as { address?: unknown })?.address ?? '').trim();
+    if (!FEATURED_SOURCE_ADDRESSES.has(address)) {
+      // Throws (401/403) on failure — caught by the app's global onError and
+      // turned into the right response; resolves to undefined on success.
+      await requireAdmin(c, async () => {});
+    }
     try {
       // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
       assertAllowedSourceAddress(String(body?.address ?? ''));

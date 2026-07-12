@@ -1,10 +1,9 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { KeyRound, Plug, Wrench } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,10 +33,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useAuth } from '@/features/providers/auth-provider';
 import { useInstallMarketplaceItem, useInstalledItems } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { listProjectsForAccount } from '@kortix/sdk/projects-client';
 import {
   buildInstallSuccessSummary,
   capabilityCount,
@@ -46,6 +43,7 @@ import {
   projectMarketplaceHref,
 } from './marketplace-install';
 import { typeMeta } from './marketplace-meta';
+import { useProjectPicker } from './marketplace-project-picker';
 
 export function AddToProjectModal({
   item,
@@ -63,24 +61,13 @@ export function AddToProjectModal({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
-  const { user } = useAuth();
   const usePicker = !fixedProjectId;
-  const [pickedProjectId, setPickedProjectId] = useState('');
   const install = useInstallMarketplaceItem();
 
-  const projectsQuery = useQuery({
-    queryKey: ['projects', 'all-for-marketplace'],
-    queryFn: () => listProjectsForAccount(),
-    enabled: !!user && open && usePicker,
-    staleTime: 30_000,
+  const { projects, projectsQuery, pickedProjectId, setPickedProjectId } = useProjectPicker({
+    open,
+    enabled: usePicker,
   });
-  const projects = projectsQuery.data ?? [];
-
-  useEffect(() => {
-    if (open && usePicker && !pickedProjectId && projects.length > 0) {
-      setPickedProjectId(projects[0].project_id);
-    }
-  }, [open, usePicker, projects, pickedProjectId]);
 
   const targetProjectId = fixedProjectId ?? pickedProjectId;
   const caps = item?.capabilities;

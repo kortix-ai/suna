@@ -53,13 +53,11 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
 import {
-  defaultProjectMarketplaceItems,
   getMarketplaceItem,
   listMarketplaceItems,
   type MarketplaceItem,
 } from '@/lib/marketplace-client';
 import {
-  createProjectSession,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -70,7 +68,6 @@ import {
   type KortixAccount,
   type KortixProject,
 } from '@kortix/sdk/projects-client';
-import { buildTemplateSetupPrompt } from '@/features/marketplace/marketplace-setup-prompt';
 import { cn } from '@/lib/utils';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
@@ -79,6 +76,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
+import { startTemplateSetupSession } from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -97,7 +95,6 @@ const managedProjectSchema = z.object({
         .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
     ),
   includeGeneralKnowledgeSkills: z.boolean(),
-  marketplaceItems: z.array(z.string()),
 });
 
 const githubLinkSchema = z.object({
@@ -149,7 +146,6 @@ export const ProjectCreateModal = ({
 
   const [mode, setMode] = useState<'managed' | 'template' | 'github'>('managed');
   const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
-  const [marketplaceDefaultsApplied, setMarketplaceDefaultsApplied] = useState(false);
   const [sourceNameApplied, setSourceNameApplied] = useState(false);
   const [pickedAccountId, setPickedAccountId] = useState<string | null>(null);
   // Cloning a project template comes from two places: the marketplace's
@@ -177,7 +173,6 @@ export const ProjectCreateModal = ({
     defaultValues: {
       name: '',
       includeGeneralKnowledgeSkills: true,
-      marketplaceItems: [],
     },
   });
 
@@ -195,7 +190,6 @@ export const ProjectCreateModal = ({
 
   function resetAndClose() {
     setMode('managed');
-    setMarketplaceDefaultsApplied(false);
     setSourceNameApplied(false);
     setPickedAccountId(null);
     setPickedTemplateId(null);
@@ -245,25 +239,17 @@ export const ProjectCreateModal = ({
         type: 'active',
       });
 
-      // Cloned from a marketplace item → don't drop the user on an empty
-      // project. Immediately start a setup session that reads the seeded config
-      // and wires up its integrations, and land them there.
+      // Cloned from a marketplace item → route through the setup session
+      // instead of dropping the user on an empty project.
       if (effectiveSourceItemId) {
-        try {
-          const title = sourceItemQuery.data?.title ?? 'this project';
-          const session = await createProjectSession(project.project_id, {
-            initial_prompt: buildTemplateSetupPrompt(title),
-            name: `Set up ${title.replaceAll('-', ' ')}`,
-            metadata: { kind: 'template-setup', item_id: effectiveSourceItemId },
-          });
-          const sessionId = (session as { session_id?: string } | undefined)?.session_id;
-          if (sessionId) {
-            resetAndClose();
-            router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
-            return;
-          }
-        } catch {
-          // Fall through to the project home if the setup session can't start.
+        const sessionId = await startTemplateSetupSession(project, {
+          itemId: effectiveSourceItemId,
+          title: sourceItemQuery.data?.title ?? 'this project',
+        });
+        if (sessionId) {
+          resetAndClose();
+          router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
+          return;
         }
       }
 
@@ -320,28 +306,8 @@ export const ProjectCreateModal = ({
     setSourceNameApplied(true);
   }, [managedForm, cloningFromSource, open, sourceItemQuery.data, sourceNameApplied]);
 
-  const marketplaceDefaultsQuery = useQuery({
-    queryKey: ['marketplace-default-project-items'],
-    queryFn: () => listMarketplaceItems({ source: 'kortix', type: 'skill' }),
-    enabled: open && mode === 'managed' && !cloningFromSource,
-    staleTime: 60_000,
-  });
-  const marketplaceItems = useMemo(
-    () => defaultProjectMarketplaceItems(marketplaceDefaultsQuery.data?.items),
-    [marketplaceDefaultsQuery.data?.items],
-  );
   const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
   const includedCount = includeGeneralKnowledgeSkills ? 1 : 0;
-
-  useEffect(() => {
-    if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
-    managedForm.setValue('marketplaceItems', marketplaceItems.map((item) => item.id), {
-      shouldDirty: false,
-      shouldTouch: false,
-      shouldValidate: false,
-    });
-    setMarketplaceDefaultsApplied(true);
-  }, [managedForm, marketplaceDefaultsApplied, marketplaceItems, open]);
 
   const githubInstallations = useMemo(
     () => githubInstallationsQuery.data?.installations ?? [],
@@ -585,11 +551,6 @@ export const ProjectCreateModal = ({
                             managedForm.setValue('includeGeneralKnowledgeSkills', next, {
                               shouldDirty: true,
                             });
-                            managedForm.setValue(
-                              'marketplaceItems',
-                              next ? marketplaceItems.map((item) => item.id) : [],
-                              { shouldDirty: true },
-                            );
                           }}
                         />
                       </div>
@@ -630,11 +591,7 @@ export const ProjectCreateModal = ({
                 <Button
                   type="submit"
                   className="w-full sm:w-auto"
-                  disabled={
-                    submitting ||
-                    !effectiveAccountId ||
-                    (includeGeneralKnowledgeSkills && marketplaceDefaultsQuery.isLoading)
-                  }
+                  disabled={submitting || !effectiveAccountId}
                 >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(

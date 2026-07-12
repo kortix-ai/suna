@@ -16,8 +16,8 @@ export function MarketplaceExploreCard({
   item: MarketplaceItem;
   showSource?: boolean;
 }) {
-  const { itemHref, openItem, installedNames } = useMarketplaceSurface();
-  const installed = installedNames.has(item.name);
+  const surface = useMarketplaceSurface();
+  const installed = surface.variant === 'project' && surface.installedNames.has(item.name);
 
   const className = cn(
     'group bg-popover hover:bg-muted/70 flex w-full items-center gap-3.5 rounded-md border px-4 py-3 text-left',
@@ -51,15 +51,15 @@ export function MarketplaceExploreCard({
 
   // Public surface renders a real crawlable link; the in-project overlay uses a
   // button that opens the detail store (can't navigate away from the panel).
-  if (itemHref) {
+  if (surface.variant === 'public') {
     return (
-      <Link href={itemHref(item.id)} className={className}>
+      <Link href={surface.itemHref(item.id)} className={className}>
         {inner}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={() => openItem(item.id)} className={className}>
+    <button type="button" onClick={() => surface.openItem(item.id)} className={className}>
       {inner}
     </button>
   );

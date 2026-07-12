@@ -215,13 +215,20 @@ function rawFilesForRoot(name: string, dir: string): StarterFile[] {
 /**
  * Replace `{{name}}` placeholders. Only `\w+` identifiers — keeps
  * accidental matches in code/docs (e.g. `{{ body.action }}` in a
- * trigger prompt) from being treated as substitution targets.
+ * trigger prompt) from being treated as substitution targets. Exported so
+ * other callers with their own `{{var}}` content (e.g. the API's
+ * `registry:project` clone path in `apps/api/src/projects/seed-files.ts`)
+ * reuse this exact convention instead of reimplementing the regex.
  */
-function interpolate(input: string, vars: Required<StarterVars>): string {
+export function interpolateVars(input: string, vars: Record<string, string>): string {
   return input.replace(/\{\{(\w+)\}\}/g, (match, name: string) => {
-    if (name in vars) return (vars as Record<string, string>)[name]!;
+    if (name in vars) return vars[name]!;
     return match; // leave unknown placeholders intact
   });
+}
+
+function interpolate(input: string, vars: Required<StarterVars>): string {
+  return interpolateVars(input, vars as unknown as Record<string, string>);
 }
 
 function walk(root: string): string[] {

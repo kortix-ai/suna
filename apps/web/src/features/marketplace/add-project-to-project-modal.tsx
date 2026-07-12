@@ -1,8 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -29,10 +28,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useAuth } from '@/features/providers/auth-provider';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem } from '@/lib/marketplace-client';
-import { listProjectsForAccount } from '@kortix/sdk/projects-client';
+import { useMarketplaceSurface } from './marketplace-surface';
+import { useProjectPicker } from './marketplace-project-picker';
 
 /**
  * Merge a whole `registry:project` marketplace item into a project the user
@@ -52,23 +51,16 @@ export function AddProjectToProjectModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const { user } = useAuth();
-  const [pickedProjectId, setPickedProjectId] = useState('');
+  const surface = useMarketplaceSurface();
   const install = useInstallMarketplaceItemAsSession();
 
-  const projectsQuery = useQuery({
-    queryKey: ['projects', 'all-for-marketplace'],
-    queryFn: () => listProjectsForAccount(),
-    enabled: !!user && open,
-    staleTime: 30_000,
+  // On the in-project surface, default the picker to the project you're
+  // already customizing — merging this catalog project into itself is the
+  // most likely target — instead of an arbitrary first item.
+  const { projects, projectsQuery, pickedProjectId, setPickedProjectId } = useProjectPicker({
+    open,
+    preferredProjectId: surface.variant === 'project' ? surface.projectId : undefined,
   });
-  const projects = projectsQuery.data ?? [];
-
-  useEffect(() => {
-    if (open && !pickedProjectId && projects.length > 0) {
-      setPickedProjectId(projects[0].project_id);
-    }
-  }, [open, projects, pickedProjectId]);
 
   const guardedOpenChange = (next: boolean) => {
     if (install.isPending) return;
