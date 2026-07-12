@@ -26,7 +26,13 @@ async function resolveAcpTarget(c: any) {
   if (!sandbox?.externalId) return null;
   const endpoint = await sandboxOpencodeEndpoint(sandbox.externalId, loaded.userId);
   if (!endpoint) return null;
-  return { projectId, sessionId, runtimeId: sessionId, endpoint };
+  return {
+    projectId,
+    sessionId,
+    runtimeId: sessionId,
+    agentName: visible.row.agentName ?? 'kortix',
+    endpoint,
+  };
 }
 
 async function appendEnvelope(input: {
@@ -110,7 +116,7 @@ projectsApp.get('/:projectId/sessions/:sessionId/acp/transcript', async (c: any)
 projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp', async (c: any) => {
   const target = await resolveAcpTarget(c);
   if (!target) return c.json({ error: 'Session runtime not found' }, 404);
-  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}`;
+  const upstreamUrl = `${target.endpoint.url}/acp/${encodeURIComponent(target.runtimeId)}?agent=${encodeURIComponent(target.agentName)}`;
   const method = c.req.method.toUpperCase();
   const headers = new Headers(target.endpoint.headers);
 
