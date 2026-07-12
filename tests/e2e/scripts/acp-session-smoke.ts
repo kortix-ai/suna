@@ -111,7 +111,10 @@ async function main() {
     console.log(`[acp-smoke] session=${sessionId}`);
 
     let start: any = null;
-    const startDeadline = Date.now() + 8 * 60_000;
+    // A cold runtime-layer build may take ~9 minutes and provider provisioning
+    // may take another ~5. Keep this black-box proof above the documented worst
+    // case instead of deleting the project while its first image is still baking.
+    const startDeadline = Date.now() + 15 * 60_000;
     while (Date.now() < startDeadline) {
       const result = await api(
         "POST",
