@@ -84,6 +84,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
+    runtime_sessions: [],
     opencode_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,

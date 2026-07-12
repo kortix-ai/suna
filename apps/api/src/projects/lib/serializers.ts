@@ -59,7 +59,7 @@ export function serializeSession(
     ownerEmail?: string | null;
   },
 ): ProjectSession {
-  const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
+  const runtimeSessions = Array.isArray(row.metadata?.opencode_sessions)
     ? row.metadata.opencode_sessions
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
@@ -92,7 +92,8 @@ export function serializeSession(
     status: row.status,
     error: row.error,
     metadata: row.metadata ?? {},
-    opencode_sessions: opencodeSessions,
+    runtime_sessions: runtimeSessions,
+    opencode_sessions: runtimeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,

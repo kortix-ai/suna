@@ -8,7 +8,7 @@ import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk/projects
 
 /** The root runtime session a project session is pinned to (if synced). */
 export function rootRuntimeSession(session: ProjectSession): ProjectRuntimeSession | null {
-  const runtimeSessions = session.opencode_sessions ?? [];
+  const runtimeSessions = session.runtime_sessions ?? session.opencode_sessions ?? [];
   const rootId = session.runtime_session_id;
   if (rootId) return runtimeSessions.find((item) => item.id === rootId) ?? null;
   return runtimeSessions.find((item) => !item.parent_id) ?? null;
@@ -18,7 +18,7 @@ export function rootRuntimeSession(session: ProjectSession): ProjectRuntimeSessi
 export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
   const root = rootRuntimeSession(session);
   if (!root) return [];
-  return (session.opencode_sessions ?? [])
+  return (session.runtime_sessions ?? session.opencode_sessions ?? [])
     .filter((item) => item.parent_id === root.id && !item.archived_at)
     .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
 }

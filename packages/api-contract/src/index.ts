@@ -357,6 +357,7 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
+  runtime_sessions: z.array(z.unknown()),
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
