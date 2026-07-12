@@ -28,23 +28,30 @@
 // assertProjectCapability so the agent-grant fold fires.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auth, errors, json } from '../../openapi';
+import { projects } from '@kortix/db';
+import {
+  type AgentBlockV2,
+  type ManifestIssue,
+  validateAgentMdFrontmatter,
+} from '@kortix/manifest-schema';
+import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { validateAgentMdFrontmatter, type AgentBlockV2, type ManifestIssue } from '@kortix/manifest-schema';
-import { applyAgentBlockV2, readAgentBlockV2 } from '../lib/agent-config-v2';
+import { auth, errors, json } from '../../openapi';
+import { db } from '../../shared/db';
+import { readRepoFile } from '../git';
+import { commitMultipleFilesToBranch } from '../git/branches';
+import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { applyAgentBlockV2, applyDefaultAgentV2, readAgentBlockV2 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
+import { projectsApp } from '../lib/app';
 import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
 } from '../lib/compile-agent-config';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { withProjectGitAuth } from '../lib/git';
-import { commitMultipleFilesToBranch } from '../git/branches';
-import { projectsApp } from '../lib/app';
 import { loadManifestForEdit } from '../lib/triggers';
 import { MANIFEST_FILENAME, serializeManifest } from '../triggers';
-import { readRepoFile } from '../git';
 
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_cli actions, etc.) happens in
@@ -71,6 +78,12 @@ const AgentBlockSchema = z
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
+
+const DefaultAgentBodySchema = z.object({ agent: z.string().min(1).max(200) });
+const DefaultAgentResponseSchema = z.object({
+  ok: z.boolean(),
+  default_agent: z.string(),
+});
 
 /** Read + parse an agent's `.md` (governance-declared or not — behavior and
  *  governance are independently addressable). Never throws: a missing file
@@ -167,6 +180,91 @@ projectsApp.openapi(
       default_agent: read.defaultAgent,
       block,
     });
+  },
+);
+
+// PUT /v1/projects/:projectId/default-agent
+// `kortix.yaml.default_agent` is durable truth; project.metadata.default_agent
+// is the read-optimized mirror used by session creation and channel surfaces.
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/default-agent',
+    tags: ['projects'],
+    summary: 'Set the project default agent',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: {
+        content: {
+          'application/json': { schema: DefaultAgentBodySchema },
+        },
+      },
+    },
+    responses: {
+      200: json(DefaultAgentResponseSchema, 'Updated project default agent'),
+      ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+    );
+
+    const parsed = DefaultAgentBodySchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid body', code: 'invalid_body', issues: parsed.error.issues }, 400);
+    }
+    const agentName = parsed.data.agent.trim();
+
+    let manifest: Awaited<ReturnType<typeof loadManifestForEdit>>;
+    try {
+      manifest = await loadManifestForEdit(loaded.row);
+    } catch (error) {
+      return c.json(
+        { error: (error as Error).message || 'failed to read manifest', code: 'manifest_read' },
+        400,
+      );
+    }
+
+    const applied = applyDefaultAgentV2(manifest, agentName);
+    if (!applied.ok) {
+      return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
+    }
+
+    manifest.raw = applied.raw;
+    const manifestPath = manifest.path || loaded.row.manifestPath || MANIFEST_FILENAME;
+    try {
+      const gitProject = await withProjectGitAuth(loaded.row);
+      await commitMultipleFilesToBranch(gitProject, {
+        files: [{ path: manifestPath, content: serializeManifest(manifest) }],
+        message: `chore: set default agent to ${agentName}`,
+        branch: loaded.row.defaultBranch,
+      });
+    } catch (error) {
+      return c.json(
+        { error: `Failed to commit default agent: ${(error as Error).message || String(error)}` },
+        502,
+      );
+    }
+
+    const metadata = {
+      ...((loaded.row.metadata as Record<string, unknown> | null) ?? {}),
+      default_agent: agentName,
+    };
+    await db
+      .update(projects)
+      .set({ metadata, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId));
+
+    return c.json({ ok: true, default_agent: agentName });
   },
 );
 

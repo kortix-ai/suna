@@ -54,22 +54,37 @@ const authedSubdomains = new Map<string, AuthState>();
 const AUTH_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const PUBLIC_SHARE_SESSION_TTL_MS = 15 * 60 * 1000;
 
-function key(sandboxId: string, port: number): string {
-  return `p${port}-${sandboxId}`;
+function clientKey(req: Request): string {
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip')?.trim() ||
+    req.headers.get('cf-connecting-ip')?.trim() ||
+    'unknown';
+  const ua = req.headers.get('user-agent') || 'unknown';
+  return `${ip}|${ua}`;
 }
 
-function getAuthedSubdomain(sandboxId: string, port: number): AuthState | null {
-  const entry = authedSubdomains.get(key(sandboxId, port));
+export function previewSubdomainAuthCacheKeyForTest(sandboxId: string, port: number, req: Request): string {
+  return `p${port}-${sandboxId}|${clientKey(req)}`;
+}
+
+function key(sandboxId: string, port: number, req: Request): string {
+  return previewSubdomainAuthCacheKeyForTest(sandboxId, port, req);
+}
+
+function getAuthedSubdomain(sandboxId: string, port: number, req: Request): AuthState | null {
+  const cacheKey = key(sandboxId, port, req);
+  const entry = authedSubdomains.get(cacheKey);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
-    authedSubdomains.delete(key(sandboxId, port));
+    authedSubdomains.delete(cacheKey);
     return null;
   }
   return entry;
 }
 
-function markAuthedSubdomain(sandboxId: string, port: number, userId: string): void {
-  authedSubdomains.set(key(sandboxId, port), {
+function markAuthedSubdomain(sandboxId: string, port: number, req: Request, userId: string): void {
+  authedSubdomains.set(key(sandboxId, port, req), {
     kind: 'principal',
     userId,
     expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
@@ -80,7 +95,7 @@ function markPublicShareSubdomain(sandboxId: string, port: number, share: {
   shareId: string;
   mode: string;
   expiresAt: Date | null;
-}): AuthState {
+}, req: Request): AuthState {
   const expiresAt = Math.min(
     Date.now() + PUBLIC_SHARE_SESSION_TTL_MS,
     share.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY,
@@ -91,7 +106,7 @@ function markPublicShareSubdomain(sandboxId: string, port: number, share: {
     mode: share.mode,
     expiresAt,
   };
-  authedSubdomains.set(key(sandboxId, port), state);
+  authedSubdomains.set(key(sandboxId, port, req), state);
   return state;
 }
 
@@ -99,6 +114,7 @@ async function authenticatePublicShareSubdomain(
   token: string | null,
   sandboxId: string,
   port: number,
+  req: Request,
 ): Promise<AuthState | null> {
   if (!token) return null;
   const resolved = await resolvePublicShare(token);
@@ -115,7 +131,7 @@ async function authenticatePublicShareSubdomain(
   }
 
   void touchPublicShare(share.shareId).catch(() => {});
-  return markPublicShareSubdomain(sandboxId, port, share);
+  return markPublicShareSubdomain(sandboxId, port, share, req);
 }
 
 // Periodic cleanup of expired entries — keeps the map from growing
@@ -164,7 +180,7 @@ export async function handleSubdomainRequest(
     });
   }
 
-  let authed = getAuthedSubdomain(sandboxId, port);
+  let authed = getAuthedSubdomain(sandboxId, port, req);
 
   // Not authed yet — first honor a public share token, then fall back to normal
   // logged-in preview auth. Public shares deliberately use the same transparent
@@ -175,6 +191,7 @@ export async function handleSubdomainRequest(
       url.searchParams.get('public_share'),
       sandboxId,
       port,
+      req,
     );
   }
   if (!authed) {
@@ -193,7 +210,7 @@ export async function handleSubdomainRequest(
         },
       );
     }
-    markAuthedSubdomain(sandboxId, port, validatedUserId);
+    markAuthedSubdomain(sandboxId, port, req, validatedUserId);
     authed = { kind: 'principal', userId: validatedUserId, expiresAt: Date.now() + AUTH_SESSION_TTL_MS };
   }
 

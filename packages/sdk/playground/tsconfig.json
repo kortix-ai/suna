@@ -1,0 +1,9 @@
+{
+  // Typechecks the playground standalone: `bun x tsc --noEmit -p playground/tsconfig.json`
+  // Same pattern as examples/tsconfig.json — scripts import ../src directly.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["**/*.ts"]
+}

@@ -109,6 +109,16 @@ interface JwtPayload {
   user_metadata?: Record<string, unknown>;
 }
 
+export function decodeSupabaseJwtPayload(token: string): JwtPayload | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[1]))) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
 interface JwtHeader {
   alg: string;
   kid?: string;

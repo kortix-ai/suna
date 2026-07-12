@@ -13,13 +13,6 @@ import {
   normalizeClassName,
   prepareMarkdownForKatex,
 } from '@/components/markdown/katex-markdown';
-import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
-import { parseSetupLinkHref } from '@/components/setup-links/util';
-import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { isMermaidCode } from '@/lib/mermaid-utils';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   isInternalUrl,
   languageLabel,
@@ -27,6 +20,13 @@ import {
   looksLikeUrl,
   normalizeLanguage,
 } from '@/components/markdown/unified-markdown-utils';
+import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
+import { parseSetupLinkHref } from '@/components/setup-links/util';
+import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { isMermaidCode } from '@/lib/mermaid-utils';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getActivePanelSessionId, openFileInSessionPanel } from '@/stores/session-browser-store';
 import { autoLinkUrls } from '@kortix/shared';
@@ -328,7 +328,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
 // ─── Inline code ─────────────────────────────────────────────────────────────
 const INLINE_CODE =
-  'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 dark:bg-card';
+  'rounded-sm border bg-muted px-1.5 py-[0.1rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card';
 
 // Inline code that becomes a link (URLs) or opens a file preview (absolute paths).
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {
@@ -454,7 +454,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
         ),
 
         p: ({ children }: { children?: React.ReactNode }) => (
-          <div className="text-foreground/95 my-4 leading-relaxed font-medium first:mt-0 last:mb-0 [&:has(img)]:my-0">
+          <div className="text-foreground/95 my-4 leading-relaxed font-medium [overflow-wrap:anywhere] first:mt-0 last:mb-0 [&:has(img)]:my-0">
             {wrapChildrenWithPaths(children)}
           </div>
         ),
@@ -470,7 +470,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
           </ol>
         ),
         li: ({ children }: { children?: React.ReactNode }) => (
-          <li className="text-foreground/95 leading-relaxed font-medium">
+          <li className="text-foreground/95 leading-relaxed font-medium [overflow-wrap:anywhere]">
             {wrapChildrenWithPaths(children)}
           </li>
         ),
@@ -696,7 +696,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
 
     return (
       <div
-        className={cn('kortix-markdown text-[15px]', isStreaming && 'streaming-active', className)}
+        className={cn(
+          'kortix-markdown max-w-full min-w-0 text-[15px] [overflow-wrap:anywhere]',
+          isStreaming && 'streaming-active',
+          className,
+        )}
         data-streaming={isStreaming ? 'true' : 'false'}
       >
         <Streamdown

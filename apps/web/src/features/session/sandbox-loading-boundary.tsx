@@ -7,9 +7,11 @@
  * escalates to the Next route boundary (app/error.tsx) and the user sees a hard
  * "Something went wrong" instead of a loading state.
  *
- * This boundary catches ONLY those transient runtime-not-ready errors and shows
- * the normal provisioning loader, auto-retrying until the runtime is ready. Every
- * other error is rethrown so it bubbles to the outer boundary exactly as before.
+ * This boundary catches ONLY those transient runtime-not-ready errors and
+ * auto-retries silently until the runtime is ready. It intentionally renders no
+ * fallback: the project shell is already mounted during session navigation and
+ * must never be replaced by a full-page loading logo. Every other error is
+ * rethrown so it bubbles to the outer boundary exactly as before.
  *
  * The gate fix in `use-opencode-sessions/keys.ts` + the guard in `session-chat`
  * should prevent these throws in the first place; this is belt-and-suspenders so
@@ -17,7 +19,6 @@
  */
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
 import { useEffect } from 'react';
 
 /** Transient errors thrown while the sandbox/opencode runtime is still booting. */
@@ -29,18 +30,15 @@ function isRuntimeNotReadyError(error: Error): boolean {
 function RuntimeLoadingFallback({ reset }: { reset: () => void }) {
   // The runtime URL lands within a second or two of provisioning. Soft-reset the
   // boundary on a short interval so the subtree re-renders and picks it up the
-  // moment it's ready — no hard reload, no manual "Try again". Render the one
-  // canonical Kortix loader (same as ProjectAccessLoading) so the whole project
-  // route shows a single, consistent loader rather than a stray spinner.
+  // moment it's ready — no hard reload, no manual "Try again". This must stay
+  // visually empty: initial project access has its own legitimate loader, but a
+  // transient runtime race while switching sessions must not cover the loaded
+  // project with the ASCII logo.
   useEffect(() => {
     const t = setInterval(reset, 800);
     return () => clearInterval(t);
   }, [reset]);
-  return (
-    <div className="flex h-full min-h-[50vh] w-full flex-1 items-center justify-center">
-      <KortixHyperLogo size={34} startOnView={false} animateOnHover={false} />
-    </div>
-  );
+  return null;
 }
 
 // Rethrow non-runtime errors so they propagate to the nearest OUTER boundary

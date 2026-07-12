@@ -36,26 +36,30 @@ export class PermissionGuard {
   }
 
   checkPermission(permissionId: string | undefined): boolean {
+    return !!this.getPermission(permissionId);
+  }
+
+  getPermission(permissionId: string | undefined): LocalPermission | null {
     if (!permissionId) {
-      return false;
+      return null;
     }
 
     const perm = this.permissions.get(permissionId);
     if (!perm) {
       // After sync, unknown permission = deny (fail-closed).
       // Before sync, also deny — we have no basis to allow.
-      return false;
+      return null;
     }
 
     if (perm.expiresAt) {
       const expiry = new Date(perm.expiresAt).getTime();
       if (isNaN(expiry) || expiry < Date.now()) {
         this.permissions.delete(permissionId);
-        return false;
+        return null;
       }
     }
 
-    return true;
+    return perm;
   }
 
   clear(): void {

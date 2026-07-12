@@ -19,20 +19,21 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useProjectManifestVersion } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
+import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
+import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { cn } from '@/lib/utils';
 import {
-  buildSandboxTemplate,
-  deleteSandboxTemplate,
-  getProject,
-  listProjectSnapshots,
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
   type SandboxTemplate,
   type SnapshotErrorCategory,
+  buildSandboxTemplate,
+  deleteSandboxTemplate,
+  getProject,
+  listProjectSnapshots,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
 import {
   AlarmClockSolid,
   CheckCircleSolid,
@@ -51,7 +52,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
 
@@ -543,9 +544,9 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const data = snapshotsQuery.data;
   const builds = Array.isArray(data?.builds) ? data.builds : [];
   const templates = Array.isArray(data?.templates) ? data.templates : [];
-  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const latestFailure = currentFailedBuild(builds);
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
-  const canFixWithAgent = !!latestFailure && !!latestReady;
+  const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
   const isFullyEmpty = templates.length === 0 && builds.length === 0;
 
   // Build-log rows carry no provider column of their own, so resolve it from the

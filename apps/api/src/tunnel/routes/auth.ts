@@ -15,12 +15,14 @@ import { resolveAccountId } from '../../shared/resolve-account';
  *   • MANAGE (getTunnelOwnerContext) — create/delete/rename connections, grant/
  *     revoke permissions, approve device-auth, rotate tokens. These mutate the
  *     security posture of a real machine, so they require a USER credential
- *     (interactive session / PAT), never a long-lived sandbox apiKey.
+ *     (interactive session / PAT), never a long-lived non-human principal
+ *     like a sandbox apiKey or service-account bearer.
  */
 
-/** Reject sandbox/apiKey credentials — used to fence off tunnel management. */
+/** Allow only human credentials — used to fence off tunnel management. */
 export function requireUserCredential(c: any): void {
-  if (c.get('authType') === 'apiKey') {
+  const authType = c.get('authType');
+  if (authType !== 'supabase' && authType !== 'pat') {
     throw new HTTPException(403, {
       message: 'User credentials are required for tunnel management',
     });
@@ -54,7 +56,7 @@ export async function getTunnelReadContext(c: any) {
 
 /**
  * Resolve the account + ownership clause for tunnel MANAGEMENT. Same as the
- * read context, but first rejects apiKey credentials.
+ * read context, but first rejects non-human credentials.
  */
 export async function getTunnelOwnerContext(c: any) {
   requireUserCredential(c);

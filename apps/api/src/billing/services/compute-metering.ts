@@ -91,8 +91,11 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     gpuCount: opts.spec.gpuCount ?? 0,
     state: 'active',
     metadata: (opts.metadata ?? {}) as Record<string, unknown>,
+  }).catch(async (err) => {
+    if ((err as { code?: string })?.code !== '23505') throw err;
+    return getOpenComputeSession(opts.sandboxId);
   });
-  return row.id;
+  return row?.id ?? null;
 }
 
 /**

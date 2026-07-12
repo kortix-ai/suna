@@ -20,7 +20,7 @@
  *   import { classifyTurn, type ClassifiedPart } from '@kortix/sdk/turns';
  */
 import { createKortix } from '../src/index';
-import { classifyTurn, type ClassifiedPart } from '../src/turns/index';
+import { classifyTurn, type ClassifiedPart } from '../src/core/turns/index';
 import type { MessageWithParts } from '../src/transcript';
 
 function renderPart(part: ClassifiedPart): string {

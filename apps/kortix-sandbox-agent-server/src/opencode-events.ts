@@ -42,6 +42,7 @@ type OpencodeEventHandlers = {
   // filtering down to the root turn.
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string, error?: OpencodeTurnError) => void
+  onSessionStatus?: (sessionID: string, status: string) => void
   // Fired every time the /event SSE (re)subscribes successfully. Used to
   // reconcile a turn that finished BEFORE the subscription was live: a fast
   // boot could reach session.idle inside the gap between prompt_async and the
@@ -169,6 +170,12 @@ export function flattenOpencodeError(e: {
 // Exported for unit testing — maps a raw opencode SSE event to a handler call,
 // including flattening session.error's nested error into OpencodeTurnError.
 export function dispatch(event: { type?: string; properties?: unknown }, handlers: OpencodeEventHandlers): void {
+  if (event.type === 'session.status' && handlers.onSessionStatus) {
+    const props = event.properties as { sessionID?: string; status?: { type?: string } | string } | undefined
+    const status = typeof props?.status === 'string' ? props.status : props?.status?.type
+    if (props?.sessionID && status) handlers.onSessionStatus(props.sessionID, status)
+    return
+  }
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
     const req = event.properties as QuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {

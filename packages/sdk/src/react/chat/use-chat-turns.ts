@@ -13,8 +13,8 @@
  */
 
 import { useMemo } from 'react';
-import type { ClassifiedPart, TurnError } from '../../turns';
-import { classifyTurn } from '../../turns';
+import type { ClassifiedPart, TurnError } from '../../core/turns';
+import { classifyTurn } from '../../core/turns';
 import type { MessageWithParts } from '../use-opencode-sessions';
 
 export interface TurnView {

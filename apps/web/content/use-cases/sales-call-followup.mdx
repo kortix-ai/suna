@@ -1,0 +1,149 @@
+---
+title: "How we follow up after sales calls"
+description: An agent connected to our call transcripts, HubSpot, and Linear that drafts the recap, updates the deal, and files the follow-up tasks, then holds the email for the rep to send.
+date: "2026-02-25"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - Team
+---
+
+After a sales call ends, someone has to write the recap email, answer the
+questions that came up, update the CRM, and file whatever the team committed to.
+It's an hour of work that usually happens late, half-remembered, or not at all.
+The deal stalls not because the call went badly but because the follow-up slipped.
+
+We run an agent on Kortix that does the follow-up the moment a call ends. It reads
+the transcript, writes the recap, updates the HubSpot deal, and files the tasks in
+Linear, then holds the outbound email at an approval gate so the rep reviews and
+sends it. This is how we handle our own post-call follow-up.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">Every sales call, when the recording ends</Fact>
+  <Fact label="Connected systems">Call transcript · HubSpot · Linear</Fact>
+  <Fact label="Mode">Trigger-driven · email held for the rep</Fact>
+</KeyFacts>
+
+## The problem
+
+The follow-up after a call is where deals leak. The rep just ran the meeting, so
+the context is in their head, but the writing-up is manual: recap the discussion,
+answer the open questions, restate the next steps, log it in the CRM, and file the
+tasks. Done well it takes an hour; done late it's vague; skipped, the deal goes
+quiet.
+
+The usual fixes don't close the gap. A CRM reminder tells you to follow up but
+doesn't do any of it. A note-taker that dumps a transcript into the deal leaves
+the recap, the CRM update, and the tasks for the rep to write by hand. A template
+email is fast but generic, and it still needs the account context filled in.
+
+## What we built
+
+On Kortix, the end of a call triggers an agent. When the recording finishes, the
+transcript spawns an isolated session (a cloud sandbox) with scoped access to
+HubSpot and Linear. The agent reads the transcript, drafts the recap email with
+the answers and next steps, updates the deal stage, notes, and contacts, and files
+the follow-up tasks. The recap email waits at an approval gate for the rep to
+review and send.
+
+<Figure
+  caption="The agent's recap draft held for the rep, with the CRM update and tasks already filed"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect the call as the trigger">
+
+The meeting recorder is connected so the end of a call is the trigger. When a
+recording finishes, the transcript fires a fresh **session** in its own sandbox,
+seeded with the call. One call maps to one session on one disposable machine, so
+nothing carries between deals and concurrent calls process in parallel.
+
+</Step>
+<Step title="Give the agent the recap playbook">
+
+How we write a follow-up lives as **skills** and **memory** that travel with the
+agent: the shape of a good recap, how we phrase next steps, which objections need
+a considered answer, and the account's own history. When a rep improves a recap,
+we write it down and the agent applies it on the next call.
+
+</Step>
+<Step title="Connect HubSpot and Linear">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the transcript** — the full call, including the questions raised and what
+  was committed to.
+- **Update the HubSpot deal** — stage, notes, and contacts, written back from what
+  the call actually covered.
+- **File follow-up tasks in Linear** — the concrete next steps, assigned and dated.
+- **Draft the recap email** — summary, answers to the open questions, and clear
+  next steps, ready for the rep.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent reads the transcript and writes to the CRM and the task tracker on its
+own, but the outbound email never sends itself. Every recap stops at a **human
+approval gate**, so the rep reads it, edits if needed, and sends. Credentials are
+encrypted in the Secrets Manager and injected at runtime, never shown to the model
+or written to logs.
+
+</Step>
+<Step title="Let the follow-up be ready when the call ends">
+
+With that in place, hanging up is the whole task. By the time the rep looks, the
+deal is updated, the tasks are filed, and a recap email is drafted and waiting:
+the summary, the answers, and the next steps. The rep reviews and sends. The
+follow-up happens while the call is still fresh instead of days later.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **trigger** on the end of each call spawns a session with scoped
+  **connectors** into HubSpot and Linear. How we write a recap is encoded as
+  **skills** and **memory**. The CRM and tasks update automatically; the outbound
+  email waits for the rep at an approval gate.
+</Callout>
+
+## Guardrails
+
+The agent reads customer conversations and writes to the CRM, so the access is
+scoped and the outbound step stays with a person:
+
+- **Isolation.** Every call runs in its own microVM sandbox. The session reads only
+  the transcript it's seeded with and reaches only HubSpot and Linear; only the
+  updates and the drafted email leave the sandbox.
+- **Scoped secrets.** The transcript, HubSpot, and Linear credentials are encrypted
+  in the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gate.** The recap email never sends on its own. Each one is held
+  for the rep to review and send; the agent writes to the CRM and tasks, the rep
+  owns the outbound.
+- **Everything is code.** The agent's configuration, skills, and permissions are
+  files in the repo, versioned and changed through a reviewed **change request**
+  rather than a dashboard setting.
+
+<Figure
+  caption="A held recap with the rep's edits before it sends"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every call" label="Recap, CRM update, and tasks ready when it ends" />
+  <Stat value="Rep sends" label="The outbound email is always reviewed by a person" />
+  <Stat value="3 systems" label="Transcript, HubSpot, and Linear in one agent" />
+</StatGrid>
+
+The follow-up now happens while the call is still fresh: the deal is updated, the
+tasks are filed, and a recap email is drafted and waiting. The rep spends a minute
+reviewing instead of an hour writing, and no email goes out without a person
+sending it.

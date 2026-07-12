@@ -1,0 +1,152 @@
+---
+title: "How we run async standups in Slack"
+description: A daily agent that collects each person's Linear and GitHub activity, prompts anyone with nothing recorded, and posts a concise team standup to Slack. Read-only across every tool.
+date: "2026-01-28"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - Team
+template: standup-summary
+---
+
+A standup is supposed to answer one question: what did everyone do, and what's
+next. In practice it costs a meeting, or a thread where half the team pastes a
+summary and the other half forgets. The information already exists in Linear and
+GitHub; someone just has to gather it, format it, and chase the people who didn't
+post.
+
+We run a daily agent on Kortix that does the gathering. It reads each person's
+Linear and GitHub activity, nudges anyone with nothing recorded, and posts a
+concise standup to a Slack channel. This is how we run our own standups, and the
+same setup works for any team.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A daily cron, one post per weekday</Fact>
+  <Fact label="Connected systems">Linear · GitHub · Slack</Fact>
+  <Fact label="Mode">Read-only across the tools, no writes</Fact>
+</KeyFacts>
+
+## The problem
+
+A live standup takes a slot on everyone's calendar to relay information that's
+already recorded somewhere. An async thread saves the meeting but shifts the work
+onto people: each person has to remember to write, summarize their own day, and
+post it, and the ones who don't leave gaps.
+
+The common workarounds are partial. A recurring bot that asks "what did you do
+yesterday?" still depends on everyone answering. A dashboard shows activity but
+doesn't summarize it or tell you who's quiet. Neither reads the tools where the
+work actually happened, so the summary is only as complete as the people filling
+it in.
+
+## What we built
+
+On Kortix, a cron fires once each weekday morning and spawns an agent. It reads
+each team member's recent Linear issues and GitHub activity, builds a short
+per-person summary, checks who has nothing recorded, and posts the standup to a
+Slack channel. Anyone with a quiet day gets a light prompt so they can add
+context the tools can't see. The agent only reads; it never writes to Linear or
+GitHub.
+
+<Figure
+  caption="The daily standup summary posted to the team Slack channel"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Trigger it on a daily cron">
+
+The standup runs on a **cron trigger**: once every weekday morning, the schedule
+spawns a fresh **session** in its own isolated sandbox. One run, one disposable
+machine, nothing carried over from the day before. No one has to start it and
+there's no bot sitting idle waiting for messages.
+
+</Step>
+<Step title="Give the agent the team and the format">
+
+Who's on the team, which repos and Linear projects to look at, and what a good
+standup entry looks like live as **skills** and **memory** that travel with the
+agent: the roster, the mapping from a person to their Linear and GitHub handles,
+and the house style for a summary. When the format changes, we update the file
+and the next run picks it up.
+
+</Step>
+<Step title="Connect Linear and GitHub, read-only">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent reads:
+
+- **Linear** — each person's recently updated and closed issues, and what's in
+  progress.
+- **GitHub** — commits, opened and merged PRs, and reviews since the last
+  standup.
+
+Both connectors are scoped to read only. The agent can see the activity; it
+cannot change an issue or touch a branch.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** across Linear and GitHub by design: its only write is
+the Slack post. It doesn't move tickets, comment on PRs, or edit anyone's work.
+Credentials are encrypted in the Secrets Manager and injected at runtime, never
+shown to the model or written to logs.
+
+</Step>
+<Step title="Post the standup and prompt the gaps">
+
+With that in place, the morning post writes itself: a per-person summary drawn
+from Linear and GitHub, grouped so the team can scan it in one read. Anyone with
+no recorded activity is flagged with a gentle prompt to add what the tools
+missed, meetings, planning, anything off-platform, so a quiet day shows context
+rather than a blank line.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A **cron trigger** spawns a session each morning with read-only **connectors**
+  into Linear and GitHub. The roster and format live as **skills** and
+  **memory**. The agent summarizes, prompts the gaps, and posts to Slack, its
+  only write.
+</Callout>
+
+## Guardrails
+
+The agent reads everyone's activity across two tools and posts to a shared
+channel, so the access is scoped and contained:
+
+- **Isolation.** Every run happens in its own microVM sandbox. The session reads
+  the day's activity, builds the summary, and only the Slack post leaves the
+  sandbox.
+- **Scoped secrets.** The Linear, GitHub, and Slack credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Read-only across the tools.** The Linear and GitHub connectors are scoped to
+  read. The agent's only write is the standup post; it changes nothing in the
+  source tools.
+- **Everything is code.** The roster, the format, and the per-tool permissions
+  are files in the repo, versioned and changed through a reviewed **change
+  request** rather than a dashboard setting.
+
+<Figure
+  caption="A per-person summary with a light prompt for a teammate who has nothing recorded"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="No meeting" label="The standup is a post, not a slot on the calendar" />
+  <Stat value="Read-only" label="No writes to Linear or GitHub, only the Slack post" />
+  <Stat value="3 systems" label="Linear, GitHub, and Slack in one daily agent" />
+</StatGrid>
+
+The standup now arrives each morning as a Slack post built from the work people
+already recorded, with quiet days flagged instead of skipped. No one spends a
+meeting relaying status, and no one has to write their own summary for the
+activity the tools already have.

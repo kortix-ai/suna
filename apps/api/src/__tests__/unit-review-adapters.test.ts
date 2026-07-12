@@ -55,6 +55,7 @@ const baseExec: ExecutorExecutionRow = {
   accountId: 'acc-1',
   projectId: 'proj-1',
   connectorId: 'conn-1',
+  profileId: null,
   actionPath: 'gmail.messages.send',
   actingUserId: 'user-1',
   sessionId: null,

@@ -1,0 +1,128 @@
+---
+title: Streaming
+description: 'How live events flow — the readiness handshake, session.stream(), narrowChatEvent, reconnect machinery, and exactly which runtimes support streaming.'
+---
+
+Live updates are the SDK's most powerful surface and its most
+environment-sensitive one. This page covers how the stream works, the pattern
+for consuming it correctly, and precisely where it runs.
+
+## The mental model
+
+A session's events come from the **OpenCode runtime inside its sandbox**,
+reached through the Kortix API as a proxy. There is no separate WebSocket
+endpoint or `EventSource` — the transport is **`fetch` with a streaming
+response body** (server-sent events read via `ReadableStream` +
+`TextDecoderStream`).
+
+The SDK owns everything above the wire: **reconnection, backoff, heartbeat
+detection, and event coalescing** live in the SDK's event-stream layer, so a
+dropped connection resumes without your code noticing.
+
+## The pattern
+
+Three rules make streaming correct:
+
+1. **Ready the session first.** The runtime doesn't exist until the sandbox is
+   provisioned or resumed — that's `ensureReady()`.
+2. **Connect the stream before sending**, so no early events are missed.
+3. **End the turn on `session.idle`**, not on a timer.
+
+```ts
+const session = kortix.session(projectId, sessionId);
+const { opencodeSessionId } = await session.ensureReady();
+
+const stream = await session.stream({
+  onEvent: (event) => {
+    const e = narrowChatEvent(event);
+    if (!e) return;
+    switch (e.type) {
+      case 'message.part.updated': // a part grew — render incrementally
+      case 'message.updated': // message metadata changed
+      case 'session.status': // busy / building / …
+        break;
+      case 'question.asked': // the agent needs an answer
+        break;
+      case 'session.error': // the turn failed — surface e.error
+        break;
+      case 'session.idle': // the turn is DONE
+        if (e.sessionID === opencodeSessionId) onTurnDone();
+        break;
+    }
+  },
+});
+
+await session.send('…');
+// … await your idle signal …
+stream.close();
+```
+
+`narrowChatEvent(event)` narrows the raw wire events to a small typed union —
+everything you need for a chat UI — and returns `null` for events you can
+ignore. In React, skip all of this: [`useSession`](/docs/sdk/react) owns the
+stream, readiness, and reconnect for you.
+
+## Readiness is a handshake, not a one-liner
+
+`ensureReady()` issues **one bounded long-poll** against the session's
+`/start` endpoint. On a warm session it resolves immediately; on a **cold
+boot** — a sandbox being provisioned for the first time — the long-poll can
+return before the sandbox is up, and `ensureReady()` throws a typed
+`ApiError` with `code: 'RUNTIME_UNAVAILABLE'`.
+
+That error means _not ready yet_, not _failed_. Retry it — each retry
+re-attaches to the same server-side provision:
+
+```ts
+async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    try {
+      return await ensure();
+    } catch (error) {
+      const provisioning = error instanceof ApiError && error.code === 'RUNTIME_UNAVAILABLE';
+      if (!provisioning || Date.now() > deadline) throw error;
+      await new Promise((r) => setTimeout(r, 3_000));
+    }
+  }
+}
+```
+
+`ensureReady()` is idempotent and deduplicates concurrent starts for the same
+session, so racing calls ride one `/start` instead of issuing several.
+
+## Runtime support matrix
+
+Streaming needs `fetch` with a real `ReadableStream` response body **and**
+`TextDecoderStream`:
+
+| Runtime                   | Streams? | Notes                                                                                                                                                           |
+| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modern browsers           | ✅       | `TextDecoderStream` needs Safari 16.4+                                                                                                                          |
+| Node ≥ 18                 | ✅       | `fetch` and `TextDecoderStream` are global                                                                                                                      |
+| Bun                       | ✅       |                                                                                                                                                                 |
+| Cloudflare Workers / edge | ✅       |                                                                                                                                                                 |
+| **React Native / Expo**   | ❌       | RN's `fetch` has no `response.body`, and Hermes has no `TextDecoderStream`. **REST works; live streaming does not.** Don't build RN streaming on the SDK today. |
+
+<Callout type="warn">
+  Everything *except* streaming — projects, sessions, files, secrets, the whole REST surface — works
+  everywhere `fetch` does, including React Native. The matrix above is only about the live event
+  stream.
+</Callout>
+
+## What the stream delivers
+
+The narrowed union covers the full chat lifecycle:
+
+| `type`                                          | When                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `message.updated` / `message.removed`           | a message's metadata changed / it was deleted                                                     |
+| `message.part.updated` / `message.part.removed` | a part (text, tool call, file, reasoning) grew or was removed — this is the token-by-token signal |
+| `session.status`                                | the session's busy/working state changed                                                          |
+| `session.idle`                                  | the turn finished — your "done" signal                                                            |
+| `session.error`                                 | the turn failed (LLM error, tool crash) — carries the error payload                               |
+| `question.asked` / `question.answered`          | the agent asked for permission/input, and the resolution                                          |
+
+Render the growing transcript with [`classifyTurn`](/docs/sdk/turns), which
+turns raw messages + parts into an exhaustively-typed union of renderable
+parts.

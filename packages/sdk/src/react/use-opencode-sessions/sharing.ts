@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { opencodeKeys } from './keys';
 import { unwrap } from './shared';

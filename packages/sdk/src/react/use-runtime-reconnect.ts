@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { getSupabaseAccessToken } from '../platform/auth';
-import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../session';
+import { getSupabaseAccessToken } from '../core/http/auth';
+import { getSessionHealth, isRuntimeReady, type SessionHealthResponse } from '../core/session';
 import {
   incrementSandboxFail,
   markInitialCheckDone,
@@ -13,8 +13,8 @@ import {
   setSandboxVersion,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
-} from '../state/sandbox-connection-store';
-import { useServerStore } from '../state/server-store';
+} from '../browser/stores/sandbox-connection-store';
+import { useServerStore } from '../browser/stores/server-store';
 
 /**
  * Number of consecutive failures before marking as unreachable
@@ -156,11 +156,15 @@ export function nextPollDelay(status: SandboxConnectionStatus, healthy: boolean 
  * functions, since the repo has no harness to render-test a hook directly.
  */
 export function useRuntimeReconnect() {
+  const manualRetryNonce = useSandboxConnectionStore((state) => state.manualRetryNonce);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isMountRef = useRef(true);
 
   useEffect(() => {
+    // Reading the generation inside the effect makes the dependency explicit:
+    // each manual retry tears down the in-flight probe and starts a fresh one.
+    void manualRetryNonce;
     const isFirstMount = isMountRef.current;
     isMountRef.current = false;
 
@@ -286,5 +290,5 @@ export function useRuntimeReconnect() {
       abortRef.current?.abort();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, []);
+  }, [manualRetryNonce]);
 }
