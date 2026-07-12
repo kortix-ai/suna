@@ -7,11 +7,12 @@ export async function publishTeamsAppToCatalog(input: {
   tenantId: string;
   baseUrl: string;
   appId: string;
+  appName?: string;
 }): Promise<{ ok: boolean; teamsAppId?: string; error?: string }> {
   const token = await graphToken(input.tenantId).catch(() => null);
   if (!token) return { ok: false, error: 'could not mint a Graph token for the tenant' };
 
-  const zip = buildTeamsAppPackage({ appId: input.appId, baseUrl: input.baseUrl });
+  const zip = buildTeamsAppPackage({ appId: input.appId, baseUrl: input.baseUrl, appName: input.appName, botName: input.appName });
   let res: Response;
   try {
     res = await fetch(CATALOG_URL, {

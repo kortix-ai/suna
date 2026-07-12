@@ -943,7 +943,7 @@ projectsApp.openapi(
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
-    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl }));
+    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl, appName: config.TEAMS_APP_NAME, botName: config.TEAMS_APP_NAME }));
   },
 );
 
