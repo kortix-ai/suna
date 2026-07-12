@@ -532,7 +532,6 @@ async function preserveEstablishedRuntimeOnOpen(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
       reason,
     };
   }
@@ -542,7 +541,6 @@ async function preserveEstablishedRuntimeOnOpen(
     agent_name: visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: preserved ? serializeSandboxRow(preserved) : serializeSandboxRow(row),
-    opencode_session_id: null,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: RUNTIME_IDENTITY_UNAVAILABLE,
   };
@@ -570,7 +568,6 @@ async function recoverConfirmedMissingRuntimeOnOpen(
     agent_name: visible.row.agentName ?? 'default',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
     reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
   };
 }
@@ -578,7 +575,7 @@ async function recoverConfirmedMissingRuntimeOnOpen(
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
- * resumes a hibernated/idle one, and resolves the canonical OpenCode pin once the
+ * resumes a hibernated/idle one, and reports ACP runtime readiness once the
  * box is reachable. Returns ONE readiness payload the client polls until `ready`.
  */
 export async function openSession(args: {
@@ -647,7 +644,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: false,
         sandbox: null,
-        opencode_session_id: null,
       };
     }
     if (visible.row.status !== 'provisioning') {
@@ -669,7 +665,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
     };
   }
 
@@ -692,7 +687,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
     };
   }
 
@@ -719,7 +713,6 @@ export async function openSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_removed_checking',
       };
@@ -762,7 +755,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason:
         providerStatus === 'stopped'
@@ -782,7 +774,6 @@ export async function openSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: !ready,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
       runtime_protocol: 'acp',
       runtime_id: runtimeHealth.acpServerId,
       runtime_session_id:
@@ -804,7 +795,6 @@ export async function openSession(args: {
     agent_name: visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: null,
     runtime_protocol: null,
     runtime_id: null,
     runtime_session_id: null,

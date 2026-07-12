@@ -421,8 +421,6 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
-  opencode_session_id: z.string().nullable(),
   /** Canonical runtime transport. ACP is the v3 path; opencode is v1/v2 compatibility. */
   runtime_protocol: z.enum(['acp', 'opencode']).nullable().optional(),
   /** Runtime process/server identity, independent of the ACP conversation. */
@@ -430,7 +428,7 @@ export const SessionStartResultSchema = z.object({
   /** Runtime-owned conversation id. For ACP this is assigned by session/new. */
   runtime_session_id: z.string().nullable().optional(),
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000),
+   * Relative proxy path for this session's runtime (port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */

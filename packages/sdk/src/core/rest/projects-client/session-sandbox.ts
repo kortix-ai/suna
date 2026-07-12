@@ -44,7 +44,6 @@ export interface SessionStartResult {
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
-  opencode_session_id?: string | null;
   runtime_protocol?: 'acp' | 'opencode' | null;
   runtime_id?: string | null;
   runtime_session_id?: string | null;

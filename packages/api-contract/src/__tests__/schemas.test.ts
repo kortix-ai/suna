@@ -224,7 +224,6 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
     });
     expect(parsed.runtime_url).toBeUndefined();
   });
@@ -235,7 +234,9 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: sandboxFixture(),
-      opencode_session_id: 'ses_abc',
+      runtime_protocol: 'acp',
+      runtime_id: 'runtime-abc',
+      runtime_session_id: 'ses_abc',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     });
@@ -249,7 +250,6 @@ describe('SessionStartResultSchema', () => {
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
       }),
     ).toThrow();
   });
