@@ -21,10 +21,18 @@ import {
   setChannelConversationPolicy,
   setChannelModel,
 } from "../../channels/slack/selection";
+import { backfillChannelName } from "../../channels/slack/dispatch";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
-import { chooseEffectiveAgent, toOpencodeModelRef } from "../../llm-gateway/resolution/effective";
+import {
+  type ModelSource,
+  chooseEffectiveAgent,
+  chooseEffectiveModel,
+  toOpencodeModelRef,
+  toWireModel,
+} from "../../llm-gateway/resolution/effective";
+import { type AccountModelDefaults, getAccountModelDefaults } from "../../repositories/model-preferences";
 import { PROJECT_ACTIONS } from "../../iam";
 import { auth, errors, json } from "../../openapi";
 import { loadProjectForUser, assertProjectCapability } from "../lib/access";
@@ -39,11 +47,53 @@ function projectDefaultAgentOf(metadata: unknown): string | null {
     : null;
 }
 
-function serializeBinding(row: ChannelBindingRow, projectDefaultAgent: string | null) {
+interface ModelResolutionCtx {
+  userId: string;
+  accountId: string;
+  projectId: string;
+  modelDefaults: AccountModelDefaults;
+  freeModelsOnly: boolean;
+}
+
+// Mirrors resolveEffectiveModel (default-model.ts) but batches the account
+// defaults fetch across every binding in the list instead of re-querying per
+// row. A pinned model that's no longer servable (BYOK key disconnected,
+// managed model retired) silently degrades to the project → account →
+// platform chain here too, so `effectiveModel.source` never lies about what a
+// session from this channel will actually run.
+async function resolveBindingEffectiveModel(
+  explicitModel: string | null,
+  agentName: string,
+  ctx: ModelResolutionCtx,
+): Promise<{ model: string | null; source: ModelSource }> {
+  if (explicitModel) {
+    const servable = await isModelServableForAccount({
+      userId: ctx.userId,
+      accountId: ctx.accountId,
+      projectId: ctx.projectId,
+      freeModelsOnly: ctx.freeModelsOnly,
+      model: explicitModel,
+    });
+    if (servable) return { model: toWireModel(explicitModel), source: "explicit" };
+  }
+  return chooseEffectiveModel({
+    agentDefault: ctx.modelDefaults.agents[agentName] ?? null,
+    projectDefault: ctx.modelDefaults.projects[ctx.projectId] ?? null,
+    accountDefault: ctx.modelDefaults.account,
+    freeModelsOnly: ctx.freeModelsOnly,
+  });
+}
+
+async function serializeBinding(
+  row: ChannelBindingRow,
+  projectDefaultAgent: string | null,
+  modelCtx: ModelResolutionCtx,
+) {
   const effectiveAgent = chooseEffectiveAgent({
     explicit: row.agentName,
     projectDefault: projectDefaultAgent,
   });
+  const effectiveModel = await resolveBindingEffectiveModel(row.opencodeModel, effectiveAgent.agent, modelCtx);
   return {
     bindingId: row.bindingId,
     platform: row.platform,
@@ -56,6 +106,7 @@ function serializeBinding(row: ChannelBindingRow, projectDefaultAgent: string | 
     conversationPolicy: row.conversationPolicy,
     installedAt: row.installedAt.toISOString(),
     effectiveAgent,
+    effectiveModel,
   };
 }
 
@@ -82,11 +133,33 @@ projectsApp.openapi(
     // unchecking it in a custom role is denied. Every built-in role holds it.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
+    const accountId = loaded.row.accountId as string;
     const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
     const bindings = await listChannelBindingsForProject(projectId);
+    // Rows created before channel-name persistence existed on every bind path
+    // (or created before the project's Slack token was available) can still
+    // have `channelName === null`. Resolve those live on read so the settings
+    // page shows the real Slack channel name on the very next load instead of
+    // waiting for the channel's next Slack event.
+    await Promise.all(
+      bindings
+        .filter((b) => b.platform === "slack" && !b.channelName)
+        .map(async (b) => {
+          b.channelName = await backfillChannelName(b.workspaceId, b.channelId, projectId);
+        }),
+    );
+    const modelCtx: ModelResolutionCtx = {
+      userId: loaded.userId,
+      accountId,
+      projectId,
+      modelDefaults: await getAccountModelDefaults(accountId),
+      freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
+        ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
+        : false,
+    };
     return c.json({
       projectDefaultAgent,
-      bindings: bindings.map((b) => serializeBinding(b, projectDefaultAgent)),
+      bindings: await Promise.all(bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx))),
     });
   },
 );
@@ -229,6 +302,16 @@ projectsApp.openapi(
 
     const updated = await getChannelBindingById(projectId, bindingId);
     if (!updated) return c.json({ error: "Not found" }, 404);
-    return c.json(serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata)));
+    const accountId = loaded.row.accountId as string;
+    const modelCtx: ModelResolutionCtx = {
+      userId: loaded.userId,
+      accountId,
+      projectId,
+      modelDefaults: await getAccountModelDefaults(accountId),
+      freeModelsOnly: config.KORTIX_BILLING_INTERNAL_ENABLED
+        ? !tierGrantsAllModels(await getCachedAccountTier(accountId))
+        : false,
+    };
+    return c.json(await serializeBinding(updated, projectDefaultAgentOf(loaded.row.metadata), modelCtx));
   },
 );

@@ -55,10 +55,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelConnectionGate } from '@/features/session/use-model-connection-gate';
 import { useSlackInstall, useSlackMode } from '@/hooks/channels/use-channels-installations';
 import { useToolConnect } from '@/hooks/connectors/use-tool-connect';
-import { providerListHasModels } from '@/hooks/opencode/provider-selection';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
@@ -279,7 +279,7 @@ function StepPrimaryAction({
   const slackInstall = useSlackInstall(stepId === 'slack' ? projectId : null);
   const slackConnected = !!slackInstall.data;
   const modelProviders = useOpenCodeProviders();
-  const hasModels = providerListHasModels(modelProviders.data);
+  const { hasSelectableModels } = useModelConnectionGate(flattenModels(modelProviders.data));
 
   if (stepId === 'slack') {
     return (
@@ -314,7 +314,7 @@ function StepPrimaryAction({
   if (stepId === 'model') {
     return (
       <div className="flex items-center gap-3">
-        {!hasModels && (
+        {!hasSelectableModels && (
           <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onNext}>
             Skip
           </Button>
@@ -725,8 +725,9 @@ function SlackGlyph() {
 
 function ModelStep() {
   const { data: providers, isLoading } = useOpenCodeProviders();
-  const hasModels = providerListHasModels(providers);
-  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, hasSelectableModels } = useModelConnectionGate(
+    flattenModels(providers),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -746,7 +747,7 @@ function ModelStep() {
           <Loader2 className="size-4 animate-spin" />
           Checking your connected models…
         </div>
-      ) : hasModels ? (
+      ) : hasSelectableModels ? (
         <InfoBanner tone="success" icon={Check} title="You're connected 🎉">
           A model is ready to go — switch it anytime from the chat composer.
         </InfoBanner>

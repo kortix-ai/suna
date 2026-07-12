@@ -52,15 +52,17 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain('useUpdateChannelBinding');
   });
 
-  test('agent picker offers the project default plus the declared/discovered agents', () => {
-    expect(channelsSource).toContain('AGENT_DEFAULT_VALUE');
-    expect(channelsSource).toContain('declaredAgents');
+  test('agent picker reuses the shared AgentSelector (same component as chat input/schedules), offering a project-default entry plus visible agents', () => {
+    expect(channelsSource).toContain("from '@/features/session/session-chat-input'");
+    expect(channelsSource).toContain('<AgentSelector');
+    expect(channelsSource).toContain('useVisibleAgents');
     expect(channelsSource).toContain('Project default');
   });
 
-  test('model override reuses the shared ModelSelector (not a hand-rolled input)', () => {
+  test('model override reuses the shared ModelSelector (not a hand-rolled input) and labels the unset state "Project default"', () => {
     expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');
+    expect(channelsSource).toContain('unsetLabel="Project default"');
   });
 
   test('join-policy picker covers all three conversation policies', () => {
