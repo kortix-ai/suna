@@ -7,6 +7,7 @@ import {
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
+  isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
@@ -870,6 +871,171 @@ test('does NOT suppress a real V8/Node regex error with different wording', () =
   assert.equal(
     shouldIgnoreSentryBrowserNoise({
       exception: { values: [{ value: 'TypeError: Cannot read properties of undefined (reading id)' }] },
+    }),
+    false,
+  )
+})
+
+// Reproduces the old-browser minified-chunk `SyntaxError` parse-failure cluster
+// (Kortix Frontend prod, application_id 2346967), all 1–2 occurrences each, 0
+// users, from `app:///_next/static/chunks/…` minified bundles on old browsers
+// / stripped-down WebViews. The browser cannot parse modern minified JS —
+// incompatible, not an app defect. Covered Better Stack fingerprints:
+//   Unexpected token '='        0015b43d…, 23ac8ed3…, 0665f05e…, 4bcd8a1a…,
+//                               bb3aef66…, 277d3a4a…
+//   Unexpected token '('        dfe7db0b…, 1aa71b82…, a75e4f55…, 7a61bbd1…,
+//                               38e4f3da…
+//   Unexpected token '{'        aff45748…, 40ed5a29…
+//   Invalid or unexpected token c8f836d4…, 572a247e…
+//   Cannot use import statement outside a module  17aeb077…
+// The message prefixes are generic (a real `new Function('…')` / `eval('…')`
+// eval bug throws the same wording), so the matcher requires BOTH the message
+// prefix AND a minified-chunk frame (`_next/static/chunks/` or `?dpl=dpl_…`).
+// Parse failures fire at raw chunk load time, before Sentry sourcemap
+// resolution, so the frame filename stays as the raw chunk path — a genuine
+// first-party eval bug de-minifies to `apps/web/src/…` and is never hidden.
+const CHUNK_FRAME = 'app:///_next/static/chunks/76904-c52ab52c4900447c.js'
+
+const OLD_BROWSER_SYNTAX_PARSE_EVENTS = [
+  // `Unexpected token '='` family (V8/SpiderMonkey).
+  "Unexpected token '='",
+  "SyntaxError: Unexpected token '='",
+  "Unhandled promise rejection: SyntaxError: Unexpected token '='",
+  // `Unexpected token '('` family.
+  "Unexpected token '('",
+  "SyntaxError: Unexpected token '('",
+  // `Unexpected token '{'` family.
+  "Unexpected token '{'",
+  "SyntaxError: Unexpected token '{'",
+  // `Invalid or unexpected token` (V8).
+  'Invalid or unexpected token',
+  'SyntaxError: Invalid or unexpected token',
+  'Unhandled promise rejection: Invalid or unexpected token',
+  // `Cannot use import statement outside a module` (V8, ES-module chunk
+  // loaded as a classic script by an old browser).
+  'Cannot use import statement outside a module',
+  'SyntaxError: Cannot use import statement outside a module',
+  'Unhandled promise rejection: SyntaxError: Cannot use import statement outside a module',
+]
+
+test('classifies every old-browser minified-chunk SyntaxError variant as noise (with a chunk frame)', () => {
+  for (const message of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      isOldBrowserSyntaxParseError({ message, frames: [{ filename: CHUNK_FRAME }] }),
+      true,
+      `expected "${message}" from a chunk frame to be classified as old-browser parse noise`,
+    )
+  }
+})
+
+test('suppresses every old-browser SyntaxError Sentry event whose frame is a minified chunk', () => {
+  for (const value of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [{ filename: CHUNK_FRAME }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" from a chunk frame to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an old-browser SyntaxError from a Vercel ?dpl= deploy-hash chunk URL', () => {
+  // Old browsers loading a chunk from a Vercel deployment URL also surface the
+  // raw `?dpl=dpl_…` filename, not the de-minified source.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "SyntaxError: Unexpected token '='",
+            stacktrace: {
+              frames: [
+                { filename: 'https://kortix.com/_next/static/chunks/1234-abcd.js?dpl=dpl_abc123' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses an old-browser SyntaxError via the runtime (window.onerror) gate with a chunk filename', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "SyntaxError: Unexpected token '('",
+      filename: CHUNK_FRAME,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Cannot use import statement outside a module',
+      filename: 'https://kortix.com/_next/static/chunks/main-app.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress an old-browser SyntaxError with NO chunk frame (conservative — keep reporting)', () => {
+  // Frameless window.onerror / onunhandledrejection captures carry no chunk
+  // anchor. The message prefixes are generic, so without a chunk frame we
+  // cannot tell old-browser noise from a real eval bug — keep reporting.
+  for (const message of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      isOldBrowserSyntaxParseError({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real app SyntaxError from a de-minified first-party frame', () => {
+  // A genuine `new Function('…')` / `eval('…')` eval bug in first-party app
+  // code throws the SAME wording, but Sentry's sourcemap resolution
+  // de-minifies the frame to `apps/web/src/…` — NOT a raw `_next/static/chunks/`
+  // path, and not a `?dpl=dpl_…` URL. The matcher must keep reporting it so a
+  // real eval regression is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/dynamic-eval.ts' },
+    { filename: 'apps/web/src/lib/dynamic-eval.ts' },
+    { filename: 'https://kortix.com/src/lib/dynamic-eval.ts' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///apps/web/src/features/foo.tsx' }]]) {
+    for (const message of [
+      "SyntaxError: Unexpected token '}'",
+      'Invalid or unexpected token',
+      'Cannot use import statement outside a module',
+    ]) {
+      assert.equal(
+        isOldBrowserSyntaxParseError({ message, frames }),
+        false,
+        `expected real app SyntaxError "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "SyntaxError: Unexpected token ')'",
+      filename: 'app:///apps/web/src/features/foo.tsx',
     }),
     false,
   )
