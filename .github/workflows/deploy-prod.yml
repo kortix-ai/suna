@@ -88,6 +88,37 @@ jobs:
             echo "No RELEASE_SOURCE_SHA (legacy release) — will use legacy dev fallback images"
           fi
 
+  # ── Raise the "new version rolling out" banner ──────────────────────────────
+  # Show users a dismissible WARNING banner for the duration of the rollout.
+  # Best-effort and non-blocking: it never gates or fails the deploy, and it
+  # never clobbers an active incident banner (see scripts/ci-maintenance-banner.sh).
+  # Cleared again by `maintenance-banner-off`, but ONLY once the rollout is green.
+  # Requires the PROD_MAINTENANCE_TOKEN secret (a platform-admin bearer); if it
+  # is unset the job is a no-op, so the release still works before it is added.
+  maintenance-banner-on:
+    name: Rollout banner (raise)
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect maintenance token
+        id: cfg
+        env:
+          TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::PROD_MAINTENANCE_TOKEN not set — skipping rollout banner."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Raise rollout banner
+        if: steps.cfg.outputs.enabled == 'true'
+        continue-on-error: true
+        env:
+          MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+        run: bash scripts/ci-maintenance-banner.sh on "v${{ needs.version.outputs.version }}"
+
   # ── Retag staged images → versioned + latest (no rebuild) ───────────────────
   retag-images:
     name: Re-tag staged → v${{ needs.version.outputs.version }}
@@ -1038,3 +1069,35 @@ jobs:
           gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" --admin \
             || gh pr merge "$BR" --squash --delete-branch --subject "$SUBJ" --body "" \
             || true
+
+  # ── Lower the "new version rolling out" banner — ONLY when the rollout is green ─
+  # `needs: deploy-api` with the default `if: success()` means this runs only
+  # after the API has rolled out to the new version AND passed its health gate
+  # (deploy-api hard-fails otherwise). migrate-db is upstream of deploy-api, so a
+  # failed migration also keeps the banner up. If the rollout fails, this job is
+  # skipped and the warning banner stays raised — deliberately, so users keep
+  # seeing it until an admin clears or escalates it from the console. Best-effort
+  # and non-clobbering: only clears the banner if it is still OUR rollout banner.
+  maintenance-banner-off:
+    name: Rollout banner (lower)
+    needs: [deploy-api]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect maintenance token
+        id: cfg
+        env:
+          TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::PROD_MAINTENANCE_TOKEN not set — skipping rollout banner clear."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Lower rollout banner
+        if: steps.cfg.outputs.enabled == 'true'
+        continue-on-error: true
+        env:
+          MAINTENANCE_TOKEN: ${{ secrets.PROD_MAINTENANCE_TOKEN }}
+        run: bash scripts/ci-maintenance-banner.sh off

@@ -3,9 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ArrowRight } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useApiHealth } from '@/hooks/usage/use-health';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnimatedBg } from '@/components/ui/animated-bg';
@@ -15,7 +16,25 @@ export function MaintenancePage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
+  const { data: adminRole } = useAdminRole();
+  const [isBypassing, setIsBypassing] = useState(false);
+
   const { data: healthData, isLoading: isCheckingHealth, refetch } = useApiHealth();
+
+  // Admins can bypass a full lockdown: mint a signed bypass cookie server-side
+  // (after an admin-role check), then hard-navigate so middleware re-evaluates
+  // with the cookie present and lets us into the app.
+  const handleAdminBypass = async () => {
+    setIsBypassing(true);
+    try {
+      const res = await fetch('/api/maintenance/bypass', { method: 'POST' });
+      if (!res.ok) throw new Error(`bypass failed (${res.status})`);
+      window.location.href = '/projects';
+    } catch (error) {
+      console.error('Admin maintenance bypass failed:', error);
+      setIsBypassing(false);
+    }
+  };
 
   const checkHealth = async () => {
     try {
@@ -36,6 +55,29 @@ export function MaintenancePage() {
 
   return (
     <div className="w-full relative overflow-hidden min-h-screen">
+      {/* Admin bypass — top-right. Only admins can mint the bypass cookie; the
+          server re-checks the role, so this button is safe to always render. */}
+      {adminRole?.isAdmin && (
+        <div className="absolute top-4 right-4 z-[60]">
+          <Button
+            onClick={handleAdminBypass}
+            disabled={isBypassing}
+            size="sm"
+            variant="outline"
+            className="gap-1.5 bg-card/80 backdrop-blur"
+          >
+            {isBypassing ? (
+              <KortixLoader size="small" customSize={14} />
+            ) : (
+              <>
+                Enter app (admin)
+                <ArrowRight className="h-3.5 w-3.5" />
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+
       <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
         {/* Animated background - exactly like hero section */}
         <AnimatedBg variant="hero" />
