@@ -4,6 +4,7 @@ import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import type { ProjectEnvStore } from '../project-env'
+import type { AcpRuntime } from '../acp/runtime'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
@@ -12,7 +13,7 @@ function bearerToken(header: string | undefined): string | null {
 
 /** Server-to-server project environment refresh. Harnesses receive the next
  * snapshot when their ACP process starts; no harness-native API is invoked. */
-export function createEnvRouter(cfg: Config, projectEnv: ProjectEnvStore): Hono {
+export function createEnvRouter(cfg: Config, projectEnv: ProjectEnvStore, runtime?: AcpRuntime): Hono {
   const router = new Hono()
   let syncInFlight: Promise<Response> | null = null
   router.post('/', async (c) => {
@@ -22,15 +23,36 @@ export function createEnvRouter(cfg: Config, projectEnv: ProjectEnvStore): Hono 
     if (syncInFlight) return c.json({ error: 'env sync already running' }, 409)
     syncInFlight = (async () => {
       try {
-        const body = await c.req.json().catch(() => null) as { revision?: unknown; env?: unknown; names?: unknown } | null
+        const body = (await c.req.json().catch(() => null)) as {
+          revision?: unknown
+          env?: unknown
+          names?: unknown
+        } | null
         if (!body || typeof body.revision !== 'string') return c.json({ error: 'revision is required' }, 400)
         if (!body.env || typeof body.env !== 'object' || Array.isArray(body.env)) return c.json({ error: 'env object is required' }, 400)
-        const result = projectEnv.apply({ revision: body.revision, env: body.env as Record<string, unknown>, names: body.names })
+        const result = projectEnv.apply({
+          revision: body.revision,
+          env: body.env as Record<string, unknown>,
+          names: body.names,
+        })
         if (result.changed) writeAgentEnvFile(projectEnv)
-        return c.json({ ok: true, changed: result.changed, revision: result.revision, names: result.names })
+        const processes = result.changed && runtime ? await runtime.recycleIdle() : { recycled: [], deferred: [] }
+        return c.json({
+          ok: true,
+          changed: result.changed,
+          revision: result.revision,
+          names: result.names,
+          processes,
+        })
       } catch (error) {
         logger.error('[env] sync failed', error)
-        return c.json({ error: 'env sync failed', message: error instanceof Error ? error.message : String(error) }, 500)
+        return c.json(
+          {
+            error: 'env sync failed',
+            message: error instanceof Error ? error.message : String(error),
+          },
+          500,
+        )
       } finally {
         syncInFlight = null
       }

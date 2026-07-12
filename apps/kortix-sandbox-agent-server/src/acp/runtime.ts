@@ -5,11 +5,7 @@ import { createInterface } from 'node:readline'
 
 import { logger } from '../logger'
 import { mergeProjectEnv, type ProjectEnvStore } from '../project-env'
-import type {
-  AcpHarnessDescriptor,
-  AcpHarnessId,
-  AcpHarnessRegistry,
-} from './harness-registry'
+import { resolveAcpHarnessLaunchEnv, type AcpHarnessDescriptor, type AcpHarnessId, type AcpHarnessRegistry } from './harness-registry'
 
 export type JsonRpcEnvelope = Record<string, unknown> & { jsonrpc: '2.0' }
 
@@ -42,12 +38,14 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
 const MAX_REPLAY_EVENTS = 2_000
 const MAX_STDERR_LINES = 100
 const SENSITIVE_ENV_NAME = /(TOKEN|KEY|SECRET|PASSWORD|AUTH)/i
-const HARNESS_CONFIG_DIR_ENV = [
-  'CLAUDE_CONFIG_DIR',
-  'CODEX_HOME',
-  'OPENCODE_CONFIG_DIR',
-  'PI_CODING_AGENT_DIR',
-] as const
+const HARNESS_CONFIG_DIR_ENV = ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'OPENCODE_CONFIG_DIR', 'PI_CODING_AGENT_DIR'] as const
+const SERVER_SIDE_AUTH_ENV = ['CODEX_AUTH_JSON', 'OPENCODE_AUTH_JSON'] as const
+
+export function sanitizeHarnessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env }
+  for (const name of SERVER_SIDE_AUTH_ENV) delete out[name]
+  return out
+}
 
 export function redactHarnessStderr(line: string, env: NodeJS.ProcessEnv): string {
   let redacted = line
@@ -123,7 +121,10 @@ class AcpProcess {
     this.serverId = options.serverId
     this.descriptor = options.descriptor
     this.onUnexpectedExit = options.onUnexpectedExit
-    const childEnv = { ...options.env, ...options.descriptor.launch.env }
+    // Project secrets arrive through env sync after daemon boot. Resolve the
+    // harness auth route now from that current snapshot.
+    const launchEnv = resolveAcpHarnessLaunchEnv(options.descriptor.id, options.env)
+    const childEnv = sanitizeHarnessEnv({ ...options.env, ...launchEnv })
     ensureHarnessConfigDirs(childEnv, options.cwd)
     this.child = spawn(options.descriptor.launch.command, options.descriptor.launch.args, {
       cwd: options.cwd,
@@ -201,11 +202,7 @@ class AcpProcess {
     return response
   }
 
-  subscribe(
-    afterEventId: number,
-    event: Subscriber['event'],
-    close: Subscriber['close'] = () => {},
-  ): () => void {
+  subscribe(afterEventId: number, event: Subscriber['event'], close: Subscriber['close'] = () => {}): () => void {
     for (const replayed of this.replay) {
       if (replayed.id > afterEventId) event(replayed)
     }
@@ -346,9 +343,7 @@ export class AcpRuntime {
       const descriptor = this.options.registry.get(harness)
       if (!descriptor) throw new Error(`unsupported ACP agent '${harness}'`)
       const baseEnv = this.options.baseEnv ?? process.env
-      const env = this.options.projectEnv
-        ? mergeProjectEnv(baseEnv, this.options.projectEnv)
-        : baseEnv
+      const env = this.options.projectEnv ? mergeProjectEnv(baseEnv, this.options.projectEnv) : baseEnv
       const instance = new AcpProcess({
         serverId,
         descriptor,
@@ -376,6 +371,23 @@ export class AcpRuntime {
     await instance.stop()
   }
 
+  /** Apply newly synchronized credentials without interrupting an active turn.
+   * Idle processes are recreated on the next ACP request; busy ones retain
+   * their launch snapshot until they become idle or the session is restarted. */
+  async recycleIdle(): Promise<{ recycled: string[]; deferred: string[] }> {
+    const recycled: string[] = []
+    const deferred: string[] = []
+    for (const instance of [...this.instances.values()]) {
+      if (instance.busy) {
+        deferred.push(instance.serverId)
+        continue
+      }
+      await this.delete(instance.serverId)
+      recycled.push(instance.serverId)
+    }
+    return { recycled, deferred }
+  }
+
   async shutdown(): Promise<void> {
     const instances = [...this.instances.values()]
     this.instances.clear()
@@ -389,9 +401,7 @@ export class AcpHarnessConflictError extends Error {
     readonly existingHarness: AcpHarnessId,
     readonly requestedHarness: AcpHarnessId,
   ) {
-    super(
-      `ACP server '${serverId}' already uses '${existingHarness}', not '${requestedHarness}'`,
-    )
+    super(`ACP server '${serverId}' already uses '${existingHarness}', not '${requestedHarness}'`)
   }
 }
 

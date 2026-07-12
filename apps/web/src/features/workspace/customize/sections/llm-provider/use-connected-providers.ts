@@ -1,8 +1,8 @@
 'use client';
 
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
-import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
 import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
@@ -12,7 +12,11 @@ import {
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
   MANAGED_MODEL_ID_SET,
 } from './constants';
-import { buildCodexProvider } from './utils';
+import {
+  buildClaudeSubscriptionProvider,
+  buildCodexProvider,
+  buildCustomRestProvider,
+} from './utils';
 
 export function useConnectedProviders(projectId: string, enabled: boolean) {
   const projectDetailQuery = useQuery({
@@ -72,12 +76,16 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
     const byo = LLM_PROVIDERS.filter(
       (p) =>
-        p.id !== 'kortix' &&
-        p.envVars.length > 0 &&
-        p.envVars.every((v) => secretNames.has(v)),
+        p.id !== 'kortix' && p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
     );
     const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
-    return kortixProvider ? [kortixProvider, ...subscription, ...byo] : [...subscription, ...byo];
+    const claude = buildClaudeSubscriptionProvider(secretNames);
+    const claudeSubscription: LlmProviderEntry[] = claude ? [claude] : [];
+    const custom = buildCustomRestProvider(secretNames);
+    const customProvider: LlmProviderEntry[] = custom ? [custom] : [];
+    return kortixProvider
+      ? [kortixProvider, ...subscription, ...claudeSubscription, ...customProvider, ...byo]
+      : [...subscription, ...claudeSubscription, ...customProvider, ...byo];
   }, [secretNames, kortixProvider, ocProviders]);
 
   return { secretsQuery, connectedProviders, llmGatewayEnabled };

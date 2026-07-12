@@ -1,12 +1,15 @@
 import type { LlmProviderEntry, LlmProviderModel } from '@/lib/llm-providers';
 
 import {
+  CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
   CODEX_AUTH_JSON_SECRET_NAME,
+  CUSTOM_LLM_SECRET_NAMES,
   LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
 } from './constants';
 import type { ActiveTab } from './types';
 
 export function providerCredentialSummary(provider: LlmProviderEntry): string {
+  if (provider.id === 'claude-subscription') return 'Claude subscription';
   if (provider.id === 'codex') return 'ChatGPT subscription';
   if (provider.id === 'openai') return 'OpenAI API key';
   return provider.envVars.join(' · ');
@@ -28,10 +31,10 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
           .filter(([id]) => id.startsWith('codex/'))
           .map(([id, m]) => ({
             id: id.slice('codex/'.length),
-            name: (((m as { name?: string }).name || id).replace('(latest)', '').trim()).replace(
-              /\s*\(ChatGPT\)$/,
-              '',
-            ),
+            name: ((m as { name?: string }).name || id)
+              .replace('(latest)', '')
+              .trim()
+              .replace(/\s*\(ChatGPT\)$/, ''),
             released:
               (m as { release_date?: string; released?: string }).release_date ??
               (m as { released?: string }).released ??
@@ -50,7 +53,38 @@ export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmPr
   };
 }
 
-export function pickInitialTab(defaultTab: ActiveTab | undefined, hasConnections: boolean): ActiveTab {
+export function buildClaudeSubscriptionProvider(secretNames: Set<string>): LlmProviderEntry | null {
+  if (!secretNames.has(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)) return null;
+  return {
+    id: 'claude-subscription',
+    label: 'Claude subscription',
+    envVars: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME],
+    helpUrl: 'https://docs.anthropic.com/en/docs/claude-code/iam',
+    hint: 'Claude Code subscription auth',
+    models: [],
+    featured: true,
+  };
+}
+
+export function buildCustomRestProvider(secretNames: Set<string>): LlmProviderEntry | null {
+  if (!secretNames.has('CUSTOM_LLM_PROTOCOL') || !secretNames.has('CUSTOM_LLM_BASE_URL')) {
+    return null;
+  }
+  return {
+    id: 'custom-rest',
+    label: 'Custom REST provider',
+    envVars: [...CUSTOM_LLM_SECRET_NAMES],
+    helpUrl: '',
+    hint: 'Harness-compatible custom endpoint',
+    models: [],
+    featured: true,
+  };
+}
+
+export function pickInitialTab(
+  defaultTab: ActiveTab | undefined,
+  hasConnections: boolean,
+): ActiveTab {
   if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';

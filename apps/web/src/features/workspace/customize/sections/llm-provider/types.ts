@@ -23,12 +23,11 @@ export interface ProjectProviderModalProps {
 }
 
 export interface CustomFormState {
-  providerId: string;
+  protocol: 'openai' | 'anthropic';
   name: string;
   baseURL: string;
   apiKey: string;
   modelId: string;
-  modelName: string;
 }
 
 export type ChatGptPhase = 'idle' | 'waiting' | 'done';

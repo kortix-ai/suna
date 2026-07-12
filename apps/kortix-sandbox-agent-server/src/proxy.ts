@@ -33,25 +33,38 @@ function jsonError(status: number, body: Record<string, unknown>): Response {
   })
 }
 
-function prepareKortixPtyWsUpgrade(
-  req: Request,
-  cfg: Config,
-): { ok: true; data: KortixPtyWsData } | { ok: false; response: Response } {
+function prepareKortixPtyWsUpgrade(req: Request, cfg: Config): { ok: true; data: KortixPtyWsData } | { ok: false; response: Response } {
   const url = new URL(req.url)
   const match = KORTIX_PTY_WS_PATH_RE.exec(url.pathname)
-  if (!match) return { ok: false, response: jsonError(404, { error: 'unsupported websocket path' }) }
+  if (!match)
+    return {
+      ok: false,
+      response: jsonError(404, { error: 'unsupported websocket path' }),
+    }
   const ptyId = match[1]!
 
   if (!cfg.sandboxToken) {
     logger.warn('[pty] rejecting websocket: KORTIX_TOKEN not configured')
-    return { ok: false, response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }) }
+    return {
+      ok: false,
+      response: jsonError(503, {
+        error: 'daemon not configured',
+        detail: 'KORTIX_TOKEN unset',
+      }),
+    }
   }
 
   const header = req.headers.get(KORTIX_USER_CONTEXT_HEADER) ?? url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
   const auth = verifyKortixUserContext(header, cfg.sandboxToken)
   if (!auth.ok) {
-    logger.warn('[pty] reject websocket', { reason: auth.reason, path: url.pathname })
-    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+    logger.warn('[pty] reject websocket', {
+      reason: auth.reason,
+      path: url.pathname,
+    })
+    return {
+      ok: false,
+      response: jsonError(401, { error: 'unauthorized', reason: auth.reason }),
+    }
   }
 
   return { ok: true, data: { ptyId } }
@@ -60,10 +73,17 @@ function prepareKortixPtyWsUpgrade(
 export function buildAcpApp(
   cfg: Config,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
+  bootState: SandboxBootState = {
+    repoMaterializationError: null,
+    timeline: [],
+  },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
-  acpRuntime: AcpRuntime = new AcpRuntime({ registry: createAcpHarnessRegistry(), cwd: cfg.projectTarget, projectEnv }),
+  acpRuntime: AcpRuntime = new AcpRuntime({
+    registry: createAcpHarnessRegistry(),
+    cwd: cfg.projectTarget,
+    projectEnv,
+  }),
   ptyRegistry: PtyRegistry = createPtyRegistry(cfg),
 ): Hono {
   const app = new Hono()
@@ -79,8 +99,8 @@ export function buildAcpApp(
   control.route('/pty', pty)
   control.route('/pty/', pty)
   if (projectEnv) {
-    control.route('/env', createEnvRouter(cfg, projectEnv))
-    control.route('/env/', createEnvRouter(cfg, projectEnv))
+    control.route('/env', createEnvRouter(cfg, projectEnv, acpRuntime))
+    control.route('/env/', createEnvRouter(cfg, projectEnv, acpRuntime))
   }
   app.route('/kortix', control)
 
@@ -106,17 +126,30 @@ export function buildAcpApp(
   return app
 }
 
-export type ProxyServer = { stop(): Promise<void>; port: number; reload(next: Config): void }
+export type ProxyServer = {
+  stop(): Promise<void>
+  port: number
+  reload(next: Config): void
+}
 
 export function startProxy(
   cfg: Config,
   bootTime: number,
-  bootState: SandboxBootState = { repoMaterializationError: null, timeline: [] },
+  bootState: SandboxBootState = {
+    repoMaterializationError: null,
+    timeline: [],
+  },
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
   providedAcpRuntime?: AcpRuntime,
 ): ProxyServer {
-  const acpRuntime = providedAcpRuntime ?? new AcpRuntime({ registry: createAcpHarnessRegistry(), cwd: cfg.projectTarget, projectEnv })
+  const acpRuntime =
+    providedAcpRuntime ??
+    new AcpRuntime({
+      registry: createAcpHarnessRegistry(),
+      cwd: cfg.projectTarget,
+      projectEnv,
+    })
   const ptyRegistry = createPtyRegistry(cfg)
   let currentCfg = cfg
   let app = buildAcpApp(cfg, bootTime, bootState, projectEnv, staticWebPort, acpRuntime, ptyRegistry)
@@ -141,19 +174,27 @@ export function startProxy(
         const state = ws.data
         const handle = ptyRegistry.attach(state.ptyId, {
           onData: (chunk) => {
-            try { ws.send(chunk) } catch {}
+            try {
+              ws.send(chunk)
+            } catch {}
           },
           onExit: (exitCode) => {
-            try { ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`) } catch {}
+            try {
+              ws.close(1000, `pty exited${exitCode === null ? '' : ` (${exitCode})`}`)
+            } catch {}
           },
         })
         if (!handle) {
-          try { ws.close(1011, 'pty not found') } catch {}
+          try {
+            ws.close(1011, 'pty not found')
+          } catch {}
           return
         }
         state.handle = handle
         if (handle.replay) {
-          try { ws.send(handle.replay) } catch {}
+          try {
+            ws.send(handle.replay)
+          } catch {}
         }
       },
       message(ws: ServerWebSocket<KortixPtyWsData>, message: string | Buffer) {
@@ -164,14 +205,22 @@ export function startProxy(
       },
     },
   })
-  logger.info('[proxy] ACP daemon listening', { port: server.port, hostname: '0.0.0.0' })
+  logger.info('[proxy] ACP daemon listening', {
+    port: server.port,
+    hostname: '0.0.0.0',
+  })
   return {
     port: server.port ?? cfg.servicePort,
-    async stop() { await acpRuntime.shutdown(); server.stop(true) },
+    async stop() {
+      await acpRuntime.shutdown()
+      server.stop(true)
+    },
     reload(next) {
       currentCfg = next
       app = buildAcpApp(currentCfg, bootTime, bootState, projectEnv, staticWebPort, acpRuntime, ptyRegistry)
-      logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
+      logger.info('[proxy] reloaded with session config', {
+        projectId: next.projectId,
+      })
     },
   }
 }

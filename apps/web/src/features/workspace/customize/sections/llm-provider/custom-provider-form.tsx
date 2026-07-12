@@ -3,16 +3,23 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
-import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, ChevronLeft, Copy } from 'lucide-react';
+import { AlertCircle, ChevronLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type FormEvent, useState } from 'react';
 
 import type { CustomFormState } from './types';
-import { buildCustomProviderSnippet } from './utils';
+
+const CUSTOM_PROVIDER_SECRET_NAMES = {
+  protocol: 'CUSTOM_LLM_PROTOCOL',
+  baseURL: 'CUSTOM_LLM_BASE_URL',
+  apiKey: 'CUSTOM_LLM_API_KEY',
+  modelId: 'CUSTOM_LLM_MODEL_ID',
+  name: 'CUSTOM_LLM_NAME',
+} as const;
 
 export function CustomProviderForm({
   projectId,
@@ -26,71 +33,55 @@ export function CustomProviderForm({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CustomFormState>({
-    providerId: '',
+    protocol: 'openai',
     name: '',
     baseURL: '',
     apiKey: '',
     modelId: '',
-    modelName: '',
   });
   const [error, setError] = useState<string | null>(null);
-  const [savedSnippet, setSavedSnippet] = useState<{
-    snippet: string;
-    secretName: string | null;
-  } | null>(null);
 
   const save = useMutation({
     mutationFn: async () => {
       const trimmed: CustomFormState = {
-        providerId: form.providerId.trim().toLowerCase(),
+        protocol: form.protocol,
         name: form.name.trim(),
         baseURL: form.baseURL.trim(),
         apiKey: form.apiKey.trim(),
         modelId: form.modelId.trim(),
-        modelName: form.modelName.trim(),
       };
 
-      if (!trimmed.providerId || !trimmed.name || !trimmed.baseURL) {
-        throw new Error('Provider ID, name, and base URL are required');
-      }
-      if (!/^[a-z0-9][a-z0-9_-]*$/.test(trimmed.providerId)) {
-        throw new Error('Provider ID can only use letters, numbers, dashes, underscores');
+      if (!trimmed.name || !trimmed.baseURL) {
+        throw new Error('Name and base URL are required');
       }
       if (!/^https?:\/\//.test(trimmed.baseURL)) {
         throw new Error('Base URL must start with http:// or https://');
       }
-      if (!trimmed.modelId || !trimmed.modelName) {
-        throw new Error('At least one model (ID + name) is required');
+      if (!trimmed.modelId) {
+        throw new Error('Model ID is required');
       }
 
-      const secretName = trimmed.apiKey
-        ? `CUSTOM_${trimmed.providerId.toUpperCase().replace(/-/g, '_')}_API_KEY`
-        : null;
-      if (secretName) {
-        // LLM provider credentials are always project-wide (see
-        // api-key-connect-form.tsx) — a per-user key is invisible to the
-        // gateway's shared-row resolution and breaks every model turn.
-        await upsertProjectSecret(projectId, {
-          name: secretName,
-          value: trimmed.apiKey,
-        });
+      const values = [
+        [CUSTOM_PROVIDER_SECRET_NAMES.protocol, trimmed.protocol],
+        [CUSTOM_PROVIDER_SECRET_NAMES.baseURL, trimmed.baseURL],
+        [CUSTOM_PROVIDER_SECRET_NAMES.modelId, trimmed.modelId],
+        [CUSTOM_PROVIDER_SECRET_NAMES.name, trimmed.name],
+        ...(trimmed.apiKey ? [[CUSTOM_PROVIDER_SECRET_NAMES.apiKey, trimmed.apiKey] as const] : []),
+      ] as const;
+      await Promise.all(
+        values.map(([name, value]) => upsertProjectSecret(projectId, { name, value })),
+      );
+      if (!trimmed.apiKey) {
+        await deleteProjectSecret(projectId, CUSTOM_PROVIDER_SECRET_NAMES.apiKey).catch(
+          () => undefined,
+        );
       }
-
-      const snippet = buildCustomProviderSnippet({
-        providerId: trimmed.providerId,
-        name: trimmed.name,
-        baseURL: trimmed.baseURL,
-        secretName,
-        modelId: trimmed.modelId,
-        modelName: trimmed.modelName,
-      });
-
-      return { snippet, secretName };
     },
-    onSuccess: (result) => {
-      setSavedSnippet(result);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
       refreshProjectProviderState(queryClient, projectId);
+      successToast('Custom provider connected');
+      onDone();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
   });
@@ -104,16 +95,6 @@ export function CustomProviderForm({
     event.preventDefault();
     setError(null);
     save.mutate();
-  }
-
-  if (savedSnippet) {
-    return (
-      <CustomProviderSnippetView
-        snippet={savedSnippet.snippet}
-        secretName={savedSnippet.secretName}
-        onDone={onDone}
-      />
-    );
   }
 
   return (
@@ -134,13 +115,8 @@ export function CustomProviderForm({
           {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs">
-          {tHardcodedUi.raw(
-            'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
-          )}{' '}
-          <code className="bg-background rounded px-1 py-0.5 font-mono">
-            .opencode/opencode.jsonc
-          </code>
-          .
+          Connect a REST endpoint once. Kortix translates it into native configuration for every
+          compatible ACP harness.
         </p>
       </div>
 
@@ -148,38 +124,43 @@ export function CustomProviderForm({
         onSubmit={handleSubmit}
         className="border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4"
       >
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1002JsxTextProviderId')}
-            </label>
-            <Input
-              type="text"
-              value={form.providerId}
-              onChange={(e) =>
-                setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
-              }
-              placeholder="my-llm"
-              className="h-9 font-mono text-xs"
-              autoFocus
-            />
+        <div>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+            API compatibility
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['openai', 'anthropic'] as const).map((protocol) => (
+              <Button
+                key={protocol}
+                type="button"
+                size="sm"
+                variant={form.protocol === protocol ? 'secondary' : 'outline'}
+                onClick={() => setField('protocol', protocol)}
+              >
+                {protocol === 'openai' ? 'OpenAI-compatible' : 'Anthropic-compatible'}
+              </Button>
+            ))}
           </div>
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1020JsxTextDisplayName',
-              )}
-            </label>
-            <Input
-              type="text"
-              value={form.name}
-              onChange={(e) => setField('name', e.target.value)}
-              placeholder={tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
-              )}
-              className="h-9 text-sm"
-            />
-          </div>
+          <p className="text-muted-foreground mt-1.5 text-xs text-pretty">
+            {form.protocol === 'openai'
+              ? 'Available to Codex, OpenCode, and Pi.'
+              : 'Available to Claude Code. The endpoint must implement the Anthropic Messages API.'}
+          </p>
+        </div>
+        <div>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1020JsxTextDisplayName')}
+          </label>
+          <Input
+            type="text"
+            value={form.name}
+            onChange={(e) => setField('name', e.target.value)}
+            placeholder={tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
+            )}
+            className="h-9 text-sm"
+            autoFocus
+          />
         </div>
 
         {form.apiKey.trim() && (
@@ -214,33 +195,17 @@ export function CustomProviderForm({
             className="h-9 font-mono text-xs"
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}
-            </label>
-            <Input
-              type="text"
-              value={form.modelId}
-              onChange={(e) => setField('modelId', e.target.value)}
-              placeholder="my-llm/foo-7b"
-              className="h-9 font-mono text-xs"
-            />
-          </div>
-          <div>
-            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1071JsxTextModelName')}
-            </label>
-            <Input
-              type="text"
-              value={form.modelName}
-              onChange={(e) => setField('modelName', e.target.value)}
-              placeholder={tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b',
-              )}
-              className="h-9 text-sm"
-            />
-          </div>
+        <div>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}
+          </label>
+          <Input
+            type="text"
+            value={form.modelId}
+            onChange={(e) => setField('modelId', e.target.value)}
+            placeholder="my-llm/foo-7b"
+            className="h-9 font-mono text-xs"
+          />
         </div>
 
         {error && (
@@ -254,100 +219,13 @@ export function CustomProviderForm({
           {save.isPending ? (
             <>
               <Loading className="mr-1.5 size-3.5 shrink-0" />
-              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}
+              Connecting…
             </>
           ) : (
-            'Generate snippet'
+            'Connect provider'
           )}
         </Button>
       </form>
-    </div>
-  );
-}
-
-function CustomProviderSnippetView({
-  snippet,
-  secretName,
-  onDone,
-}: {
-  snippet: string;
-  secretName: string | null;
-  onDone: () => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [copied, setCopied] = useState(false);
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      successToast('Snippet copied');
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      errorToast('Copy failed — select and copy manually');
-    }
-  }
-
-  return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
-      <div className="border-kortix-green/30 bg-kortix-green/[0.04] rounded-2xl border px-3.5 py-3">
-        <div className="text-foreground text-sm font-medium">
-          {secretName ? 'API key saved' : 'Snippet ready'}
-        </div>
-        <p className="text-muted-foreground mt-0.5 text-xs">
-          {secretName ? (
-            <>
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs',
-              )}{' '}
-              <code className="bg-background rounded px-1 py-0.5 font-mono">{secretName}</code>{' '}
-              {tHardcodedUi.raw(
-                'componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn',
-              )}
-            </>
-          ) : (
-            tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
-            )
-          )}
-        </p>
-      </div>
-
-      <div>
-        <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}
-            <code className="font-mono normal-case">.opencode/opencode.jsonc</code>
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 px-2 text-xs"
-            onClick={handleCopy}
-          >
-            <Copy className="h-3 w-3" />
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
-        </div>
-        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[280px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-snug">
-          {snippet}
-        </pre>
-      </div>
-
-      <p className="text-muted-foreground px-1 text-xs">
-        {tHardcodedUi.raw(
-          'componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS',
-        )}{' '}
-        <code className="bg-muted rounded px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}
-        {tHardcodedUi.raw(
-          'componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe',
-        )}
-      </p>
-
-      <Button size="sm" onClick={onDone}>
-        Done
-      </Button>
     </div>
   );
 }

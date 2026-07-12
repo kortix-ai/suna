@@ -64,6 +64,23 @@ function envPrefix(id: AcpHarnessId): string {
   return `KORTIX_ACP_${id.toUpperCase()}`
 }
 
+function customProvider(env: NodeJS.ProcessEnv): {
+  protocol: 'openai' | 'anthropic'
+  baseUrl: string
+  apiKey?: string
+  model?: string
+} | null {
+  const protocol = env.CUSTOM_LLM_PROTOCOL?.trim().toLowerCase()
+  const baseUrl = env.CUSTOM_LLM_BASE_URL?.trim().replace(/\/+$/, '')
+  if ((protocol !== 'openai' && protocol !== 'anthropic') || !baseUrl) return null
+  return {
+    protocol,
+    baseUrl,
+    ...(env.CUSTOM_LLM_API_KEY?.trim() ? { apiKey: env.CUSTOM_LLM_API_KEY.trim() } : {}),
+    ...(env.CUSTOM_LLM_MODEL_ID?.trim() ? { model: env.CUSTOM_LLM_MODEL_ID.trim() } : {}),
+  }
+}
+
 function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEnv): string[] {
   const raw = env[`${envPrefix(id)}_ARGS`]?.trim()
   if (!raw) return fallback
@@ -74,13 +91,14 @@ function argsFromEnv(id: AcpHarnessId, fallback: string[], env: NodeJS.ProcessEn
   return parsed
 }
 
-function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
+export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<string, string> | undefined {
   const native = nativeConfigEnv(id, env)
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
+  const custom = customProvider(env)
   if (id === 'opencode') {
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
-    if (!nativeAgent) return Object.keys(native).length ? native : undefined
+    if (!nativeAgent && custom?.protocol !== 'openai') return Object.keys(native).length ? native : undefined
     let existing: Record<string, unknown> = {}
     try {
       const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT || '{}')
@@ -89,13 +107,54 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
       // A malformed inherited override must not make logical agent routing
       // disappear. OpenCode receives the manifest-selected default below.
     }
+    const customConfig =
+      custom?.protocol === 'openai'
+        ? {
+            provider: {
+              custom: {
+                npm: '@ai-sdk/openai-compatible',
+                name: 'Custom REST provider',
+                options: {
+                  baseURL: custom.baseUrl,
+                  ...(custom.apiKey ? { apiKey: custom.apiKey } : {}),
+                },
+                ...(custom.model ? { models: { [custom.model]: { name: custom.model } } } : {}),
+              },
+            },
+          }
+        : {}
     return {
       ...native,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...existing, default_agent: nativeAgent }),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        ...existing,
+        ...customConfig,
+        ...(nativeAgent ? { default_agent: nativeAgent } : {}),
+      }),
     }
   }
   if (id === 'codex') {
-    if (env.CODEX_API_KEY || env.OPENAI_API_KEY || env.CODEX_AUTH_JSON) return Object.keys(native).length ? native : undefined
+    // Direct API keys are consumed natively by codex-acp. Subscription auth is
+    // intentionally different: CODEX_AUTH_JSON stays server-side where the
+    // Kortix gateway can refresh it, and the adapter authenticates to that
+    // gateway with the sandbox token below.
+    if (env.CODEX_API_KEY || env.OPENAI_API_KEY) return Object.keys(native).length ? native : undefined
+    if (custom?.protocol === 'openai') {
+      return {
+        ...native,
+        NO_BROWSER: '1',
+        ...(custom.model ? { CODEX_CONFIG: JSON.stringify({ model: custom.model }) } : {}),
+        DEFAULT_AUTH_REQUEST: JSON.stringify({
+          methodId: 'gateway',
+          _meta: {
+            gateway: {
+              baseUrl: custom.baseUrl,
+              providerName: 'Custom REST provider',
+              ...(custom.apiKey ? { headers: { Authorization: `Bearer ${custom.apiKey}` } } : {}),
+            },
+          },
+        }),
+      }
+    }
     if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
     return {
       ...native,
@@ -114,6 +173,32 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
     }
   }
   if (id === 'pi') {
+    if (custom?.protocol === 'openai') {
+      return {
+        ...native,
+        KORTIX_PI_MODELS_JSON: JSON.stringify({
+          providers: {
+            custom: {
+              baseUrl: custom.baseUrl,
+              api: 'openai-responses',
+              ...(custom.apiKey ? { apiKey: custom.apiKey } : {}),
+              authHeader: Boolean(custom.apiKey),
+              models: [
+                {
+                  id: custom.model || 'default',
+                  name: custom.model || 'Default',
+                  reasoning: true,
+                  input: ['text', 'image'],
+                  contextWindow: 128000,
+                  maxTokens: 32768,
+                },
+              ],
+            },
+          },
+        }),
+        PI_TELEMETRY: '0',
+      }
+    }
     if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
     return {
       ...native,
@@ -124,7 +209,16 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
             api: 'openai-responses',
             apiKey: '$KORTIX_TOKEN',
             authHeader: true,
-            models: [{ id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, input: ['text', 'image'], contextWindow: 400000, maxTokens: 128000 }],
+            models: [
+              {
+                id: 'gpt-5.4',
+                name: 'GPT-5.4',
+                reasoning: true,
+                input: ['text', 'image'],
+                contextWindow: 400000,
+                maxTokens: 128000,
+              },
+            ],
           },
         },
       }),
@@ -132,7 +226,15 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
     }
   }
   if (id !== 'claude') return Object.keys(native).length ? native : undefined
-  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return Object.keys(native).length ? native : undefined
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) return Object.keys(native).length ? native : undefined
+  if (custom?.protocol === 'anthropic') {
+    return {
+      ...native,
+      ANTHROPIC_BASE_URL: custom.baseUrl,
+      ...(custom.apiKey ? { ANTHROPIC_AUTH_TOKEN: custom.apiKey } : {}),
+      ...(custom.model ? { ANTHROPIC_MODEL: custom.model } : {}),
+    }
+  }
   if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
   return {
     ...native,
@@ -147,9 +249,7 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
   }
 }
 
-export function createAcpHarnessRegistry(
-  env: NodeJS.ProcessEnv = process.env,
-): AcpHarnessRegistry {
+export function createAcpHarnessRegistry(env: NodeJS.ProcessEnv = process.env): AcpHarnessRegistry {
   return new Map(
     ACP_HARNESS_IDS.map((id) => {
       const defaults = DEFAULTS[id]
@@ -161,7 +261,10 @@ export function createAcpHarnessRegistry(
         launch: {
           command: commandOverride || defaults.launch.command,
           args: argsFromEnv(id, commandOverride ? [] : defaults.launch.args, env),
-          env: defaultLaunchEnv(id, env),
+          // Runtime credentials are synchronized after the daemon starts, so
+          // this is only a diagnostic snapshot. AcpProcess resolves launch env
+          // again from the latest merged project environment before spawning.
+          env: resolveAcpHarnessLaunchEnv(id, env),
         },
       }
       return [id, descriptor]
