@@ -13,6 +13,9 @@ import { AcpPlanCard, AcpToolCallCard } from './acp-tool-call-card';
 import { SessionSiteHeader } from './header/session-site-header';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { SessionChatInput, type AttachedFile } from './session-chat-input';
+import { SessionContextModal } from './session-context-modal';
+import type { Session } from '@/hooks/runtime/use-runtime-sessions';
+import { projectAcpContextMessages } from './acp-context-projection';
 
 export function AcpSessionChat({
   acp,
@@ -40,6 +43,19 @@ export function AcpSessionChat({
     setConfigOption,
   } = acp;
   const items = useMemo(() => projectAcpChatItems(envelopes), [envelopes]);
+  const contextMessages = useMemo(
+    () => projectAcpContextMessages(items, sessionId, Date.parse(envelopes[0]?.createdAt ?? '') || Date.now()),
+    [envelopes, items, sessionId],
+  );
+  const contextSession = useMemo<Session>(() => ({
+    id: sessionId,
+    title: sessionTitle,
+    time: {
+      created: Date.parse(envelopes[0]?.createdAt ?? '') || Date.now(),
+      updated: Date.parse(envelopes.at(-1)?.createdAt ?? '') || Date.now(),
+    },
+  }), [envelopes, sessionId, sessionTitle]);
+  const [contextModalOpen, setContextModalOpen] = useState(false);
   const pendingPrompts = useMemo(() => projectAcpPendingPrompts(envelopes), [envelopes]);
   const pendingPermissionIds = useMemo(() => new Set(pendingPrompts.permissions.map((request) => JSON.stringify(request.id))), [pendingPrompts.permissions]);
   const pendingQuestionIds = useMemo(() => new Set(pendingPrompts.questions.map((request) => JSON.stringify(request.id))), [pendingPrompts.questions]);
@@ -94,8 +110,8 @@ export function AcpSessionChat({
             if (item.kind === 'message') {
               const Icon = item.role === 'user' ? User : item.role === 'thought' ? Brain : Bot;
               return (
-                <div key={item.id} className="bg-popover rounded-md border px-4 py-3">
-                  <div className="mb-2 flex items-center gap-2 text-xs font-medium capitalize"><Icon className="size-3.5" />{item.role}</div>
+                <div key={item.id} className={item.role === 'user' ? 'ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-3' : 'py-2'}>
+                  <div className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium capitalize"><Icon className="size-3.5" />{item.role}</div>
                   {item.role === 'user'
                     ? <div className="text-sm whitespace-pre-wrap text-pretty">{item.text}</div>
                     : <UnifiedMarkdown content={item.text} isStreaming={busy && index === items.length - 1} />}
@@ -178,9 +194,18 @@ export function AcpSessionChat({
             onStop={() => void cancel()}
             disabled={!acpSessionId}
             placeholder="Message the agent"
+            messages={contextMessages}
+            onContextClick={() => setContextModalOpen(true)}
           />
         </div>
       </div>
+      <SessionContextModal
+        open={contextModalOpen}
+        onOpenChange={setContextModalOpen}
+        messages={contextMessages}
+        session={contextSession}
+        providers={undefined}
+      />
     </div>
   );
 }
