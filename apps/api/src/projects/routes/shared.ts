@@ -19,7 +19,7 @@ import {
   buildSessionSandboxEnvVars,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
-import { ensureOpencodeSessionPin, inspectSandboxRuntime } from '../opencode-mapping';
+import { inspectSandboxRuntime } from '../opencode-mapping';
 import {
   preserveEstablishedRuntime,
   retireUnmaterializedRuntime,
@@ -346,7 +346,6 @@ export function sessionRuntimeUrlPath(externalId: string): string {
 const STALE_PENDING_PROVISIONING_MS = 10 * 60 * 1000;
 const STALE_STARTED_PROVISIONING_MS = 5 * 60 * 1000;
 const STALE_RUNTIME_WAKE_MS = 90 * 1000;
-const STALE_OPENCODE_READY_MS = 5 * 60 * 1000;
 
 function parseTimestampMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
@@ -422,38 +421,6 @@ function staleRuntimeWakeReason(
   return null;
 }
 
-function staleOpencodeReadyReason(
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-  nowMs = Date.now(),
-): string | null {
-  if (reason !== 'not_ready' && reason !== 'unreachable') return null;
-  const metadata = sandboxMetadata(row);
-  const readyWaitStartedAtMs = parseTimestampMs(
-    metadata.opencodeReadyWaitStartedAt,
-  );
-  if (
-    readyWaitStartedAtMs &&
-    nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS
-  ) {
-    return reason === 'not_ready'
-      ? 'runtime_not_ready_timeout'
-      : 'runtime_unreachable_timeout';
-  }
-
-  const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
-  if (
-    !readyWaitStartedAtMs &&
-    initSucceededAtMs &&
-    nowMs - initSucceededAtMs > STALE_OPENCODE_READY_MS
-  ) {
-    return reason === 'not_ready'
-      ? 'runtime_not_ready_timeout'
-      : 'runtime_unreachable_timeout';
-  }
-  return null;
-}
-
 function removedRuntimeStillInGrace(
   row: typeof sessionSandboxes.$inferSelect,
   nowMs = Date.now(),
@@ -489,32 +456,6 @@ async function markRuntimeWakeStarted(
   } catch (err) {
     console.warn(
       `[start] failed to mark runtime wake for ${row.sandboxId}:`,
-      err,
-    );
-  }
-}
-
-async function markOpencodeReadyWaitStarted(
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-): Promise<void> {
-  const metadata = sandboxMetadata(row);
-  if (typeof metadata.opencodeReadyWaitStartedAt === 'string') return;
-  try {
-    await db
-      .update(sessionSandboxes)
-      .set({
-        metadata: {
-          ...metadata,
-          opencodeReadyWaitStartedAt: new Date().toISOString(),
-          opencodeReadyWaitReason: reason,
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
-  } catch (err) {
-    console.warn(
-      `[start] failed to mark OpenCode wait for ${row.sandboxId}:`,
       err,
     );
   }
@@ -827,46 +768,20 @@ export async function openSession(args: {
     };
   }
 
-  // Legacy box: resolve OpenCode readiness + the canonical pin
-  // server-side — safe now that the box is confirmed up, so the daemon answers
-  // FAST (a 503 'not_ready' while OpenCode is still booting, not an 8s timeout
-  // against a dead box). This keeps ALL the lifecycle logic server-side: the
-  // client just polls until stage='ready' and gets the pin handed to it.
-  const ensured = await ensureOpencodeSessionPin({
-    projectId,
-    sessionId,
-    accountId,
-    externalId: row.externalId,
-    userId: loaded.userId,
-    currentPin: visible.row.opencodeSessionId ?? null,
-  });
-  const booting =
-    ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
-  if (booting) {
-    const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
-    if (staleBoot) {
-      return preserveEstablishedRuntimeOnOpen(
-        loaded,
-        visible,
-        projectId,
-        sessionId,
-        row,
-        staleBoot,
-      );
-    }
-    await markOpencodeReadyWaitStarted(row, ensured.reason);
-  }
+  // Every supported harness, including OpenCode, must be reached through ACP.
+  // A box reporting the removed native runtime is not a compatibility path;
+  // it must be rebuilt/restarted with the v3 compiled runtime plan.
   return {
-    stage: booting ? 'starting' : 'ready',
+    stage: 'failed',
     agent_name: visible.row.agentName ?? 'default',
-    retriable: booting,
+    retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: ensured.pin,
-    runtime_protocol: 'opencode',
-    runtime_id: ensured.pin,
-    runtime_session_id: ensured.pin,
+    opencode_session_id: null,
+    runtime_protocol: null,
+    runtime_id: null,
+    runtime_session_id: null,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
-    reason: ensured.reason,
+    reason: 'non_acp_runtime',
   };
 }
 
