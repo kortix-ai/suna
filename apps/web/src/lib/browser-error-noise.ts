@@ -12,17 +12,6 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   // tech-detection crawlers hitting the marketing site.
   "Cannot assign to read only property 'then' of object '#<Promise>'",
   'Cannot assign to read only property',
-  // Browser-native <img> / next/image load failures. The browser emits this
-  // (or "Error: Failed to load image") through window.onerror/Sentry when an
-  // image resource fails to load for reasons outside the app: broken/expired
-  // CDN or S3 signed URLs, ad-blockers blocking image hosts, CSP, offline, or
-  // prefetch failures. It is never thrown by our own code (verified: the string
-  // does not appear anywhere in the repo), and the image components already
-  // degrade gracefully (image-renderer.tsx / show-content-renderer.tsx attach
-  // onError handlers that hide the broken <img>). Suppress the noise class so
-  // it stops paging Better Stack. Better Stack patterns 1426e718... (38) and
-  // b04a2106... (6), Kortix Frontend (prod), application_id 2346967.
-  'Failed to load image',
 ] as const;
 
 const KNOWN_TEST_NOISE_MESSAGES = [
@@ -78,6 +67,17 @@ function containsKnownPattern(message: string, patterns: readonly string[]): boo
 
 function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function isBareImageLoadNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return normalized === 'Failed to load image' || normalized === 'Error: Failed to load image';
+}
+
+function isBrowserBundleSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return normalized.startsWith('app:///_next/static/')
+    || /^https?:\/\/[^/]+\/_next\/static\//.test(normalized);
 }
 
 function extractMessage(value: unknown): string {
@@ -141,6 +141,14 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser-native <img> / next/image load failures can surface as this exact
+  // message through window.onerror. Keep this exact: pptx-react-viewer throws
+  // actionable errors such as "Failed to load image for colour change
+  // processing", which must still reach error tracking.
+  if (isBareImageLoadNoiseMessage(message)) {
+    return true;
+  }
+
   if (isKnownTestNoiseMessage(message)) {
     return true;
   }
@@ -173,6 +181,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   const environment = normalizeString((event as { environment?: unknown }).environment);
 
   if (isKnownBrowserNoiseMessage(message)) {
+    return true;
+  }
+
+  // This helper is also used by the server and edge Sentry configs. Require a
+  // browser bundle frame here so a same-worded server exception is not hidden.
+  // The client config additionally has an anchored ignoreErrors regex for
+  // frame-less browser events.
+  if (isBareImageLoadNoiseMessage(message)
+    && frames.some((frame) => isBrowserBundleSource(frame.filename))) {
     return true;
   }
 
