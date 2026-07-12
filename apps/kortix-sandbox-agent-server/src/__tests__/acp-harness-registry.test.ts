@@ -56,7 +56,10 @@ describe('ACP harness registry', () => {
       }),
     });
     expect(registry.get('opencode')?.launch.env).toBeUndefined();
-    expect(registry.get('pi')?.launch.env).toBeUndefined();
+    expect(registry.get('pi')?.launch.env).toMatchObject({
+      PI_TELEMETRY: '0',
+      KORTIX_PI_MODELS_JSON: expect.stringContaining('gpt-5.4'),
+    });
   });
 
   test('preserves native Codex credentials when the project supplied them', () => {

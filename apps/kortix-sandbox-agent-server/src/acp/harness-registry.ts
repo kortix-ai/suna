@@ -97,6 +97,24 @@ function defaultLaunchEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<stri
       }),
     }
   }
+  if (id === 'pi') {
+    if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
+    return {
+      ...native,
+      KORTIX_PI_MODELS_JSON: JSON.stringify({
+        providers: {
+          kortix: {
+            baseUrl: `${apiUrl}/router/openai`,
+            api: 'openai-responses',
+            apiKey: '$KORTIX_TOKEN',
+            authHeader: true,
+            models: [{ id: 'gpt-5.4', name: 'GPT-5.4', reasoning: true, input: ['text', 'image'], contextWindow: 400000, maxTokens: 128000 }],
+          },
+        },
+      }),
+      PI_TELEMETRY: '0',
+    }
+  }
   if (id !== 'claude') return Object.keys(native).length ? native : undefined
   if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return Object.keys(native).length ? native : undefined
   if (!apiUrl || !token) return Object.keys(native).length ? native : undefined

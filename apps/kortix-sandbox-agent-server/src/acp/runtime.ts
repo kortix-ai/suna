@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -62,6 +62,13 @@ export function ensureHarnessConfigDirs(env: NodeJS.ProcessEnv, cwd: string): vo
     const raw = env[name]?.trim()
     if (!raw) continue
     mkdirSync(isAbsolute(raw) ? raw : join(cwd, raw), { recursive: true })
+  }
+  const piDir = env.PI_CODING_AGENT_DIR?.trim()
+  const managedModels = env.KORTIX_PI_MODELS_JSON?.trim()
+  if (piDir && managedModels) {
+    const dir = isAbsolute(piDir) ? piDir : join(cwd, piDir)
+    const file = join(dir, 'models.json')
+    if (!existsSync(file)) writeFileSync(file, `${managedModels}\n`, { mode: 0o600 })
   }
 }
 
