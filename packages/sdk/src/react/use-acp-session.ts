@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createAcpClient, type AcpContentBlock, type AcpEnvelope, type AcpJsonRpcId } from '../acp';
-import { platformConfig } from '../platform/config';
+import { projectAcpEndpoint } from '../acp/project-session';
 import { clearStartStash, readStartStash } from './session-start-stash';
 
 export type AcpStoredSessionEnvelope = {
@@ -17,7 +17,7 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId }: {
   runtimeSessionId?: string | null;
 }) {
   const client = useMemo(() => createAcpClient({
-    endpoint: `${platformConfig().backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
+    endpoint: projectAcpEndpoint(projectId, sessionId),
   }), [projectId, sessionId]);
   const [envelopes, setEnvelopes] = useState<AcpStoredSessionEnvelope[]>([]);
   const [nativeId, setNativeId] = useState(runtimeSessionId ?? null);

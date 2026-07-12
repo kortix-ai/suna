@@ -31,6 +31,7 @@ import { Drawer } from 'react-native-drawer-layout';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { promptProjectAcpSession } from '@kortix/sdk';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -1687,7 +1688,7 @@ export default function ProjectSessionScreen() {
   const handleOpenChangeRequest = useCallback(async () => {
     const ps = activeProjectSession;
     const targetSandboxUrl = ps?.sandbox_url || sandboxUrl;
-    const targetSessionId = ps?.opencode_session_id || activeSessionId;
+    const targetSessionId = ps?.runtime_protocol === 'acp' ? ps.acp_session_id : ps?.opencode_session_id || activeSessionId;
 
     if (!ps || !targetSandboxUrl || !targetSessionId) {
       Alert.alert(
@@ -1700,7 +1701,14 @@ export default function ProjectSessionScreen() {
     haptics.tap();
     const baseRef = ps.base_ref || 'main';
     const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
-    const sent = await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
+    const sent = ps.runtime_protocol === 'acp'
+      ? await promptProjectAcpSession({
+          projectId: ps.project_id,
+          sessionId: ps.session_id,
+          runtimeSessionId: targetSessionId,
+          prompt: [{ type: 'text', text: prompt }],
+        }).then(() => true, () => false)
+      : await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
 
     if (sent) {
       Alert.alert('Open change request', 'Asked your agent to commit and open a change request.');

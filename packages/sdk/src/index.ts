@@ -55,6 +55,8 @@ export {
   acpTranscriptMarkdown,
   projectAcpChatItems,
   projectAcpTranscript,
+  projectAcpEndpoint,
+  promptProjectAcpSession,
   type AcpClientOptions,
   type AcpContentBlock,
   type AcpEnvelope,
