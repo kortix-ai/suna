@@ -1,4 +1,4 @@
-import type { AcpEnvelope, AcpStreamEvent } from './types';
+import type { AcpEnvelope, AcpJsonRpcId, AcpStreamEvent } from './types';
 
 export type AcpStoredEnvelope = {
   ordinal: number;
@@ -13,6 +13,47 @@ export type AcpChatItem =
   | { kind: 'tool'; title: string; data: unknown }
   | { kind: 'permission'; id: string | number; method: string; params: Record<string, unknown> }
   | { kind: 'raw'; method: string; data: unknown };
+
+export type AcpPendingOption = {
+  optionId?: string;
+  id?: string;
+  kind?: string;
+  label: string;
+  value?: string;
+  hint?: string;
+  description?: string;
+};
+
+export type AcpPendingPermission = {
+  id: AcpJsonRpcId;
+  method: string;
+  sessionId?: string;
+  permission: string;
+  patterns: string[];
+  options: AcpPendingOption[];
+  params: Record<string, unknown>;
+};
+
+export type AcpPendingQuestionItem = {
+  key?: string;
+  question: string;
+  header?: string;
+  options: AcpPendingOption[];
+  allowText?: boolean;
+};
+
+export type AcpPendingQuestion = {
+  id: AcpJsonRpcId;
+  method: string;
+  sessionId?: string;
+  questions: AcpPendingQuestionItem[];
+  params: Record<string, unknown>;
+};
+
+export type AcpPendingPrompts = {
+  permissions: AcpPendingPermission[];
+  questions: AcpPendingQuestion[];
+};
 
 export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChatItem[] {
   const items: AcpChatItem[] = [];
@@ -43,6 +84,190 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
     } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
   }
   return items;
+}
+
+export function projectAcpPendingPrompts(rows: readonly AcpStoredEnvelope[]): AcpPendingPrompts {
+  const answered = new Set<string>();
+  for (const row of rows) {
+    const envelope = row.envelope as Record<string, unknown>;
+    if (!('id' in envelope)) continue;
+    if ('method' in envelope) continue;
+    if (!('result' in envelope) && !('error' in envelope)) continue;
+    answered.add(rpcIdKey(envelope.id));
+  }
+
+  const permissions: AcpPendingPermission[] = [];
+  const questions: AcpPendingQuestion[] = [];
+  for (const row of rows) {
+    if (row.direction !== 'agent_to_client') continue;
+    const envelope = row.envelope as Record<string, unknown>;
+    if (!('id' in envelope) || typeof envelope.method !== 'string') continue;
+    if (answered.has(rpcIdKey(envelope.id))) continue;
+    if ('result' in envelope || 'error' in envelope) continue;
+    const params = isRecord(envelope.params) ? envelope.params : {};
+    if (isPermissionMethod(envelope.method)) {
+      permissions.push(projectPermission(envelope.id as AcpJsonRpcId, envelope.method, params));
+    } else if (isQuestionMethod(envelope.method)) {
+      questions.push(projectQuestion(envelope.id as AcpJsonRpcId, envelope.method, params));
+    }
+  }
+  return { permissions, questions };
+}
+
+function projectPermission(
+  id: AcpJsonRpcId,
+  method: string,
+  params: Record<string, unknown>,
+): AcpPendingPermission {
+  const toolCall = isRecord(params.toolCall) ? params.toolCall : {};
+  const permission = firstString(
+    params.permission,
+    params.title,
+    params.name,
+    toolCall.title,
+    toolCall.kind,
+    params.kind,
+    method,
+  ) ?? method;
+  return {
+    id,
+    method,
+    sessionId: firstString(params.sessionId),
+    permission,
+    patterns: stringArray(params.patterns),
+    options: normalizeOptions(params.options),
+    params,
+  };
+}
+
+function projectQuestion(
+  id: AcpJsonRpcId,
+  method: string,
+  params: Record<string, unknown>,
+): AcpPendingQuestion {
+  const explicit = Array.isArray(params.questions)
+    ? params.questions
+        .filter(isRecord)
+        .map((question) => ({
+          key: firstString(question.key, question.name),
+          question: firstString(question.question, question.label, question.title) ?? firstString(params.message, params.prompt) ?? method,
+          header: firstString(question.header, params.message, params.title),
+          options: normalizeOptions(question.options),
+          allowText: question.allowText === true || question.type === 'text',
+        }))
+    : [];
+
+  const schemaQuestions = questionItemsFromSchema(params);
+  const fallback = explicit.length || schemaQuestions.length
+    ? []
+    : [{
+        question: firstString(params.message, params.prompt, params.question, params.title) ?? method,
+        header: firstString(params.title),
+        options: normalizeOptions(params.options),
+        allowText: params.mode !== 'url',
+      }];
+
+  return {
+    id,
+    method,
+    sessionId: firstString(params.sessionId),
+    questions: [...explicit, ...schemaQuestions, ...fallback],
+    params,
+  };
+}
+
+function questionItemsFromSchema(params: Record<string, unknown>): AcpPendingQuestionItem[] {
+  const schema = isRecord(params.requestedSchema) ? params.requestedSchema : null;
+  const properties = schema && isRecord(schema.properties) ? schema.properties : null;
+  if (!properties) return [];
+  return Object.entries(properties).map(([key, raw]) => {
+    const property = isRecord(raw) ? raw : {};
+    return {
+      key,
+      question: firstString(property.title, property.description, key) ?? key,
+      header: firstString(params.message, params.title),
+      options: normalizeSchemaOptions(property),
+      allowText: property.type !== 'boolean',
+    };
+  });
+}
+
+function normalizeSchemaOptions(property: Record<string, unknown>): AcpPendingOption[] {
+  const enumValues = Array.isArray(property.enum) ? property.enum : [];
+  if (enumValues.length > 0) {
+    const options: AcpPendingOption[] = [];
+    for (const value of enumValues) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        options.push({ label: String(value), value: String(value) });
+      }
+    }
+    return options;
+  }
+  const choices = Array.isArray(property.oneOf)
+    ? property.oneOf
+    : Array.isArray(property.anyOf)
+      ? property.anyOf
+      : [];
+  return choices.filter(isRecord).map((choice) => {
+    const value = firstString(choice.const, choice.value, choice.enum);
+    const label = firstString(choice.title, choice.name, choice.label, value) ?? 'Option';
+    return {
+      label,
+      value,
+      description: firstString(choice.description),
+      hint: firstString(choice.hint),
+    };
+  });
+}
+
+function normalizeOptions(value: unknown): AcpPendingOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((option) => {
+    const optionId = firstString(option.optionId, option.id);
+    const value = firstString(option.value, optionId);
+    const label = firstString(option.label, option.name, option.title, optionId, value) ?? 'Option';
+    return {
+      optionId,
+      id: firstString(option.id),
+      kind: firstString(option.kind),
+      label,
+      value,
+      hint: firstString(option.hint),
+      description: firstString(option.description),
+    };
+  });
+}
+
+function isPermissionMethod(method: string): boolean {
+  return method.includes('permission');
+}
+
+function isQuestionMethod(method: string): boolean {
+  return method.includes('elicitation') || method.includes('question') || method.includes('input') || method.includes('request');
+}
+
+function rpcIdKey(id: unknown): string {
+  return JSON.stringify(id);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+      const nested = firstString(...value);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 export type AcpTranscriptMessage = {

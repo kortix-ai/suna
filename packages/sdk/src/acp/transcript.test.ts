@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { projectAcpTranscript } from './transcript';
+import { projectAcpPendingPrompts, projectAcpTranscript } from './transcript';
 
 describe('projectAcpTranscript', () => {
   test('projects prompts, streamed replies, thoughts, and tools without harness types', () => {
@@ -17,6 +17,71 @@ describe('projectAcpTranscript', () => {
         text: 'Done',
         reasoning_omitted: true,
         tools: [{ tool: 'shell', status: 'pending' }],
+      }),
+    ]);
+  });
+});
+
+describe('projectAcpPendingPrompts', () => {
+  test('returns unresolved ACP permission requests and hides answered ones', () => {
+    const pending = projectAcpPendingPrompts([
+      { ordinal: 1, direction: 'agent_to_client', envelope: { jsonrpc: '2.0', id: 'perm-1', method: 'session/request_permission', params: { permission: 'bash', patterns: ['rm -rf *'], options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }] } } },
+      { ordinal: 2, direction: 'agent_to_client', envelope: { jsonrpc: '2.0', id: 'perm-2', method: 'session/request_permission', params: { permission: 'edit', options: [{ optionId: 'allow_once' }] } } },
+      { ordinal: 3, direction: 'client_to_agent', envelope: { jsonrpc: '2.0', id: 'perm-2', result: { outcome: { outcome: 'selected', optionId: 'allow_once' } } } },
+    ]);
+
+    expect(pending.permissions).toEqual([
+      expect.objectContaining({
+        id: 'perm-1',
+        method: 'session/request_permission',
+        permission: 'bash',
+        patterns: ['rm -rf *'],
+        options: [expect.objectContaining({ optionId: 'allow_once', kind: 'allow_once', label: 'Allow once' })],
+      }),
+    ]);
+    expect(pending.questions).toEqual([]);
+  });
+
+  test('projects ACP elicitation schema fields as questions', () => {
+    const pending = projectAcpPendingPrompts([
+      {
+        ordinal: 1,
+        direction: 'agent_to_client',
+        envelope: {
+          jsonrpc: '2.0',
+          id: 9,
+          method: 'elicitation/create',
+          params: {
+            message: 'Choose an environment',
+            requestedSchema: {
+              type: 'object',
+              properties: {
+                environment: {
+                  title: 'Environment',
+                  enum: ['staging', 'production'],
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(pending.questions).toEqual([
+      expect.objectContaining({
+        id: 9,
+        method: 'elicitation/create',
+        questions: [
+          expect.objectContaining({
+            key: 'environment',
+            question: 'Environment',
+            header: 'Choose an environment',
+            options: [
+              { label: 'staging', value: 'staging' },
+              { label: 'production', value: 'production' },
+            ],
+          }),
+        ],
       }),
     ]);
   });

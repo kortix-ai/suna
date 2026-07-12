@@ -779,6 +779,7 @@
     "createAcpClient",
     "projectAcpChatItems",
     "projectAcpEndpoint",
+    "projectAcpPendingPrompts",
     "projectAcpTranscript",
     "promptProjectAcpSession"
   ],
@@ -787,6 +788,7 @@
     "acpTranscriptJsonl",
     "acpTranscriptMarkdown",
     "projectAcpChatItems",
+    "projectAcpPendingPrompts",
     "projectAcpTranscript"
   ],
   "./runtime-client": [
