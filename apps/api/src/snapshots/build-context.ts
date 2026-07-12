@@ -82,9 +82,9 @@ export interface StagedContext {
 
 /**
  * Per-project COLD warm: bake the project's repo checkout into /workspace at
- * build time. Passed straight through to the Dockerfile layer, which clones the
- * repo (build-time creds, one RUN) and skips the /workspace wipe. Omit for the
- * shared, project-independent default image.
+ * build time. The API fetches and archives the exact commit before provider
+ * upload; the Dockerfile only extracts that credential-free archive. Omit for
+ * the shared, project-independent default image.
  */
 export interface WarmRepoContext {
   /** Upstream URL to clone from at BUILD time (real git host or proxy). */
@@ -93,6 +93,8 @@ export interface WarmRepoContext {
   cloneHeaders: Record<string, string>;
   /** Branch to check out (default-branch tip). */
   branch: string;
+  /** Exact resolved tip baked into the content-addressed warm image. */
+  commitSha: string;
   /** Proxy origin the baked checkout's `origin` resets to (runtime re-auth). */
   originUrl: string;
 }
@@ -119,6 +121,15 @@ export async function stageBuildContext(
   await assertExistsDir(SLACK_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_SLACK_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
+  let layeredWarmRepo: Awaited<ReturnType<typeof stageWarmRepoArchive>> | undefined;
+  try {
+    layeredWarmRepo = warmRepo
+      ? await stageWarmRepoArchive(contextDir, warmRepo)
+      : undefined;
+  } catch (error) {
+    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
   await gzipFile(CLI_BIN_PATH, join(contextDir, 'kortix.gz'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
@@ -167,7 +178,7 @@ export async function stageBuildContext(
     executorSdkPath: 'kortix-executor-sdk',
     opencodeConfigPath,
     catalogPath: 'kortix-llm-catalog.json',
-    warmRepo,
+    warmRepo: layeredWarmRepo,
   });
 
   // ── Buildah-portability guard ──────────────────────────────────────────────
@@ -203,7 +214,11 @@ export async function stageBuildContext(
   // "Path does not exist", and the auto-build can't tell it's a staging miss to
   // recover from. Assert at the source so a miss is caught here AND is retryable
   // (the daytona adapter re-stages on "staging incomplete").
-  await assertContextComplete(contextDir, dockerfileName);
+  await assertContextComplete(
+    contextDir,
+    dockerfileName,
+    layeredWarmRepo?.archivePath,
+  );
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
 }
@@ -213,14 +228,76 @@ export async function stageBuildContext(
  * Dockerfile COPYs, so a staging miss fails HERE (clear + retryable) instead of
  * as an opaque provider "Path does not exist" mid-build. Cheap stat checks.
  */
-async function assertContextComplete(contextDir: string, dockerfileName: string): Promise<void> {
-  for (const rel of ['scaffold.git', 'kortix-agent.gz', dockerfileName]) {
+async function assertContextComplete(
+  contextDir: string,
+  dockerfileName: string,
+  warmRepoArchive?: string,
+): Promise<void> {
+  for (const rel of [
+    'scaffold.git',
+    'kortix-agent.gz',
+    dockerfileName,
+    ...(warmRepoArchive ? [warmRepoArchive] : []),
+  ]) {
     try {
       await stat(join(contextDir, rel));
     } catch {
       throw new Error(`build context staging incomplete: ${rel} missing in ${contextDir}`);
     }
   }
+}
+
+/** Materialize the exact project commit on the API host and archive it into
+ * the provider context. Auth headers exist only in the short-lived git process
+ * environment; they never enter Dockerfile text, provider logs, image history,
+ * or the archived checkout's git config. */
+async function stageWarmRepoArchive(
+  contextDir: string,
+  warmRepo: WarmRepoContext,
+): Promise<{ archivePath: string; branch: string; commitSha: string }> {
+  const checkout = join(contextDir, '.kortix-warm-repo-checkout');
+  const archiveName = 'kortix-warm-repo.tar.gz';
+  const archivePath = join(contextDir, archiveName);
+  await mkdir(checkout, { recursive: true });
+
+  const headers = Object.entries(warmRepo.cloneHeaders);
+  const gitEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: String(headers.length),
+  };
+  headers.forEach(([name, value], index) => {
+    gitEnv[`GIT_CONFIG_KEY_${index}`] = 'http.extraHeader';
+    gitEnv[`GIT_CONFIG_VALUE_${index}`] = `${name}: ${value}`;
+  });
+  const git = (args: string[]) =>
+    execFileAsyncBC('git', args, { cwd: checkout, env: gitEnv, timeout: 120_000 });
+
+  try {
+    await git(['init', '-b', warmRepo.branch]);
+    await git(['remote', 'add', 'origin', warmRepo.cloneUrl]);
+    await git(['fetch', '--depth', '1', 'origin', warmRepo.commitSha]);
+    await git(['checkout', '-B', warmRepo.branch, 'FETCH_HEAD']);
+    await git(['remote', 'set-url', 'origin', warmRepo.originUrl]);
+    const { stdout } = await git(['rev-parse', 'HEAD']);
+    if (stdout.trim() !== warmRepo.commitSha) {
+      throw new Error(`warm repo resolved ${stdout.trim()} but expected ${warmRepo.commitSha}`);
+    }
+    await execFileAsyncBC('tar', [
+      '-czf', archivePath,
+      '--no-xattrs',
+      '-C', checkout,
+      '.',
+    ], {
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+      timeout: 120_000,
+      maxBuffer: 1024 * 1024,
+    });
+  } finally {
+    await rm(checkout, { recursive: true, force: true }).catch(() => {});
+  }
+
+  return { archivePath: archiveName, branch: warmRepo.branch, commitSha: warmRepo.commitSha };
 }
 
 async function newestMtimeMs(dir: string): Promise<number> {

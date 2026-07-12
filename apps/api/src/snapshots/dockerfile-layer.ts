@@ -127,28 +127,18 @@ export interface BuildLayeredDockerfileOpts {
    * boot-time git clone entirely — the daemon's git.ts fast-paths a baked
    * `${target}/.git` whose HEAD matches the session base. Requires NO memory
    * snapshot: the checkout is plain rootfs bytes that BOTH Daytona and Platinum
-   * boot cold. When set, the layer clones the repo into /workspace BEFORE the
-   * opencode instance warm-up (so opencode indexes the REAL project) and does
-   * NOT wipe /workspace afterward. Omit for the shared, project-independent
-   * default image (workspace stays empty; the daemon clones at boot).
+   * boot cold. When set, the layer extracts the API-staged checkout into
+   * /workspace BEFORE the opencode instance warm-up (so it indexes the project)
+   * and does NOT wipe /workspace afterward. Omit for the shared,
+   * project-independent default image (workspace stays empty; daemon clones at boot).
    */
   warmRepo?: {
-    /** Upstream URL to clone from at BUILD time (real git host or proxy). */
-    cloneUrl: string;
-    /**
-     * Auth headers for the build-time clone, passed via `git -c
-     * http.extraHeader` inside a RUN that deletes the script in the same
-     * invocation — nothing credential-shaped survives into the image layer.
-     */
-    cloneHeaders: Record<string, string>;
+    /** Credential-free checkout archive staged by the API build context. */
+    archivePath: string;
     /** Branch to check out (the default branch tip is baked). */
     branch: string;
-    /**
-     * The Kortix git-proxy origin the baked checkout's `origin` is reset to, so
-     * the daemon's per-session credential helper re-auths pushes/fetches at
-     * runtime (the build credential is never persisted).
-     */
-    originUrl: string;
+    /** Exact commit stored in the content-addressed warm image. */
+    commitSha: string;
   };
 }
 
@@ -168,33 +158,24 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
-  // Single-quote a value for safe embedding in a build-time bash RUN.
-  const shq = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
-  // Per-project COLD warm: clone the repo into /workspace at BUILD time. The auth
-  // header goes through `git -c http.extraHeader` (never written to git config)
-  // and the whole step is one RUN, so no credential-shaped bytes persist. origin
-  // is reset to the Kortix proxy so the daemon re-auths per session at runtime.
+  // Per-project COLD warm: extract the credential-free checkout archive staged
+  // by the API. Authenticated Git access happens before provider upload, so no
+  // token can appear in Dockerfile text, provider logs, or image history.
   const warmRepoClone = warmRepo
     ? [
         '',
         '# ─── Per-project COLD warm: bake repo checkout into /workspace ──────',
-        // Clone the default-branch tip into /workspace. --depth 1 keeps the layer
-        // small; the daemon fast-paths the baked .git and deepens on demand.
+        `COPY ${warmRepo.archivePath} /tmp/kortix-warm-repo.tar.gz`,
+        // Extract the exact resolved tip into /workspace. The daemon fast-paths
+        // the baked .git and deepens through its credential helper on demand.
         // NOTE: an earlier base layer sets `WORKDIR /workspace`, so the build
-        // shell's CWD IS /workspace. We must NOT `rm -rf /workspace` (that orphans
-        // the CWD inode → git dies with "Unable to read current working
-        // directory"). Instead `cd /`, clone into a scratch dir, then move the
-        // contents into the (emptied) /workspace so the CWD inode stays valid.
+        // shell's CWD IS /workspace. Keep the directory inode and clear children.
         `RUN cd / \\`,
-        `    && rm -rf /tmp/kortix-warm-repo && mkdir -p /tmp/kortix-warm-repo /workspace \\`,
-        `    && git ${Object.entries(warmRepo.cloneHeaders)
-          .map(([k, v]) => `-c http.extraHeader=${shq(`${k}: ${v}`)}`)
-          .join(' ')} clone --depth 1 --branch ${shq(warmRepo.branch)} ${shq(warmRepo.cloneUrl)} /tmp/kortix-warm-repo \\`,
         `    && find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} + \\`,
-        `    && (shopt -s dotglob 2>/dev/null || true) && cp -a /tmp/kortix-warm-repo/. /workspace/ \\`,
-        `    && rm -rf /tmp/kortix-warm-repo \\`,
-        `    && git -C /workspace remote set-url origin ${shq(warmRepo.originUrl)} \\`,
-        `    && echo "warm-repo: baked $(git -C /workspace rev-parse HEAD) on ${warmRepo.branch}"`,
+        `    && tar --no-same-owner -xzf /tmp/kortix-warm-repo.tar.gz -C /workspace \\`,
+        `    && rm /tmp/kortix-warm-repo.tar.gz \\`,
+        `    && test "$(git -C /workspace rev-parse HEAD)" = "${warmRepo.commitSha}" \\`,
+        `    && echo "warm-repo: baked ${warmRepo.commitSha} on ${warmRepo.branch}"`,
         '',
       ]
     : [];

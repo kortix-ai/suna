@@ -974,12 +974,19 @@ export async function ensurePerProjectWarmImage(
   // Idempotency: active image under this (project, tip, runtime) → reuse it.
   // Still reap here — this path also runs when a prior bake's reap failed or a
   // moved-then-restored tip races to active, so it cleans lingering old tips.
-  if ((await provider.getSnapshotState(snapshotName)) === 'active') {
+  const existingState = await provider.getSnapshotState(snapshotName);
+  if (existingState === 'active') {
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
     return { snapshotName, tip, built: false, provider: buildProvider };
   }
+  // Match the normal template builder: a provider keeps failed names around,
+  // and create-under-the-same-name otherwise 409s forever. A later session is
+  // the warm path's retry button, so reap the failed artifact before rebuilding.
+  if (existingState === 'error' || existingState === 'build_failed') {
+    await provider.deleteSnapshot(snapshotName);
+  }
 
-  const warmRepo = await resolveWarmRepoContext(project);
+  const warmRepo = await resolveWarmRepoContext(project, tip);
 
   const buildId = opts.accountId
     ? await openBuildLog({
@@ -1024,11 +1031,14 @@ export async function ensurePerProjectWarmImage(
 /**
  * Resolve the build-time clone credentials + runtime proxy origin for a project's
  * per-project warm bake. Reads the full project row (the GitBackedProject subset
- * lacks the fields `resolveProjectUpstream` needs). The build-time auth header is
- * a short-lived git-host credential embedded ONLY in a one-shot RUN; origin is
- * reset to the Kortix proxy so the daemon re-auths per session at runtime.
+ * lacks the fields `resolveProjectUpstream` needs). The API materializes the
+ * exact commit before provider upload; the archived checkout's origin is reset
+ * to the Kortix proxy so the daemon re-auths per session at runtime.
  */
-async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRepoContext> {
+async function resolveWarmRepoContext(
+  project: GitBackedProject,
+  commitSha: string,
+): Promise<WarmRepoContext> {
   const { projects } = await import('@kortix/db');
   const { resolveProjectUpstream } = await import('../projects/lib/git');
   const { proxyGitUrl } = await import('../projects/lib/sessions');
@@ -1043,6 +1053,7 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
     cloneUrl: upstream.url,
     cloneHeaders: upstream.headers ?? {},
     branch: project.defaultBranch,
+    commitSha,
     originUrl: proxyGitUrl(project.projectId),
   };
 }

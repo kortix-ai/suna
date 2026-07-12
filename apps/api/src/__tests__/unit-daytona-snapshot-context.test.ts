@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -11,6 +12,7 @@ const entrypointPath = join(fixtureRoot, 'entrypoint.sh');
 const slackCliPath = join(fixtureRoot, 'slack-cli');
 const executorSdkPath = join(fixtureRoot, 'executor-sdk');
 const opencodeConfigPath = join(fixtureRoot, 'opencode-config');
+const warmRepoPath = join(fixtureRoot, 'warm-source');
 
 writeFileSync(agentPath, '#!/bin/sh\n');
 writeFileSync(cliPath, '#!/bin/sh\n');
@@ -21,6 +23,17 @@ await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
 await mkdir(opencodeConfigPath, { recursive: true });
+await mkdir(warmRepoPath, { recursive: true });
+execFileSync('git', ['init', '-b', 'main'], { cwd: warmRepoPath });
+execFileSync('git', ['config', 'user.name', 'Kortix Test'], { cwd: warmRepoPath });
+execFileSync('git', ['config', 'user.email', 'test@kortix.invalid'], { cwd: warmRepoPath });
+writeFileSync(join(warmRepoPath, 'README.md'), 'warm checkout\n');
+execFileSync('git', ['add', '.'], { cwd: warmRepoPath });
+execFileSync('git', ['commit', '-m', 'fixture'], { cwd: warmRepoPath });
+const warmCommitSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: warmRepoPath,
+  encoding: 'utf8',
+}).trim();
 
 // Set per-test (NOT at module load): build-context reads these lazily, so setting
 // them in beforeEach makes THIS suite's fixtures win during its own tests without
@@ -36,6 +49,8 @@ beforeEach(() => {
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
+let warmArchivePresentAtDaytonaBoundary = false;
+let warmGitConfigAtDaytonaBoundary = '';
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -50,6 +65,16 @@ mock.module('@daytonaio/sdk', () => ({
       // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
       // finally cleans the context after, so this can't be asserted afterward.
       scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
+      warmArchivePresentAtDaytonaBoundary = existsSync(
+        join(path, '..', 'kortix-warm-repo.tar.gz'),
+      );
+      warmGitConfigAtDaytonaBoundary = warmArchivePresentAtDaytonaBoundary
+        ? execFileSync(
+            'tar',
+            ['-xOf', join(path, '..', 'kortix-warm-repo.tar.gz'), './.git/config'],
+            { encoding: 'utf8' },
+          )
+        : '';
       contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
@@ -90,6 +115,33 @@ describe('Daytona snapshot build context', () => {
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
+  });
+
+  test('stages warm Git credentials outside the provider-visible Dockerfile and image history', async () => {
+    const secret = 'github_pat_must_never_reach_provider_logs';
+    await daytonaProvider.buildSnapshot({
+      ...buildInput('kortix-warm-context-security'),
+      warmRepo: {
+        cloneUrl: warmRepoPath,
+        cloneHeaders: { Authorization: `Bearer ${secret}` },
+        branch: 'main',
+        commitSha: warmCommitSha,
+        originUrl: 'https://api.example.test/v1/git/project.git',
+      },
+    });
+
+    expect(warmArchivePresentAtDaytonaBoundary).toBe(true);
+    expect(dockerfileSeen).toContain('COPY kortix-warm-repo.tar.gz');
+    expect(dockerfileSeen).toContain(warmCommitSha);
+    expect(dockerfileSeen).not.toContain(secret);
+    expect(dockerfileSeen).not.toContain('Authorization');
+    expect(dockerfileSeen).not.toContain('http.extraHeader');
+    expect(dockerfileSeen).not.toContain(warmRepoPath);
+    expect(warmGitConfigAtDaytonaBoundary).toContain(
+      'https://api.example.test/v1/git/project.git',
+    );
+    expect(warmGitConfigAtDaytonaBoundary).not.toContain(secret);
+    expect(warmGitConfigAtDaytonaBoundary).not.toContain('extraHeader');
   });
 });
 
