@@ -35,7 +35,10 @@ export interface StarterFile {
 
 export const STARTER_TEMPLATE_IDS = ['minimal', 'general-knowledge-worker'] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
-export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'minimal';
+// Every new project ships the full consolidated Kortix skill kit preinstalled
+// (the general-knowledge-worker template = base plumbing + all domain skills).
+// `minimal` (base only) stays available for callers that explicitly ask for it.
+export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
 
 export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-computer',

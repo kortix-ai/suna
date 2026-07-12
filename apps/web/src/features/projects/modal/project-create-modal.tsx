@@ -412,12 +412,13 @@ export const ProjectCreateModal = ({
       });
       return;
     }
-    const defaultMarketplaceItems = marketplaceItems.map((item) => item.id);
     createMutation.mutate({
       account_id: effectiveAccountId,
       name: values.name,
-      starter_template: 'minimal',
-      marketplace_items: values.includeGeneralKnowledgeSkills ? defaultMarketplaceItems : [],
+      // Full Kortix skill kit preinstalled by default (the general-knowledge-worker
+      // template seeds every skill). The toggle is the escape hatch to a bare project.
+      starter_template: values.includeGeneralKnowledgeSkills ? 'general-knowledge-worker' : 'minimal',
+      marketplace_items: [],
     });
   }
 

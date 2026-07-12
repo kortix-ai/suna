@@ -67,8 +67,8 @@ Options:
   --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
-  --template <name>    Starter template: minimal (default) or general-knowledge-worker.
-                       Use general-knowledge-worker to include the optional skill pack.
+  --template <name>    Starter template: general-knowledge-worker (default, full
+                       skill kit) or minimal (base plumbing only).
   --marketplace <list> Comma-separated marketplace skills to install into the
                        new project. Use "none" to skip. Interactive mode
                        opens a preselected picker.
@@ -373,8 +373,8 @@ export async function runInit(argv: string[]): Promise<number> {
   } else {
     const skills = listGeneralKnowledgeWorkerSkills();
     const includeSkills = await confirm(
-      `Include general knowledge worker skills? (${formatSkillList(skills)})`,
-      false,
+      `Include the full Kortix skill kit? (${formatSkillList(skills)})`,
+      true,
     );
     template = includeSkills ? 'general-knowledge-worker' : 'minimal';
   }
