@@ -24,7 +24,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
       emptyIcon={Sparkles}
       emptyTitle="No skills yet"
       emptyDescription="Create a skill to give agents reusable capabilities."
-      emptyDocsHref="https://opencode.ai/docs/skills/"
+      emptyDocsHref="https://agentclientprotocol.com/"
       emptyBodyLabel="Skill body is empty. Add content below the frontmatter."
       select={(config) => config.skills}
       renderTriggerLabel={(skill) => skill.name}

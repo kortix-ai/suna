@@ -1,7 +1,7 @@
 /**
  * LlmProvidersPage — Manage LLM provider connections and API keys.
  *
- * API endpoints (via OpenCode server):
+ * Runtime API endpoints:
  *   GET    {sandboxUrl}/provider         — List all providers + connected status
  *   PUT    {sandboxUrl}/auth/{id}        — Connect provider (set API key)
  *   DELETE {sandboxUrl}/auth/{id}        — Disconnect provider (remove key)
@@ -45,8 +45,8 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useOpenCodeProviders, flattenModels } from '@/lib/opencode/hooks/use-opencode-data';
-import type { ProviderInfo, FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
+import { useRuntimeProviders, flattenModels } from '@/lib/runtime/hooks/use-runtime-data';
+import type { ProviderInfo, FlatModel } from '@/lib/runtime/hooks/use-runtime-data';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import {
@@ -253,7 +253,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const inputBorder = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
   const themeColors = useThemeColors();
 
-  const { data: providers, isLoading, refetch } = useOpenCodeProviders(sandboxUrl);
+  const { data: providers, isLoading, refetch } = useRuntimeProviders(sandboxUrl);
 
   type Tab = 'providers' | 'connected' | 'models';
   const [activeTab, setActiveTab] = useState<Tab>('providers');

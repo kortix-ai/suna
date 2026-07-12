@@ -206,7 +206,14 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
     openai: {
       name: 'openai',
       targetBaseUrl: config.OPENAI_API_URL,      // https://api.openai.com/v1
-      getKortixApiKey: () => config.OPENAI_API_KEY,
+      // Managed Codex uses this Responses-compatible surface. Prefer a direct
+      // OpenAI key when configured; Kortix cloud can otherwise use its existing
+      // OpenRouter key and Responses endpoint without exposing either key to
+      // the sandbox.
+      kortixTargetBaseUrl: config.OPENAI_API_KEY
+        ? config.OPENAI_API_URL
+        : config.OPENROUTER_API_URL,
+      getKortixApiKey: () => config.OPENAI_API_KEY || config.OPENROUTER_API_KEY,
       keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Bearer ' },
       allowedRoutes: [
         { path: '/chat/completions', methods: ['POST'] },

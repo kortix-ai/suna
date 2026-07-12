@@ -1,5 +1,5 @@
 /**
- * QuestionPrompt — compact mobile-native question UI for OpenCode sessions.
+ * QuestionPrompt — compact mobile-native question UI for runtime sessions.
  *
  * Renders inside the chat input card area, replacing the text input.
  * Compact sizing to match the frontend's inline chip style.
@@ -22,7 +22,7 @@ import type {
   QuestionRequest,
   QuestionInfo,
   QuestionAnswer,
-} from '@/lib/opencode/types';
+} from '@/lib/runtime/types';
 
 // ---------------------------------------------------------------------------
 // Props

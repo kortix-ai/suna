@@ -3,7 +3,7 @@
 /**
  * useWorkspaceSearch — stubbed for project-files (read-only).
  *
- * The full CMD+K palette / @-mention search is built on the OpenCode
+ * The full CMD+K palette / @-mention search is built on the Runtime
  * find APIs which the project-files view does not have. We keep the
  * type surface stable and return empty results.
  *

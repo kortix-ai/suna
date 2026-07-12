@@ -43,7 +43,7 @@ test('getPublicSessionShare hits /public/session-shares/:shareId with no Authori
 test('getPublicSessionShareMessages hits the /messages suffix', async () => {
   nextResponse = {
     status: 200,
-    body: { available: true, reason: null, opencode_session_id: 'oc1', message_count: 1, messages: [{ role: 'user', created: null, completed: null, text: 'hi', tools: [], files: [], reasoning_omitted: false }] },
+    body: { available: true, reason: null, runtime_session_id: 'oc1', message_count: 1, messages: [{ role: 'user', created: null, completed: null, text: 'hi', tools: [], files: [], reasoning_omitted: false }] },
   };
   const result = await getPublicSessionShareMessages('S1');
   expect(last().url).toBe('http://test.local/public/session-shares/S1/messages');

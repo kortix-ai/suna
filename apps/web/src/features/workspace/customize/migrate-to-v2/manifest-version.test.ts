@@ -29,7 +29,7 @@ describe('detectManifestVersion', () => {
     expect(detectManifestVersion('[project]\nname = "x"\n')).toBe(1);
   });
 
-  test('a version beyond 2 still reads as v2 (never-v1) for UI purposes', () => {
-    expect(detectManifestVersion('kortix_version: 3\n')).toBe(2);
+  test('v3 remains distinct for ACP-first configuration UI', () => {
+    expect(detectManifestVersion('kortix_version: 3\n')).toBe(3);
   });
 });

@@ -9,11 +9,10 @@ for consuming it correctly, and precisely where it runs.
 
 ## The mental model
 
-A session's events come from the **OpenCode runtime inside its sandbox**,
-reached through the Kortix API as a proxy. There is no separate WebSocket
-endpoint or `EventSource` — the transport is **`fetch` with a streaming
-response body** (server-sent events read via `ReadableStream` +
-`TextDecoderStream`).
+A session's events come from the **ACP runtime inside its sandbox**, reached
+through the Kortix API as a proxy. There is no separate WebSocket endpoint or
+`EventSource` — the transport is **`fetch` with a streaming response body**
+(server-sent events read via `ReadableStream` + `TextDecoderStream`).
 
 The SDK owns everything above the wire: **reconnection, backoff, heartbeat
 detection, and event coalescing** live in the SDK's event-stream layer, so a
@@ -30,7 +29,7 @@ Three rules make streaming correct:
 
 ```ts
 const session = kortix.session(projectId, sessionId);
-const { opencodeSessionId } = await session.ensureReady();
+const { runtimeSessionId } = await session.ensureReady();
 
 const stream = await session.stream({
   onEvent: (event) => {
@@ -46,7 +45,7 @@ const stream = await session.stream({
       case 'session.error': // the turn failed — surface e.error
         break;
       case 'session.idle': // the turn is DONE
-        if (e.sessionID === opencodeSessionId) onTurnDone();
+        if (e.sessionID === runtimeSessionId) onTurnDone();
         break;
     }
   },

@@ -90,7 +90,12 @@ function getSandboxProxyUrl(sandboxId: string): string {
   return `${base}/p/${sandboxId}/8000`;
 }
 
-async function waitForOpenCodeHealthy(
+function normalizeProvisioningStage(stage: string | null): string | null {
+  if (stage === 'verifying_opencode') return 'verifying_runtime';
+  return stage;
+}
+
+async function waitForRuntimeHealthy(
   sandboxId: string,
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -192,11 +197,13 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
 
       const status = row.sandbox.status;
       const metadata = row.runtime?.metadata || row.session.metadata || {};
-      const stage = typeof metadata.provisioningStage === 'string'
-        ? metadata.provisioningStage
-        : status === 'provisioning'
-          ? 'cloud_init_running'
-          : null;
+      const stage = normalizeProvisioningStage(
+        typeof metadata.provisioningStage === 'string'
+          ? metadata.provisioningStage
+          : status === 'provisioning'
+            ? 'cloud_init_running'
+            : null,
+      );
       const stageProgress = status === 'active'
         ? 100
         : stage
@@ -278,8 +285,8 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           if (!healthId) return;
           update({
             status: 'polling',
-            currentStage: 'verifying_opencode',
-            progress: STAGE_PROGRESS_MAP.verifying_opencode,
+            currentStage: 'verifying_runtime',
+            progress: STAGE_PROGRESS_MAP.verifying_runtime,
             stageEnteredAt: Date.now(),
           });
 
@@ -287,7 +294,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
           const ac = new AbortController();
           healthAbortRef.current = ac;
 
-          waitForOpenCodeHealthy(healthId, ac.signal).then((healthy) => {
+          waitForRuntimeHealthy(healthId, ac.signal).then((healthy) => {
             if (stoppedRef.current) return;
             if (healthy) {
               log.log('[SandboxPoller] Health check passed — ready!');

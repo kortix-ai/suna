@@ -32,11 +32,11 @@ import { C, help, status } from '../style.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'symlink .opencode → .kortix/opencode';
+      return 'OpenCode harness compatibility: .opencode → .kortix/opencode';
     case 'claude':
-      return 'symlink .claude → .kortix/opencode';
+      return 'Claude Code local compatibility: .claude → .kortix/opencode';
     case 'codex':
-      return 'symlink .agents → .kortix/opencode + AGENTS.md';
+      return 'Codex local compatibility: .agents → .kortix/opencode + AGENTS.md';
     case 'cursor':
       return 'AGENTS.md (read natively — no rule file)';
     default:
@@ -49,7 +49,8 @@ const HELP = help`Usage: kortix init [project-name] [options]
 Start a new Kortix project.
 
 A fresh, self-contained workspace your agents can run from day one — the
-full OpenCode runtime, project memory, and a kortix.yaml to make it yours.
+Kortix ACP runtime manifest, project memory, and local agent compatibility
+files to make it yours.
 Standalone by design: like create-next-app, init always spins up a new
 project in its own directory; it never touches an existing one.
 
@@ -57,10 +58,10 @@ Arguments:
   project-name         Your project's name — and the directory it's created
                        in. Prompted if omitted.
 
-Pick the coding agent(s) to wire up. The OpenCode config dir is symlinked into
-each agent's native location (.opencode / .claude; codex wires .agents) so its
-skills and agents are shared; Codex and Cursor also get a root AGENTS.md pointer
-they read natively.
+Pick the local coding agent(s) to wire up for editing the project. This is
+local compatibility wiring only: Kortix cloud sessions use the v3 \`runtimes\`
+profiles in kortix.yaml and launch the selected ACP harness. Codex and Cursor
+also get a root AGENTS.md pointer they read natively.
 
 Options:
   --name <project>     Alias for the positional project-name.
@@ -224,10 +225,10 @@ function printAgentPreamble(): void {
     '',
     `  Pick the coding agent(s) to wire into this Kortix project.`,
     '',
-    `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
-    `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
-    `  ${dim}custom agents, or edit kortix.yaml for you.${reset}`,
-    `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
+    `  ${dim}This wires local editor/CLI compatibility. Cloud sessions use${reset}`,
+    `  ${dim}kortix.yaml v3 runtime profiles and launch ACP harness adapters.${reset}`,
+    `  ${dim}The default starter still includes an OpenCode harness profile at${reset}`,
+    `  ${dim}.kortix/opencode; add Claude/Codex native config as needed.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -468,8 +469,8 @@ export async function runInit(argv: string[]): Promise<number> {
   }
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
-  // Symlink the OpenCode config dir into each agent's native location
-  // (.opencode/.claude; codex wires .agents) + an AGENTS.md pointer for Codex & Cursor.
+  // Wire local coding-agent compatibility. This is not the cloud runtime
+  // selector; cloud sessions are governed by kortix.yaml v3 runtime profiles.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,

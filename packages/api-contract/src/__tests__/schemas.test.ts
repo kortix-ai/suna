@@ -76,14 +76,14 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_provider: 'daytona',
     sandbox_id: null,
     sandbox_url: null,
-    opencode_session_id: 'ses_abc',
+    runtime_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
     agent_name: 'default',
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
     visibility: 'private',
@@ -222,7 +222,6 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
     });
     expect(parsed.runtime_url).toBeUndefined();
   });
@@ -233,7 +232,9 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: sandboxFixture(),
-      opencode_session_id: 'ses_abc',
+      runtime_protocol: 'acp',
+      runtime_id: 'runtime-abc',
+      runtime_session_id: 'ses_abc',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     });
@@ -247,7 +248,6 @@ describe('SessionStartResultSchema', () => {
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
       }),
     ).toThrow();
   });
@@ -432,18 +432,20 @@ describe('SessionCreateInputSchema runtime_context', () => {
     ).toBe(false);
   });
 
-  test('retains deprecated camelCase inputs already accepted by the route', () => {
+  test('retains deprecated camelCase inputs already accepted by the route except model', () => {
     expect(
       SessionCreateInputSchema.safeParse({
       baseRef: 'main',
       agentName: 'veyris',
       sandboxSlug: 'default',
       initialPrompt: 'hello',
-      opencodeModel: 'kortix/auto',
+      model: 'kortix/auto',
       sessionId: '11111111-1111-4111-a111-111111111111',
       branchAlreadyCreated: true,
       }).success,
     ).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ opencodeModel: 'kortix/auto' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ opencode_model: 'kortix/auto' }).success).toBe(false);
   });
 });
 

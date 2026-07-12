@@ -55,8 +55,8 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
   const { data: errorData } = useGatewayErrors(projectId, days);
 
   // Resolve session ids → human names so spend reads as "Fix login bug", not a
-  // raw uuid. Map both the kortix and opencode ids since the gateway may key on
-  // either.
+  // raw uuid. Map both the Kortix project session id and runtime session id
+  // since the gateway may key on either.
   const { data: projectSessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -69,7 +69,7 @@ export function GatewayOverview({ projectId }: { projectId: string }) {
       const label = s.name ?? s.custom_name ?? null;
       if (!label) continue;
       m.set(s.session_id, label);
-      if (s.opencode_session_id) m.set(s.opencode_session_id, label);
+      if (s.runtime_session_id) m.set(s.runtime_session_id, label);
     }
     return m;
   }, [projectSessions]);

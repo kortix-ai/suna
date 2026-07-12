@@ -59,17 +59,16 @@ export function serializeSession(
     ownerEmail?: string | null;
   },
 ): ProjectSession {
-  const opencodeSessions = Array.isArray(row.metadata?.opencode_sessions)
-    ? row.metadata.opencode_sessions
-    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
-  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // over the auto title (metadata.name) mirrored from the runtime server-side
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
   const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const acpSessionId = typeof row.metadata?.acp_session_id === 'string' ? row.metadata.acp_session_id : null;
+  const runtimeProtocol = row.metadata?.runtime_protocol === 'acp' ? 'acp' : null;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -79,14 +78,17 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: runtimeProtocol === 'acp' ? acpSessionId : null,
+    runtime_protocol: runtimeProtocol,
+    runtime_id: typeof row.metadata?.runtime_id === 'string' ? row.metadata.runtime_id : null,
+    acp_session_id: acpSessionId,
     name: customName ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
     metadata: row.metadata ?? {},
-    opencode_sessions: opencodeSessions,
+    runtime_sessions: [],
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,

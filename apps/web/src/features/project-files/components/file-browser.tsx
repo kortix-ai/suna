@@ -37,7 +37,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { downloadFile } from '../api/opencode-files';
+import { downloadFile } from '../api/runtime-files';
 import { buildGitStatusMap, useFileList, useGitStatus, useServerHealth } from '../hooks';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import {
@@ -542,6 +542,7 @@ export function FileBrowser() {
     renameMutation,
     mkdirMutation,
     clearClipboard,
+    tHardcodedUi,
   ]);
 
   // Keyboard shortcuts
@@ -580,24 +581,14 @@ export function FileBrowser() {
           </h3>
           <p className="text-muted-foreground mt-1 text-sm">
             {tHardcodedUi.raw(
-              'featuresProjectFilesComponentsFileBrowser.line559JsxTextCouldNotConnectToTheOpencodeServerAt',
+              'featuresProjectFilesComponentsFileBrowser.line559JsxTextCouldNotConnectToTheSessionRuntimeAt',
             )}{' '}
             <code className="bg-muted rounded px-1.5 py-0.5 text-xs">{serverUrl}</code>
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            {tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextMakeSure')}
-            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">
-              {tHardcodedUi.raw(
-                'featuresProjectFilesComponentsFileBrowser.line565JsxTextOpencodeServe',
-              )}
-            </code>{' '}
-            or{' '}
-            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">
-              {tHardcodedUi.raw(
-                'featuresProjectFilesComponentsFileBrowser.line566JsxTextOpencodeWeb',
-              )}
-            </code>
-            {tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextIsRunning')}
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line565JsxTextMakeSureSessionRuntimeIsRunning',
+            )}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>

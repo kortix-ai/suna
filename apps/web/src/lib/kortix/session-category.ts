@@ -1,7 +1,7 @@
 /**
  * Session categorisation for workspace sessions + sidebar filtering.
  *
- * OpenCode sessions in the Kortix workspace come from different
+ * Runtime sessions in the Kortix workspace come from different
  * sources and the sidebar/tabs should treat them differently:
  *
  *   - `human`       — user created this in the general chat, or any other
@@ -17,7 +17,7 @@
  *                     shown under its trigger in workspace session groupings.
  *
  * Detection is currently title-based — that's what's reliably available
- * on every opencode session record. Exact string formats are set by the
+ * on every session record. Exact string formats are set by the
  * callers that create the session:
  *
  *   ticket-triggers.ts  → `${agent.name} · #${number} ${title}`

@@ -17,7 +17,7 @@ mock.module('../shared/db', () => ({
 }));
 
 // Controllable selection layer.
-let selection: unknown = { projectId: 'p1', agentName: null, opencodeModel: null };
+let selection: unknown = { projectId: 'p1', agentName: null, model: null };
 let setAgentResult: { ok: true } | { ok: false; reason: 'no_binding' | 'unknown_agent' } = { ok: true };
 let setModelResult = true;
 const setAgentCalls: Array<string | null> = [];
@@ -71,7 +71,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   identityRow = null;
-  selection = { projectId: 'p1', agentName: null, opencodeModel: null };
+  selection = { projectId: 'p1', agentName: null, model: null };
   setAgentResult = { ok: true };
   setModelResult = true;
   setAgentCalls.length = 0;
@@ -122,7 +122,7 @@ describe('identity feature gated OFF', () => {
 
 describe('/kortix models', () => {
   test('renders a picker of recommended models + a project-default reset', async () => {
-    selection = { projectId: 'p1', agentName: null, opencodeModel: 'anthropic/claude-opus-4-8' };
+    selection = { projectId: 'p1', agentName: null, model: 'anthropic/claude-opus-4-8' };
     const resp = await handleSlashCommand('models', '', ctx);
     const ids = actionIds(resp);
     expect(ids).toContain('set_model_default');
@@ -224,7 +224,7 @@ describe('/kortix session (singular)', () => {
 
 describe('/kortix whoami', () => {
   test('surfaces the current agent + model', async () => {
-    selection = { projectId: 'p1', agentName: 'reviewer', opencodeModel: 'anthropic/claude-opus-4-8' };
+    selection = { projectId: 'p1', agentName: 'reviewer', model: 'anthropic/claude-opus-4-8' };
     // whoami also fetches the project row.
     dbResults = [[{ projectId: 'p1', name: 'Proj', repoUrl: 'https://github.com/o/r' }]];
     const resp = await handleSlashCommand('whoami', '', ctx);

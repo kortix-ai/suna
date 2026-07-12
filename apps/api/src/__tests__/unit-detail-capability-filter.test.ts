@@ -10,6 +10,9 @@ const sampleConfig: Record<string, unknown> = {
   manifest_raw: 'raw toml',
   manifest: { name: 'x' },
   env: [{ name: 'FOO' }],
+  runtime_config_raw: '{}',
+  runtime_default_agent: 'bot',
+  agent_source: 'native',
   open_code_raw: '{}',
   open_code_default_agent: 'bot',
   agent_discovery: 'declared',
@@ -48,6 +51,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
   test('no agent.read → agents + discovery blanked', () => {
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canAgents: false });
     expect(out.config.agents).toEqual([]);
+    expect(out.config.agent_source).toBeNull();
     expect(out.config.agent_discovery).toBeNull();
   });
 
@@ -61,6 +65,8 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.manifest_raw).toBeNull();
     expect(out.config.manifest).toEqual({});
     expect(out.config.env).toEqual([]);
+    expect(out.config.runtime_config_raw).toBeNull();
+    expect(out.config.runtime_default_agent).toBeNull();
     expect(out.config.open_code_raw).toBeNull();
     expect(out.config.open_code_default_agent).toBeNull();
     // Structural signals survive so the workspace shell still renders.

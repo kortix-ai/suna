@@ -30,7 +30,7 @@ export const STAGE_LABELS: Record<string, string> = {
   services_starting:  'Starting workspace services',
   services_ready:     'Waiting for services to come online',
   connecting:         'Connecting to workspace',
-  verifying_opencode: 'Verifying workspace is ready',
+  verifying_runtime:  'Verifying workspace is ready',
 } as const;
 
 /** Numeric progress lookup (stage → percentage) */
@@ -41,7 +41,7 @@ export const STAGE_PROGRESS_MAP: Record<string, number> = {
   cloud_init_done:    60,
   services_starting:  80,
   services_ready:     95,
-  verifying_opencode: 98,
+  verifying_runtime:  98,
   connecting:         99,
 };
 
@@ -53,6 +53,6 @@ export const STAGE_DURATION_MS: Record<string, number> = {
   cloud_init_done:    30_000,
   services_starting:  20_000,
   services_ready:     180_000,
-  verifying_opencode: 180_000,
+  verifying_runtime:  180_000,
   connecting:         15_000,
 };

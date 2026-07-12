@@ -7,12 +7,13 @@ description: '@kortix/sdk/react — one hook to run a session (useSession), plus
 is imperative — you call a method, you get a promise — these hooks subscribe to
 **live** data and re-render as it changes. They're built on
 [React Query](https://tanstack.com/query) and
-[zustand](https://zustand-demo.pmnd.rs/), and kept current by OpenCode's SSE event
-stream.
+[zustand](https://zustand-demo.pmnd.rs/), and kept current by the session's ACP
+event stream.
 
 You almost never touch the runtime plumbing directly. **One hook runs a session:**
 
 ```tsx
+import { projectAcpChatItems } from '@kortix/sdk';
 import { useSession } from '@kortix/sdk/react';
 
 function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
@@ -22,14 +23,14 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 
   return (
     <>
-      {s.messages.map(({ info, parts }) => (
-        <Message key={info.id} info={info} parts={parts} />
+      {projectAcpChatItems(s.acp.envelopes).map((item, index) => (
+        <Message key={index} item={item} />
       ))}
       <Composer
-        busy={s.isBusy}
+        busy={s.acp.busy}
         disabled={s.runtimePhase !== 'ready'}
-        onSend={(text) => s.send(text)}
-        onStop={s.cancel}
+        onSend={(text) => s.acp.send([{ type: 'text', text }])}
+        onStop={s.acp.cancel}
       />
     </>
   );
@@ -43,9 +44,9 @@ That's the whole contract. No event provider to mount, no health poller, no
 ## `useSession(projectId, sessionId, options?)`
 
 The single hook for an open session. Internally it drives `POST /start` (the
-server long-polls), resolves the session's runtime, opens the SSE stream, resolves
-the canonical OpenCode id, and syncs messages — exposing one `phase` plus the
-thread, the actions, the interactive prompts, and the pre-runtime capabilities.
+server long-polls), resolves the session's runtime, opens the ACP event stream,
+loads or creates the ACP session, and exposes one `phase` plus the ACP chat
+state/actions and runtime metadata.
 
 **Readiness is server-truth:** the runtime is ready when `/start` returns
 `stage: 'ready'` (the backend only returns that once the daemon answered). There
@@ -62,18 +63,11 @@ and the `/start` poll for that `(projectId, sessionId)`.
 | `phase`                              | `'starting' \| 'ready' \| 'error'`                      | top-level gate — render the boot screen until `ready`                                                                     |
 | `stage`                              | `SessionStartStage \| null`                             | raw `/start` stage (`provisioning` / `starting` / `ready` / …) for boot UI                                                |
 | `runtimePhase`                       | `'connecting' \| 'booting' \| 'ready' \| 'unreachable'` | granular live connection phase (for a mid-session reconnect pill)                                                         |
-| `messages`                           | `{ info, parts }[]`                                     | the thread; parts stream in live                                                                                          |
-| `status` · `isBusy`                  | `SessionStatus` · `boolean`                             | session status · agent is generating                                                                                      |
+| `acp.envelopes`                      | `AcpStoredSessionEnvelope[]`                            | persisted and live ACP envelopes for the chat transcript                                                                  |
+| `acp.ready` · `acp.busy`             | `boolean` · `boolean`                                   | ACP session loaded · agent is generating                                                                                  |
+| `acp.error`                          | `string \| null`                                        | latest ACP transport or prompt error                                                                                      |
 | `isLoading` · `isError`              | `boolean`                                               | first hydrate in flight · terminal `/start` state                                                                         |
-| `questions` · `permissions`          | `[]`                                                    | pending agent questions / approvals (from the live prompt store)                                                          |
-| `hasPending`                         | `boolean`                                               | there are open questions/permissions                                                                                      |
-| `diffs` · `todos`                    | `[]`                                                    | live file diffs · todo items                                                                                              |
-| `pending`                            | `string \| null`                                        | the optimistic in-flight user message text                                                                                |
-| `isSending` · `sendError`            | `boolean` · `KortixSendError \| null`                   | current `send` call in flight · its last failure (billing / runtime-not-ready / runtime-error), reset on every new `send` |
-| `opencodeSessionId`                  | `string \| null`                                        | the resolved canonical OpenCode root id                                                                                   |
-| `models` · `agents`                  | `[]`                                                    | selectable models · agents (server-side, available pre-runtime)                                                           |
-| `defaultAgent` · `commands`          | `string \| null` · `[]`                                 | the project default agent · slash commands                                                                                |
-| `picks`                              | `SessionPicks`                                          | per-session model/agent selection (persisted)                                                                             |
+| `runtimeSessionId` / `acp.runtimeSessionId` | `string \| null`                               | the resolved ACP session id                                                                                               |
 | `sandbox` · `switched` · `retriable` | row · `boolean` · `boolean`                             | the `/start` sandbox row · runtime switched-in · can re-poll                                                              |
 | `startError` · `reason`              | terminal `/start` failure · `string \| null`            | render instead of spinning forever · latest `/start` reason (e.g. `'runtime_waking'`) for boot UI                         |
 
@@ -81,18 +75,17 @@ and the `/start` poll for that `(projectId, sessionId)`.
 
 | action                                  | what                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------- |
-| `send(text, override?)`                 | send a prompt (optimistic). `override` = `{ model?, agent? }` for this message      |
-| `cancel()`                              | abort the run **and** clear any pending prompt + open questions/permissions         |
-| `runCommand(command, args)`             | run a project slash-command (`/command`)                                            |
-| `answerQuestion(id, answers)`           | reply to a pending agent question through the server                                |
-| `rejectQuestion(id)`                    | reject a pending agent question through the server                                  |
-| `answerPermission(id, reply, message?)` | reply to a pending permission request — `reply` is `'once' \| 'always' \| 'reject'` |
-| `retry()`                               | force a re-poll of `/start` (e.g. a boot-screen Retry button)                       |
+| `acp.send(prompt)`                 | send ACP content blocks to the agent                          |
+| `acp.cancel()`                     | abort the current ACP run                                     |
+| `acp.respondQuestion(id, content)` | reply to a pending ACP elicitation/input request              |
+| `acp.rejectQuestion(id)`           | decline a pending ACP elicitation/input request               |
+| `acp.respondPermission(id, option)`| answer a pending ACP permission request                       |
+| `retry()`                          | force a re-poll of `/start` (e.g. a boot-screen Retry button) |
 
 <Callout type="warn">
-  `removeQuestion(id)` / `removePermission(id)` are also on the returned object but **deprecated**:
-  they drop the prompt from local state *without* replying to the server, so the agent run stays
-  blocked waiting on it. Use `answerQuestion` / `rejectQuestion` / `answerPermission` above instead.
+  Older runtime-pending store helpers can remove a prompt locally without replying to the server.
+  For ACP sessions, answer through `acp.respondQuestion`, `acp.rejectQuestion`, or
+  `acp.respondPermission` so the agent is actually unblocked.
 </Callout>
 
 ### Options
@@ -102,18 +95,17 @@ and the `/start` poll for that `(projectId, sessionId)`.
 | `waitMs`           | `15000` | long-poll budget requested on `/start` (the server clamps it)                                                                                                                                                                                                                                                                                      |
 | `replayStartStash` | `true`  | replay a stashed first message (see [start-stash](#start-stash)) once ready + empty                                                                                                                                                                                                                                                                |
 | `enabled`          | `true`  | gate the whole hook — set false until a precondition resolves (e.g. a billing check)                                                                                                                                                                                                                                                               |
-| `chatEngine`       | `true`  | mount the chat-consumption engine (message sync + the question self-heal poll) on this call. Set `false` when the host mounts its _own_ chat surface for the same session (e.g. `apps/web`'s `SessionChat`) — avoids double-mounting the same pollers; `messages`/`diffs`/`todos` stay empty and `replayStartStash` is force-disabled in that mode |
+| `chatEngine`       | deprecated | ignored by ACP sessions; kept only so old callers do not break while migrating |
 
 <Callout>
-  Sending is optimistic and fire-and-forget: `send` shows your message instantly, then SSE events
-  stream the agent's reply into the thread. `useSession` clears the optimistic bubble when your
-  message lands (or after a 30s backstop).
+  `acp.send` adds a local client envelope immediately, then ACP events stream the agent's reply
+  into `acp.envelopes`.
 </Callout>
 
 ## `KortixProjectProvider`
 
 `useSession` itself needs no provider — but a few route-scoped hooks (like
-`useOpenCodeProviders()` under [More hooks](#more-hooks)) resolve "the project
+`useRuntimeProviders()` under [More hooks](#more-hooks)) resolve "the project
 the user is looking at" from React context instead of a parameter, since the
 SDK is router-agnostic and can't call `useParams()` itself. A Next (or other
 router-based) host derives the project id once and mounts the provider near
@@ -142,12 +134,11 @@ import { useProjectModels, useVisibleAgents, useProjectConfig } from '@kortix/sd
 
 const models = useProjectModels(projectId); // selectable model rows
 const agents = useVisibleAgents({ projectId }); // visible agents
-const config = useProjectConfig(projectId); // { open_code_default_agent, commands, … }
+const config = useProjectConfig(projectId); // default agent, commands, runtime metadata, …
 ```
 
-`useSession` already exposes these as `s.models` / `s.agents` / `s.defaultAgent` /
-`s.commands` for a session view; use the standalone hooks on screens that don't
-hold a session yet.
+Use the standalone hooks for pickers and configuration surfaces. `useSession`
+stays focused on boot state plus the ACP chat state for one open session.
 
 ## Primitives
 
@@ -185,29 +176,29 @@ The session list and per-session lifecycle, as React Query queries and mutations
 
 ```tsx
 import {
-  useOpenCodeSessions,
-  useCreateOpenCodeSession,
-  useUpdateOpenCodeSession,
-  useDeleteOpenCodeSession,
+  useRuntimeSessions,
+  useCreateRuntimeSession,
+  useUpdateRuntimeSession,
+  useDeleteRuntimeSession,
 } from '@kortix/sdk/react';
 
 function Sidebar() {
-  const { data: sessions = [] } = useOpenCodeSessions();
-  const create = useCreateOpenCodeSession();
-  const rename = useUpdateOpenCodeSession();
-  const remove = useDeleteOpenCodeSession();
+  const { data: sessions = [] } = useRuntimeSessions();
+  const create = useCreateRuntimeSession();
+  const rename = useUpdateRuntimeSession();
+  const remove = useDeleteRuntimeSession();
   // …
 }
 ```
 
 | hook                                                        | purpose                                             |
 | ----------------------------------------------------------- | --------------------------------------------------- |
-| `useOpenCodeSessions()` · `useOpenCodeSession(id)`          | the live session list · one record                  |
-| `useCreateOpenCodeSession()`                                | create `{ directory?, title? }`                     |
-| `useUpdateOpenCodeSession()`                                | rename / archive `{ sessionId, title?, archived? }` |
-| `useDeleteOpenCodeSession()`                                | delete                                              |
-| `useSummarizeOpenCodeSession()` · `useInitSession()`        | compact the thread · run `/init`                    |
-| `useOpenCodeSessionDiff(id)` · `useOpenCodeSessionTodo(id)` | working diff · todo list                            |
+| `useRuntimeSessions()` · `useRuntimeSession(id)`          | the live runtime session list · one record          |
+| `useCreateRuntimeSession()`                                | create `{ directory?, title? }`                     |
+| `useUpdateRuntimeSession()`                                | rename / archive `{ sessionId, title?, archived? }` |
+| `useDeleteRuntimeSession()`                                | delete                                              |
+| `useSummarizeRuntimeSession()` · `useInitSession()`        | compact the thread · run `/init`                    |
+| `useRuntimeSessionDiff(id)` · `useRuntimeSessionTodo(id)` | working diff · todo list                            |
 
 ## Project data hooks
 
@@ -235,14 +226,14 @@ const crs = useChangeRequests(projectId, 'open'); // { data, open, merge, close,
 
 ## Runtime config
 
-Read and write OpenCode's runtime config (`opencode.jsonc` as the server sees it);
+Read and write the active runtime config as the server sees it;
 updates are optimistic and roll back on error.
 
 ```tsx
-import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@kortix/sdk/react';
+import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
 
-const { data: config } = useOpenCodeConfig();
-const update = useUpdateOpenCodeConfig();
+const { data: config } = useRuntimeConfig();
+const update = useUpdateRuntimeConfig();
 update.mutate({ permission: { edit: 'allow' } });
 ```
 
@@ -254,7 +245,7 @@ update.mutate({ permission: { edit: 'allow' } });
   hooks. Documented for the current runtime, but prefer connectors for new code.
 </Callout>
 
-`useOpenCodeMcpStatus()`, `useAddMcpServer()`, `useConnectMcpServer()`,
+`useRuntimeMcpStatus()`, `useAddMcpServer()`, `useConnectMcpServer()`,
 `useDisconnectMcpServer()`, and the OAuth trio `useMcpAuthStart()` /
 `useMcpAuthCallback()` / `useMcpAuthRemove()`.
 
@@ -267,13 +258,13 @@ running — the hook names/shapes below are unchanged from before that move.
 
 ```tsx
 import {
-  useOpenCodePtyList,
+  useRuntimePtyList,
   useCreatePty,
   useRemovePty,
   getPtyWebSocketUrl,
 } from '@kortix/sdk/react';
 
-const { data: ptys = [] } = useOpenCodePtyList();
+const { data: ptys = [] } = useRuntimePtyList();
 const create = useCreatePty();
 const url = await getPtyWebSocketUrl(id); // wss://… with the auth token appended
 ```
@@ -305,20 +296,19 @@ global default from the server the first time it resolves.
 
 <Callout type="warn">
   **Internal plumbing.** These are the pieces `useSession` wraps — the SSE provider, message sync,
-  the prompt mutations, and the OpenCode-id resolver. A chat-focused host uses `useSession` and
+  native runtime readers, and the runtime-session resolver. A chat-focused host uses `useSession` and
   never touches them. They stay exported for hosts that build **beyond chat** (a full IDE — file
-  tree, terminal, git) and for `apps/web`'s own `session-chat`; if you're just rendering a
+  tree, terminal, git); if you're just rendering a
   conversation, reach for `useSession`.
 </Callout>
 
 | hook                                                                                      | composed role                                                                                                                                                                        |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `useSessionSync(sessionId)`                                                               | fetch + live-merge the thread off the sync store                                                                                                                                     |
-| `useSendOpenCodeMessage()` · `useAbortOpenCodeSession()`                                  | prompt · abort — both take no arguments; the runtime is resolved through the single global client, not a per-session one                                                             |
-| `useExecuteOpenCodeCommand()`                                                             | run a slash-command                                                                                                                                                                  |
-| `OpenCodeEventStreamProvider` / `useOpenCodeEventStream()`                                | open the SSE stream → the stores                                                                                                                                                     |
-| `useCanonicalOpenCodeSession({ projectId, sessionId, pinFromStart })`                     | resolve the OpenCode root id                                                                                                                                                         |
-| `useOpenCodePendingStore()`                                                               | the live questions/permissions store                                                                                                                                                 |
+| `useExecuteRuntimeCommand()`                                                              | run a slash-command                                                                                                                                                                  |
+| `RuntimeEventStreamProvider` / `useRuntimeEventStream()`                                  | open the SSE stream → the stores                                                                                                                                                     |
+| `useCanonicalRuntimeSession({ projectId, sessionId, pinFromStart })`                      | resolve the runtime session id                                                                                                                                                       |
+| `useRuntimePendingStore()`                                                                | the live questions/permissions store                                                                                                                                                 |
 | `useRuntimeReconnect()`                                                                   | the independent liveness probe that detects a mid-session runtime death the SSE heartbeat can't see — polls `getSessionHealth`/`isRuntimeReady` and writes into the connection store |
 | `useQuestionSelfHeal()` / `hasRunningQuestionTool`                                        | polls for a missed `question.asked` SSE event and repairs pending-question state                                                                                                     |
 | `usePermissionSelfHeal()` / `findPermissionBlockedCandidate` / `hasActiveNonQuestionTool` | the same self-heal watchdog for missed permission requests                                                                                                                           |
@@ -329,13 +319,13 @@ global default from the server the first time it resolves.
 | hook                                                         | what                                               |
 | ------------------------------------------------------------ | -------------------------------------------------- |
 | `useProjectModels` · `useVisibleAgents` · `useProjectConfig` | server-side models · agents · config (pre-runtime) |
-| `useOpenCodeProviders()`                                     | configured providers + their models                |
-| `useOpenCodeCommands()` · `useExecuteOpenCodeCommand()`      | slash commands · run one                           |
-| `useOpenCodeToolIds()` · `useOpenCodeSkills()`               | available tool ids · skills                        |
+| `useRuntimeProviders()`                                      | configured providers + their models                |
+| `useRuntimeCommands()` · `useExecuteRuntimeCommand()`         | slash commands · run one                           |
+| `useRuntimeToolIds()` · `useRuntimeSkills()`                  | available tool ids · skills                        |
 | `useShareSession()` · `useUnshareSession()`                  | public share links                                 |
 | `useBackgroundSessionPrefetch(sessions)`                     | warm message caches on hover                       |
 
-The `opencodeKeys` query-key factory is exported too, for targeted
+The `runtimeKeys` query-key factory is exported too, for targeted
 `invalidateQueries` / `setQueryData` against the same cache.
 
 ## Kortix Master (tasks, tickets, credentials, projects)
@@ -406,7 +396,7 @@ const { data: project } = useKortixProject(identity, projectId);
 | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
 | `useKortixProjects(identity)` · `useKortixProject(identity, id)` | list · one project                                               |
 | `useKortixProjectForSession(identity, sessionId)`                | resolve the Kortix project a session belongs to (`null` if none) |
-| `useKortixProjectSessions(identity, projectId)`                  | OpenCode sessions linked to a project                            |
+| `useKortixProjectSessions(identity, projectId)`                  | runtime sessions linked to a project                             |
 | `usePatchProject()`                                              | update name / description / `user_handle`                        |
 | `useDeleteProject()`                                             | delete a project                                                 |
 
@@ -528,7 +518,7 @@ dev servers, databases, workers — registered and supervised by the daemon.
 | `useSandboxServiceAction()`                  | `{ serviceId, action }` — start/stop/restart a service                                             |
 | `useSandboxServiceReconcile()`               | re-sync the daemon's service state against what's actually running, optionally `reload`            |
 | `useRegisterSandboxService()`                | register a new service                                                                             |
-| `useSandboxRuntimeReload()`                  | `{ mode }` — reload the OpenCode runtime itself (`systemReload`, shared with `../opencode/client`) |
+| `useSandboxRuntimeReload()`                  | `{ mode }` — reload the active runtime daemon (`systemReload`) |
 
 ## Next
 

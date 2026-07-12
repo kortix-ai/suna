@@ -34,9 +34,9 @@ import {
   ProviderLogo,
 } from '@/features/providers/provider-branding';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
-import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { useModelStore } from '@/hooks/runtime/use-model-store';
+import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';

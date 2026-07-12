@@ -7,7 +7,7 @@ export function writeStreamCache(
 ) {
 	if (typeof window === "undefined") return;
 	if (!sessionID || !messageID || !partID || !text) return;
-	const key = `opencode_stream_cache:${sessionID}`;
+	const key = `runtime_stream_cache:${sessionID}`;
 	try {
 		const raw = sessionStorage.getItem(key);
 		const prev = raw ? (JSON.parse(raw) as { messageID?: string; partID?: string; text?: string } | null) : null;

@@ -23,7 +23,7 @@ export type {
   FindMatch,
   LssHit,
   LssSearchResult,
-  OpenCodeProjectInfo,
+  RuntimeProjectInfo,
   ServerHealth,
   GitCommit,
   FileHistoryResult,
@@ -50,7 +50,7 @@ export {
   createFile,
   copyFile,
   type UploadResult,
-} from './api/opencode-files';
+} from './api/runtime-files';
 
 // API — git history
 export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';

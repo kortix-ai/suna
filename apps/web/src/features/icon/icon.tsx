@@ -468,7 +468,7 @@ export const Icon = {
     );
   },
 
-  OpenCode: ({ className }: { className?: string }) => (
+  Runtime: ({ className }: { className?: string }) => (
     <svg
       width="24"
       height="30"

@@ -43,6 +43,7 @@ interface SessionSiteHeaderProps {
   isSidePanelOpen?: boolean;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
+  supportsCompact?: boolean;
 }
 
 export function SessionSiteHeader({
@@ -52,6 +53,7 @@ export function SessionSiteHeader({
   isSidePanelOpen = false,
   isMobileView,
   leadingAction,
+  supportsCompact = true,
 }: SessionSiteHeaderProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -227,12 +229,12 @@ export function SessionSiteHeader({
                   )}
                 </DropdownMenuItem>
 
-                <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                {supportsCompact ? <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
                   <Layers />
                   {tHardcodedUi.raw(
                     'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
                   )}
-                </DropdownMenuItem>
+                </DropdownMenuItem> : null}
 
                 {isProjectSession && (
                   <DropdownMenuItem
@@ -284,8 +286,14 @@ export function SessionSiteHeader({
         </div>
       </div>
 
-      <ExportTranscriptModal sessionId={sessionId} open={exportOpen} onOpenChange={setExportOpen} />
-      <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
+      <ExportTranscriptModal
+        projectId={projectId ?? null}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
+      {supportsCompact ? <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} /> : null}
 
       {isProjectSession && (
         <>

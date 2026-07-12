@@ -1,7 +1,6 @@
 "use client";
 
 import { SquareKanban, X } from "lucide-react";
-import { SessionChat } from "@/features/session/session-chat";
 import {
 	Dialog,
 	DialogContent,
@@ -51,14 +50,15 @@ export function SubSessionModal({
 					</button>
 				</div>
 
-				{/* Session chat — read-only, no header */}
-				<div className="flex-1 min-h-0 overflow-hidden">
-			<SessionChat
-					sessionId={sessionId}
-					hideHeader
-					readOnly
-					initialScrollTop
-				/>
+				<div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 text-center">
+					<div className="max-w-md space-y-2">
+						<div className="text-sm font-medium">Child runtime transcript unavailable</div>
+						<p className="text-muted-foreground text-sm">
+							This child run is identified by the native runtime id <span className="font-mono">{sessionId}</span>.
+							The ACP project-session UI only renders canonical Kortix sessions until child transcript
+							projection is exposed through the ACP transcript endpoint.
+						</p>
+					</div>
 				</div>
 			</DialogContent>
 		</Dialog>

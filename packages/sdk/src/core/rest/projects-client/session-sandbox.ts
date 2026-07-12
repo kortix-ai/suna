@@ -44,9 +44,11 @@ export interface SessionStartResult {
   /** Whether polling /start again can make progress (false = terminal). */
   retriable: boolean;
   sandbox: ProjectSessionSandbox | null;
-  opencode_session_id: string | null;
+  runtime_protocol?: 'acp' | null;
+  runtime_id?: string | null;
+  runtime_session_id?: string | null;
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * Relative proxy path for this session's runtime (port 8000), composed
    * against the configured backendUrl. The server owns the proxy scheme; the SDK
    * consumes this opaquely (never builds `/p/<id>/<port>` itself). Absent until the
    * box has an external_id — `useSession` falls back to deriving it from
@@ -91,7 +93,7 @@ function classifySessionStartFailure(error?: Error): SessionStartError | null {
 
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
- * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * the Runtime pin server-side, returning ONE readiness payload to poll until
  * stage='ready'.
  */
 export async function startProjectSession(
@@ -127,9 +129,14 @@ export async function startProjectSession(
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  if (result.stage === 'ready' && externalId && result.opencode_session_id) {
+  const runtimeSessionId = result.runtime_session_id;
+  const runtimeId = result.runtime_id ?? runtimeSessionId;
+  const runtimeProtocol = result.runtime_protocol;
+  if (result.stage === 'ready' && externalId && runtimeId && runtimeProtocol === 'acp') {
     setSessionRuntime(projectId, sessionId, {
-      opencodeSessionId: result.opencode_session_id,
+      runtimeProtocol,
+      runtimeId,
+      runtimeSessionId,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
     });

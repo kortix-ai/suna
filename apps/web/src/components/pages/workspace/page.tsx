@@ -23,21 +23,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { WorkspaceItemCard } from '@/components/ui/workspace-item-card';
 import {
-  OpenCodeSettingsDialog,
-  type OpenCodeSettingsTab,
-} from '@/features/session/opencode-settings-dialog';
+  RuntimeSettingsDialog,
+  type RuntimeSettingsTab,
+} from '@/features/session/runtime-settings-dialog';
 import { useSkills } from '@/features/skills/hooks';
 import { getSkillSource, type Skill } from '@/features/skills/types';
 import {
-  useCreateOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeMcpStatus,
-  useOpenCodeToolIds,
+  useCreateRuntimeSession,
+  useRuntimeAgents,
+  useRuntimeCommands,
+  useRuntimeMcpStatus,
+  useRuntimeToolIds,
   type Agent,
   type Command,
   type McpStatus,
-} from '@/hooks/opencode/use-opencode-sessions';
+} from '@/hooks/runtime/use-runtime-sessions';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -420,11 +420,11 @@ export default function WorkspacePage() {
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<OpenCodeSettingsTab>('general');
+  const [settingsTab, setSettingsTab] = useState<RuntimeSettingsTab>('general');
   const [selectedItem, setSelectedItem] = useState<WorkspaceItem | null>(null);
-  const createSession = useCreateOpenCodeSession();
+  const createSession = useCreateRuntimeSession();
 
-  const openSettings = useCallback((tab: OpenCodeSettingsTab) => {
+  const openSettings = useCallback((tab: RuntimeSettingsTab) => {
     setSettingsTab(tab);
     setSettingsOpen(true);
   }, []);
@@ -436,7 +436,7 @@ export default function WorkspacePage() {
         const session = await createSession.mutateAsync({
           title: preset.title,
         });
-        // `session.id` is the canonical OpenCode session id (created directly
+        // `session.id` is the canonical Runtime session id (created directly
         // by this hook) so the SDK's start-stash reads it back under the same
         // id — no route/pin translation involved.
         writeStartStash(session.id, { prompt: preset.prompt, model: null, agent: null });
@@ -458,11 +458,11 @@ export default function WorkspacePage() {
 
   // Data — workspace-global registries only. Historical projects stay in the
   // backend DB for compatibility, but the UI does not expose projects.
-  const { data: agents, isLoading: lAgents } = useOpenCodeAgents();
+  const { data: agents, isLoading: lAgents } = useRuntimeAgents();
   const { data: skills, isLoading: lSkills } = useSkills();
-  const { data: commands, isLoading: lCommands } = useOpenCodeCommands();
-  const { data: toolIds, isLoading: lTools } = useOpenCodeToolIds();
-  const { data: mcpStatus, isLoading: lMcp } = useOpenCodeMcpStatus();
+  const { data: commands, isLoading: lCommands } = useRuntimeCommands();
+  const { data: toolIds, isLoading: lTools } = useRuntimeToolIds();
+  const { data: mcpStatus, isLoading: lMcp } = useRuntimeMcpStatus();
 
   const isLoading = lAgents || lSkills || lCommands || lTools || lMcp;
 
@@ -781,7 +781,7 @@ export default function WorkspacePage() {
             )}
           </div>
 
-          <OpenCodeSettingsDialog
+          <RuntimeSettingsDialog
             open={settingsOpen}
             onOpenChange={setSettingsOpen}
             initialTab={settingsTab}

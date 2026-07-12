@@ -2,8 +2,8 @@
 
 import { Button } from '@/components/ui/button';
 import { SessionTerminalConnectBar } from '@/features/session/session-terminal-connect-bar';
-import { useCreatePty, useOpenCodePtyList, type Pty } from '@/hooks/opencode/use-opencode-pty';
-import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
+import { useCreatePty, useRuntimePtyList, type Pty } from '@/hooks/runtime/use-runtime-pty';
+import { useRuntimeReady } from '@/hooks/runtime/use-runtime-sessions';
 import { useServerStore } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
@@ -40,15 +40,15 @@ export function SessionTerminalPanel({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
-  // The opencode runtime (in-sandbox daemon + opencode server) must be booted
+  // The session runtime (in-sandbox daemon + selected harness) must be booted
   // and healthy before any /pty REST call will resolve — otherwise the proxy
-  // 404s against a sandbox whose daemon isn't up yet. Every opencode hook gates
+  // 404s against a sandbox whose daemon isn't up yet. Every runtime hook gates
   // on this same signal; the PTY list query does too (so it stays disabled, and
   // `isLoading` reads false, until ready). We mirror it here so the lazy create
   // effect below doesn't fire a doomed POST during boot.
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
 
-  const { data: ptys, isLoading } = useOpenCodePtyList();
+  const { data: ptys, isLoading } = useRuntimePtyList();
   const createPty = useCreatePty();
   const terminalPtyId = useSessionBrowserStore((s) => s.terminalPtyBySession[sessionId] ?? null);
   const setTerminalPty = useSessionBrowserStore((s) => s.setTerminalPty);

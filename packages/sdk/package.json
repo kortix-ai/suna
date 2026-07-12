@@ -1,7 +1,7 @@
 {
   "name": "@kortix/sdk",
   "version": "0.2.0",
-  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live agent streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch the raw HTTP API or OpenCode semantics.",
+  "description": "Official Kortix frontend TypeScript SDK — one typed client for the Kortix agent platform. Unifies project/session lifecycle and live ACP streaming behind a single ergonomic Session handle, so web, mobile, and white-label apps never touch raw HTTP or harness-specific semantics.",
   "type": "module",
   "license": "Elastic-2.0",
   "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/sdk",
@@ -10,11 +10,10 @@
     "url": "git+https://github.com/kortix-ai/suna.git",
     "directory": "packages/sdk"
   },
-  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "acp"],
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "1.17.11",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
@@ -31,12 +30,14 @@
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
     "./server": "./src/node/server.ts",
+    "./acp": "./src/acp/index.ts",
+    "./acp/transcript": "./src/acp/transcript.ts",
+    "./runtime-client": "./src/runtime/client.ts",
     "./internal/sync-store": "./src/internal/sync-store.ts",
     "./internal/server-store": "./src/internal/server-store.ts",
     "./internal/sandbox-connection-store": "./src/internal/sandbox-connection-store.ts",
-    "./internal/opencode-pending-store": "./src/internal/opencode-pending-store.ts",
+    "./internal/runtime-pending-store": "./src/internal/runtime-pending-store.ts",
     "./internal/idb-sync-cache": "./src/internal/idb-sync-cache.ts",
-    "./opencode-client": "./src/deprecated/opencode-client.ts",
     "./config": "./src/deprecated/config.ts",
     "./auth": "./src/deprecated/auth.ts",
     "./api-client": "./src/deprecated/api-client.ts",
@@ -44,7 +45,7 @@
     "./feature-flags": "./src/deprecated/feature-flags.ts",
     "./fresh-sessions": "./src/deprecated/fresh-sessions.ts",
     "./instance-routes": "./src/deprecated/instance-routes.ts",
-    "./opencode-errors": "./src/deprecated/opencode-errors.ts",
+    "./runtime-errors": "./src/deprecated/runtime-errors.ts",
     "./platform-client": "./src/deprecated/platform-client.ts",
     "./event-stream": "./src/deprecated/event-stream.ts",
     "./files": "./src/deprecated/files.ts",
@@ -54,7 +55,7 @@
     "./sync-store": "./src/deprecated/sync-store.ts",
     "./server-store": "./src/deprecated/server-store.ts",
     "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
-    "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
+    "./runtime-pending-store": "./src/deprecated/runtime-pending-store.ts",
     "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
   },
   "publishConfig": {
@@ -65,6 +66,15 @@
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
       "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
+      "./acp": { "types": "./dist/acp/index.d.ts", "import": "./dist/acp/index.js" },
+      "./acp/transcript": {
+        "types": "./dist/acp/transcript.d.ts",
+        "import": "./dist/acp/transcript.js"
+      },
+      "./runtime-client": {
+        "types": "./dist/runtime/client.d.ts",
+        "import": "./dist/runtime/client.js"
+      },
       "./internal/sync-store": {
         "types": "./dist/internal/sync-store.d.ts",
         "import": "./dist/internal/sync-store.js"
@@ -77,17 +87,13 @@
         "types": "./dist/internal/sandbox-connection-store.d.ts",
         "import": "./dist/internal/sandbox-connection-store.js"
       },
-      "./internal/opencode-pending-store": {
-        "types": "./dist/internal/opencode-pending-store.d.ts",
-        "import": "./dist/internal/opencode-pending-store.js"
+      "./internal/runtime-pending-store": {
+        "types": "./dist/internal/runtime-pending-store.d.ts",
+        "import": "./dist/internal/runtime-pending-store.js"
       },
       "./internal/idb-sync-cache": {
         "types": "./dist/internal/idb-sync-cache.d.ts",
         "import": "./dist/internal/idb-sync-cache.js"
-      },
-      "./opencode-client": {
-        "types": "./dist/deprecated/opencode-client.d.ts",
-        "import": "./dist/deprecated/opencode-client.js"
       },
       "./config": { "types": "./dist/deprecated/config.d.ts", "import": "./dist/deprecated/config.js" },
       "./auth": { "types": "./dist/deprecated/auth.d.ts", "import": "./dist/deprecated/auth.js" },
@@ -111,9 +117,9 @@
         "types": "./dist/deprecated/instance-routes.d.ts",
         "import": "./dist/deprecated/instance-routes.js"
       },
-      "./opencode-errors": {
-        "types": "./dist/deprecated/opencode-errors.d.ts",
-        "import": "./dist/deprecated/opencode-errors.js"
+      "./runtime-errors": {
+        "types": "./dist/deprecated/runtime-errors.d.ts",
+        "import": "./dist/deprecated/runtime-errors.js"
       },
       "./platform-client": {
         "types": "./dist/deprecated/platform-client.d.ts",
@@ -142,9 +148,9 @@
         "types": "./dist/deprecated/sandbox-connection-store.d.ts",
         "import": "./dist/deprecated/sandbox-connection-store.js"
       },
-      "./opencode-pending-store": {
-        "types": "./dist/deprecated/opencode-pending-store.d.ts",
-        "import": "./dist/deprecated/opencode-pending-store.js"
+      "./runtime-pending-store": {
+        "types": "./dist/deprecated/runtime-pending-store.d.ts",
+        "import": "./dist/deprecated/runtime-pending-store.js"
       },
       "./idb-sync-cache": {
         "types": "./dist/deprecated/idb-sync-cache.d.ts",

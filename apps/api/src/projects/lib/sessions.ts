@@ -29,7 +29,7 @@ import {
 } from '../agents';
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
-import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
+import { resolveCompiledRuntimeConfigForSession, type CompiledRuntimeConfig } from './compile-runtime-config';
 import { resolveProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
@@ -209,7 +209,7 @@ export async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
-  opencodeModel?: string | null;
+  runtimeModel?: string | null;
   /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
    *  OFF (default) → native BYOK providers must reach opencode, so the deny
@@ -246,16 +246,11 @@ export async function buildSessionSandboxEnvVars(input: {
   // below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
 
-  // v2-only: compile the manifest's `agents:` map into an OpenCode-native
-  // config the sandbox receives sealed (see compile-agent-config.ts). `null`
-  // for a v1 project (no `kortix_version: 2`) or any read/parse failure — no
-  // KORTIX_COMPILED_AGENT_CONFIG key is emitted below in that case, so a v1
-  // project's sandbox env is byte-for-byte unaffected by this. Gated on the
-  // same `defaultBranch` presence as the `agents:` grant resolution below
-  // (both need git context; optional call sites that omit it get neither).
-  let compiledAgentConfig: string | null = null;
+  // One compiler entrypoint: v2 returns the sealed OpenCode compatibility
+  // config; v3 returns the ACP launch plan. V1/no manifest remains null.
+  let compiledRuntimeConfig: CompiledRuntimeConfig | null = null;
   if (input.defaultBranch) {
-    compiledAgentConfig = await resolveCompiledAgentConfigForSession({
+    compiledRuntimeConfig = await resolveCompiledRuntimeConfigForSession({
       projectId: input.projectId,
       repoUrl: input.repoUrl,
       defaultBranch: input.defaultBranch,
@@ -366,8 +361,8 @@ export async function buildSessionSandboxEnvVars(input: {
       initialPrompt: input.initialPrompt,
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
-      opencodeModel: input.opencodeModel,
-      compiledAgentConfig,
+      runtimeModel: input.runtimeModel,
+      compiledRuntimeConfig,
     }),
   };
 }
@@ -483,8 +478,16 @@ export async function createProjectSession(input: {
   const projectDefaultAgent = normalizeString(
     (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
   );
+  const requestedAgent = normalizeString(body.agent_name ?? body.agentName);
+  // V3's manifest is the source of truth. Newly provisioned projects may not
+  // have mirrored default_agent into project metadata yet, so resolve it from
+  // kortix.yaml before falling back to the legacy "default" sentinel.
+  let loadedAgentsForDefault: Awaited<ReturnType<typeof loadProjectAgents>> | null = null;
+  if (!requestedAgent && !projectDefaultAgent) {
+    loadedAgentsForDefault = await loadProjectAgents(project);
+  }
   const agentName =
-    normalizeString(body.agent_name ?? body.agentName) ?? projectDefaultAgent ?? 'default';
+    requestedAgent ?? projectDefaultAgent ?? loadedAgentsForDefault?.defaultAgent ?? 'default';
   let loadedAgentGrant: ReturnType<typeof grantFromLoadedAgents> | undefined;
   if (parsedConnectorBindings.bindings) {
     loadedAgentGrant = grantFromLoadedAgents(agentName, await loadProjectAgents(project));
@@ -529,7 +532,7 @@ export async function createProjectSession(input: {
   // fail-safe for NON-subject projects). Non-subject projects take the exact
   // same path as before this flag existed (zero added I/O, zero behavior change).
   if (projectRequiresDeclaredAgents(project.metadata, config.KORTIX_REQUIRE_DECLARED_AGENTS)) {
-    const loadedAgents = await loadProjectAgents(project);
+    const loadedAgents = loadedAgentsForDefault ?? await loadProjectAgents(project);
     const governed = resolveGovernedAgentGrant(agentName, loadedAgents, {
       subject: true,
       projectDefaultAgent,
@@ -645,17 +648,25 @@ export async function createProjectSession(input: {
   if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
+  if ('opencode_model' in body || 'opencodeModel' in body) {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'Use model or runtime_model for session model overrides', code: 'invalid_body' },
+      },
+    };
+  }
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const runtimeModel = normalizeString(body.model ?? body.runtime_model);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
-    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
+    ...(runtimeModel ? { model: runtimeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -771,7 +782,7 @@ export async function createProjectSession(input: {
           baseRef,
           agentName,
           initialPrompt,
-          opencodeModel,
+          runtimeModel,
           llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,

@@ -153,6 +153,20 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.name).toBe('Mine');
     expect(parsed.custom_name).toBe('Mine');
   });
+
+  test('ACP runtime identity is exposed without an OpenCode pin', () => {
+    const out = serializeSession(sessionRow({
+      opencodeSessionId: null,
+      metadata: { runtime_protocol: 'acp', runtime_id: 'runtime-1', acp_session_id: 'conversation-1' },
+    }));
+    const parsed = ProjectSessionSchema.strict().parse(out);
+    expect(parsed.runtime_protocol).toBe('acp');
+    expect(parsed.runtime_id).toBe('runtime-1');
+    expect(parsed.runtime_session_id).toBe('conversation-1');
+    expect(parsed.acp_session_id).toBe('conversation-1');
+    expect('opencode_session_id' in parsed).toBe(false);
+    expect('opencode_sessions' in parsed).toBe(false);
+  });
 });
 
 describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
@@ -169,7 +183,9 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
-      opencode_session_id: 'ses_abc',
+      runtime_protocol: 'acp' as const,
+      runtime_id: 'runtime-1',
+      runtime_session_id: 'conversation-1',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     };

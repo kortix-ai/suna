@@ -28,7 +28,7 @@ a deprecated alias; new code imports from the root. See
 
 ## Part classification — `classifyPart` / `classifyTurn`
 
-The primary entry point. `@opencode-ai/sdk`'s wire `Part` union has 12
+The primary entry point. The legacy runtime wire `Part` union has 12
 variants (`text`, `reasoning`, `tool`, `file`, `subtask`, `patch`, `snapshot`,
 `agent`, `retry`, `compaction`, `step-start`, `step-finish`). `classifyPart`
 normalizes any one of them into a `ClassifiedPart` — a discriminated union
@@ -377,12 +377,12 @@ The grouping/status functions above (`groupMessagesIntoTurns`,
 `getWorkingState`, `getTurnCost`, …) are typed against minimal **structural**
 protocols — `PartLike`, `MessageInfoLike`, `MessageWithPartsLike`, `TurnLike`,
 `ToolStateLike`, `ToolPartLike`, `SessionStatusLike`, `RequestWithToolLike`,
-`TokenUsageLike` — instead of the concrete `@opencode-ai/sdk` wire types.
+`TokenUsageLike` — instead of concrete native harness SDK wire types.
 That's deliberate: every host's own message/part union (web's rich type,
 mobile's leaner local mirror) flows through unchanged as long as it has the
 right shape, and TypeScript preserves your concrete type end to end instead
 of widening it to the SDK's own. `classifyPart` / `classifyTurn` are the
-exception — they're typed against the real `@opencode-ai/sdk` `Part` union on
+exception — they're typed against the runtime `Part` union on
 purpose, so the exhaustiveness check is meaningful.
 
 ## Everything is on the root entry

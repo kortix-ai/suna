@@ -17,9 +17,9 @@ export const skillsKeys = {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch all available skills from the OpenCode server.
+ * Fetch all available skills from the Runtime server.
  *
- * This replaces the old `useOpenCodeSkills` hook from use-opencode-sessions.ts
+ * This replaces the old `useRuntimeSkills` hook from use-runtime-sessions.ts
  * with a feature-scoped version that uses the same query key so the cache
  * stays unified.
  */

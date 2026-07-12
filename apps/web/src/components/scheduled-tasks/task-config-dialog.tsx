@@ -50,7 +50,7 @@ import { ScheduleBuilder } from './schedule-builder';
 // Shared selectors from ChatInput (same as used in channels)
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
-import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
+import { useRuntimeProviders, useVisibleAgents } from '@/hooks/runtime/use-runtime-sessions';
 
 interface TaskConfigDialogProps {
   open: boolean;
@@ -140,7 +140,7 @@ export function TaskConfigDialog({
 
   // Use the same hooks as ChatInput / channels for agents + models
   const agents = useVisibleAgents();
-  const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
+  const { data: providers, isLoading: modelsLoading } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
   const handleClose = () => {

@@ -1,7 +1,7 @@
 import { ApiError } from '../api/client.ts';
+import { createAcpClient, projectAcpTranscript, type AcpStoredEnvelope } from '@kortix/sdk/acp';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { opencodeClient } from '../api/sandbox-proxy.ts';
 import { loadLink } from '../project-link.ts';
 import {
   resolveProjectContext,
@@ -172,31 +172,34 @@ export async function runDoctor(argv: string[]): Promise<number> {
       `${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`,
     );
 
-    // ── 6. Open an opencode session + send a prompt ──────────────────────
-    const oc = opencodeClient({ auth, sandboxId: running.sandbox_id! });
-    let ocSid: string;
+    // ── 6. Open the session's ACP conversation + send a prompt ──────────
+    const endpoint = `${auth.api_base.replace(/\/$/, '')}/projects/${ctx.projectId}/sessions/${running.session_id}/acp`;
+    const acp = createAcpClient({
+      endpoint,
+      fetch: ((input, init) => fetch(input, {
+        ...init,
+        headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), Authorization: `Bearer ${auth.token}` },
+      })) as typeof fetch,
+    });
+    let acpSid: string;
     try {
-      const created = await oc.createSession({ title: 'kortix doctor' });
-      ocSid = created.id;
+      await acp.initialize({ protocolVersion: 1, clientInfo: { name: '@kortix/cli-doctor', version: '3' } });
+      const created = await acp.newSession({ cwd: '/workspace', mcpServers: [] });
+      acpSid = created.sessionId;
     } catch (err) {
-      process.stdout.write(`${status.err(`opencode session create failed: ${describe(err)}`)}\n`);
+      process.stdout.write(`${status.err(`ACP session create failed: ${describe(err)}`)}\n`);
       return 1;
     }
-    process.stdout.write(`${status.ok(`opencode session ${C.faded}${ocSid}${C.reset}`)}\n`);
+    process.stdout.write(`${status.ok(`ACP session ${C.faded}${acpSid}${C.reset}`)}\n`);
 
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await oc.sendPrompt(
-        ocSid,
-        [{ type: 'text', text: flags.prompt }],
-        undefined,
-        flags.timeoutSec * 1000,
+      await acp.prompt(acpSid, [{ type: 'text', text: flags.prompt }]);
+      const transcript = await ctx.client.get<{ envelopes: AcpStoredEnvelope[] }>(
+        `/projects/${ctx.projectId}/sessions/${running.session_id}/acp/transcript`,
       );
-      const text = reply.parts
-        .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))
-        .join(' ')
-        .trim();
+      const text = projectAcpTranscript(transcript.envelopes).filter((message) => message.role === 'assistant').at(-1)?.text.trim() ?? '';
       if (!text) {
         process.stdout.write(`${status.err('reply had no text content')}\n`);
         failures += 1;

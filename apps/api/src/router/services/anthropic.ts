@@ -2,6 +2,7 @@ import { config, KORTIX_MARKUP } from '../../config';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
 import type { ModelConfig } from '../config/models';
 import { getTraceHeaders } from '../../lib/request-context';
+import { getManagedModel } from '@kortix/llm-catalog';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -33,9 +34,18 @@ export async function proxyToAnthropic(
   }
 
   const url = `${config.OPENROUTER_API_URL}/messages`;
+  const requestedModel = typeof body.model === 'string' ? body.model : '';
+  // `/router/messages` is the Anthropic-compatible endpoint used by Claude
+  // Code. OpenRouter requires a provider-qualified slug, while Kortix managed
+  // model ids are deliberately bare on our public wire. Keep billing keyed to
+  // the requested Kortix id in the route, but translate only the upstream copy.
+  const managed = getManagedModel(requestedModel.replace(/^kortix\//, ''));
+  const upstreamBody = managed
+    ? { ...body, model: managed.pricingRef }
+    : body;
 
   console.log(
-    `[LLM][Anthropic] Proxying via OpenRouter: ${body.model} (stream=${isStreaming})`,
+    `[LLM][Anthropic] Proxying via OpenRouter: ${upstreamBody.model} (stream=${isStreaming})`,
   );
 
   return fetch(url, {
@@ -48,7 +58,7 @@ export async function proxyToAnthropic(
       'X-Title': OPENROUTER_APP_TITLE,
       ...traceHeaders,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(upstreamBody),
   });
 }
 

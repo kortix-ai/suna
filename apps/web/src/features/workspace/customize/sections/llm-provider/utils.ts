@@ -12,14 +12,14 @@ export function providerCredentialSummary(provider: LlmProviderEntry): string {
   return provider.envVars.join(' · ');
 }
 
-type OpenCodeProvidersSnapshot =
+type RuntimeProvidersSnapshot =
   | {
       connected?: string[];
       all?: Array<{ id: string; models?: Record<string, unknown> }>;
     }
   | undefined;
 
-export function buildCodexProvider(ocProviders: OpenCodeProvidersSnapshot): LlmProviderEntry {
+export function buildCodexProvider(ocProviders: RuntimeProvidersSnapshot): LlmProviderEntry {
   const connectedIds = new Set(ocProviders?.connected ?? []);
   const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
   const models: LlmProviderModel[] =

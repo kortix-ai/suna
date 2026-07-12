@@ -1,23 +1,22 @@
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { AcpClient, createAcpClient, type AcpStreamHandle } from '../../acp';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
  * One client. Every action a method. The host app imports ONLY from `@kortix/sdk`
- * — never `@opencode-ai/sdk`, never `backendApi`/`authenticatedFetch` directly.
+ * — never native harness SDKs, never `backendApi`/`authenticatedFetch` directly.
  *
  *   const kortix = createKortix({ getToken });
  *   await kortix.projects.list();
  *   await kortix.project(pid).secrets.upsert({ name, value });
  *   const s = kortix.session(pid, sid);
  *   await s.start();
- *   s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via the SDK
+ *   await s.send('do the task');   // ACP-first conversation, via the SDK
  *
  * REST methods are direct references to the platform client, so they keep their
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
-import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
@@ -30,19 +29,9 @@ import {
   type SessionRuntimeEntry,
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
-import {
-  openEventStream,
-  type EventStreamHandle,
-  type OpenCodeEvent,
-} from '../stream/event-stream';
 
-/** A model the agent can run, as the opencode runtime identifies it. */
+/** A model override retained for API compatibility; ACP harness config owns selection. */
 export type SessionModel = { providerID: string; modelID: string };
-
-/** The opencode runtime client for the currently-active sandbox (set by the host). */
-function runtime(): OpencodeClient {
-  return getClient();
-}
 
 /**
  * Thrown by a session handle's runtime-scoped operations (`.runtime`,
@@ -642,18 +631,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     };
   }
 
-  /** Id-bound handle for a single session: lifecycle (REST) + runtime (opencode). */
+  /** Id-bound handle for a single session: lifecycle (REST) + runtime protocol client. */
   function session(projectId: string, sessionId: string) {
-    // Opinionated-action state, scoped to THIS handle. The opencode runtime is
-    // keyed by the OpenCode session id (resolved server-side at /start), NOT the
+    // Opinionated-action state, scoped to THIS handle. The runtime is
+    // keyed by the Runtime session id (resolved server-side at /start), NOT the
     // Kortix `sessionId` — they differ. We resolve+cache it once (including the
     // resolved runtime URL + sandbox id), and remember a chosen model so `send`
     // carries it. Every runtime-scoped operation below reads ONLY this cached
     // record — never the module-global "currently active" runtime — so two
     // session handles pointed at two different sandboxes never cross wires.
     let _ready: SessionRuntimeEntry | null = null;
-    let _model: SessionModel | undefined;
-    let _agent: string | undefined;
+    let _acpClient: AcpClient | null = null;
+    let _acpSessionId: string | null = null;
 
     /**
      * Adopt an already-resolved runtime for THIS (projectId, sessionId) from
@@ -672,7 +661,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     }
 
     /**
-     * Make this session's runtime reachable and return its OpenCode session id
+     * Make this session's runtime reachable and return its Runtime session id
      * (plus this handle's own resolved runtime URL + sandbox id). Idempotent:
      * adopts the registry entry if another handle already resolved this
      * session; otherwise `start` provisions/resumes the sandbox (long-poll
@@ -697,12 +686,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       const startPromise = (async (): Promise<SessionRuntimeEntry> => {
         const started = await P.startProjectSession(projectId, sessionId, 30_000);
-        if (
-          !started ||
-          started.stage !== 'ready' ||
-          !started.sandbox ||
-          !started.opencode_session_id
-        ) {
+        const runtimeProtocol = started?.runtime_protocol ?? null;
+        const runtimeSessionId = started?.runtime_session_id ?? null;
+        const runtimeId = started?.runtime_id ?? runtimeSessionId;
+        if (!started || started.stage !== 'ready' || !started.sandbox || runtimeProtocol !== 'acp' || !runtimeId) {
           throw new ApiError(`Session runtime not ready (stage: ${started?.stage ?? 'unknown'})`, {
             code: 'RUNTIME_UNAVAILABLE',
           });
@@ -722,7 +709,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         // handle's own operations never read it back, only `_ready` below.
         setCurrentRuntime(runtimeUrl, externalId);
         return {
-          opencodeSessionId: started.opencode_session_id,
+          runtimeProtocol,
+          runtimeId,
+          runtimeSessionId,
           runtimeUrl,
           sandboxId: externalId,
         };
@@ -749,7 +738,42 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
     function forgetReady(): void {
       _ready = null;
+      _acpClient = null;
+      _acpSessionId = null;
       clearSessionRuntime(projectId, sessionId);
+    }
+
+    async function ensureAcpSession(): Promise<{
+      client: AcpClient;
+      acpSessionId: string;
+      ready: SessionRuntimeEntry;
+    }> {
+      const ready = await ensureReady();
+      if (ready.runtimeProtocol !== 'acp') {
+        throw new ApiError('Session did not start an ACP runtime', {
+          code: 'RUNTIME_PROTOCOL_MISMATCH',
+        });
+      }
+      const client = _acpClient ?? createAcpClient({
+        endpoint: `${config.backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/acp`,
+      });
+      _acpClient = client;
+      if (!_acpSessionId) {
+        await client.initialize({
+          protocolVersion: 1,
+          clientCapabilities: {},
+          clientInfo: { name: '@kortix/sdk', title: 'Kortix SDK', version: '0.2.0' },
+        });
+        if (ready.runtimeSessionId) {
+          await client.loadSession({ sessionId: ready.runtimeSessionId, cwd: '/workspace', mcpServers: [] });
+          _acpSessionId = ready.runtimeSessionId;
+        } else {
+          const created = await client.newSession({ cwd: '/workspace', mcpServers: [] });
+          _acpSessionId = created.sessionId;
+        }
+        ready.runtimeSessionId = _acpSessionId;
+      }
+      return { client, acpSessionId: _acpSessionId, ready };
     }
 
     return {
@@ -796,7 +820,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
-       * sandbox (long-poll until ready) and caches the resolved OpenCode session
+       * sandbox (long-poll until ready) and caches the resolved Runtime session
        * id + runtime URL + sandbox id for every other call on this handle. Call
        * this (or `send`/`abort`, which call it internally) before `.runtime`,
        * `.health()`, `.previewUrl()`, or `.proxyUrl()` — those throw
@@ -829,46 +853,24 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
-      // the runtime is up, resolve the OpenCode session id, and act through a
-      // client bound to THIS handle's own runtime URL (never the module-global
-      // "active" one, so parallel handles on different sandboxes never cross
-      // wires). React hosts use `@kortix/sdk/react` hooks instead, which bind to
-      // the same resolved id reactively (see the white-label reference app).
-      /** Pick the model `send` will use for subsequent prompts (until changed). */
-      setModel: (model: SessionModel | undefined) => {
-        _model = model;
-      },
-      /** Pick the agent `send` will use for subsequent prompts (until changed). */
-      setAgent: (agent: string | undefined) => {
-        _agent = agent;
-      },
-      /**
-       * Provision/resume if needed, then send a text prompt to the agent. A
-       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
-       * choices for this message only.
-       */
-      send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
-        const model = opts?.model ?? _model;
-        const agent = opts?.agent ?? _agent;
-        return getClientForUrl(runtimeUrl).session.prompt({
-          sessionID: opencodeSessionId,
-          parts: [{ type: 'text', text }],
-          ...(model ? { model } : {}),
-          ...(agent ? { agent } : {}),
-        });
+      // the runtime is up, resolve the Runtime session id, and act through a
+      // ACP is the sole client-to-agent contract. Harness-native model and
+      // agent selection live in the selected runtime's own config directory.
+      send: async (text: string) => {
+        const { client, acpSessionId } = await ensureAcpSession();
+        return client.prompt(acpSessionId, [{ type: 'text', text }]);
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
-        return getClientForUrl(runtimeUrl).session.abort({ sessionID: opencodeSessionId });
+        const { client, acpSessionId } = await ensureAcpSession();
+        return client.cancel(acpSessionId);
       },
       /**
        * Live SSE stream of THIS session's runtime events (message/part
        * updates, session status, permissions/questions, lsp diagnostics, …).
        * A thin facade over the framework-free `openEventStream` primitive
        * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
-       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * `@kortix/sdk/react`'s ACP session stream): resolves THIS
        * handle's own runtime first (`ensureReady()`), then connects a client
        * bound to that runtime URL — never the module-global "active" one, so
        * two session handles on two different sandboxes never cross wires.
@@ -883,25 +885,30 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *   handle.close();
        */
       stream: async (opts: {
-        onEvent: (event: OpenCodeEvent) => void;
-        onGapRehydrate?: (gapMs: number) => void;
+        onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
+        onError?: Parameters<AcpClient['connect']>[0]['onError'];
         signal?: AbortSignal;
-      }): Promise<EventStreamHandle> => {
-        const { runtimeUrl } = await ensureReady();
-        return openEventStream({
-          client: getClientForUrl(runtimeUrl),
-          onEvent: opts.onEvent,
-          onGapRehydrate: opts.onGapRehydrate,
-          signal: opts.signal,
-        });
+        lastEventId?: number;
+      }): Promise<AcpStreamHandle> => {
+        const { client } = await ensureAcpSession();
+        return client.connect(opts);
       },
 
-      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
-      // The typed opencode client, reached ONLY through the SDK. The host never
-      // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
-      // with server-owned side-effects) layer on top of this as they land.
-      get runtime(): OpencodeClient {
-        return getClientForUrl(requireReady('runtime').runtimeUrl);
+      /** ACP-native runtime transport for v3 sessions. */
+      acp: {
+        connect: async (opts: {
+          onEvent: Parameters<AcpClient['connect']>[0]['onEvent'];
+          onError?: Parameters<AcpClient['connect']>[0]['onError'];
+          signal?: AbortSignal;
+          lastEventId?: number;
+        }): Promise<AcpStreamHandle> => {
+          const { client } = await ensureAcpSession();
+          return client.connect(opts);
+        },
+        client: async () => (await ensureAcpSession()).client,
+        sessionId: async () => (await ensureAcpSession()).acpSessionId,
+        respond: async (...args: Parameters<AcpClient['respond']>) =>
+          (await ensureAcpSession()).client.respond(...args),
       },
 
       /**
@@ -967,8 +974,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     marketplace,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
-    /** Escape hatch: the typed opencode client for the active sandbox. */
-    runtime,
   };
 }
 
