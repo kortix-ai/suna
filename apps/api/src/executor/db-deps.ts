@@ -626,8 +626,18 @@ async function resolveProjectPrincipal(
 
   if (tokenProjectId) {
     // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
-    // tokenProjectId === the URL project at the auth layer. Re-check defensively.
+    // tokenProjectId === the URL project at the auth layer. Re-check defensively,
+    // then bind the token account to the actual project account. This prevents a
+    // PAT row from one account from being labeled with another account's project
+    // id and then used on the project-explicit Executor gateway.
     if (tokenProjectId !== projectId) return null;
+    const [project] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project || !accountId || project.accountId !== accountId) return null;
+    accountId = project.accountId;
   } else {
     // User token (PAT/JWT, no pinned project): verify project access. Throws 403
     // if the user isn't a member — treat that as an unauthorized principal.

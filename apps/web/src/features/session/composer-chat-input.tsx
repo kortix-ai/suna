@@ -70,7 +70,7 @@ export function ComposerChatInput({
   boundAgentName?: string | null;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
-  const { data: providers } = useRuntimeProviders();
+  const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: commands } = useRuntimeCommands();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
@@ -122,6 +122,7 @@ export function ComposerChatInput({
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
       modelRequired
+      modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}

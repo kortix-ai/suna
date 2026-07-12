@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { I18nextProvider } from 'react-i18next';
 import { AlertTriangle, Download } from 'lucide-react';
@@ -64,6 +64,44 @@ const KORTIX_VIEWER_THEME: ViewerTheme = {
 };
 
 /**
+ * pptx-react-viewer measures its own container width and, below 1024px,
+ * swaps to a phone-optimized layout (bottom tab bar, full-screen sheets for
+ * the slides/notes panels) with no prop to opt out. We always want the
+ * regular desktop chrome — a persistent, open-by-default slides sidebar —
+ * so the stage below is never narrower than this, and is scaled down
+ * (visually only, not in layout) to fit smaller panels instead of
+ * triggering that responsive swap. A few px of buffer over the library's
+ * exact 1024px breakpoint avoids sub-pixel ResizeObserver rounding landing
+ * just under it.
+ */
+const PPTX_DESKTOP_STAGE_WIDTH = 1040;
+
+/**
+ * Scales the fixed-width desktop stage down to fit a narrower viewport, never
+ * up. Uses a callback ref (rather than a plain `useRef`) so the observer
+ * attaches exactly when the viewport element mounts — it doesn't exist yet on
+ * first render, since the viewer only appears once the file bytes finish
+ * loading.
+ */
+function usePptxStageScale(): [(node: HTMLDivElement | null) => void, number] {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+
+  useLayoutEffect(() => {
+    if (!node || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? node.clientWidth;
+      setScale(Math.min(1, width / PPTX_DESKTOP_STAGE_WIDTH));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return [setNode, scale];
+}
+
+/**
  * PptxRenderer — renders `.pptx`/`.ppt` decks inline with pptx-react-viewer,
  * matching how we render docx/xlsx. Read-only (`canEdit={false}`); a download
  * action is offered only when the file can't be parsed.
@@ -80,6 +118,7 @@ export function PptxRenderer({
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [viewportRef, stageScale] = usePptxStageScale();
 
   useEffect(() => {
     let cancelled = false;
@@ -163,18 +202,30 @@ export function PptxRenderer({
 
   return (
     <div
-      data-pptx-minimal=""
-      className={cn('relative flex h-full w-full flex-col overflow-hidden bg-background', className)}
+      ref={viewportRef}
+      className={cn(
+        'flex h-full w-full items-center justify-center overflow-hidden bg-background',
+        className,
+      )}
     >
-      <I18nextProvider i18n={getPptxI18n()}>
-        <PowerPointViewer
-          content={bytes}
-          fileName={fileName}
-          canEdit={false}
-          theme={KORTIX_VIEWER_THEME}
-          className="h-full w-full min-h-0"
-        />
-      </I18nextProvider>
+      <div
+        data-pptx-minimal=""
+        className="h-full flex-none"
+        style={{
+          width: stageScale < 1 ? PPTX_DESKTOP_STAGE_WIDTH : '100%',
+          transform: stageScale < 1 ? `scale(${stageScale})` : undefined,
+        }}
+      >
+        <I18nextProvider i18n={getPptxI18n()}>
+          <PowerPointViewer
+            content={bytes}
+            fileName={fileName}
+            canEdit={false}
+            theme={KORTIX_VIEWER_THEME}
+            className="h-full w-full min-h-0"
+          />
+        </I18nextProvider>
+      </div>
     </div>
   );
 }

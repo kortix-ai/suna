@@ -38,7 +38,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
-import { flattenModels } from '@/features/session/session-chat-input';
+import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import {
@@ -57,14 +57,9 @@ import {
   type EmailInstallation,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
+import { useRuntimeProviders, useVisibleAgents, type Agent } from '@/hooks/runtime/use-runtime-sessions';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
-import {
-  getProject,
-  getProjectDetail,
-  listProjectAccess,
-  type ProjectConfigSummary,
-} from '@kortix/sdk/projects-client';
+import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -279,8 +274,30 @@ const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']
   { value: 'owner_approval', label: 'Owner approval' },
 ];
 
-/** null = "project default" — the picker's own reset option. */
-const AGENT_DEFAULT_VALUE = '__project_default__';
+/** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
+function agentDefaultLabel(projectDefaultAgent: string | null): string {
+  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
+}
+
+/** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
+function stripRuntimeNamespace(model: string): string {
+  return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
+}
+
+/**
+ * Honest one-line summary of what a channel's model binding will actually
+ * run — including the case an explicit pin silently degrades because it's no
+ * longer servable (BYOK key disconnected, managed model retired), which
+ * `effectiveModel.source` surfaces as something other than `'explicit'`.
+ */
+function describeEffectiveModel(binding: ChannelBinding): string {
+  if (binding.model) {
+    const label = stripRuntimeNamespace(binding.model);
+    return binding.effectiveModel.source === 'explicit' ? label : `${label} (unavailable — using default)`;
+  }
+  const resolved = binding.effectiveModel.model;
+  return resolved ? `Project default (${stripRuntimeNamespace(resolved)})` : 'Project default';
+}
 
 function ChannelBindingTableRow({
   projectId,
@@ -303,23 +320,33 @@ function ChannelBindingTableRow({
   // (the PATCH route asserts project.connector.write and would 403).
   const canManage = Boolean(accessQuery.data?.can_manage) && canWrite;
 
-  const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
-  });
-  const config: ProjectConfigSummary | undefined = detailQuery.data?.config;
-  const declaredAgents = useMemo(() => {
-    const names = (config?.agents ?? []).map((a) => a.name);
-    // Keep a currently-bound name in the list even if it was since renamed/removed,
-    // so the Select never renders a value it can't display.
-    if (binding.agentName && !names.includes(binding.agentName)) names.push(binding.agentName);
-    return names;
-  }, [config, binding.agentName]);
+  // Same agent source as the chat input / schedules pickers (spec: "use the
+  // same component everywhere"). `projectId` does a server-side fetch of the
+  // declared manifest agents — no live sandbox/session required, so it works
+  // on a settings page with nothing running.
+  const visibleAgents = useVisibleAgents({ projectId });
+  const agentSelectorAgents = useMemo<Agent[]>(() => {
+    const defaultEntry = {
+      name: agentDefaultLabel(projectDefaultAgent),
+      description: 'Falls back to the project\'s configured default agent.',
+      mode: 'primary',
+      permission: {},
+      options: {},
+    } as unknown as Agent;
+    const names = new Set(visibleAgents.map((a) => a.name));
+    // Keep a currently-bound name in the list even if it was since renamed/
+    // removed, so the picker never renders a value it can't display.
+    const missingCurrent =
+      binding.agentName && !names.has(binding.agentName)
+        ? [{ name: binding.agentName, mode: 'primary', permission: {}, options: {} } as unknown as Agent]
+        : [];
+    return [defaultEntry, ...visibleAgents, ...missingCurrent];
+  }, [visibleAgents, projectDefaultAgent, binding.agentName]);
+  const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = binding.model ? wireToModelKey(stripOpencodeNamespace(binding.model)) : null;
+  const selectedModel = binding.model ? wireToModelKey(stripRuntimeNamespace(binding.model)) : null;
 
   const update = useUpdateChannelBinding();
 
@@ -332,59 +359,58 @@ function ChannelBindingTableRow({
         </div>
       </TableCell>
       <TableCell>
-        <Select
-          value={binding.agentName ?? AGENT_DEFAULT_VALUE}
-          onValueChange={(v) =>
-            update.mutate(
-              { projectId, bindingId: binding.bindingId, agentName: v === AGENT_DEFAULT_VALUE ? null : v },
-              {
-                onSuccess: () => successToast('Channel agent updated'),
-                onError: (e) => errorToastFallback(e),
-              },
-            )
-          }
-          disabled={!canManage || update.isPending}
-        >
-          <SelectTrigger className="w-44" variant="popover">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AGENT_DEFAULT_VALUE}>
-              Project default{projectDefaultAgent ? ` (${projectDefaultAgent})` : ''}
-            </SelectItem>
-            {declaredAgents.map((name) => (
-              <SelectItem key={name} value={name}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="bg-card rounded-2xl border px-2 py-1 inline-flex">
+          <AgentSelector
+            agents={agentSelectorAgents}
+            selectedAgent={selectedAgentValue}
+            onSelect={(v) =>
+              update.mutate(
+                {
+                  projectId,
+                  bindingId: binding.bindingId,
+                  agentName: !v || v === agentDefaultLabel(projectDefaultAgent) ? null : v,
+                },
+                {
+                  onSuccess: () => successToast('Channel agent updated'),
+                  onError: (e) => errorToastFallback(e),
+                },
+              )
+            }
+            disabled={!canManage || update.isPending}
+          />
+        </div>
       </TableCell>
       <TableCell>
         {canManage ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ModelSelector
-              models={models}
-              providers={providers}
-              selectedModel={selectedModel}
-              onSelect={(m) =>
-                update.mutate(
-                  {
-                    projectId,
-                    bindingId: binding.bindingId,
-                    model: m ? modelKeyToWire(m) : null,
-                  },
-                  {
-                    onSuccess: () => successToast('Channel model updated'),
-                    onError: (e) => errorToastFallback(e),
-                  },
-                )
-              }
-            />
+          <div className="flex flex-col gap-1">
+            <div className="bg-card rounded-2xl border px-2 py-1 inline-flex w-fit">
+              <ModelSelector
+                models={models}
+                providers={providers}
+                selectedModel={selectedModel}
+                unsetLabel="Project default"
+                onSelect={(m) =>
+                  update.mutate(
+                    {
+                      projectId,
+                      bindingId: binding.bindingId,
+                      model: m ? modelKeyToWire(m) : null,
+                    },
+                    {
+                      onSuccess: () => successToast('Channel model updated'),
+                      onError: (e) => errorToastFallback(e),
+                    },
+                  )
+                }
+              />
+            </div>
+            {!binding.model ? (
+              <p className="text-muted-foreground/70 text-xs">{describeEffectiveModel(binding)}</p>
+            ) : null}
           </div>
         ) : (
           <Badge variant="outline" size="sm" className="font-mono">
-            {binding.model ?? 'Auto'}
+            {describeEffectiveModel(binding)}
           </Badge>
         )}
       </TableCell>
@@ -420,11 +446,6 @@ function ChannelBindingTableRow({
       </TableCell>
     </TableRow>
   );
-}
-
-/** Strip opencode's `kortix/` ref namespace so the bare wire id reaches wireToModelKey. */
-function stripOpencodeNamespace(model: string): string {
-  return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
 }
 
 function errorToastFallback(error: unknown) {

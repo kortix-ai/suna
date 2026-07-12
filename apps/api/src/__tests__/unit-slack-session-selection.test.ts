@@ -224,6 +224,26 @@ test('unbound channel (null selection) → agent "default", no model', async () 
   expect('opencode_model' in (lastBody ?? {})).toBe(false);
 });
 
+// Regression guard: previously Slack ALWAYS sent the literal 'default' as
+// agent_name, so sessions.ts's `body.agent_name ?? projectDefaultAgent`
+// fallback never fired — a project's configured default_agent was silently
+// ignored by every Slack session, diverging from what the settings page
+// showed as "Project default (agentX)". No channel override should now
+// resolve to the project's configured default, not the bare sentinel.
+test('no channel override, but project has a configured default_agent → that agent is used', async () => {
+  selection = { projectId: 'proj-1', agentName: null, opencodeModel: null };
+  dbResults = [
+    [{ ...project, metadata: { default_agent: 'shipper' } }], // spawnAgentTurn project lookup
+    [], // chat_threads lookup → brand-new thread
+    [{ ...project, metadata: { default_agent: 'shipper' } }], // createOrJoinThreadSession project lookup
+    [{ eventId: 'claim' }], // claimThreadCreate → WON
+    [], // re-check chat_threads → none
+    [], // chat_threads insert
+  ];
+  await spawnAgentTurn('proj-1', envelope, event);
+  expect(lastBody?.agent_name).toBe('shipper');
+});
+
 // The reported bug: the channel's agent was deleted, so createSession rejects it
 // as 400 AGENT_NOT_DECLARED. The whole point of the fix is that this no longer
 // collapses into the dead-end "try again" copy — it renders an inline picker of

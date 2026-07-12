@@ -207,6 +207,39 @@ function subProviderOf(modelID: string): string {
   return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
+/**
+ * True when at least one model in `allModels` is actually usable right now —
+ * i.e. would work if sent, not merely present in the catalog. The gateway
+ * bakes its ENTIRE routable catalog into every project regardless of plan or
+ * connected keys (`providers.connected` always includes `kortix`), so raw
+ * catalog presence (`providerListHasModels`, `models.length`) is never a
+ * reliable "nothing is connected" signal — it's true even for a brand-new,
+ * unpaid, no-BYOK account. This mirrors the entitlement half of `isVisible`
+ * (managed models gated by `!freeTier`, BYOK-under-gateway models gated by
+ * their sub-provider being connected) without its display-curation half
+ * (the "latest per family" / flagship-only default view) — a model can be
+ * fully usable while `isVisible` still hides it by default.
+ */
+export function hasUsableModel(
+  allModels: FlatModel[],
+  opts: { connectedProviderIds?: Set<string>; freeTier?: boolean },
+): boolean {
+  const connectedProviderIds = opts.connectedProviderIds;
+  const freeTier = opts.freeTier ?? false;
+  return allModels.some((m) => {
+    if (m.providerID !== MANAGED_GATEWAY_PROVIDER_ID) {
+      // Native/direct provider models: flattenModels only includes models
+      // from CONNECTED providers, so presence here already means usable.
+      return true;
+    }
+    if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
+    const sub = subProviderOf(m.modelID);
+    return sub === SUBSCRIPTION_PROVIDER_ID
+      ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
+      : (connectedProviderIds?.has(sub) ?? false);
+  });
+}
+
 export function isDefaultVisible(model: ModelKey): boolean {
   return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
 }

@@ -53,6 +53,12 @@ function clientRateLimitKey(c: any): string {
   return forwarded || realIp || cfIp || 'unknown';
 }
 
+function checkDeviceAuthResolutionRateLimit(c: any, endpoint: string) {
+  const userId = (c.get('userId') as string | undefined) ?? 'anonymous';
+  const key = `${userId}:${clientRateLimitKey(c)}`;
+  return tunnelRateLimiter.check(endpoint, key);
+}
+
 /**
  * Public router — mounted BEFORE auth middleware.
  * Handles create + poll (unauthenticated, used by CLI).
@@ -237,6 +243,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthInfo');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const code = c.req.param('code');
 
       const [row] = await db
@@ -294,6 +304,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthApprove');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const userId = c.get('userId') as string;
       const accountId = await resolveAccountId(userId);
       const code = c.req.param('code');
@@ -383,6 +397,10 @@ export function createDeviceAuthRouter() {
     }),
     async (c: any) => {
       requireUserCredential(c);
+      const rl = checkDeviceAuthResolutionRateLimit(c, 'deviceAuthDeny');
+      if (!rl.allowed) {
+        return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
+      }
       const code = c.req.param('code');
 
       const [updated] = await db
