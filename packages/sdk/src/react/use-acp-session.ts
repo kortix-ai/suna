@@ -11,11 +11,12 @@ export type AcpStoredSessionEnvelope = {
   createdAt?: string;
 };
 
-export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled = true }: {
+export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled = true, replayStartStash = true }: {
   projectId: string;
   sessionId: string;
   runtimeSessionId?: string | null;
   enabled?: boolean;
+  replayStartStash?: boolean;
 }) {
   const client = useMemo(() => createAcpClient({
     endpoint: projectAcpEndpoint(projectId, sessionId),
@@ -55,19 +56,22 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
         if (!active) return;
         setNativeId(id);
         setReady(true);
-        const stash = readStartStash(sessionId);
+        const stash = replayStartStash === false ? null : readStartStash(sessionId);
         if (stash?.prompt) {
           clearStartStash(sessionId);
           setBusy(true);
-          await client.prompt(id, [{ type: 'text', text: stash.prompt }]);
-          setBusy(false);
+          try {
+            await client.prompt(id, [{ type: 'text', text: stash.prompt }]);
+          } finally {
+            if (active) setBusy(false);
+          }
         }
       } catch (reason) {
         if (active) setError(reason instanceof Error ? reason.message : String(reason));
       }
     })();
     return () => { active = false; stream.close(); };
-  }, [addEnvelope, client, enabled, runtimeSessionId, sessionId]);
+  }, [addEnvelope, client, enabled, replayStartStash, runtimeSessionId, sessionId]);
 
   const send = useCallback(async (prompt: AcpContentBlock[]) => {
     if (!nativeId || busy) return false;

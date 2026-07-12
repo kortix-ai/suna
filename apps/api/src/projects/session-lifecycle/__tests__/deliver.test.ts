@@ -3,16 +3,16 @@ import { deliverWithRetry, type DeliveryTarget } from '../deliver';
 
 // Regression guard for "@Kortix replied 'Still waking this thread's session back
 // up — send that again' on a session that was already awake." The runtime was
-// ready; the prompt hand-off just had a transient post-wake hiccup (a rotated
-// opencode session 404, a daemon 5xx, a briefly-null externalId). The old path
-// bounced to 'pending' on the first miss and dropped the message. deliverWithRetry
-// must heal + retry through that window and only surface 'pending' if it truly
-// never lands.
+// ready; the ACP prompt hand-off just had a transient post-wake hiccup (adapter
+// 404/5xx, a briefly-null externalId/runtimeId). deliverWithRetry must heal +
+// retry through that window and only surface 'pending' if it truly never lands.
 
-const ready = (externalId: string | null, opencodeSessionId: string | null): DeliveryTarget => ({
+const ready = (externalId: string | null, runtimeId: string | null): DeliveryTarget => ({
   stage: 'ready',
   externalId,
-  opencodeSessionId,
+  runtimeProtocol: 'acp',
+  runtimeId,
+  runtimeSessionId: 'conversation-1',
 });
 
 const noSleep = async () => {};
@@ -51,10 +51,10 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     let sends = 0;
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => ready('ext-1', 'oc-2'), // rotated opencode session
-      send: async (_ext, oc) => {
+      reopen: async () => ready('ext-1', 'runtime-2'), // adapter/runtime id healed
+      send: async (_ext, runtimeId) => {
         sends++;
-        return oc === 'oc-2'; // first id 404s, healed id is accepted
+        return runtimeId === 'runtime-2'; // first id 404s, healed id is accepted
       },
       now: stepNow(1000),
       sleepFn: noSleep,
@@ -79,7 +79,6 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     const opened: DeliveryTarget = {
       stage: 'ready',
       externalId: 'ext-acp',
-      opencodeSessionId: null,
       runtimeProtocol: 'acp',
       runtimeId: 'runtime-acp',
       runtimeSessionId: null,
@@ -130,7 +129,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
   test('reopen reports a terminal failure → failed (do not keep retrying a dead box)', async () => {
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => ({ stage: 'failed', externalId: null, opencodeSessionId: null }),
+      reopen: async () => ({ stage: 'failed', externalId: null, runtimeProtocol: 'acp', runtimeId: null }),
       send: async () => false,
       now: stepNow(1000),
       sleepFn: noSleep,

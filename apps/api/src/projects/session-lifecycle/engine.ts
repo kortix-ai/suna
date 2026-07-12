@@ -302,15 +302,12 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  // Runtime is ready — hand off the prompt, healing + retrying through the
-  // transient failures a freshly-woken sandbox throws (adapter 404, daemon 5xx
-  // while it binds, externalId/runtime_session_id briefly null). Bounce to
-  // 'pending' only after the bounded window genuinely exhausts; the old code
-  // gave up on the first hiccup and dropped the user's message.
+  // Runtime is ready — hand off the prompt through ACP, healing + retrying
+  // through transient wake/bind failures. Bounce to 'pending' only after the
+  // bounded window genuinely exhausts.
   const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
     stage: o.stage,
     externalId: sandboxExternalId(o),
-    opencodeSessionId: o.runtime_protocol === 'opencode' ? o.runtime_session_id ?? null : null,
     runtimeProtocol: o.runtime_protocol ?? null,
     runtimeId: o.runtime_id ?? null,
     runtimeSessionId: o.runtime_session_id ?? null,
@@ -324,17 +321,15 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: (externalId, runtimeId, target) =>
-      target.runtimeProtocol === 'acp'
-        ? postAcpPrompt({
-            externalId,
-            runtimeId,
-            acpSessionId: target.runtimeSessionId ?? null,
-            projectId: session.projectId,
-            sessionId,
-            text,
-            userId,
-          })
-        : postPrompt(externalId, runtimeId, text, userId),
+      postAcpPrompt({
+        externalId,
+        runtimeId,
+        acpSessionId: target.runtimeSessionId ?? null,
+        projectId: session.projectId,
+        sessionId,
+        text,
+        userId,
+      }),
   });
 }
 
@@ -609,38 +604,6 @@ function sandboxExternalId(
   result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
 ): string | null {
   return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
-}
-
-async function postPrompt(
-  externalId: string,
-  opencodeSessionId: string,
-  text: string,
-  userId: string,
-): Promise<boolean> {
-  const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text }] }));
-  try {
-    const res = await forwardToSandbox(
-      externalId,
-      DAEMON_PORT,
-      { kind: 'principal', userId },
-      'POST',
-      `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
-      `?directory=${encodeURIComponent(WORKSPACE)}`,
-      new Headers({ 'Content-Type': 'application/json' }),
-      body.buffer as ArrayBuffer,
-      config.KORTIX_URL ?? '',
-    );
-    if (res.ok || res.status === 204) return true;
-    if (res.status !== 404)
-      console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
-    return false;
-  } catch (err) {
-    // A connection refused/reset while the sandbox finishes resuming — treat as a
-    // retryable miss (the deliver loop will heal + retry) instead of letting it
-    // bubble up and silently drop the turn.
-    console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
-    return false;
-  }
 }
 
 async function postAcpPrompt(input: {

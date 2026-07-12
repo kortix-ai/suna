@@ -65,7 +65,6 @@ import {
   useRuntimeConfig,
 } from '@/lib/runtime/hooks/use-runtime-data';
 import { useResolvedConfig } from '@/lib/runtime/hooks/use-local-config';
-import { useCompactSession } from '@/lib/runtime/hooks/use-compact-session';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
@@ -1159,8 +1158,6 @@ export default function ProjectSessionScreen() {
     validatePersistedScreenshots();
   }, []);
 
-  // Compact session mutation
-  const compactSession = useCompactSession();
   const queryClient = useQueryClient();
 
   // Persisted tab state (survives app restarts)
@@ -3024,31 +3021,10 @@ export default function ProjectSessionScreen() {
                 onNewSession={handleNewSession}
                 onOpenTabs={handleOpenTabsOverview}
                 onCompactSession={() => {
-                  if (activeSessionId && sandboxUrl) {
-                    Alert.alert(
-                      'Compact Session',
-                      'This will summarize older messages using AI to free up context space. Key information is preserved, but original messages will be condensed into a compact summary.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Compact',
-                          onPress: () => {
-                            compactSession.mutate(
-                              { sandboxUrl, sessionId: activeSessionId },
-                              {
-                                onError: (err) => {
-                                  Alert.alert(
-                                    'Compact Failed',
-                                    err.message || 'Failed to compact session.'
-                                  );
-                                },
-                              }
-                            );
-                          },
-                        },
-                      ]
-                    );
-                  }
+                  Alert.alert(
+                    'Compaction unavailable',
+                    'ACP sessions do not use the legacy runtime summarize endpoint. Session compaction will return after summaries are exposed through the project-session API.',
+                  );
                 }}
                 onExportTranscript={() => {
                   if (activeSessionId) {

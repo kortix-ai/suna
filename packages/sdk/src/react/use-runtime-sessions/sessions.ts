@@ -35,14 +35,14 @@ export function useRuntimeSessions(enabled = true) {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    // With the scaffold-warm seed, opencode is ALREADY 'ok' for /workspace and a
-    // root session is pinned the moment runtimeReady flips — so the first list
+    // With the scaffold-warm seed, the runtime is already ready for /workspace
+    // and a root session is pinned the moment runtimeReady flips — so the first list
     // normally returns the pinned session in one shot. The only misses left are
     // the server-switch client race + the ~350ms health-poll enable lag, both of
     // which clear in one fast retry. So poll TIGHT (16 x 150ms = ~2.4s) to land
     // the first success in <300ms instead of mid-400ms-window; exponential tail
     // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
-    // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
+    // (~3.2s) was the entire 'runtime-listed' wall in the browser trace.
     retry: (failureCount, error) =>
       !isRuntimeConfigInvalidError(error) && failureCount < 16,
     retryDelay: (attempt) =>
@@ -83,8 +83,8 @@ export function useCreateRuntimeSession() {
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
       const opts = options || {};
       // The runtime can still be booting when this fires (auto-create on
-      // session page mount). Legacy OpenCode harnesses surface 503
-      // "opencode not ready" until the process binds its port. Retry that
+      // session page mount). Legacy sandbox images can still surface 503
+      // "opencode not ready" until the runtime process binds its port. Retry that
       // specific transient inline — anything else propagates immediately.
       for (let attempt = 0; ; attempt++) {
         try {
@@ -145,7 +145,6 @@ export function useDeleteRuntimeSession() {
         return old.filter((s) => s.id !== sessionId);
       });
       queryClient.removeQueries({ queryKey: runtimeKeys.session(sessionId) });
-      queryClient.removeQueries({ queryKey: runtimeKeys.messages(sessionId) });
     },
   });
 }
@@ -248,25 +247,7 @@ export function useSummarizeRuntimeSession() {
         }
       }
 
-      // 2. Try to get model from the session's latest assistant message
-      if (!providerID || !modelID) {
-        try {
-          const msgs = await client.session.messages({ sessionID: params.sessionId });
-          const allMsgs = (msgs.data ?? []) as Array<{ info: { role: string; providerID?: string; modelID?: string } }>;
-          for (let i = allMsgs.length - 1; i >= 0; i--) {
-            const m = allMsgs[i].info;
-            if (m.role === 'assistant' && m.providerID && m.modelID) {
-              providerID = providerID || m.providerID;
-              modelID = modelID || m.modelID;
-              break;
-            }
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      // 3. Try first available provider/model from provider list
+      // 2. Try first available provider/model from provider list
       if (!providerID || !modelID) {
         try {
           // The provider list's typed shape is `{ all, default, connected }`,
@@ -316,9 +297,8 @@ export function useSummarizeRuntimeSession() {
       stopCompaction(sessionId);
     },
     onSuccess: (_sessionId) => {
-      // SSE session.compacted event handles rehydration of messages and
-      // session data. No need to invalidate here — the event handler in
-      // use-runtime-events.ts fetches messages + session for that ID.
+      // ACP sessions do not use legacy message compaction; callers that still
+      // invoke this adapter manage their own follow-up refresh.
     },
   });
 }
@@ -353,11 +333,7 @@ export function useInitSession() {
       }
       return sessionId;
     },
-    onSuccess: (sessionId) => {
-      // SSE events handle session updates. Just refetch messages for this session
-      // since /init creates new messages.
-      queryClient.refetchQueries({ queryKey: runtimeKeys.messages(sessionId) });
-    },
+    onSuccess: () => {},
     // Suppress global error handler — caller handles errors via onError callback
     onError: () => {},
     // Same rationale as useExecuteRuntimeCommand — /command blocks until done,

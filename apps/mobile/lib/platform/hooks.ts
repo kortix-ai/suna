@@ -21,7 +21,7 @@ import {
   getProviders,
   type SandboxInfo,
 } from './client';
-import type { Session, SessionMessage, SessionStatusMap } from './types';
+import type { Session, SessionStatusMap } from './types';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -32,7 +32,6 @@ export const platformKeys = {
   providers: () => [...platformKeys.all, 'providers'] as const,
   sessions: () => [...platformKeys.all, 'sessions'] as const,
   session: (id: string) => [...platformKeys.sessions(), id] as const,
-  sessionMessages: (id: string) => [...platformKeys.session(id), 'messages'] as const,
   sessionStatus: () => [...platformKeys.all, 'session-status'] as const,
 };
 
@@ -157,24 +156,6 @@ export function useSession(sandboxUrl: string | undefined, sessionId: string | u
     queryFn: async () => {
       if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
       return runtimeFetch<Session>(sandboxUrl, `/session/${sessionId}`);
-    },
-    enabled: !!sandboxUrl && !!sessionId,
-    staleTime: 5 * 1000,
-  });
-}
-
-// ─── Session Messages Hook ───────────────────────────────────────────────────
-
-/**
- * Get messages for a session.
- * GET {sandboxUrl}/session/{id}/message
- */
-export function useSessionMessages(sandboxUrl: string | undefined, sessionId: string | undefined) {
-  return useQuery({
-    queryKey: platformKeys.sessionMessages(sessionId || ''),
-    queryFn: async () => {
-      if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
-      return runtimeFetch<SessionMessage[]>(sandboxUrl, `/session/${sessionId}/message`);
     },
     enabled: !!sandboxUrl && !!sessionId,
     staleTime: 5 * 1000,
@@ -353,41 +334,6 @@ export function useRenameSession(sandboxUrl: string | undefined) {
     onSettled: (_data, _err, vars) => {
       queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
       queryClient.invalidateQueries({ queryKey: platformKeys.session(vars.sessionId) });
-    },
-  });
-}
-
-// ─── Session Prompt Mutation ─────────────────────────────────────────────────
-
-/**
- * Send a prompt to a session.
- * POST {sandboxUrl}/session/{id}/prompt
- */
-export function useSendPrompt(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (params: {
-      sessionId: string;
-      parts: Array<{ type: 'text'; text: string }>;
-    }) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-
-      log.log('💬 [useSendPrompt] Sending prompt to session:', params.sessionId);
-      await runtimeFetch<void>(sandboxUrl, `/session/${params.sessionId}/prompt`, {
-        method: 'POST',
-        body: JSON.stringify({
-          parts: params.parts,
-        }),
-      });
-
-      log.log('✅ [useSendPrompt] Prompt sent');
-    },
-    onSuccess: (_, params) => {
-      // Invalidate messages so they refetch
-      queryClient.invalidateQueries({
-        queryKey: platformKeys.sessionMessages(params.sessionId),
-      });
     },
   });
 }

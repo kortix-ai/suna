@@ -22,7 +22,7 @@ export interface MessageInfoLike {
   error?: unknown;
 }
 
-/** A message with its pre-resolved parts — the shape returned by `session.messages()`. */
+/** A native harness message with its pre-resolved parts. */
 export interface MessageWithPartsLike {
   info: MessageInfoLike;
   parts: PartLike[];

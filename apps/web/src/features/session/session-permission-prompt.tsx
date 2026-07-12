@@ -2,19 +2,18 @@
 
 /**
  * Inline "agent needs your permission" prompt, pinned above the composer — the
- * opencode tool-permission twin of `SessionApprovalPrompt` (connector
- * approvals). Answering resumes the agent's already-blocked turn in place
- * (opencode holds the tool call open until `/permission/{id}/reply`), so no
- * follow-up "continue" message is ever needed.
+ * runtime tool-permission twin of `SessionApprovalPrompt` (connector
+ * approvals). Answering resumes the agent's already-blocked turn in place, so
+ * no follow-up "continue" message is ever needed.
  *
  * Three decision scopes, visually separated by how long they last:
- *  - per request: Deny / Allow once / Allow for session (opencode's native
+ *  - per request: Deny / Allow once / Allow for session (the runtime's native
  *    `always` reply — this action pattern, rest of this session)
  *  - per session: "Allow everything" writes a blanket allow ruleset onto the
- *    opencode session (survives tab close) + auto-approves anything already
+ *    runtime session (survives tab close) + auto-approves anything already
  *    pending; a client-side auto-approver backstops any ask that still arrives.
  *  - persistent (footer, gated on `project.customize.write`): writes the
- *    project's opencode permission config — future sessions stop asking.
+ *    project's runtime permission config — future sessions stop asking.
  */
 
 import { Button } from '@/components/ui/button';

@@ -29,10 +29,7 @@ import type {
 
 export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
 
-/**
- * Shape returned by `client.session.messages()`:
- * `Array<{ info: Message; parts: Part[] }>`
- */
+/** Legacy harness message projection used only by native-runtime utilities. */
 export interface MessageWithParts {
   info: Message;
   parts: Part[];
@@ -90,7 +87,6 @@ export const runtimeKeys = {
   all: ['runtime'] as const,
   sessions: (serverId?: string) => ['runtime', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['runtime', 'session', id] as const,
-  messages: (sessionId: string) => ['runtime', 'session', sessionId, 'messages'] as const,
   agents: () => ['runtime', 'agents', activeServerKey()] as const,
   toolIds: () => ['runtime', 'tool-ids', activeServerKey()] as const,
   tools: (providerID: string, modelID: string) => ['runtime', 'tools', providerID, modelID, activeServerKey()] as const,

@@ -15,44 +15,30 @@
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FINAL PUBLIC SURFACE (Phase 7). A new host should reach a session through ONE
-// hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
-// hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
-// primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
-// reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
-// no `RuntimeEventStreamProvider`, no `useCanonicalRuntimeSession`, no raw
-// stores, no `getClient`.
-//
-// The lower-level exports below (`RuntimeEventStreamProvider`,
-// `useCanonicalRuntimeSession`, the sandbox-connection / sync / pending stores,
-// the per-sandbox session hooks) are now INTERNAL plumbing that `useSession`
-// composes. They remain exported ONLY because apps/web still consumes them
-// directly through its not-yet-migrated file/terminal/git hooks; once that
-// migration lands they come out of the public surface. New hosts: do not import
-// them — use `useSession`.
+// PUBLIC SURFACE. A host should reach a project session through ONE hook —
+// `useSession(projectId, sessionId)` — plus the pre-runtime capability hooks
+// (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and primitives
+// (`useSessionPicks` / `useRuntimePhase` / start-stash). Session conversation
+// transport is ACP-owned; the legacy runtime message sync/event-stream hooks
+// are intentionally not exported.
 // ─────────────────────────────────────────────────────────────────────────────
 // Router-agnostic route scope: the host injects "the project the user is
 // looking at" here (Next hosts derive it from useParams once, near the root);
 // `useRuntimeProviders`/`useRuntimeLocal` resolve it via this context.
 export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
 export * from './use-runtime-sessions';
-export * from './use-runtime-events';
 export * from './use-runtime-local';
 export * from './use-runtime-mcp';
 export * from './use-runtime-pty';
 export * from './use-runtime-config';
 export * from './use-model-store';
-export * from './use-session-sync';
 // Runtime health has three independent layers, each covering a failure mode
 // the others can't see — do not collapse them:
 //   1. Boot readiness is server-truth: `useSession`'s /start resolves
 //      `stage==='ready'` only once the backend reached the daemon and Runtime
 //      answered, and seeds that straight into the connection store. No client
 //      poll is needed (or trustworthy) to *establish* the first connection.
-//   2. In-stream stalls are covered by the SSE heartbeat in
-//      `state/event-stream.ts` (`openEventStream`) — a 15s watchdog that
-//      forces a reconnect if no event arrives, so a stream that goes quiet
-//      recovers on its own.
+//   2. In-stream stalls are covered by ACP stream handling in `useSession`.
 //   3. Neither of those promptly detects the runtime dying *mid-session* or a
 //      network partition: a dead sandbox's SSE connection can hang rather than
 //      error, and the heartbeat only fires once its own timeout elapses. That
@@ -65,16 +51,14 @@ export * from './use-session-sync';
 //      ~30s to surface — traded against not hammering a healthy sandbox with a
 //      tight poll forever.
 export * from './use-runtime-reconnect';
-// The live pending-request store. The SSE event stream writes agent QUESTIONS
-// and PERMISSION requests here (keyed by request id, each carrying sessionID);
-// `useSessionSync` does NOT surface them, so a host that renders interactive
-// prompts must read them from this store.
+// Legacy runtime pending-request store. ACP-native prompts are surfaced through
+// `useSession().acp.envelopes`; this remains exported only for runtime adapter
+// screens that have not yet been rewritten.
 export { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
 } from '../browser/stores/sandbox-connection-store';
-export * from './use-session-prefetch';
 // Relocated from `platform/projects-client/session-sandbox` — it types against
 // react-query's QueryClient, which the framework-free REST layer must not.
 export { prefetchSessionStart } from './prefetch-session-start';

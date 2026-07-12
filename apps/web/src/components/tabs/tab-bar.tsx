@@ -653,10 +653,8 @@ export function TabBar() {
   }, [sessions, sessionsLoading]);
 
   // Prefetch session metadata for all open tabs so switching is instant.
-  // NOTE: Message prefetching was removed — messages are now served from
-  // the Zustand sync store (populated by useSessionSync on mount and kept
-  // live by SSE events). The old message prefetch caused duplicate
-  // /session/{id}/message requests every time tabs changed.
+  // NOTE: Legacy message prefetching was removed — the active session surface
+  // now owns its own transcript stream/fetch path.
   useEffect(() => {
     for (const id of tabOrder) {
       const tab = tabs[id];

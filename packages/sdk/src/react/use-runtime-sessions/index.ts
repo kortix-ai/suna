@@ -5,7 +5,6 @@
 // re-exported here.
 export * from './keys';
 export * from './sessions';
-export * from './messages';
 export * from './agents';
 export * from './tools';
 export * from './projects';

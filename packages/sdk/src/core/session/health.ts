@@ -21,6 +21,7 @@ export type SessionHealthResponse = {
   status?: string;
   runtimeReady?: boolean;
   version?: string;
+  /** Legacy daemon field retained while older sandbox images roll forward. */
   opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;

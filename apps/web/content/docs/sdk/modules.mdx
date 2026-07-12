@@ -226,15 +226,15 @@ talking to and how to reach it, owned by the active session via `useSession`;
 `sync-store` holds the **live thread state** that SSE events stream into.
 
 ```ts
-import { useServerStore, getActiveOpenCodeUrl } from '@kortix/sdk/server-store';
+import { useServerStore, getActiveRuntimeUrl } from '@kortix/sdk/server-store';
 import { useSyncStore } from '@kortix/sdk/sync-store';
 
-const runtimeUrl = getActiveOpenCodeUrl(); // outside React
+const runtimeUrl = getActiveRuntimeUrl(); // outside React
 const messages = useSyncStore((s) => s.messages[sessionId]); // in React
 ```
 
 `server-store` also exports `getSandboxUrlForExternalId`, `getPublicShareUrlForToken`,
-`deriveSubdomainOpts`, `getActiveDbSandboxId`, `getActiveOpenCodeUrl`,
+`deriveSubdomainOpts`, `getActiveDbSandboxId`, `getActiveRuntimeUrl`,
 `getActiveSandboxId`, and `getBackendPort` — the resolution helpers behind
 `getActiveServerUrl()`. There's no "active server" to switch between anymore: an
 older multi-instance registry and server-switching layer were removed, and a

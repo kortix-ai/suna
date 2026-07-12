@@ -61,7 +61,7 @@ export type FileDiff = Omit<import('@kortix/sdk/runtime-client').SnapshotFileDif
 
 /**
  * A message with its pre-resolved parts — the shape returned by
- * `session.messages()`.
+ * a native harness message projection.
  */
 export interface MessageWithParts {
   info: import('@kortix/sdk/runtime-client').Message;

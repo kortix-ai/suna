@@ -81,16 +81,12 @@ import { CompactModal } from '@/features/session/header/compact-modal';
 import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/runtime/use-model-store';
 import { useCreatePty } from '@/hooks/runtime/use-runtime-pty';
-import {
-  useCreateRuntimeSession,
-  useRuntimeMessages,
-} from '@/hooks/runtime/use-runtime-sessions';
+import { useCreateRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   buildWebProxyUrl,
   normalizeExternalInput,
@@ -98,13 +94,10 @@ import {
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
 import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { chalkColors, formatRelativeTime } from '@kortix/shared';
 import { UsersSolid } from '@mynaui/icons-react';
@@ -114,7 +107,6 @@ type PalettePage =
   | 'root'
   | 'agents'
   | 'models'
-  | 'messages'
   | 'projects'
   | 'accounts'
   | 'sessions'
@@ -271,84 +263,6 @@ function FileSearchPage({
               {item.path}
             </span>
           </div>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
-
-function MessagesPage({
-  sessionId,
-  query,
-  onSelect,
-}: {
-  sessionId: string;
-  query: string;
-  onSelect: (messageId: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const { data: messages, isLoading } = useRuntimeMessages(sessionId);
-
-  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
-
-  const items = useMemo(() => {
-    return turns
-      .map((turn) => {
-        const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-        const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
-        return {
-          id: turn.userMessage.info.id,
-          text: stripped,
-        };
-      })
-      .filter((item) => item.text.length > 0);
-  }, [turns]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return items;
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
-  }, [items, query]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-10">
-        <TextShimmer>
-          {tHardcodedUi.raw('componentsCommandPalette.line328JsxTextLoadingMessages')}
-        </TextShimmer>
-      </div>
-    );
-  }
-
-  if (filtered.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="bg-muted/30 flex h-10 w-10 items-center justify-center rounded-full">
-          <MessageCircle className="text-muted-foreground/30 size-4" />
-        </div>
-        <span className="text-muted-foreground/60 text-sm">
-          {query ? `No messages matching "${query}"` : 'No messages in this session'}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <CommandGroup heading={`Messages (${filtered.length})`} forceMount>
-      {filtered.map((item, index) => (
-        <CommandItem
-          key={item.id}
-          value={sanitizeCmdkValue(`message ${index} ${item.text.slice(0, 80)}`)}
-          onSelect={() => onSelect(item.id)}
-        >
-          <MessageCircle className="text-muted-foreground/40 h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-muted-foreground/50 w-6 flex-shrink-0 text-right text-xs tabular-nums">
-            #{index + 1}
-          </span>
-          <span className="flex-1 truncate text-sm">
-            {item.text.length > 80 ? `${item.text.slice(0, 80)}...` : item.text}
-          </span>
         </CommandItem>
       ))}
     </CommandGroup>
@@ -675,12 +589,6 @@ export function CommandPalette() {
         keywords: 'change model llm switch select provider anthropic openai claude gpt',
         targetPage: 'models',
       });
-      items.push({
-        id: 'jump-to-message',
-        label: 'Jump to Message',
-        keywords: 'jump message go scroll navigate find conversation chat',
-        targetPage: 'messages',
-      });
     }
     return items.filter((item) => {
       const haystack = [item.label, item.keywords].join(' ').toLowerCase();
@@ -841,16 +749,6 @@ export function CommandPalette() {
       close();
     },
     [projectId, router, close],
-  );
-
-  const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
-
-  const handleJumpToMessage = useCallback(
-    (messageId: string) => {
-      jumpToMessage(messageId);
-      close();
-    },
-    [jumpToMessage, close],
   );
 
   const detectedUrl = useMemo(() => {
@@ -1225,7 +1123,6 @@ export function CommandPalette() {
     if (page === 'projects') return filteredProjectsList.length;
     if (page === 'accounts') return filteredAccountsList.length;
     if (page === 'sessions') return filteredProjectSessionsList.length;
-    if (page === 'messages') return 0;
     if (!hasQuery) return 0;
     return (
       filteredNavItems.length +
@@ -1251,7 +1148,6 @@ export function CommandPalette() {
     if (page === 'agents') return 'Search agents...';
     if (page === 'models') return 'Search models...';
     if (page === 'files') return 'Search files in this project...';
-    if (page === 'messages') return 'Search messages...';
     if (page === 'projects') return 'Search projects...';
     if (page === 'accounts') return 'Search accounts...';
     if (page === 'sessions') return 'Search sessions...';
@@ -1262,7 +1158,6 @@ export function CommandPalette() {
     if (page === 'agents') return 'Change Agent';
     if (page === 'models') return 'Change Model';
     if (page === 'files') return 'Search Files';
-    if (page === 'messages') return 'Jump to Message';
     if (page === 'projects') return 'Switch Project';
     if (page === 'accounts') return 'Switch Account';
     if (page === 'sessions') return 'Open Session';
@@ -1379,18 +1274,6 @@ export function CommandPalette() {
                                 )?.modelName || currentModelKey.modelID}
                               </span>
                             )}
-                            <ChevronRight className="text-muted-foreground/30 size-3" />
-                          </CommandItem>
-                          <CommandItem
-                            value="suggestion jump to message go scroll navigate"
-                            onSelect={() => goToPage('messages')}
-                          >
-                            <MessageCircle className="size-4" />
-                            <span className="flex-1">
-                              {tHardcodedUi.raw(
-                                'componentsCommandPalette.line1235JsxTextJumpToMessage',
-                              )}
-                            </span>
                             <ChevronRight className="text-muted-foreground/30 size-3" />
                           </CommandItem>
                         </>
@@ -1921,13 +1804,6 @@ export function CommandPalette() {
                 </div>
               ))}
 
-            {page === 'messages' && currentSessionId && (
-              <MessagesPage
-                sessionId={currentSessionId}
-                query={query}
-                onSelect={handleJumpToMessage}
-              />
-            )}
           </CommandList>
         </FadedScrollArea>
 

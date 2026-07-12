@@ -17,7 +17,7 @@
  *                     shown under its trigger in workspace session groupings.
  *
  * Detection is currently title-based — that's what's reliably available
- * on every opencode session record. Exact string formats are set by the
+ * on every session record. Exact string formats are set by the
  * callers that create the session:
  *
  *   ticket-triggers.ts  → `${agent.name} · #${number} ${title}`

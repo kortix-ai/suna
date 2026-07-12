@@ -11,7 +11,6 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
-import { useRuntimeMessages } from '@/hooks/runtime/use-runtime-sessions';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -63,8 +62,6 @@ export const SessionLayout = memo(function SessionLayout({
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
   const booting = !!bootStage;
-
-  const { data: messages } = useRuntimeMessages(sessionId);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. pendingToolNavIndex, focusedToolCallId). Destructuring the whole
@@ -316,7 +313,7 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <SessionActionsPanel sessionId={sessionId} messages={messages} />
+    <SessionActionsPanel sessionId={sessionId} messages={undefined} />
   );
   const panelBody = (
     <div className="relative h-full w-full">

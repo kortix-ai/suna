@@ -47,32 +47,6 @@ export {
 // `KortixMasterIdentity` seam that replaces web's direct `useAuth()` calls.
 export * from './use-kortix-master';
 
-// The send / stash-replay / error-recovery core extracted from apps/web's
-// `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
-// (yet) re-exported by `./runtime`'s explicit barrel list, so re-exported
-// directly here (same reasoning as the other direct re-exports above).
-export {
-  useSessionSend,
-  beginOptimisticSend,
-  abandonOptimisticSend,
-  recoverFromSendFailure,
-  sendAndRecover,
-  applyOptimisticAbort,
-  replayStartStash,
-  type RuntimeMessagesClient,
-  type SendRecoveryOptions,
-  type SendAndRecoverArgs,
-  type SendAndRecoverResult,
-  type StashReplayTimerHandle,
-  type StashReplayTimers,
-  type PreparedStashSend,
-  type StartStashReplayOptions,
-  type StartStashReplayHandle,
-  type UseSessionSendOptions,
-  type SendCallOptions,
-  type UseSessionSendResult,
-} from './use-session-send';
-
 // The headless chat kit — `useChatTurns` (memoized `classifyTurn` over a
 // message list) + `renderParts` (compile-time-exhaustive part -> T
 // dispatcher). Framework-free classification lives in `@kortix/sdk/turns`;

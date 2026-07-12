@@ -49,12 +49,11 @@ export function getSandboxUrlForExternalId(externalId: string): string {
  * `/v1/p/{externalId}/{port}` route. Pure function of the token — no
  * dependency on the active server.
  *
- * The backend blocks the opencode API port (8000) on this route
+ * The backend blocks the runtime API port (8000) on this route
  * (`PUBLIC_SHARE_BLOCKED_PORTS` in `apps/api/src/shared/session-public-shares.ts`)
  * — this only ever reaches a shared preview port or the file share, never a
- * session's opencode `/session`/`/session/:id/message` API.
+ * session's runtime control API.
  */
 export function getPublicShareUrlForToken(token: string, port: number): string {
   return `${getBackendUrl()}/p/public-share/${token}/${port}`;
 }
-

@@ -84,6 +84,9 @@ export { Segmented, FieldRow } from './agent-editor-primitives';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
+const currentBehavior = (block?: AgentConfigBlock | null): RuntimeAgentBehaviorConfig =>
+  block?.behavior ?? block?.opencode ?? {};
+
 function AgentEditorModal({
   projectId,
   agentName,
@@ -143,19 +146,20 @@ function AgentEditorModal({
       return next;
     });
 
-  // Runtime-layer v2 behavior fields still arrive under the compatibility
-  // `opencode` wire key; keep the UI vocabulary runtime-neutral.
+  // Runtime-layer v2 behavior fields use the runtime-neutral `behavior` wire
+  // key. `opencode` is read only as a compatibility alias for older API rows.
   const setRuntimeBehavior = <K extends keyof RuntimeAgentBehaviorConfig>(
     key: K,
     value: RuntimeAgentBehaviorConfig[K],
   ) =>
     setDraft((d) => {
-      const behavior: RuntimeAgentBehaviorConfig = { ...(d.opencode ?? {}) };
+      const behavior: RuntimeAgentBehaviorConfig = { ...currentBehavior(d) };
       if (value === undefined || value === '') delete behavior[key];
       else behavior[key] = value;
       const next = { ...d };
-      if (Object.keys(behavior).length > 0) next.opencode = behavior;
-      else delete next.opencode;
+      delete next.opencode;
+      if (Object.keys(behavior).length > 0) next.behavior = behavior;
+      else delete next.behavior;
       return next;
     });
 
@@ -252,7 +256,7 @@ function AgentEditorModal({
               />
               <RuntimeLayerFields
                 agentName={agentName}
-                behavior={draft.opencode ?? {}}
+                behavior={currentBehavior(draft)}
                 setBehavior={setRuntimeBehavior}
               />
             </div>
@@ -367,22 +371,22 @@ export function AgentConfigEditor({
             {block.runtime}
           </Badge>
         ) : null}
-        {block.opencode?.mode ? (
+        {currentBehavior(block).mode ? (
           <Badge variant="outline" size="xs" className="capitalize">
-            {block.opencode.mode}
+            {currentBehavior(block).mode}
           </Badge>
         ) : null}
-        {block.opencode?.model ? (
+        {currentBehavior(block).model ? (
           <Badge variant="outline" size="xs" className="font-mono">
-            {block.opencode.model}
+            {currentBehavior(block).model}
           </Badge>
         ) : null}
-        {block.opencode?.temperature !== undefined ? (
+        {currentBehavior(block).temperature !== undefined ? (
           <Badge variant="outline" size="xs">
-            temp {block.opencode.temperature}
+            temp {currentBehavior(block).temperature}
           </Badge>
         ) : null}
-        {block.opencode?.hidden ? (
+        {currentBehavior(block).hidden ? (
           <Badge variant="muted" size="xs">
             hidden
           </Badge>

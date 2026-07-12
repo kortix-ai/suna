@@ -296,16 +296,15 @@ global default from the server the first time it resolves.
 
 <Callout type="warn">
   **Internal plumbing.** These are the pieces `useSession` wraps — the SSE provider, message sync,
-  the prompt mutations, and the runtime-session resolver. A chat-focused host uses `useSession` and
+  native runtime readers, and the runtime-session resolver. A chat-focused host uses `useSession` and
   never touches them. They stay exported for hosts that build **beyond chat** (a full IDE — file
-  tree, terminal, git) and for `apps/web`'s own `session-chat`; if you're just rendering a
+  tree, terminal, git); if you're just rendering a
   conversation, reach for `useSession`.
 </Callout>
 
 | hook                                                                                      | composed role                                                                                                                                                                        |
 | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `useSessionSync(sessionId)`                                                               | fetch + live-merge the thread off the sync store                                                                                                                                     |
-| `useSendRuntimeMessage()` · `useAbortRuntimeSession()`                                     | prompt · abort through the active runtime client                                                                                                                                     |
 | `useExecuteRuntimeCommand()`                                                              | run a slash-command                                                                                                                                                                  |
 | `RuntimeEventStreamProvider` / `useRuntimeEventStream()`                                  | open the SSE stream → the stores                                                                                                                                                     |
 | `useCanonicalRuntimeSession({ projectId, sessionId, pinFromStart })`                      | resolve the runtime session id                                                                                                                                                       |

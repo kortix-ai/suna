@@ -284,7 +284,13 @@ export function SessionSiteHeader({
         </div>
       </div>
 
-      <ExportTranscriptModal sessionId={sessionId} open={exportOpen} onOpenChange={setExportOpen} />
+      <ExportTranscriptModal
+        projectId={projectId ?? null}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
       <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
 
       {isProjectSession && (

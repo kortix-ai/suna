@@ -40,7 +40,7 @@ export interface UseQuestionSelfHealOptions {
  * is rendering as running/pending but the pending-request store has nothing
  * for this session, re-hydrate from `question.list()`.
  *
- * This is a LIVE-CONNECTION safety net, distinct from `useRuntimeEventStream`'s
+ * This is a live-connection safety net, distinct from transcript replay.
  * reconnect-gap hydration (which only re-hydrates questions/permissions after
  * an SSE gap >5s): it covers a `question.asked` event being dropped, or racing
  * the `message.part.updated` event that renders the tool as running, while the

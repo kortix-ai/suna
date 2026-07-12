@@ -4,10 +4,10 @@
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
 // (connectors/secrets/skills/kortix_cli/workspace/enabled); the agent's own
-// native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
-// OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
-// color/hidden/permission) plus the prompt itself. This route is the ONE
-// place that merges them into a single wire shape (`block.opencode = {...}`)
+// runtime-native markdown frontmatter + body carries every behavioral field
+// (mode/model/temperature/top_p/steps/variant/color/hidden/permission) plus
+// the prompt itself. This route is the ONE place that merges them into a single
+// wire shape (`block.behavior = {...}`)
 // so the dashboard editor's data binding never has to know two files exist —
 // see agent-editor.tsx. GET reads both; PUT writes governance to kortix.yaml
 // and behavior to the `.md` in ONE atomic commit (commitMultipleFilesToBranch)
@@ -70,10 +70,9 @@ const GrantSetSchema = z.union([
 ]);
 
 // The KORTIX layer — governance only (spec §2.2 redirect). No model, no
-// description, no behavior: those all moved into `opencode` (defined in
-// ../lib/compile-agent-config alongside its canonical KNOWN_BEHAVIOR_KEYS —
-// see that module for why), which this route writes to the `.md`, never to
-// kortix.yaml.
+// description, no behavior: those all moved into `behavior` (defined by
+// ../lib/compile-agent-config's canonical KNOWN_BEHAVIOR_KEYS), which this
+// route writes to the `.md`, never to kortix.yaml.
 const AgentBlockSchema = z
   .object({
     runtime: z.string().min(1).max(200).optional(),
@@ -84,6 +83,7 @@ const AgentBlockSchema = z
     skills: GrantSetSchema.optional(),
     kortix_cli: GrantSetSchema.optional(),
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
+    behavior: OpencodeAgentConfigSchema.optional(),
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
@@ -130,7 +130,7 @@ function mergeFrontmatter(
 }
 
 /** Project the recognized behavior fields out of a `.md`'s parsed
- *  frontmatter, for the GET response's `block.opencode`. */
+ *  frontmatter, for the GET response's `block.behavior`. */
 function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of KNOWN_BEHAVIOR_KEYS) {
@@ -186,13 +186,13 @@ projectsApp.openapi(
     const read = readAgentBlockV2(manifest, agentName);
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
-    let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
+    let block: (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> }) | null = read.block;
     if (read.schemaVersion === 2) {
       const mdPath = agentMarkdownPath(manifest.raw, agentName);
       const { frontmatter, body } = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+      const behavior = pickBehaviorFields(frontmatter);
+      if (body.trim()) behavior.prompt = body;
+      block = { ...(read.block ?? {}), behavior, opencode: behavior };
     }
 
     return c.json({
@@ -329,7 +329,14 @@ projectsApp.openapi(
     // Split the wire body into its native v2/v3 homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
-    const { opencode: opencodeDraft, runtime, agent: nativeAgent, ...governanceRaw } = parsed.data;
+    const {
+      behavior: behaviorDraft,
+      opencode: opencodeDraft,
+      runtime,
+      agent: nativeAgent,
+      ...governanceRaw
+    } = parsed.data;
+    const runtimeBehaviorDraft = behaviorDraft ?? opencodeDraft;
     const governanceBlock: AgentBlockV2 = {};
     for (const [key, value] of Object.entries(governanceRaw)) {
       if (value !== undefined) (governanceBlock as Record<string, unknown>)[key] = value;
@@ -346,9 +353,9 @@ projectsApp.openapi(
     }
 
     if (manifest.schemaVersion === 3) {
-      if (opencodeDraft !== undefined) {
+      if (runtimeBehaviorDraft !== undefined) {
         return c.json({
-          error: 'OpenCode behavior is not edited through kortix.yaml v3. Edit the selected runtime native config directly.',
+          error: 'Runtime behavior is not edited through kortix.yaml v3. Edit the selected runtime native config directly.',
           code: 'native_config_owned',
         }, 400);
       }
@@ -400,13 +407,13 @@ projectsApp.openapi(
     let mdPath: string | null = null;
     let nextFrontmatter: Record<string, unknown> | null = null;
     let nextBody: string | null = null;
-    if (opencodeDraft !== undefined) {
+    if (runtimeBehaviorDraft !== undefined) {
       mdPath = agentMarkdownPath(applied.raw, agentName);
       const existing = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
-      const draftRecord: Record<string, unknown> = { ...opencodeDraft };
+      const draftRecord: Record<string, unknown> = { ...runtimeBehaviorDraft };
       delete draftRecord.prompt;
       nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);
-      nextBody = opencodeDraft.prompt ?? '';
+      nextBody = runtimeBehaviorDraft.prompt ?? '';
 
       const issues: ManifestIssue[] = [];
       validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
@@ -459,7 +466,7 @@ projectsApp.openapi(
     }
 
     const read = readAgentBlockV2(manifest, agentName);
-    const responseOpencode =
+    const responseBehavior =
       nextFrontmatter !== null
         ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
         : undefined;
@@ -468,7 +475,10 @@ projectsApp.openapi(
       agent: agentName,
       schema_version: manifest.schemaVersion,
       block: read.ok
-        ? { ...(read.block ?? {}), ...(responseOpencode ? { opencode: responseOpencode } : {}) }
+        ? {
+            ...(read.block ?? {}),
+            ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}),
+          }
         : governanceBlock,
     });
   },

@@ -3,7 +3,7 @@
  * Ported from web's SessionDiffViewer, adapted for mobile.
  *
  * Features:
- * - Fetches diffs from API (GET /session/:id/diff), falls back to message extraction
+ * - Fetches diffs from the runtime diff API, falls back to already-loaded message extraction
  * - Unified / side-by-side view toggle
  * - Expandable file cards that fill available space
  */

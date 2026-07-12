@@ -870,7 +870,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * updates, session status, permissions/questions, lsp diagnostics, …).
        * A thin facade over the framework-free `openEventStream` primitive
        * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
-       * `@kortix/sdk/react`'s `useRuntimeEventStream`): resolves THIS
+       * `@kortix/sdk/react`'s ACP session stream): resolves THIS
        * handle's own runtime first (`ensureReady()`), then connects a client
        * bound to that runtime URL — never the module-global "active" one, so
        * two session handles on two different sandboxes never cross wires.

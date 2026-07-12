@@ -31,7 +31,6 @@ import {
   stripMarkupForToolOutput,
 } from '@/features/session/tool-renderers-sanitization';
 import { useOcFileOpen } from '@/features/session/use-oc-file-open';
-import { useRuntimeMessages } from '@/hooks/runtime/use-runtime-sessions';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
@@ -5626,7 +5625,7 @@ function TaskTool({ part, forceOpen }: ToolProps) {
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
   // Always load child messages — hook is stable even with empty string (returns nothing)
-  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
+  const childMessages = undefined;
 
   // Collect tool parts from child session for inline activity list
   const childToolParts = useMemo(() => {
@@ -5699,7 +5698,7 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   // Extract child session ID from output text
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
+  const childMessages = undefined;
 
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
@@ -6475,7 +6474,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
 
   const childSessionId: string | undefined = useMemo(() => getChildSessionId(part), [part]);
 
-  const { data: childMessages } = useRuntimeMessages(childSessionId ?? '');
+  const childMessages = undefined;
   const childToolParts = useMemo(() => {
     if (!childMessages) return [];
     return getChildSessionToolParts(childMessages as MessageWithParts[]);

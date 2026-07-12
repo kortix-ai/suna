@@ -62,7 +62,7 @@ export interface UseSessionOptions {
 }
 
 export function useSession(projectId: string, sessionId: string, options: UseSessionOptions = {}) {
-  const { waitMs = 15_000, enabled = true } = options;
+  const { waitMs = 15_000, enabled = true, replayStartStash = true } = options;
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId, sessionId, waitMs),
@@ -103,6 +103,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     runtimeSessionId: startData?.runtime_session_id ?? null,
+    replayStartStash,
     enabled: switched && !protocolError,
   });
   const runtimePhase = useRuntimePhase();

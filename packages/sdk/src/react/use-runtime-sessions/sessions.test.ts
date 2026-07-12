@@ -39,9 +39,8 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 // `client` is swapped per-test via `clientImpl` so each test controls exactly
-// what `client.global.config.get()` / `client.session.messages()` /
-// `client.provider.list()` / `client.session.summarize()` /
-// `client.session.command()` resolve to.
+// what `client.global.config.get()` / `client.provider.list()` /
+// `client.session.summarize()` / `client.session.command()` resolve to.
 let clientImpl: Record<string, unknown> = {};
 mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
@@ -69,8 +68,8 @@ beforeEach(() => {
 });
 
 // ============================================================================
-// useSummarizeRuntimeSession — the 3-tier model-resolution fallback chain
-// (config default → last assistant message → first connected provider/model)
+// useSummarizeRuntimeSession — model-resolution fallback chain
+// (config default → first connected provider/model)
 // ============================================================================
 
 describe('useSummarizeRuntimeSession — model resolution fallback chain', () => {
@@ -107,36 +106,11 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
     expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'openrouter', modelID: 'z-ai/glm-5.2' });
   });
 
-  test('tier 2: falls back to the session\'s last assistant message model when config has none', async () => {
+  test('tier 2: falls back to the first connected provider/model when config has none', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
       global: { config: { get: async () => ({ data: {} }) } },
       session: {
-        messages: async () => ({
-          data: [
-            { info: { role: 'user' } },
-            { info: { role: 'assistant', providerID: 'anthropic', modelID: 'claude-sonnet' } },
-          ],
-        }),
-        summarize: async (args: unknown) => {
-          summarizeArgs = args;
-          return { data: {} };
-        },
-      },
-    };
-    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await mutationFn({ sessionId: 'ses_1' });
-    expect(summarizeArgs).toEqual({ sessionID: 'ses_1', providerID: 'anthropic', modelID: 'claude-sonnet' });
-  });
-
-  test('tier 3: falls back to the first connected provider/model when config and history have none', async () => {
-    let summarizeArgs: unknown;
-    clientImpl = {
-      global: { config: { get: async () => ({ data: {} }) } },
-      session: {
-        messages: async () => ({ data: [] }),
         summarize: async (args: unknown) => {
           summarizeArgs = args;
           return { data: {} };
@@ -174,7 +148,6 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
   test('throws when every tier fails to resolve a model', async () => {
     clientImpl = {
       global: { config: { get: async () => ({ data: {} }) } },
-      session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
@@ -190,8 +163,10 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
     clientImpl = {
       global: { config: { get: async () => { throw new Error('network down'); } } },
       session: {
-        messages: async () => ({ data: [{ info: { role: 'assistant', providerID: 'anthropic', modelID: 'x' } }] }),
         summarize: async (args: unknown) => { summarizeArgs = args; return { data: {} }; },
+      },
+      provider: {
+        list: async () => ({ data: { anthropic: { models: { x: {} } } } }),
       },
     };
     const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
@@ -204,7 +179,6 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
   test('onMutate/onError toggle the compaction store around the send', () => {
     clientImpl = {
       global: { config: { get: async () => ({ data: {} }) } },
-      session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
     const hook = useSummarizeRuntimeSession() as unknown as {
@@ -219,11 +193,11 @@ describe('useSummarizeRuntimeSession — model resolution fallback chain', () =>
 });
 
 // ============================================================================
-// useInitSession — /init command error duck-typing + refetch-on-success.
+// useInitSession — /init command error duck-typing.
 // ============================================================================
 
 describe('useInitSession', () => {
-  test('resolves with the sessionId on success and refetches its messages', async () => {
+  test('resolves with the sessionId on success', async () => {
     clientImpl = { session: { command: async () => ({}) } };
     const hook = useInitSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
@@ -233,7 +207,7 @@ describe('useInitSession', () => {
     expect(result).toBe('ses_1');
 
     hook.onSuccess('ses_1');
-    expect(fakeQueryClient.refetchCalls).toEqual([{ queryKey: runtimeKeys.messages('ses_1') }]);
+    expect(fakeQueryClient.refetchCalls).toEqual([]);
   });
 
   test('extracts a NotFoundError-shaped error message (`.data.message`)', async () => {

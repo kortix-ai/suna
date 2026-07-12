@@ -24,7 +24,7 @@ import {
 } from './preview';
 
 describe('session/health', () => {
-  it('isRuntimeReady reads runtimeReady / opencode / status', () => {
+  it('isRuntimeReady reads runtimeReady / legacy opencode / status', () => {
     expect(isRuntimeReady({ runtimeReady: true })).toBe(true);
     expect(isRuntimeReady({ runtimeReady: false })).toBe(false);
     expect(isRuntimeReady({ opencode: 'ok' })).toBe(true);
