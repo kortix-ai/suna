@@ -38,7 +38,7 @@ export type AuthorizeFn = (
 
 export type BatchProbe = {
   action: string;
-  target: AuthorizeTarget;
+  target: AuthorizeTarget | undefined;
 };
 
 export type BatchProbeResult = {
@@ -51,15 +51,17 @@ export type BatchProbeResult = {
 
 /** Context handed to `onProbeError` when a single probe's `authorize` rejects.
  *  Lets the route handler ship a structured log without this module depending
- *  on the logger (which would pull the @logtail transport into the unit test). */
-export interface BatchProbeErrorContext {
+ *  on the logger (which would pull the @logtail transport into the unit test).
+ *  Declared as a `type` (not `interface`) so it's assignable to the logger's
+ *  `Record<string, unknown>` context param. */
+export type BatchProbeErrorContext = {
   accountId: string;
   action: string;
   resourceType: string | undefined;
   resourceId: string | null;
   error: string;
   errorName: string;
-}
+};
 
 /**
  * Resolve a batch of effective-permission probes, isolating per-probe failures.
@@ -97,7 +99,7 @@ export async function resolveBatchProbes(
       return {
         action: p.action,
         resource_type: resourceTypeForAction(p.action),
-        resource_id: p.target && 'id' in p.target ? p.target.id : null,
+        resource_id: (p.target && 'id' in p.target ? p.target.id : null) ?? null,
         allowed: r.allowed,
         reason: r.reason ?? null,
       } satisfies BatchProbeResult;
@@ -112,14 +114,14 @@ export async function resolveBatchProbes(
       accountId,
       action: p.action,
       resourceType: p.target?.type,
-      resourceId: p.target && 'id' in p.target ? p.target.id : null,
+      resourceId: (p.target && 'id' in p.target ? p.target.id : null) ?? null,
       error: reason?.message ?? String(s.reason),
       errorName: reason?.name ?? 'Error',
     });
     return {
       action: p.action,
       resource_type: resourceTypeForAction(p.action),
-      resource_id: p.target && 'id' in p.target ? p.target.id : null,
+      resource_id: (p.target && 'id' in p.target ? p.target.id : null) ?? null,
       allowed: false,
       reason: 'probe_error',
     } satisfies BatchProbeResult;

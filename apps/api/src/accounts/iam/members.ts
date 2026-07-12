@@ -409,10 +409,7 @@ iamRouter.openapi(
   // get partial results that look successful at first glance.
   type ParsedProbe = {
     action: string;
-    // `target` is always assigned below ({ type: 'account' } or a typed
-    // resource ref), so narrow out the `undefined` from authorize's optional
-    // 4th param to match BatchProbe.target.
-    target: NonNullable<Parameters<typeof authorize>[3]>;
+    target: Parameters<typeof authorize>[3];
   };
   const parsed: ParsedProbe[] = [];
   for (let i = 0; i < rawProbes.length; i++) {
