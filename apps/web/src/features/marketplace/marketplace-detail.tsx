@@ -23,6 +23,7 @@ import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-sl
 import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
+import { MarketplaceFileTree } from './marketplace-file-tree';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
@@ -315,19 +316,7 @@ function ItemSidebar({
       {data.files.length > 0 ? (
         <div className="space-y-2">
           <SectionLabel count={data.files.length}>Files</SectionLabel>
-          <div className="bg-popover max-h-56 overflow-y-auto rounded-md border">
-            <ul className="divide-border divide-y">
-              {data.files.map((file) => (
-                <li
-                  key={file.target}
-                  className="text-foreground/90 truncate px-3 py-2 font-mono text-xs"
-                  title={file.target}
-                >
-                  {file.target}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <MarketplaceFileTree targets={data.files.map((f) => f.target)} />
         </div>
       ) : null}
 
