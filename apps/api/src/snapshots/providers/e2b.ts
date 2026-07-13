@@ -8,6 +8,7 @@ import {
   DEFAULT_MEMORY_GB,
   stageBuildContext,
 } from '../build-context';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -89,13 +90,13 @@ class E2BAdapter implements SandboxProviderAdapter {
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!this.isConfigured()) return 'missing';
     try {
-      if (await Template.exists(snapshotName, connectionOpts())) return 'active';
       const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
       if (!template) return 'missing';
-      const status = String(template.buildStatus ?? '').toLowerCase();
-      if (status === 'ready') return 'active';
-      if (status === 'error') return 'build_failed';
-      return status || 'building';
+      // Template.exists() becomes true when E2B creates the template identity,
+      // before its launchable :default tag exists. Only buildStatus=ready is a
+      // usable snapshot; every non-terminal provider status is canonicalized to
+      // building so the UI keeps polling and the session path falls back cold.
+      return normalizeExistingProviderState(template.buildStatus);
     } catch {
       return 'missing';
     }

@@ -19,6 +19,7 @@ import {
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
 } from '../build-context';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -149,10 +150,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         SNAPSHOT_STATE_TIMEOUT_MS,
         `Daytona snapshot.get(${snapshotName})`,
       );
-      const state = (snap
-        ? String((snap as { state?: string }).state ?? 'missing')
-        : 'missing'
-      ).toLowerCase() as ProviderState;
+      const state = snap
+        ? normalizeExistingProviderState((snap as { state?: string }).state)
+        : 'missing';
       if (state === 'active') {
         snapshotStateCache.set(snapshotName, {
           state,

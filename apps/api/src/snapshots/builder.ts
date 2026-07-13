@@ -304,7 +304,7 @@ async function runInlineBuild(
   const provider = getSandboxProvider(opts.buildProvider ?? template.provider);
 
   // Reap a failed/dead snapshot under the same name so the rebuild starts fresh.
-  if (opts.state === 'error' || opts.state === 'build_failed') {
+  if (opts.state === 'build_failed') {
     await provider.deleteSnapshot(identity.snapshotName);
   }
 
@@ -317,6 +317,7 @@ async function runInlineBuild(
         contentHash: identity.contentHash,
         commitSha: identity.builtFromCommit ?? '',
         source: opts.source,
+        provider: provider.id,
       })
     : null;
 
@@ -414,7 +415,7 @@ export async function deleteSandboxImage(
     }
   }
   return {
-    deleted: before === 'active' || before === 'building' || before === 'pulling',
+    deleted: before === 'active' || before === 'building',
     snapshotName: identity.snapshotName,
     slug: template.slug,
   };
@@ -577,33 +578,61 @@ export async function reconcileStaleBuilds(
     .limit(STALE_BUILD_BATCH);
   if (rows.length === 0) return { checked: 0, closedReady: 0, closedFailed: 0 };
 
-  // Only Daytona today; build-log rows don't carry a provider column, so use
-  // the lone configured adapter. If it's not configured we can't know the true
-  // state, so leave the rows alone rather than mark good builds failed.
-  const provider = getSandboxProvider('daytona');
-  if (!provider.isConfigured()) return { checked: rows.length, closedReady: 0, closedFailed: 0 };
-
   let closedReady = 0;
   let closedFailed = 0;
   for (const row of rows) {
-    let state: ProviderState;
-    try {
-      state = await provider.getSnapshotState(row.snapshotName);
-    } catch {
-      state = 'missing';
-    }
-    if (state === 'active') {
+    const providerIds = buildLogProviderCandidates(row.metadata, config.ALLOWED_SANDBOX_PROVIDERS);
+    const providers = providerIds.flatMap((providerId) => {
+      try {
+        const provider = getSandboxProvider(providerId);
+        return provider.isConfigured() ? [provider] : [];
+      } catch {
+        return [];
+      }
+    });
+    if (providers.length === 0) continue;
+
+    const states = await Promise.all(providers.map(async (provider) => {
+      try {
+        return { provider: provider.id, state: await provider.getSnapshotState(row.snapshotName) };
+      } catch {
+        return { provider: provider.id, state: 'missing' as ProviderState };
+      }
+    }));
+    if (states.some(({ state }) => state === 'active')) {
       await closeBuildLogReady(row.buildId);
       closedReady += 1;
+    } else if (states.some(({ state }) => state === 'building')) {
+      // Provider truth still says this build is in flight. Never turn it into a
+      // false failure merely because a large provider build crossed our stale
+      // row cutoff; a later poll will close it when the provider settles.
+      continue;
     } else {
       await closeBuildLogFailed(
         row.buildId,
-        'Build did not finish — the API process restarted or the build timed out before it completed.',
+        `Build did not finish — provider state: ${states.map(({ provider, state }) => `${provider}=${state}`).join(', ')}.`,
       );
       closedFailed += 1;
     }
   }
   return { checked: rows.length, closedReady, closedFailed };
+}
+
+/**
+ * New build rows record the exact provider in metadata. Historical rows do not,
+ * so reconcile them against every provider enabled in this environment instead
+ * of assuming Daytona.
+ */
+export function buildLogProviderCandidates(
+  metadata: unknown,
+  allowedProviders: readonly string[],
+): string[] {
+  const provider = metadata && typeof metadata === 'object'
+    ? (metadata as Record<string, unknown>).provider
+    : null;
+  return typeof provider === 'string' && provider.trim()
+    ? [provider]
+    : [...new Set(allowedProviders)];
 }
 
 async function openBuildLog(args: {
@@ -614,6 +643,7 @@ async function openBuildLog(args: {
   contentHash: string;
   commitSha?: string;
   source: SnapshotBuildSource;
+  provider: string;
 }): Promise<string | null> {
   try {
     const [row] = await db
@@ -626,7 +656,7 @@ async function openBuildLog(args: {
         snapshotName: args.snapshotName,
         contentHash: args.contentHash,
         status: 'building',
-        metadata: { source: args.source, slug: args.slug },
+        metadata: { source: args.source, slug: args.slug, provider: args.provider },
       })
       .returning({ buildId: projectSnapshotBuilds.buildId });
     return row?.buildId ?? null;
@@ -982,9 +1012,19 @@ export async function ensurePerProjectWarmImage(
   // Idempotency: active image under this (project, tip, runtime) → reuse it.
   // Still reap here — this path also runs when a prior bake's reap failed or a
   // moved-then-restored tip races to active, so it cleans lingering old tips.
-  if ((await provider.getSnapshotState(snapshotName)) === 'active') {
+  const existingState = await provider.getSnapshotState(snapshotName);
+  if (existingState === 'active') {
     await reapOldPerProjectWarm(project.projectId, snapshotName, buildProvider);
     return { snapshotName, tip, built: false, provider: buildProvider };
+  }
+  if (existingState === 'building') {
+    // Another API replica already owns this provider build. Do not issue a
+    // duplicate same-name build; session-start will use the cold base image
+    // until the provider reports the warm template as active.
+    return { snapshotName, tip, built: false, provider: buildProvider };
+  }
+  if (existingState === 'build_failed') {
+    await provider.deleteSnapshot(snapshotName).catch(() => {});
   }
 
   const warmRepo = await resolveWarmRepoContext(project);
@@ -998,6 +1038,7 @@ export async function ensurePerProjectWarmImage(
         contentHash: baseIdentity.contentHash,
         commitSha: tip,
         source: opts.source ?? 'manual',
+        provider: buildProvider,
       })
     : null;
 

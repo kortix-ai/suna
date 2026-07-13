@@ -95,7 +95,33 @@ describe('E2B template adapter', () => {
 
   test('reports a ready E2B template through the common snapshot state contract', async () => {
     templateExists = true;
+    globalThis.fetch = mock(async () => Response.json([
+      {
+        templateID: 'tpl-ready',
+        names: ['team/kortix-e2b-template:default'],
+        aliases: ['kortix-e2b-template'],
+        buildStatus: 'ready',
+      },
+    ])) as unknown as typeof fetch;
     expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('active');
+  });
+
+  test('does not report an E2B template as active until its default tag is ready', async () => {
+    // E2B exposes the template identity through Template.exists() as soon as a
+    // build starts, before the :default tag can actually launch a sandbox. The
+    // live session path must follow buildStatus, otherwise a concurrent session
+    // selects the half-built template and E2B rejects it with a 404.
+    templateExists = true;
+    globalThis.fetch = mock(async () => Response.json([
+      {
+        templateID: 'tpl-building',
+        names: ['team/kortix-e2b-template'],
+        aliases: ['kortix-e2b-template'],
+        buildStatus: 'building',
+      },
+    ])) as unknown as typeof fetch;
+
+    expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('building');
   });
 
   test('lists and deletes only the matching E2B template identity', async () => {

@@ -23,6 +23,7 @@ import {
   KORTIX_ENTRYPOINT,
 } from '../build-context';
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -63,16 +64,6 @@ interface PlatinumTemplate {
   id: string;
   name?: string;
   state?: string;
-}
-
-/** Platinum template state → the adapter's ProviderState vocabulary. */
-function mapState(state: string | undefined): ProviderState {
-  switch ((state ?? '').toLowerCase()) {
-    case 'ready': return 'active';
-    case 'building': return 'building';
-    case 'failed': return 'build_failed';
-    default: return 'missing'; // deprecated / absent / unknown
-  }
 }
 
 async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
@@ -203,7 +194,8 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!isPlatinumConfigured()) return 'missing';
     try {
-      return mapState((await findTemplateByName(snapshotName))?.state);
+      const template = await findTemplateByName(snapshotName);
+      return template ? normalizeExistingProviderState(template.state) : 'missing';
     } catch {
       return 'missing';
     }

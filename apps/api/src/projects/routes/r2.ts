@@ -343,7 +343,8 @@ projectsApp.openapi(
 // ─── Sandbox templates ─────────────────────────────────────────────────────
 // One platform-default image, optionally extended by `sandbox: templates:` entries
 // in kortix.yaml. Session boot is stateless: it computes the expected snapshot
-// name from the resolved template, asks Daytona if it exists, builds if not.
+// name from the resolved template, asks the selected provider if it is launch
+// ready, and builds it there if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
 // consulted by the boot path.
 
