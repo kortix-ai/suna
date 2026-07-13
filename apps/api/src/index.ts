@@ -35,6 +35,7 @@ import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -790,6 +791,23 @@ app.onError((err, c) => {
   const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
   if (isAbort && isSandboxProxy) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
+  }
+
+  // Platinum auto-stops idle microVMs natively; while a box is stopped, POST
+  // /:id/expose answers `409 sandbox_not_running`. That is an EXPECTED,
+  // transient state, not a 500 — the caller either wakes the box and retries
+  // (preview proxy) or the client retries (transcript / lease-discover). It
+  // must NOT page Sentry, so the typed error is classified out of
+  // captureException and surfaced as a retryable 503 + Retry-After (mirroring
+  // the request-deadline 503 pattern). Other Platinum failures still throw a
+  // generic Error and fall through to the generic capture below. See
+  // shared/platinum.ts PlatinumSandboxNotRunningError.
+  if (isPlatinumSandboxNotRunningError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
+      method, path, errorType: 'PlatinumSandboxNotRunningError',
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
   }
 
   if (err instanceof BillingError) {
