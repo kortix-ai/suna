@@ -8,27 +8,23 @@
  * and one plain sentence saying what will show up here. Nothing technical is
  * visible until the user asks for it.
  *
- * Two shapes:
- * - `drillIn` — chevron points right, the header navigates away (Progress
- *   opens the step list). There is no in-place body.
- * - default — chevron rotates down, the header toggles an in-place body
- *   (Outputs / Context).
+ * The chevron rotates down and the header toggles an in-place body (Outputs /
+ * Context). Progress is the odd one out — it navigates to a full-height step
+ * list instead of expanding in place, so it hand-rolls its own row rather
+ * than using this shell (see `ProgressCard`).
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 export interface PanelCardProps {
   title: string;
   count?: number;
-  /** Chevron points right and the header is a plain navigation button (Progress). No in-place body. */
-  drillIn?: boolean;
-  onOpen?: () => void;
   children?: ReactNode;
   /** Soft placeholder art shown above `emptyText` — the "promise" state. */
   emptyArt?: ReactNode;
@@ -71,8 +67,6 @@ function CardTitleRow({
 export function PanelCard({
   title,
   count,
-  drillIn = false,
-  onOpen,
   children,
   emptyArt,
   emptyText,
@@ -89,20 +83,6 @@ export function PanelCard({
   useEffect(() => {
     if (defaultExpanded) setExpanded(true);
   }, [defaultExpanded]);
-
-  if (drillIn) {
-    return (
-      <div className="border-border bg-popover overflow-hidden rounded-md border">
-        <button type="button" onClick={onOpen} className={cn(HEADER_CLASS, 'cursor-pointer')}>
-          <CardTitleRow
-            title={title}
-            count={count}
-            chevron={<ChevronRight className="text-muted-foreground size-4 shrink-0" />}
-          />
-        </button>
-      </div>
-    );
-  }
 
   return (
     <Disclosure
