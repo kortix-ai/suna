@@ -3,7 +3,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
@@ -16,6 +16,7 @@ import {
   parseFilter,
   scimAudit,
   scimRouter,
+  userIdByEmail,
 } from './app';
 
 /**
@@ -49,13 +50,18 @@ async function addGroupMembersOrDeferInvites(
     await db.insert(accountGroupMembers).values(rows).onConflictDoNothing();
   }
 
-  // Anything not a real member may be a pending invite (SCIM id = invite_id) —
-  // record the group on the invite so it lands when they accept.
+  // Anything not a real member may be a pending invite (SCIM id = invite_id).
+  // The IdP caches that id forever, but the person can BECOME a member through
+  // a different door — SSO JIT auto-create — without ever "accepting" the
+  // invite. So resolve each invite's EMAIL to a live member first and add them
+  // directly; only park on the invite when the person truly isn't in yet.
   const unmatched = memberValues.filter((v) => !memberSet.has(v));
   if (unmatched.length === 0) return;
   const invites = await db
     .select({
       inviteId: accountInvitations.inviteId,
+      email: accountInvitations.email,
+      acceptedAt: accountInvitations.acceptedAt,
       bootstrapGrants: accountInvitations.bootstrapGrants,
     })
     .from(accountInvitations)
@@ -63,10 +69,37 @@ async function addGroupMembersOrDeferInvites(
       and(
         eq(accountInvitations.accountId, accountId),
         inArray(accountInvitations.inviteId, unmatched),
-        isNull(accountInvitations.acceptedAt),
       ),
     );
   for (const inv of invites) {
+    const resolvedUserId = await userIdByEmail(inv.email, accountId);
+    let resolvedMemberUserId: string | null = null;
+    if (resolvedUserId) {
+      const [member] = await db
+        .select({ userId: accountMembers.userId })
+        .from(accountMembers)
+        .where(
+          and(
+            eq(accountMembers.accountId, accountId),
+            eq(accountMembers.userId, resolvedUserId),
+          ),
+        )
+        .limit(1);
+      resolvedMemberUserId = member?.userId ?? null;
+    }
+
+    const action = resolveInviteMemberAction({
+      accepted: inv.acceptedAt !== null,
+      resolvedMemberUserId,
+    });
+    if (action === 'add-member' && resolvedMemberUserId) {
+      await db
+        .insert(accountGroupMembers)
+        .values({ groupId, userId: resolvedMemberUserId })
+        .onConflictDoNothing();
+      continue;
+    }
+    if (action !== 'park') continue;
     const existing = inv.bootstrapGrants ?? [];
     if (existing.some((g) => 'group_id' in g && g.group_id === groupId)) continue;
     await db
@@ -74,6 +107,27 @@ async function addGroupMembersOrDeferInvites(
       .set({ bootstrapGrants: [...existing, { group_id: groupId }] })
       .where(eq(accountInvitations.inviteId, inv.inviteId));
   }
+}
+
+/**
+ * Pure decision for a SCIM member value that matched an invitation. Exported
+ * for unit tests.
+ *
+ *  - the person is ALREADY a member (SSO JIT or accepted invite) → add them
+ *    to the group directly; parking would strand the membership because JIT
+ *    never fires the invite-acceptance path.
+ *  - truly pending (no member row, not accepted) → park on the invite; it
+ *    materializes at first sign-in.
+ *  - accepted but no member row (member since removed) → skip; re-adding a
+ *    removed member is a user-provisioning decision, not a group PATCH's.
+ */
+export function resolveInviteMemberAction(args: {
+  accepted: boolean;
+  resolvedMemberUserId: string | null;
+}): 'add-member' | 'park' | 'skip' {
+  if (args.resolvedMemberUserId) return 'add-member';
+  if (!args.accepted) return 'park';
+  return 'skip';
 }
 
 // ─── Groups ───────────────────────────────────────────────────────────────
