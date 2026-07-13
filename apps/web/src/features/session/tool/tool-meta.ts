@@ -13,7 +13,7 @@ import type { ToolPart } from '@/ui';
 export const CONTEXT_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
 
 /** Normalize `oc-foo_bar` → `foo_bar`, `foo-bar` → `foo_bar`. */
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
   return name.replace(/^oc-/, '').replace(/-/g, '_');
 }
 

@@ -6,6 +6,9 @@ export const ToolRegistry = {
   register(name: string, component: ToolComponent) {
     registry.set(name, component);
   },
+  keys(): string[] {
+    return Array.from(registry.keys());
+  },
   get(name: string): ToolComponent | undefined {
     const candidates = new Set<string>();
     const add = (value?: string | null) => {
