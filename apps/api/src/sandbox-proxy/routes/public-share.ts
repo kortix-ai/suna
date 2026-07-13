@@ -111,6 +111,16 @@ async function forwardPublicShare(c: any, args: {
   if (args.share.resourceType === 'file' && !VIEW_METHODS.has(method)) {
     return c.json({ error: 'This public share is view-only' }, 405);
   }
+  // A view-mode PREVIEW share must also be view-only: without this gate a holder
+  // of a `mode:'view'` preview link could POST/PUT/DELETE to the sandboxed
+  // preview app. Mirrors the file branch above. See SSR-PV1 (weekly pentest #4).
+  if (
+    args.share.resourceType === 'preview' &&
+    args.share.mode === 'view' &&
+    !VIEW_METHODS.has(method)
+  ) {
+    return c.json({ error: 'This public share is view-only' }, 405);
+  }
 
   const sandbox = await loadSandbox(args.share.externalId!);
   if (!sandbox) return c.json({ error: 'Sandbox not found' }, 404);
