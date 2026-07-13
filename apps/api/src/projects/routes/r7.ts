@@ -1263,6 +1263,26 @@ projectsApp.openapi(
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
   }
 
+  // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
+  // deleteSession() is the only legitimate writer; they are consumed by
+  // isSessionVisibleTo (r7.ts:488 — hides the session from every member's
+  // list), the continue-session guard (session-lifecycle/engine.ts:236 —
+  // returns 'no-session' so queued Slack/trigger follow-ups 404), and the
+  // sandbox reaper (sandbox-reaper.ts:477 — tombstones the live box).
+  // Letting a client forge either via PATCH lets any project member hide
+  // another member's session, block its follow-ups, and trip the reaper.
+  // See SSR-7 (weekly pentest run #4).
+  const SERVER_MANAGED_METADATA_KEYS = ['deletedAt', 'deletedBy'];
+  const metadataInput = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+    ? (body.metadata as Record<string, unknown>)
+    : null;
+  if (metadataInput) {
+    const forgedKey = SERVER_MANAGED_METADATA_KEYS.find((k) => hasOwn(metadataInput, k));
+    if (forgedKey) {
+      return c.json({ error: `metadata key is server-managed: ${forgedKey}` }, 400);
+    }
+  }
+
   const visible = await loadVisibleSession(loaded, sessionId);
   if (!visible) return c.json({ error: 'Not found' }, 404);
   const existing = visible.row;
@@ -1276,9 +1296,7 @@ projectsApp.openapi(
   // and reverts the session to its auto title.
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
-  const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
-    ? body.metadata as Record<string, unknown>
-    : null;
+  const metadata = metadataInput;
 
   if (hasNameField || metadata) {
     const nextMetadata: Record<string, unknown> = {
