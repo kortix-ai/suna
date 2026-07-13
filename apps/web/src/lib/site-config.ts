@@ -4,15 +4,12 @@ export type NavSubLink = {
 };
 
 export type NavLink =
-  | { id: number; name: string; href: string }
-  | { id: number; name: string; href: NavSubLink[] };
+  { id: number; name: string; href: string } | { id: number; name: string; href: NavSubLink[] };
+
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
 export const siteConfig = {
-  url:
-    process.env.KORTIX_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_URL ||
-    'http://localhost:3000',
+  url: CANONICAL_ORIGIN,
   nav: {
     links: [
       { id: 1, name: 'Product', href: '/' },
