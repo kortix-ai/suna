@@ -91,5 +91,5 @@ action = "block"            # always_run | require_approval | block
 Sensitive connectors (email, files, secrets-bearing) default every action to `require_approval` unless a policy explicitly opens it up.
 
 <Callout title="Under the hood">
-Every session gets a `kortix-executor` MCP server and a scoped Executor token — the agent discovers tools through it (`connectors` → `discover` → `describe` → `call`), and each `call` is brokered by the Kortix API, which resolves the credential server-side, enforces the grant and policies, runs it, and audits it. The agent never holds third-party credentials. Credentials are shared at the project level — no per-user BYO-credential mode today.
+Every session gets a `kortix-executor` MCP server and a scoped Executor token — the agent discovers tools through it (`connectors` → `discover` → `describe` → `call`), and each `call` is brokered by the Kortix API, which resolves the credential server-side, enforces the grant and policies, runs it, and audits it. The agent never holds third-party credentials. Credentials live in project-owned **connection profiles**: one default profile per connector, plus optional additional profiles that a session can bind explicitly per connector. There is no per-user BYO-credential mode today.
 </Callout>
