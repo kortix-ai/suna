@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 
 /**
  * Standardized search bar for page-level search/filter.
- * Use on workspace, service-manager, connectors, tunnel, scheduled-tasks, deployments, etc.
+ * Use on workspace, service-manager, connectors, tunnel, scheduled-tasks, etc.
  */
 function PageSearchBar({
   value,

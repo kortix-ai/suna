@@ -137,9 +137,6 @@ Pattern can clone the project-level OAuth device flow already in
 | `kortix triggers ls`                            | List triggers                                                        | `GET /v1/projects/:id/triggers`                                     |
 | `kortix triggers fire <slug>`                   | Manually fire                                                        | `POST /v1/projects/:id/triggers/:slug/fire`                         |
 | `kortix triggers enable/disable <slug>`         | Flip `enabled` in manifest                                           | `PATCH /v1/projects/:id/triggers/:slug`                             |
-| `kortix apps ls [--remote]`                     | Local from manifest, or `--remote` from API                          | `GET /v1/projects/:id/apps`                                         |
-| `kortix apps deploy <slug>`                     | Trigger deploy                                                       | `POST /v1/projects/:id/apps/:slug/deploy`                           |
-| `kortix apps logs <slug> [-f]`                  | Tail deploy logs                                                     | `GET /v1/projects/:id/apps/:slug/logs`                              |
 | `kortix env ls/pull/push`                       | Alias of `kortix secrets` plus dotenv import/export                  | same as secrets                                                     |
 
 Conventions:

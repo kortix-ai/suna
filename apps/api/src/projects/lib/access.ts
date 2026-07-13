@@ -321,7 +321,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
 // Maps the high-level project access action onto the IAM action key
 // the engine recognises. Keep this narrow — these three labels cover
 // every gate this file uses; bespoke actions (project.trigger.fire,
-// project.deploy, project.secrets.write, etc.) should call authorize()
+// project.trigger.create, project.secret.write, etc.) should call authorize()
 // directly with the exact action.
 
 export function iamActionForProjectAccess(action: ProjectAccessAction): string {

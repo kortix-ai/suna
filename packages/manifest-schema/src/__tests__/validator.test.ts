@@ -481,16 +481,16 @@ base_url = "https://example.com"
   });
 });
 
-describe('validateManifest — [[apps]]', () => {
-  test('source.type must be git or tar', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[apps]]
-slug = "site"
-  [apps.source]
-  type = "ftp"
-`);
-    expect(errorPaths).toContain('apps[0].source.type');
+describe('validateManifest — retired hosted apps section', () => {
+  test('rejects the removed section in both manifest versions', () => {
+    expect(summarize('kortix_version = 1\n[[apps]]\nslug = "site"').errorPaths).toContain('apps');
+    const v2 = validateManifest(
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site',
+      'yaml',
+    );
+    expect(v2.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toContain(
+      'apps',
+    );
   });
 });
 
@@ -542,11 +542,6 @@ describe('validateManifest — input tolerance (mirrors runtime parser)', () => 
     ).toEqual([]);
   });
 
-  test('app enabled accepts coercible values', () => {
-    expect(
-      connectorErrors(`[[apps]]\nslug = "s"\nenabled = "yes"\n  [apps.source]\n  type = "git"`),
-    ).not.toContain('apps[0].enabled');
-  });
 });
 
 describe('formatIssues', () => {

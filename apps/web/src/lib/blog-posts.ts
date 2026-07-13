@@ -487,6 +487,159 @@ const beyondTheChatBox: BlogPostEntry = {
   ],
 };
 
+const secureAiAgentToolAccess: BlogPostEntry = {
+  slug: 'secure-ai-agent-tool-access',
+  title: 'How to give AI agents tool access safely',
+  description:
+    'How to give AI agents production tool access without raw API keys: scoped connectors, approval policies, server-side credentials, and reviewed work.',
+  date: '2026-07-07',
+  author: 'team',
+  cover: '/banner.png',
+  tags: ['Security', 'Connectors', 'Enterprise'],
+  readingTime: 7,
+  blocks: [
+    {
+      type: 'lead',
+      text: 'The moment an AI agent can use tools, it stops being a chat feature and becomes production infrastructure. It can read customer records, draft emails, open pull requests, query billing, post in Slack, or touch an internal API. At that point the hard question is not “can the model call the tool?” It is **who gave it access, how narrow is that access, what happens before a risky action runs, and what audit trail remains afterward?**',
+    },
+    {
+      type: 'p',
+      text: 'Kortix was built around that boundary. Tool access does not belong in a prompt and raw credentials do not belong in an agent sandbox. In Kortix, connections are part of the project operating layer: declared as files, brokered server-side, granted per agent, governed by policy, and reviewed when durable work changes the company. If you want the larger architecture first, read [Introducing Kortix](/blog/introducing-kortix) or the [company OS post](/blog/ai-transformation-company-os).',
+    },
+    {
+      type: 'p',
+      text: 'The rest of the market is converging on the same lesson. [Auth0](https://auth0.com/blog/api-key-security-for-ai-agents) calls out over-privileged tokens, prompt-injection exposure, and missing audit trails as common risks when teams hand API keys to agents. [WorkOS](https://workos.com/blog/ai-agent-credentials) argues agents need their own scoped, revocable credentials instead of borrowing a user’s full session. [Promptfoo’s OWASP Agentic AI summary](https://www.promptfoo.dev/docs/red-team/owasp-agentic-ai) lists Tool Misuse and Identity and Privilege Abuse as core agentic risks. The pattern is clear: agent security is mostly tool security.',
+    },
+    { type: 'h2', text: 'Chat is harmless until it touches systems' },
+    {
+      type: 'p',
+      text: 'A model drafting text in a window has a small blast radius. A model with connected tools has the blast radius of those tools. That is not a reason to keep agents powerless; powerless agents do not run companies. It is a reason to treat the connector layer as seriously as you treat IAM, secrets, and production deploys.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**A support agent** may need to read tickets and invoices, but should not be able to refund money without approval.',
+        '**A finance agent** may need to pull Stripe, bank, and warehouse data, but should not be able to send vendor payments from the same path.',
+        '**A recruiting agent** may need to enrich candidates and draft outreach, but should not send messages without a human approving the final copy.',
+        '**An engineering agent** may need GitHub, Linear, CI, and preview access, but should land work through a reviewed change request instead of mutating main directly.',
+      ],
+    },
+    {
+      type: 'callout',
+      text: 'The control plane cannot be “the prompt told the agent to be careful.” The control plane has to be outside the model.',
+    },
+    { type: 'h2', text: 'The five rules of safe tool access' },
+    {
+      type: 'p',
+      text: 'A production agent platform needs five layers before you can comfortably connect real company systems:',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**Keep credentials out of the sandbox.** The agent should never receive a third-party API key unless the task truly requires direct process-level access. Connector credentials should be resolved server-side and injected into the upstream request, not into model context.',
+        '**Grant tools per agent.** Connecting Slack, Gmail, Stripe, or GitHub to a project is not the same as letting every agent call it. The support agent and release agent need different reach.',
+        '**Gate individual actions.** Read operations, write operations, deletes, sends, payments, and admin changes should not share one permission bit. Tool names need policy: always run, require approval, or block.',
+        '**Make risky calls human-reviewable.** A good agent can prepare the exact action and evidence. The platform should pause at the boundary where a human decision is required.',
+        '**Route durable change through review.** If the agent edits the operating layer — agents, skills, triggers, memory, policies, or code — that work should be a diff someone can review, merge, and roll back.',
+      ],
+    },
+    { type: 'h2', text: 'How Kortix models a connector' },
+    {
+      type: 'p',
+      text: 'Kortix connections are documented in [Connecting your tools](/docs/guides/connecting-tools). A connector can be a one-click Pipedream app, a remote MCP server, an OpenAPI or GraphQL API, a raw HTTP API, a channel such as Slack, or a connected computer. The definition lives with the project; the credential lives on the platform. The agent sees a tool catalog, not a pile of secrets.',
+    },
+    {
+      type: 'code',
+      code: `connectors:
+  - slug: stripe
+    provider: openapi
+    spec: https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json
+    policies:
+      - match: "*.get*"
+        action: always_run
+      - match: "*.create*"
+        action: require_approval
+      - match: "*.delete*"
+        action: block
+
+agents:
+  support:
+    connectors: [plain, stripe]
+    secrets: none
+    kortix_cli: none
+
+  release-bot:
+    connectors: [github, vercel]
+    kortix_cli: [project.cr.open]`,
+    },
+    {
+      type: 'p',
+      text: 'That example is deliberately boring. Boring is the point. You should be able to answer “what can this agent call?” by reading the project files, not by reverse-engineering a prompt or inspecting a live process. The [manifest reference](/docs/reference/manifest#connectors--connectors) defines connector policies and the [agent governance section](/docs/reference/manifest#agents-v2) defines per-agent grants.',
+    },
+    { type: 'h2', text: 'Server-side credentials change the failure mode' },
+    {
+      type: 'p',
+      text: 'When credentials sit in environment variables inside the agent runtime, every prompt-injection bug, logging bug, file-read bug, and subprocess bug becomes a possible credential leak. When credentials are brokered server-side, the agent can ask to call a tool, but the platform decides whether the call is allowed, resolves the credential, executes the upstream request, and records what happened.',
+    },
+    {
+      type: 'p',
+      text: 'That is the model behind the Kortix Executor. Every session gets a scoped Executor token. The agent discovers tools, describes their schemas, and calls them through the Kortix API. The gateway enforces the project grant and connector policy, resolves credentials outside the sandbox, runs the request, and audits the call. The [connections guide](/docs/guides/connecting-tools) is explicit: the agent never holds third-party credentials.',
+    },
+    {
+      type: 'callout',
+      text: 'A scoped tool token is not just safer than a raw API key. It also makes the audit trail meaningful: agent identity, tool name, input boundary, policy decision, approval state, and upstream result can all be tied together.',
+    },
+    { type: 'h2', text: 'The dangerous pattern to delete' },
+    {
+      type: 'p',
+      text: 'The common early pattern is understandable: put `STRIPE_SECRET_KEY`, `GITHUB_TOKEN`, `SLACK_BOT_TOKEN`, and a dozen other keys into `.env`, start the agent, and hope the prompt keeps it in bounds. That works for a demo. It is the wrong shape for a company.',
+    },
+    {
+      type: 'ul',
+      items: [
+        '**It is too broad.** The key usually carries every permission the integration owner had, not the minimum action the agent needs.',
+        '**It is hard to attribute.** Downstream systems see the shared key, not the agent, session, person, or approval that caused the call.',
+        '**It is hard to revoke safely.** Rotating a shared key breaks every workflow using it; leaving it in place keeps the blast radius large.',
+        '**It hides policy in code and prompts.** Security reviewers need declarative grants and logs, not “the agent instructions say don’t delete things.”',
+      ],
+    },
+    { type: 'h2', text: 'A quick audit for your agent stack' },
+    {
+      type: 'p',
+      text: 'Before you connect agents to production systems, ask these questions:',
+    },
+    {
+      type: 'ul',
+      items: [
+        'Can I list every external system this agent can reach without opening the agent prompt?',
+        'Can I give a sales agent CRM read access without also giving it billing write access?',
+        'Can I block deletes, require approval for sends, and allow safe reads on the same connector?',
+        'Can I see which person, agent, session, and policy decision caused a tool call?',
+        'Can I revoke one agent’s reach without rotating a shared key that breaks other workflows?',
+        'Can the operating layer move from cloud to VPC or on-prem without rewriting the tool model?',
+      ],
+    },
+    {
+      type: 'p',
+      text: 'If the answer is no, you may still have a useful agent prototype. You do not yet have a secure AI command center.',
+    },
+    { type: 'h2', text: 'Why this is a company OS problem' },
+    {
+      type: 'p',
+      text: 'Safe tool access is not a standalone feature. It only works when it sits beside the rest of the company operating layer: memory, agents, skills, triggers, secrets, policies, sandboxes, and change requests. The connector grant says what the agent may touch. The sandbox limits where it runs. The policy gate decides which calls need approval. The change request records durable changes as a diff. The repo keeps the whole thing owned and reviewable.',
+    },
+    {
+      type: 'p',
+      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more integrations. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
+    },
+    {
+      type: 'cta',
+      title: 'Connect the tools, keep the keys out of the agent.',
+      body: 'Start with one workflow, grant only the connectors it needs, gate risky actions, and run the work from a repo your company owns.',
+    },
+  ],
+};
+
 const aiTransformationCompanyOs: BlogPostEntry = {
   slug: 'ai-transformation-company-os',
   title: 'AI transformation needs a company OS',
@@ -647,6 +800,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
 };
 
 export const BLOG_POSTS: BlogPostEntry[] = [
+  secureAiAgentToolAccess,
   aiTransformationCompanyOs,
   kortixVsClaudeCowork,
   personalAgentsVsCompanyOs,

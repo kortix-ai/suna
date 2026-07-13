@@ -175,7 +175,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   <TableHead>Platform</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Bot</TableHead>
-                  <TableHead className="w-[120px]">
+                  <TableHead className="w-[1%] whitespace-nowrap text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -208,7 +208,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   <TableHead>Platform</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Workspace</TableHead>
-                  <TableHead className="w-[120px]">
+                  <TableHead className="w-[1%] whitespace-nowrap text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -560,7 +560,16 @@ function SlackChannelRow({
         )}
       </TableCell>
       <TableCell className="text-muted-foreground text-sm">
-        {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
+        <span
+          className="block max-w-[240px] truncate"
+          title={
+            connected
+              ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined)
+              : undefined
+          }
+        >
+          {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
+        </span>
       </TableCell>
       <TableCell>
         {!canWrite ? null : connected ? (
@@ -1090,7 +1099,12 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
         )}
       </TableCell>
       <TableCell className="text-muted-foreground text-sm">
-        {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
+        <span
+          className="block max-w-[240px] truncate"
+          title={connected ? (install?.teamName ?? install?.tenantId ?? undefined) : undefined}
+        >
+          {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
+        </span>
       </TableCell>
       <TableCell>
         {!canWrite ? null : connected ? (
@@ -1184,7 +1198,12 @@ function EmailChannelRow({
         </TableCell>
         <TableCell className="text-muted-foreground text-sm">
           {connected ? (
-            <code className="text-foreground font-mono text-xs">{installation?.email ?? '—'}</code>
+            <code
+              className="text-foreground block max-w-[240px] truncate font-mono text-xs"
+              title={installation?.email ?? undefined}
+            >
+              {installation?.email ?? '—'}
+            </code>
           ) : (
             '—'
           )}

@@ -430,24 +430,6 @@ a meeting bot.
 | `meet.setBotName(name)`                                     | rename the meeting bot                                 |
 | `meet.speak(botId, text, voice?)`                           | make the bot speak text in a live meeting              |
 
-### `p.apps` — deployments
-
-The `/projects/:id/apps/*` family — deploy a service out of the project's repo.
-
-| method                        | what             |
-| ----------------------------- | ---------------- |
-| `list()`                      | deployed apps    |
-| `create(input)`               | define a new app |
-| `update(slug, input)`         | edit its config  |
-| `remove(slug)`                | delete it        |
-| `deploy(slug)` · `stop(slug)` | deploy · stop    |
-| `logs(slug)`                  | its logs         |
-
-<Callout type="warn">
-  `apps.updateConfig(input)` still exists for parity with the underlying client but is
-  **deprecated** — use `p.updateExperimentalFeature('apps', enabled)` instead.
-</Callout>
-
 ### `p.updateExperimentalFeature` — feature flags
 
 `p.updateExperimentalFeature(feature, enabled)` — toggle an experimental feature

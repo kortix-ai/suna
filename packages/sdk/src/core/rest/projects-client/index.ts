@@ -22,7 +22,6 @@ export * from './agent-config';
 export * from './billing';
 export * from './channels';
 export * from './gateway';
-export * from './apps';
 export * from './transcription';
 export * from './review';
 export * from './sandbox-shares';

@@ -8,17 +8,38 @@ import { ProjectManifestUpgradeAlertView } from './project-manifest-upgrade-aler
 // needs a SidebarProvider context around it — same shell the sidebar's own
 // tests use. `defaultOpen` expands the disclosure so its body (only mounted
 // while open) is present in the static markup.
+//
+// The disclosure body is motion-backed; motion's SSR path treats a truthy
+// `globalThis.window` as "in a browser" and calls `window.addEventListener`.
+// Other unit tests in this suite stub `window`/`document` with bare objects
+// (no `addEventListener`) and, under bun's shared-process runner, one can still
+// be ambient when we render here — turning the SSR into a
+// `target.addEventListener is not a function` crash. Render in a hermetic
+// no-DOM state (the real SSR condition) and restore, so this file is immune to
+// whatever ambient globals a sibling test left behind.
 function render(props: {
   visible: boolean;
   pending: boolean;
   onMigrate: () => void;
   defaultOpen?: boolean;
 }) {
-  return renderToStaticMarkup(
-    <SidebarProvider defaultOpen>
-      <ProjectManifestUpgradeAlertView {...props} />
-    </SidebarProvider>,
-  );
+  const g = globalThis as { window?: unknown; document?: unknown };
+  const hadWindow = 'window' in g;
+  const hadDocument = 'document' in g;
+  const prevWindow = g.window;
+  const prevDocument = g.document;
+  delete g.window;
+  delete g.document;
+  try {
+    return renderToStaticMarkup(
+      <SidebarProvider defaultOpen>
+        <ProjectManifestUpgradeAlertView {...props} />
+      </SidebarProvider>,
+    );
+  } finally {
+    if (hadWindow) g.window = prevWindow;
+    if (hadDocument) g.document = prevDocument;
+  }
 }
 
 describe('ProjectManifestUpgradeAlertView — v1/v2 visibility', () => {
