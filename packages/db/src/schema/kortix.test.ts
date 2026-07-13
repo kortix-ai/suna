@@ -244,11 +244,11 @@ describe('projects table', () => {
     expect(col?.default).toBe('active');
   });
 
-  test('enforces a unique account/repo index', () => {
+  test('retains the unique account/repo index through the application rollout', () => {
     const cfg = getTableConfig(projects);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
-    expect(unique).toBeDefined();
-    expect(unique?.config.unique).toBe(true);
+    const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
+    expect(accountRepo).toBeDefined();
+    expect(accountRepo?.config.unique).toBe(true);
   });
 });
 
@@ -286,7 +286,7 @@ describe('project_members table', () => {
 });
 
 describe('project_group_grants table', () => {
-  test('stores an optional default base ref for sessions started by group members', () => {
+  test('retains the deprecated base-ref column through the code-removal rollout', () => {
     const col = getTableConfig(projectGroupGrants).columns.find(
       (column) => column.name === 'default_base_ref',
     );

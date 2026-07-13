@@ -49,8 +49,8 @@ import {
   type ExperimentalFeatureView,
   type KortixProject,
   type ProjectDetail,
-} from '@kortix/sdk/projects-client';
-import type { SandboxProviderName } from '@kortix/sdk/platform-client';
+  type SandboxProviderName,
+} from '@kortix/sdk';
 import { refreshProjectProviderState } from '@/hooks/opencode/provider-refresh';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -260,7 +260,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
         <FieldGroup className="grid gap-3 sm:grid-cols-2">
           <Field>
             <div className="flex items-center justify-between gap-2">
-              <FieldLabel htmlFor="default-branch">Default session branch</FieldLabel>
+              <FieldLabel htmlFor="default-branch">
+                {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}
+              </FieldLabel>
               {saving ? <SaveStatus /> : null}
             </div>
             <Select
@@ -280,7 +282,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
               </SelectContent>
             </Select>
             <FieldDescription>
-              New sessions fork from this branch unless a group or one-session override applies.
+              New sessions and change requests use this branch as their base.
             </FieldDescription>
           </Field>
           <Field>

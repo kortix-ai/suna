@@ -282,6 +282,9 @@ mock.module('../shared/db', () => ({
           return Promise.resolve([]);
         },
         onConflictDoUpdate: () => {
+          if (table === projects) {
+            throw new Error('managed project provisioning must insert a fresh project row');
+          }
           if (table === projectMembers) {
             grantedProjectRole = values;
             return Promise.resolve([]);

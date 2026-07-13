@@ -6,11 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
-
-- Project branch responses now expose the current caller's effective session
-  base ref (project or group default), and group-grant mutations can set or
-  clear an optional `default_base_ref`. Existing fields and call signatures
-  remain compatible.
+- Typed GitHub repository branch discovery through
+  `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
+  including GitHub's default branch and branch protection metadata.
 - The root entry `@kortix/sdk` is now canonical: it exports the whole
   framework-free surface (client, session, turns, files, event stream, errors).
 - CDN builds: a minified ESM bundle (`dist/kortix.esm.min.js`) and an IIFE
@@ -21,7 +19,6 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
 
 ### Deprecated
-
 - The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
   `/event-stream`, the stores, …). They still work. Import from the root.
 - `KortixProject` **as exported from `@kortix/sdk/opencode-client`** — renamed to
@@ -29,12 +26,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unchanged and keeps its name.
 
 ### Fixed
-
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 
 ### Internal
-
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
@@ -94,7 +89,7 @@ domains promoted into the facade.
     `tierConfigurations` (read-only entitlement/usage surface), plus a curated
     mutation surface: `billing.checkout.{createSession, confirmSession}`,
     `billing.subscription.{createPortalSession, cancel, reactivate,
-scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
+    scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
     `billing.credits.{purchase, autoTopupSettings, configureAutoTopup}`.
   - `project(id).marketplace` / `.registry` — install/list/updates/update/
     updateAll/remove for a catalog item on a project's default branch.

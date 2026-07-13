@@ -653,3 +653,49 @@ smoke:install` packed, installed, imported, and constructed `@kortix/sdk`
 successfully.
 
 **Shippable to production: YES** for the SDK surface.
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (claim)
+
+Claimed the user-directed personal session-branch preference work. This adds an
+additive SDK/API contract for a project-scoped current-user default and makes
+session base-ref resolution honor it before group and project defaults. No
+existing public names or required fields will be changed. SDK work will follow
+RED -> GREEN -> REFACTOR and finish with typecheck, full suite, and packed-install
+smoke evidence.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (abandoned)
+
+Abandoned the personal/group session-branch preference claim by explicit product
+decision. Branch choice belongs to an ordinary isolated Kortix project: users may
+connect the same Git repository more than once, choose an existing branch during
+project creation, and keep each project's secrets, access, sessions, triggers,
+deployments, and runtime settings independent. The advanced per-session `base_ref`
+API remains compatible, but no preference hierarchy or environment entity will be
+added.
+
+**Status:** WON'T DO (superseded by independent same-repository projects).
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (replacement completion)
+
+Completed the replacement project-as-environment SDK surface. GitHub imports can
+now discover existing repository branches through the typed
+`kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`
+facade. A Kortix project owns one selected repository branch as its canonical
+`default_branch`; no personal/group preference hierarchy remains in the SDK.
+Existing per-session `base_ref` support remains backward compatible.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1085 pass / 0 fail** across 77 files
+with 4960 assertions; `pnpm --filter @kortix/sdk smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the public addition is typed, additive,
+snapshot-locked, and verified from the packed package.

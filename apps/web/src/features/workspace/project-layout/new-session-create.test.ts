@@ -14,18 +14,8 @@ describe('buildNewSessionCreateInput', () => {
 
   it('carries the sandbox slug through alongside the agent', () => {
     expect(
-      buildNewSessionCreateInput({
-        agent: 'builder',
-        sandbox_slug: 'node22',
-        base_ref: 'staging',
-      }),
-    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22', base_ref: 'staging' });
-  });
-
-  it('carries a one-session branch override without requiring another override', () => {
-    expect(buildNewSessionCreateInput({ base_ref: 'feature/shadcn' })).toEqual({
-      base_ref: 'feature/shadcn',
-    });
+      buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' }),
+    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {
