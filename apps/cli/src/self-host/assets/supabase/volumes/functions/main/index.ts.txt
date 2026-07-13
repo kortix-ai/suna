@@ -80,15 +80,15 @@ async function isValidJWT(jwt: string): Promise<boolean> {
 
 /**
  * Verify JWT token, handling both legacy (HS256) and newer (ES256/RS256) algorithms
- *
+ * 
  * This function automatically detects the algorithm used in the token and applies
  * the appropriate verification method:
  * - HS256: Uses JWT_SECRET (symmetric key)
  * - ES256/RS256: Uses JWKS endpoint (asymmetric public keys)
- *
+ * 
  * This fix ensures compatibility with both legacy tokens and newer asymmetric tokens,
  * resolving the "Key for the ES256 algorithm must be of type CryptoKey" error.
- *
+ * 
  * @param jwt - The JWT token string to verify
  * @returns Promise resolving to true if verification succeeds, false otherwise
  */
