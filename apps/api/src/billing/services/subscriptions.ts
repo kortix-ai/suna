@@ -818,7 +818,7 @@ export async function confirmCheckoutSession(params: {
         'tier_grant',
         `${tier.displayName} subscription activated: ${tier.monthlyCredits} credits`,
         true,
-        session.id,
+        `subscription_activation:${subscriptionId}`,
       );
     } catch (err) {
       console.error('[Billing] Failed to grant initial plan credits during checkout confirm:', err);

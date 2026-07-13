@@ -126,6 +126,13 @@ async function performDeletion(accountId: string) {
     });
   }
 
+  const hasRevenueCatSubscription =
+    account?.provider === 'revenuecat'
+    || account?.revenuecatSubscriptionId
+    || account?.revenuecatCustomerId;
+
+  const now = new Date().toISOString();
+
   // Zero out all credit balances
   await updateCreditAccount(accountId, {
     balance: '0',
@@ -135,6 +142,15 @@ async function performDeletion(accountId: string) {
     tier: 'free',
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',
+    ...(hasRevenueCatSubscription ? {
+      revenuecatCancelledAt: now,
+      revenuecatCancelAtPeriodEnd: now,
+      revenuecatProductId: null,
+      revenuecatSubscriptionId: null,
+      revenuecatPendingChangeProduct: null,
+      revenuecatPendingChangeDate: null,
+      revenuecatPendingChangeType: null,
+    } : {}),
   } as any);
 
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);

@@ -141,7 +141,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Seat sync result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await syncSeatQuantity(accountId);
     return c.json(result);
   },
@@ -298,7 +298,7 @@ subscriptionsRouter.openapi(
     responses: { 200: json(OpaqueSchema, 'Sync result') },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const result = await syncSubscription(accountId);
     return c.json(result);
   },
@@ -364,7 +364,7 @@ subscriptionsRouter.openapi(
     },
   }),
   async (c: any) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = (await c.req.json()) as { session_id?: string };
     if (!body.session_id) return c.json({ error: 'session_id required' }, 400);
 
