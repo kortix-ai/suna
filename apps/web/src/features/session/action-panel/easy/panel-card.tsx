@@ -89,7 +89,16 @@ export function PanelCard({
       open={expanded}
       onOpenChange={setExpanded}
       variant="outline"
-      className="bg-popover overflow-hidden"
+      // `shrink-0`: this card sits in a flex column (`EasyPanel`'s home view)
+      // alongside the other two cards. Without it, the browser's flexbox
+      // algorithm treats this element's automatic minimum size as 0 (the
+      // `overflow-hidden` on this element and inside `DisclosureContent`
+      // makes that the spec-mandated minimum) and will happily shrink it
+      // *below* its expanded content's real height whenever the column runs
+      // out of room — clipping a row in half instead of ever scrolling. The
+      // column's own `overflow-auto` (see `easy-panel.tsx`) is what should
+      // handle overflow, not a silent shrink of this card.
+      className="bg-popover shrink-0 overflow-hidden"
       transition={transition}
     >
       <DisclosureTrigger variant="outline">

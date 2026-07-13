@@ -36,7 +36,10 @@ export function ProgressCard({
       onClick={onOpen}
       disabled={!hasSteps}
       className={cn(
-        'border-border bg-popover flex min-h-11 w-full items-center justify-between gap-2 overflow-hidden rounded-md border px-4 py-3 text-left',
+        // `shrink-0`: same reasoning as `PanelCard` — a sibling in the same
+        // flex column must never be squeezed below its own height by the
+        // other cards' content; see the comment there.
+        'border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 overflow-hidden rounded-md border px-4 py-3 text-left',
         'transition-[background-color,transform] active:scale-[0.998]',
         hasSteps ? 'hover:bg-muted-foreground/[0.04] cursor-pointer' : 'cursor-default',
       )}

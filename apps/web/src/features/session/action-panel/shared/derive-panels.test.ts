@@ -254,8 +254,89 @@ describe('deriveContext', () => {
     ]);
     expect(files).toHaveLength(2);
     expect(web).toHaveLength(1);
-    expect(web[0].label).toBe('https://example.com/docs');
+    // A raw URL is exactly the kind of technical string this feature exists
+    // to hide — no title was recoverable from the (empty) output, so the
+    // fallback must be the human-readable domain, never the bare URL.
+    expect(web[0].label).toBe('example.com');
+    expect(web[0].label).not.toMatch(/^https?:\/\//);
     expect(tools.some((t) => t.label === 'Bash')).toBe(true);
+  });
+
+  // ─── BUG 1 — anything that produced an Output must never also appear in
+  // Context's "Tools used" bucket. `edit` already gets this right (see the
+  // test above); `create` (image_gen/video_gen/presentation_gen/show) did
+  // not, so an image_gen call double-counted: once in Outputs, again as
+  // "Image Gen" in Context. ───────────────────────────────────────────────
+
+  it('never surfaces an image_gen call in Context — Outputs already owns it', () => {
+    const { tools } = deriveContext([part('image_gen', { action: 'generate' })]);
+    expect(tools).toEqual([]);
+  });
+
+  it('never surfaces any create-family tool (video/presentation/show) in Context, matching the edit-family exclusion', () => {
+    const { tools } = deriveContext([
+      part('video_gen', {}),
+      part('presentation_gen', { action: 'create_slide' }),
+      part('show', { type: 'markdown', content: 'hi' }),
+    ]);
+    expect(tools).toEqual([]);
+  });
+
+  // ─── BUG 2 — web sources must dedup by the underlying page, not by
+  // whatever string happened to land in `label` — a search whose top result
+  // is the exact page a later `web_fetch` call visits must collapse to ONE
+  // entry, and the surviving label must be a human title or a domain, never
+  // a bare URL. ─────────────────────────────────────────────────────────────
+
+  it('collapses a searched-then-fetched same page into one web source', () => {
+    const { web } = deriveContext([
+      part(
+        'web_search',
+        { query: 'Acme Corp pricing plans 2026' },
+        {
+          output: JSON.stringify({
+            query: 'Acme Corp pricing plans 2026',
+            results: [{ title: 'Acme Corp Pricing', url: 'https://acme.example.com/pricing' }],
+          }),
+        },
+      ),
+      // Same page, different protocol/www/trailing-slash — must still collapse.
+      part('web_fetch', { url: 'https://www.acme.example.com/pricing/' }),
+    ]);
+    expect(web).toHaveLength(1);
+    expect(web[0].label).toBe('Acme Corp Pricing');
+  });
+
+  it('dedups two fetches of the same URL that only differ by protocol/www/trailing-slash', () => {
+    const { web } = deriveContext([
+      part('web_fetch', { url: 'http://example.com/docs/' }),
+      part('web_fetch', { url: 'https://www.example.com/docs' }),
+    ]);
+    expect(web).toHaveLength(1);
+  });
+
+  it('never renders a bare URL as a web source label, even with no title anywhere', () => {
+    const { web } = deriveContext([
+      part('web_fetch', { url: 'https://acme.example.com/pricing' }),
+      part('web_fetch', { url: 'https://globex.example.com/plans' }),
+    ]);
+    expect(web).toHaveLength(2);
+    for (const w of web) {
+      expect(w.label).not.toMatch(/^https?:\/\//);
+    }
+    expect(web.map((w) => w.label)).toEqual(['acme.example.com', 'globex.example.com']);
+  });
+
+  it('keeps distinct searches with no recoverable URL as their own entries, labeled by query', () => {
+    const { web } = deriveContext([
+      part('web_search', { query: 'Acme Corp pricing plans 2026' }, { output: '' }),
+      part('web_search', { query: 'Globex Cloud pricing tiers comparison' }, { output: '' }),
+    ]);
+    expect(web).toHaveLength(2);
+    expect(web.map((w) => w.label)).toEqual([
+      'Acme Corp pricing plans 2026',
+      'Globex Cloud pricing tiers comparison',
+    ]);
   });
 
   it('deduplicates a file read twice', () => {

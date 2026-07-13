@@ -18,6 +18,8 @@ import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
 import { parseImageOutput } from '../../image-output-path';
+import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
+import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
 import { createArtifactKind, familyForTool, humanizeToolName } from './narration';
 
 export interface OutputItem {
@@ -31,6 +33,9 @@ export interface ContextItem {
   callID: string;
   label: string;
   kind: 'file' | 'web' | 'tool';
+  /** The real URL a `web` item points at — never rendered as the label
+   * itself, only as a title attribute / link target for the row. */
+  url?: string;
 }
 
 function filePathOf(part: ToolPart): string | undefined {
@@ -183,6 +188,70 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
   return out;
 }
 
+/**
+ * Collapse protocol/`www.`/trailing-slash differences so the same page
+ * fetched two different ways (http vs https, with vs without `www.`, with
+ * vs without a trailing slash) normalizes to one dedup key. Never shown to
+ * the user — `web[].label` is always a title or a domain (see `webSourceOf`).
+ */
+function normalizeUrl(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/\/+$/, '')
+    .toLowerCase();
+}
+
+/** A page title extracted from a `web_fetch`/`webfetch` call's own HTML
+ * output, reusing the exact same parsing WebFetchTool itself uses — never a
+ * second, divergent HTML-sniffing implementation. `undefined` for non-HTML
+ * output (plain text/markdown fetches carry no separate title). */
+function titleFromFetchOutput(part: ToolPart): string | undefined {
+  const output = rawOutputOf(part);
+  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+  const format = typeof input.format === 'string' ? input.format : '';
+  const isHtml = format === 'html' || (!format && looksLikeHtml(output));
+  if (!isHtml || !output) return undefined;
+  return extractReadableHtml(output).title || undefined;
+}
+
+/**
+ * The one real-world page a `web`-family call is "about", if any — the
+ * identity `deriveContext` dedups on and the truthful label it shows.
+ *
+ * - `web_fetch`/`scrape_webpage`-style calls target a URL directly (`input.url`).
+ * - `web_search`-style calls have no URL of their own, but their OUTPUT is a
+ *   search-results payload (see `parseWebSearchOutput`) — its first result is
+ *   the page the search actually surfaced. Using it (rather than the raw
+ *   query text) is what lets a search-then-fetch of the same page collapse
+ *   to one entry: if the agent later fetches that exact URL, both calls
+ *   resolve to the same normalized key.
+ * - A search with no parseable result (or a call with no `url` at all) falls
+ *   back to the query text, its own distinct entry — there is nothing more
+ *   concrete to show, but it is still a fallback, never a bare identifier.
+ */
+function webSourceOf(part: ToolPart): { url: string; label: string } | null {
+  const t = normalizeName(part.tool);
+  const input = (part.state?.input ?? {}) as Record<string, unknown>;
+
+  if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
+    const firstResult = parseWebSearchOutput(rawOutputOf(part)).flatMap((r) => r.sources)[0];
+    if (firstResult?.url) {
+      return { url: firstResult.url, label: firstResult.title || wsDomain(firstResult.url) };
+    }
+    const query = typeof input.query === 'string' ? input.query : '';
+    return query ? { url: '', label: query } : null;
+  }
+
+  // web_fetch / webfetch / scrape_webpage / scrapewebpage — identified by
+  // the page it targeted. The label is the real page title when the fetch's
+  // own output is parseable HTML; otherwise the domain — never the raw URL.
+  const url = typeof input.url === 'string' ? input.url : '';
+  if (!url) return null;
+  return { url, label: titleFromFetchOutput(part) || wsDomain(url) };
+}
+
 export function deriveContext(parts: ToolPart[]): {
   files: ContextItem[];
   web: ContextItem[];
@@ -211,17 +280,27 @@ export function deriveContext(parts: ToolPart[]): {
 
     // A write is something the agent MADE, not something it looked at —
     // Outputs owns it, not Context, even though it also "touches" a file.
-    if (family === 'edit') continue;
+    // `create` (image_gen/video_gen/presentation_gen/show/show_user) is the
+    // same story — an image/video/presentation/result the agent produced —
+    // so it gets the exact same treatment, or it double-counts: once in
+    // Outputs, again here as e.g. "Image Gen".
+    if (family === 'edit' || family === 'create') continue;
 
     if (family === 'web') {
-      const input = (part.state?.input ?? {}) as Record<string, unknown>;
-      const label =
-        (typeof input.url === 'string' && input.url) ||
-        (typeof input.query === 'string' && input.query) ||
-        getToolPrimaryArg(part);
-      if (!label || seenWeb.has(label)) continue;
-      seenWeb.add(label);
-      web.push({ callID: part.callID, label, kind: 'web' });
+      const source = webSourceOf(part);
+      if (!source) continue;
+      // Dedup by the normalized URL when one is known (a search that
+      // surfaced the exact page a later fetch visited collapses here);
+      // otherwise fall back to the label itself (a bare query has no URL).
+      const key = source.url ? normalizeUrl(source.url) : `q:${source.label}`;
+      if (seenWeb.has(key)) continue;
+      seenWeb.add(key);
+      web.push({
+        callID: part.callID,
+        label: source.label,
+        kind: 'web',
+        url: source.url || undefined,
+      });
       continue;
     }
 

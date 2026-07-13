@@ -28,7 +28,13 @@ function ContextGroup({
       </span>
       <ul className="flex flex-col gap-0.5">
         {items.map((it) => (
-          <li key={it.callID} className="flex min-h-8 items-center gap-2 px-2 py-1">
+          <li
+            key={it.callID}
+            // The real URL (when this row is a web source) rides along as a
+            // native tooltip only — never rendered as the row's label.
+            title={it.url}
+            className="flex min-h-8 items-center gap-2 px-2 py-1"
+          >
             <Ico className="text-muted-foreground size-3.5 shrink-0" />
             <span className="text-foreground truncate text-sm">{it.label}</span>
           </li>

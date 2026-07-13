@@ -550,13 +550,26 @@ const EASY_PARTS = [
   // "Web sources" bucket.
   part(
     'web_search',
-    done({ query: 'Acme Corp pricing plans 2026' }, 'Results for "Acme Corp pricing plans 2026"'),
+    done(
+      { query: 'Acme Corp pricing plans 2026' },
+      JSON.stringify({
+        query: 'Acme Corp pricing plans 2026',
+        results: [
+          { title: 'Acme Corp Pricing Plans', url: 'https://acme.example.com/pricing' },
+        ],
+      }),
+    ),
   ),
   part(
     'web_search',
     done(
       { query: 'Globex Cloud pricing tiers comparison' },
-      'Results for "Globex Cloud pricing tiers comparison"',
+      JSON.stringify({
+        query: 'Globex Cloud pricing tiers comparison',
+        results: [
+          { title: 'Globex Cloud — Plans & Pricing', url: 'https://globex.example.com/plans' },
+        ],
+      }),
     ),
   ),
   part(
@@ -619,6 +632,17 @@ const EASY_MESSAGES: MessageWithParts[] = [
   } as any,
 ];
 
+// A run that has only just started: no tool calls yet at all. Exercises the
+// Outputs/Context cards' EMPTY states (soft placeholder art + one plain
+// sentence) — the main fixture above always has content in both, so without
+// this the empty state would ship unverified.
+const EMPTY_MESSAGES: MessageWithParts[] = [
+  {
+    info: { id: 'm_empty', role: 'assistant' },
+    parts: [],
+  } as any,
+];
+
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -670,6 +694,14 @@ export default function DebugToolsPage() {
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
               <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — empty (no tool calls yet)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
             </div>
           </div>
         </div>
