@@ -89,6 +89,40 @@ export function isProviderConnected(providerId: string, connectedEnvVars: Set<st
 }
 
 /**
+ * Reduce the gateway's runtime catalog to the models a project can actually
+ * choose without downloading the complete models.dev registry. Managed models
+ * are always retained (the caller has already applied free-tier filtering),
+ * connected BYOK/Codex providers retain their served models, and configured
+ * models are kept so existing defaults and fallback policies remain editable
+ * after a provider is disconnected.
+ */
+export function projectPickerCatalog<T>(
+  fullCatalog: Record<string, T>,
+  connectedEnvVars: Set<string>,
+  requiredModels: string[],
+): Record<string, T> {
+  const required = new Set(requiredModels.filter(Boolean).map(toWireModel));
+  const codexConnected =
+    connectedEnvVars.has('CODEX_AUTH_JSON') || connectedEnvVars.has('OPENCODE_AUTH_JSON');
+  const compact: Record<string, T> = {};
+
+  for (const [model, entry] of Object.entries(fullCatalog)) {
+    const slash = model.indexOf('/');
+    const managed = slash === -1;
+    const provider = managed ? null : model.slice(0, slash);
+    const connected =
+      provider === 'codex'
+        ? codexConnected
+        : provider
+          ? isProviderConnected(provider, connectedEnvVars)
+          : false;
+    if (managed || connected || required.has(model)) compact[model] = entry;
+  }
+
+  return compact;
+}
+
+/**
  * The flagship `provider/model` ref for the provider whose primary credential
  * env var is `envVar` (e.g. `ANTHROPIC_API_KEY` → `anthropic/claude-opus-4.8`),
  * or null. Used to auto-seed a sensible project default when a user connects

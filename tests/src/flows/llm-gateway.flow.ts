@@ -72,6 +72,7 @@ flow(
       "PUT /v1/projects/:projectId/gateway/routing-policy",
       "DELETE /v1/projects/:projectId/gateway/routing-policy",
       "POST /v1/projects/:projectId/gateway/routing-policy/preview",
+      "GET /v1/projects/:projectId/model-picker",
     ],
   },
   async (ctx) => {
@@ -102,6 +103,27 @@ flow(
         .has("$.project.rules", [])
         .exists("$.effective.defaultModel")
         .has("$.capabilities.write", true);
+    });
+
+    await ctx.step("compact project model picker is available without the full runtime catalog", async () => {
+      const enabled = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/experimental",
+          { feature: "llm_gateway", enabled: true },
+          { params },
+        );
+      enabled.status(200);
+
+      const picker = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/model-picker", { params });
+      picker.status(200).body().exists("$.models");
+      const pickerModels = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
+      const pickerCount = Object.keys(pickerModels).length;
+      if (pickerCount === 0 || pickerCount >= 100) {
+        throw new Error(`expected a compact non-empty picker catalog, got ${pickerCount} models`);
+      }
     });
 
     await ctx.step("save and read back the complete project policy", async () => {
@@ -182,6 +204,10 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/gateway/routing-policy", { params });
       anonymous.status(401);
+      const anonymousPicker = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/model-picker", { params });
+      anonymousPicker.status(401);
     });
 
     await ctx.step("reset removes every project override", async () => {

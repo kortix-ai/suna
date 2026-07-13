@@ -58,7 +58,7 @@ async function main() {
   });
 
   // 6. Send. Per-send overrides let you pick the model and the agent for
-  //    just this prompt (ids come from projects.llmCatalog() and
+  //    just this prompt (ids come from projects.modelPicker() and
   //    projects.detail().config.agents).
   await session.send('What files are in this repo?', {
     model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },

@@ -28,6 +28,8 @@ describe("useGatewayRoutingPolicy", () => {
 
   test("set and reset invalidate the policy while preview remains a one-shot mutation", () => {
     const result = useGatewayRoutingPolicy("P1") as any;
+    expect(result.set.mutationKey).toEqual(gatewayRoutingPolicyKey("P1"));
+    expect(result.reset.mutationKey).toEqual(gatewayRoutingPolicyKey("P1"));
     result.set.onSuccess();
     result.reset.onSuccess();
     expect(invalidated).toEqual([
