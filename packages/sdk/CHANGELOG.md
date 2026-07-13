@@ -11,6 +11,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   base ref (project or group default), and group-grant mutations can set or
   clear an optional `default_base_ref`. Existing fields and call signatures
   remain compatible.
+- `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
+  `kortix.project(id).modelPicker()` expose the compact, connection-aware
+  selector catalog; the existing `llmCatalog` remains the complete runtime
+  catalog.
+- Typed GitHub repository branch discovery through
+  `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
+  including GitHub's default branch and branch-protection metadata.
 - The root entry `@kortix/sdk` is now canonical: it exports the whole
   framework-free surface (platform client, ACP client/projections, session,
   turns, files, and errors).

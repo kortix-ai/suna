@@ -15,9 +15,10 @@ shared by two deployments:
   independently.
 
 There is **one** pipeline implementation; only the hook binding differs (direct
-calls in-process vs HTTP from the standalone pod). `hooks.ts` is the single source
-of truth for auth resolution, billing, budgets, usage recording, and traces —
-both deployments call the same functions.
+calls in-process vs HTTP from the standalone pod). This API module is the source
+of truth for catalog data, route policies, upstream resolution, auth, billing,
+budgets, usage, and traces. The package pipeline treats model/provider ids as
+opaque values and executes the finite route returned by the control plane.
 
 ## Files
 
@@ -26,9 +27,11 @@ both deployments call the same functions.
 | `wire.ts` | Mounts `/v1/llm` (in-process pipeline), `/internal/gateway` (RPC), and the `/v1/llm-gateway` reverse proxy. Called once from `apps/api/src/index.ts`. |
 | `hooks.ts` | Canonical control plane: `authenticatePrincipal`, `assertGatewayBudget`, `recordGatewayUsage`, `persistGatewayTrace`, and `createInProcessGatewayHooks()`. |
 | `internal-routes.ts` | Thin HTTP wrappers over `hooks.ts` for the out-of-process gateway pod. |
+| `routing/` | Host-owned model defaults and declarative fallback policies; backs `/internal/gateway/resolve-route`. |
 | `resolution/` | `resolveCandidates` — turns a requested model into ordered upstream descriptors (BYOK → managed fallback, Codex, managed Bedrock/OpenRouter). |
 | `budgets.ts` | Per-project / per-member spend caps (`checkBudget`). |
-| `models/` | Server-side model catalog served to clients (`gatewayModelCatalog`). |
+| `models/runtime-catalog.ts` | Fetches provider/model metadata from `LLM_GATEWAY_CATALOG_URL` (models.dev by default), refreshes every 24 hours, and atomically retains the last known snapshot on failure. |
+| `models/` | Builds the project/tier-specific catalog served to clients and resolves provider transports from the runtime catalog. |
 | `gateway-keys.ts` | Gateway API key (`kgw_…`) lifecycle + validation. |
 | `credentials/` | Codex (ChatGPT subscription) credential resolution. |
 | `sandbox-credentials.ts` | Which provider env vars are withheld from opencode so the gateway is the only LLM path. |
@@ -40,11 +43,32 @@ client (opencode)
   → POST /v1/llm/chat/completions  (in-API)   or  → standalone gateway pod
        │                                                │  /internal/gateway/* RPC
        └──────────── @kortix/llm-gateway pipeline ──────┘
-                       authenticate → billing → budget → resolve
+                       authenticate → billing → budget → resolve-route
+                       → resolve upstream descriptors
                        → failover over candidates (retry + circuit breaker)
                        → stream relay (SSE, 10s heartbeat) / json
                        → recordUsage + recordTrace
 ```
+
+The standalone pod does not import `@kortix/llm-catalog`. It obtains both the
+served model catalog and each request's route plan from this API over the
+internal authenticated RPC.
+
+## Runtime routing configuration
+
+The concrete platform policy is deploy configuration, not gateway-core logic:
+
+- `LLM_GATEWAY_DEFAULT_MODEL` — primary target for `auto`.
+- `LLM_GATEWAY_VISION_MODEL` — target when the selected model lacks image input.
+- `LLM_GATEWAY_FALLBACK_POLICIES` — JSON array of `{ id, models,
+  fallbackModels, fallbackOn }` policies.
+- `LLM_GATEWAY_MANAGED_MODELS` — optional JSON replacement for the managed-model
+  overlay, including transport, upstream id, pricing ref, and capabilities.
+- `LLM_GATEWAY_CATALOG_URL` — live provider/model catalog API.
+
+The generic `createModelFallbackPolicyEngine` validates unique ownership and
+returns finite ordered routes. The pipeline de-duplicates them and enforces the
+configured limit plus a hard ceiling of eight fallbacks.
 
 ## Auth & billing
 

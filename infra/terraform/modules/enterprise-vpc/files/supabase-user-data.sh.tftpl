@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/kortix-bootstrap.log | logger -t kortix-bootstrap -s 2>/dev/console) 2>&1
+
+dnf update -y
+dnf install -y amazon-cloudwatch-agent awscli2 curl docker jq xfsprogs
+install -d -m 0755 /usr/local/lib/docker/cli-plugins
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://github.com/docker/compose/releases/download/v5.3.1/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+echo 'f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959  /usr/local/lib/docker/cli-plugins/docker-compose' | sha256sum --check --strict
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
+systemctl enable --now docker amazon-ssm-agent
+
+install -d -m 0755 /etc/kortix /opt/kortix/releases /var/lib/kortix
+
+volume_id="${data_volume_id}"
+disk_id="nvme-Amazon_Elastic_Block_Store_$${volume_id//-/}"
+disk="/dev/disk/by-id/$${disk_id}"
+for _ in $(seq 1 120); do
+  [ -b "$${disk}" ] && break
+  sleep 2
+done
+[ -b "$${disk}" ] || { echo "persistent EBS volume not attached"; exit 1; }
+
+if ! blkid "$${disk}" >/dev/null 2>&1; then
+  mkfs.xfs -L kortix-data "$${disk}"
+fi
+uuid=$(blkid -s UUID -o value "$${disk}")
+grep -q "$${uuid}" /etc/fstab || echo "UUID=$${uuid} /var/lib/kortix xfs defaults,nofail,nodev,nosuid 0 2" >> /etc/fstab
+mount -a
+
+cat >/etc/kortix/instance.env <<'ENV'
+AWS_REGION=${aws_region}
+KORTIX_INSTANCE=${instance_name}
+KORTIX_RUNTIME_SECRET_ARN=${runtime_secret_arn}
+KORTIX_BACKUP_BUCKET=${backup_bucket}
+KORTIX_BACKUP_KMS_KEY_ARN=${backup_kms_key_arn}
+KORTIX_STATE_TABLE=${state_table}
+KORTIX_LOG_GROUP=${log_group}
+ENV
+chmod 0600 /etc/kortix/instance.env
+
+cat >/etc/systemd/system/kortix-supabase.service <<'UNIT'
+[Unit]
+Description=Kortix private Supabase runtime
+After=docker.service var-lib-kortix.mount network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/kortix/instance.env
+ExecStart=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-start ]; then exec /opt/kortix/current/bin/supabase-start; else echo "awaiting signed release reconciliation"; fi'
+ExecStop=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-stop ]; then exec /opt/kortix/current/bin/supabase-stop; fi'
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now kortix-supabase.service

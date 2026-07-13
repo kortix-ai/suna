@@ -44,6 +44,20 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
+  /**
+   * Fresh launch-readiness observations for this exact content-addressed image
+   * on every supported provider. The legacy single state follows the project's
+   * routing mode; this array preserves the independent provider truth.
+   */
+  provider_coverage?: Array<{
+    provider: 'daytona' | 'platinum' | 'e2b';
+    available: boolean;
+    snapshot_name: string;
+    state: 'active' | 'building' | 'build_failed' | 'removing' | 'unknown' | 'missing' | null;
+    status: 'ready' | 'building' | 'failed' | 'not_built' | 'unavailable' | 'unknown';
+    launch_ready: boolean;
+    observed_at: string | null;
+  }>;
   /** Per-template warm pool config + live counts. null when the operator gate
    *  is off (feature unavailable platform-wide). */
   warm_pool?: {
@@ -59,6 +73,8 @@ export interface SandboxTemplate {
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
+  provider_mode?: 'automatic' | 'pinned';
+  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
   /** Whether the warm pool feature is enabled platform-wide. */
   warm_pool_available?: boolean;
 }
@@ -81,6 +97,8 @@ export interface ProjectSnapshotBuild {
   /** Server-derived: can an in-sandbox agent plausibly fix this by editing the repo? */
   fixable_by_agent: boolean;
   source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
+  /** Exact provider recorded for new builds; null/absent on historical rows. */
+  provider?: 'daytona' | 'platinum' | 'e2b' | null;
   started_at: string;
   finished_at: string | null;
 }
@@ -89,6 +107,8 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
+  provider_mode?: 'automatic' | 'pinned';
+  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
   /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
   warm_pool_available?: boolean;
 }
@@ -100,6 +120,8 @@ export interface ProjectSandboxHealth {
   building: boolean;
   latest_build: ProjectSnapshotBuild | null;
   latest_failure: ProjectSnapshotBuild | null;
+  provider_mode?: 'automatic' | 'pinned';
+  selected_provider?: 'daytona' | 'platinum' | 'e2b' | null;
 }
 
 export interface RebuildSnapshotResponse {
@@ -107,6 +129,7 @@ export interface RebuildSnapshotResponse {
   slug: string;
   deleted_existing: boolean;
   snapshot_name: string;
+  providers?: Array<'daytona' | 'platinum' | 'e2b'>;
 }
 
 /**
@@ -221,7 +244,12 @@ export async function deleteSandboxTemplate(projectId: string, templateId: strin
 
 export async function buildSandboxTemplate(projectId: string, templateId: string) {
   return unwrap(
-    await backendApi.post<{ status: 'started'; template_id: string; slug: string }>(
+    await backendApi.post<{
+      status: 'started';
+      template_id: string;
+      slug: string;
+      providers?: Array<'daytona' | 'platinum' | 'e2b'>;
+    }>(
       `/projects/${projectId}/sandbox-templates/${templateId}/build`,
       {},
     ),

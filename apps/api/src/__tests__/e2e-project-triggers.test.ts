@@ -180,6 +180,8 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickRoutedPreBuild: () => {},
+  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -234,7 +236,9 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
   listInstallationRepositories: async () => [],
+  listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
   isOrgAccount: async () => true,
@@ -314,9 +318,7 @@ mock.module('../projects/secrets', () => ({
     secretValues.get(name) ?? null,
 }));
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const triggerDbMock: any = {
     execute: async () => [],
     transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
@@ -559,7 +561,13 @@ mock.module('../shared/db', () => ({
         if (table === sessionLifecycleCommands) lifecycleCommandRows = [];
       },
     }),
-  },
+};
+triggerDbMock.transaction = async (run: (tx: typeof triggerDbMock) => Promise<unknown>) =>
+  run(triggerDbMock);
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: triggerDbMock,
 }));
 
 const {

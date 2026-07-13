@@ -30,7 +30,7 @@ A Kortix **project** is a git repo, and that repo *is* the company. Configuratio
 
 The whole thing is defined by two files:
 
-- **`kortix.yaml`** — the Kortix layer. The sandbox image, the cron and webhook triggers, the channels, the apps, the connectors, which secrets are required, where your agent config lives.
+- **`kortix.yaml`** — the Kortix layer. The sandbox image, the cron and webhook triggers, the channels, the connectors, which secrets are required, where your agent config lives.
 - **OpenCode config** — the runtime your agents think in. Agents, skills, commands, tools, plugins, models, providers.
 
 Everything past that is files in the repo. You can `grep` your entire company. You can read any agent's instructions in plain markdown. You can open a memory file and see exactly what it believes about you. Nothing is hidden because there is nowhere to hide it.

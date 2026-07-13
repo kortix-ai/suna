@@ -16,7 +16,7 @@
  * the probe is a veto for provably-busy boxes, not a requirement.
  */
 
-import { resolvePreviewLink, resolveServiceKey } from '../sandbox-proxy/backend';
+import { resolveSandboxIngress, resolveServiceKey } from '../sandbox-proxy/backend';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../shared/kortix-user-context';
 
 export type SandboxBusyState = 'busy' | 'idle' | 'unknown';
@@ -37,13 +37,15 @@ export async function probeSandboxBusy(row: {
 }): Promise<SandboxBusyState> {
   try {
     const [link, serviceKey] = await Promise.all([
-      resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT),
+      resolveSandboxIngress(row.externalId, {
+        port: SANDBOX_SERVICE_PORT,
+        transport: 'http',
+      }),
       resolveServiceKey(row.sandboxId),
     ]);
     if (!serviceKey) return 'unknown';
     const headers: Record<string, string> = {
-      'X-Daytona-Skip-Preview-Warning': 'true',
-      'X-Daytona-Disable-CORS': 'true',
+      ...link.headers,
       Authorization: `Bearer ${serviceKey}`,
       [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
         {
@@ -55,7 +57,6 @@ export async function probeSandboxBusy(row: {
         serviceKey,
       ),
     };
-    if (link.token) headers['X-Daytona-Preview-Token'] = link.token;
     const res = await fetch(`${link.url}/kortix/health`, {
       headers,
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),

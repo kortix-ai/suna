@@ -8,6 +8,9 @@ mock.module('../../../config', () => ({
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: true,
+    LLM_GATEWAY_DEFAULT_MODEL: 'codex/gpt-5.6-sol',
+    LLM_GATEWAY_VISION_MODEL: 'claude-sonnet-4.6',
+    LLM_GATEWAY_FALLBACK_POLICIES: [],
   },
 }));
 mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));

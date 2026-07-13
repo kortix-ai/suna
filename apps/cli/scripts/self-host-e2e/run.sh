@@ -211,8 +211,7 @@ $CLI self-host env set --instance "$INSTANCE" \
   "POSTGRES_PORT=$POSTGRES_PORT" \
   "ALLOWED_SANDBOX_PROVIDERS=daytona" \
   "KORTIX_LOCAL_IMAGES=$KORTIX_LOCAL_IMAGES" >/dev/null
-# Sandbox runtime is Daytona (the only sandbox provider after local_docker was
-# removed). NOTE: this self-host e2e therefore needs Daytona credentials in the
+# This self-host e2e uses Daytona and therefore needs Daytona credentials in the
 # environment to provision a sandbox — it is no longer hermetic. If those aren't
 # available in CI, this golden path must be reworked or retired.
 if [ -n "$FRONTEND_IMAGE" ]; then

@@ -10,7 +10,7 @@
 
 import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
-import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
+import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
 import {
   stageBuildContext,
@@ -19,6 +19,7 @@ import {
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
 } from '../build-context';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -149,10 +150,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         SNAPSHOT_STATE_TIMEOUT_MS,
         `Daytona snapshot.get(${snapshotName})`,
       );
-      const state = (snap
-        ? String((snap as { state?: string }).state ?? 'missing')
-        : 'missing'
-      ).toLowerCase() as ProviderState;
+      const state = snap
+        ? normalizeExistingProviderState((snap as { state?: string }).state)
+        : 'missing';
       if (state === 'active') {
         snapshotStateCache.set(snapshotName, {
           state,
@@ -162,12 +162,14 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         snapshotStateCache.delete(snapshotName);
       }
       return state;
-    } catch {
-      // Error *or* timeout (TimeoutError) → treat as unknown/missing. We never
-      // poison the positive cache here, so the next poll re-checks once Daytona
-      // recovers.
+    } catch (err) {
+      // Daytona represents a missing named snapshot as a 404 exception rather
+      // than `null`. That is definitive provider truth and must be `missing` so
+      // the template coordinator can create it. Transport/timeouts and all
+      // other probe failures remain `unknown` and fail closed.
       snapshotStateCache.delete(snapshotName);
-      return 'missing';
+      if (isDaytonaNotFoundError(err)) return 'missing';
+      return 'unknown';
     }
   }
 
@@ -185,6 +187,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     } catch {
       // not found / transient — treat as already gone
     }
+  }
+
+  async listSnapshots(): Promise<Array<{ name: string }>> {
+    if (!isDaytonaConfigured()) return [];
+    return (await listDaytonaSnapshots()).map((snapshot) => ({ name: snapshot.name }));
   }
 
   private async waitForActive(name: string): Promise<void> {
@@ -233,6 +240,26 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     return 'unknown';
   }
+}
+
+function isDaytonaNotFoundError(err: unknown): boolean {
+  const value = err as
+    | {
+        name?: unknown;
+        message?: unknown;
+        statusCode?: unknown;
+        response?: { status?: unknown };
+      }
+    | null
+    | undefined;
+  const status = value?.statusCode ?? value?.response?.status;
+  const name = String(value?.name ?? '').toLowerCase();
+  const message = String(value?.message ?? '').toLowerCase();
+  return (
+    status === 404 ||
+    name === 'daytonanotfounderror' ||
+    (message.includes('snapshot with name') && message.includes('not found'))
+  );
 }
 
 function isTransientDaytonaError(err: unknown): boolean {

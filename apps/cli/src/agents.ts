@@ -124,7 +124,7 @@ OpenCode harness config into wired local coding-agent discovery dirs
 (\`.opencode\`, \`.claude\`, \`.agents\`) for local editing compatibility.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, connectors, deployable apps, runtime profiles, or how
+sandbox image, sessions, connectors, deployed services, runtime profiles, or how
 to configure an ACP harness — read \`${CANONICAL_SKILL}\` first. It is the
 canonical reference.
 

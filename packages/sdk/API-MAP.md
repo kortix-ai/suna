@@ -52,9 +52,9 @@ try/catching every call.
 |---|---|---|
 | list / get / create / update | `GET/POST /v1/projects`, `GET/PUT /v1/projects/:id` | ✅ |
 | detail (config+agents+skills+files) | `GET /v1/projects/:id/detail` | ✅ |
-| provision / link repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
-| github installs / repos / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
-| llm-catalog | `GET /v1/projects/:id/llm-catalog` | ✅ |
+| provision / import linked repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
+| github installs / repos / repository branches / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
+| model catalogs | `GET /v1/projects/:id/llm-catalog` (full runtime), `GET /v1/projects/:id/model-picker` (compact connected UI picker) | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 
 ### 3. Project secrets / env  ✅
@@ -143,7 +143,7 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
-| branches + effective session base ref | `GET /v1/projects/:id/branches` |
+| branches | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
 | change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
@@ -286,8 +286,8 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Setup links, manifest validate, git token | ✅ complete — facade `project(id).{setupLinks, validateManifest, gitToken}` |
 | Account audit (Enterprise) | ✅ client + facade (`kortix.accounts.audit.*`); 🟡 no hooks yet |
 | Skills create/update/delete | ❌ web-local (daemon file I/O) |
-| Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription, apps | 🟡 client fns ✅ in SDK, hooks still web-local |
-| Channels (Slack/email/Meet installs + apps deploy family) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
+| Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription | 🟡 client fns ✅ in SDK, hooks still web-local |
+| Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Executor connectors runtime | 🟡 web-local |
 | Kortix daemon helper family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`core/runtime/kortix-master.ts`) + hooks in `@kortix/sdk/react`; these are structural daemon helpers, not the agent conversation protocol, which is ACP-only |

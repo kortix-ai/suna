@@ -89,6 +89,8 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
+  ResolvedSandboxIngress,
+  SandboxIngressRequest,
 } from './index';
 
 // Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
@@ -323,36 +325,36 @@ export class DaytonaProvider implements SandboxProvider {
     }
   }
 
-  async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
+  async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {
     const daytona = getDaytona();
     const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
     const link: any = await withTimeout(
-      (sandbox as any).getPreviewLink(port),
+      (sandbox as any).getPreviewLink(request.port),
       PROVIDER_CALL_TIMEOUT_MS,
-      `Daytona getPreviewLink(${externalId}:${port})`,
+      `Daytona getPreviewLink(${externalId}:${request.port})`,
     );
-    return { url: (link.url || String(link)).replace(/\/$/, ''), token: link.token || null };
-  }
-
-  async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
-    const daytona = getDaytona();
-    const sandbox = await withTimeout(daytona.get(externalId), PROVIDER_CALL_TIMEOUT_MS, `Daytona get(${externalId})`);
-    const link: any = await withTimeout(
-      (sandbox as any).getPreviewLink(8000),
-      PROVIDER_CALL_TIMEOUT_MS,
-      `Daytona getPreviewLink(${externalId}:8000)`,
-    );
-    const url = (link.url || String(link)).replace(/\/$/, '');
-    const token = link.token || null;
-
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       'X-Daytona-Skip-Preview-Warning': 'true',
       'X-Daytona-Disable-CORS': 'true',
     };
-    if (token) {
-      headers['X-Daytona-Preview-Token'] = token;
-    }
+    if (link.token) headers['X-Daytona-Preview-Token'] = link.token;
+    return {
+      url: (link.url || String(link)).replace(/\/$/, ''),
+      headers,
+      effectivePort: request.port,
+    };
+  }
+
+  routeIngress(request: SandboxIngressRequest) {
+    return { effectivePort: request.port };
+  }
+
+  async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
+    const ingress = await this.resolveIngress(externalId, { port: 8000, transport: 'http' });
+    const headers: Record<string, string> = {
+      ...ingress.headers,
+      'Content-Type': 'application/json',
+    };
 
     // Look up the service key (sandboxes OR session_sandboxes) to authenticate to the sandbox.
     try {
@@ -364,7 +366,7 @@ export class DaytonaProvider implements SandboxProvider {
       console.warn(`[DAYTONA] Failed to look up service key for ${externalId}:`, err);
     }
 
-    return { url, headers };
+    return { url: ingress.url, headers };
   }
 
   async ensureRunning(externalId: string): Promise<void> {

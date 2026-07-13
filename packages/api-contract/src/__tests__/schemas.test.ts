@@ -164,6 +164,19 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
+  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'e2b',
+      available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+    }))).not.toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'managed',
+    }))).toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      available_sandbox_providers: ['daytona', 'local_docker'],
+    }))).toThrow();
+  });
+
   test('rejects an unknown status', () => {
     expect(() => ProjectSchema.parse(projectFixture({ status: 'deleted' }))).toThrow();
   });
@@ -243,7 +256,7 @@ describe('SessionStartResultSchema', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'local_docker', 'justavps', 'platinum']) {
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();

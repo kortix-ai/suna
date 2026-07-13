@@ -1,14 +1,14 @@
 import { and, eq } from 'drizzle-orm';
 import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { resolvePreviewLink } from '../../sandbox-proxy/backend';
+import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { listProjectSecretsSnapshotForUser, projectSecretsRevision } from '../secrets';
 import { grantFromLoadedAgents, loadProjectAgents } from '../agents';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { daytonaPreviewHeaders } from './sandbox-daemon-ready';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -97,7 +97,7 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
 
 async function postEnvToDaemon(args: {
   previewUrl: string;
-  previewToken: string | null;
+  providerHeaders: Record<string, string>;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   refreshModels?: boolean;
@@ -108,11 +108,7 @@ async function postEnvToDaemon(args: {
   if (!isSecureOrPrivateTarget(args.previewUrl)) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${args.serviceKey}`,
-    ...daytonaPreviewHeaders(args.previewToken),
-  };
+  const headers = buildEnvSyncHeaders(args);
 
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
@@ -138,12 +134,26 @@ async function postEnvToDaemon(args: {
   await res.arrayBuffer().catch(() => undefined);
 }
 
+/** Build the service-to-service env-sync boundary. Provider ingress credentials
+ * are preserved, but a user-scoped preview context must never reach the daemon's
+ * privileged secret refresh route or override its sandbox service credential. */
+export function buildEnvSyncHeaders(args: {
+  providerHeaders: Record<string, string>;
+  serviceKey: string;
+}): Headers {
+  const headers = new Headers(args.providerHeaders);
+  headers.delete(KORTIX_USER_CONTEXT_HEADER);
+  headers.set('Authorization', `Bearer ${args.serviceKey}`);
+  headers.set('Content-Type', 'application/json');
+  return headers;
+}
+
 export async function syncSandboxEnvForPrompt(args: {
   projectId: string;
   sessionId: string;
   serviceKey: string | null;
   previewUrl: string;
-  previewToken: string | null;
+  providerHeaders: Record<string, string>;
 }): Promise<void> {
   if (!args.serviceKey) return;
   const snapshot = await resolveSandboxEnvSnapshot(args.projectId, args.sessionId);
@@ -151,7 +161,7 @@ export async function syncSandboxEnvForPrompt(args: {
   const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
   await postEnvToDaemon({
     previewUrl: args.previewUrl,
-    previewToken: args.previewToken,
+    providerHeaders: args.providerHeaders,
     serviceKey: args.serviceKey,
     snapshot,
     refreshModels: true,
@@ -189,8 +199,17 @@ export async function propagateProjectSecretsToActiveSandboxes(
       try {
         const snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
         if (!snapshot) return;
-        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
-        await postEnvToDaemon({ previewUrl: url, previewToken: token, serviceKey, snapshot, refreshModels: opts?.refreshModels });
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
+        await postEnvToDaemon({
+          previewUrl: url,
+          providerHeaders: headers,
+          serviceKey,
+          snapshot,
+          refreshModels: opts?.refreshModels,
+        });
       } catch (err) {
         console.warn(
           `[env-sync] hot push failed for sandbox ${row.externalId}:`,
@@ -232,10 +251,13 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
         const snapshot =
           (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
           emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
+        const { url, headers } = await resolveSandboxIngress(row.externalId, {
+          port: SANDBOX_SERVICE_PORT,
+          transport: 'http',
+        });
         await postEnvToDaemon({
           previewUrl: url,
-          previewToken: token,
+          providerHeaders: headers,
           serviceKey,
           snapshot,
           refreshModels: true,

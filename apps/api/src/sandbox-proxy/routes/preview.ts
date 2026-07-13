@@ -10,12 +10,11 @@ import {
   loadSandbox,
   markSandboxErrored,
   markSandboxUsed,
-  resolvePreviewLink,
+  resolveSandboxIngress,
+  routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
 import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
-
-const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -244,24 +243,11 @@ function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
 }
 
-// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only). Daytona
-// (a container) reaches it directly; Platinum (a microVM) has its edge dial the
-// guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
-// is what breaks `kortix sessions connect` / `opencode attach` on Platinum.
-//
-// The sandbox agent on :8000 (binds 0.0.0.0, reachable) already reverse-proxies
-// every path to opencode's localhost:4096 in-box. So for Platinum we route
-// opencode(4096) traffic through :8000 — the same bridge the /pty/ WebSocket
-// already uses. The 8000-keyed guards below (session-visibility gate, /kortix/env
-// block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
-// subject to the SAME protection as a direct :8000 request — the reroute changes
-// reachability, never the auth/control surface.
-const OPENCODE_INTERNAL_PORT = 4096;
 const SANDBOX_AGENT_PORT = 8000;
 
 /**
  * Should the data-path proxy WAKE a stopped box instead of 503ing it? Only when a
- * real user (principal) is actively hitting the OpenCode daemon (port 8000) — never
+ * real user (principal) is actively hitting the session daemon (port 8000) — never
  * on passive asset/preview traffic or non-user (service) access. That gate is what
  * lets the runtime path auto-resume like `/start` WITHOUT fighting the reaper's
  * idle-quiesce "don't resurrect on passive traffic" policy. Pure + exported so the
@@ -274,12 +260,6 @@ export function shouldAutoResumeStoppedSandbox(
 ): boolean {
   return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
 }
-function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
-  return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
-    ? SANDBOX_AGENT_PORT
-    : addressedPort;
-}
-
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -317,15 +297,13 @@ export async function forwardToSandbox(
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
   }
-  // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
-  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
-  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
-  // request (sandbox ownership is already enforced unconditionally above). NOTE:
-  // redirectPrefix/X-Forwarded-Prefix stays on the client-addressed `port` ON
-  // PURPOSE — the prefix must reflect the URL the client actually used (/4096).
-  const upstreamPort = effectiveUpstreamPort(record.provider, port);
+  // Providers may route an addressed port through a provider-specific ingress.
+  // Authorization keys off the effective port, while redirects retain the
+  // client-addressed port so browser-visible URLs remain stable.
+  const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
-  // The daemon port serves the session's OpenCode conversation + owner-synced
+  // The daemon port serves the session's ACP conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
@@ -349,7 +327,7 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
-    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
+    // A stopped-but-resumable box hit by a REAL USER on the ACP data path
     // (port 8000, principal) should wake in place — the same resume `/start` does —
     // rather than dead-end with a manual-Restart card. This closes the stale-ready
     // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
@@ -387,7 +365,7 @@ export async function forwardToSandbox(
   // the first RX interrupt → daemon briefly unreachable ~1s) clears on the next
   // attempt instead of stretching to seconds. The old [2000,5000,8000] turned a
   // ~1s stall into the multi-second session-list lag observed in-browser
-  // (opencode-listed +5578ms, 2026-06-14). Later delays stay progressive for a
+  // (runtime-listed +5578ms, 2026-06-14). Later delays stay progressive for a
   // genuinely cold-booting port.
   const RETRY_DELAYS_MS = [250, 1000, 3000];
   let wakeTriggered = false;
@@ -407,7 +385,8 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+      const ingress = await resolveSandboxIngress(record, ingressRequest);
+      const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       // Build forwarding headers: copy the client's (minus stripped), force
@@ -427,7 +406,7 @@ export async function forwardToSandbox(
         sandboxId,
         userId,
         serviceKey,
-        previewToken,
+        providerHeaders: ingress.headers,
       });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
@@ -540,19 +519,6 @@ export async function forwardToSandbox(
       //   502 — container started but the port isn't listening yet
       //   503 — sandbox service temporarily unavailable
       // Retry with auto-wake so users don't see errors during the boot window.
-      if (upstream.status === 503) {
-        const bodyText = await upstream.clone().text().catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
-          void markSandboxUsed(sandboxId);
-          const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
-          return new Response(bodyText, {
-            status: upstream.status,
-            statusText: upstream.statusText,
-            headers: notReadyHeaders,
-          });
-        }
-      }
-
       if (upstream.status === 502 || upstream.status === 503) {
         if (attempt < MAX_RETRIES) {
           // Port not ready yet — sandbox is booting (container running, port down).
@@ -675,13 +641,12 @@ export async function resolvePreviewWsUpstream(opts: {
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
-  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
-  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
-  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
-  const upstreamPort =
-    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
-      ? 8000
-      : opts.upstreamPort;
+  const ingressRequest = {
+    port: opts.upstreamPort,
+    path: remainingPath,
+    transport: 'websocket' as const,
+  };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
@@ -703,7 +668,8 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+  const ingress = await resolveSandboxIngress(record, ingressRequest);
+  const previewUrl = ingress.url;
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
@@ -712,22 +678,18 @@ export async function resolvePreviewWsUpstream(opts: {
     sandboxId,
     userId,
     serviceKey: record.serviceKey,
-    previewToken,
+    providerHeaders: ingress.headers,
   });
 
   const upstreamUrl = new URL(wsBase + remainingPath + queryString);
-  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+  if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
-    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
-    // opencode's PTY WS replays its scrollback — including the live shell prompt —
-    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
-    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
-    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
-    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
-    // hits the agent's ticket+cursor default. Default to replay-from-start when the
-    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
-    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
-    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
+    if (signedContext) {
+      upstreamUrl.searchParams.set(ingress.websocket.userContextQueryParam, signedContext);
+    }
+  }
+  for (const [key, value] of Object.entries(ingress.websocket?.queryDefaults ?? {})) {
+    if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
   }
 
   return { ok: true, url: upstreamUrl.toString(), headers };

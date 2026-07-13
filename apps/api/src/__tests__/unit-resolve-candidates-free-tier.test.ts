@@ -4,20 +4,6 @@ let billingEnabled = true;
 let accountTier = 'free';
 let accountTierCalls = 0;
 
-mock.module('@kortix/llm-gateway', () => ({
-  resolveCatalogUpstream: (provider: string) =>
-    provider === 'openai' || provider === 'anthropic'
-      ? {
-          envVar: provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
-          kind: provider === 'openai' ? 'openai-chat' : 'anthropic',
-          baseUrl:
-            provider === 'openai'
-              ? 'https://api.openai.com/v1'
-              : 'https://api.anthropic.com/v1',
-        }
-      : null,
-}));
-
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
   KORTIX_MARKUP: 1.2,
@@ -32,6 +18,16 @@ mock.module('../config', () => ({
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
+        if (key === 'LLM_GATEWAY_VISION_MODEL') return 'claude-sonnet-4.6';
+        if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') {
+          return [{
+            id: 'test-platform-default',
+            models: ['codex/gpt-5.6-sol'],
+            fallbackModels: ['glm-5.2'],
+            fallbackOn: 'any-error',
+          }];
+        }
         return target[key];
       },
     },
@@ -44,6 +40,10 @@ mock.module('../billing/services/entitlements', () => ({
     accountTierCalls += 1;
     return accountTier;
   },
+}));
+
+mock.module('../repositories/project-routing-policies', () => ({
+  getProjectRoutingPolicy: async () => null,
 }));
 
 mock.module('../projects/secrets', () => ({

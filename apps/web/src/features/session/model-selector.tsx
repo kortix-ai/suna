@@ -131,6 +131,7 @@ export interface ModelSelectorProps {
    * chosen when something concrete will actually run.
    */
   unsetLabel?: string;
+  disabled?: boolean;
 }
 
 export function ModelSelector({
@@ -139,6 +140,7 @@ export function ModelSelector({
   onSelect,
   defaultControls,
   unsetLabel = 'No model',
+  disabled = false,
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -324,19 +326,24 @@ export function ModelSelector({
   return (
     <>
       {connectionModal}
-      <CommandPopover open={open} onOpenChange={setOpen}>
+      <CommandPopover
+        open={disabled ? false : open}
+        onOpenChange={(next) => !disabled && setOpen(next)}
+      >
         <Tooltip>
           <TooltipTrigger asChild>
             <CommandPopoverTrigger>
               <button
                 type="button"
                 data-testid="catalog-model-selector"
+                disabled={disabled}
                 aria-label={tHardcodedUi.raw(
                   'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
                 )}
                 className={cn(
                   'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200',
                   open && 'bg-muted text-foreground',
+                  disabled && 'cursor-not-allowed opacity-60',
                 )}
               >
                 <span className="max-w-[120px] truncate">{displayName}</span>

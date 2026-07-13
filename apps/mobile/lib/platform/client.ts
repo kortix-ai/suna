@@ -32,10 +32,13 @@ import { stopProjectSession } from '@kortix/sdk/projects-client';
 // `systemReload` targets the globally-active runtime URL, not an explicit
 // sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
 import {
+  getProviders as sdkGetProviders,
   getServiceLogs as sdkGetServiceLogs,
   listServices as sdkListServices,
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
+  type ProvidersInfo,
+  type SandboxProviderName,
 } from '@kortix/sdk';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
@@ -50,7 +53,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'justavps';
+export type { SandboxProviderName } from '@kortix/sdk';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -278,7 +281,9 @@ export async function ensureSandbox(opts?: {
 
   const session = (await createProjectSession(
     project.project_id,
-    {}
+    {
+      ...(opts?.provider ? { provider: opts.provider } : {}),
+    }
   )) as unknown as ProjectSessionSummary;
   const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
   const sandbox = toSandboxInfo(project, session, runtime);
@@ -349,10 +354,10 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
 
 /**
  * Get available sandbox providers.
- * GET /platform/providers
+ * GET /setup/sandbox-providers
  */
-export async function getProviders(): Promise<string[]> {
-  return ['daytona'];
+export async function getProviders(): Promise<ProvidersInfo> {
+  return sdkGetProviders();
 }
 
 /**

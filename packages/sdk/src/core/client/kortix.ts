@@ -228,6 +228,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     update: P.updateProject,
     archive: P.archiveProject,
     llmCatalog: P.getProjectLlmCatalog,
+    modelPicker: P.getProjectModelPicker,
     sandboxHealth: P.getProjectSandboxHealth,
     sandboxTemplates: P.listProjectSandboxTemplates,
     sessions: P.listProjectSessions,
@@ -240,6 +241,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     getInstallation: P.getGitHubInstallation,
     listInstallations: P.listGitHubInstallations,
     listRepositories: P.listGitHubRepositories,
+    listRepositoryBranches: P.listGitHubRepositoryBranches,
     saveInstallation: P.saveGitHubInstallation,
     deleteInstallation: P.deleteGitHubInstallation,
   };
@@ -282,6 +284,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
+      modelPicker: () => P.getProjectModelPicker(projectId),
       /** Declared logical agents resolved through the project's single runtime compiler. */
       agents: async () => (await P.getProjectDetail(projectId)).config.agents,
       /** Harness authentication connections, including explicit active bindings. */
@@ -549,6 +552,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         keys: () => P.getGatewayKeys(projectId),
         createKey: (name: string) => P.createGatewayKey(projectId, name),
         revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+        routing: {
+          get: () => P.getGatewayRoutingPolicy(projectId),
+          set: (policy: Parameters<typeof P.setGatewayRoutingPolicy>[1]) =>
+            P.setGatewayRoutingPolicy(projectId, policy),
+          reset: () => P.resetGatewayRoutingPolicy(projectId),
+          preview: (input: Parameters<typeof P.previewGatewayRoute>[1]) =>
+            P.previewGatewayRoute(projectId, input),
+        },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
         playground: (prompt: string, models: string[]) =>
           P.runGatewayPlayground(projectId, prompt, models),
@@ -621,7 +632,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
         buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
-        setProvider: (provider: string | null) =>
+        setProvider: (provider: Parameters<typeof P.updateProjectSandboxProvider>[1]) =>
           P.updateProjectSandboxProvider(projectId, provider),
       },
 

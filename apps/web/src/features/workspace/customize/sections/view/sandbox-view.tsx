@@ -24,6 +24,7 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { cn } from '@/lib/utils';
+import { describeProviderCoverage } from './sandbox-provider-coverage';
 import {
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
@@ -109,7 +110,7 @@ const BUILD_STATUS_TILE: Record<
   },
 };
 
-const DAYTONA_STATE_LABEL: Record<
+const TEMPLATE_STATE_LABEL: Record<
   string,
   { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' }
 > = {
@@ -122,14 +123,14 @@ const DAYTONA_STATE_LABEL: Record<
   missing: { label: 'Not built yet', tone: 'idle' },
 };
 
-const DAYTONA_TONE_BADGE = {
+const TEMPLATE_TONE_BADGE = {
   ok: { variant: 'success' as const },
   busy: { variant: 'solid' as const, color: 'blue' as const },
   fail: { variant: 'destructive' as const },
   idle: { variant: 'muted' as const },
 };
 
-const DAYTONA_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = {
+const TEMPLATE_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = {
   ok: 'bg-kortix-green/10 text-kortix-green',
   busy: 'bg-kortix-yellow/10 text-kortix-yellow',
   fail: 'bg-kortix-red/10 text-kortix-red',
@@ -137,17 +138,14 @@ const DAYTONA_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = 
 };
 
 function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' } {
-  return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
+  return TEMPLATE_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
-// Small, muted chip naming the sandbox provider (Daytona / Platinum / Managed)
-// a template/build belongs to — reads the provider field directly, capitalized.
-// Omitted entirely when the provider is unknown — we never render "Unknown".
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   if (!provider) return null;
   return (
     <Badge variant="muted" size="sm">
-      {provider.charAt(0).toUpperCase() + provider.slice(1)}
+      {provider === 'e2b' ? 'E2B' : provider.charAt(0).toUpperCase() + provider.slice(1)}
     </Badge>
   );
 }
@@ -164,7 +162,7 @@ function formatBuildDuration(startedAt: string, finishedAt: string | null): stri
   return `${hours}h`;
 }
 
-function BuildRow({ build, provider }: { build: ProjectSnapshotBuild; provider?: string }) {
+function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
   const status = BUILD_STATUS_TILE[build.status];
   const { Icon } = status;
   const duration = formatBuildDuration(build.started_at, build.finished_at);
@@ -185,7 +183,7 @@ function BuildRow({ build, provider }: { build: ProjectSnapshotBuild; provider?:
           <Badge variant={status.badgeVariant} size="xs">
             {status.label}
           </Badge>
-          <ProviderBadge provider={provider} />
+          <ProviderBadge provider={build.provider} />
         </div>
         <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
           <span className="truncate font-mono">{build.snapshot_name}</span>
@@ -244,6 +242,55 @@ function BuildRow({ build, provider }: { build: ProjectSnapshotBuild; provider?:
     <li className="group bg-popover rounded-md border transition-colors">
       <div className="flex items-center gap-3 px-4 py-2">{row}</div>
     </li>
+  );
+}
+
+function ProviderCoverage({
+  coverage,
+}: {
+  coverage: NonNullable<SandboxTemplate['provider_coverage']>;
+}) {
+  const observedAt = coverage
+    .map((item) => item.observed_at)
+    .filter((value): value is string => !!value)
+    .sort()
+    .at(-1);
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <span className="text-muted-foreground text-xs">Provider images</span>
+      {coverage.map((item) => {
+        const state = describeProviderCoverage(item.status);
+        const variant =
+          state.tone === 'ok'
+            ? 'success'
+            : state.tone === 'busy'
+              ? 'warning'
+              : state.tone === 'fail'
+                ? 'destructive'
+                : 'muted';
+        const provider = item.provider === 'e2b'
+          ? 'E2B'
+          : item.provider.charAt(0).toUpperCase() + item.provider.slice(1);
+        return (
+          <Badge
+            key={item.provider}
+            variant={variant}
+            size="xs"
+            aria-label={`${provider}: ${state.label}`}
+          >
+            {provider}
+            <span className="opacity-50" aria-hidden="true">&bull;</span>
+            {state.label}
+          </Badge>
+        );
+      })}
+      {observedAt ? (
+        <span className="text-muted-foreground text-xs tabular-nums">
+          Checked {formatRelative(observedAt)}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -396,8 +443,8 @@ function TemplateRow({
         : manifestVersion && manifestVersion >= 2
           ? 'kortix.yaml'
           : 'kortix.toml';
-  const stateInfo = describeState(template.daytona_state);
-  const stateBadge = DAYTONA_TONE_BADGE[stateInfo.tone];
+  const stateInfo = describeState(template.provider_state || template.daytona_state);
+  const stateBadge = TEMPLATE_TONE_BADGE[stateInfo.tone];
   const StateIcon =
     stateInfo.tone === 'busy'
       ? Loading
@@ -413,7 +460,7 @@ function TemplateRow({
         <div
           className={cn(
             'inline-flex size-11 shrink-0 items-center justify-center rounded-sm border',
-            DAYTONA_TONE_ICON_TILE[stateInfo.tone],
+            TEMPLATE_TONE_ICON_TILE[stateInfo.tone],
           )}
         >
           <Icon className="size-6 shrink-0" />
@@ -424,9 +471,8 @@ function TemplateRow({
             <Badge variant="secondary" size="sm">
               {template.slug}
             </Badge>
-            <ProviderBadge provider={template.provider} />
           </div>
-          <div className="text-muted-foreground truncate text-[13px]">
+          <div className="text-muted-foreground truncate text-xs">
             {sub} &bull; {template.cpu}{' '}
             {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextVCPU15535b27')}{' '}
             &bull; {template.memory_gb}{' '}
@@ -435,6 +481,9 @@ function TemplateRow({
             {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}{' '}
             &bull; {sourceTag}
           </div>
+          {template.provider_coverage?.length ? (
+            <ProviderCoverage coverage={template.provider_coverage} />
+          ) : null}
         </div>
         <Badge
           variant={stateBadge.variant}
@@ -530,8 +579,9 @@ export function SandboxView({ projectId }: { projectId: string }) {
       const templates = Array.isArray(data.templates) ? data.templates : [];
       const anyBuilding =
         builds.some((b) => b.status === 'building') ||
+        templates.some((t) => t.provider_state === 'building') ||
         templates.some((t) =>
-          ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase()),
+          t.provider_coverage?.some((provider) => provider.status === 'building'),
         );
       return anyBuilding ? 5_000 : false;
     },
@@ -548,10 +598,6 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
   const isFullyEmpty = templates.length === 0 && builds.length === 0;
-
-  // Build-log rows carry no provider column of their own, so resolve it from the
-  // template the build was for (`template_slug`). Unknown → the badge is omitted.
-  const providerBySlug = new Map(templates.map((t) => [t.slug, t.provider]));
 
   const newTemplateAction = canManage ? (
     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setFormOpen(true)}>
@@ -706,11 +752,7 @@ export function SandboxView({ projectId }: { projectId: string }) {
                   ) : (
                     <ul className="space-y-2">
                       {builds.slice(0, 10).map((b) => (
-                        <BuildRow
-                          key={b.build_id}
-                          build={b}
-                          provider={providerBySlug.get(b.template_slug)}
-                        />
+                        <BuildRow key={b.build_id} build={b} />
                       ))}
                     </ul>
                   )}

@@ -154,6 +154,8 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickRoutedPreBuild: () => {},
+  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
@@ -282,6 +284,9 @@ mock.module('../shared/db', () => ({
           return Promise.resolve([]);
         },
         onConflictDoUpdate: () => {
+          if (table === projects) {
+            throw new Error('managed project provisioning must insert a fresh project row');
+          }
           if (table === projectMembers) {
             grantedProjectRole = values;
             return Promise.resolve([]);

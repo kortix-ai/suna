@@ -23,6 +23,7 @@ import {
   KORTIX_ENTRYPOINT,
 } from '../build-context';
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -66,16 +67,6 @@ interface PlatinumTemplate {
   error?: string | null;
   build_error?: string | null;
   status_message?: string | null;
-}
-
-/** Platinum template state → the adapter's ProviderState vocabulary. */
-function mapState(state: string | undefined): ProviderState {
-  switch ((state ?? '').toLowerCase()) {
-    case 'ready': return 'active';
-    case 'building': return 'building';
-    case 'failed': return 'build_failed';
-    default: return 'missing'; // deprecated / absent / unknown
-  }
 }
 
 async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
@@ -206,9 +197,10 @@ class PlatinumAdapter implements SandboxProviderAdapter {
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!isPlatinumConfigured()) return 'missing';
     try {
-      return mapState((await findTemplateByName(snapshotName))?.state);
+      const template = await findTemplateByName(snapshotName);
+      return template ? normalizeExistingProviderState(template.state) : 'missing';
     } catch {
-      return 'missing';
+      return 'unknown';
     }
   }
 
@@ -221,6 +213,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     } catch {
       // not found / transient — treat as already gone
     }
+  }
+
+  async listSnapshots(): Promise<Array<{ name: string }>> {
+    if (!isPlatinumConfigured()) return [];
+    return (await platinumJson<PlatinumTemplate[]>('/v1/templates'))
+      .map((template) => template.name)
+      .filter((name): name is string => !!name)
+      .map((name) => ({ name }));
   }
 
   private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {

@@ -131,7 +131,7 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
           sessionId: target.sessionId,
           serviceKey: target.endpoint.serviceKey,
           previewUrl: target.endpoint.url,
-          previewToken: target.endpoint.previewToken,
+          providerHeaders: target.endpoint.headers,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

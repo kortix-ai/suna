@@ -24,7 +24,7 @@ export function getDefaultSandboxUrl(): string {
 }
 
 /**
- * Derive the proxy URL for a managed sandbox by its provider sandbox id.
+ * Derive the proxy URL for a cloud sandbox by its provider sandbox id.
  * Always computed fresh — never persisted — so route renames can't go stale.
  */
 export function getSandboxServerUrl(sandboxId: string): string {

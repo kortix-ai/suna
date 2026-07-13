@@ -8,7 +8,7 @@ import type { ProviderListResponse } from './keys';
 import { getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
-  getProjectLlmCatalog,
+  getProjectModelPicker,
 } from '../../core/rest/projects-client';
 import {
   filterToGatewayProviders,
@@ -49,7 +49,7 @@ export function useRuntimeProviders() {
       : runtimeKeys.providers(),
     queryFn: async () => {
       if (!projectId) return { all: [], connected: [], default: {} } as ProviderListResponse;
-      const catalog = await getProjectLlmCatalog(projectId);
+      const catalog = await getProjectModelPicker(projectId);
       const providers = projectLlmCatalogToProviderList(catalog);
       setLSCache(LS_PROVIDERS, providers, cacheScope);
       return providers;

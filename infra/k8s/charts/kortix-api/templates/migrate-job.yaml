@@ -17,6 +17,9 @@ metadata:
     argocd.argoproj.io/hook: PreSync
     # Keep the finished Job for log inspection; replace it at the next sync.
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
@@ -37,7 +40,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "kortix-api.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           workingDir: /app/packages/db
           command: ["bunx", "drizzle-kit", "migrate"]

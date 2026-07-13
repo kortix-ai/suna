@@ -18,6 +18,7 @@
 // registration order — preserve it. r1 registers the global `/*` auth
 // middleware first (its first statement), then the remaining route groups.
 import './routes/r1';
+import './routes/github-repositories';
 import './routes/r2';
 import './routes/r3';
 import './routes/setup-links';

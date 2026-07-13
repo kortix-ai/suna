@@ -1,9 +1,8 @@
-import { resolvePreviewLink, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
-  KORTIX_USER_CONTEXT_HEADER,
-  encodeKortixUserContext,
-} from '../shared/kortix-user-context';
-import { resolvePreviewUserContext } from '../shared/preview-ownership';
+  buildSandboxUpstreamHeaders,
+  resolveSandboxIngress,
+  resolveServiceKey,
+} from '../sandbox-proxy/backend';
 
 const DAEMON_PORT = 8000;
 
@@ -22,25 +21,21 @@ export async function sandboxRuntimeEndpoint(
   url: string;
   headers: Record<string, string>;
   serviceKey: string;
-  previewToken: string | null;
 } | null> {
   const serviceKey = await resolveServiceKey(externalId);
   if (!serviceKey) return null;
-  const { url, token } = await resolvePreviewLink(externalId, DAEMON_PORT);
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${serviceKey}`,
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (token) headers['X-Daytona-Preview-Token'] = token;
-  const payload = await resolvePreviewUserContext(externalId, userId);
-  if (payload) headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
+  const ingress = await resolveSandboxIngress(externalId, { port: DAEMON_PORT });
+  const headers = await buildSandboxUpstreamHeaders({
+    sandboxId: externalId,
+    userId: userId ?? '',
+    serviceKey,
+    providerHeaders: ingress.headers,
+  });
+  headers['Content-Type'] = 'application/json';
   return {
-    url: url.replace(/\/$/, ''),
+    url: ingress.url.replace(/\/$/, ''),
     headers,
     serviceKey,
-    previewToken: token,
   };
 }
 

@@ -22,9 +22,11 @@ import {
   projectMembers,
   projectGroupGrants,
   projectGitConnections,
+  projectLlmRoutingPolicies,
   sandboxes,
   sandboxMembers,
   kortixApiKeys,
+  sandboxComputeSessions,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -67,11 +69,9 @@ describe('kortix enums', () => {
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
     expect(sandboxProviderEnum.enumValues).toEqual([
-      'managed',
       'daytona',
-      'local_docker',
-      'justavps',
       'platinum',
+      'e2b',
     ]);
   });
 
@@ -141,6 +141,15 @@ describe('kortix enums', () => {
   test('change_request_status enum is non-empty and named', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('sandbox compute provider attribution', () => {
+  test('compute windows persist the provider and index it with start time', () => {
+    expect(columnNames(sandboxComputeSessions)).toContain('provider');
+    expect(indexNames(sandboxComputeSessions)).toContain(
+      'idx_sandbox_compute_sessions_provider_time',
+    );
   });
 });
 
@@ -235,11 +244,27 @@ describe('projects table', () => {
     expect(col?.default).toBe('active');
   });
 
-  test('enforces a unique account/repo index', () => {
+  test('indexes account/repo without preventing branch-isolated projects', () => {
     const cfg = getTableConfig(projects);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
-    expect(unique).toBeDefined();
-    expect(unique?.config.unique).toBe(true);
+    const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
+    expect(accountRepo).toBeDefined();
+    expect(accountRepo?.config.unique).toBe(false);
+  });
+});
+
+describe('project_llm_routing_policies table', () => {
+  test('stores one versioned routing document per project with audit fields', () => {
+    expect(getTableConfig(projectLlmRoutingPolicies).name).toBe('project_llm_routing_policies');
+    expect(primaryColumn(projectLlmRoutingPolicies)).toBe('project_id');
+    expect(columnNames(projectLlmRoutingPolicies)).toEqual(expect.arrayContaining([
+      'vision_model',
+      'default_fallback_models',
+      'default_fallback_on',
+      'rules',
+      'updated_by',
+      'created_at',
+      'updated_at',
+    ]));
   });
 });
 
@@ -261,12 +286,11 @@ describe('project_members table', () => {
 });
 
 describe('project_group_grants table', () => {
-  test('stores an optional default base ref for sessions started by group members', () => {
+  test('does not carry branch selection outside the project boundary', () => {
     const col = getTableConfig(projectGroupGrants).columns.find(
       (column) => column.name === 'default_base_ref',
     );
-    expect(col).toBeDefined();
-    expect(col?.notNull).toBe(false);
+    expect(col).toBeUndefined();
   });
 });
 

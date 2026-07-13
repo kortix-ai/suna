@@ -4,6 +4,7 @@ import type {
   GatewayConfig,
   GatewayHooks,
   GatewayLogger,
+  ModelRoutePlan,
   TokenCounts,
   UpstreamDescriptor,
   UsageEvent,
@@ -61,6 +62,20 @@ function newRequestId(): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function requestHasImage(body: Record<string, unknown>): boolean {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  return messages.some((message) => {
+    if (!message || typeof message !== 'object') return false;
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) return false;
+    return content.some((part) => {
+      if (!part || typeof part !== 'object') return false;
+      const type = (part as { type?: unknown }).type;
+      return type === 'image_url' || type === 'input_image' || type === 'image';
+    });
+  });
 }
 
 // An empty completion is often a transient upstream hiccup on one specific
@@ -248,9 +263,39 @@ export async function handleChatCompletions(
   }
 
   const requestedModel = typeof body.model === 'string' ? body.model : '';
-  // Resolve synthetic models (e.g. "auto") to a concrete one. `requestedModel`
-  // stays as asked for the trace; `routedModel` is what we actually resolve/bill.
-  const routedModel = config.autoRouter?.(requestedModel, body, principal) ?? requestedModel;
+  // Model names, defaults, catalog availability, and fallback policy belong to
+  // the host/control plane. The gateway sends only the requested id and minimal
+  // capability traits, then executes the returned finite route generically.
+  let route: ModelRoutePlan | null;
+  try {
+    route = await hooks.resolveRoute?.(principal, {
+      requestedModel,
+      requires: { imageInput: requestHasImage(body) },
+    }) ?? null;
+  } catch (err) {
+    const message = errorMessage(err);
+    step('route_resolution_failed', { ms: lap(), error: message });
+    emit({
+      ...id,
+      requestedModel,
+      resolvedModel: requestedModel,
+      status: 502,
+      ok: false,
+      errorCode: 'routing_unavailable',
+      errorMessage: message,
+      request: capture(body),
+    });
+    return gatewayErrorResponse(502, {
+      message: 'Model routing policy is unavailable',
+      code: 'routing_unavailable',
+      provider: '',
+      requestedModel,
+      resolvedModel: requestedModel,
+      requestId,
+      suggestion: 'Retry the request. If the error continues, check the gateway control plane.',
+    });
+  }
+  const routedModel = route?.primaryModel || requestedModel;
   if (routedModel !== requestedModel) {
     body.model = routedModel;
   }
@@ -270,7 +315,6 @@ export async function handleChatCompletions(
     `[gateway] → ${requestId} ${requestedModel || '(no model)'}${routedModel !== requestedModel ? ` →${routedModel}` : ''}${body.stream === true ? ' stream' : ''} acct=${principal.accountId.slice(0, 8)}`,
   );
 
-  const route = config.modelFallbackRouter?.(routedModel, body, principal);
   const maxFallbackModels = Math.min(8, Math.max(0, config.maxFallbackModels ?? 3));
   const routeModels = [
     routedModel,
@@ -286,7 +330,7 @@ export async function handleChatCompletions(
       ? {
           ...metadata,
           gatewayRouting: {
-            policy: 'model-fallback',
+            policy: route?.policyId || 'control-plane',
             models: routeModels,
             selected,
           },

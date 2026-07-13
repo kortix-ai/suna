@@ -6,7 +6,6 @@ import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
@@ -108,7 +107,13 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId).catch((err) =>
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+    null,
+    row.provider as SandboxProviderName,
+  ).catch((err) =>
     console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
   );
 
@@ -311,13 +316,6 @@ export async function allocateRuntimeOnOpen(
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
-  // Migrated session — restore its original chat as part of provisioning, before
-  // the sandbox goes active so the compiled ACP launch plan survives.
-  const legacySandboxId = (
-    loaded.row as {
-      metadata?: { legacy_migration?: { source_sandbox_id?: unknown } };
-    }
-  ).metadata?.legacy_migration?.source_sandbox_id;
   const runtimeModel = typeof session.metadata?.model === 'string' ? session.metadata.model : null;
   const runtimeAuthKind = typeof session.metadata?.auth_connection === 'string'
     ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
@@ -352,15 +350,6 @@ export async function allocateRuntimeOnOpen(
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
-    beforeActive:
-      typeof legacySandboxId === 'string'
-        ? (externalId) =>
-            rehydrateSessionChat({
-              sessionId,
-              legacySandboxId,
-              newExternalId: externalId,
-            })
-        : undefined,
   });
 }
 

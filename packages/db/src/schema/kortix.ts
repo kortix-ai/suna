@@ -29,15 +29,9 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
 ]);
 
 export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
-  // 'daytona' is the managed cloud backend's identity — new rows write 'daytona'.
-  // 'managed' remains a valid enum value only because the ADD VALUE migration that
-  // introduced it can't be dropped in Postgres; it's a harmless defensive leftover
-  // from the reverted daytona→managed rename (read paths still accept it).
-  'managed',
   'daytona',
-  'local_docker',
-  'justavps',
   'platinum',
+  'e2b',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -277,7 +271,7 @@ export const projects = kortixSchema.table(
     index('idx_projects_account').on(table.accountId),
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
-    uniqueIndex('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+    index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
   ],
 );
 
@@ -610,6 +604,42 @@ export const accountModelPreferences = kortixSchema.table(
       table.accountId,
       table.scope,
       table.scopeKey,
+    ),
+  ],
+);
+
+export interface ProjectLlmRoutingRule {
+  model: string;
+  fallbackModels: string[];
+  fallbackOn: 'transient' | 'any-error';
+}
+
+// Project-owned gateway composition. A NULL default_fallback_models inherits
+// the operator policy while [] deliberately disables fallback for `auto`.
+// The project default model remains in account_model_preferences so every
+// existing default-model consumer continues to share one source of truth.
+export const projectLlmRoutingPolicies = kortixSchema.table(
+  'project_llm_routing_policies',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    visionModel: varchar('vision_model', { length: 128 }),
+    defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
+    defaultFallbackOn: text('default_fallback_on'),
+    rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_llm_routing_policies_fallback_pair_check',
+      sql`(${table.defaultFallbackModels} IS NULL AND ${table.defaultFallbackOn} IS NULL) OR (${table.defaultFallbackModels} IS NOT NULL AND ${table.defaultFallbackOn} IN ('transient', 'any-error'))`,
+    ),
+    check(
+      'project_llm_routing_policies_rules_array_check',
+      sql`jsonb_typeof(${table.rules}) = 'array'`,
     ),
   ],
 );
@@ -1247,7 +1277,9 @@ export const sandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    // Historical /instances audit rows may carry retired providers. Current
+    // session runtimes use the strict sandbox_provider enum.
+    provider: text('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     status: sandboxStatusEnum('status').default('provisioning').notNull(),
     baseUrl: text('base_url').notNull(),
@@ -2032,6 +2064,7 @@ export const sandboxComputeSessions = kortixSchema.table(
     sandboxId: uuid('sandbox_id').notNull(),
     sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     cpuCores: integer('cpu_cores').notNull(),
     memoryGb: integer('memory_gb').notNull(),
     diskGb: integer('disk_gb').notNull(),
@@ -2056,6 +2089,7 @@ export const sandboxComputeSessions = kortixSchema.table(
   },
   (table) => [
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
+    index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
     index('idx_sandbox_compute_sessions_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),
@@ -2738,10 +2772,6 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
-    /** Optional session-base override for members of this attached group.
-     *  NULL inherits projects.default_branch. Conflicting defaults from
-     *  multiple memberships intentionally fall back to the project default. */
-    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */

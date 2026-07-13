@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-let previewLink: { url: string; token: string | null } = { url: 'https://box.example', token: 'ptoken' };
+let sandboxIngress: { url: string; headers: Record<string, string>; effectivePort: number } = {
+  url: 'https://box.example',
+  headers: { 'e2b-traffic-access-token': 'traffic-token' },
+  effectivePort: 8000,
+};
 let serviceKey: string | null = 'svc-key';
 let previewLinkError: Error | null = null;
 
 mock.module('../sandbox-proxy/backend', () => ({
-  resolvePreviewLink: async () => {
+  resolveSandboxIngress: async () => {
     if (previewLinkError) throw previewLinkError;
-    return previewLink;
+    return sandboxIngress;
   },
   resolveServiceKey: async () => serviceKey,
 }));
@@ -19,7 +23,11 @@ let fetchResponse: (() => Response | Promise<Response>) | null = null;
 let lastRequest: { url: string; headers: Record<string, string> } | null = null;
 
 beforeEach(() => {
-  previewLink = { url: 'https://box.example', token: 'ptoken' };
+  sandboxIngress = {
+    url: 'https://box.example',
+    headers: { 'e2b-traffic-access-token': 'traffic-token' },
+    effectivePort: 8000,
+  };
   serviceKey = 'svc-key';
   previewLinkError = null;
   fetchResponse = null;
@@ -55,12 +63,12 @@ describe('classifySessionStatusBody', () => {
 describe('probeSandboxBusy', () => {
   const row = { sandboxId: 'sb-1', externalId: 'ext-1' };
 
-  test('busy body → busy, with auth + preview headers sent', async () => {
+  test('busy body → busy, with service and provider ingress auth sent', async () => {
     fetchResponse = () => new Response(JSON.stringify({ acp_busy: true }), { status: 200 });
     expect(await probeSandboxBusy(row)).toBe('busy');
     expect(lastRequest?.url).toBe('https://box.example/kortix/health');
     expect(lastRequest?.headers['Authorization']).toBe('Bearer svc-key');
-    expect(lastRequest?.headers['X-Daytona-Preview-Token']).toBe('ptoken');
+    expect(lastRequest?.headers['e2b-traffic-access-token']).toBe('traffic-token');
     expect(lastRequest?.headers['X-Kortix-User-Context']).toContain('.');
   });
 

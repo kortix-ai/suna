@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { chmod, mkdir } from 'node:fs/promises';
+import { chmod, mkdir, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -22,6 +22,8 @@ await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
+await mkdir(join(executorSdkPath, 'node_modules'), { recursive: true });
+await symlink('/definitely-not-present/typescript', join(executorSdkPath, 'node_modules', 'typescript'));
 await mkdir(opencodeConfigPath, { recursive: true });
 await mkdir(warmRepoPath, { recursive: true });
 execFileSync('git', ['init', '-b', 'main'], { cwd: warmRepoPath });
@@ -45,10 +47,12 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
   process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
+  getSnapshotImpl = async () => ({ state: snapshotState() });
 });
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
+let executorNodeModulesPresentAtProviderBoundary = false;
 let warmArchivePresentAtDaytonaBoundary = false;
 let warmGitConfigAtDaytonaBoundary = '';
 // One push per build attempt — the composed Dockerfile path (== context dir).
@@ -57,6 +61,7 @@ const contextPaths: string[] = [];
 // Per-test behavior (default: a clean successful build), driven by the tests.
 let createImpl: () => Promise<void> = async () => {};
 let snapshotState: () => string = () => 'active';
+let getSnapshotImpl: () => Promise<{ state: string }> = async () => ({ state: snapshotState() });
 
 mock.module('@daytonaio/sdk', () => ({
   Image: {
@@ -65,6 +70,9 @@ mock.module('@daytonaio/sdk', () => ({
       // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
       // finally cleans the context after, so this can't be asserted afterward.
       scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
+      executorNodeModulesPresentAtProviderBoundary = existsSync(
+        join(path, '..', 'kortix-executor-sdk', 'node_modules'),
+      );
       warmArchivePresentAtDaytonaBoundary = existsSync(
         join(path, '..', 'kortix-warm-repo.tar.gz'),
       );
@@ -87,11 +95,12 @@ mock.module('../shared/daytona', () => ({
       create: async () => {
         await createImpl();
       },
-      get: async () => ({ state: snapshotState() }),
+      get: async () => getSnapshotImpl(),
       delete: async () => undefined,
     },
   }),
   isDaytonaConfigured: () => true,
+  listDaytonaSnapshots: async () => [],
 }));
 
 const { daytonaProvider } = await import('../snapshots/providers/daytona');
@@ -115,6 +124,7 @@ describe('Daytona snapshot build context', () => {
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
+    expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
   });
 
   test('stages warm Git credentials outside the provider-visible Dockerfile and image history', async () => {
@@ -142,6 +152,29 @@ describe('Daytona snapshot build context', () => {
     );
     expect(warmGitConfigAtDaytonaBoundary).not.toContain(secret);
     expect(warmGitConfigAtDaytonaBoundary).not.toContain('extraHeader');
+  });
+});
+
+describe('Daytona snapshot state', () => {
+  test('reports a Daytona 404 as missing so a new template can be built', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('Snapshot with name kortix-new-template not found'), {
+        name: 'DaytonaNotFoundError',
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('missing');
+  });
+
+  test('keeps a transient Daytona probe failure unknown', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('upstream unavailable'), {
+        statusCode: 503,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('unknown');
   });
 });
 

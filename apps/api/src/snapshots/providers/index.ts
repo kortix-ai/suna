@@ -1,16 +1,16 @@
 /**
  * Sandbox provider adapters.
  *
- * A provider builds and hosts the actual sandbox image. Today there's one:
- * Daytona. Future providers (e.g. Vercel Sandbox, local Docker) implement the
- * `SandboxProviderAdapter` interface and slot in here.
+ * A provider builds and hosts the actual sandbox image. Daytona, Platinum, and
+ * E2B implement the `SandboxProviderAdapter` interface and slot in here.
  *
- * The provider is identified by a stable string (`daytona`, `local`, …) that
- * lives on the template row. The session boot path resolves the adapter by
- * that string and delegates the actual snapshot build / state check.
+ * The provider is identified by a stable string (`daytona`, `platinum`, or
+ * `e2b`) that lives on the template row. The session boot path resolves the
+ * adapter by that string and delegates the actual snapshot build / state check.
  */
 
 import { daytonaProvider } from './daytona';
+import { e2bProvider } from './e2b';
 import { platinumProvider } from './platinum';
 import type { WarmRepoContext } from '../build-context';
 
@@ -46,13 +46,13 @@ export interface BuildableTemplate {
 
 export type ProviderState =
   | 'active'
-  | 'pulling'
   | 'building'
-  | 'error'
   | 'build_failed'
   | 'removing'
-  | 'missing'
-  | string;
+  | 'unknown'
+  | 'missing';
+
+export { normalizeExistingProviderState } from './state';
 
 export interface BuildLogTap {
   /** Streamed per line from the provider build. */
@@ -60,7 +60,7 @@ export interface BuildLogTap {
 }
 
 export interface SandboxProviderAdapter {
-  readonly id: 'daytona' | 'local' | string;
+  readonly id: string;
 
   /**
    * Build the snapshot. The caller has already composed the layered Dockerfile
@@ -74,6 +74,8 @@ export interface SandboxProviderAdapter {
 
   /** Delete the snapshot (no-op if missing). */
   deleteSnapshot(snapshotName: string): Promise<void>;
+  /** List provider snapshots/templates owned by the current account. */
+  listSnapshots(): Promise<Array<{ name: string }>>;
 
   /**
    * Optional agent-only fast path: produce `newSnapshotName` from a predecessor
@@ -88,13 +90,9 @@ export interface SandboxProviderAdapter {
 }
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
-// The managed cloud backend's identity is 'daytona' (daytonaProvider.id). It's
-// ALSO registered under 'managed' purely as a defensive read alias, so any row
-// written 'managed' during the daytona→managed rename window still resolves to
-// the same adapter. New writes use 'daytona'.
-ADAPTERS.set('managed', daytonaProvider);
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
 ADAPTERS.set(platinumProvider.id, platinumProvider);
+ADAPTERS.set(e2bProvider.id, e2bProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {
   const adapter = ADAPTERS.get(id);

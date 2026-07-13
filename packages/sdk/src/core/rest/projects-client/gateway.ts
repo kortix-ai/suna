@@ -155,6 +155,93 @@ export interface CreatedGatewayKey {
   secret_key: string;
 }
 
+export type GatewayFallbackCondition = 'transient' | 'any-error';
+
+export interface GatewayFallbackChain {
+  models: string[];
+  fallbackOn: GatewayFallbackCondition;
+}
+
+export interface GatewayRoutingRule {
+  model: string;
+  fallbackModels: string[];
+  fallbackOn: GatewayFallbackCondition;
+}
+
+export interface GatewayProjectRoutingPolicy {
+  defaultModel: string | null;
+  visionModel: string | null;
+  defaultFallback: GatewayFallbackChain | null;
+  rules: GatewayRoutingRule[];
+}
+
+export interface GatewayRoutingPolicyDocument {
+  version: 1;
+  project: GatewayProjectRoutingPolicy;
+  effective: {
+    defaultModel: string;
+    defaultModelSource: 'project' | 'account' | 'platform';
+    visionModel: string;
+    defaultFallback: GatewayFallbackChain;
+  };
+  platform: {
+    defaultModel: string;
+    visionModel: string;
+    defaultFallback: GatewayFallbackChain;
+  };
+  capabilities?: { write: boolean };
+}
+
+export interface GatewayRoutePreviewInput {
+  requestedModel: string;
+  imageInput: boolean;
+}
+
+export interface GatewayRoutePreview {
+  version: 1;
+  route: {
+    policyId: string;
+    primaryModel: string;
+    fallbackModels: string[];
+    fallbackOn: GatewayFallbackCondition;
+  };
+  models: Array<{ model: string; available: boolean }>;
+}
+
+export async function getGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.get<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function setGatewayRoutingPolicy(
+  projectId: string,
+  policy: GatewayProjectRoutingPolicy,
+): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.put<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`, policy),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function resetGatewayRoutingPolicy(projectId: string): Promise<GatewayRoutingPolicyDocument> {
+  return unwrap(
+    await backendApi.delete<GatewayRoutingPolicyDocument>(`/projects/${projectId}/gateway/routing-policy`),
+    'Gateway routing policy request failed',
+  );
+}
+
+export async function previewGatewayRoute(
+  projectId: string,
+  input: GatewayRoutePreviewInput,
+): Promise<GatewayRoutePreview> {
+  return unwrap(
+    await backendApi.post<GatewayRoutePreview>(`/projects/${projectId}/gateway/routing-policy/preview`, input),
+    'Gateway route preview failed',
+  );
+}
+
 export async function listGatewayLogs(
   projectId: string,
   opts?: { limit?: number; offset?: number; ok?: boolean },

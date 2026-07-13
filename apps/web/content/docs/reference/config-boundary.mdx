@@ -5,7 +5,7 @@ description: The strict ownership boundary between kortix.yaml and harness-nativ
 
 A Kortix project's config has two owners, and the boundary is strict.
 
-- **Kortix owns** the manifest (`kortix.yaml`) and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, apps, runtime routing, and which agents the platform may launch/authorize.
+- **Kortix owns** the manifest (`kortix.yaml`) and `.kortix/Dockerfile` — what a project is, its sandbox, secrets, triggers, runtime routing, and which agents the platform may launch/authorize.
 - **The selected harness owns** its native config directory — how that runtime behaves. Claude Code, Codex, OpenCode, and Pi keep their own prompts, tools, model/provider settings, permissions, and local conventions in the format they already understand.
 
 In v3, `kortix.yaml` declares named `runtimes:`. Each runtime selects a `harness` and optional `config_dir`; the sandbox daemon maps that directory to the harness-native env var (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCODE_CONFIG_DIR`, or `PI_CODING_AGENT_DIR`) and speaks ACP to the harness process.
@@ -28,7 +28,6 @@ v1 projects (`kortix.toml`) express the same governance idea with `[[agents]]` �
 | Runtime profiles | `kortix.yaml` `runtimes:` | Kortix |
 | Runtime config directories | `kortix.yaml` `runtimes.<name>.config_dir` | Kortix → selected harness |
 | Triggers (cron + webhook) | `kortix.yaml` `triggers:` | Kortix |
-| Apps (experimental) | `kortix.yaml` `apps:` | Kortix |
 | Platform-launchable agents and grants | `kortix.yaml` `agents:` | Kortix |
 | Channels | Not in the manifest — dashboard/CLI-managed (`kortix channels`). The connector itself (`provider: channel`) is still declared under `connectors:` once you connect one. | Kortix (live routing is the `chat_channel_bindings` table) |
 | Agent personas | Harness-native config dir | Selected harness |

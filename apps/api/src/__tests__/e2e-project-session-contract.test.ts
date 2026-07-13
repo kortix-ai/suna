@@ -242,6 +242,8 @@ mock.module('../snapshots/builder', () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickRoutedPreBuild: () => {},
+  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => undefined,
@@ -296,7 +298,12 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async () => [],
+  listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
   isOrgAccount: async () => true,
@@ -2303,14 +2310,14 @@ describe('project session API contract', () => {
     expect(shadowRes.status).toBe(400);
   });
 
-  test('creates a session with the required id, branch, and sandbox invariant', async () => {
+  test('inherits the project environment branch and preserves the session/sandbox invariant', async () => {
+    projectRow.defaultBranch = 'dev';
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         provider: 'daytona',
-        base_ref: 'main',
         name: 'Contract session',
         agent_name: 'reviewer',
         initial_prompt: 'Review the repo',
@@ -2325,15 +2332,18 @@ describe('project session API contract', () => {
     expect(body.session_id).toBe(body.sandbox_id);
     expect(body.session_id).toBe(body.branch_name);
     expect(body.sandbox_provider).toBe('daytona');
+    expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
+    expect(sessionRow?.baseRef).toBe('dev');
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_RUNTIME_HARNESS).toBe('opencode');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_NATIVE_AGENT).toBe('reviewer');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 

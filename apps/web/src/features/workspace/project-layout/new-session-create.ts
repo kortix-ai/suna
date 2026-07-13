@@ -9,7 +9,6 @@ export interface NewSessionCreateInput {
     model_id?: string | null;
     connection_id?: import('@kortix/sdk').HarnessAuthKind | null;
   };
-  base_ref?: string;
 }
 
 export interface NewSessionAgentConfig {
@@ -32,12 +31,9 @@ export function resolveNewSessionAgent(
 /**
  * Build the session-create payload from the composer's send options.
  *
- * A project session's boot agent is IMMUTABLE and bound at creation. The API
- * preview proxy rejects any prompt whose `agent` differs from the session's
- * bound agent with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION — and the bound agent
- * defaults to "default" when none is set at create. So the agent the composer
- * will send on the very first prompt MUST be bound here, at session birth, or
- * the first message fails to start the task at all.
+ * A project session's boot agent is immutable and bound at creation. The ACP
+ * daemon compiles that agent's harness, auth, and model launch plan once for the
+ * session, so the composer selection must be carried into the create request.
  *
  * `agent_name` therefore mirrors `options.agent` exactly: the create-time bind
  * and the first-prompt send read the same value, so they can never disagree.
@@ -48,7 +44,6 @@ export function resolveNewSessionAgent(
 export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'runtimeModel' | 'connectionId' | 'modelSelection'> & {
     sandbox_slug?: string;
-    base_ref?: string;
   } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
@@ -68,6 +63,5 @@ export function buildNewSessionCreateInput(
       connection_id: options.connectionId ?? null,
     };
   }
-  if (options.base_ref) input.base_ref = options.base_ref;
   return Object.keys(input).length > 0 ? input : undefined;
 }

@@ -27,7 +27,7 @@ interface SandboxContextValue {
   provisioningSandboxId: string | undefined;
   /** The external_id for proxy URL construction */
   provisioningExternalId: string | undefined;
-  /** The provider of the provisioning sandbox (daytona, justavps, etc.) */
+  /** The provider of the provisioning sandbox. */
   provisioningProvider: string | undefined;
   /** Call this when provisioning completes to refetch sandbox data */
   onProvisioningComplete: () => void;
