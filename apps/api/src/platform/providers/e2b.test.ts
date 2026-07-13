@@ -21,7 +21,7 @@ let killed: string[] = [];
 let infoState: 'running' | 'paused' | 'missing' = 'running';
 let listed: Array<{ sandboxId: string; startedAt: Date | null }> = [];
 let listOpts: Record<string, unknown> | undefined;
-let connectFactory: (sandboxId: string) => FakeSandbox = (sandboxId) => fakeSandbox(sandboxId);
+let connectFactory: (sandboxId: string) => FakeSandbox | Promise<FakeSandbox> = (sandboxId) => fakeSandbox(sandboxId);
 let createFactory: () => FakeSandbox = () => fakeSandbox('sb-created');
 
 class FakeSandboxNotFoundError extends Error {}
@@ -195,8 +195,12 @@ describe('E2B provider lifecycle', () => {
     expect(sandbox.runs).toHaveLength(3);
     expect(sandbox.runs[0].command).toBe('chmod 600 /etc/kortix/runtime-env.json');
     expect(sandbox.runs[1]).toMatchObject({
-      command: '/usr/local/bin/kortix-entrypoint',
-      opts: { envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'sandbox-token' }) },
+      command: expect.stringContaining('flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint'),
+      opts: {
+        background: true,
+        timeoutMs: 0,
+        envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'sandbox-token' }),
+      },
     });
     expect(sandbox.runs[2].command).toContain('http://127.0.0.1:8000/kortix/health');
     expect(result).toMatchObject({
@@ -249,8 +253,10 @@ describe('E2B provider lifecycle', () => {
     expect(connected.map((call) => call.sandboxId)).toEqual(['sb-cold-resume']);
     expect(resumed.runs).toEqual([
       expect.objectContaining({
-        command: '/usr/local/bin/kortix-entrypoint',
+        command: expect.stringContaining('flock -n /run/kortix-entrypoint.lock /usr/local/bin/kortix-entrypoint'),
         opts: expect.objectContaining({
+          background: true,
+          timeoutMs: 0,
           envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'persisted-token' }),
         }),
       }),
@@ -258,6 +264,26 @@ describe('E2B provider lifecycle', () => {
         command: expect.stringContaining('http://127.0.0.1:8000/kortix/health'),
       }),
     ]);
+  });
+
+  test('overlapping cold-resume calls share one provider start operation', async () => {
+    const resumed = fakeSandbox('sb-concurrent-resume');
+    let releaseConnect!: () => void;
+    const connectGate = new Promise<void>((resolve) => { releaseConnect = resolve; });
+    connectFactory = async () => {
+      await connectGate;
+      return resumed;
+    };
+    const provider = new E2BProvider();
+
+    const first = provider.start('sb-concurrent-resume');
+    const second = provider.start('sb-concurrent-resume');
+    await Promise.resolve();
+
+    expect(connected.map((call) => call.sandboxId)).toEqual(['sb-concurrent-resume']);
+    releaseConnect();
+    await Promise.all([first, second]);
+    expect(resumed.runs.filter((run) => run.command.includes('/usr/local/bin/kortix-entrypoint'))).toHaveLength(1);
   });
 
   test.each([

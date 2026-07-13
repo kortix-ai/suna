@@ -22,6 +22,8 @@ import type {
 // backstop and must not make sandbox creation plan-dependent.
 const E2B_RUNTIME_BACKSTOP_MS = 60 * 60 * 1000;
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
+const KORTIX_ENTRYPOINT_COMMAND =
+  `exec flock -n /run/kortix-entrypoint.lock ${KORTIX_ENTRYPOINT}`;
 const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
 const KORTIX_HEALTH_WAIT =
   'for attempt in $(seq 1 180); do ' +
@@ -47,6 +49,7 @@ function isMissingSandboxError(error: unknown): boolean {
  * after API restarts recovers a fresh token and explicitly resumes a paused box.
  */
 const connectedSandboxes = new Map<string, E2BSandbox>();
+const startOperations = new Map<string, Promise<void>>();
 
 function validateRuntimeEnv(value: unknown, externalId: string): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -111,11 +114,18 @@ async function ensureKortixEntrypoint(
     (process) => `${process.cmd} ${process.args.join(' ')}`.includes(KORTIX_ENTRYPOINT),
   );
   if (!alreadyRunning) {
-    await sandbox.commands.run(KORTIX_ENTRYPOINT, {
+    // The guest lock is the cross-process/cross-replica authority. Two API
+    // replicas can both miss commands.list() during the first few milliseconds
+    // of a cold boot; only one is allowed to own the long-lived daemon.
+    await sandbox.commands.run(KORTIX_ENTRYPOINT_COMMAND, {
       background: true,
       user: 'root',
       ...(envs ? { envs } : {}),
-      timeoutMs: 20_000,
+      // E2B applies timeoutMs to the total lifetime of a background command;
+      // its default is 60s and our former 20s value deterministically killed
+      // the Kortix daemon after boot. Zero is the SDK's documented no-timeout
+      // value. The sandbox lifecycle/reaper remains the authority that stops it.
+      timeoutMs: 0,
     });
   }
   await sandbox.commands.run(KORTIX_HEALTH_WAIT, {
@@ -216,7 +226,7 @@ export class E2BProvider implements SandboxProvider {
     };
   }
 
-  async start(externalId: string): Promise<void> {
+  private async startOnce(externalId: string): Promise<void> {
     try {
       const sandbox = await Sandbox.connect(externalId, {
         ...apiOpts(),
@@ -232,6 +242,19 @@ export class E2BProvider implements SandboxProvider {
       connectedSandboxes.delete(externalId);
       throw error;
     }
+  }
+
+  async start(externalId: string): Promise<void> {
+    const inFlight = startOperations.get(externalId);
+    if (inFlight) return inFlight;
+
+    const operation = this.startOnce(externalId).finally(() => {
+      if (startOperations.get(externalId) === operation) {
+        startOperations.delete(externalId);
+      }
+    });
+    startOperations.set(externalId, operation);
+    return operation;
   }
 
   async stop(externalId: string): Promise<void> {
