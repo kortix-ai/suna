@@ -19,8 +19,8 @@ const REQUIRED_BASE_PATHS = [
 
 const GKW_SKILL_PATHS = [
   '.kortix/opencode/skills/account-research/SKILL.md',
-  '.kortix/opencode/skills/audit-support/SKILL.md',
-  '.kortix/opencode/skills/content-creation/SKILL.md',
+  '.kortix/opencode/skills/deep-research/SKILL.md',
+  '.kortix/opencode/skills/pdf/SKILL.md',
 ];
 
 function baseStarterPaths(): string[] {
@@ -52,11 +52,12 @@ function walk(root: string, relPrefix = ''): string[] {
 }
 
 describe('applyScaffold', () => {
-  test('writes the default minimal Kortix starter into a fresh directory', () => {
+  test('writes the default (full) Kortix starter into a fresh directory', () => {
     const result = applyScaffold({ repoRoot: dir, projectName: 'Hello World' });
 
+    // The one starter kit is the default — the full skill kit ships with it.
     for (const path of REQUIRED_BASE_PATHS) expect(result.written).toContain(path);
-    for (const path of GKW_SKILL_PATHS) expect(result.written).not.toContain(path);
+    for (const path of GKW_SKILL_PATHS) expect(result.written).toContain(path);
     expect(result.skipped).toEqual([]);
 
     expect(walk(dir)).toEqual(result.written.sort());
@@ -73,7 +74,7 @@ describe('applyScaffold', () => {
     expect(result.written).not.toContain('.kortix/memory/overview.md');
   });
 
-  test('general knowledge worker skills are explicit opt-in', () => {
+  test('general-knowledge-worker template carries the full domain skill kit', () => {
     const result = applyScaffold({
       repoRoot: dir,
       projectName: 'Hello World',

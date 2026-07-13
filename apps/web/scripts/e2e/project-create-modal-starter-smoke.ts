@@ -78,7 +78,8 @@ async function openHarness(page: Page) {
   });
   await page.goto(`${baseUrl}/debug/project-create-modal`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('dialog', { name: /new project/i }).waitFor({ state: 'visible', timeout: 30_000 });
-  await page.getByRole('checkbox', { name: /starter pack/i }).waitFor({ state: 'visible', timeout: 30_000 });
+  // One starter kit — every project ships the full skill pack; there's no toggle.
+  await page.getByText(/starter pack/i).first().waitFor({ state: 'visible', timeout: 30_000 });
 }
 
 function defaultMarketplaceItem(name: string, title: string, order: number) {
@@ -101,11 +102,7 @@ function defaultMarketplaceItem(name: string, title: string, order: number) {
   };
 }
 
-async function submitProjectCreate(
-  page: Page,
-  name: string,
-  toggleStarterSkills: boolean,
-): Promise<ProvisionPayload> {
+async function submitProjectCreate(page: Page, name: string): Promise<ProvisionPayload> {
   let payload: ProvisionPayload | null = null;
   await page.route('**/projects/provision', async (route) => {
     payload = JSON.parse(route.request().postData() || '{}') as ProvisionPayload;
@@ -133,14 +130,6 @@ async function submitProjectCreate(
   });
 
   await page.getByRole('textbox', { name: /project name/i }).fill(name);
-  if (toggleStarterSkills) {
-    const starterPack = page.getByRole('checkbox', { name: /starter pack/i });
-    if (await starterPack.isVisible().catch(() => false)) {
-      await starterPack.click();
-    } else {
-      await page.locator('[role="checkbox"]').first().click();
-    }
-  }
   const request = page.waitForRequest((req) => req.url().includes('/projects/provision'));
   await page.getByRole('button', { name: /^create project$/i }).click();
   await request;
@@ -162,33 +151,15 @@ async function main() {
     const page = await browser.newPage();
 
     await openHarness(page);
-    const defaultPayload = await submitProjectCreate(page, 'default-minimal', false);
+    const defaultPayload = await submitProjectCreate(page, 'default-full');
     assert(defaultPayload.account_id === '00000000-0000-4000-a000-000000000101', 'default payload account_id mismatch');
-    assert(defaultPayload.name === 'default-minimal', 'default payload name mismatch');
+    assert(defaultPayload.name === 'default-full', 'default payload name mismatch');
     assert(defaultPayload.seed_starter === true, 'default payload should seed starter');
-    assert(defaultPayload.starter_template === 'minimal', 'default payload should use minimal starter_template');
+    // One starter kit: every project scaffolds with the full general-knowledge-worker starter.
     assert(
-      JSON.stringify(defaultPayload.marketplace_items) === JSON.stringify([
-        'kortix-starter:deep-research',
-        'kortix-starter:research-report',
-        'kortix-starter:document-review',
-        'kortix-starter:pdf',
-        'kortix-starter:docx',
-        'kortix-starter:xlsx',
-        'kortix-starter:presentations',
-        'kortix-starter:website-building',
-        'kortix-starter:agent-browser',
-      ]),
-      'default payload should include registry-driven marketplace defaults',
+      defaultPayload.starter_template === 'general-knowledge-worker',
+      'default payload should use the general-knowledge-worker starter_template',
     );
-
-    await openHarness(page);
-    const optOutPayload = await submitProjectCreate(page, 'without-starter-pack', true);
-    assert(optOutPayload.account_id === '00000000-0000-4000-a000-000000000101', 'opt-out payload account_id mismatch');
-    assert(optOutPayload.name === 'without-starter-pack', 'opt-out payload name mismatch');
-    assert(optOutPayload.seed_starter === true, 'opt-out payload should seed starter');
-    assert(optOutPayload.starter_template === 'minimal', 'opt-out payload should still use minimal starter_template');
-    assert(JSON.stringify(optOutPayload.marketplace_items) === JSON.stringify([]), 'opt-out payload should omit starter pack skills');
 
     await mockAccounts(page);
     await openHarness(page);
@@ -198,7 +169,7 @@ async function main() {
       (await accountField.textContent())?.includes('Personal'),
       'account field should show the default account before switching',
     );
-    const defaultAccountPayload = await submitProjectCreate(page, 'default-account-visible', false);
+    const defaultAccountPayload = await submitProjectCreate(page, 'default-account-visible');
     assert(
       defaultAccountPayload.account_id === DEFAULT_ACCOUNT_ID,
       'payload should target the displayed default account',
@@ -211,7 +182,7 @@ async function main() {
       (await page.getByTestId('project-create-account').textContent())?.includes('Acme Team'),
       'account field should show the switched account',
     );
-    const switchedPayload = await submitProjectCreate(page, 'switched-account', false);
+    const switchedPayload = await submitProjectCreate(page, 'switched-account');
     assert(
       switchedPayload.account_id === TEAM_ACCOUNT_ID,
       'payload should target the account picked in the modal',

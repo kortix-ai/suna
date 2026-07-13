@@ -548,12 +548,13 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(requests).toEqual([]);
   }, 15_000);
 
-  test('init --yes writes the minimal starter by default', async () => {
-    const result = await runCli(['init', 'minimal-project', '--yes', '--no-git']);
+  test('init --yes writes the full starter kit by default', async () => {
+    const result = await runCli(['init', 'default-project', '--yes', '--no-git']);
 
     expect(result.code).toBe(0);
-    const root = join(tmp, 'minimal-project');
+    const root = join(tmp, 'default-project');
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-system', 'SKILL.md'))).toBe(true);
+    // Managed / served-live skills still aren't committed into the repo.
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(false);
     expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
@@ -561,7 +562,8 @@ console.log(JSON.stringify({ cmd, args, body }));
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
     expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(false);
+    // The full kit is the default now, so domain skills like pdf ARE present.
+    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init can explicitly opt into the general knowledge worker skill pack', async () => {

@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
   getMarketplaceFiles,
-  listGeneralKnowledgeWorkerSkills,
   STARTER_TEMPLATE_IDS,
   type StarterTemplateId,
 } from '@kortix/starter';
@@ -245,12 +244,6 @@ function sampleStarterPrompt(): string {
   );
 }
 
-function formatSkillList(skills: string[]): string {
-  const visible = skills.slice(0, 12).join(', ');
-  const remaining = skills.length - 12;
-  return remaining > 0 ? `${visible}, +${remaining} more` : visible;
-}
-
 function starterMarketplaceRegistry() {
   const files = getMarketplaceFiles();
   const map = new Map(files.map((file) => [file.path, file.content] as const));
@@ -365,19 +358,10 @@ export async function runInit(argv: string[]): Promise<number> {
   mkdirSync(cwd, { recursive: true });
 
   // ── Resolve starter template ────────────────────────────────────────
-  let template: StarterTemplateId;
-  if (flags.template) {
-    template = flags.template;
-  } else if (flags.yes) {
-    template = DEFAULT_STARTER_TEMPLATE_ID;
-  } else {
-    const skills = listGeneralKnowledgeWorkerSkills();
-    const includeSkills = await confirm(
-      `Include the full Kortix skill kit? (${formatSkillList(skills)})`,
-      true,
-    );
-    template = includeSkills ? 'general-knowledge-worker' : 'minimal';
-  }
+  // There's one starter kit — every project scaffolds with the full Kortix
+  // skill kit. The `--template` flag stays as an advanced escape hatch (e.g.
+  // the internal base-only `minimal`), but we no longer prompt for a choice.
+  const template: StarterTemplateId = flags.template ?? DEFAULT_STARTER_TEMPLATE_ID;
 
   // ── Resolve marketplace skills ──────────────────────────────────────
   let marketplaceItems: string[];

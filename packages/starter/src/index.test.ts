@@ -20,8 +20,8 @@ describe('STARTER_TEMPLATE_IDS', () => {
     expect([...STARTER_TEMPLATE_IDS]).toEqual(['minimal', 'general-knowledge-worker']);
   });
 
-  test('default template is the minimal Kortix runtime floor', () => {
-    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('minimal');
+  test('default template is the general knowledge worker (base + all domain skills)', () => {
+    expect(DEFAULT_STARTER_TEMPLATE_ID).toBe('general-knowledge-worker');
   });
 });
 
@@ -102,8 +102,8 @@ describe('getStarterFiles', () => {
 
   test('an unknown template value falls back to the default template layers', () => {
     const fallback = getStarterFiles({ projectName: 'X', template: 'bogus' as never });
-    const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(fallback.map((f) => f.path)).toEqual(minimal.map((f) => f.path));
+    const dflt = getStarterFiles({ projectName: 'X', template: DEFAULT_STARTER_TEMPLATE_ID });
+    expect(fallback.map((f) => f.path)).toEqual(dflt.map((f) => f.path));
   });
 
   test('general-knowledge-worker includes more files than minimal', () => {
@@ -144,10 +144,16 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
-  test('default starter does not ship general knowledge worker skills', () => {
-    const files = getStarterFiles({ projectName: 'X' });
-    expect(files.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
-    expect(files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+  test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
+    // The one user-facing starter (the default) carries the full skill kit.
+    const dflt = getStarterFiles({ projectName: 'X' });
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
+
+    // `minimal` stays base-only (used internally by the project-clone seed path).
+    const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/account-research/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
   });
 
   test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
@@ -185,7 +191,10 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-computer',
       'kortix-executor',
+      'kortix-marketplace',
+      'kortix-meet',
       'kortix-memory',
+      'kortix-onboarding',
       'kortix-slack',
       'kortix-system',
     ]);

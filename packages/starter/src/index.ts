@@ -33,11 +33,18 @@ export interface StarterFile {
   content: string;
 }
 
+// There is one USER-FACING starter kit: `general-knowledge-worker` (base
+// plumbing + the full consolidated Kortix skill kit). Every new project is
+// scaffolded with it — project creation no longer offers a choice.
+//
+// `minimal` (base only, no domain skills) is kept purely as an INTERNAL
+// building block: the project-clone seed path (`buildProjectSeedFilesFromItem`)
+// uses it to lay down just the opencode runtime before a `registry:project`'s
+// own skills/agents are layered on top, so a specialized project template isn't
+// polluted with every general-knowledge skill. It is not surfaced in the
+// create-project UI, mobile, or the `kortix init` prompt.
 export const STARTER_TEMPLATE_IDS = ['minimal', 'general-knowledge-worker'] as const;
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
-// Every new project ships the full consolidated Kortix skill kit preinstalled
-// (the general-knowledge-worker template = base plumbing + all domain skills).
-// `minimal` (base only) stays available for callers that explicitly ask for it.
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
 
 export const KORTIX_MANAGED_SKILL_NAMES = [
@@ -63,7 +70,8 @@ export interface StarterVars {
   projectName: string;
   /** "owner/repo" GitHub identifier. Optional — defaults to "your-org/your-repo". */
   repoFullName?: string;
-  /** Starter variant. Defaults to the minimal Kortix runtime floor. */
+  /** Starter kit. Defaults to the one user-facing kit
+   *  (`general-knowledge-worker`). `minimal` is an internal base-only build. */
   template?: StarterTemplateId;
 }
 

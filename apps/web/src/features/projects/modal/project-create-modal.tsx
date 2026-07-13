@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,7 +72,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
 import { startTemplateSetupSession } from './template-setup-session';
@@ -94,7 +93,6 @@ const managedProjectSchema = z.object({
         .min(1, 'Project name is required')
         .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
     ),
-  includeGeneralKnowledgeSkills: z.boolean(),
 });
 
 const githubLinkSchema = z.object({
@@ -172,7 +170,6 @@ export const ProjectCreateModal = ({
     resolver: zodResolver(managedProjectSchema),
     defaultValues: {
       name: '',
-      includeGeneralKnowledgeSkills: true,
     },
   });
 
@@ -306,9 +303,6 @@ export const ProjectCreateModal = ({
     setSourceNameApplied(true);
   }, [managedForm, cloningFromSource, open, sourceItemQuery.data, sourceNameApplied]);
 
-  const includeGeneralKnowledgeSkills = managedForm.watch('includeGeneralKnowledgeSkills');
-  const includedCount = includeGeneralKnowledgeSkills ? 1 : 0;
-
   const githubInstallations = useMemo(
     () => githubInstallationsQuery.data?.installations ?? [],
     [githubInstallationsQuery.data?.installations],
@@ -381,9 +375,9 @@ export const ProjectCreateModal = ({
     createMutation.mutate({
       account_id: effectiveAccountId,
       name: values.name,
-      // Full Kortix skill kit preinstalled by default (the general-knowledge-worker
-      // template seeds every skill). The toggle is the escape hatch to a bare project.
-      starter_template: values.includeGeneralKnowledgeSkills ? 'general-knowledge-worker' : 'minimal',
+      // One starter kit: every new project ships the full Kortix skill kit (the
+      // general-knowledge-worker template seeds every skill).
+      starter_template: 'general-knowledge-worker',
       marketplace_items: [],
     });
   }
@@ -526,33 +520,22 @@ export const ProjectCreateModal = ({
                     </div>
                   ) : (
                     <div className="space-y-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-foreground text-sm font-medium">Starter skills</span>
-                        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                          {includedCount} included
-                        </span>
-                      </div>
+                      <span className="text-foreground text-sm font-medium">Starter skills</span>
                       <p className="text-muted-foreground text-xs leading-relaxed">
-                        Preinstalled into your project&apos;s repo and ready in the first session.
-                        Toggle off anything you don&apos;t need.
+                        Every new project ships with the full Kortix skill kit —
+                        preinstalled into your repo and ready in the first session.
                       </p>
-                      <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
-                        <SetupOptionRow
-                          icon={
-                            <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
-                              <Boxes className="size-4" />
-                            </span>
-                          }
-                          title="Starter pack"
-                          description="Ready-made skills for research, writing, documents, slides, data, the web, and browser automation."
-                          selected={includeGeneralKnowledgeSkills}
-                          disabled={submitting}
-                          onToggle={(next) => {
-                            managedForm.setValue('includeGeneralKnowledgeSkills', next, {
-                              shouldDirty: true,
-                            });
-                          }}
-                        />
+                      <div className="flex items-center gap-3 rounded-2xl border px-3.5 py-3">
+                        <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <Boxes className="size-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-foreground text-sm font-medium">Starter pack</div>
+                          <div className="text-muted-foreground text-xs leading-relaxed">
+                            Ready-made skills for research, writing, documents, slides, data, the
+                            web, and browser automation.
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -918,65 +901,6 @@ function CreateAccountField({
         </div>
       )}
     </div>
-  );
-}
-
-/** One selectable row in the New Project "Starter skills" surface — the whole
- *  row is a label wrapping a real checkbox, so a click anywhere toggles it and
- *  it stays keyboard-accessible. Selected rows read as "included in this
- *  project" via the tinted fill + checked box (no "Add" affordance). */
-function SetupOptionRow({
-  icon,
-  title,
-  description,
-  badge,
-  selected,
-  disabled,
-  onToggle,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  badge?: string;
-  selected: boolean;
-  disabled?: boolean;
-  onToggle: (next: boolean) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        'flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors',
-        selected ? 'bg-primary/[0.05]' : 'hover:bg-foreground/[0.03]',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      {icon}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-foreground truncate text-sm font-medium">{title}</span>
-          {badge && (
-            <Badge variant="new" size="sm" className="shrink-0">
-              {badge}
-            </Badge>
-          )}
-          {selected && (
-            <Badge variant="outline" size="sm" className="shrink-0">
-              Included
-            </Badge>
-          )}
-        </div>
-        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
-          {description}
-        </p>
-      </div>
-      <Checkbox
-        checked={selected}
-        onCheckedChange={(value) => onToggle(value === true)}
-        disabled={disabled}
-        aria-label={title}
-        className="mt-0.5 shrink-0"
-      />
-    </label>
   );
 }
 
