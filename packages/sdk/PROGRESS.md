@@ -559,3 +559,15 @@ packed, installed, imported, and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. The two skipped tests are
 the existing browser-bundle tests that only execute after `build:bundles`; this
 change does not touch bundles or runtime transport.
+
+---
+
+### Session 2026-07-13 — telegram pairing client (additive)
+
+Added to `core/rest/projects-client/channels.ts` on the `telegram-channel` PR branch:
+`createTelegramPairingCode`, `removeTelegramAllowedUser`, `TelegramPairing`,
+`ConnectTelegramResult`; `TelegramInstallation` gained optional `allowedUserIds` +
+`pairingRequired`. Purely additive — both surface snapshots re-recorded with zero
+removals (the diff also back-fills the branch's earlier telegram exports that were
+never recorded). Evidence: `bun test` 1079 pass / 0 fail (72 files), `tsc --noEmit`
+exit 0.

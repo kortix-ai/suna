@@ -114,8 +114,26 @@ setup nagging anywhere.
 - **e2e without real Telegram** — `KORTIX_TELEGRAM_API_BASE` override + local stub, so
   send/read/file are genuinely exercised (request shape asserted) with zero external calls.
 
+## Sender pairing (allowlist)
+
+Telegram bots are world-messageable, so the inbound webhook only runs agent turns for
+senders on the project allowlist (`projects.metadata.telegram.allowedUserIds`, gate
+`TELEGRAM_REQUIRE_USER_IDENTITY`, default ON / fail closed). Pairing is how humans get
+on the list without hunting for their numeric Telegram id:
+
+- Dashboard (Channels → Telegram → Pair) or `kortix channels pair` mints a single-use
+  15-minute code (`POST /channels/telegram/pairing-code`; connect mints the first one).
+- The user sends the bot `/start <code>` (deep link `t.me/<bot>?start=<code>` works) —
+  the webhook constant-time-validates it, allowlists the sender, clears the code.
+- Unpaired senders in private chats get one pairing hint (dedup-throttled), never a turn.
+- Remove via the Pair modal (`DELETE /channels/telegram/allowed-users/:userId`).
+
+Pure logic in `channels/telegram/pairing.ts` (+ unit tests); the paired sender still runs
+as the project automation actor — pairing is authorization, not identity attribution.
+
 ## Out of scope (deliberate)
 
 Slash-command UX (`/kortix` parity), group-admin flows, inline keyboards/interactivity,
 per-user identity binding (`chat_user_identities` login flow — sessions attribute to the
-project automation actor as today), Slack-style streaming plan UI.
+project automation actor as today; the pairing allowlist above decides WHO may trigger
+them), Slack-style streaming plan UI.
