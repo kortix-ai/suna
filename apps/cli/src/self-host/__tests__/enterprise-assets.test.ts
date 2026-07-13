@@ -51,6 +51,13 @@ describe('embedded enterprise Terraform graph', () => {
     expect(controllerIrsa).toContain('route53:ChangeResourceRecordSets');
   });
 
+  test('accepts only the Route 53 apex or a label-bounded subdomain after provider name normalization', () => {
+    const acm = enterpriseTerraformAssets['modules/enterprise-vpc/acm.tf'];
+    expect(acm).toContain('lower(trimsuffix(data.aws_route53_zone.public.name, "."))');
+    expect(acm).toContain('lower(domain) == local.public_zone_name');
+    expect(acm).toContain('endswith(lower(domain), ".${local.public_zone_name}")');
+  });
+
   test('keeps the customer updater as the only enterprise Helm reconciler', () => {
     const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
     const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];
