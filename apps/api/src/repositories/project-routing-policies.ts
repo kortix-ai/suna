@@ -13,12 +13,6 @@ export interface StoredProjectRoutingPolicy {
   rules: ProjectRoutingRule[];
 }
 
-const TTL_MS = 30_000;
-const cache = new Map<
-  string,
-  { value: StoredProjectRoutingPolicy | null; expiresAt: number }
->();
-
 function fromRow(
   row: typeof projectLlmRoutingPolicies.$inferSelect,
 ): StoredProjectRoutingPolicy {
@@ -38,20 +32,15 @@ function fromRow(
 export async function getProjectRoutingPolicy(
   projectId: string,
 ): Promise<StoredProjectRoutingPolicy | null> {
-  const cached = cache.get(projectId);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  // Do not process-cache this document. API replicas cannot invalidate each
+  // other's memory, so an immediate read after a write can otherwise return a
+  // stale policy from whichever pod served an earlier request.
   const [row] = await db
     .select()
     .from(projectLlmRoutingPolicies)
     .where(eq(projectLlmRoutingPolicies.projectId, projectId))
     .limit(1);
-  const value = row ? fromRow(row) : null;
-  cache.set(projectId, { value, expiresAt: Date.now() + TTL_MS });
-  return value;
-}
-
-export function invalidateProjectRoutingPolicy(projectId: string): void {
-  cache.delete(projectId);
+  return row ? fromRow(row) : null;
 }
 
 /** Persist the complete project document and its default model atomically. */
@@ -116,7 +105,6 @@ export async function setProjectRoutingPolicy(params: {
         },
       });
   });
-  invalidateProjectRoutingPolicy(params.projectId);
 }
 
 export async function resetProjectRoutingPolicy(params: {
@@ -137,5 +125,4 @@ export async function resetProjectRoutingPolicy(params: {
         ),
       );
   });
-  invalidateProjectRoutingPolicy(params.projectId);
 }
