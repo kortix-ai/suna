@@ -9,6 +9,11 @@ import {
   projectMembers,
   projects,
 } from '@kortix/db';
+import {
+  collectConditionValues,
+  extractStringArray,
+  queryResult,
+} from './helpers/drizzle-query-mock';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -145,32 +150,6 @@ function resetState() {
   rejectedBranch = null;
 }
 
-function collectConditionValues(condition: unknown): Record<string, unknown> {
-  const values: Record<string, unknown> = {};
-  const visit = (node: any) => {
-    if (!node) return;
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
-    }
-    if (node.queryChunks) visit(node.queryChunks);
-    if (Object.prototype.hasOwnProperty.call(node, 'value') && node.encoder?.name && !Array.isArray(node.value)) {
-      values[node.encoder.name] = node.value;
-    }
-  };
-  visit(condition);
-  return values;
-}
-
-function queryResult<T = any>(rows: T[]) {
-  return {
-    then: (resolve: (value: T[]) => unknown, reject?: (reason: unknown) => unknown) =>
-      Promise.resolve(rows).then(resolve, reject),
-    limit: async (count: number) => rows.slice(0, count),
-    orderBy: async () => rows,
-  };
-}
-
 function selectRows(table: unknown, fields: Record<string, unknown> | undefined, condition: unknown): any[] {
   const values = collectConditionValues(condition);
   const accountId = values.account_id as string | undefined;
@@ -217,23 +196,6 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
   }
 
   return [];
-}
-
-function extractStringArray(condition: unknown): string[] | null {
-  let result: string[] | null = null;
-  const visit = (node: any) => {
-    if (!node || result) return;
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
-    }
-    if (node.queryChunks) visit(node.queryChunks);
-    if (Array.isArray(node.value) && node.encoder?.name && node.value.every((item: unknown) => typeof item === 'string')) {
-      result = node.value;
-    }
-  };
-  visit(condition);
-  return result;
 }
 
 function insertProject(values: any) {
@@ -623,7 +585,7 @@ function createApp() {
 describe('projects API contract', () => {
   beforeEach(() => resetState());
 
-  test('registers an existing repo without starter commits and grants manager access', async () => {
+  test('registers a repo on its GitHub default without starter commits and grants manager access', async () => {
     const app = createApp();
     const missing = await app.request('/v1/projects', {
       method: 'POST',
@@ -640,7 +602,6 @@ describe('projects API contract', () => {
         account_id: ACCOUNT_ID,
         repo_url: 'https://github.com/kortix-org/new-project.git/',
         name: 'New Project',
-        default_branch: 'trunk',
         manifest_path: 'config/kortix.yaml',
       }),
     });
@@ -683,44 +644,25 @@ describe('projects API contract', () => {
       repo_url: 'https://github.com/kortix-org/new-project.git',
       default_branch: 'main',
     };
-
-    const first = await app.request('/v1/projects', {
+    const request = (name: string) => app.request('/v1/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, name: 'API development' }),
-    });
-    const second = await app.request('/v1/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, name: 'Web development' }),
+      body: JSON.stringify({ ...payload, name }),
     });
 
-    expect(first.status).toBe(201);
-    expect(second.status).toBe(201);
-    const firstBody = await first.json();
-    const secondBody = await second.json();
-    expect(firstBody.project_id).toBe(NEW_PROJECT_ID);
-    expect(secondBody.project_id).toBe(SECOND_NEW_PROJECT_ID);
-    expect(secondBody.project_id).not.toBe(firstBody.project_id);
+    const first = await request('API development');
+    const second = await request('Web development');
+    expect([first.status, second.status]).toEqual([201, 201]);
+    const [firstBody, secondBody] = await Promise.all([first.json(), second.json()]);
+    expect([firstBody.project_id, secondBody.project_id]).toEqual([
+      NEW_PROJECT_ID,
+      SECOND_NEW_PROJECT_ID,
+    ]);
     expect(projectRows.filter((row) => row.repoUrl === payload.repo_url)).toHaveLength(2);
     expect(gitConnectionRows.map((row) => row.projectId)).toEqual([
       NEW_PROJECT_ID,
       SECOND_NEW_PROJECT_ID,
     ]);
-  });
-
-  test('uses the repository default when the caller does not select a branch', async () => {
-    const res = await createApp().request('/v1/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        repo_url: 'https://github.com/kortix-org/new-project.git',
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(await res.json()).toMatchObject({ default_branch: 'trunk' });
   });
 
   test('rejects a branch GitHub cannot resolve before inserting the project', async () => {

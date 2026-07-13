@@ -20,7 +20,7 @@ function repositoryIdentity(repoUrl: string): { key: string; label: string } | n
     const key = `${url.hostname.toLowerCase()}/${path.toLowerCase()}`;
     return {
       key,
-      label: url.hostname.toLowerCase() === 'github.com' ? path.toLowerCase() : key,
+      label: url.hostname.toLowerCase() === 'github.com' ? path : `${url.hostname}/${path}`,
     };
   } catch {
     const key = raw

@@ -31,7 +31,7 @@ describe('groupProjectsByRepository', () => {
     expect(groups).toHaveLength(2);
     expect(groups[0]).toMatchObject({
       key: 'github.com/kortix/suna',
-      label: 'kortix/suna',
+      label: 'Kortix/suna',
     });
     expect(groups[0]?.projects.map((item) => [item.name, item.default_branch])).toEqual([
       ['API dev', 'dev'],

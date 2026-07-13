@@ -2742,6 +2742,9 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
+    /** Deprecated release-compatibility column. The branch hierarchy no longer
+     * reads or writes this value; remove only after the code-removal rollout. */
+    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */
