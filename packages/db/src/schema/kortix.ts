@@ -2782,6 +2782,10 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
+    /** Optional session-base override for members of this attached group.
+     *  NULL inherits projects.default_branch. Conflicting defaults from
+     *  multiple memberships intentionally fall back to the project default. */
+    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */

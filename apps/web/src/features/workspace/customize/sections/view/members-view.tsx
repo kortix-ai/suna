@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Check, Clock, CornerDownRight, KeyRound, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
+import { Bot, Check, Clock, CornerDownRight, GitBranch, KeyRound, Mail, MessageSquare, Plug, Plus, RefreshCw, Shield, Sparkles, User, Users, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
@@ -73,6 +73,7 @@ import {
   listPendingProjectInvites,
   listProjectAccess,
   listProjectAccessRequests,
+  listProjectBranches,
   listProjectGroupGrants,
   listProjectResourceGrants,
   createProjectResourceGrant,
@@ -1354,6 +1355,12 @@ function ProjectGroupGrantsCard({
     enabled: canManage,
     staleTime: 60_000,
   });
+  const branchesQuery = useQuery({
+    queryKey: ['project-branches', projectId],
+    queryFn: () => listProjectBranches(projectId),
+    enabled: canManage,
+    staleTime: 60_000,
+  });
   // Custom-role policies bound to a GROUP on this project. A group that has BOTH
   // a built-in grant (this list) AND a custom-role policy hits the union trap:
   // allow-only/highest-wins means the built-in role WINS and silently overrides
@@ -1407,6 +1414,7 @@ function ProjectGroupGrantsCard({
     queryClient.invalidateQueries({ queryKey: grantsKey });
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
     queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['project-branches', projectId] });
   }
 
   const attachMutation = useMutation({
@@ -1426,12 +1434,23 @@ function ProjectGroupGrantsCard({
   });
 
   const updateMutation = useMutation({
-    mutationFn: (input: { groupId: string; role: ProjectRole }) =>
-      updateProjectGroupGrant(projectId, input.groupId, input.role),
+    mutationFn: (input: {
+      groupId: string;
+      role: ProjectRole;
+      defaultBaseRef?: string | null;
+      kind: 'role' | 'branch';
+    }) =>
+      updateProjectGroupGrant(
+        projectId,
+        input.groupId,
+        input.role,
+        undefined,
+        input.defaultBaseRef,
+      ),
     onMutate: (input) => markPending(input.groupId),
     onSettled: (_data, _error, input) => clearPending(input.groupId),
-    onSuccess: () => {
-      successToast('Role updated');
+    onSuccess: (_data, input) => {
+      successToast(input.kind === 'role' ? 'Role updated' : 'Session branch updated');
       invalidate();
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
@@ -1565,6 +1584,14 @@ function ProjectGroupGrantsCard({
           <ul className="space-y-2">
             {grants.map((g: ProjectGroupGrant) => {
               const busy = pendingGroupIds.has(g.group_id);
+              const projectDefaultValue = '__project_default__';
+              const branchNames = Array.from(
+                new Set([
+                  g.default_base_ref,
+                  branchesQuery.data?.default_branch,
+                  ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
+                ].filter((value): value is string => Boolean(value))),
+              );
               return (
                 <li key={g.group_id} className={MEMBER_ROW}>
                   <EntityAvatar icon={UsersSolid} size="md" />
@@ -1580,6 +1607,13 @@ function ProjectGroupGrantsCard({
                             {g.member_count} {g.member_count === 1 ? 'member' : 'members'}
                           </span>
                         )}
+                        <span className="inline-flex items-center gap-1">
+                          <GitBranch className="size-3 shrink-0" />
+                          <span className="font-mono">
+                            {g.default_base_ref ?? branchesQuery.data?.default_branch ?? 'project default'}
+                          </span>
+                          {!g.default_base_ref ? <span>(project default)</span> : null}
+                        </span>
                         {typeof g.override_count === 'number' && g.override_count > 0 && (
                           <span
                             className="text-kortix-orange"
@@ -1611,7 +1645,11 @@ function ProjectGroupGrantsCard({
                       <Select
                         value={g.role}
                         onValueChange={(v) =>
-                          updateMutation.mutate({ groupId: g.group_id, role: v as ProjectRole })
+                          updateMutation.mutate({
+                            groupId: g.group_id,
+                            role: v as ProjectRole,
+                            kind: 'role',
+                          })
                         }
                       >
                         <SelectTrigger className="h-8 w-28 text-xs">
@@ -1621,6 +1659,33 @@ function ProjectGroupGrantsCard({
                           <ProjectRoleSelectItem role="member" />
                           <ProjectRoleSelectItem role="editor" />
                           <ProjectRoleSelectItem role="manager" />
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={g.default_base_ref ?? projectDefaultValue}
+                        onValueChange={(value) =>
+                          updateMutation.mutate({
+                            groupId: g.group_id,
+                            role: g.role,
+                            defaultBaseRef: value === projectDefaultValue ? null : value,
+                            kind: 'branch',
+                          })
+                        }
+                      >
+                        <SelectTrigger
+                          className="h-8 w-40 text-xs"
+                          aria-label={`Default session branch for ${g.group_name}`}
+                        >
+                          <GitBranch className="size-3.5 shrink-0" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={projectDefaultValue}>Project default</SelectItem>
+                          {branchNames.map((branch) => (
+                            <SelectItem key={branch} value={branch} className="font-mono text-xs">
+                              {branch}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <Button
