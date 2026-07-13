@@ -7,9 +7,11 @@
 import { loadSlackTokenForProject } from '../install-store';
 
 const SLACK_API = 'https://slack.com/api';
-// Only ever attach the bot token to Slack's own hosts — `url` is caller-supplied,
-// so this is the SSRF guard that stops the token leaking to an arbitrary origin.
-const SLACK_HOST = /(^|\.)slack\.com$/i;
+// Only ever attach the bot token to Slack's FILE-serving hosts — `url` is
+// caller-supplied, so this is the SSRF guard that stops the token leaking to an
+// arbitrary origin. Narrowed from the apex `slack.com` (where `/api/*` lives,
+// reachable with the bot token attached) to the file subdomains only. See S3-2.
+const SLACK_HOST = /^(files|files-origin|files-priv|files-private|files-public)\.slack\.com$/i;
 
 export type FileProxyError = { ok: false; error: string; status: number };
 
