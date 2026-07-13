@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
@@ -1449,4 +1450,191 @@ test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT pr
       `expected non-TronLink Proxy message "${value}" to keep reporting`,
     )
   }
+})
+
+// Reproduces Better Stack error e6a45fe4999b5a60f5cd64fd4153b18c2beebfc4409a3d54da456a4bbc24e5d2
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-12 19:31:47 UTC. A Threads (Barcelona) in-app Android WebView
+// (Android 14 / Chrome 149, referer https://l.threads.com/) visited the
+// marketing homepage (`https://kortix.com/`). The Android System WebView
+// injects a synthetic `app://navigation_performance_logger_android` script
+// that records navigation timing (FBNavResponseStart / FBNavDomContentLoaded /
+// …) and ships it to its native Java bridge via `sendDataToNative` →
+// `postMessage`. The bridge holds only a WEAK reference to the Java object,
+// so once it is garbage-collected (page navigation / WebView teardown / the
+// in-app browser dismissing the tab) the next `postMessage` throws
+// `Error invoking postMessage: Java object is gone`. Sentry's
+// `BrowserApiErrors` integration auto-wraps `addEventListener` on
+// `EventTarget` and captures the throw as a global error. The frames (Sentry
+// oldest-first → last is the throwing frame) are the Android bridge internals:
+//   app:///_next/static/chunks/66499-…?dpl=dpl_…   (Sentry wrapper frame `u`)
+//   app://navigation_performance_logger_android   `?`
+//   app://navigation_performance_logger_android   `sendJsBlockingTimeMessage`
+//   app://navigation_performance_logger_android   `sendDataToNative`  (throw)
+// This is the WebView's OWN instrumentation, never first-party code. The
+// matcher requires BOTH the exact message AND a frame whose filename is the
+// Android bridge source, so a genuine first-party `window.postMessage`
+// failure keeps reporting.
+const ANDROID_NAV_PERF_LOGGER_FRAME = 'app://navigation_performance_logger_android'
+const ANDROID_WEBVIEW_BRIDGE_EVENTS = [
+  // The exact raw exception value from the production event.
+  'Error invoking postMessage: Java object is gone',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: Error invoking postMessage: Java object is gone',
+]
+
+test('classifies the Android WebView native-bridge postMessage noise (with a bridge frame)', () => {
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message,
+        frames: [{ filename: ANDROID_NAV_PERF_LOGGER_FRAME }],
+      }),
+      true,
+      `expected "${message}" from the Android bridge frame to be classified as noise`,
+    )
+  }
+})
+
+test('suppresses the Android WebView bridge Sentry event via the beforeSend gate', () => {
+  // Exact frame chain from the raw production event (oldest-first → throwing
+  // frame last).
+  for (const value of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  {
+                    filename:
+                      'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+                    function: 'u',
+                  },
+                  { filename: ANDROID_NAV_PERF_LOGGER_FRAME, function: '?' },
+                  {
+                    filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+                    function: 'sendJsBlockingTimeMessage',
+                  },
+                  {
+                    filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+                    function: 'sendDataToNative',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Android WebView bridge noise via the runtime (window.onerror) gate with a bridge filename', () => {
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" with the Android bridge filename`,
+    )
+  }
+})
+
+test('does NOT suppress the Android bridge message with NO bridge frame (conservative — keep reporting)', () => {
+  // The message wording is generic enough that a real first-party
+  // `window.postMessage` failure could share it; without the Android bridge
+  // frame/filename we cannot confirm origin — keep reporting.
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message,
+        frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+      }),
+      false,
+      `expected "${message}" from an app chunk (no bridge frame) to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party postMessage failure that throws from an app chunk', () => {
+  // A genuine `window.postMessage` / structured-clone failure in our own code
+  // throws the SAME message wording, but from an `app:///_next/…` chunk (or a
+  // de-minified `apps/web/src/…` frame), NEVER from the Android bridge source.
+  // It must keep reporting so a real postMessage regression is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js' },
+    { filename: 'apps/web/src/features/messaging/postmessage-bridge.ts' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///apps/web/src/features/messaging/bridge.ts' }]]) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message: 'Error invoking postMessage: Java object is gone',
+        frames,
+      }),
+      false,
+      `expected real first-party postMessage error from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Error invoking postMessage: Java object is gone',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real first-party postMessage error from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      filename: 'apps/web/src/features/messaging/postmessage-bridge.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a same-worded message from a different bridge / non-Android source', () => {
+  // The matcher is anchored on the EXACT `app://navigation_performance_logger_android`
+  // source — a near-identical filename (e.g. a hypothetical iOS sibling or a
+  // typo) must NOT be swallowed by this guard.
+  assert.equal(
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      frames: [{ filename: 'app://navigation_performance_logger_ios' }],
+    }),
+    false,
+  )
+  assert.equal(
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+    }),
+    false,
+  )
 })
