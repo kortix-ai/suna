@@ -684,7 +684,7 @@ export async function reconcileStaleBuilds(
       try {
         return { provider: provider.id, state: await provider.getSnapshotState(row.snapshotName) };
       } catch {
-        return { provider: provider.id, state: 'missing' as ProviderState };
+        return { provider: provider.id, state: 'unknown' as ProviderState };
       }
     }));
     if (states.some(({ state }) => state === 'active')) {
@@ -708,8 +708,9 @@ export async function reconcileStaleBuilds(
 
 /**
  * New build rows record the exact provider in metadata. Historical rows do not,
- * so reconcile them against every provider enabled in this environment instead
- * of assuming Daytona.
+ * and multi-provider builds predate this provenance, so legacy rows remain
+ * unresolved instead of being guessed as Daytona or whichever provider happens
+ * to be enabled today.
  */
 export function buildLogProviderCandidates(
   metadata: unknown,
@@ -718,9 +719,14 @@ export function buildLogProviderCandidates(
   const provider = metadata && typeof metadata === 'object'
     ? (metadata as Record<string, unknown>).provider
     : null;
-  return typeof provider === 'string' && provider.trim()
+  return typeof provider === 'string' && allowedProviders.includes(provider)
     ? [provider]
-    : [...new Set(allowedProviders)];
+    : [];
+}
+
+/** Reconcile only when provider truth confirms the current image needs a build. */
+export function shouldReconcileProviderState(state: ProviderState): boolean {
+  return state === 'missing' || state === 'build_failed';
 }
 
 async function openBuildLog(args: {
@@ -1047,7 +1053,8 @@ async function reconcileProjectTemplates(
     }
     for (const providerId of providers) {
       const provider = getSandboxProvider(providerId);
-      if ((await provider.getSnapshotState(identity.snapshotName)) === 'active') continue;
+      const state = await provider.getSnapshotState(identity.snapshotName);
+      if (!shouldReconcileProviderState(state)) continue;
       kickPreBuild(project, {
         slug: t.slug,
         accountId: opts.accountId,

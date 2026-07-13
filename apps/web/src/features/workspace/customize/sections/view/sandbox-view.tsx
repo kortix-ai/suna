@@ -24,7 +24,12 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { cn } from '@/lib/utils';
-import { describeProviderCoverage } from './sandbox-provider-coverage';
+import {
+  describeProviderCoverage,
+  describeProviderMode,
+  sandboxProviderLabel,
+  type SandboxProviderMode,
+} from './sandbox-provider-coverage';
 import {
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
@@ -36,7 +41,6 @@ import {
   listProjectSnapshots,
 } from '@kortix/sdk/projects-client';
 import {
-  AlarmClockSolid,
   CheckCircleSolid,
   SparklesSolid,
   XCircleSolid,
@@ -121,13 +125,6 @@ const TEMPLATE_STATE_LABEL: Record<
   error: { label: 'Error', tone: 'fail' },
   build_failed: { label: 'Build failed', tone: 'fail' },
   missing: { label: 'Not built yet', tone: 'idle' },
-};
-
-const TEMPLATE_TONE_BADGE = {
-  ok: { variant: 'success' as const },
-  busy: { variant: 'solid' as const, color: 'blue' as const },
-  fail: { variant: 'destructive' as const },
-  idle: { variant: 'muted' as const },
 };
 
 const TEMPLATE_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = {
@@ -247,8 +244,10 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
 
 function ProviderCoverage({
   coverage,
+  selectedProvider,
 }: {
   coverage: NonNullable<SandboxTemplate['provider_coverage']>;
+  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
 }) {
   const observedAt = coverage
     .map((item) => item.observed_at)
@@ -269,17 +268,22 @@ function ProviderCoverage({
               : state.tone === 'fail'
                 ? 'destructive'
                 : 'muted';
-        const provider = item.provider === 'e2b'
-          ? 'E2B'
-          : item.provider.charAt(0).toUpperCase() + item.provider.slice(1);
+        const provider = sandboxProviderLabel(item.provider);
+        const selected = item.provider === selectedProvider;
         return (
           <Badge
             key={item.provider}
             variant={variant}
             size="xs"
-            aria-label={`${provider}: ${state.label}`}
+            aria-label={`${provider}${selected ? ' selected' : ''}: ${state.label}`}
           >
             {provider}
+            {selected ? (
+              <>
+                <span className="opacity-50" aria-hidden="true">&bull;</span>
+                Selected
+              </>
+            ) : null}
             <span className="opacity-50" aria-hidden="true">&bull;</span>
             {state.label}
           </Badge>
@@ -400,11 +404,15 @@ function TemplateRow({
   template,
   canManage,
   onEdit,
+  providerMode,
+  selectedProvider,
 }: {
   projectId: string;
   template: SandboxTemplate;
   canManage: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
+  providerMode: SandboxProviderMode;
+  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -444,15 +452,7 @@ function TemplateRow({
           ? 'kortix.yaml'
           : 'kortix.toml';
   const stateInfo = describeState(template.provider_state || template.daytona_state);
-  const stateBadge = TEMPLATE_TONE_BADGE[stateInfo.tone];
-  const StateIcon =
-    stateInfo.tone === 'busy'
-      ? Loading
-      : stateInfo.tone === 'ok'
-        ? CheckCircleSolid
-        : stateInfo.tone === 'fail'
-          ? XCircleSolid
-          : AlarmClockSolid;
+  const providerModeInfo = describeProviderMode(providerMode, selectedProvider);
 
   return (
     <>
@@ -481,17 +481,18 @@ function TemplateRow({
             {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}{' '}
             &bull; {sourceTag}
           </div>
-          {template.provider_coverage?.length ? (
-            <ProviderCoverage coverage={template.provider_coverage} />
+          {providerMode === 'pinned' && template.provider_coverage?.length ? (
+            <ProviderCoverage
+              coverage={template.provider_coverage}
+              selectedProvider={selectedProvider}
+            />
           ) : null}
         </div>
-        <Badge
-          variant={stateBadge.variant}
-          color={'color' in stateBadge ? stateBadge.color : undefined}
-        >
-          <StateIcon className="size-4 shrink-0" />
-          {stateInfo.label}
-        </Badge>
+        {providerMode === 'automatic' ? (
+          <Badge variant="muted">{providerModeInfo.label}</Badge>
+        ) : !template.provider_coverage?.length ? (
+          <Badge variant="muted">{providerModeInfo.label}</Badge>
+        ) : null}
         {canManage && (
           <div className="flex items-center gap-1">
             {template.template_id && !template.is_default && (
@@ -594,6 +595,10 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const data = snapshotsQuery.data;
   const builds = Array.isArray(data?.builds) ? data.builds : [];
   const templates = Array.isArray(data?.templates) ? data.templates : [];
+  const providerMode: SandboxProviderMode = data?.provider_mode === 'pinned'
+    ? 'pinned'
+    : 'automatic';
+  const selectedProvider = data?.selected_provider ?? null;
   const latestFailure = currentFailedBuild(builds);
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
@@ -718,6 +723,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
                           template={t}
                           canManage={canManage}
                           onEdit={openEditForm}
+                          providerMode={providerMode}
+                          selectedProvider={selectedProvider}
                         />
                       ))}
                     </ul>

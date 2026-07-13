@@ -767,3 +767,23 @@ and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface. Parent API/UI rollout and
 live provider verification remain part of the enclosing change.
+
+---
+
+### 2026-07-13 — session `sandbox-template-provider-status-v2` (completion)
+
+Completed the follow-up provider-status and failure-recovery contract on top of
+the provider-neutral synchronization rollout. The additive rebuild response can
+now report providers that failed before their rebuild was started, while the UI
+keeps Automatic neutral and shows selected-provider plus current-image status
+only for pinned projects. Existing provider readiness and `launch_ready` fields
+remain backward compatible.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1094 pass / 2 skip / 0 fail**
+across 80 files with 4986 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. API/web typechecks,
+focused provider tests, and UI lint also pass; live dev verification remains the
+enclosing rollout gate.
