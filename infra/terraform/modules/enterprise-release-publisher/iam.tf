@@ -39,7 +39,7 @@ data "aws_iam_policy_document" "promotion" {
 
   statement {
     sid       = "SignOnlineMetadataAndArtifacts"
-    actions   = ["kms:GetPublicKey", "kms:Sign"]
+    actions   = ["kms:DescribeKey", "kms:GetPublicKey", "kms:Sign"]
     resources = concat([for key in aws_kms_key.online : key.arn], [aws_kms_key.cosign.arn])
   }
 
