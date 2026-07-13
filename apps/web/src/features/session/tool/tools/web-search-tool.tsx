@@ -91,7 +91,7 @@ function DomainSourceGroup({ group }: { group: WebSearchDomainGroup }) {
               <p className="text-foreground min-w-0 truncate text-sm font-medium">
                 {item.src.title}
               </p>
-              <p className="text-muted-foreground ml-auto min-w-0 shrink-0 truncate font-mono text-xs">
+              <p className="text-muted-foreground ml-auto min-w-0 shrink-0 truncate text-xs">
                 {item.hostname}
               </p>
             </Link>

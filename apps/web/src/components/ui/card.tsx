@@ -3,11 +3,21 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-const cardVariants = cva('flex flex-col gap-6 rounded-lg border text-card-foreground', {
+/**
+ * Kortix <Card> — the codified panel surface.
+ *
+ * Mirrors the hand-composed `bg-popover rounded-md border` panels from the
+ * customize section views. The bordered element carries no padding so flush
+ * children (tables, lists, images) can sit edge-to-edge; padding lives on the
+ * slots (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5`
+ * rhythm). Panels stay flat by default: border, no shadow — the shadow ladder
+ * is for overlays and floating surfaces.
+ */
+const cardVariants = cva('bg-popover text-card-foreground flex flex-col gap-5 rounded-md border', {
   variants: {
     variant: {
-      default: 'bg-card py-6',
-      glass: 'bg-card/40 shadow-sm py-6 border border-border/40',
+      default: '',
+      glass: 'bg-card/40 border-border/40 shadow-sm',
     },
   },
   defaultVariants: {
@@ -26,7 +36,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="card-header"
       className={cn(
-        '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6',
+        '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1 px-4 pt-5 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-4 [&:last-child]:pb-5',
         className,
       )}
       {...props}
@@ -38,7 +48,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="card-title"
-      className={cn('leading-none font-semibold', className)}
+      className={cn('text-sm leading-none font-medium', className)}
       {...props}
     />
   );
@@ -65,14 +75,20 @@ function CardAction({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function CardContent({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div data-slot="card-content" className={cn('px-6', className)} {...props} />;
+  return (
+    <div
+      data-slot="card-content"
+      className={cn('px-4 [&:last-child]:pb-5', className)}
+      {...props}
+    />
+  );
 }
 
 function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="card-footer"
-      className={cn('flex items-center px-6 [.border-t]:pt-6', className)}
+      className={cn('flex items-center gap-2 px-4 pb-5 [.border-t]:pt-4', className)}
       {...props}
     />
   );

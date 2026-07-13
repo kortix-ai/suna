@@ -505,27 +505,46 @@ const SHADOW_SCALE: ReadonlyArray<{
   twClass?: string;
 }> = [
   {
+    label: 'shadow-2xs',
+    twClass: 'shadow-2xs',
+    cssVar: '--shadow-2xs',
+    use: 'Hairline lift — inputs, thumbnails',
+  },
+  {
+    label: 'shadow-xs',
+    twClass: 'shadow-xs',
+    cssVar: '--shadow-xs',
+    use: 'Chips, slider thumbs, glass panels',
+  },
+  {
     label: 'shadow-sm',
     twClass: 'shadow-sm',
     cssVar: '--shadow-sm',
-    use: 'Tabs, sticky bars, subtle lift',
+    use: 'Tabs, sticky bars, hover lift',
   },
   {
     label: 'shadow-md',
     twClass: 'shadow-md',
     cssVar: '--shadow-md',
-    use: 'Select menus, dropdowns',
+    use: 'Dropdowns, selects, popovers',
   },
   {
     label: 'shadow-lg',
     twClass: 'shadow-lg',
     cssVar: '--shadow-lg',
-    use: 'Modals, dialogs, floating panels',
+    use: 'Modals, sheets, toasts',
   },
   {
-    label: 'popover',
-    cssVar: '--cds-shadow-popover',
-    use: 'Popovers and elevated overlays',
+    label: 'shadow-xl',
+    twClass: 'shadow-xl',
+    cssVar: '--shadow-xl',
+    use: 'Command palette, floating windows',
+  },
+  {
+    label: 'shadow-2xl',
+    twClass: 'shadow-2xl',
+    cssVar: '--shadow-2xl',
+    use: 'Marketing, large previews',
   },
 ];
 
@@ -1348,7 +1367,7 @@ export default function BrandPage() {
               </h2>
               <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                 {tI18nHardcoded.raw(
-                  'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation9150cc18',
+                  'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation8c9f8cda',
                 )}{' '}
                 <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code> values.
               </p>

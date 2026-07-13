@@ -119,16 +119,20 @@ export function SessionSiteHeader({
 
   return (
     <>
-      <div className="z-20 w-full border-b">
+      {/* No divider line. The row itself stays transparent (the welcome
+          wallpaper reads through it), and the fade lives in the strip below:
+          it overlays the top of the message list, so content scrolling up
+          dissolves into the page instead of hitting a hard rule. Gradient has
+          to sit over the content — painting it inside the row would just fade
+          background into the identical background behind it, i.e. invisible. */}
+      <div className="after:from-background relative z-20 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
         {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
             line (children h-[28px] → center y≈26, matching the traffic lights
             and the shell's Open-sidebar toggle), and indent the leading side
             past the lights + toggle. px values on purpose — the lights are
             OS-positioned; rem sizes drift with the root font. Both groups stay
             in flow so justify-between keeps the trailing cluster on the right. */}
-        <div
-          className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}
-        >
+        <div className={cn('flex items-center justify-between p-2', sidebarHidden && 'pt-[12px]')}>
           <div
             className={cn(
               'pointer-events-auto flex items-center gap-0.5 transition-[margin] duration-200 ease-linear',
@@ -270,12 +274,7 @@ export function SessionSiteHeader({
                 variant="ghost"
                 size="icon"
                 onClick={onToggleSidePanel}
-                className={cn(
-                  'cursor-pointer transition-colors',
-                  isSidePanelOpen
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+                className={cn('text-foreground cursor-pointer transition-colors')}
               >
                 <PanelRight className="h-4 w-4" />
               </Button>
