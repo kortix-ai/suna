@@ -517,3 +517,16 @@ gateway credentials were revoked and the Codex-secret mutation was restored.
 **Shippable to production: YES** — SDK public behavior is regression-locked;
 the wider gateway change still follows its normal PR, deploy-dev, and live-dev
 verification lifecycle.
+
+---
+
+### 2026-07-13 — session `session-base-branches` (claim)
+
+Claimed the user-directed additive branch-environment work: preserve the existing
+per-session `base_ref` API, expose effective project/group branch defaults through
+the typed project Git surface, and extend group-grant mutations without renaming or
+removing public SDK symbols. TDD will be RED-watched before implementation; the
+full SDK typecheck, test, and packed-install smoke gates are required before this
+claim is closed.
+
+**Status:** IN PROGRESS.
