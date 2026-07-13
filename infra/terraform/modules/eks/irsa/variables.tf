@@ -29,6 +29,12 @@ variable "policy_json" {
   default     = ""
 }
 
+variable "create_inline_policy" {
+  description = "Explicitly controls inline policy creation when policy_json is not known during planning. Null preserves automatic detection."
+  type        = bool
+  default     = null
+}
+
 variable "policy_arns" {
   description = "Managed IAM policy ARNs to attach."
   type        = list(string)
@@ -39,6 +45,12 @@ variable "max_session_duration" {
   description = "Max assumed-session duration (seconds)."
   type        = number
   default     = 3600
+}
+
+variable "permissions_boundary_arn" {
+  description = "Optional customer-owned IAM permissions boundary for this workload role."
+  type        = string
+  default     = null
 }
 
 variable "tags" {
