@@ -48,7 +48,8 @@ export function messageAttachments(
 ): Array<{ kind: string; file: TelegramFileRef }> {
   const out: Array<{ kind: string; file: TelegramFileRef }> = [];
   if (message.document) out.push({ kind: 'document', file: message.document });
-  if (message.photo?.length) out.push({ kind: 'photo', file: message.photo[message.photo.length - 1] });
+  if (message.photo?.length)
+    out.push({ kind: 'photo', file: message.photo[message.photo.length - 1] });
   if (message.video) out.push({ kind: 'video', file: message.video });
   if (message.audio) out.push({ kind: 'audio', file: message.audio });
   if (message.voice) out.push({ kind: 'voice', file: message.voice });
@@ -153,7 +154,10 @@ export function shouldRespondInChat(
 export function stripBotMention(text: string, botUsername: string | null): string {
   if (!botUsername) return text.trim();
   const re = new RegExp(`@${botUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-  return text.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+  return text
+    .replace(re, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 // ─── Command replies ─────────────────────────────────────────────────────────
@@ -238,7 +242,10 @@ export function renderTelegramAgentPrompt(
   message: TelegramMessage,
   botUsername: string | null,
 ): string {
-  const text = stripBotMention(message.text ?? message.caption ?? '(non-text payload)', botUsername);
+  const text = stripBotMention(
+    message.text ?? message.caption ?? '(non-text payload)',
+    botUsername,
+  );
   const attachments = describeAttachments(message);
   return [
     "You're answering a message from Telegram.",
@@ -259,7 +266,10 @@ export function renderTelegramFollowUpPrompt(
   message: TelegramMessage,
   botUsername: string | null,
 ): string {
-  const text = stripBotMention(message.text ?? message.caption ?? '(non-text payload)', botUsername);
+  const text = stripBotMention(
+    message.text ?? message.caption ?? '(non-text payload)',
+    botUsername,
+  );
   const attachments = describeAttachments(message);
   return [
     `New message from ${senderLabel(message.from)} in the same Telegram chat:`,

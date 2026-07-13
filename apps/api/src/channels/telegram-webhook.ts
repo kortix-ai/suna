@@ -14,16 +14,17 @@
  * never in anything a sandbox sees (buildTelegramTurnEnv is context-only).
  */
 
-import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { createRoute, z } from '@hono/zod-openapi';
 import { chatChannelBindings, chatEventDedup, chatThreads, projects } from '@kortix/db';
-import { db } from '../shared/db';
+import { and, eq } from 'drizzle-orm';
+import { errors, json, makeOpenApiApp } from '../openapi';
 import {
   continueSession,
   createSession,
   resolveProjectAutomationActor,
 } from '../projects/session-lifecycle';
+import { db } from '../shared/db';
 import {
   clearTelegramPairing,
   loadTelegramInstall,
@@ -31,15 +32,11 @@ import {
   loadTelegramTokenForProject,
   loadTelegramWebhookSecretForProject,
 } from './install-store';
-import { telegramSendMessage } from './telegram-api';
-import { currentChannelSelection } from './slack/selection';
-import { normalizeConversationPolicy } from './slack/participants';
 import { EVENT_DEDUPE_TTL_MS } from './slack/app';
+import { normalizeConversationPolicy } from './slack/participants';
+import { currentChannelSelection } from './slack/selection';
+import { telegramSendMessage } from './telegram-api';
 import {
-  parseTelegramCommand,
-  renderTelegramAgentPrompt,
-  renderTelegramFollowUpPrompt,
-  shouldRespondInChat,
   TELEGRAM_HELP_TEXT,
   TELEGRAM_LOCKED_TEXT,
   TELEGRAM_NEW_TEXT,
@@ -48,6 +45,10 @@ import {
   TELEGRAM_START_TEXT,
   type TelegramMessage,
   type TelegramUpdate,
+  parseTelegramCommand,
+  renderTelegramAgentPrompt,
+  renderTelegramFollowUpPrompt,
+  shouldRespondInChat,
 } from './telegram/inbound';
 import { addTelegramAllowedUser, telegramPairingMatches } from './telegram/pairing';
 import {
@@ -58,7 +59,6 @@ import {
   telegramQueuedMessage,
   telegramStartErrorMessage,
 } from './telegram/turn';
-import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const telegramWebhookApp = makeOpenApiApp();
 
@@ -73,7 +73,10 @@ telegramWebhookApp.openapi(
       body: { content: { 'application/json': { schema: z.any() } } },
     },
     responses: {
-      200: json(z.object({ ok: z.boolean(), challenge: z.string().optional() }).passthrough(), 'Accepted'),
+      200: json(
+        z.object({ ok: z.boolean(), challenge: z.string().optional() }).passthrough(),
+        'Accepted',
+      ),
       ...errors(400, 401, 404),
     },
   }),
@@ -249,10 +252,7 @@ async function attemptTelegramPairing(
 
 /** Whether the identity gate would reject this sender — drives the /start
  *  reply (pairing instructions vs the normal intro). */
-async function telegramSenderLocked(
-  projectId: string,
-  message: TelegramMessage,
-): Promise<boolean> {
+async function telegramSenderLocked(projectId: string, message: TelegramMessage): Promise<boolean> {
   if (!telegramRequireUserIdentityForTest()) return false;
   const [project] = await db
     .select({ metadata: projects.metadata })
@@ -342,10 +342,13 @@ async function createOrJoinChatSession(input: {
     if (sessionId) {
       await followUp(sessionId);
     } else {
-      console.warn('[telegram-webhook] lost chat-create claim but winner never published a session', {
-        botId,
-        chatId,
-      });
+      console.warn(
+        '[telegram-webhook] lost chat-create claim but winner never published a session',
+        {
+          botId,
+          chatId,
+        },
+      );
     }
     return;
   }

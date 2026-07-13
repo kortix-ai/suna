@@ -63,20 +63,15 @@ export async function saveTelegramInstall(
   const { projectId } = input;
   await db
     .delete(chatInstalls)
-    .where(
-      and(
-        eq(chatInstalls.platform, "telegram"),
-        eq(chatInstalls.projectId, projectId),
-      ),
-    );
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
   await db
     .insert(chatInstalls)
-    .values({ platform: "telegram", workspaceId: input.botId, projectId })
+    .values({ platform: 'telegram', workspaceId: input.botId, projectId })
     .onConflictDoNothing();
   await upsertSecret(projectId, TELEGRAM_BOT_TOKEN, input.botToken);
   await upsertSecret(projectId, TELEGRAM_WEBHOOK_SECRET, input.webhookSecret);
   await upsertSecret(projectId, TELEGRAM_BOT_ID, input.botId);
-  await upsertSecret(projectId, TELEGRAM_BOT_USERNAME, input.botUsername ?? "");
+  await upsertSecret(projectId, TELEGRAM_BOT_USERNAME, input.botUsername ?? '');
   return {
     botId: input.botId,
     botUsername: input.botUsername,
@@ -88,21 +83,11 @@ export async function deleteTelegramInstall(projectId: string): Promise<void> {
   for (const name of TELEGRAM_KEYS) {
     await db
       .delete(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.name, name),
-        ),
-      );
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
   }
   await db
     .delete(chatInstalls)
-    .where(
-      and(
-        eq(chatInstalls.platform, "telegram"),
-        eq(chatInstalls.projectId, projectId),
-      ),
-    );
+    .where(and(eq(chatInstalls.platform, 'telegram'), eq(chatInstalls.projectId, projectId)));
 }
 
 export async function loadTelegramInstall(
@@ -133,9 +118,7 @@ export async function loadTelegramInstall(
 
 /** SERVER-SIDE ONLY — feeds telegram-api.ts and the executor gateway's
  *  credential resolution. Never returned to a sandbox or the dashboard. */
-export async function loadTelegramTokenForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadTelegramTokenForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, TELEGRAM_BOT_TOKEN);
 }
 
@@ -508,12 +491,12 @@ export async function loadAgentMailInstall(
 ): Promise<AgentMailInstallSummary | null> {
   const keys = agentMailKeys(profileSlug);
   const [inboxId, email, displayName, webhookId, senderPolicyRaw] = await Promise.all([
-      readSecret(projectId, keys.inboxId),
-      readSecret(projectId, keys.email),
-      readSecret(projectId, keys.displayName),
-      readSecret(projectId, keys.webhookId),
-      readSecret(projectId, keys.senderPolicy),
-    ]);
+    readSecret(projectId, keys.inboxId),
+    readSecret(projectId, keys.email),
+    readSecret(projectId, keys.displayName),
+    readSecret(projectId, keys.webhookId),
+    readSecret(projectId, keys.senderPolicy),
+  ]);
   if (!inboxId || !email) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
@@ -786,9 +769,11 @@ export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsI
   if (input.teamId != null) await upsertSecret(projectId, MS_TEAMS_TEAM_ID, input.teamId);
   if (input.teamName != null) await upsertSecret(projectId, MS_TEAMS_TEAM_NAME, input.teamName);
   if (input.botId != null) await upsertSecret(projectId, MS_TEAMS_BOT_ID, input.botId);
-  if (input.serviceUrl != null) await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
+  if (input.serviceUrl != null)
+    await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
   if (input.appId != null) await upsertSecret(projectId, MS_TEAMS_APP_ID, input.appId);
-  if (input.appPassword != null) await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
+  if (input.appPassword != null)
+    await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
 
   return {
     tenantId,
@@ -811,7 +796,9 @@ export async function setTeamsCatalogAppId(projectId: string, catalogAppId: stri
   await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
 }
 
-export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
+export async function loadTeamsBotCredentials(
+  projectId: string,
+): Promise<TeamsBotCredentials | null> {
   const secrets = await readTeamsSecrets(projectId);
   const appId = secrets[MS_TEAMS_APP_ID];
   const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
@@ -836,7 +823,9 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
+    .where(
+      and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)),
+    )
     .limit(1);
   return {
     tenantId,
@@ -937,8 +926,7 @@ async function readTeamsSecrets(projectId: string): Promise<Record<string, strin
     if (!row.valueEnc) continue;
     try {
       out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
-    } catch {
-    }
+    } catch {}
   }
   return out;
 }
