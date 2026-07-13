@@ -1507,6 +1507,11 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill", "registry:project"]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
+  // Kortix-managed system skills (kortix-system/executor/memory/slack/computer/
+  // meet) are the platform floor — they ship in every project and are served
+  // live via `kortix skills get`, so they're not browse-and-install cards. They
+  // stay installable by id (getCatalogEntry, ungated).
+  if (it.managedBy === "kortix") return false;
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
