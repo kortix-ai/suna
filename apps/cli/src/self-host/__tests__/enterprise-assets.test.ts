@@ -43,4 +43,48 @@ describe('embedded enterprise Terraform graph', () => {
     expect(typeof policy).toBe('string');
     expect(JSON.parse(policy)).toMatchObject({ Version: '2012-10-17' });
   });
+
+  test('embeds the reviewed controller trust plane used by cluster outputs', () => {
+    const controllerIrsa = enterpriseTerraformAssets['modules/enterprise-vpc/controller-irsa.tf'];
+    expect(controllerIrsa).toContain('module "alb_controller_irsa"');
+    expect(controllerIrsa).toContain('module "external_dns_irsa"');
+    expect(controllerIrsa).toContain('route53:ChangeResourceRecordSets');
+  });
+
+  test('keeps the customer updater as the only enterprise Helm reconciler', () => {
+    const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
+    const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];
+
+    expect(sharedPlatform).toContain('count            = var.argo_cd_enabled ? 1 : 0');
+    expect(enterprisePlatform).toContain('argo_cd_enabled             = false');
+  });
+
+  test('recovers missed publisher hints through the same authoritative hourly reconciler', () => {
+    const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
+    const hintTarget = updater.slice(
+      updater.indexOf('resource "aws_cloudwatch_event_target" "release_hint"'),
+      updater.indexOf('resource "aws_cloudwatch_event_rule" "hourly"'),
+    );
+    const hourlyTarget = updater.slice(
+      updater.indexOf('resource "aws_cloudwatch_event_target" "hourly"'),
+    );
+
+    expect(hintTarget).toContain('arn            = aws_sfn_state_machine.reconcile.arn');
+    expect(hourlyTarget).toContain('arn      = aws_sfn_state_machine.reconcile.arn');
+    expect(hourlyTarget).toContain('trigger = "hourly"');
+    expect(hourlyTarget).toContain('force   = false');
+  });
+
+  test('does not grant the automatic platform apply role AWS infrastructure mutation', () => {
+    const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
+    const applyPolicy = updater.slice(
+      updater.indexOf('data "aws_iam_policy_document" "updater_apply"'),
+      updater.indexOf('resource "aws_iam_role_policy" "updater_apply"'),
+    );
+
+    expect(applyPolicy).toContain('eks:DescribeCluster');
+    expect(applyPolicy).toContain('sts:GetCallerIdentity');
+    expect(applyPolicy).not.toContain('ManageTaggedKortixInfrastructure');
+    expect(applyPolicy).not.toMatch(/"(?:autoscaling|backup|cloudwatch|codebuild|ec2|ecr|eks|elasticloadbalancing|events|logs|secretsmanager|ssm|states|tag):\*"/);
+  });
 });

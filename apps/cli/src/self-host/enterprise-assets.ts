@@ -26,6 +26,7 @@ import stateModuleVersions from '../../../../infra/terraform/modules/enterprise-
 
 import enterpriseAcm from '../../../../infra/terraform/modules/enterprise-vpc/acm.tf' with { type: 'text' };
 import enterpriseBackup from '../../../../infra/terraform/modules/enterprise-vpc/backup.tf' with { type: 'text' };
+import enterpriseControllerIrsa from '../../../../infra/terraform/modules/enterprise-vpc/controller-irsa.tf' with { type: 'text' };
 import enterpriseEks from '../../../../infra/terraform/modules/enterprise-vpc/eks.tf' with { type: 'text' };
 import supabaseUserData from '../../../../infra/terraform/modules/enterprise-vpc/files/supabase-user-data.sh.tftpl' with { type: 'text' };
 import updaterBuildspec from '../../../../infra/terraform/modules/enterprise-vpc/files/updater-buildspec.yml.tftpl' with { type: 'text' };
@@ -87,6 +88,7 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   'modules/enterprise-state/versions.tf': stateModuleVersions,
   'modules/enterprise-vpc/acm.tf': enterpriseAcm,
   'modules/enterprise-vpc/backup.tf': enterpriseBackup,
+  'modules/enterprise-vpc/controller-irsa.tf': enterpriseControllerIrsa,
   'modules/enterprise-vpc/eks.tf': enterpriseEks,
   'modules/enterprise-vpc/files/supabase-user-data.sh.tftpl': supabaseUserData,
   'modules/enterprise-vpc/files/updater-buildspec.yml.tftpl': updaterBuildspec,

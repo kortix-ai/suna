@@ -34,6 +34,8 @@ export interface EnterpriseInstanceOutput {
   state_machine_arn?: string;
   release_state_table?: string;
   supabase_instance_id?: string;
+  supabase_private_ip?: string;
+  runtime_secret_arn?: string;
   [key: string]: unknown;
 }
 
@@ -72,6 +74,7 @@ export function writeClusterFiles(
     vpc_cidr: aws.vpc_cidr,
     api_domain: aws.api_domain,
     frontend_domain: aws.frontend_domain,
+    route53_zone_id: aws.route53_zone_id,
     release_repository_url: aws.release_repository_url,
     tuf_root_sha256: aws.tuf_root_sha256,
     updater_bootstrap_url: aws.updater_bootstrap_url,
@@ -79,6 +82,9 @@ export function writeClusterFiles(
     release_publisher_account_id: aws.release_publisher_account_id,
     maintenance_window: aws.maintenance_window,
     permissions_boundary_arn: permissionsBoundaryArn,
+    terraform_state_bucket: backend.bucket,
+    terraform_state_lock_table: backend.dynamodb_table,
+    terraform_state_kms_key_arn: backend.kms_key_id,
     tags: { Environment: 'enterprise', ManagedBy: 'kortix-self-host' },
   });
 }

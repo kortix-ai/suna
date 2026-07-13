@@ -10,6 +10,7 @@ module "enterprise" {
   vpc_cidr                     = var.vpc_cidr
   api_domain                   = var.api_domain
   frontend_domain              = var.frontend_domain
+  route53_zone_id              = var.route53_zone_id
   release_repository_url       = var.release_repository_url
   tuf_root_sha256              = var.tuf_root_sha256
   updater_bootstrap_url        = var.updater_bootstrap_url
@@ -19,6 +20,9 @@ module "enterprise" {
   operator_principal_arns      = var.operator_principal_arns
   operator_external_id         = var.operator_external_id
   permissions_boundary_arn     = var.permissions_boundary_arn
+  terraform_state_bucket       = var.terraform_state_bucket
+  terraform_state_lock_table   = var.terraform_state_lock_table
+  terraform_state_kms_key_arn  = var.terraform_state_kms_key_arn
   tags                         = var.tags
 }
 

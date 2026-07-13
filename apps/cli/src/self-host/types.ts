@@ -11,6 +11,7 @@ export interface SelfHostCommandFlags {
   vpcCidr?: string;
   apiDomain?: string;
   frontendDomain?: string;
+  route53ZoneId?: string;
   releaseRepositoryUrl?: string;
   tufRootSha256?: string;
   updaterBootstrapUrl?: string;

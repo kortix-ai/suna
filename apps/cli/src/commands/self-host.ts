@@ -66,6 +66,7 @@ Options:
   --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS VPC target.
   --api-domain <name>  Public API DNS name for the AWS target.
   --frontend-domain <name> Public dashboard DNS name for the AWS target.
+  --route53-zone-id <id> Customer Route 53 public hosted zone for DNS and ACM.
   --release-repository-url <url> Immutable enterprise TUF repository.
   --tuf-root-sha256 <digest> Offline-reviewed trusted TUF root digest.
   --updater-bootstrap-url <url> Digest-pinned enterprise updater binary.
@@ -238,6 +239,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const vpcCidr = takeFlagValue(args, ['--vpc-cidr']);
   const apiDomain = takeFlagValue(args, ['--api-domain']);
   const frontendDomain = takeFlagValue(args, ['--frontend-domain']);
+  const route53ZoneId = takeFlagValue(args, ['--route53-zone-id']);
   const releaseRepositoryUrl = takeFlagValue(args, ['--release-repository-url']);
   const tufRootSha256 = takeFlagValue(args, ['--tuf-root-sha256']);
   const updaterBootstrapUrl = takeFlagValue(args, ['--updater-bootstrap-url']);
@@ -261,6 +263,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     vpcCidr,
     apiDomain,
     frontendDomain,
+    route53ZoneId,
     releaseRepositoryUrl,
     tufRootSha256,
     updaterBootstrapUrl,
