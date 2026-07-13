@@ -465,14 +465,14 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                         {includedCount} included
                       </span>
                     </div>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
+                    <p className="text-muted-foreground text-pretty text-xs leading-relaxed">
                       Preinstalled into your project&apos;s repo and ready in the first session.
                       Toggle off anything you don&apos;t need.
                     </p>
-                    <div className="divide-border/60 divide-y overflow-hidden rounded-2xl border">
+                    <div className="divide-border/60 divide-y overflow-hidden rounded-md border">
                       <SetupOptionRow
                         icon={
-                          <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-sm">
                             <Boxes className="size-4" />
                           </span>
                         }

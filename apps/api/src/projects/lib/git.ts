@@ -133,8 +133,16 @@ async function resolveImportedDefaultBranch(
   const [owner, repoName] = repo.full_name.split('/');
   try {
     await getRepositoryBranch({ owner: owner!, repo: repoName!, branch, auth });
-  } catch {
-    throw new Error(`Selected branch "${branch}" does not exist in ${repo.full_name}`);
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'status' in error &&
+      error.status === 404
+    ) {
+      throw new Error(`Selected branch "${branch}" does not exist in ${repo.full_name}`);
+    }
+    throw error;
   }
   return branch;
 }

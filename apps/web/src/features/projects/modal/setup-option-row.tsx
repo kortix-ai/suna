@@ -45,7 +45,7 @@ export function SetupOptionRow({
             </Badge>
           ) : null}
         </div>
-        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-pretty text-xs leading-relaxed">
           {description}
         </p>
       </div>

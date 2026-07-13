@@ -3,6 +3,17 @@ import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
 
+export class GitHubApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly path: string,
+  ) {
+    super(message);
+    this.name = 'GitHubApiError';
+  }
+}
+
 // 'managed' = a Kortix-managed git token minted server-side by the managed backend.
 // 'project_credential' = provider-neutral git credential stored outside
 // user-readable runtime secrets.
@@ -246,7 +257,11 @@ async function ghFetch<T>(
     } catch {
       detail = await res.text().catch(() => '');
     }
-    throw new Error(`GitHub ${path} failed (${res.status}): ${detail || res.statusText}`);
+    throw new GitHubApiError(
+      `GitHub ${path} failed (${res.status}): ${detail || res.statusText}`,
+      res.status,
+      path,
+    );
   }
   return res.json() as Promise<T>;
 }

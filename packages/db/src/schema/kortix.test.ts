@@ -244,11 +244,11 @@ describe('projects table', () => {
     expect(col?.default).toBe('active');
   });
 
-  test('indexes account/repo without preventing isolated duplicate projects', () => {
+  test('retains the unique account/repo index through the application rollout', () => {
     const cfg = getTableConfig(projects);
     const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
     expect(accountRepo).toBeDefined();
-    expect(accountRepo?.config.unique).toBe(false);
+    expect(accountRepo?.config.unique).toBe(true);
   });
 });
 

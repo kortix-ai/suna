@@ -80,6 +80,7 @@ let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
 let rejectedBranch: string | null;
+let repoUniquenessEnforced: boolean;
 
 function setCurrentUser(userId: string, userEmail: string) {
   currentUserId = userId;
@@ -148,6 +149,7 @@ function resetState() {
   readRepoFileCalls = [];
   archiveCalls = [];
   rejectedBranch = null;
+  repoUniquenessEnforced = true;
 }
 
 function selectRows(table: unknown, fields: Record<string, unknown> | undefined, condition: unknown): any[] {
@@ -155,6 +157,7 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
   const accountId = values.account_id as string | undefined;
   const userId = values.user_id as string | undefined;
   const projectId = values.project_id as string | undefined;
+  const repoUrl = values.repo_url as string | undefined;
   const status = values.status as string | undefined;
 
   if (table === accountMembers) {
@@ -190,6 +193,7 @@ function selectRows(table: unknown, fields: Record<string, unknown> | undefined,
     return projectRows.filter((row) =>
       (!accountId || row.accountId === accountId) &&
       (!projectId || row.projectId === projectId) &&
+      (!repoUrl || row.repoUrl === repoUrl) &&
       (!status || row.status === status) &&
       (!inArrayProjectIds || inArrayProjectIds.includes(row.projectId))
     );
@@ -407,7 +411,9 @@ mock.module('../projects/github', () => ({
     description: null,
   }),
   getRepositoryBranch: async ({ branch }: { branch: string }) => {
-    if (branch === rejectedBranch) throw new Error(`GitHub branch ${branch} not found`);
+    if (branch === rejectedBranch) {
+      throw Object.assign(new Error(`GitHub branch ${branch} not found`), { status: 404 });
+    }
     return { name: branch, protected: false };
   },
   listInstallationRepositories: async () => [],
@@ -462,6 +468,15 @@ const projectDbMock: any = {
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
+        onConflictDoNothing: () => ({
+          returning: async () => {
+            if (table !== projects) return [];
+            const conflicts = repoUniquenessEnforced && projectRows.some(
+              (row) => row.accountId === values.accountId && row.repoUrl === values.repoUrl,
+            );
+            return conflicts ? [] : [insertProject(values)];
+          },
+        }),
         onConflictDoUpdate: ({ set }: { set?: Record<string, unknown> }) => ({
           returning: async () => {
             if (table === projects) {
@@ -498,6 +513,9 @@ const projectDbMock: any = {
               if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
               else gitConnectionRows.push(row);
               return [row];
+            }
+            if (table === projectMembers) {
+              return [grantProjectRole(values, set as Partial<ProjectMemberRow>)];
             }
             return [];
           },
@@ -637,7 +655,7 @@ describe('projects API contract', () => {
     }));
   });
 
-  test('registers the same repository and branch as distinct isolated projects', async () => {
+  test('keeps re-import idempotent while the phase-one unique index remains', async () => {
     const app = createApp();
     const payload = {
       account_id: ACCOUNT_ID,
@@ -656,13 +674,12 @@ describe('projects API contract', () => {
     const [firstBody, secondBody] = await Promise.all([first.json(), second.json()]);
     expect([firstBody.project_id, secondBody.project_id]).toEqual([
       NEW_PROJECT_ID,
-      SECOND_NEW_PROJECT_ID,
-    ]);
-    expect(projectRows.filter((row) => row.repoUrl === payload.repo_url)).toHaveLength(2);
-    expect(gitConnectionRows.map((row) => row.projectId)).toEqual([
       NEW_PROJECT_ID,
-      SECOND_NEW_PROJECT_ID,
     ]);
+    expect(projectRows.filter((row) => row.repoUrl === payload.repo_url)).toEqual([
+      expect.objectContaining({ projectId: NEW_PROJECT_ID, name: 'Web development' }),
+    ]);
+    expect(gitConnectionRows.map((row) => row.projectId)).toEqual([NEW_PROJECT_ID]);
   });
 
   test('rejects a branch GitHub cannot resolve before inserting the project', async () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { getRepositoryBranch, listRepositoryBranches } from './github';
+import { GitHubApiError, getRepositoryBranch, listRepositoryBranches } from './github';
 
 const originalFetch = globalThis.fetch;
 
@@ -60,5 +60,20 @@ describe('GitHub repository branches', () => {
     expect(requested).toBe(
       'https://api.github.com/repos/kortix/suna/branches/release%2Fnext',
     );
+  });
+
+  test('preserves the GitHub status at the API boundary', async () => {
+    globalThis.fetch = (async () =>
+      Response.json({ message: 'Service unavailable' }, { status: 503 })) as unknown as typeof fetch;
+
+    const request = getRepositoryBranch({
+      owner: 'kortix',
+      repo: 'suna',
+      branch: 'dev',
+      auth: { token: 'test-token' },
+    });
+
+    await expect(request).rejects.toBeInstanceOf(GitHubApiError);
+    await expect(request).rejects.toMatchObject({ status: 503 });
   });
 });

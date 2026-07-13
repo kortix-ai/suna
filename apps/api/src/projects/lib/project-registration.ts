@@ -11,6 +11,7 @@ import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
 import { clampProjectName, deriveProjectName, type ProjectRow } from './serializers';
+import { and, eq } from 'drizzle-orm';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -57,7 +58,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   };
 
   const row = await db.transaction(async (tx) => {
-    const [project] = await tx
+    const [inserted] = await tx
       .insert(projects)
       .values({
         accountId: input.accountId,
@@ -69,7 +70,42 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         metadata,
         updatedAt: now,
       })
+      // Phase-one compatibility: production still has the historical unique
+      // (account_id, repo_url) index. Once phase two makes that index
+      // non-unique, this insert naturally creates an independent project.
+      .onConflictDoNothing()
       .returning();
+
+    let project = inserted;
+    if (!inserted) {
+      const [existing] = await tx
+        .select()
+        .from(projects)
+        .where(
+          and(
+            eq(projects.accountId, input.accountId),
+            eq(projects.repoUrl, input.repo.clone_url),
+          ),
+        )
+        .limit(1);
+      if (!existing) {
+        throw new Error('Project registration conflicted without an existing repository project');
+      }
+      const [updated] = await tx
+        .update(projects)
+        .set({
+          name: projectName,
+          defaultBranch: input.defaultBranch,
+          manifestPath: input.manifestPath,
+          status: 'active',
+          metadata,
+          updatedAt: now,
+        })
+        .where(eq(projects.projectId, existing.projectId))
+        .returning();
+      if (!updated) throw new Error('Existing repository project disappeared during registration');
+      project = updated;
+    }
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {
@@ -84,7 +120,16 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
           createdBy: input.userId,
           updatedAt: now,
         })
+        .onConflictDoUpdate({
+          target: [projectGitCredentials.projectId, projectGitCredentials.provider],
+          set: {
+            valueEnc: encryptProjectSecret(project.projectId, input.auth.token),
+            createdBy: input.userId,
+            updatedAt: now,
+          },
+        })
         .returning();
+      if (!credential) throw new Error('Project Git credential was not persisted');
       credentialRef = credential.credentialId;
     }
 
@@ -113,6 +158,32 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         },
         updatedAt: now,
       })
+      .onConflictDoUpdate({
+        target: projectGitConnections.projectId,
+        set: {
+          provider: 'github',
+          repoUrl: input.repo.clone_url,
+          repoOwner: owner,
+          repoName: input.repo.name,
+          externalRepoId: String(input.repo.id),
+          defaultBranch: input.defaultBranch,
+          authMethod,
+          installationId: githubApp?.installationId ?? null,
+          credentialRef,
+          permissions: githubApp?.permissions ?? {},
+          visibility: input.repo.private ? 'private' : 'public',
+          status: 'connected',
+          lastValidatedAt: now,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          metadata: {
+            full_name: input.repo.full_name,
+            html_url: input.repo.html_url,
+            ssh_url: input.repo.ssh_url,
+          },
+          updatedAt: now,
+        },
+      })
       .returning();
 
     await tx
@@ -124,6 +195,14 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         projectRole: 'manager',
         grantedBy: input.userId,
         updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projectMembers.projectId, projectMembers.userId],
+        set: {
+          projectRole: 'manager',
+          grantedBy: input.userId,
+          updatedAt: now,
+        },
       })
       .returning();
 
