@@ -82,11 +82,6 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  // EXPERIMENTAL: turns on the `apps:` section in kortix.yaml — manifest
-  // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
-  // by default until the wire is hardened.
-  KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
-
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -107,10 +102,6 @@ const envSchema = z.object({
   REPLICATE_API_TOKEN:         optStr,
   CONTEXT7_API_URL:            optUrl('https://context7.com'),
   CONTEXT7_API_KEY:            optStr,
-
-  // ── Freestyle / Deployments (optional) ───────────────────────────────────
-  FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
-  FREESTYLE_API_KEY:           optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
@@ -581,7 +572,6 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
-  KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
 
   // ─── Database ──────────────────────────────────────────────────────────────
@@ -616,10 +606,6 @@ export const config = {
   REPLICATE_API_TOKEN: env.REPLICATE_API_TOKEN,
   CONTEXT7_API_URL: env.CONTEXT7_API_URL,
   CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
-
-  // ─── Freestyle (Deployments) ──────────────────────────────────────────────
-  FREESTYLE_API_URL: env.FREESTYLE_API_URL,
-  FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
 
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
@@ -940,11 +926,6 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_context7: {
     baseCost: 0.001,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_freestyle_deploy: {
-    baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

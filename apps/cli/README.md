@@ -86,7 +86,7 @@ pnpm install
 ```
 
 `self-host start` creates the config when needed and only asks for product
-integrations: Freestyle, GitHub, and Pipedream. Run `self-host configure` later
+integrations: GitHub and Pipedream. Run `self-host configure` later
 to change those credentials.
 
 The generated Docker distribution embeds a pinned copy of the official full

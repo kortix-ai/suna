@@ -6,7 +6,7 @@
  * session, then drives the Next dashboard. We verify the Customize → Sandbox
  * panel:
  *
- *   1. Provision a Freestyle-backed project for the test user.
+ *   1. Provision a managed-GitHub project for the test user.
  *   2. GET /sandboxes — platform default present (API-level smoke).
  *   3. Open the project's Sandbox tab in the browser; assert it renders
  *      WITHOUT a runtime error (catches the regression where the card crashed

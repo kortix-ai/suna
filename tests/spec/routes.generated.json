@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 476,
+  "count": 469,
   "routes": [
     {
       "method": "GET",
@@ -973,38 +973,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/approvals/needs-input"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps-config"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/apps/:slug"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps/:slug"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:slug/deploy"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:slug/logs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:slug/stop"
     },
     {
       "method": "GET",

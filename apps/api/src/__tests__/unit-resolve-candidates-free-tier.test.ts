@@ -30,7 +30,6 @@ mock.module('../config', () => ({
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
-        if (key === 'KORTIX_APPS_EXPERIMENTAL') return false;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'claude-sonnet-4.6';
         return target[key];

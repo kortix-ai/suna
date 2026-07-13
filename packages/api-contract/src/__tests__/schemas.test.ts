@@ -40,7 +40,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     effective_project_role: 'manager',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
-      apps: false,
       agent_tunnel: false,
       marketplace: false,
       agentmail_email: false,
@@ -48,18 +47,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
     },
-    experimental_features: [
-      {
-        key: 'apps',
-        name: 'Apps',
-        description: 'Deploy apps.',
-        stability: 'experimental',
-        available: true,
-        enabled: false,
-        overridden: false,
-      },
-    ],
-    apps_enabled: false,
+    experimental_features: [],
     default_sandbox_provider: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
@@ -348,7 +336,6 @@ describe('envelopes', () => {
 
   test('experimental keys stay in sync with the map schema', () => {
     expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
-      'apps',
       'agent_tunnel',
       'marketplace',
       'agentmail_email',

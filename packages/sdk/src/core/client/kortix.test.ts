@@ -157,13 +157,8 @@ test('project(id).channels covers slack, email and meet', async () => {
   expect(last().method).toBe('PUT');
 });
 
-test('project(id).apps hits the apps/deployments endpoints', async () => {
-  await kortix.project('PID123').apps.list();
-  expect(last().url).toContain('/projects/PID123/apps');
-
-  await kortix.project('PID123').apps.deploy('web');
-  expect(last().url).toContain('/projects/PID123/apps/web/deploy');
-  expect(last().method).toBe('POST');
+test('project(id) omits the retired hosted-app surface', () => {
+  expect('apps' in (kortix.project('PID123') as object)).toBe(false);
 });
 
 test('project(id).modelDefaults gets/sets/clears the default model', async () => {
@@ -325,7 +320,7 @@ test('kortix.connectStatus hits the top-level connect-status endpoint (not proje
   expect(last().url).toContain('/executor/connect-status');
 });
 
-test('project(id) covers experimental-feature toggle, sandbox provider pin, apps config, and repo-collaborator invite', async () => {
+test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
   await kortix.project('PID123').updateExperimentalFeature('marketplace', true);
   expect(last().url).toContain('/projects/PID123/experimental');
   expect(last().method).toBe('PATCH');
@@ -337,9 +332,6 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, apps
   await kortix.project('PID123').sandbox.setProvider('daytona');
   expect(last().url).toContain('/projects/PID123/sandbox-provider');
   expect(last().method).toBe('PATCH');
-
-  await kortix.project('PID123').apps.updateConfig({ enabled: true });
-  expect(last().url).toContain('/projects/PID123/experimental');
 
   await kortix.project('PID123').git.inviteCollaborator('octocat');
   expect(last().url).toContain('/projects/PID123/git/collaborators');

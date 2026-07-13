@@ -236,8 +236,8 @@ facade as `kortix.billing.{checkout, subscription, credits}`:
 ### 16. Transcription / misc session input  🟡
 `POST /v1/transcription` (voice) client now in SDK (`projects-client/transcription.ts`) ✅; hooks still web-local (`hooks/transcription`) 🟡.
 
-### 17. Channels / apps (project-scoped)  🟡
-Slack/email inbound-outbound installs (`projects-client/channels.ts`) and the `/v1/projects/:id/apps/*` deployment family (`projects-client/apps.ts`) — clients ✅ in SDK; hooks web-local.
+### 17. Channels (project-scoped)  🟡
+Slack/email inbound-outbound installs live in `projects-client/channels.ts`; hooks remain web-local.
 Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
 `GET/POST /v1/projects/:id/channels/slack/file[/upload]`) and the Meet
