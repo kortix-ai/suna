@@ -676,3 +676,14 @@ imports, conflict markers, and tracked Claude setup-token patterns are all zero.
 ACP `IN PROGRESS` entries above. Delivery remains intentionally limited to the
 open, unmerged PR #4510 by explicit user instruction; this branch must not be
 merged into `main` without separate authorization.
+
+### 2026-07-13 — session `acp-harness-runtime-v2`: CodeQL closure claim
+
+Claimed the five security-severity findings GitHub attributes to this large PR:
+the CLI doctor must use the SDK-owned authenticated ACP transport, SDK auth must
+make its intentional credential egress boundary explicit, daemon file reads
+must not check-then-open through a swappable path, and mobile release-title
+normalization must escape arbitrary version text safely. RED regressions precede
+implementation; affected/full gates and a green PR CodeQL aggregate are required.
+
+**Status: IN PROGRESS.** PR #4510 remains open and must not be merged.
