@@ -429,12 +429,6 @@ function createPartKey(part: ToolPart): string {
 
 export type CreateArtifactKind = 'image' | 'video' | 'presentation';
 
-/** image_gen actions that modify an image that already existed rather than
- * make a new one. The component still renders a resulting image for all of
- * these (see ImageGenTool), so a real file exists — but it is not something
- * newly *made*, so Outputs must not list it as a freshly generated image. */
-const IMAGE_GEN_DERIVATIVE_ACTIONS = new Set(['edit', 'upscale', 'remove_bg']);
-
 /** presentation_gen actions that extend or export the deck itself. The other
  * six actions are pure reads (list_slides, list_presentations,
  * validate_slide, preview, serve) or destructive (delete_slide,
@@ -443,16 +437,20 @@ const PRESENTATION_GEN_ARTIFACT_ACTIONS = new Set(['create_slide', 'export_pdf',
 
 /**
  * The kind of artifact this call produced, or `null` if it did not make
- * anything worth surfacing in Outputs (a delete, a listing, a preview, an
- * edit of a pre-existing image, …).
+ * anything worth surfacing in Outputs (a delete, a listing, a preview, …).
+ *
+ * `image_gen` has no pure-read action — generate/edit/upscale/remove_bg (and
+ * a missing/unrecognized action) all leave behind a real image file the user
+ * asked for and will want to open (see ImageGenTool, which renders a
+ * resulting image for every one of these). Only the LABEL differs by action
+ * (see `imageGenSentence` — calling an edit "Made an image" would be a lie);
+ * the artifact itself must always surface here, or a user who asks to
+ * edit/upscale/remove a background gets an empty Outputs card despite the
+ * agent having actually produced something.
  */
 export function createArtifactKind(part: ToolPart): CreateArtifactKind | null {
   const t = normalizeName(part.tool);
-  if (t === 'image_gen') {
-    const action = rawInput(part).action as string | undefined;
-    if (action && IMAGE_GEN_DERIVATIVE_ACTIONS.has(action)) return null;
-    return 'image';
-  }
+  if (t === 'image_gen') return 'image';
   if (t === 'video_gen') return 'video';
   if (t === 'presentation_gen') {
     const action = rawInput(part).action as string | undefined;

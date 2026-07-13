@@ -76,9 +76,17 @@ describe('deriveOutputs', () => {
     }
   });
 
-  it('an image_gen edit is not misreported as a newly created image — it modifies an existing image, so it is excluded from Outputs rather than shown as fresh output', () => {
+  // ─── image_gen: edit/upscale/remove_bg still produce a real image file —
+  // the user asked to modify an existing image and got one back. The only
+  // thing that was wrong to call it was the LABEL ("Made an image" would be
+  // a lie for an edit); the artifact itself must still surface in Outputs,
+  // or a user who asks to edit/upscale/remove a background gets an empty
+  // Outputs card despite the agent actually producing something to open. ──
+
+  it('reports an image_gen edit as an image output — editing an existing image still produces a real file to open', () => {
     const out = deriveOutputs([part('image_gen', { action: 'edit' })]);
-    expect(out).toEqual([]);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('image');
   });
 
   it('still reports a real image_gen generate as an output', () => {
@@ -87,10 +95,27 @@ describe('deriveOutputs', () => {
     expect(out[0].kind).toBe('image');
   });
 
-  it('does not report upscale/remove_bg as a newly created image either — same reasoning as edit', () => {
+  it('reports upscale/remove_bg as image outputs too — same reasoning as edit', () => {
     for (const action of ['upscale', 'remove_bg']) {
-      expect(deriveOutputs([part('image_gen', { action })])).toEqual([]);
+      const out = deriveOutputs([part('image_gen', { action })]);
+      expect(out).toHaveLength(1);
+      expect(out[0].kind).toBe('image');
     }
+  });
+
+  it('reports an image_gen call with no/unrecognized action as an image output — vague-but-true bias: assume it produced something rather than hide it', () => {
+    const out = deriveOutputs([part('image_gen', {})]);
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('image');
+  });
+
+  it('still does not report a deleted/listed presentation as an output (no regression from the image_gen fix)', () => {
+    expect(
+      deriveOutputs([part('presentation_gen', { action: 'delete_presentation' })]),
+    ).toEqual([]);
+    expect(
+      deriveOutputs([part('presentation_gen', { action: 'list_presentations' })]),
+    ).toEqual([]);
   });
 });
 

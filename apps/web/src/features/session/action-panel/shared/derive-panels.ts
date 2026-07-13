@@ -6,10 +6,11 @@
  *
  * Classification is delegated to narration.ts wherever it already owns the
  * answer (`familyForTool` for which tools write/read/browse the web,
- * `createArtifactKind` for the image_gen/presentation_gen actions that
- * genuinely made something) — this file must never re-derive that logic with
- * its own second set of tool-name tables, or the two cards could disagree
- * with what Progress just narrated for the same call.
+ * `createArtifactKind` for which image_gen/presentation_gen actions leave
+ * behind a real artifact to open versus a pure read/delete/listing) — this
+ * file must never re-derive that logic with its own second set of tool-name
+ * tables, or the two cards could disagree with what Progress just narrated
+ * for the same call.
  */
 
 import type { ToolPart } from '@/ui';
