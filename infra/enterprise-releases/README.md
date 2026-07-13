@@ -11,5 +11,15 @@ workflow refuses to infer rollback or database safety from a version number.
   customer-zero release may use a single reviewed `baseline` entry because
   there is no earlier installed enterprise release to roll back to.
 
+For the first baseline, `sha256` is the deterministic archive digest of the
+canonical node-pg-migrate ledger in the exact production image source commit:
+
+```bash
+git archive --format=tar <RELEASE_SOURCE_SHA> -- packages/db/migrations | sha256sum
+```
+
+The protected promotion workflow recomputes this digest and rejects a baseline
+contract that does not match the production provenance recorded on `prod`.
+
 Contracts are immutable review evidence. Add a new file for every enterprise
 revision; never rewrite a contract after its TUF target has been published.
