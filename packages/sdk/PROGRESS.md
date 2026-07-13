@@ -579,3 +579,21 @@ packed, installed, imported, and constructed the published package successfully.
 **Shippable to production: YES** for the SDK subtraction. Repository delivery,
 deployment, and the separate forward database-schema removal remain tracked by
 the parent removal goal.
+
+---
+
+### 2026-07-13 — session `remove-app-deploy-residue`: B8 documentation follow-up
+
+Removed stale affirmative references to the retired project-app deployment
+surface from the SDK README and API map as part of the repository-wide starter
+and documentation cleanup. No SDK source, export, type, or runtime behavior
+changed; the B8 removal record remains as the audit trail.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1079 pass / 0 fail** across 72 files
+with 4921 assertions after bundle generation; `pnpm --filter @kortix/sdk run
+smoke:install` built, packed, installed, imported, and constructed the published
+package successfully.
+
+**Shippable to production: YES** — documentation-only SDK follow-up with the
+full published-package gates green.

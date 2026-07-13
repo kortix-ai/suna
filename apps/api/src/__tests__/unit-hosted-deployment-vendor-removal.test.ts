@@ -24,6 +24,17 @@ const forbiddenCapabilityIdentifiers = [
   'deploymentsRelations',
   'NewDeployment',
   'DeploymentSelect',
+  'kortix apps deploy',
+  'Apps (experimental)',
+  'deployable apps',
+  'deploy apps',
+  'apps deploy family',
+  '{triggers,apps}',
+  'sandbox/triggers/apps',
+  'bad triggers and apps',
+  'change requests, apps',
+  'project manifest (agents: map, triggers, sandbox, apps)',
+  'project(id).apps',
 ];
 const immutableSchemaHistoryPrefixes = [
   'packages/db/drizzle/',
