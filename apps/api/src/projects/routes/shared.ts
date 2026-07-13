@@ -66,6 +66,8 @@ export async function resumeStoppedSandbox(row: {
     'needsReprovision',
     'runtimeWakeError',
     'runtimeWakeFailedAt',
+    'opencodeReadyWaitStartedAt',
+    'opencodeReadyWaitReason',
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
@@ -95,7 +97,7 @@ export async function resumeStoppedSandbox(row: {
 
   await db
     .update(projectSessions)
-    .set({ status: 'running', updatedAt: now })
+    .set({ status: 'running', error: null, updatedAt: now })
     .where(eq(projectSessions.sessionId, row.sessionId))
     .catch((err) =>
       console.warn(

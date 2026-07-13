@@ -931,7 +931,23 @@ projectsApp.openapi(
     const updated = await updateTemplate(templateId, patch, projectId);
     if (!updated) return c.json({ error: 'Not found' }, 404);
     if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
-    return c.json({ template_id: updated.templateId, slug: updated.slug });
+    // An edit changes the content-addressed identity just like creation. Audit
+    // and (when needed) rebuild that identity independently on every enabled
+    // provider so the template cannot remain ready on only the provider that
+    // happens to launch the next session. Cache hits make metadata-only edits
+    // cheap while still healing any provider that drifted or was never built.
+    const project = await loadGitProject(loaded);
+    kickRoutedPreBuild(project, {
+      slug: updated.slug,
+      accountId: loaded.row.accountId,
+      source: 'manual',
+    });
+    return c.json({
+      template_id: updated.templateId,
+      slug: updated.slug,
+      build_status: 'started',
+      providers: templateBuildProviders(),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 400);
