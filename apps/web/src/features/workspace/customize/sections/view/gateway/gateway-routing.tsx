@@ -315,7 +315,15 @@ function ChainEditor({
   );
 }
 
-export function GatewayRouting({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+export function GatewayRouting({
+  projectId,
+  canWrite,
+  projectDefaultPending,
+}: {
+  projectId: string;
+  canWrite: boolean;
+  projectDefaultPending: boolean;
+}) {
   const queryClient = useQueryClient();
   const routing = useGatewayRoutingPolicy(projectId);
   const modelDefaults = useModelDefaults(projectId);
@@ -394,6 +402,12 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
   }
 
   const writable = canWrite && routing.data.capabilities?.write !== false;
+  const controlsDisabled =
+    !writable ||
+    routing.set.isPending ||
+    routing.reset.isPending ||
+    projectDefaultPending ||
+    modelDefaults.isLoading;
   const editableState = (policy: GatewayProjectRoutingPolicy) => ({
     defaultFallback: policy.defaultFallback,
     rules: policy.rules,
@@ -452,7 +466,13 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
       description="Choose a bounded fallback path for the project default model."
       action={
         writable ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setResetOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={controlsDisabled}
+            onClick={() => setResetOpen(true)}
+          >
             <RotateCcw className="size-3.5" /> Reset
           </Button>
         ) : (
@@ -476,7 +496,7 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
               </div>
               <Select
                 value={fallbackMode}
-                disabled={!writable}
+                disabled={controlsDisabled}
                 onValueChange={(mode) => changeFallbackMode(mode as FallbackMode)}
               >
                 <SelectTrigger className="w-44" aria-label="Default fallback strategy">
@@ -495,7 +515,7 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
                 primary={primaryModel}
                 chain={draft.defaultFallback}
                 models={models}
-                disabled={!writable}
+                disabled={controlsDisabled}
                 onChange={(defaultFallback) => setDraft({ ...draft, defaultFallback })}
               />
             ) : fallbackMode === 'inherit' ? (
@@ -559,7 +579,7 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
                           value={rule.model}
                           models={models}
                           exclude={usedRuleModels.filter((_, itemIndex) => itemIndex !== index)}
-                          disabled={!writable}
+                          disabled={controlsDisabled}
                           onChange={(model) => model && setRule(index, { ...rule, model })}
                         />
                       </div>
@@ -570,6 +590,7 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
                             size="icon-sm"
                             variant="ghost"
                             aria-label="Remove model override"
+                            disabled={controlsDisabled}
                             onClick={() =>
                               setDraft({
                                 ...draft,
@@ -586,7 +607,7 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
                       primary={rule.model}
                       chain={{ models: rule.fallbackModels, fallbackOn: rule.fallbackOn }}
                       models={models}
-                      disabled={!writable}
+                      disabled={controlsDisabled}
                       onChange={(chain) =>
                         setRule(index, {
                           ...rule,
@@ -602,7 +623,9 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={!newRuleModel || draft.rules.length >= MAX_RULES}
+                    disabled={
+                      controlsDisabled || !newRuleModel || draft.rules.length >= MAX_RULES
+                    }
                     onClick={() =>
                       newRuleModel &&
                       setDraft({
@@ -634,19 +657,21 @@ export function GatewayRouting({ projectId, canWrite }: { projectId: string; can
           </div>
           <Button
             type="button"
-            disabled={
-              !dirty ||
-              !!validation ||
-              routing.set.isPending ||
-              modelDefaults.isLoading ||
-              modelDefaults.isUpdating
-            }
+            disabled={!dirty || !!validation || controlsDisabled}
             onClick={() => {
               const defaultModel = modelDefaults.data ? projectDefaultWire : draft.defaultModel;
               routing.set.mutate(
                 { ...draft, defaultModel },
                 {
-                  onSuccess: () => successToast('Routing policy saved'),
+                  onSuccess: async () => {
+                    await Promise.all([
+                      queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] }),
+                      queryClient.invalidateQueries({
+                        queryKey: ['project-model-picker', projectId],
+                      }),
+                    ]);
+                    successToast('Routing policy saved');
+                  },
                   onError: (error) =>
                     errorToast(
                       error instanceof Error ? error.message : 'Could not save routing policy',

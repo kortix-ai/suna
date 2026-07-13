@@ -121,9 +121,18 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('routing cannot race a pending project-default write', () => {
-    expect(modelDefaultsSource).toContain('isUpdating: boolean');
-    expect(routingSource).toContain('modelDefaults.isUpdating');
+    expect(gatewayViewSource).toContain('projectDefaultPending={modelDefaults.isUpdating}');
+    expect(routingSource).toContain('projectDefaultPending: boolean');
+    expect(routingSource).toContain('projectDefaultPending ||');
     expect(gatewayViewSource).toContain('useIsMutating');
     expect(gatewayViewSource).toContain('gatewayRoutingPolicyKey(projectId)');
+  });
+
+  test('routing freezes edits in flight and refreshes the shared project default after save', () => {
+    expect(routingSource).toContain('const controlsDisabled =');
+    expect(routingSource).toContain('routing.set.isPending ||');
+    expect(routingSource).toContain('routing.reset.isPending ||');
+    expect(routingSource).toContain("queryKey: ['model-defaults', projectId]");
+    expect(routingSource).toContain("queryKey: ['project-model-picker', projectId]");
   });
 });
