@@ -23,6 +23,10 @@ resource "aws_security_group" "supabase" {
     security_groups = [module.eks.cluster_security_group_id]
   }
 
+  # Bootstrap and signed upgrades fetch packages and OCI layers through the VPC
+  # NAT gateway. Runtime AWS API traffic uses private endpoints, ingress is
+  # restricted to EKS, and this exception is TCP/443 only.
+  #trivy:ignore:AVD-AWS-0104
   egress {
     description = "TLS-only connected-tier egress"
     protocol    = "tcp"
@@ -93,7 +97,7 @@ data "aws_iam_policy_document" "supabase" {
   }
 
   statement {
-    sid = "BackupAndReleaseObjects"
+    sid = "BackupObjects"
     actions = [
       "s3:AbortMultipartUpload",
       "s3:GetObject",
@@ -104,9 +108,25 @@ data "aws_iam_policy_document" "supabase" {
     resources = [
       aws_s3_bucket.backups.arn,
       "${aws_s3_bucket.backups.arn}/*",
-      aws_s3_bucket.release_cache.arn,
-      "${aws_s3_bucket.release_cache.arn}/*",
     ]
+  }
+
+  statement {
+    sid = "ReadMirroredReleaseArtifacts"
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:ListImages",
+    ]
+    resources = [for repository in aws_ecr_repository.enterprise : repository.arn]
+  }
+
+  statement {
+    sid       = "EcrLogin"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
   }
 
   statement {
@@ -188,13 +208,12 @@ resource "aws_instance" "supabase" {
   }
 
   user_data = templatefile("${path.module}/files/supabase-user-data.sh.tftpl", {
-    aws_region           = local.region
-    data_volume_id       = aws_ebs_volume.supabase_data.id
-    instance_name        = var.name
-    runtime_secret_arn   = aws_secretsmanager_secret.runtime.arn
-    backup_bucket        = aws_s3_bucket.backups.id
-    release_cache_bucket = aws_s3_bucket.release_cache.id
-    log_group            = aws_cloudwatch_log_group.supabase.name
+    aws_region         = local.region
+    data_volume_id     = aws_ebs_volume.supabase_data.id
+    instance_name      = var.name
+    runtime_secret_arn = aws_secretsmanager_secret.runtime.arn
+    backup_bucket      = aws_s3_bucket.backups.id
+    log_group          = aws_cloudwatch_log_group.supabase.name
   })
 
   tags = merge(local.tags, {

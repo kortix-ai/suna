@@ -56,6 +56,10 @@ locals {
 # This boundary is part of the customer-owned trust plane. Runtime roles may
 # perform their narrow identity-policy actions, but can never mutate IAM/KMS
 # trust, network boundaries, release-event trust, or storage access policies.
+# Trivy treats a permissions-boundary maximum as an identity grant. This policy
+# grants nothing by itself; each role also needs a narrow identity policy, and
+# the explicit deny statements below constrain storage and trust mutations.
+#trivy:ignore:AVD-AWS-0345
 data "aws_iam_policy_document" "role_boundary" {
   #checkov:skip=CKV_AWS_107:This boundary grants nothing alone; effective permissions are the intersection with narrow identity policies.
   #checkov:skip=CKV_AWS_108:This boundary grants nothing alone; storage/network trust mutation is explicitly denied and identity policies scope data access.

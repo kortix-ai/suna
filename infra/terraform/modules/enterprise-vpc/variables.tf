@@ -173,9 +173,14 @@ variable "release_channel" {
 }
 
 variable "image_repositories" {
-  description = "Customer-owned ECR repositories populated by the signed updater."
+  description = "Customer-owned ECR repositories populated by the signed updater. The release-bundle repository stores signed OCI bundles as well as rollback metadata."
   type        = set(string)
-  default     = ["api", "frontend", "gateway", "migrate"]
+  default     = ["api", "frontend", "gateway", "migrate", "release-bundle"]
+
+  validation {
+    condition     = length(setsubtract(toset(["api", "frontend", "gateway", "migrate", "release-bundle"]), var.image_repositories)) == 0
+    error_message = "image_repositories must include api, frontend, gateway, migrate, and release-bundle."
+  }
 }
 
 variable "maintenance_window" {

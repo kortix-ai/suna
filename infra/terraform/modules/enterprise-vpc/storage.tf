@@ -11,15 +11,6 @@ resource "aws_s3_bucket" "backups" {
   tags          = local.tags
 }
 
-resource "aws_s3_bucket" "release_cache" {
-  #checkov:skip=CKV_AWS_144:This is a reproducible cache of signed upstream artifacts and intentionally remains in-region.
-  #checkov:skip=CKV_AWS_18:Object-level CloudTrail data events below audit all accesses.
-  #checkov:skip=CKV2_AWS_62:CloudTrail data events are the central notification and audit path.
-  bucket        = "${local.bucket_prefix}-releases"
-  force_destroy = false
-  tags          = local.tags
-}
-
 resource "aws_s3_bucket" "audit" {
   #checkov:skip=CKV_AWS_144:Audit evidence remains in the customer-selected residency region and is protected with KMS, validation, versioning, and archival lifecycle.
   #checkov:skip=CKV_AWS_18:Logging the CloudTrail destination to itself would recurse; log-file validation provides integrity and the trail captures protected-bucket data events.
@@ -29,17 +20,8 @@ resource "aws_s3_bucket" "audit" {
   tags          = local.tags
 }
 
-locals {
-  protected_buckets = {
-    backups       = aws_s3_bucket.backups.id
-    release_cache = aws_s3_bucket.release_cache.id
-    audit         = aws_s3_bucket.audit.id
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "protected" {
-  for_each = local.protected_buckets
-  bucket   = each.value
+resource "aws_s3_bucket_public_access_block" "backups" {
+  bucket = aws_s3_bucket.backups.id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -47,17 +29,31 @@ resource "aws_s3_bucket_public_access_block" "protected" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_versioning" "protected" {
-  for_each = local.protected_buckets
-  bucket   = each.value
+resource "aws_s3_bucket_public_access_block" "audit" {
+  bucket = aws_s3_bucket.audit.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "backups" {
+  bucket = aws_s3_bucket.backups.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "protected" {
-  for_each = local.protected_buckets
-  bucket   = each.value
+resource "aws_s3_bucket_versioning" "audit" {
+  bucket = aws_s3_bucket.audit.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -65,6 +61,25 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "protected" {
       sse_algorithm     = "aws:kms"
     }
     bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "audit" {
+  bucket = aws_s3_bucket.audit.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.data.arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+locals {
+  protected_buckets = {
+    backups = aws_s3_bucket.backups.id
+    audit   = aws_s3_bucket.audit.id
   }
 }
 
@@ -134,10 +149,14 @@ data "aws_iam_policy_document" "bucket_transport" {
   }
 }
 
-resource "aws_s3_bucket_policy" "bucket_transport" {
-  for_each = local.protected_buckets
-  bucket   = each.value
-  policy   = data.aws_iam_policy_document.bucket_transport[each.key].json
+resource "aws_s3_bucket_policy" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  policy = data.aws_iam_policy_document.bucket_transport["backups"].json
+}
+
+resource "aws_s3_bucket_policy" "audit" {
+  bucket = aws_s3_bucket.audit.id
+  policy = data.aws_iam_policy_document.bucket_transport["audit"].json
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
@@ -158,22 +177,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "backups" {
     }
     noncurrent_version_expiration {
       noncurrent_days = var.backup_retention_days
-    }
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "release_cache" {
-  bucket = aws_s3_bucket.release_cache.id
-
-  rule {
-    id     = "expire-noncurrent-release-cache"
-    status = "Enabled"
-    filter {}
-    noncurrent_version_expiration {
-      noncurrent_days = 90
     }
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
@@ -253,12 +256,51 @@ resource "aws_cloudtrail" "operations" {
       type = "AWS::S3::Object"
       values = [
         "${aws_s3_bucket.backups.arn}/",
-        "${aws_s3_bucket.release_cache.arn}/",
       ]
     }
   }
 
-  depends_on = [aws_s3_bucket_policy.bucket_transport]
+  depends_on = [aws_s3_bucket_policy.audit]
+}
+
+moved {
+  from = aws_s3_bucket_public_access_block.protected["backups"]
+  to   = aws_s3_bucket_public_access_block.backups
+}
+
+moved {
+  from = aws_s3_bucket_public_access_block.protected["audit"]
+  to   = aws_s3_bucket_public_access_block.audit
+}
+
+moved {
+  from = aws_s3_bucket_versioning.protected["backups"]
+  to   = aws_s3_bucket_versioning.backups
+}
+
+moved {
+  from = aws_s3_bucket_versioning.protected["audit"]
+  to   = aws_s3_bucket_versioning.audit
+}
+
+moved {
+  from = aws_s3_bucket_server_side_encryption_configuration.protected["backups"]
+  to   = aws_s3_bucket_server_side_encryption_configuration.backups
+}
+
+moved {
+  from = aws_s3_bucket_server_side_encryption_configuration.protected["audit"]
+  to   = aws_s3_bucket_server_side_encryption_configuration.audit
+}
+
+moved {
+  from = aws_s3_bucket_policy.bucket_transport["backups"]
+  to   = aws_s3_bucket_policy.backups
+}
+
+moved {
+  from = aws_s3_bucket_policy.bucket_transport["audit"]
+  to   = aws_s3_bucket_policy.audit
 }
 
 resource "aws_cloudwatch_log_group" "cloudtrail" {

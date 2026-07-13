@@ -38,8 +38,9 @@ Kortix publishes signed TUF metadata and may send a cross-account EventBridge
 wake-up hint. The customer's Step Functions execution starts private CodeBuild.
 The updater verifies the pinned bootstrap digest, TUF root/metadata, Cosign
 signature, target channel, instance compatibility, migrations, and Terraform
-plan classification. It then mirrors immutable images into customer ECR,
-updates Supabase through SSM, reconciles EKS, runs health gates, and records the
+plan classification. It then mirrors immutable images plus the signed OCI
+release bundle and rollback metadata into customer ECR, updates Supabase
+through SSM, reconciles EKS, runs health gates, and records the
 result in customer DynamoDB. An hourly schedule performs the same source-of-
 truth check if hints are missed.
 

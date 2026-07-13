@@ -26,6 +26,10 @@ resource "aws_security_group" "updater" {
   description = "Customer-owned release reconciler; no ingress"
   vpc_id      = module.network.vpc_id
 
+  # The reconciler reaches the public TUF origin and OCI registries through the
+  # VPC NAT gateway. AWS API traffic uses private endpoints, ingress is empty,
+  # and this exception is TCP/443 only.
+  #trivy:ignore:AVD-AWS-0104
   egress {
     description = "TLS to TUF repository and AWS endpoints"
     protocol    = "tcp"
@@ -113,19 +117,7 @@ data "aws_iam_policy_document" "codebuild" {
   }
 
   statement {
-    sid = "ReleaseCache"
-    actions = [
-      "s3:AbortMultipartUpload",
-      "s3:GetObject",
-      "s3:GetObjectVersion",
-      "s3:ListBucket",
-      "s3:PutObject",
-    ]
-    resources = [aws_s3_bucket.release_cache.arn, "${aws_s3_bucket.release_cache.arn}/*"]
-  }
-
-  statement {
-    sid = "MirrorImages"
+    sid = "MirrorReleaseArtifacts"
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:BatchGetImage",
@@ -218,7 +210,6 @@ data "aws_iam_policy_document" "updater_apply" {
       "elasticloadbalancing:*",
       "events:*",
       "logs:*",
-      "s3:*",
       "secretsmanager:*",
       "ssm:*",
       "states:*",
@@ -235,6 +226,20 @@ data "aws_iam_policy_document" "updater_apply" {
       variable = "aws:RequestTag/KortixInstance"
       values   = [var.name]
     }
+  }
+
+  statement {
+    sid = "InspectKortixStorage"
+    actions = [
+      "s3:Get*",
+      "s3:List*",
+    ]
+    resources = [
+      aws_s3_bucket.backups.arn,
+      "${aws_s3_bucket.backups.arn}/*",
+      aws_s3_bucket.audit.arn,
+      "${aws_s3_bucket.audit.arn}/*",
+    ]
   }
 
   # Terraform must refresh the reviewed trust-plane resources, but the
@@ -403,8 +408,8 @@ resource "aws_codebuild_project" "updater" {
       value = aws_dynamodb_table.release_state.name
     }
     environment_variable {
-      name  = "KORTIX_RELEASE_CACHE_BUCKET"
-      value = aws_s3_bucket.release_cache.id
+      name  = "KORTIX_RELEASE_BUNDLE_REPOSITORY"
+      value = aws_ecr_repository.enterprise["release-bundle"].repository_url
     }
     environment_variable {
       name  = "KORTIX_APPLY_ROLE_ARN"

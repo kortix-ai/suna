@@ -14,8 +14,8 @@ data boundary, and update control plane.
 - One private, SSM-only EC2 host for the official Supabase Docker stack, with a
   separately attached encrypted EBS data volume and EC2 system recovery.
 - Customer KMS keys, Secrets Manager, immutable ECR repositories, ACM,
-  CloudTrail, encrypted logs, alerting, release cache, WAL bucket, hourly AWS
-  Backup recovery points, and vault lock.
+  CloudTrail, encrypted logs, alerting, immutable ECR release bundles, WAL
+  bucket, hourly AWS Backup recovery points, and vault lock.
 - Customer-owned EventBridge, Step Functions, and CodeBuild reconciliation. A
   Kortix event is only a wake-up hint; hourly reconciliation and TUF metadata
   are authoritative.
