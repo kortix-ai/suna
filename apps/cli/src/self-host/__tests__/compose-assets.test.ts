@@ -17,6 +17,7 @@ describe('full self-host Docker distribution', () => {
         container_name?: string;
         ports?: string[];
         depends_on?: Record<string, unknown>;
+        healthcheck?: { test?: string[] };
       }>;
     };
 
@@ -42,6 +43,10 @@ describe('full self-host Docker distribution', () => {
     expect(document.services['supabase-db']?.image).toBe('supabase/postgres:17.6.1.136');
     expect(document.services['supabase-studio']?.image).toBe('supabase/studio:2026.07.07-sha-a6a04f2');
     expect(document.services['supabase-analytics']?.image).toBe('supabase/logflare:1.43.1');
+    expect(document.services['supabase-db']?.healthcheck?.test).toEqual([
+      'CMD-SHELL',
+      'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+    ]);
 
     for (const [name, service] of Object.entries(document.services)) {
       expect(service.container_name, `${name} must support multiple Kortix instances`).toBeUndefined();

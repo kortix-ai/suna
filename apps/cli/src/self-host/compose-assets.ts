@@ -89,6 +89,25 @@ export function renderFullDockerCompose(composeProject: string): string {
 
   const kong = services['supabase-kong'];
   if (kong) kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+  const database = services['supabase-db'];
+  if (database) {
+    // `pg_isready` succeeds against the temporary server that the Postgres
+    // entrypoint uses while running init scripts. Auth can therefore start
+    // before the late 99-roles.sql script has assigned its password and enter
+    // a permanent restart loop. Treat the database as ready only after a real
+    // password-authenticated query using Auth's role succeeds. `$$` defers the
+    // environment expansion from Compose to the healthcheck container.
+    database.healthcheck = {
+      test: [
+        'CMD-SHELL',
+        'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+      ],
+      interval: '5s',
+      timeout: '5s',
+      retries: 20,
+      start_period: '10s',
+    };
+  }
   const supavisor = services['supabase-supavisor'];
   if (supavisor) {
     supavisor.ports = [
