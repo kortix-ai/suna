@@ -39,7 +39,7 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← project manifest (agents: map, triggers, sandbox, apps)
+├── kortix.yaml                        ← project manifest (agents: map, triggers, sandbox)
 └── .kortix/
     ├── memory/MEMORY.md               ← project-wide memory for agents
     └── opencode/                      ← OpenCode native config dir
