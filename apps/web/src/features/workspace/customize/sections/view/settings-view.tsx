@@ -260,6 +260,9 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
               className="font-mono text-xs"
               variant="popover"
             />
+            <FieldDescription>
+              New sessions and change requests use this branch as their base.
+            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="manifest-path">

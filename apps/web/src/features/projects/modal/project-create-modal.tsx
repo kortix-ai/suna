@@ -324,7 +324,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   const linkMutation = useMutation({
     mutationFn: linkRepository,
     onSuccess: (result) => {
-      successToast('Repository linked');
+      successToast('Project imported');
       queryClient.setQueryData<KortixProject[]>(
         ['projects', result.project.account_id],
         (projects) => upsertProject(projects, result.project),
