@@ -165,5 +165,12 @@ teamsOauthApp.get('/callback', async (c: any) => {
   void reconcileChannelConnectors(state.projectId);
 
   const status = published.published ? 'connected' : published.pendingReview ? 'review' : 'consented';
+  console.info('[teams-oauth] install complete', {
+    projectId: state.projectId,
+    tenantId,
+    status,
+    teamsAppId: published.teamsAppId ?? null,
+    error: published.error ?? null,
+  });
   return c.redirect(dest(status), 302);
 });
