@@ -25,7 +25,9 @@ import {
   resolveProjectAutomationActor,
 } from '../projects/session-lifecycle';
 import {
+  clearTelegramPairing,
   loadTelegramInstall,
+  loadTelegramPairing,
   loadTelegramTokenForProject,
   loadTelegramWebhookSecretForProject,
 } from './install-store';
@@ -39,11 +41,15 @@ import {
   renderTelegramFollowUpPrompt,
   shouldRespondInChat,
   TELEGRAM_HELP_TEXT,
+  TELEGRAM_LOCKED_TEXT,
   TELEGRAM_NEW_TEXT,
+  TELEGRAM_PAIRED_TEXT,
+  TELEGRAM_PAIRING_FAILED_TEXT,
   TELEGRAM_START_TEXT,
   type TelegramMessage,
   type TelegramUpdate,
 } from './telegram/inbound';
+import { addTelegramAllowedUser, telegramPairingMatches } from './telegram/pairing';
 import {
   finalizeTelegramTurnDirect,
   restartTelegramTurnForFollowUp,
@@ -185,7 +191,17 @@ async function handleUpdate(
       });
       return;
     }
-    const reply = command.command === 'start' ? TELEGRAM_START_TEXT : TELEGRAM_HELP_TEXT;
+    // /start <code> is the pairing handshake (deep links t.me/<bot>?start=<code>
+    // arrive in exactly this shape) — it must work for UNPAIRED senders, which
+    // is why commands are handled before the allowlist gate.
+    const reply =
+      command.command === 'start'
+        ? command.args
+          ? await attemptTelegramPairing(projectId, message, command.args)
+          : (await telegramSenderLocked(projectId, message))
+            ? TELEGRAM_LOCKED_TEXT
+            : TELEGRAM_START_TEXT
+        : TELEGRAM_HELP_TEXT;
     await telegramSendMessage(token, message.chat.id, reply, {
       replyToMessageId: message.message_id,
     });
@@ -193,6 +209,58 @@ async function handleUpdate(
   }
 
   await createOrJoinChatSession({ projectId, botId, botUsername, chatId, message });
+}
+
+// `/start <code>`: validate the dashboard-minted single-use code and allowlist
+// the sender in projects.metadata.telegram.allowedUserIds. Failure is one
+// generic message — never confirm whether a code exists, is expired, or is
+// merely wrong.
+async function attemptTelegramPairing(
+  projectId: string,
+  message: TelegramMessage,
+  presented: string,
+): Promise<string> {
+  const senderId = message.from?.id;
+  if (senderId === undefined || senderId === null) return TELEGRAM_PAIRING_FAILED_TEXT;
+
+  const pairing = await loadTelegramPairing(projectId);
+  if (!pairing || !telegramPairingMatches(pairing, presented, new Date())) {
+    console.warn('[telegram-webhook] pairing attempt rejected', { projectId, senderId });
+    return TELEGRAM_PAIRING_FAILED_TEXT;
+  }
+
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return TELEGRAM_PAIRING_FAILED_TEXT;
+
+  await db
+    .update(projects)
+    .set({ metadata: addTelegramAllowedUser(project.metadata, senderId) })
+    .where(eq(projects.projectId, projectId));
+  // Clear BEFORE replying: even if the ack fails, the code must not be
+  // replayable by a second sender.
+  await clearTelegramPairing(projectId);
+  console.log('[telegram-webhook] paired sender', { projectId, senderId });
+  return TELEGRAM_PAIRED_TEXT;
+}
+
+/** Whether the identity gate would reject this sender — drives the /start
+ *  reply (pairing instructions vs the normal intro). */
+async function telegramSenderLocked(
+  projectId: string,
+  message: TelegramMessage,
+): Promise<boolean> {
+  if (!telegramRequireUserIdentityForTest()) return false;
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return true;
+  return !isKnownTelegramSenderForTest(project, message);
 }
 
 // Atomically create the durable session for a chat — or, if this chat already
@@ -217,14 +285,28 @@ async function createOrJoinChatSession(input: {
   if (!project) return;
 
   // Sessions run as the project's automation actor; the allowlist gate below
-  // decides which Telegram senders may trigger them (per-user identity
-  // binding stays out of scope for v1 — see docs/TELEGRAM_CHANNEL_PLAN.md).
+  // decides which Telegram senders may trigger them. Pairing (/start <code>,
+  // handled before this) is how senders get onto the allowlist.
   if (telegramRequireUserIdentityForTest() && !isKnownTelegramSenderForTest(project, message)) {
     console.warn(
       '[telegram-webhook] rejecting unbound sender for project',
       projectId,
       message.from?.id,
     );
+    // Tell the human how to pair instead of ghosting them — private chats
+    // only (a group hint would answer arbitrary bystanders), throttled via
+    // the dedup table so a chatty stranger can't turn us into a reply bot.
+    if (message.chat.type === 'private' && message.from?.id != null) {
+      const hintKey = `telegram:pairhint:${botId}:${chatId}:${message.from.id}`;
+      if (await claimOnce(hintKey)) {
+        const token = await loadTelegramTokenForProject(projectId);
+        if (token) {
+          await telegramSendMessage(token, message.chat.id, TELEGRAM_LOCKED_TEXT, {
+            replyToMessageId: message.message_id,
+          }).catch(() => {});
+        }
+      }
+    }
     return;
   }
 

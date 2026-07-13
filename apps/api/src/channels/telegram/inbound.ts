@@ -179,6 +179,27 @@ export const TELEGRAM_START_TEXT = [
 export const TELEGRAM_NEW_TEXT =
   'Fresh start — your next message opens a new conversation with the agent.';
 
+export const TELEGRAM_PAIRED_TEXT = [
+  "✅ Paired! You're on this project's allowlist now.",
+  '',
+  'Send me a message and an agent will work on it and reply right here.',
+  'Use /help to see what I can do, or /new to start a fresh conversation.',
+].join('\n');
+
+export const TELEGRAM_PAIRING_FAILED_TEXT = [
+  "That pairing code didn't work — it may have expired (codes last 15 minutes)",
+  'or already been used. Ask a project admin to generate a fresh one',
+  '(dashboard → Customize → Channels → Telegram → Pair), then send:',
+  '/start <code>',
+].join('\n');
+
+export const TELEGRAM_LOCKED_TEXT = [
+  'This bot only talks to paired users.',
+  '',
+  'Ask a project admin for a pairing code (dashboard → Customize → Channels →',
+  'Telegram → Pair), then send: /start <code>',
+].join('\n');
+
 // ─── Session prompts ─────────────────────────────────────────────────────────
 
 const TURN_INSTRUCTIONS = [

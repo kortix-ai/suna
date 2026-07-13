@@ -18,12 +18,14 @@ export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
 export const TELEGRAM_BOT_ID = 'TELEGRAM_BOT_ID';
 export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
+export const TELEGRAM_PAIRING_CODE = 'TELEGRAM_PAIRING_CODE';
 
 const TELEGRAM_KEYS = [
   TELEGRAM_BOT_TOKEN,
   TELEGRAM_WEBHOOK_SECRET,
   TELEGRAM_BOT_ID,
   TELEGRAM_BOT_USERNAME,
+  TELEGRAM_PAIRING_CODE,
 ] as const;
 
 export async function loadTelegramWebhookSecretForProject(
@@ -135,6 +137,41 @@ export async function loadTelegramTokenForProject(
   projectId: string,
 ): Promise<string | null> {
   return readSecret(projectId, TELEGRAM_BOT_TOKEN);
+}
+
+// Active sender-pairing code (see telegram/pairing.ts). Single-use: minting
+// replaces any previous code, a successful `/start <code>` clears it.
+export async function saveTelegramPairing(
+  projectId: string,
+  pairing: { code: string; expiresAt: string },
+): Promise<void> {
+  await upsertSecret(projectId, TELEGRAM_PAIRING_CODE, JSON.stringify(pairing));
+}
+
+export async function loadTelegramPairing(
+  projectId: string,
+): Promise<{ code: string; expiresAt: string } | null> {
+  const raw = await readSecret(projectId, TELEGRAM_PAIRING_CODE);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { code?: unknown; expiresAt?: unknown };
+    if (typeof parsed.code !== 'string' || typeof parsed.expiresAt !== 'string') return null;
+    return { code: parsed.code, expiresAt: parsed.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearTelegramPairing(projectId: string): Promise<void> {
+  await db
+    .delete(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.name, TELEGRAM_PAIRING_CODE),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
 }
 
 export const AGENTMAIL_API_KEY = 'AGENTMAIL_API_KEY';
