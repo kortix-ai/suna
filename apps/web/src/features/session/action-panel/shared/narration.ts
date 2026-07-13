@@ -8,6 +8,13 @@
  * The `other` fallback is load-bearing: MCP tools have arbitrary `server/tool`
  * names that cannot be enumerated, and tools added after this ships are unknown
  * here. Neither may ever surface a raw identifier.
+ *
+ * GOVERNING RULE: narration must never mislead. A tool's family and sentence
+ * are decided by what its registered component actually renders/does (see
+ * apps/web/src/features/session/tool/tools/*.tsx), not by how its name reads.
+ * Several tools register the *same* component under multiple aliases (e.g.
+ * `task_create` and `agent_task_create` both render `AgentSpawnTool`) — those
+ * aliases must always resolve to the same family and the same sentence.
  */
 
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
@@ -47,20 +54,42 @@ assign('web', [
   'scrape_webpage', 'scrapewebpage', 'image_search',
 ]);
 assign('create', ['image_gen', 'video_gen', 'presentation_gen', 'show', 'show_user']);
-assign('plan', [
-  'todo_write', 'todowrite', 'task', 'task_create', 'task_get', 'task_list',
-  'task_update', 'task_done', 'task_delete', 'task_start', 'task_message',
-  'task_approve', 'task_cancel',
-]);
+
+// `todo_write` is the model's own step checklist — nothing is delegated to
+// another agent. This is the ONLY thing left in `plan`; every `task_*` /
+// `agent_task_*` alias below shares a component with an explicit agent_*
+// delegation tool, so it belongs in `delegate`, not here.
+assign('plan', ['todo_write', 'todowrite']);
+
+// Every one of these renders one of: AgentSpawnTool, AgentTaskUpdateTool,
+// AgentMessageTool, TaskDoneTool, AgentStopTool, AgentStatusTool, or
+// TaskListTool — the same components the bare `agent_*` tools render. A
+// `task_*` alias and its `agent_task_*` twin MUST land here together, or the
+// same backend action narrates two different ways depending on which the
+// model happened to emit.
 assign('delegate', [
-  'agent_spawn', 'agent_message', 'agent_status', 'agent_stop', 'agent_task',
-  'agent_task_create', 'agent_task_get', 'agent_task_list', 'agent_task_update',
-  'agent_task_start', 'agent_task_message', 'agent_task_approve', 'agent_task_cancel',
+  // spawn a helper agent to do work (renders AgentSpawnTool / SessionSpawnTool)
+  'agent_spawn', 'agent_task', 'agent_task_create', 'agent_task_start',
+  'task', 'task_create', 'task_start',
+  'session_spawn', 'session_start_background',
+  // send an instruction/update to a running helper (AgentMessageTool / AgentTaskUpdateTool)
+  'agent_message', 'agent_task_message', 'task_message',
+  'agent_task_update', 'task_update',
+  'session_message',
+  // read-only status check on helpers/tasks (AgentStatusTool / TaskListTool)
+  'agent_status', 'agent_task_list', 'agent_task_get', 'task_list', 'task_get',
+  // stop a running helper (AgentStopTool)
+  'agent_stop', 'agent_task_cancel', 'task_cancel',
+  // mark a helper's task done (TaskDoneTool)
+  'agent_task_approve', 'task_approve', 'task_done',
+  // remove a task (TaskDeleteTool)
+  'task_delete',
 ]);
+// Genuine read-only lookups of past/other session state — no delegation happens here.
 assign('sessions', [
-  'session_get', 'session_read', 'session_search', 'session_message', 'session_spawn',
+  'session_get', 'session_read', 'session_search',
   'session_lineage', 'session_stats', 'session_list', 'session_list_background',
-  'session_list_spawned', 'session_start_background',
+  'session_list_spawned',
 ]);
 assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
 assign('apps', [
@@ -103,14 +132,149 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 
+/** `["a"]` → `"a"`; `["a","b"]` → `"a and b"`; `["a","b","c"]` → `"a, b, and c"`. */
+function joinWithAnd(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
 /** The primary arg of the first part, if it has one (a filename, a query, …). */
 function firstArg(parts: ToolPart[]): string {
   return parts.length ? getToolPrimaryArg(parts[0]) : '';
 }
 
+/** Raw tool input, for the rare case a sentence must depend on an argument
+ * rather than the tool name (e.g. the bare `triggers` tool's `action` field). */
+function rawInput(part: ToolPart): Record<string, unknown> {
+  const state = (part.state ?? {}) as { input?: Record<string, unknown> };
+  return state.input ?? {};
+}
+
+// ─── delegate: what is this task/agent call actually doing? ────────────────
+
+type DelegateAction = 'spawn' | 'message' | 'status' | 'stop' | 'done' | 'delete';
+
+const DELEGATE_ACTION: Record<string, DelegateAction> = {
+  agent_spawn: 'spawn',
+  agent_task: 'spawn',
+  agent_task_create: 'spawn',
+  agent_task_start: 'spawn',
+  task: 'spawn',
+  task_create: 'spawn',
+  task_start: 'spawn',
+  session_spawn: 'spawn',
+  session_start_background: 'spawn',
+
+  agent_message: 'message',
+  agent_task_message: 'message',
+  task_message: 'message',
+  agent_task_update: 'message',
+  task_update: 'message',
+  session_message: 'message',
+
+  agent_status: 'status',
+  agent_task_list: 'status',
+  agent_task_get: 'status',
+  task_list: 'status',
+  task_get: 'status',
+
+  agent_stop: 'stop',
+  agent_task_cancel: 'stop',
+  task_cancel: 'stop',
+
+  agent_task_approve: 'done',
+  task_approve: 'done',
+  task_done: 'done',
+
+  task_delete: 'delete',
+};
+
+function delegateAction(part: ToolPart): DelegateAction {
+  return DELEGATE_ACTION[normalizeName(part.tool)] ?? 'message';
+}
+
+// ─── automations: create/update vs read vs delete vs pause/resume/test ─────
+
+type AutomationAction = 'create' | 'update' | 'delete' | 'read' | 'control';
+
+function classifyAutomationAction(action: string): AutomationAction {
+  switch (action) {
+    case 'create':
+      return 'create';
+    case 'update':
+      return 'update';
+    case 'delete':
+      return 'delete';
+    case 'test':
+    case 'pause':
+    case 'resume':
+      return 'control';
+    case 'list':
+    case 'get':
+    default:
+      return 'read';
+  }
+}
+
+function automationAction(part: ToolPart): AutomationAction {
+  const t = normalizeName(part.tool);
+  if (t === 'triggers') {
+    // The tool's own default is 'list' when the model omits the field —
+    // match that exactly so the narration can never disagree with the UI.
+    const action = (rawInput(part).action as string) || 'list';
+    return classifyAutomationAction(action);
+  }
+  const m = t.match(/^trigger_(.+)$/);
+  return classifyAutomationAction(m ? m[1] : 'list');
+}
+
+// ─── apps: discovery/reads vs actually connecting vs running a connected tool ─
+
+type AppAction = 'connect' | 'read' | 'call';
+
+const APP_ACTION: Record<string, AppAction> = {
+  connector_setup: 'connect',
+  connector_get: 'read',
+  connector_list: 'read',
+  kortix_executor_discover: 'read',
+  kortix_executor_describe: 'read',
+  kortix_executor_connectors: 'read',
+  kortix_executor_call: 'call',
+};
+
+function appAction(part: ToolPart): AppAction {
+  return APP_ACTION[normalizeName(part.tool)] ?? 'read';
+}
+
+// ─── projects: opening/viewing vs creating vs a delete that is a no-op ──────
+
+type ProjectAction = 'open' | 'create' | 'delete';
+
+const PROJECT_ACTION: Record<string, ProjectAction> = {
+  project_get: 'open',
+  project_list: 'open',
+  project_select: 'open',
+  project_update: 'open',
+  project_create: 'create',
+  project_delete: 'delete',
+};
+
+function projectAction(part: ToolPart): ProjectAction {
+  return PROJECT_ACTION[normalizeName(part.tool)] ?? 'open';
+}
+
+function allSame<T>(items: T[]): boolean {
+  return items.every((i) => i === items[0]);
+}
+
 /**
  * One sentence for a group of same-family calls.
- * `parts` is guaranteed non-empty and homogeneous by `group-steps`.
+ * `parts` is guaranteed non-empty and homogeneous by `group-steps` — homogeneous
+ * by *family*, not by tool, so a single call can still mix several distinct
+ * tools (e.g. `image_gen` + `video_gen`, or `connector_get` + `connector_setup`).
+ * Every branch below inspects every part, never just `parts[0]`.
  */
 export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
   const n = parts.length;
@@ -142,26 +306,122 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       return `Searched and read ${n} ${plural(n, 'source', 'sources')}`;
     }
     case 'create': {
-      const t = normalizeName(parts[0].tool);
-      if (t === 'image_gen') return n === 1 ? 'Made an image' : `Made ${n} images`;
-      if (t === 'video_gen') return n === 1 ? 'Made a video' : `Made ${n} videos`;
-      if (t === 'presentation_gen') return 'Built a presentation';
-      return arg ? `Showed you ${arg}` : 'Showed you the result';
+      if (n === 1) {
+        const t = normalizeName(parts[0].tool);
+        if (t === 'image_gen') return 'Made an image';
+        if (t === 'video_gen') return 'Made a video';
+        if (t === 'presentation_gen') return 'Built a presentation';
+        return arg ? `Showed you ${arg}` : 'Showed you the result';
+      }
+
+      let images = 0;
+      let videos = 0;
+      let presentations = 0;
+      let shown = 0;
+      for (const p of parts) {
+        switch (normalizeName(p.tool)) {
+          case 'image_gen':
+            images++;
+            break;
+          case 'video_gen':
+            videos++;
+            break;
+          case 'presentation_gen':
+            presentations++;
+            break;
+          default:
+            shown++;
+            break;
+        }
+      }
+
+      const segments: string[] = [];
+      if (images) segments.push(`${images} ${plural(images, 'image', 'images')}`);
+      if (videos) segments.push(`${videos} ${plural(videos, 'video', 'videos')}`);
+      if (presentations)
+        segments.push(`${presentations} ${plural(presentations, 'presentation', 'presentations')}`);
+
+      if (segments.length === 0) {
+        return `Showed you ${n} ${plural(n, 'result', 'results')}`;
+      }
+      const made = `Made ${joinWithAnd(segments)}`;
+      return shown ? `${made} and showed you more` : made;
     }
     case 'plan':
       return n === 1 ? 'Planned the work' : `Planned the work · ${n} steps`;
-    case 'delegate':
-      return n === 1 ? 'Asked a helper agent' : `Worked with ${n} helper agents`;
+    case 'delegate': {
+      const actions = parts.map(delegateAction);
+      if (allSame(actions)) {
+        switch (actions[0]) {
+          case 'spawn':
+            return n === 1 ? 'Asked a helper agent' : `Worked with ${n} helper agents`;
+          case 'message':
+            return n === 1
+              ? 'Sent instructions to a helper agent'
+              : `Sent instructions to ${n} helper agents`;
+          case 'status':
+            return 'Checked on a helper agent';
+          case 'stop':
+            return n === 1 ? 'Stopped a helper agent' : `Stopped ${n} helper agents`;
+          case 'done':
+            return n === 1 ? 'A helper agent finished a task' : `Helper agents finished ${n} tasks`;
+          case 'delete':
+            return n === 1 ? 'Removed a task' : `Removed ${n} tasks`;
+        }
+      }
+      return n === 1 ? 'Worked with a helper agent' : `Worked with helper agents · ${n} steps`;
+    }
     case 'sessions':
       return 'Checked earlier work';
     case 'memory':
       return 'Recalled what you told it before';
-    case 'apps':
-      return arg ? `Connected to ${arg}` : 'Connected to an app';
-    case 'automations':
-      return n === 1 ? 'Set up an automation' : `Updated ${n} automations`;
-    case 'projects':
-      return arg ? `Opened ${arg}` : 'Opened your project';
+    case 'apps': {
+      const actions = parts.map(appAction);
+      if (allSame(actions)) {
+        switch (actions[0]) {
+          case 'connect':
+            if (n === 1) return arg ? `Connected to ${arg}` : 'Connected to an app';
+            return `Connected to ${n} apps`;
+          case 'call':
+            return n === 1 ? 'Used a connected app' : `Used ${n} connected apps`;
+          case 'read':
+            return 'Checked your connected apps';
+        }
+      }
+      return 'Worked with your connected apps';
+    }
+    case 'automations': {
+      const actions = parts.map(automationAction);
+      if (allSame(actions)) {
+        switch (actions[0]) {
+          case 'create':
+            return n === 1 ? 'Set up an automation' : `Set up ${n} automations`;
+          case 'update':
+            return n === 1 ? 'Updated an automation' : `Updated ${n} automations`;
+          case 'delete':
+            return n === 1 ? 'Deleted an automation' : `Deleted ${n} automations`;
+          case 'control':
+            return n === 1 ? 'Adjusted an automation' : `Adjusted ${n} automations`;
+          case 'read':
+            return 'Checked your automations';
+        }
+      }
+      return 'Worked with your automations';
+    }
+    case 'projects': {
+      const actions = parts.map(projectAction);
+      if (allSame(actions)) {
+        switch (actions[0]) {
+          case 'delete':
+            return "Tried to delete a project — deletion isn't allowed";
+          case 'create':
+            return arg ? `Created ${arg}` : 'Created a project';
+          case 'open':
+            return arg ? `Opened ${arg}` : 'Opened your project';
+        }
+      }
+      return arg ? `Worked in ${arg}` : 'Worked in your project';
+    }
     case 'skills':
       return arg ? `Used the ${arg} skill` : 'Used a skill';
     case 'ask':
