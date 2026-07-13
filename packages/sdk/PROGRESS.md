@@ -610,3 +610,27 @@ default names and behavior remain unchanged. SDK work will follow RED → GREEN 
 REFACTOR and finish on the full typecheck, test, and packed-install smoke gates.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `gateway-routing-ui` (completion)
+
+Completed the additive project LLM routing-policy SDK surface: typed whole-document
+CRUD and route preview functions, `project(id).gateway.routing.{get,set,reset,preview}`,
+and `useGatewayRoutingPolicy` with project-scoped caching/invalidation. Runtime and
+type public-surface snapshots contain additions only; no existing SDK name or contract
+was removed or renamed.
+
+**Focused evidence:** routing transport/facade/hook tests passed **65 / 0** together
+with the existing facade suite. The isolated black-box `GW-4` flow passed **1 / 0**
+against the real API and a provisioned project, covering persisted save/read-back,
+default and exact route preview, invalid-policy preservation, access boundaries, and
+reset.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1083 pass / 0 fail** across 74 files with
+4936 assertions; `pnpm --filter @kortix/sdk run smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Repository merge, Deploy Dev,
+and live-dev verification remain part of the parent feature lifecycle.

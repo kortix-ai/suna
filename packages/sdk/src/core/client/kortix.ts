@@ -542,6 +542,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         keys: () => P.getGatewayKeys(projectId),
         createKey: (name: string) => P.createGatewayKey(projectId, name),
         revokeKey: (keyId: string) => P.revokeGatewayKey(projectId, keyId),
+        routing: {
+          get: () => P.getGatewayRoutingPolicy(projectId),
+          set: (policy: Parameters<typeof P.setGatewayRoutingPolicy>[1]) =>
+            P.setGatewayRoutingPolicy(projectId, policy),
+          reset: () => P.resetGatewayRoutingPolicy(projectId),
+          preview: (input: Parameters<typeof P.previewGatewayRoute>[1]) =>
+            P.previewGatewayRoute(projectId, input),
+        },
         /** Run one prompt against up to 6 models side by side (a model-comparison playground). */
         playground: (prompt: string, models: string[]) =>
           P.runGatewayPlayground(projectId, prompt, models),

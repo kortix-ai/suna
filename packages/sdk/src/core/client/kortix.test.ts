@@ -142,6 +142,30 @@ test('project(id).gateway hits the gateway observability + budget + key endpoint
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).gateway.routing binds policy CRUD and preview to the project', async () => {
+  await kortix.project('PID123').gateway.routing.get();
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').gateway.routing.set({
+    defaultModel: 'codex/gpt-5.6-sol',
+    visionModel: null,
+    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    rules: [],
+  });
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').gateway.routing.preview({
+    requestedModel: 'auto',
+    imageInput: false,
+  });
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').gateway.routing.reset();
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).channels covers slack, email and meet', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');

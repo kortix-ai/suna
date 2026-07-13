@@ -614,6 +614,42 @@ export const accountModelPreferences = kortixSchema.table(
   ],
 );
 
+export interface ProjectLlmRoutingRule {
+  model: string;
+  fallbackModels: string[];
+  fallbackOn: 'transient' | 'any-error';
+}
+
+// Project-owned gateway composition. A NULL default_fallback_models inherits
+// the operator policy while [] deliberately disables fallback for `auto`.
+// The project default model remains in account_model_preferences so every
+// existing default-model consumer continues to share one source of truth.
+export const projectLlmRoutingPolicies = kortixSchema.table(
+  'project_llm_routing_policies',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    visionModel: varchar('vision_model', { length: 128 }),
+    defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
+    defaultFallbackOn: text('default_fallback_on'),
+    rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_llm_routing_policies_fallback_pair_check',
+      sql`(${table.defaultFallbackModels} IS NULL AND ${table.defaultFallbackOn} IS NULL) OR (${table.defaultFallbackModels} IS NOT NULL AND ${table.defaultFallbackOn} IN ('transient', 'any-error'))`,
+    ),
+    check(
+      'project_llm_routing_policies_rules_array_check',
+      sql`jsonb_typeof(${table.rules}) = 'array'`,
+    ),
+  ],
+);
+
 /**
  * Allow-list for a `restricted` session — which members/groups (besides the
  * owner) can see + open it. Mirrors `project_secret_grants`.

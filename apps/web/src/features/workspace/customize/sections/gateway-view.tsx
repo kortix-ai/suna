@@ -26,6 +26,7 @@ import { GatewayBudgets } from '@/features/workspace/customize/sections/view/gat
 import { GatewayKeys } from '@/features/workspace/customize/sections/view/gateway/gateway-keys';
 import { GatewayLogs } from '@/features/workspace/customize/sections/view/gateway/gateway-logs';
 import { GatewayOverview } from '@/features/workspace/customize/sections/view/gateway/gateway-overview';
+import { GatewayRouting } from '@/features/workspace/customize/sections/view/gateway/gateway-routing';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import type { CustomizeSection } from '@/lib/customize-sections';
@@ -33,10 +34,11 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 
-type LlmTab = 'providers' | 'overview' | 'logs' | 'budgets' | 'keys';
+type LlmTab = 'providers' | 'routing' | 'overview' | 'logs' | 'budgets' | 'keys';
 
 const LLM_TABS: { id: LlmTab; label: string }[] = [
   { id: 'providers', label: 'Providers' },
+  { id: 'routing', label: 'Routing' },
   { id: 'overview', label: 'Overview' },
   { id: 'logs', label: 'Logs' },
   { id: 'budgets', label: 'Budgets' },
@@ -69,7 +71,7 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
   // sees the gateway read-only: logs/overview/spend stay visible, but the
   // account-default model picker — the one mutating control in this bar, which
   // POSTs setAccountDefault — is hidden so a read-only user can't 403.
-  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
   // Follow an external deep-link (e.g. openCustomize('llm-providers')) to its
   // tab. Plain in-view tab clicks stay local and never move the main rail.
@@ -121,6 +123,9 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
       </TabsContent>
       <TabsContent value="overview" className="min-h-0 overflow-y-auto">
         <GatewayOverview projectId={projectId} />
+      </TabsContent>
+      <TabsContent value="routing" className="min-h-0 overflow-y-auto">
+        <GatewayRouting projectId={projectId} canWrite={canWrite} />
       </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />

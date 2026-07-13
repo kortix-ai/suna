@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 469,
+  "count": 473,
   "routes": [
     {
       "method": "GET",
@@ -1193,6 +1193,22 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/gateway/playground"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/gateway/routing-policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/gateway/routing-policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/gateway/routing-policy"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/gateway/routing-policy/preview"
     },
     {
       "method": "GET",
