@@ -97,7 +97,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-accent mx-3 -mt-3 rounded-b-xl border"
+              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-xl border"
             >
               <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
