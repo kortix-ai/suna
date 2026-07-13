@@ -514,7 +514,10 @@ const GROUPS: Group[] = [
 // competitors price their plans, write it up, and make a cover image."
 // Exercises: grouping (6 consecutive reads → one step, 2 searches + 2 fetches
 // → one mixed step), a `write` (Outputs), `read`s (Context files), a web
-// search + fetch (Context web sources), a running step, and an errored step.
+// search + fetch (Context web sources), a running step, an errored step, and
+// a `show` call whose only input is a raw sandbox path (Easy mode must never
+// render that path — see the `show` row in Progress, which narrates it by
+// basename instead).
 // ---------------------------------------------------------------------------
 const PRICING_REPORT_CONTENT = `# Pricing comparison
 
@@ -607,6 +610,17 @@ const EASY_PARTS = [
     ),
   ),
 
+  // 4b. A write that FAILED — must never appear in Outputs (see BLOCKER 3):
+  // the file was never actually produced, so the card must not advertise it
+  // as something the user can open.
+  part(
+    'write',
+    errored(
+      { filePath: '/workspace/reports/failed-draft.md' },
+      'ENOSPC: no space left on device',
+    ),
+  ),
+
   // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
   // locally-served asset as the direct URL so the tool view renders a real
   // image without needing a live sandbox.
@@ -621,7 +635,21 @@ const EASY_PARTS = [
     ),
   ),
 
-  // 6. Still going — the run isn't finished, so Progress shows the shimmer.
+  // 6. show — previews the finished report with only a raw sandbox path in
+  // its input, no title. This is the exact shape that used to leak straight
+  // through to "Showed you /workspace/reports/pricing-comparison.html" (see
+  // BLOCKER 2 — a raw path/URL must never reach a non-technical user); the
+  // fixed narration must show a basename instead ("Showed you
+  // pricing-comparison.html").
+  part(
+    'show',
+    done(
+      { type: 'file', path: '/workspace/reports/pricing-comparison.html' },
+      '',
+    ),
+  ),
+
+  // 7. Still going — the run isn't finished, so Progress shows the shimmer.
   part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
 ];
 
