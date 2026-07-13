@@ -737,3 +737,13 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 install-verified, and backed by the real local compact-picker API flow.
 
 ---
+
+### 2026-07-13 — session `sandbox-template-provider-readiness` (claim)
+
+Claimed the additive provider-aware sandbox-template observation contract. The
+template API will expose current launch readiness independently for Daytona,
+Platinum, and E2B while retaining every existing response field. The web host
+will consume that typed SDK contract instead of interpreting the legacy
+Daytona-named field as universal provider truth.
+
+**Status:** IN PROGRESS.
