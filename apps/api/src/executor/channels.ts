@@ -24,6 +24,7 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
  * `action_not_found`.
  */
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
+export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
 export const MEET_CHANNEL_CONNECTOR_SLUG = 'kortix_meet';
 export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = 'kortix_telegram';
@@ -32,6 +33,8 @@ export function channelDefaultSlug(platform: string): string {
   switch (platform) {
     case 'slack':
       return SLACK_CHANNEL_CONNECTOR_SLUG;
+    case 'teams':
+      return TEAMS_CHANNEL_CONNECTOR_SLUG;
     case 'email':
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
     case 'meet':
@@ -69,6 +72,8 @@ export function channelApiBase(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'https://slack.com/api';
+    case 'teams':
+      return 'https://graph.microsoft.com/v1.0';
     case 'email':
       return 'https://api.agentmail.to/v0';
     case 'meet':
@@ -88,6 +93,8 @@ export function channelLabel(platform: string): string {
   switch (platform) {
     case 'slack':
       return 'Slack';
+    case 'teams':
+      return 'Microsoft Teams';
     case 'email':
       return 'Email';
     case 'meet':
@@ -676,11 +683,128 @@ function toAction(def: ChannelActionDef): NormalizedAction {
   };
 }
 
+const TEAMS_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'get_team',
+    method: 'teams/{team-id}',
+    verb: 'GET',
+    name: 'Get team',
+    description: 'Fetch a team (Microsoft 365 group) by its id.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'list_channels',
+    method: 'teams/{team-id}/channels',
+    verb: 'GET',
+    name: 'List channels',
+    description: 'List the channels in a team. Requires `team-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'get_channel',
+    method: 'teams/{team-id}/channels/{channel-id}',
+    verb: 'GET',
+    name: 'Get channel',
+    description: 'Fetch a single channel in a team. Requires `team-id` and `channel-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+    },
+    required: ['team-id', 'channel-id'],
+  },
+  {
+    path: 'list_members',
+    method: 'teams/{team-id}/members',
+    verb: 'GET',
+    name: 'List team members',
+    description: 'List the members of a team. Requires `team-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+    },
+    required: ['team-id'],
+  },
+  {
+    path: 'get_user',
+    method: 'users/{user-id}',
+    verb: 'GET',
+    name: 'Get user',
+    description: 'Fetch a user profile by id or userPrincipalName.',
+    risk: 'read',
+    properties: {
+      'user-id': { type: 'string', description: 'The user id or userPrincipalName.' },
+    },
+    required: ['user-id'],
+  },
+  {
+    path: 'list_teams',
+    method: 'teams',
+    verb: 'GET',
+    name: 'List teams',
+    description: 'List the teams the bot can see in the tenant.',
+    risk: 'read',
+    properties: {},
+    required: [],
+  },
+  {
+    path: 'list_messages',
+    method: 'teams/{team-id}/channels/{channel-id}/messages',
+    verb: 'GET',
+    name: 'List channel messages',
+    description: 'List recent messages in a channel (history). Requires `team-id` and `channel-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+    },
+    required: ['team-id', 'channel-id'],
+  },
+  {
+    path: 'get_message',
+    method: 'teams/{team-id}/channels/{channel-id}/messages/{message-id}',
+    verb: 'GET',
+    name: 'Get channel message',
+    description: 'Fetch a single channel message. Requires `team-id`, `channel-id`, `message-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+      'message-id': { type: 'string', description: 'The message id.' },
+    },
+    required: ['team-id', 'channel-id', 'message-id'],
+  },
+  {
+    path: 'list_replies',
+    method: 'teams/{team-id}/channels/{channel-id}/messages/{message-id}/replies',
+    verb: 'GET',
+    name: 'List message replies',
+    description: 'List replies to a channel message (a thread). Requires `team-id`, `channel-id`, `message-id`.',
+    risk: 'read',
+    properties: {
+      'team-id': { type: 'string', description: 'The team (group) id.' },
+      'channel-id': { type: 'string', description: 'The channel id.' },
+      'message-id': { type: 'string', description: 'The message id.' },
+    },
+    required: ['team-id', 'channel-id', 'message-id'],
+  },
+];
+
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
 export function channelCatalog(platform: string): NormalizedAction[] {
   switch (platform) {
     case 'slack':
       return SLACK_ACTIONS.map(toAction);
+    case 'teams':
+      return TEAMS_ACTIONS.map(toAction);
     case 'email':
       return EMAIL_ACTIONS.map(toAction);
     case 'meet':

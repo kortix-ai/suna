@@ -1,9 +1,7 @@
 ---
 title: Error handling
-description: The typed error hierarchy — ApiError, AuthError, BillingError, RequestTooLargeError — and how to catch, branch on, and format them for the UI.
+description: "The typed error hierarchy — ApiError, AuthError, BillingError, SessionNotReadyError, the RUNTIME_UNAVAILABLE handshake — and how to catch, branch on, and format them for the UI."
 ---
-
-import { Callout } from 'fumadocs-ui/components/callout';
 
 Every REST call made through `createKortix(...)` or `backendApi` rejects with a
 real `Error` subclass — never a plain object. `catch` it, `instanceof` it, and
@@ -29,18 +27,19 @@ try {
 
 ## The classes
 
-| class | extends | when | key fields |
-|---|---|---|---|
-| `ApiError` | `Error` | the default for any failed request — bad status, network failure, timeout, or an aborted request | `status`, `code`, `details`/`data`, `detail`, `response`, `url`, `endpoint`, `timeout` |
-| `AuthError` | `ApiError` | `getToken` returned `null` — the request was never sent | `code` is always `'NO_SESSION'` |
-| `BillingError` | `Error` | HTTP `402` — the backend's only billing error today | `status` (`402`), `detail: { message, ... }` |
-| `RequestTooLargeError` | `Error` | HTTP `431` — typically too many files attached to one request | `status` (`431`), `detail: { message, suggestion }` |
+| class                  | extends    | when                                                                                             | key fields                                                                             |
+| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `ApiError`             | `Error`    | the default for any failed request — bad status, network failure, timeout, or an aborted request | `status`, `code`, `details`/`data`, `detail`, `response`, `url`, `endpoint`, `timeout` |
+| `AuthError`            | `ApiError` | `getToken` returned `null` — the request was never sent                                          | `code` is always `'NO_SESSION'`                                                        |
+| `BillingError`         | `Error`    | HTTP `402` — the backend's only billing error today                                              | `status` (`402`), `detail: { message, ... }`                                           |
+| `RequestTooLargeError` | `Error`    | HTTP `431` — typically too many files attached to one request                                    | `status` (`431`), `detail: { message, suggestion }`                                    |
+| `SessionNotReadyError` | `Error`    | a runtime accessor (`previewUrl`, `proxyUrl`, `.runtime`) was called before `ensureReady()` — see [below](#session-readiness-errors) | `name` is `'SessionNotReadyError'`                                                     |
 
 <Callout>
-`BillingError` used to be an 8-class hierarchy (`AGENT_RUN_LIMIT_EXCEEDED`,
-`THREAD_LIMIT_EXCEEDED`, etc.). The backend now only ever returns a plain `402`
-with `{ message }`, so it's one class — legacy code that still switches on old
-error-code strings can delete that branch.
+  `BillingError` used to be an 8-class hierarchy (`AGENT_RUN_LIMIT_EXCEEDED`,
+  `THREAD_LIMIT_EXCEEDED`, etc.). The backend now only ever returns a plain `402` with `{message}`,
+  so it's one class — legacy code that still switches on old error-code strings can delete that
+  branch.
 </Callout>
 
 ### `ApiError`
@@ -76,12 +75,70 @@ Thrown for HTTP `431` (Request Header Fields Too Large) — in practice, this
 means too many files were attached to a single request. `detail.suggestion`
 is a ready-to-show hint ("Try uploading files one at a time...").
 
+## Session readiness errors
+
+Two failure modes are about the **session's runtime not being there yet** —
+they're deliberate design, not bugs, and each has one correct response.
+
+### `SessionNotReadyError`
+
+Thrown **synchronously, client-side** when you touch a runtime-scoped accessor
+— `session.previewUrl()`, `session.proxyUrl()`, `session.runtime` — before this
+handle has resolved its own runtime. This enforces the SDK's most important
+invariant: a session handle resolves *its own* sandbox or throws — it never
+silently falls back to whatever sandbox happens to be globally active (which
+could route your calls into another session's machine).
+
+```ts
+import { SessionNotReadyError } from '@kortix/sdk';
+
+const s = kortix.session(projectId, sessionId);
+try {
+  const url = s.previewUrl(3000); // ← throws: nothing resolved yet
+} catch (err) {
+  if (err instanceof SessionNotReadyError) {
+    await s.ensureReady(); // resolve the runtime first
+  }
+}
+```
+
+The fix is always the same: `await session.ensureReady()` (or `send()`, which
+readies internally) before the accessor. `session.health()` is the one
+exception — it never throws this, so a health poller can run before the
+session has ever booted.
+
+### `ApiError` with `code: 'RUNTIME_UNAVAILABLE'`
+
+Thrown by `ensureReady()` when its single bounded `/start` long-poll returns
+while the sandbox is **still provisioning** — normal on a cold boot, which can
+take longer than one poll. It means *not ready yet*, not *failed*: retry, and
+each retry re-attaches to the same server-side provision.
+
+```ts
+if (err instanceof ApiError && err.code === 'RUNTIME_UNAVAILABLE') {
+  // still provisioning — wait a few seconds and call ensureReady() again
+}
+```
+
+The full retry-with-deadline pattern lives on the
+**[Streaming](/docs/sdk/streaming#readiness-is-a-handshake-not-a-one-liner)**
+page; in React, `useSession` handles all of this for you (surfacing it as the
+boot `phase` instead of an exception).
+
+<Callout type="warn">
+  One `instanceof` trap: if a page somehow loads **two copies** of the SDK (the
+  ESM build *and* the CDN `window.Kortix` global), each copy has its own
+  `ApiError` class and `instanceof` across the boundary silently returns
+  `false`. Pick one distribution per page — see
+  [Distribution](/docs/sdk/distribution#cdn--no-build-step).
+</Callout>
+
 ## Helpers
 
-| helper | signature | what |
-|---|---|---|
-| `parseBillingError(error)` | `(error: any) => Error` | If `error`'s status is `402`, wraps it into a `BillingError`; otherwise returns `error` unchanged. Called internally on every `402` response, so callers rarely need it directly. |
-| `isBillingError(error)` | `(error: any) => boolean` | `error instanceof BillingError` |
+| helper                           | signature                                | what                                                                                                                                                                                                                                                            |
+| -------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseBillingError(error)`       | `(error: any) => Error`                  | If `error`'s status is `402`, wraps it into a `BillingError`; otherwise returns `error` unchanged. Called internally on every `402` response, so callers rarely need it directly.                                                                               |
+| `isBillingError(error)`          | `(error: any) => boolean`                | `error instanceof BillingError`                                                                                                                                                                                                                                 |
 | `formatBillingErrorForUI(error)` | `(error: any) => BillingErrorUI \| null` | Returns `null` for anything that isn't a `BillingError`; otherwise returns `{ alertTitle, alertSubtitle }` ready to render in an upgrade/pricing modal — with a dedicated "you ran out of credits" copy when the message mentions credits/balance/insufficient. |
 
 ```ts
@@ -111,9 +168,9 @@ return value) instead of making you `instanceof`-check by hand:
 ```ts
 interface KortixSendError {
   kind: 'billing' | 'runtime-not-ready' | 'runtime-error';
-  message: string;       // already formatted for display
+  message: string; // already formatted for display
   billing?: BillingError; // present when kind === 'billing'
-  cause: unknown;         // the original thrown value
+  cause: unknown; // the original thrown value
 }
 ```
 

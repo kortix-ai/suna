@@ -38,6 +38,12 @@ if (SENTRY_DSN) {
       'ECONNRESET',
       'ETIMEDOUT',
       'UND_ERR_CONNECT_TIMEOUT',
+      // Bun fetch: upstream socket dropped mid-request/stream. Transient
+      // upstream/network noise — the git smart-HTTP proxy retries idempotent
+      // ref discovery and returns a clean 502 otherwise (see git-proxy/). Even
+      // when one escapes the streamed pack path it is not actionable, so drop
+      // it here instead of paging (Better Stack pattern df7a31d4…).
+      'The socket connection was closed unexpectedly',
       // Client-side abort
       'AbortError',
       'The operation was aborted',
@@ -107,7 +113,11 @@ export function setSentryUser(user: { id: string; email?: string; accountId?: st
 /**
  * Add a breadcrumb for debugging context on future errors.
  */
-export function addBreadcrumb(message: string, data?: Record<string, unknown>, category = 'app'): void {
+export function addBreadcrumb(
+  message: string,
+  data?: Record<string, unknown>,
+  category = 'app',
+): void {
   if (!SENTRY_DSN) return;
   Sentry.addBreadcrumb({ message, data, category, level: 'info' });
 }

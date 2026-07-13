@@ -13,7 +13,6 @@ import type {
   Agent,
   Command,
   MessageWithParts,
-  PromptPart,
   ProviderListResponse,
   Session,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -25,14 +24,13 @@ import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
-import { clearForkDraft, readForkDraft } from '@kortix/sdk/react';
 
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   ArrowUp,
   ArrowUpLeft,
   Check,
   ChevronDown,
+  Clock,
   Folder,
   ListTodo,
   Loader2,
@@ -46,12 +44,20 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { resolveComposerResetOnSend } from './composer-reset';
+import {
+  mergeFailedSubmissionFiles,
+  mergeFailedSubmissionMentions,
+  mergeFailedSubmissionText,
+} from './composer-draft-recovery';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
+import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
 import {
@@ -1098,6 +1104,16 @@ export interface SessionChatInputProps {
     mentions?: TrackedMention[],
   ) => void | Promise<void>;
   isBusy?: boolean;
+  /**
+   * Messages queued while `isBusy` was true — held client-side (mirrors
+   * Claude Code/Codex) and flushed one at a time by the parent at the next
+   * safe boundary instead of interleaving into the live turn. When present
+   * alongside `onQueueMessage`, submitting while busy enqueues instead of
+   * sending immediately.
+   */
+  queuedMessages?: { id: string; text: string }[];
+  onQueueMessage?: (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => void;
+  onRemoveQueuedMessage?: (id: string) => void;
   onStop?: () => void;
   /**
    * Render the stop button in its disabled state even without an `onStop` — used
@@ -1144,20 +1160,30 @@ export interface SessionChatInputProps {
   clearOnSend?: boolean;
   /** If true, a concrete model must be selected before a chat/command send. */
   modelRequired?: boolean;
+  /** True while the provider/model catalog is still being fetched — suppresses
+   *  the full-block "connect a model" gate so it doesn't flash for accounts
+   *  that do have models but are mid-load (e.g. sandbox still warming up). */
+  modelsLoading?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
-  /** Imperative draft prefill used by parent composers for starter prompts. */
-  prefill?: { text: string; id: number } | null;
+  /** Imperative draft prefill used by parent composers for starter prompts or
+   * failed first-turn recovery. Recovery merges instead of overwriting any
+   * draft the user typed while the request was in flight. */
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
   /** Full provider list response (for connect/manage provider dialogs) */
   providers?: ProviderListResponse;
 
-  /** Thread/fork context — renders an inline indicator inside the input card */
+  /** Sub-session context — renders an inline indicator inside the input card */
   threadContext?: {
-    variant: 'thread' | 'fork';
     parentTitle: string;
     onBackToParent: () => void;
   };
@@ -1196,32 +1222,12 @@ export interface SessionChatInputProps {
   escCount?: number;
 }
 
-function parseForkDraft(parts: PromptPart[] | null | undefined) {
-  if (!parts?.length) return { text: '', files: [] as AttachedFile[] };
-  const files: AttachedFile[] = [];
-  let text = '';
-
-  for (const part of parts) {
-    if (part.type === 'text') {
-      text = part.text;
-      continue;
-    }
-    if (part.type !== 'file') continue;
-    files.push({
-      kind: 'remote',
-      url: part.url,
-      filename: part.filename || 'Attachment',
-      mime: part.mime,
-      isImage: part.mime.startsWith('image/'),
-    });
-  }
-
-  return { text, files };
-}
-
 export function SessionChatInput({
   onSend,
   isBusy = false,
+  queuedMessages,
+  onQueueMessage,
+  onRemoveQueuedMessage,
   onStop,
   stopDisabled = false,
   isSending = false,
@@ -1243,6 +1249,7 @@ export function SessionChatInput({
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
+  modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1329,9 +1336,24 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  const prefillId = prefill?.id;
+  const prefillText = prefill?.text ?? '';
+  const prefillFiles = prefill?.files;
+  const prefillMode = prefill?.mode;
   useEffect(() => {
-    if (!prefill?.text) return;
-    setText(prefill.text);
+    if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
+    setText((current) =>
+      prefillMode === 'merge'
+        ? mergeFailedSubmissionText(current, prefillText)
+        : prefillText,
+    );
+    if (prefillFiles?.length) {
+      setAttachedFiles((current) =>
+        prefillMode === 'merge'
+          ? mergeFailedSubmissionFiles(current, prefillFiles)
+          : [...prefillFiles],
+      );
+    }
     setStagedCommand(null);
     setSlashFilter(null);
     setMentionQuery(null);
@@ -1340,14 +1362,14 @@ export function SessionChatInput({
       const ta = textareaRef.current;
       if (!ta) return;
       ta.focus();
-      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.setSelectionRange(prefillText.length, prefillText.length);
       ta.style.height = 'auto';
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       if (highlightRef.current) {
         highlightRef.current.style.height = ta.style.height;
       }
     });
-  }, [prefill?.id, prefill?.text]);
+  }, [prefillId, prefillText, prefillFiles, prefillMode]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -1361,26 +1383,6 @@ export function SessionChatInput({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to lockForQuestion changes
   }, [lockForQuestion]);
-
-  useEffect(() => {
-    if (!sessionId || typeof window === 'undefined') return;
-    const parsed = readForkDraft(sessionId);
-    if (parsed) {
-      const next = parseForkDraft(parsed);
-      setText(next.text);
-      setAttachedFiles((prev) => {
-        for (const file of prev) {
-          if (file.kind === 'local') URL.revokeObjectURL(file.localUrl);
-        }
-        return next.files;
-      });
-      setSlashFilter(null);
-      setMentionQuery(null);
-      setMentions([]);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-    clearForkDraft(sessionId);
-  }, [sessionId]);
 
   // ChatGPT-like behavior: if the user starts typing while the textarea is not
   // focused, redirect the keystroke into this textarea and focus it.
@@ -1701,6 +1703,26 @@ export function SessionChatInput({
     selectedModel,
     lockForQuestion,
   });
+  // Drives the "connect a model" bar under the input. Two distinct dead-end
+  // states both surface it — either way the composer cannot send and needs to
+  // say why:
+  //  1. Nothing SELECTED (`!selectedModel`, i.e. `modelUnavailable`) — the
+  //     send button is hard-disabled with only a tooltip explaining it.
+  //  2. Nothing USABLE (`!hasSelectableModels`) — entitlement check: NOT
+  //     `models.length === 0`, because the gateway bakes its whole catalog
+  //     into every project regardless of plan or connected keys; this accounts
+  //     for free-tier gating and which providers are actually connected.
+  // Both are only consulted after every input settles (`modelsLoading` for the
+  // provider catalog, `entitlementsPending` for account/secrets/project), so
+  // the bar renders exactly once with the final answer instead of flashing in
+  // on half-loaded data and vanishing when the account state arrives.
+  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const noModelsConnected =
+    modelRequired &&
+    !lockForQuestion &&
+    !modelsLoading &&
+    !entitlementsPending &&
+    (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -1773,24 +1795,42 @@ export function SessionChatInput({
       setSlashFilter(null);
       setMentionQuery(null);
       setMentions([]);
-      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
       setAttachedFiles([]);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
     }
 
+    // While the agent is busy, hold the message client-side instead of
+    // sending it straight through — mirrors Claude Code/Codex's "queued
+    // while busy" behavior. The parent flushes it at the next safe boundary
+    // (a tool call finishing, or the turn going idle) rather than
+    // interleaving it into the live turn.
+    if (isBusy && onQueueMessage) {
+      onQueueMessage(trimmed, filesToSend, mentionsToSend);
+      return;
+    }
+
     // Send directly. The OpenCode server serializes concurrent prompt_async
-    // calls per-session, so sending while the agent is busy is safe — the
-    // server queues it. (No client-side message queue.)
+    // calls per-session, so sending while the agent is busy is safe even
+    // without queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
+      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
     } catch {
-      // Restore the text so the user can retry. The failure itself is surfaced
-      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
-      // handleSend's catch — a toast here would double-display it. (No-op when
-      // clearOnSend is false: the text was never cleared.)
-      if (clearOnSend) setText(trimmed);
+      // Restore the entire submitted draft, not just its text. Object URLs stay
+      // alive until success, so local files remain retryable. Merge with any
+      // text/files/mentions added while the request was in flight instead of
+      // overwriting newer work.
+      if (clearOnSend) {
+        setText((current) => mergeFailedSubmissionText(current, trimmed));
+        setAttachedFiles((current) =>
+          mergeFailedSubmissionFiles(current, filesToSend ?? []),
+        );
+        setMentions((current) =>
+          mergeFailedSubmissionMentions(current, mentionsToSend ?? []),
+        );
+      }
     }
   }, [
     text,
@@ -1798,6 +1838,8 @@ export function SessionChatInput({
     modelUnavailable,
     clearOnSend,
     onSend,
+    isBusy,
+    onQueueMessage,
     onCommand,
     stagedCommand,
     attachedFiles,
@@ -2068,8 +2110,36 @@ export function SessionChatInput({
           )}
 
           {/* Inline chips: thread context, todos, queue — unified spacing */}
-          {(threadContext || sessionId || inputSlot || replyTo) && (
+          {(threadContext || sessionId || inputSlot || replyTo || queuedMessages?.length) && (
             <div className="mx-3 mt-2.5 flex flex-col gap-1.5 empty:hidden">
+              <AnimatePresence initial={false}>
+                {queuedMessages?.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    layout
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 2 }}
+                    transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                    className="border-border/60 bg-muted/40 flex items-center gap-2 rounded-2xl border px-3 py-1.5"
+                  >
+                    <Clock className="text-muted-foreground/70 size-3 flex-shrink-0" />
+                    <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+                      {m.text.length > 120 ? `${m.text.slice(0, 120)}…` : m.text}
+                    </span>
+                    {onRemoveQueuedMessage && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveQueuedMessage(m.id)}
+                        className="text-muted-foreground hover:text-foreground -m-1.5 flex-shrink-0 rounded-full p-1.5 transition-[color,transform] active:scale-[0.96]"
+                        aria-label="Remove queued message"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {replyTo && (
                 <div className="bg-primary/5 border-primary/10 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
                   <Reply className="text-primary/60 size-3 flex-shrink-0" />
@@ -2099,7 +2169,7 @@ export function SessionChatInput({
                 >
                   <ArrowUpLeft className="text-muted-foreground size-3.5 flex-shrink-0 transition-transform group-hover:-translate-x-0.5 group-hover:-translate-y-0.5" />
                   <span className="min-w-0 flex-1 truncate text-left">
-                    {threadContext.variant === 'fork' ? 'Fork of' : 'Sub-session of'}{' '}
+                    {'Sub-session of'}{' '}
                     <span className="text-foreground/80 font-medium">
                       {threadContext.parentTitle}
                     </span>
@@ -2407,6 +2477,7 @@ export function SessionChatInput({
           </div>
         </div>
       </div>
+      <ModelConnectionBar show={noModelsConnected} />
     </div>
   );
 }

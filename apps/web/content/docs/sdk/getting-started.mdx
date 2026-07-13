@@ -3,8 +3,6 @@ title: Getting started
 description: Install @kortix/sdk, create a client, authenticate, and make your first calls.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 ## Install
 
 ```sh
@@ -12,8 +10,13 @@ pnpm add @kortix/sdk
 ```
 
 `react` (≥18) and `@tanstack/react-query` (≥5) are **optional peers** — needed only
-if you use the `@kortix/sdk/react` hooks. The core client is framework-agnostic
-and works in Node, the browser, and React Native.
+if you use the `@kortix/sdk/react` hooks. The core client is framework-free and
+runs in Node ≥ 18, Bun, modern browsers, and edge runtimes such as Cloudflare
+Workers — see **[Streaming & runtime support](/docs/sdk/streaming)** for the full
+matrix (React Native is REST-only today; live streaming is not supported there).
+
+No build step? The SDK also ships **CDN bundles** — an ESM module and a
+`window.Kortix` `<script>` global — see **[Distribution](/docs/sdk/distribution)**.
 
 ## Create a client
 
@@ -32,26 +35,28 @@ export const kortix = createKortix({
 
 ### Config
 
-| field | type | required | what |
-|---|---|---|---|
-| `backendUrl` | `string` | yes | Kortix API base, e.g. `https://api.kortix.com/v1` |
-| `getToken` | `() => Promise<string \| null>` | yes | Returns the bearer token — a Kortix API key, a PAT (`kortix_pat_…`), or a Supabase JWT |
-| `getUserId` | `() => Promise<string \| null>` | no | Current user id, when the host knows it |
-| `billingEnabled` | `boolean` | no | Toggles billing-gated behaviour |
-| `onError` · `onToast` · `onNotify` | callbacks | no | Host sinks for errors, toasts, and notifications |
-| `sandboxId` | `string \| null` | no | Default sandbox id for local/single-sandbox hosts |
-| `featureFlags` | object | no | Per-flag overrides for `@kortix/sdk/feature-flags` — see **[Modules](/docs/sdk/modules#other-subpaths-internal-plumbing)** |
+| field                              | type                            | required | what                                                                                                                       |
+| ---------------------------------- | ------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `backendUrl`                       | `string`                        | yes      | Kortix API base, e.g. `https://api.kortix.com/v1`                                                                          |
+| `getToken`                         | `() => Promise<string \| null>` | yes      | Returns the bearer token — a Kortix API key, a PAT (`kortix_pat_…`), or a Supabase JWT                                     |
+| `getUserId`                        | `() => Promise<string \| null>` | no       | Current user id, when the host knows it                                                                                    |
+| `billingEnabled`                   | `boolean`                       | no       | Toggles billing-gated behaviour                                                                                            |
+| `onError` · `onToast` · `onNotify` | callbacks                       | no       | Host sinks for errors, toasts, and notifications                                                                           |
+| `sandboxId`                        | `string \| null`                | no       | Default sandbox id for local/single-sandbox hosts                                                                          |
+| `featureFlags`                     | object                          | no       | Per-flag overrides for `@kortix/sdk/feature-flags` — see **[Modules](/docs/sdk/modules#other-subpaths-internal-plumbing)** |
 
 <Callout>
-`createKortix` calls `configureKortix` for you — the one global seam every SDK
-module reads. Call it once at app startup.
+  `createKortix` calls `configureKortix` for you — the one global seam every SDK module reads. Call
+  it once at app startup.
 </Callout>
 
 ## Authentication
 
 The SDK sends `Authorization: Bearer <token>` on every request; `getToken` supplies
-it. The default is an **API key** — create one in **Settings → API keys**
-(account-wide, or scoped to a single project), store it as a secret, and return it:
+it. The default is an **API key** — open your avatar menu → **User settings** →
+**API keys** (under _Account_) → **Create API key**. Pick account-wide or a single
+project as the scope, copy the `kortix_pat_…` (it is shown once), store it as a
+secret, and return it:
 
 ```ts
 const kortix = createKortix({
@@ -66,8 +71,8 @@ scopes, rotation, web vs backend — is on the **[Authentication](/docs/sdk/auth
 page.
 
 <Callout>
-Keys never live inside the SDK — `getToken` is called on demand, and the host owns
-storage, caching, and refresh.
+  Keys never live inside the SDK — `getToken` is called on demand, and the host owns storage,
+  caching, and refresh.
 </Callout>
 
 ## Your first calls
@@ -92,8 +97,8 @@ await s.runtime.session.prompt({
 ```
 
 <Callout type="warn">
-Don't import `@opencode-ai/sdk`, `backendApi`, or `authenticatedFetch` in app
-code. Everything is reachable through `createKortix` or a `@kortix/sdk/*` subpath.
+  Don't import `@opencode-ai/sdk`, `backendApi`, or `authenticatedFetch` in app code. Everything is
+  reachable through `createKortix` or a `@kortix/sdk/*` subpath.
 </Callout>
 
 ## In a React app
@@ -108,7 +113,9 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
   if (s.phase !== 'ready') return <Booting stage={s.stage} onRetry={s.retry} />;
   return (
     <>
-      {s.messages.map(({ info, parts }) => <Message key={info.id} info={info} parts={parts} />)}
+      {s.messages.map(({ info, parts }) => (
+        <Message key={info.id} info={info} parts={parts} />
+      ))}
       <Composer busy={s.isBusy} onSend={(t) => s.send(t)} onStop={s.cancel} />
     </>
   );
@@ -121,6 +128,9 @@ canonical id — no provider to mount, no poller, no server store. See
 
 ## Next
 
+- [Full example](/docs/sdk/full-example) — zero to a streaming agent reply in one file.
 - [The client](/docs/sdk/the-client) — the full facade surface.
 - [Sessions](/docs/sdk/sessions) — lifecycle, runtime health, previews, and the opencode runtime.
+- [Streaming](/docs/sdk/streaming) — live events, the readiness handshake, and runtime support.
 - [React hooks](/docs/sdk/react) — live, reactive data for your UI.
+- [Distribution](/docs/sdk/distribution) — npm, CDN bundles, and the stability tiers.

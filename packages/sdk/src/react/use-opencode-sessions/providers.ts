@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../opencode/client';
+import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
@@ -10,7 +10,7 @@ import {
   getProjectDetail,
   getProjectLlmCatalog,
   listProjectSecrets,
-} from '../../platform/projects-client';
+} from '../../core/rest/projects-client';
 import {
   filterToGatewayProviders,
   filterToNativeProviders,

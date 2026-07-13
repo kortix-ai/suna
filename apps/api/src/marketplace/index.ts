@@ -5,6 +5,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { supabaseAuth } from '../middleware/auth';
+import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
 import {
@@ -165,6 +166,17 @@ marketplaceApp.use('/sources', supabaseAuth);
 marketplaceApp.use('/sources/*', supabaseAuth);
 // Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
 // items merge into the catalog. Platform-global; persisted as a platform setting.
+// Mutating this list is a platform-admin action (GET stays open to any
+// authenticated user); gate POST/DELETE the same way admin/index.ts and
+// ops/index.ts do, without touching the GET listing above.
+marketplaceApp.use('/sources', async (c, next) => {
+  if (c.req.method === 'POST') return requireAdmin(c, next);
+  await next();
+});
+marketplaceApp.use('/sources/*', async (c, next) => {
+  if (c.req.method === 'DELETE') return requireAdmin(c, next);
+  await next();
+});
 
 marketplaceApp.openapi(
   createRoute({

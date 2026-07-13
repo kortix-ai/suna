@@ -70,7 +70,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'email' | 'meet' | 'telegram';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'meet' | 'telegram';
 
 type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'oauth1' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'oauth1', 'none'];

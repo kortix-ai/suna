@@ -46,6 +46,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
+`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via Mailtrap; `emailed:false` when Mailtrap unconfigured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ---
@@ -192,7 +193,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 
 DB `project_sessions` (`status queued|branching|provisioning|running|stopped|failed|completed`, unique `(project_id, branch_name)`). Branch name = `session_id`.
 
-`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
+`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?,runtime_context?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). Base-ref precedence for human UI/mobile/CLI starts is explicit `base_ref` → one agreed non-expired attached-group `default_base_ref` → project `default_branch`; conflicting group defaults deterministically fall back to the project default. Automation/system starts ignore group defaults unless they pass an explicit `base_ref`. `runtime_context` is an optional non-secret scalar map (max 64 entries / 16 KiB UTF-8 JSON; lower-case semantic keys only; no credential-like keys); it is stored outside user-editable session metadata and restored into every replacement runtime as the single server-owned `KORTIX_SESSION_CONTEXT` JSON variable. Nested/oversize/reserved/credential-shaped input → 400 before session persistence or provisioning; raw env/MCP fields are unknown and rejected. MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
 `SESS-2` concurrency cap — Nth session over tier cap → **429** + `X-RateLimit-Limit/-Remaining` headers.
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
@@ -245,7 +246,7 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-3` `GET /projects/:id/files/search?q=&content=1&ref=&limit=` → filename + grep.
 `FILE-4` `GET /projects/:id/files/history?path=` → commit history for path.
 `FILE-5` `GET /projects/:id/files/archive?path=&ref=` → zip stream.
-`FILE-6` `GET /projects/:id/branches` → branches.
+`FILE-6` `GET /projects/:id/branches` → branches plus the caller's effective `session_default_ref`, source/group metadata, and conflict fallback signal.
 `FILE-7` `GET /projects/:id/commits?ref=&path=` · `GET …/commits/:sha` · `GET …/commits/:sha/diff`.
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to OpenCode file API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
@@ -646,7 +647,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
-`PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
+`PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; POST/PATCH accepts optional nullable `default_base_ref` for that group's human-launched session default; missing group_id → 400; unknown → 404.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
 `BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.

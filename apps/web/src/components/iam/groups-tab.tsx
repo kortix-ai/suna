@@ -8,7 +8,6 @@ import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MoreHorizontal, Plus, Search, Trash2, Users } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState } from 'react';
 
@@ -37,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { type AccountGroup, createGroup, deleteGroup, listGroups } from '@/lib/iam-client';
 
@@ -63,6 +63,7 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
+  const openDemo = useRequestDemo();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AccountGroup | null>(null);
@@ -130,8 +131,12 @@ export function GroupsTab({ accountId, canCreate, rbacEnabled }: GroupsTabProps)
             tone="info"
             title="Enterprise feature"
             action={
-              <Button asChild variant="outline" size="sm">
-                <Link href="/enterprise">Contact sales</Link>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openDemo({ source: 'accounts-groups' })}
+              >
+                Contact sales
               </Button>
             }
           >

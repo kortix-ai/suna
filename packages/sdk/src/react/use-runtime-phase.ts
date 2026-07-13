@@ -1,6 +1,6 @@
 'use client';
 
-import { useSandboxConnectionStore } from '../state/sandbox-connection-store';
+import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 
 export type RuntimePhase = 'connecting' | 'booting' | 'ready' | 'unreachable';
 

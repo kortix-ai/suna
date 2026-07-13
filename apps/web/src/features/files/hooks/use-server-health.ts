@@ -2,9 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
+import { requestRuntimeReconnect, useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/types';
+import { fileServerHealthState } from './server-health-state';
 
 /**
  * Check if the active OpenCode server is reachable and healthy.
@@ -19,22 +20,20 @@ import type { ServerHealth, OpenCodeProjectInfo } from '@/features/file-browser/
  */
 export function useServerHealth(options?: { enabled?: boolean }) {
   const status = useSandboxConnectionStore((s) => s.status);
-  const healthy = useSandboxConnectionStore((s) => s.healthy);
+  const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
   const version = useSandboxConnectionStore((s) => s.openCodeVersion);
 
   // Return a shape compatible with the old UseQueryResult<ServerHealth>
   // so consumers don't need to change their destructuring pattern.
-  const data: ServerHealth | undefined =
-    healthy !== null ? { healthy, version: version ?? '' } : undefined;
+  const data: ServerHealth | undefined = fileServerHealthState(status, runtimeHealthy, version);
 
   return {
     data,
-    isLoading: status === 'connecting' && healthy === null,
+    isLoading: status === 'connecting' && runtimeHealthy === null,
     isError: status === 'unreachable',
     error: status === 'unreachable' ? new Error('Server unreachable') : null,
     refetch: async () => {
-      // No-op — the health check polling loop handles this automatically.
-      // Kept for backward compatibility with consumers that call refetch().
+      requestRuntimeReconnect();
       return { data } as any;
     },
   };

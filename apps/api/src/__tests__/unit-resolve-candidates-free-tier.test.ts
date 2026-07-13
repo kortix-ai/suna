@@ -133,22 +133,24 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(accountTierCalls).toBe(1);
   });
 
-  test('resolves raw auto to a concrete managed upstream for stale gateway callers', async () => {
+  test('resolves raw auto to the Codex GPT-5.6 Sol platform default for stale gateway callers', async () => {
     accountTier = 'per_seat';
     const candidates = await resolveCandidates(principal('team-auto'), 'auto');
     expect(candidates).toHaveLength(1);
-    expect(candidates[0]?.provider).toBe('openrouter');
-    expect(candidates[0]?.resolvedModel).toBe('z-ai/glm-5.2');
-    expect(accountTierCalls).toBe(1);
+    expect(candidates[0]?.provider).toBe('openai-codex');
+    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
+    expect(accountTierCalls).toBe(0);
   });
 
-  test('resolves raw auto to no managed candidate for free accounts', async () => {
+  test('does not tier-gate the Codex platform default for free accounts with ChatGPT auth', async () => {
     accountTier = 'free';
     const candidates = await resolveCandidates(
       { ...principal('free-auto'), freeModelsOnly: true },
       'auto',
     );
-    expect(candidates).toEqual([]);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.provider).toBe('openai-codex');
+    expect(candidates[0]?.resolvedModel).toBe('gpt-5.6-sol');
     expect(accountTierCalls).toBe(0);
   });
 

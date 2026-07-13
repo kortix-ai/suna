@@ -198,7 +198,7 @@ projectsApp.openapi(
   if (getAgentGrant(c)) {
     return c.json({ error: 'Agent-session tokens cannot manage project tokens' }, 403);
   }
-  const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
+  const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
 },

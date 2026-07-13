@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
 import { prompt, selectFrom } from '../prompts.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const DEFAULT_TAG = 'latest';
@@ -22,7 +22,7 @@ const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
 const LOCAL_SOURCE_TAG = 'selfhost-local';
 
-const HELP = `Usage: kortix self-host <subcommand> [options]
+const HELP = help`Usage: kortix self-host <subcommand> [options]
 
 Run your own Kortix Cloud locally or on your infrastructure using the
 published Docker images from Docker Hub.

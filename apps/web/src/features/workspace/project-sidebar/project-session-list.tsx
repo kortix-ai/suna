@@ -31,6 +31,8 @@ import {
   shouldPollProjectSessions,
   sortSessionsByCreatedAt,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { Icon } from '@/features/icon/icon';
 import {
   listProjectSessions,
@@ -40,6 +42,10 @@ import {
   type ProjectSessionStatus,
 } from '@kortix/sdk/projects-client';
 import { cn } from '@/lib/utils';
+import {
+  shouldBeginSessionSwitch,
+  useSessionSwitchStore,
+} from '@/stores/session-switch-store';
 import { Icon as IconMynauiType, Pencil, Share, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -101,6 +107,9 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeOpenCodeSessionId = searchParams.get('oc');
+  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
+  const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
@@ -116,6 +125,13 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
       shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
     refetchOnWindowFocus: false,
   });
+
+  // Review Center is one coherent system: the per-session row indicators, the
+  // footer "Review" pill, and the Customize rail all read the SAME inbox summary
+  // and gate on the SAME flag. When the flag is off the summary query never runs,
+  // so no indicators render and nothing polls.
+  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
   const restartMutation = useMutation({
     mutationFn: ({ sessionId }: { sessionId: string; label: string }) =>
@@ -200,15 +216,32 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         {visibleSessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+          const isSwitchTarget = switchingToSessionId === session.session_id;
           const children = directSubsessions(session);
           return (
             <div key={session.session_id} className="space-y-px">
               <ProjectSessionRow
                 session={session}
                 href={href}
-                isActive={!!isActive && !activeOpenCodeSessionId}
+                isActive={
+                  (!!isActive && !activeOpenCodeSessionId && !switchingToSessionId) ||
+                  isSwitchTarget
+                }
+                isSwitching={isSwitchTarget}
+                onNavigate={(event) => {
+                  if (
+                    shouldBeginSessionSwitch(
+                      event,
+                      session.session_id,
+                      activeSessionId,
+                    )
+                  ) {
+                    beginSessionSwitch(session.session_id);
+                  }
+                }}
                 displayTitle={getSessionDisplayTitle(session)}
                 childCount={children.length}
+                reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
                 onRename={(id, name) => setSessionToRename({ id, name })}
@@ -275,6 +308,8 @@ interface ProjectSessionRowProps {
   session: ProjectSession;
   href: string;
   isActive: boolean;
+  isSwitching: boolean;
+  onNavigate: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   displayTitle: string;
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
@@ -284,12 +319,16 @@ interface ProjectSessionRowProps {
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
   childCount?: number;
+  /** How many review items from this session are awaiting the human (`needs_you`). */
+  reviewCount?: number;
 }
 
 function ProjectSessionRow({
   session,
   href,
   isActive,
+  isSwitching,
+  onNavigate,
   displayTitle,
   onDelete,
   onShare,
@@ -299,6 +338,7 @@ function ProjectSessionRow({
   onStop,
   isStopping,
   childCount = 0,
+  reviewCount = 0,
 }: ProjectSessionRowProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -329,8 +369,17 @@ function ProjectSessionRow({
             : 'text-muted-foreground hover:text-sidebar-foreground',
         )}
       >
-        <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 self-stretch">
-          <SessionStatusDot status={session.status} />
+        <Link
+          href={href}
+          onClick={onNavigate}
+          aria-busy={isSwitching || undefined}
+          className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
+        >
+          {isSwitching ? (
+            <Loading className="text-kortix-green size-3 shrink-0" />
+          ) : (
+            <SessionStatusDot status={session.status} reviewCount={reviewCount} />
+          )}
 
           <span
             title={displayTitle}
@@ -487,11 +536,33 @@ function ProjectSubsessionRow({
   );
 }
 
-function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
+function SessionStatusDot({
+  status,
+  reviewCount = 0,
+}: {
+  status: ProjectSessionStatus;
+  reviewCount?: number;
+}) {
   const isProvisioning = status === 'queued' || status === 'branching' || status === 'provisioning';
+  // A session with items awaiting the human reads as "finished — your turn": a
+  // solid accent ring + filled center in Kortix green, overriding the run-status
+  // dot because "awaiting you" is the more actionable signal. This is the same
+  // needs_you state the footer "Review" pill counts, so the dots always sum to it.
+  const reviewPending = reviewCount > 0;
 
   return (
-    <Hint side="right" label={<span className="text-xs capitalize">{status}</span>}>
+    <Hint
+      side="right"
+      label={
+        reviewPending ? (
+          <span className="text-xs">
+            {reviewCount} awaiting your review
+          </span>
+        ) : (
+          <span className="text-xs capitalize">{status}</span>
+        )
+      }
+    >
       <div className="flex size-4 shrink-0 items-center justify-center">
         <svg
           height="16"
@@ -499,19 +570,21 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
           width="16"
           strokeLinejoin="round"
           style={{
-            color: isProvisioning
-              ? 'var(--kortix-yellow)'
-              : status === 'running'
-                ? 'var(--kortix-green)'
-                : status === 'stopped'
-                  ? 'var(--muted-foreground)'
-                  : status === 'completed'
-                    ? 'var(--kortix-green)'
-                    : 'var(--kortix-red)',
+            color: reviewPending
+              ? 'var(--kortix-green)'
+              : isProvisioning
+                ? 'var(--kortix-yellow)'
+                : status === 'running'
+                  ? 'var(--kortix-green)'
+                  : status === 'stopped'
+                    ? 'var(--muted-foreground)'
+                    : status === 'completed'
+                      ? 'var(--kortix-green)'
+                      : 'var(--kortix-red)',
           }}
           className={cn(
             'relative flex shrink-0 items-center justify-center',
-            isProvisioning && 'animate-spin',
+            !reviewPending && isProvisioning && 'animate-spin',
           )}
         >
           <circle
@@ -521,10 +594,10 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
             stroke="currentColor"
             fill="none"
             strokeWidth="1.5"
-            strokeDasharray="3 3.4"
+            strokeDasharray={reviewPending ? undefined : '3 3.4'}
           ></circle>
-          {(isProvisioning || status === 'failed') && (
-            <circle cx="8" cy="8" r="4" fill="currentColor" />
+          {(reviewPending || isProvisioning || status === 'failed') && (
+            <circle cx="8" cy="8" r={reviewPending ? 3.2 : 4} fill="currentColor" />
           )}
         </svg>
       </div>

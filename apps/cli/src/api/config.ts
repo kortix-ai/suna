@@ -171,8 +171,10 @@ export function loadConfig(): Config {
 export function saveConfig(config: Config): void {
   const path = configFilePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(config, null, 2) + '\n', 'utf8');
+  writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
   try {
+    // Belt-and-braces for pre-existing files whose mode predates this fix —
+    // writeFileSync's `mode` option only applies when the file is created.
     chmodSync(path, 0o600);
   } catch {
     /* Windows */

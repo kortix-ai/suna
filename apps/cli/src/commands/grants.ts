@@ -5,7 +5,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
 // connectors) live on AGENTS; you assign an agent to a member or group and
@@ -50,7 +50,7 @@ interface AccessMember {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const HELP = `Usage: kortix grants <subcommand> [options]
+const HELP = help`Usage: kortix grants <subcommand> [options]
 
 Assign project resources to people — the inheritance PYRAMID. Secrets and
 connectors live on AGENTS; assign an agent to a member (or group) and they

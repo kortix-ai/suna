@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   chooseEffectiveAgent,
   chooseEffectiveModel,
+  degradeUnservableDefault,
   toOpencodeModelRef,
   toWireModel,
 } from './effective';
@@ -96,5 +97,54 @@ describe('chooseEffectiveAgent', () => {
 
   test("falls back to 'default'", () => {
     expect(chooseEffectiveAgent({})).toEqual({ agent: 'default', source: 'fallback' });
+  });
+});
+
+describe('degradeUnservableDefault — stale default guard', () => {
+  const neverProbe = () => {
+    throw new Error('probe must not be called');
+  };
+
+  test('null/undefined default → null, no probe', async () => {
+    expect(await degradeUnservableDefault(null, { hasProject: true }, neverProbe)).toBeNull();
+    expect(await degradeUnservableDefault(undefined, { hasProject: true }, neverProbe)).toBeNull();
+  });
+
+  test('managed default is trusted without a probe (bare id and kortix/ ref)', async () => {
+    expect(await degradeUnservableDefault('glm-5.2', { hasProject: true }, neverProbe)).toBe(
+      'glm-5.2',
+    );
+    expect(
+      await degradeUnservableDefault('kortix/claude-opus-4.8', { hasProject: true }, neverProbe),
+    ).toBe('kortix/claude-opus-4.8');
+  });
+
+  test('BYOK default with no project context degrades to platform, no probe', async () => {
+    expect(
+      await degradeUnservableDefault('anthropic/claude-opus-4-8', { hasProject: false }, neverProbe),
+    ).toBeNull();
+  });
+
+  test('BYOK default kept when the provider key is servable', async () => {
+    expect(
+      await degradeUnservableDefault(
+        'anthropic/claude-opus-4-8',
+        { hasProject: true },
+        async () => true,
+      ),
+    ).toBe('anthropic/claude-opus-4-8');
+  });
+
+  test('BYOK default whose key is gone degrades to platform (the migrate-to-v2 bug)', async () => {
+    // The exact failure: an auto-seeded `anthropic/claude-opus-4-8` project default
+    // whose Anthropic key is absent in this environment. Previously returned as-is →
+    // "No upstream configured"; now degrades to null so `auto` uses the platform default.
+    expect(
+      await degradeUnservableDefault(
+        'anthropic/claude-opus-4-8',
+        { hasProject: true },
+        async () => false,
+      ),
+    ).toBeNull();
   });
 });

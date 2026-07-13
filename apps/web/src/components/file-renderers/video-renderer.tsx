@@ -320,10 +320,11 @@ export function VideoRenderer({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-8 p-0 text-white hover:bg-white/20"
+                  className="w-auto gap-1.5 px-2.5 text-white hover:bg-white/20"
                   onClick={onDownload}
                 >
                   <Download className="h-4 w-4" />
+                  Download
                 </Button>
               )}
             </div>

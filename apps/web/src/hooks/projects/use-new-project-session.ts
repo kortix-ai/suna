@@ -51,7 +51,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       // match the agent the composer sends on the first prompt — the API proxy
       // rejects any prompt whose `agent` differs from the session's bound agent
       // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      create?: { sandbox_slug?: string; agent_name?: string };
+      create?: { sandbox_slug?: string; agent_name?: string; base_ref?: string };
     }) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();

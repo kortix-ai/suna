@@ -18,7 +18,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, executorConnectors, executorExecutions, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability, isUuid } from '../lib/access';
-import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionSchema, projectsApp } from '../lib/app';
+import { AnyObject, GroupGrantSchema, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, normalizeString, readBody, requestAuditContext, serializeSession } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
@@ -71,6 +71,7 @@ projectsApp.openapi(
     .select({
       groupId: projectGroupGrants.groupId,
       role: projectGroupGrants.role,
+      defaultBaseRef: projectGroupGrants.defaultBaseRef,
       grantedBy: projectGroupGrants.grantedBy,
       createdAt: projectGroupGrants.createdAt,
       expiresAt: projectGroupGrants.expiresAt,
@@ -132,6 +133,7 @@ projectsApp.openapi(
         group_id: r.groupId,
         group_name: r.groupName,
         role: r.role,
+        default_base_ref: r.defaultBaseRef,
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
         /** Auto-revoke timestamp. NULL = permanent attachment. */
@@ -195,6 +197,14 @@ projectsApp.openapi(
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
+  const hasDefaultBaseRef = hasOwn(body, 'default_base_ref') || hasOwn(body, 'defaultBaseRef');
+  const rawDefaultBaseRef = hasOwn(body, 'default_base_ref')
+    ? body.default_base_ref
+    : body.defaultBaseRef;
+  const defaultBaseRef = rawDefaultBaseRef === null ? null : normalizeString(rawDefaultBaseRef);
+  if (hasDefaultBaseRef && rawDefaultBaseRef !== null && !defaultBaseRef) {
+    return c.json({ error: 'default_base_ref must be a non-empty string or null' }, 400);
+  }
 
   // Confirm the group exists and belongs to this account — prevents
   // attaching a foreign-account group via a guessed UUID.
@@ -215,6 +225,7 @@ projectsApp.openapi(
       groupId,
       accountId: loaded.row.accountId,
       role,
+      defaultBaseRef: defaultBaseRef ?? null,
       grantedBy: loaded.userId,
       expiresAt: expires.value ?? null,
     })
@@ -226,11 +237,17 @@ projectsApp.openapi(
         updatedAt: now,
         // Only overwrite when caller explicitly set the field.
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+        ...(hasDefaultBaseRef ? { defaultBaseRef } : {}),
       },
     });
   await invalidateIamCacheForGroup(groupId);
 
-  return c.json({ project_id: projectId, group_id: groupId, role }, 201);
+  return c.json({
+    project_id: projectId,
+    group_id: groupId,
+    role,
+    default_base_ref: defaultBaseRef ?? null,
+  }, 201);
 },
 );
 
@@ -272,19 +289,32 @@ projectsApp.openapi(
   }
 
   const body = await readBody(c);
-  const role = normalizeProjectRole(body.role);
-  if (!role) {
+  const hasRole = hasOwn(body, 'role');
+  const role = hasRole ? normalizeProjectRole(body.role) : null;
+  if (hasRole && !role) {
     return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
+  const hasDefaultBaseRef = hasOwn(body, 'default_base_ref') || hasOwn(body, 'defaultBaseRef');
+  const rawDefaultBaseRef = hasOwn(body, 'default_base_ref')
+    ? body.default_base_ref
+    : body.defaultBaseRef;
+  const defaultBaseRef = rawDefaultBaseRef === null ? null : normalizeString(rawDefaultBaseRef);
+  if (hasDefaultBaseRef && rawDefaultBaseRef !== null && !defaultBaseRef) {
+    return c.json({ error: 'default_base_ref must be a non-empty string or null' }, 400);
+  }
+  if (!hasRole && expires.value === undefined && !hasDefaultBaseRef) {
+    return c.json({ error: 'role, expires_at, or default_base_ref is required' }, 400);
+  }
 
   const result = await db
     .update(projectGroupGrants)
     .set({
-      role,
+      ...(role ? { role } : {}),
       updatedAt: new Date(),
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+      ...(hasDefaultBaseRef ? { defaultBaseRef } : {}),
     })
     .where(
       and(
@@ -292,11 +322,20 @@ projectsApp.openapi(
         eq(projectGroupGrants.groupId, groupId),
       ),
     )
-    .returning({ groupId: projectGroupGrants.groupId });
+    .returning({
+      groupId: projectGroupGrants.groupId,
+      role: projectGroupGrants.role,
+      defaultBaseRef: projectGroupGrants.defaultBaseRef,
+    });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
   await invalidateIamCacheForGroup(groupId);
-  return c.json({ project_id: projectId, group_id: groupId, role: body.role });
+  return c.json({
+    project_id: projectId,
+    group_id: groupId,
+    role: result[0]!.role,
+    default_base_ref: result[0]!.defaultBaseRef,
+  });
 },
 );
 
@@ -356,12 +395,12 @@ projectsApp.openapi(
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: SessionCreateInputSchema } } },
       },
     responses: {
         201: json(SessionSchema, 'The created session'),
         202: json(SessionCreateAcceptedSchema, 'Create accepted; poll the session'),
-        ...errors(404),
+        ...errors(400, 403, 404, 409),
     },
   }),
   async (c: any) => {
@@ -372,6 +411,20 @@ projectsApp.openapi(
   // Per-agent gate: starting a session provisions compute. A scoped agent token
   // must hold project.session.start (no-op for human/PAT tokens).
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+  const requestedConnectorBindings = body.connector_bindings;
+  if (
+    requestedConnectorBindings &&
+    typeof requestedConnectorBindings === 'object' &&
+    Object.keys(requestedConnectorBindings).length > 0
+  ) {
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+    );
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).

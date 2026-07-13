@@ -24,6 +24,7 @@ tests/security/run.sh --sast --deps
 | Container | [`container/`](container/) | Trivy image (Apache-2.0) | `aquasec/trivy:0.58.0` | No (builds `apps/*/Dockerfile`) | `trivy-image-{api,web,sandbox}.sarif` |
 | DAST | [`dast/`](dast/) | OWASP ZAP baseline + Schemathesis (Apache-2.0 / MIT) | `ghcr.io/zaproxy/zaproxy:2.16.0`, `schemathesis/schemathesis:3.39.5` | **Yes — `TARGET_URL`** | `zap-baseline.{html,json}`, `schemathesis-junit.xml` |
 | Automated pentest | [`../pentest/`](../pentest/) | Kortix black-box adversarial probes | Bun | **Yes — `PENTEST_TARGET_URL`** | `pentest/junit.xml`, `pentest/results.json` |
+| Agentic pentest | [`strix/`](strix/) | Strix OSS (Apache-2.0) | Local CLI + pinned sandbox | Optional dev/staging target | `strix_runs/*/{findings.sarif,penetration_test_report.md}` |
 
 Static vs dynamic: the first four lanes are **static** and safe to run anywhere
 (including CI on every PR). The **DAST** lane is dynamic — it sends live,
@@ -74,7 +75,8 @@ For compliance, use three layers:
 
 1. Deterministic static gates here (`make security`).
 2. Dynamic automated gates against staging (`make security-dast` and `make pentest`).
-3. Independent manual/external penetration test reports with remediation evidence.
+3. Source-aware Strix OSS scans (`make strix`) with safe, validated proofs of concept.
+4. Independent manual/external penetration test reports with remediation evidence.
 
 The automated lanes are release/nightly controls. They are not a replacement for human-led
 penetration testing, but they provide recurring evidence that known attack classes stay fixed.

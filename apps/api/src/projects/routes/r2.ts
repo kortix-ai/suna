@@ -1,6 +1,7 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds } from '../../snapshots/builder';
+import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { getSandboxProvider } from '../../snapshots/providers';
 import { withTimeout } from '../../shared/with-timeout';
@@ -427,7 +428,7 @@ projectsApp.openapi(
 
 // GET /v1/projects/:projectId/sandbox-health
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
-// template's live state + the most recent failed build (across any template).
+// template's live state + the current failed build, if the newest attempt failed.
 //
 // Whole-handler wall-clock budget, kept comfortably under the frontend's 30s
 // request timeout (apps/web/src/lib/api-client.ts → "Request timed out after
@@ -478,7 +479,7 @@ async function buildSandboxHealth(
   const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
   const latest = builds[0] ?? null;
-  const latestFailure = builds.find((b) => b.status === 'failed') ?? null;
+  const latestFailure = currentFailedSnapshotBuild(builds);
   const isBuilding =
     (latest && latest.status === 'building') ||
     (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
@@ -636,9 +637,9 @@ projectsApp.openapi(
   const userId = c.get('userId') as string;
 
   const builds = await listSnapshotBuilds(projectId, { limit: 50 }).catch(() => []);
-  const failed = builds.find((b) => b.status === 'failed');
+  const failed = currentFailedSnapshotBuild(builds);
   if (!failed) {
-    return c.json({ error: 'No failed snapshot build to fix.' }, 409);
+    return c.json({ error: 'No current failed snapshot build to fix.' }, 409);
   }
 
   const errorText = failed.error ?? 'Snapshot build failed';
@@ -878,8 +879,17 @@ projectsApp.openapi(
     diskGb: 'disk_gb' in body ? (typeof body.disk_gb === 'number' ? body.disk_gb : null) : undefined,
   };
 
+  // Ownership check BEFORE the write. updateTemplate keys the UPDATE on
+  // templateId alone, so without this a manager of their own project could
+  // mutate any other tenant's template by id (the post-write projectId check
+  // below only masks the response — the write had already committed). Mirrors
+  // the sibling DELETE handler.
+  const existing = await getTemplateById(templateId);
+  if (!existing) return c.json({ error: 'Not found' }, 404);
+  if (existing.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
+
   try {
-    const updated = await updateTemplate(templateId, patch);
+    const updated = await updateTemplate(templateId, patch, projectId);
     if (!updated) return c.json({ error: 'Not found' }, 404);
     if (updated.projectId !== projectId) return c.json({ error: 'Not found' }, 404);
     return c.json({ template_id: updated.templateId, slug: updated.slug });

@@ -9,13 +9,16 @@ import React, {
 } from 'react';
 import { cn } from '@/lib/utils';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Modal,
+  ModalBody,
+  ModalClose,
+  ModalContent,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { ButtonGroup } from '@/components/ui/button-group';
+import Hint from '@/components/ui/hint';
+import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw, Copy, Check } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Global cache for rendered Mermaid diagrams
@@ -57,8 +60,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     const [isLoading, setIsLoading] = useState(true);
     const [renderedContent, setRenderedContent] = useState<string>('');
     const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
-    const [fullscreenRenderedContent, setFullscreenRenderedContent] =
-      useState<string>('');
 
     // Create a stable hash for the chart content to enable caching
     const chartHash = useMemo(() => {
@@ -75,12 +76,28 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     // Canvas state for fullscreen viewer
     const canvasRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(1);
+    const [rotation, setRotation] = useState(0);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(
       null,
     );
+
+    // Inline-card control: copy the diagram source.
+    const [copied, setCopied] = useState(false);
+
+    const handleCopySource = useCallback(async () => {
+      try {
+        await navigator.clipboard.writeText(chart);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error('Failed to copy diagram source:', err);
+      }
+    }, [chart]);
+
+    const handleRotate = useCallback(() => setRotation((prev) => prev + 90), []);
 
     // Set up periodic cleanup of Mermaid error messages
     useEffect(() => {
@@ -264,111 +281,17 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
     // Simple zoom controls
     const handleZoomIn = () => setZoom((prev) => Math.min(5, prev * 1.2));
     const handleZoomOut = () => setZoom((prev) => Math.max(0.1, prev * 0.8));
-    const handleResetView = () => {
-      setZoom(1);
-      setPanOffset({ x: 0, y: 0 });
-    };
-    const handleFitToViewport = () => {
-      setZoom(0.8);
-      setPanOffset({ x: 0, y: 0 });
-    };
 
     const handleFullscreenOpen = () => {
       if (enableFullscreen) {
         setIsFullscreenOpen(true);
         // Reset canvas state
         setZoom(0.8); // Start with a reasonable fit
+        setRotation(0);
         setPanOffset({ x: 0, y: 0 });
         setIsDragging(false);
-        // Render diagram for fullscreen
-        renderChartForFullscreen();
       }
     };
-
-    const renderChartForFullscreen = async () => {
-      try {
-        // Check cache first for fullscreen
-        const cachedResult = mermaidCache.get(chartHash);
-        if (cachedResult) {
-          setFullscreenRenderedContent(cachedResult);
-          return;
-        }
-
-        // Use cached Mermaid instance or initialize new one
-        if (!mermaidInstance) {
-          const mermaid = (await import('mermaid')).default;
-          await mermaid.initialize({
-            startOnLoad: false,
-            securityLevel: 'strict',
-            theme: 'base',
-            fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-            // Enable experimental features including gitgraph
-            gitGraph: {
-              showBranches: true,
-              showCommitLabel: true,
-              mainBranchName: 'main',
-              rotateCommitLabel: true,
-            },
-          });
-          mermaidInstance = mermaid;
-        }
-
-        const chartId = `mermaid-fullscreen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        const result = await mermaidInstance.render(chartId, chart);
-
-        // Cache the fullscreen result too
-        mermaidCache.set(chartHash, result.svg);
-        setFullscreenRenderedContent(result.svg);
-      } catch (err) {
-        console.error('Fullscreen rendering error:', err);
-        // For fullscreen, show a fallback message instead of crashing
-        if (isFullscreenOpen) {
-          setFullscreenRenderedContent(`
-          <div style="display: flex; align-items: center; justify-content: center; height: 200px; color: #6b7280; font-family: ui-sans-serif, system-ui, sans-serif;">
-            <div style="text-align: center;">
-              <div style="font-size: 24px; margin-bottom: 8px;">📊</div>
-              <div>Diagram rendering failed</div>
-              <div style="font-size: 12px; margin-top: 4px; opacity: 0.7;">Check diagram syntax</div>
-            </div>
-          </div>
-        `);
-        }
-      }
-    };
-
-    // Keyboard shortcuts for fullscreen viewer
-    useEffect(() => {
-      if (!isFullscreenOpen) return;
-
-      const handleKeyDown = (e: KeyboardEvent) => {
-        switch (e.key) {
-          case 'Escape':
-            setIsFullscreenOpen(false);
-            break;
-          case '+':
-          case '=':
-            e.preventDefault();
-            handleZoomIn();
-            break;
-          case '-':
-            e.preventDefault();
-            handleZoomOut();
-            break;
-          case '0':
-            e.preventDefault();
-            handleResetView();
-            break;
-          case 'f':
-          case 'F':
-            e.preventDefault();
-            handleFitToViewport();
-            break;
-        }
-      };
-
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isFullscreenOpen]);
 
     useEffect(() => {
       let mounted = true;
@@ -561,7 +484,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       return (
         <div
           className={cn(
-            'flex items-center justify-center p-8 bg-muted/30 rounded-2xl border border-dashed',
+            'flex items-center justify-center p-8 bg-muted/30 rounded-lg border border-dashed',
             className,
           )}
         >
@@ -586,7 +509,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
                 Unsupported diagram type (not available in Mermaid 11.x)
               </span>
             </div>
-            <pre className="text-xs p-3 bg-muted/50 border rounded-2xl overflow-x-auto whitespace-pre-wrap font-mono">
+            <pre className="text-xs p-3 bg-muted/50 border rounded-lg overflow-x-auto whitespace-pre-wrap font-mono">
               {chart}
             </pre>
           </div>
@@ -597,7 +520,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
       return (
         <div
           className={cn(
-            'p-4 bg-muted/30 border border-border/40 rounded-2xl',
+            'p-4 bg-muted/30 border border-border/40 rounded-lg',
             className,
           )}
         >
@@ -648,183 +571,117 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           .mermaid-container .marker {
             fill: hsl(var(--foreground)) !important;
           }
-
-          /* Fullscreen modal specific styles */
-          .mermaid-fullscreen-modal svg {
-            max-width: 100% !important;
-            max-height: 100% !important;
-            width: auto !important;
-            height: auto !important;
-            display: block !important;
-            margin: 0 auto !important;
-          }
-
-          .mermaid-fullscreen-modal .mermaid-container {
-            max-width: 100% !important;
-            max-height: 100% !important;
-            overflow: auto !important;
-            padding: 1rem !important;
-          }
-
-          /* Ensure diagrams don't overflow their containers */
-          .mermaid-fullscreen-modal {
-            width: 100% !important;
-            height: 100% !important;
-            display: flex !important;
-            align-items: flex-start !important;
-            justify-content: center !important;
-          }
         `,
           }}
         />
         <div
           className={cn(
-            'mermaid-container my-4 rounded-2xl border overflow-auto bg-background relative group cursor-pointer',
-            enableFullscreen && 'hover:ring-2 hover:ring-primary/20',
+            'mermaid-container group relative my-4 w-full overflow-auto rounded-lg border bg-background',
             className,
           )}
-          style={{
-            minHeight: '200px',
-            width: '100%',
-          }}
-          onClick={enableFullscreen ? handleFullscreenOpen : undefined}
+          style={{ minHeight: '200px' }}
         >
-          <div
-            ref={containerRef}
-            dangerouslySetInnerHTML={{ __html: renderedContent }}
-          />
-          {enableFullscreen && (
-            <div className="absolute inset-0 bg-black/0 hover:bg-black/5 transition-colors rounded-2xl flex items-center justify-center opacity-0 hover:opacity-100 pointer-events-none">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-8 p-0 bg-background/90 hover:bg-background border shadow-sm pointer-events-auto"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleFullscreenOpen();
-                }}
-                title="View fullscreen"
-              >
-                <Maximize2 className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
+          {/* Inline controls — reveal on hover/focus */}
+          <div className="absolute right-2 top-2 z-10 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+            <ButtonGroup>
+              {enableFullscreen && (
+                <Hint label="Fullscreen" side="top">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={handleFullscreenOpen}
+                    className="bg-background/90 backdrop-blur-sm"
+                    aria-label="Open diagram fullscreen"
+                  >
+                    <Maximize2 className="size-3.5" />
+                  </Button>
+                </Hint>
+              )}
+              <Hint label={copied ? 'Copied' : 'Copy source'} side="top">
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={handleCopySource}
+                  className="bg-background/90 backdrop-blur-sm"
+                  aria-label="Copy diagram source"
+                >
+                  {copied ? (
+                    <Check className="size-3.5 text-kortix-green" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </Button>
+              </Hint>
+            </ButtonGroup>
+          </div>
+
+          <div ref={containerRef} dangerouslySetInnerHTML={{ __html: renderedContent }} />
         </div>
 
-        {/* Fullscreen Modal with Canvas Controls */}
-        <Dialog open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
-          <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 overflow-hidden">
-            <div className="flex flex-col h-full bg-background">
-              {/* Header with controls */}
-              <div className="flex items-center justify-between p-4 pr-16 border-b bg-background/95 backdrop-blur-sm">
-                <div className="flex items-center gap-2">
-                  <DialogTitle className="text-sm font-medium">
-                    Mermaid Diagram
-                  </DialogTitle>
-                  <span className="text-xs text-muted-foreground">
-                    Zoom: {Math.round(zoom * 100)}%
-                  </span>
-                </div>
-
-                {/* Canvas controls - Dialog has its own close button */}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleZoomOut}
-                    className="h-8 w-8 p-0"
-                    title="Zoom out"
-                  >
-                    <ZoomOut className="h-4 w-4" />
+        {/* Fullscreen viewer — Modal with zoom / rotate canvas */}
+        <Modal open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
+          <ModalContent
+            variant="base"
+            showCloseButton={false}
+            className="flex h-[90vh] flex-col space-y-0 overflow-hidden lg:h-[90vh] lg:max-w-7xl"
+            closeButtonChildren={
+              <ButtonGroup>
+                <Hint label="Zoom in" side="bottom">
+                  <Button variant="outline" size="icon" onClick={handleZoomIn} aria-label="Zoom in">
+                    <ZoomIn className="size-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleResetView}
-                    className="h-8 w-8 p-0"
-                    title="Reset view"
-                  >
-                    <RotateCcw className="h-4 w-4" />
+                </Hint>
+                <Hint label="Zoom out" side="bottom">
+                  <Button variant="outline" size="icon" onClick={handleZoomOut} aria-label="Zoom out">
+                    <ZoomOut className="size-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleZoomIn}
-                    className="h-8 w-8 p-0"
-                    title="Zoom in"
-                  >
-                    <ZoomIn className="h-4 w-4" />
+                </Hint>
+                <Hint label="Rotate" side="bottom">
+                  <Button variant="outline" size="icon" onClick={handleRotate} aria-label="Rotate diagram">
+                    <RotateCcw className="size-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleFitToViewport}
-                    className="h-8 px-3"
-                    title="Fit to viewport"
-                  >
-                    Fit
+                </Hint>
+                <ModalClose asChild>
+                  <Button variant="outline" size="icon" aria-label="Close">
+                    <X className="size-4" />
                   </Button>
-                </div>
-              </div>
-
-              {/* Canvas area */}
+                </ModalClose>
+              </ButtonGroup>
+            }
+          >
+            <ModalTitle className="sr-only">Diagram</ModalTitle>
+            <ModalBody className="relative min-h-0 flex-1 space-y-0 p-0">
               <div
                 ref={canvasRef}
-                className="flex-1 min-h-0 relative overflow-hidden bg-muted/10 cursor-move touch-none select-none"
-                onClick={(e) => e.stopPropagation()} // Prevent dialog from closing on canvas clicks
-                onMouseDown={(e) => {
-                  e.stopPropagation(); // Prevent dialog from closing
-                  handleMouseDown(e);
-                }}
+                className="absolute inset-0 touch-none select-none overflow-hidden bg-muted/10"
+                onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
-                onTouchStart={(e) => {
-                  e.stopPropagation(); // Prevent dialog from closing
-                  handleTouchStart(e);
-                }}
+                onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
-                style={{
-                  cursor: isDragging ? 'grabbing' : 'grab',
-                }}
+                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
               >
-                {fullscreenRenderedContent ? (
+                {renderedContent ? (
                   <div
-                    className="absolute inset-0 flex items-center justify-center"
+                    className="mermaid-container absolute inset-0 flex items-center justify-center"
                     style={{
-                      transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+                      transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom}) rotate(${rotation}deg)`,
                       transformOrigin: 'center center',
-                      transition: isDragging
-                        ? 'none'
-                        : 'transform 0.1s ease-out',
+                      transition: isDragging ? 'none' : 'transform 0.15s ease-out',
                     }}
-                    dangerouslySetInnerHTML={{
-                      __html: fullscreenRenderedContent,
-                    }}
+                    dangerouslySetInnerHTML={{ __html: renderedContent }}
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full w-full">
-                    <div className="text-center">
-                      <div className="text-sm text-muted-foreground mb-2">
-                        🎨 Loading fullscreen diagram...
-                      </div>
-                      <KortixLoader size="medium" />
-                    </div>
+                  <div className="flex h-full w-full items-center justify-center">
+                    <KortixLoader size="medium" />
                   </div>
                 )}
-
-                {/* Canvas instructions */}
-                <div className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-2xl px-3 py-2 text-xs text-muted-foreground shadow-sm">
-                  <div>Drag to pan • Scroll to zoom • Pinch to zoom</div>
-                  <div className="mt-1 opacity-75">
-                    Esc: close • +/-: zoom • 0: reset • F: fit
-                  </div>
-                </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </ModalBody>
+          </ModalContent>
+        </Modal>
       </>
     );
   },

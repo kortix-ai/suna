@@ -5,7 +5,7 @@
  * the assistant turn renders full-width as ordered content blocks — clean and
  * monochrome.
  *
- * Rendering is driven by `classifyTurn`/`classifyPart` (`@kortix/sdk/turns`):
+ * Rendering is driven by `classifyTurn`/`classifyPart` (`@kortix/sdk`):
  * every one of opencode's 12 part types is classified into a typed
  * `ClassifiedPart`, and `renderParts` (`@kortix/sdk/react`) requires a
  * renderer for every kind at compile time — so a new part type (or one we
@@ -19,7 +19,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker';
 import { Message } from '@/components/ui/message';
 import { type MessageWithParts, type PartRenderers, renderParts } from '@kortix/sdk/react';
-import { classifyTurn } from '@kortix/sdk/turns';
+import { classifyTurn } from '@kortix/sdk';
 import {
   Brain,
   ChevronRight,

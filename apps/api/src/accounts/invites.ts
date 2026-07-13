@@ -1,6 +1,12 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
+import {
+  accountGroupMembers,
+  accountInvitations,
+  accountMembers,
+  accounts,
+  projectMembers,
+} from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
@@ -100,6 +106,17 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   };
 }
 
+// A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
+// while they were still a pending invite (see scim/groups.ts). Validated the same
+// defensive way as project grants so a bad jsonb write can't break acceptance.
+// Exported for unit tests.
+export function validateBootstrapGroup(raw: unknown): { group_id: string } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Record<string, unknown>;
+  if (typeof g.group_id !== 'string' || !UUID_RE.test(g.group_id)) return null;
+  return { group_id: g.group_id };
+}
+
 // Apply the invite's bootstrap grants (the project_members rows the inviter
 // wanted this user to land on). Idempotent — onConflictDoUpdate means a
 // re-accept simply re-asserts the grant rather than erroring. Owners/admins
@@ -117,6 +134,24 @@ async function applyBootstrapGrants(
   if (rawBootstraps.length === 0 || invite.initialRole !== 'member') return applied;
 
   for (const raw of rawBootstraps) {
+    // A SCIM Group membership parked while this user was a pending invite —
+    // materialize it now that they have a real user row. Idempotent.
+    const grp = validateBootstrapGroup(raw);
+    if (grp) {
+      try {
+        await db
+          .insert(accountGroupMembers)
+          .values({ groupId: grp.group_id, userId })
+          .onConflictDoNothing();
+      } catch (err) {
+        console.warn(
+          '[accept-invite] failed to apply bootstrap group',
+          { group_id: grp.group_id },
+          err,
+        );
+      }
+      continue;
+    }
     const g = validateBootstrapGrant(raw);
     if (!g) {
       console.warn('[accept-invite] skipping malformed bootstrap grant', {
@@ -265,6 +300,9 @@ accountInvitesRouter.openapi(
   }
 
   const alreadyAccepted = !!invite.acceptedAt;
+  if (alreadyAccepted && invite.acceptedByUserId && invite.acceptedByUserId !== userId) {
+    return c.json({ error: 'Invite has already been accepted by another account.' }, 409);
+  }
 
   // Only block a *fresh* accept on expiry. An already-accepted invite stays
   // redeemable for the addressed user so re-entry can heal a grant that was
@@ -292,7 +330,7 @@ accountInvitesRouter.openapi(
   if (!alreadyAccepted) {
     await db
       .update(accountInvitations)
-      .set({ acceptedAt: new Date() })
+      .set({ acceptedAt: new Date(), acceptedByUserId: userId })
       .where(
         and(
           eq(accountInvitations.inviteId, invite.inviteId),

@@ -3,6 +3,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
@@ -13,7 +20,7 @@ import {
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { formatMode } from '@/features/workspace/customize/shared/utils';
+import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/opencode/use-model-defaults';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -27,6 +34,7 @@ import {
   listProjectResourceGrants,
   listProjectSecrets,
   setAgentScope,
+  updateProjectDefaultAgent,
 } from '@kortix/sdk/projects-client';
 import { StarSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -52,6 +60,9 @@ export function AgentsView({ projectId }: { projectId: string }) {
       emptyDocsHref="https://opencode.ai/docs/agents/"
       emptyBodyLabel="Agent body is empty. Add prompt content below the frontmatter."
       select={(config) => config.agents}
+      renderContext={(config) => (
+        <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
+      )}
       renderTriggerLabel={(agent) => agent.name}
       className=' p-4  lg:py-0'
       renderRowTrailing={(agent, config) => (
@@ -102,7 +113,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           <AgentConfigEditor
             projectId={projectId}
             agent={agent}
-            skillsOptions={config.skills.map((s) => ({ id: s.name, label: s.name }))}
+            skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
             fallback={
               <>
                 <AgentModel projectId={projectId} agentName={agent.name} />
@@ -113,6 +124,68 @@ export function AgentsView({ projectId }: { projectId: string }) {
         </div>
       )}
     />
+  );
+}
+
+function DefaultAgentSelector({
+  projectId,
+  config,
+  canWrite,
+}: {
+  projectId: string;
+  config: ProjectConfigSummary;
+  canWrite: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const isV2 = detectManifestVersion(config.manifest_raw) === 2;
+  const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
+  const current = config.open_code_default_agent;
+  const mutation = useMutation({
+    mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
+    onSuccess: async (result) => {
+      successToast(`${result.default_agent} is now the project default`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['project-config', projectId] }),
+      ]);
+    },
+    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
+  });
+
+  if (!isV2 || availableAgents.length === 0 || !current) return null;
+
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-foreground text-sm font-medium">Default agent</p>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+          New chats in this project start with this agent selected.
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+        <Select
+          value={current}
+          onValueChange={(agentName) => mutation.mutate(agentName)}
+          disabled={!canWrite || mutation.isPending}
+        >
+          <SelectTrigger
+            aria-label="Default agent"
+            className="w-48 shrink-0"
+            variant="popover"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {availableAgents.map((agent) => (
+              <SelectItem key={agent.name} value={agent.name}>
+                {agent.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
   );
 }
 
@@ -319,12 +392,10 @@ function AgentScopeCard({
   const [editorNonce, setEditorNonce] = useState(0);
   // Reset local edits whenever the committed scope changes (agent switch, or a
   // save landed and the config query refetched) so the form tracks the source.
-  const committedKey = JSON.stringify({ agentName, env: scope.env, connectors: scope.connectors });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: committedKey encodes the scope fields we reset on.
   useEffect(() => {
     setEnv(scope.env);
     setConnectors(scope.connectors);
-  }, [committedKey]);
+  }, [agentName, scope.env, scope.connectors]);
 
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],

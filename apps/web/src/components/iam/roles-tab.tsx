@@ -13,7 +13,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
-import Link from 'next/link';
 
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -30,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -84,6 +84,7 @@ interface RolePrefill {
 }
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
+  const openDemo = useRequestDemo();
   return (
     <div className="space-y-6">
       {canManage && !rbacEnabled && (
@@ -91,8 +92,12 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           tone="info"
           title="Enterprise feature"
           action={
-            <Button asChild variant="outline" size="sm">
-              <Link href="/enterprise">Contact sales</Link>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDemo({ source: 'accounts-roles' })}
+            >
+              Contact sales
             </Button>
           }
         >

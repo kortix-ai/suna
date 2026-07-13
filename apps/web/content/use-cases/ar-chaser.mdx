@@ -1,0 +1,153 @@
+---
+title: "How we chase down overdue invoices"
+description: An accounts-receivable agent we run on Kortix — connected to Stripe, email, and the accounting ledger. It finds overdue invoices, sends the right reminder, logs every touch, and reconciles when payment lands.
+date: "2026-02-11"
+author: team
+tags:
+  - Finance
+  - Case Study
+  - Enterprise
+template: ar-chaser
+---
+
+Chasing overdue invoices is steady, repetitive work that still needs judgment.
+Most reminders are routine: an invoice is a few days late, a polite note goes out,
+the customer pays. But the timing, the tone, and the escalation depend on how late
+the balance is and how large it is, and some accounts are sensitive enough that no
+automated email should go out without a person looking first.
+
+We run an accounts-receivable agent on Kortix that does this chasing on a daily
+schedule. This is how we collect on our own invoices, including the connections
+and guardrails involved.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A daily cron</Fact>
+  <Fact label="Connected systems">Stripe · Email · Accounting ledger</Fact>
+  <Fact label="Mode">Read-mostly · reminders and status notes gate-able</Fact>
+</KeyFacts>
+
+## The problem
+
+Receivables slip because no one has time to work the list every day. An invoice
+goes a week late, then two, and the reminder that should have gone out on day one
+never does. The ones that need a firmer note get the same generic email as the
+ones that are barely late, and the sensitive accounts — a large balance, a
+disputed line, something heading to legal — get chased the same way as everything
+else.
+
+The common fixes are incomplete. Stripe's built-in reminders send on a fixed
+cadence regardless of balance size or account context. A spreadsheet and a
+calendar reminder depend on someone actually working it. A generic automation
+sends the same email to everyone and has no way to hold the risky ones back.
+
+## What we built
+
+On Kortix, a daily cron triggers an agent. Each morning it spawns an isolated
+session (a cloud sandbox) with scoped access to Stripe, our email, and the
+accounting ledger. It finds every invoice that's overdue or coming due soon,
+decides the right reminder for each based on how late and how large the balance
+is, sends it, logs the touch, and reconciles the invoice when payment lands.
+Anything sensitive stops at a human approval gate before it sends.
+
+<Figure
+  caption="The agent's daily receivables run, grouped by how late each balance is"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Trigger the run on a daily cron">
+
+A **cron trigger** fires once a day and spawns a fresh **session** in its own
+sandbox. Each run works the full receivables list from scratch, so nothing carries
+over between days and a missed morning is just the next run picking up where it
+left off. One run maps to one session on one disposable machine.
+
+</Step>
+<Step title="Give the agent the collections playbook">
+
+Our collections policy lives as **skills** and **memory** that travel with the
+agent: the reminder cadence by days overdue, the escalating tone from a first
+notice to a final notice, the balance thresholds that change the approach, and
+which accounts are flagged as disputed or sensitive. When we adjust the policy, we
+write it down and the agent applies it on the next run.
+
+</Step>
+<Step title="Connect Stripe, email, and the ledger">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read invoices from Stripe** — which are overdue, which are coming due, the
+  balance and age of each.
+- **Send reminders by email** — the right escalating notice for each invoice,
+  from the agent's own address.
+- **Read the accounting ledger** — to confirm balances and reconcile against
+  what Stripe reports.
+- **Log every touch and status note** — each reminder and reconciliation recorded
+  against the invoice.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-mostly**: it reads Stripe and the ledger, and the only writes
+it makes are reminder emails and status notes. Anything sensitive — a large
+balance, a disputed invoice, or an account heading to legal — stops at a **human
+approval gate** before it sends. Credentials are encrypted in the Secrets Manager
+and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let the list work itself each morning">
+
+With that in place, the daily run finds the overdue and soon-due invoices, sends
+each account the reminder its timing and balance call for, and logs the touch. A
+routine day-three nudge goes out on its own. A large or disputed balance is held
+for a person to approve. When a payment lands, the agent matches it to the invoice
+and marks it settled.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A daily **cron** spawns a session with scoped **connectors** into Stripe, email,
+  and the ledger. The collections policy is encoded as **skills** and **memory**.
+  The agent stays read-mostly, sensitive accounts wait for a human, and every
+  touch is logged.
+</Callout>
+
+## Guardrails
+
+The agent sends email on our behalf and touches invoice state, so the access is
+scoped and contained:
+
+- **Isolation.** Every run happens in its own per-task microVM sandbox. The
+  session reads Stripe and the ledger and can send only the reminders and status
+  notes it's scoped to; nothing else leaves the sandbox.
+- **Scoped secrets.** The Stripe, email, and ledger credentials are encrypted in
+  the Secrets Manager and injected into the sandbox at runtime, never exposed to
+  the model or the logs.
+- **Human approval gate.** A large balance, a disputed invoice, or an account
+  heading to legal stops for a person to approve before any email goes out.
+- **Everything is code.** The agent's configuration, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="A held reminder waiting on approval, with the balance and dispute flag attached"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every morning" label="The full receivables list worked on schedule" />
+  <Stat value="Read-mostly" label="Only reminders and status notes are written" />
+  <Stat value="3 systems" label="Stripe, email, and the ledger in one agent" />
+</StatGrid>
+
+Overdue invoices now get the right reminder on the day they should, with each
+touch logged and each payment reconciled when it lands. Routine chases run on
+their own, the sensitive accounts wait for a person, and the receivables list no
+longer depends on someone finding time to work it.

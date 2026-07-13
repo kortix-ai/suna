@@ -1,17 +1,16 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
-import type { Session } from '@opencode-ai/sdk/v2/client';
 // Imported BEFORE `mock.module` below runs, so this binds to the REAL store
 // (module resolution for a static import happens before the rest of this
 // file's top-level code executes) — used as the mock's backing state so
 // `onMutate`/`onError` assertions see genuine store mutations.
-import { useOpenCodeCompactionStore as realCompactionStore } from '../../state/opencode-compaction-store';
+import { useOpenCodeCompactionStore as realCompactionStore } from '../../browser/stores/opencode-compaction-store';
 
 // react-query's `useQuery`/`useMutation` are mocked down to identity functions
 // (return the config object passed in) so the hooks under test can be called
 // as plain functions — same harness as `./messages.test.ts` /
 // `../use-kortix-master.test.ts`. `useQueryClient` returns a minimal
 // hand-rolled cache (not a real `QueryClient`) with just the methods these
-// three hooks actually call.
+// two hooks actually call.
 function makeFakeQueryClient() {
   const cache = new Map<string, unknown>();
   const cacheKey = (k: readonly unknown[]) => JSON.stringify(k);
@@ -42,9 +41,9 @@ mock.module('@tanstack/react-query', () => ({
 // `client` is swapped per-test via `clientImpl` so each test controls exactly
 // what `client.global.config.get()` / `client.session.messages()` /
 // `client.provider.list()` / `client.session.summarize()` /
-// `client.session.fork()` / `client.session.command()` resolve to.
+// `client.session.command()` resolve to.
 let clientImpl: Record<string, unknown> = {};
-mock.module('../../opencode/client', () => ({
+mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
 }));
 
@@ -53,7 +52,7 @@ mock.module('../../opencode/client', () => ({
 // "Invalid hook call". Replace the reactive wrapper with a plain selector
 // call against the REAL store's `getState()`/`setState()`, so `onMutate`/
 // `onError` still exercise genuine store mutations.
-mock.module('../../state/opencode-compaction-store', () => ({
+mock.module('../../browser/stores/opencode-compaction-store', () => ({
   useOpenCodeCompactionStore: Object.assign(
     (selector: (s: ReturnType<typeof realCompactionStore.getState>) => unknown) =>
       selector(realCompactionStore.getState()),
@@ -61,7 +60,7 @@ mock.module('../../state/opencode-compaction-store', () => ({
   ),
 }));
 
-const { useSummarizeOpenCodeSession, useForkSession, useInitSession } = await import('./sessions');
+const { useSummarizeOpenCodeSession, useInitSession } = await import('./sessions');
 const { opencodeKeys } = await import('./keys');
 
 beforeEach(() => {
@@ -216,68 +215,6 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     expect(realCompactionStore.getState().compactingBySession.ses_compact).toBe(true);
     hook.onError(new Error('boom'), { sessionId: 'ses_compact' });
     expect(realCompactionStore.getState().compactingBySession.ses_compact).toBeUndefined();
-  });
-});
-
-// ============================================================================
-// useForkSession — onSuccess dedups the forked session into the cached list.
-// ============================================================================
-
-describe('useForkSession', () => {
-  function forkedSession(id: string, updated: number): Session {
-    return {
-      id,
-      slug: id,
-      projectID: 'proj_1',
-      directory: '/workspace',
-      title: 'Forked',
-      version: '1.0.0',
-      time: { created: updated, updated },
-    };
-  }
-
-  test('mutationFn sends only the provided optional fields and unwraps the result', async () => {
-    let forkArgs: unknown;
-    clientImpl = {
-      session: {
-        fork: async (args: unknown) => {
-          forkArgs = args;
-          return { data: forkedSession('ses_fork', 5) };
-        },
-      },
-    };
-    const { mutationFn } = useForkSession() as unknown as {
-      mutationFn: (args: { sessionId: string; messageId?: string }) => Promise<Session>;
-    };
-    const result = await mutationFn({ sessionId: 'ses_1', messageId: 'msg_5' });
-
-    expect(forkArgs).toEqual({ sessionID: 'ses_1', messageID: 'msg_5' });
-    expect(result.id).toBe('ses_fork');
-  });
-
-  test('onSuccess inserts a brand-new forked session at the front, newest first', () => {
-    const { onSuccess } = useForkSession() as unknown as { onSuccess: (s: Session) => void };
-    fakeQueryClient.setQueryData(opencodeKeys.sessions(), [forkedSession('ses_old', 1)]);
-
-    onSuccess(forkedSession('ses_new', 10));
-
-    const list = fakeQueryClient.getQueryData(opencodeKeys.sessions()) as Session[];
-    expect(list.map((s) => s.id)).toEqual(['ses_new', 'ses_old']);
-    expect(fakeQueryClient.getQueryData(opencodeKeys.session('ses_new'))).toMatchObject({ id: 'ses_new' });
-  });
-
-  test('onSuccess replaces (dedups) an existing entry instead of duplicating it', () => {
-    const { onSuccess } = useForkSession() as unknown as { onSuccess: (s: Session) => void };
-    fakeQueryClient.setQueryData(opencodeKeys.sessions(), [
-      forkedSession('ses_a', 1),
-      forkedSession('ses_fork', 2),
-    ]);
-
-    onSuccess(forkedSession('ses_fork', 20));
-
-    const list = fakeQueryClient.getQueryData(opencodeKeys.sessions()) as Session[];
-    expect(list).toHaveLength(2);
-    expect(list.find((s) => s.id === 'ses_fork')?.time.updated).toBe(20);
   });
 });
 

@@ -1,5 +1,5 @@
-import { createGateway } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
+import { pickAutoModel, routeDefaultModelFallbacks } from '@kortix/llm-catalog';
+import { createGateway, gatewayErrorResponse } from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { createApiClient } from './clients/api-client';
 import { config } from './config';
@@ -67,6 +67,7 @@ export function buildServer(): GatewayServer {
       // API-side in withResolvedTier and carried across the authorize RPC).
       autoRouter: (model, body, principal) =>
         pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
+      modelFallbackRouter: (model) => routeDefaultModelFallbacks(model),
     },
     { logger },
   );
@@ -168,6 +169,7 @@ export function buildServer(): GatewayServer {
   const chatCompletions = async (c: {
     req: { header: (k: string) => string | undefined; text: () => Promise<string> };
   }) => {
+    const requestId = `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     try {
       const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),
@@ -178,9 +180,10 @@ export function buildServer(): GatewayServer {
     } catch (err) {
       console.error('[gateway] request failed', err);
       recordOutcome(503);
-      return new Response(JSON.stringify({ error: 'Gateway unavailable', code: 'gateway_error' }), {
-        status: 503,
-        headers: { 'content-type': 'application/json' },
+      return gatewayErrorResponse(503, {
+        message: 'Gateway unavailable', code: 'gateway_error', provider: '',
+        requestedModel: '', resolvedModel: '', requestId,
+        suggestion: 'Retry the request. If the error continues, switch to another model.',
       });
     }
   };

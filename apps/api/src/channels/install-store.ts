@@ -1,23 +1,23 @@
-import { and, eq, isNull, like } from "drizzle-orm";
-import { chatInstalls, projectSecrets } from "@kortix/db";
-import { db } from "../shared/db";
-import { config } from "../config";
+import { chatInstalls, projectSecrets } from '@kortix/db';
+import { and, eq, inArray, isNull, like } from 'drizzle-orm';
+import { config } from '../config';
 import {
   decryptProjectSecret,
   encryptProjectSecret,
   listProjectSecrets,
-} from "../projects/secrets";
+} from '../projects/secrets';
+import { db } from '../shared/db';
 
-export const SLACK_BOT_TOKEN = "SLACK_BOT_TOKEN";
-export const SLACK_SIGNING_SECRET = "SLACK_SIGNING_SECRET";
-export const SLACK_TEAM_ID = "SLACK_TEAM_ID";
-export const SLACK_BOT_USER_ID = "SLACK_BOT_USER_ID";
-export const SLACK_TEAM_NAME = "SLACK_TEAM_NAME";
+export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
+export const SLACK_SIGNING_SECRET = 'SLACK_SIGNING_SECRET';
+export const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
+export const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
+export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
 
-export const TELEGRAM_BOT_TOKEN = "TELEGRAM_BOT_TOKEN";
-export const TELEGRAM_WEBHOOK_SECRET = "TELEGRAM_WEBHOOK_SECRET";
-export const TELEGRAM_BOT_ID = "TELEGRAM_BOT_ID";
-export const TELEGRAM_BOT_USERNAME = "TELEGRAM_BOT_USERNAME";
+export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
+export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+export const TELEGRAM_BOT_ID = 'TELEGRAM_BOT_ID';
+export const TELEGRAM_BOT_USERNAME = 'TELEGRAM_BOT_USERNAME';
 
 const TELEGRAM_KEYS = [
   TELEGRAM_BOT_TOKEN,
@@ -137,19 +137,19 @@ export async function loadTelegramTokenForProject(
   return readSecret(projectId, TELEGRAM_BOT_TOKEN);
 }
 
-export const AGENTMAIL_API_KEY = "AGENTMAIL_API_KEY";
-export const AGENTMAIL_INBOX_ID = "AGENTMAIL_INBOX_ID";
-export const AGENTMAIL_INBOX_EMAIL = "AGENTMAIL_INBOX_EMAIL";
-export const AGENTMAIL_INBOX_DISPLAY_NAME = "AGENTMAIL_INBOX_DISPLAY_NAME";
-export const AGENTMAIL_WEBHOOK_ID = "AGENTMAIL_WEBHOOK_ID";
-export const AGENTMAIL_WEBHOOK_SECRET = "AGENTMAIL_WEBHOOK_SECRET";
-export const AGENTMAIL_SENDER_POLICY = "AGENTMAIL_SENDER_POLICY";
+export const AGENTMAIL_API_KEY = 'AGENTMAIL_API_KEY';
+export const AGENTMAIL_INBOX_ID = 'AGENTMAIL_INBOX_ID';
+export const AGENTMAIL_INBOX_EMAIL = 'AGENTMAIL_INBOX_EMAIL';
+export const AGENTMAIL_INBOX_DISPLAY_NAME = 'AGENTMAIL_INBOX_DISPLAY_NAME';
+export const AGENTMAIL_WEBHOOK_ID = 'AGENTMAIL_WEBHOOK_ID';
+export const AGENTMAIL_WEBHOOK_SECRET = 'AGENTMAIL_WEBHOOK_SECRET';
+export const AGENTMAIL_SENDER_POLICY = 'AGENTMAIL_SENDER_POLICY';
 
-export const RECALL_API_KEY = "RECALL_API_KEY";
+export const RECALL_API_KEY = 'RECALL_API_KEY';
 
 export interface MeetInstallSummary {
   /** Where the resolved Recall key came from — operator env or a project override. */
-  source: "project" | "env";
+  source: 'project' | 'env';
 }
 
 /**
@@ -158,20 +158,16 @@ export interface MeetInstallSummary {
  * meet channel connector's `Authorization: Token` header and is never injected
  * into a sandbox.
  */
-export async function loadMeetTokenForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadMeetTokenForProject(projectId: string): Promise<string | null> {
   const override = await readSecret(projectId, RECALL_API_KEY);
   return override ?? (config.RECALL_API_KEY || null);
 }
 
 /** Cheap "is meet usable?" — a Recall key resolves (per-project override or env). */
-export async function loadMeetInstall(
-  projectId: string,
-): Promise<MeetInstallSummary | null> {
+export async function loadMeetInstall(projectId: string): Promise<MeetInstallSummary | null> {
   const override = await readSecret(projectId, RECALL_API_KEY).catch(() => null);
-  if (override) return { source: "project" };
-  if (config.RECALL_API_KEY) return { source: "env" };
+  if (override) return { source: 'project' };
+  if (config.RECALL_API_KEY) return { source: 'env' };
   return null;
 }
 
@@ -194,14 +190,14 @@ const AGENTMAIL_KEYS = [
 ] as const;
 
 export interface AgentMailSenderPolicy {
-  mode: "allow_all" | "restricted";
+  mode: 'allow_all' | 'restricted';
   allowedEmails: string[];
   allowedDomains: string[];
   allowedRegex: string | null;
 }
 
 export const DEFAULT_AGENTMAIL_SENDER_POLICY: AgentMailSenderPolicy = {
-  mode: "allow_all",
+  mode: 'allow_all',
   allowedEmails: [],
   allowedDomains: [],
   allowedRegex: null,
@@ -246,12 +242,12 @@ export interface AgentMailInstallInput {
 }
 
 function agentMailProfileSuffix(profileSlug?: string | null): string {
-  const slug = (profileSlug || "kortix_email").trim();
-  if (!slug || slug === "kortix_email") return "";
+  const slug = (profileSlug || 'kortix_email').trim();
+  if (!slug || slug === 'kortix_email') return '';
   return `_${slug
     .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")}`;
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')}`;
 }
 
 function agentMailKeys(profileSlug?: string | null) {
@@ -272,9 +268,7 @@ function uniqueStrings(values: unknown): string[] {
   return Array.from(
     new Set(
       values
-        .map((value) =>
-          typeof value === "string" ? value.trim().toLowerCase() : "",
-        )
+        .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
         .filter(Boolean),
     ),
   );
@@ -285,17 +279,16 @@ export function normalizeSenderPolicy(
 ): AgentMailSenderPolicy {
   const allowedEmails = uniqueStrings(input?.allowedEmails);
   const allowedDomains = uniqueStrings(input?.allowedDomains).map((domain) =>
-    domain.replace(/^@+/, ""),
+    domain.replace(/^@+/, ''),
   );
-  const rawRegex =
-    typeof input?.allowedRegex === "string" ? input.allowedRegex.trim() : "";
+  const rawRegex = typeof input?.allowedRegex === 'string' ? input.allowedRegex.trim() : '';
   const restricted =
-    input?.mode === "restricted" ||
+    input?.mode === 'restricted' ||
     allowedEmails.length > 0 ||
     allowedDomains.length > 0 ||
     rawRegex.length > 0;
   return {
-    mode: restricted ? "restricted" : "allow_all",
+    mode: restricted ? 'restricted' : 'allow_all',
     allowedEmails,
     allowedDomains,
     allowedRegex: rawRegex || null,
@@ -305,22 +298,18 @@ export function normalizeSenderPolicy(
 function parseSenderPolicy(raw: string | null): AgentMailSenderPolicy {
   if (!raw) return DEFAULT_AGENTMAIL_SENDER_POLICY;
   try {
-    return normalizeSenderPolicy(
-      JSON.parse(raw) as Partial<AgentMailSenderPolicy>,
-    );
+    return normalizeSenderPolicy(JSON.parse(raw) as Partial<AgentMailSenderPolicy>);
   } catch {
     return DEFAULT_AGENTMAIL_SENDER_POLICY;
   }
 }
 
-export async function saveSlackInstall(
-  input: SlackInstallInput,
-): Promise<SlackInstallSummary> {
+export async function saveSlackInstall(input: SlackInstallInput): Promise<SlackInstallSummary> {
   const { projectId } = input;
   await db
     .insert(chatInstalls)
     .values({
-      platform: "slack",
+      platform: 'slack',
       workspaceId: input.teamId,
       projectId,
     })
@@ -329,7 +318,7 @@ export async function saveSlackInstall(
   await upsertSecret(projectId, SLACK_SIGNING_SECRET, input.signingSecret);
   await upsertSecret(projectId, SLACK_TEAM_ID, input.teamId);
   await upsertSecret(projectId, SLACK_BOT_USER_ID, input.botUserId);
-  await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? "");
+  await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? '');
   return {
     workspaceId: input.teamId,
     workspaceName: input.teamName,
@@ -342,35 +331,25 @@ export async function deleteSlackInstall(projectId: string): Promise<void> {
   for (const name of SLACK_KEYS) {
     await db
       .delete(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.name, name),
-        ),
-      );
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
   }
   await db
     .delete(chatInstalls)
-    .where(
-      and(
-        eq(chatInstalls.platform, "slack"),
-        eq(chatInstalls.projectId, projectId),
-      ),
-    );
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)));
 }
 
 export async function saveAgentMailInstall(
   input: AgentMailInstallInput,
 ): Promise<AgentMailInstallSummary> {
   const { projectId } = input;
-  const profileSlug = input.profileSlug || "kortix_email";
+  const profileSlug = input.profileSlug || 'kortix_email';
   const keys = agentMailKeys(profileSlug);
   const previous = await loadAgentMailInstall(projectId, profileSlug);
   if (input.apiKey) await upsertSecret(projectId, keys.apiKey, input.apiKey);
   await upsertSecret(projectId, keys.inboxId, input.inboxId);
   await upsertSecret(projectId, keys.email, input.email);
-  await upsertSecret(projectId, keys.displayName, input.displayName ?? "");
-  await upsertSecret(projectId, keys.webhookId, input.webhookId ?? "");
+  await upsertSecret(projectId, keys.displayName, input.displayName ?? '');
+  await upsertSecret(projectId, keys.webhookId, input.webhookId ?? '');
   await upsertSecret(
     projectId,
     keys.senderPolicy,
@@ -384,7 +363,7 @@ export async function saveAgentMailInstall(
       .delete(chatInstalls)
       .where(
         and(
-          eq(chatInstalls.platform, "email"),
+          eq(chatInstalls.platform, 'email'),
           eq(chatInstalls.projectId, projectId),
           eq(chatInstalls.workspaceId, previous.inboxId),
         ),
@@ -392,21 +371,12 @@ export async function saveAgentMailInstall(
   }
   await db
     .delete(chatInstalls)
-    .where(
-      and(
-        eq(chatInstalls.platform, "email"),
-        eq(chatInstalls.workspaceId, input.inboxId),
-      ),
-    );
+    .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.workspaceId, input.inboxId)));
   await db
     .insert(chatInstalls)
-    .values({ platform: "email", workspaceId: input.inboxId, projectId })
+    .values({ platform: 'email', workspaceId: input.inboxId, projectId })
     .onConflictDoNothing({
-      target: [
-        chatInstalls.platform,
-        chatInstalls.workspaceId,
-        chatInstalls.projectId,
-      ],
+      target: [chatInstalls.platform, chatInstalls.workspaceId, chatInstalls.projectId],
     });
   return {
     profileSlug,
@@ -428,45 +398,33 @@ export async function deleteAgentMailInstall(
   for (const name of Object.values(keys)) {
     await db
       .delete(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.name, name),
-        ),
-      );
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
   }
   if (install?.inboxId) {
     await db
       .delete(chatInstalls)
       .where(
         and(
-          eq(chatInstalls.platform, "email"),
+          eq(chatInstalls.platform, 'email'),
           eq(chatInstalls.projectId, projectId),
           eq(chatInstalls.workspaceId, install.inboxId),
         ),
       );
-  } else if (!profileSlug || profileSlug === "kortix_email") {
+  } else if (!profileSlug || profileSlug === 'kortix_email') {
     await db
       .delete(chatInstalls)
-      .where(
-        and(
-          eq(chatInstalls.platform, "email"),
-          eq(chatInstalls.projectId, projectId),
-        ),
-      );
+      .where(and(eq(chatInstalls.platform, 'email'), eq(chatInstalls.projectId, projectId)));
   }
 }
 
 function agentMailProfileSlugFromInboxSecret(name: string): string | null {
   if (!name.startsWith(AGENTMAIL_INBOX_ID)) return null;
   const suffix = name.slice(AGENTMAIL_INBOX_ID.length);
-  if (!suffix) return "kortix_email";
-  return suffix.replace(/^_+/, "").toLowerCase() || null;
+  if (!suffix) return 'kortix_email';
+  return suffix.replace(/^_+/, '').toLowerCase() || null;
 }
 
-export async function listAgentMailInstalls(
-  projectId: string,
-): Promise<AgentMailInstallSummary[]> {
+export async function listAgentMailInstalls(projectId: string): Promise<AgentMailInstallSummary[]> {
   const rows = await db
     .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
     .from(projectSecrets)
@@ -487,9 +445,7 @@ export async function listAgentMailInstalls(
       decryptProjectSecret(projectId, row.valueEnc);
       const install = await loadAgentMailInstall(projectId, profileSlug);
       if (install) installs.push(install);
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return installs.sort((a, b) => a.profileSlug.localeCompare(b.profileSlug));
 }
@@ -514,8 +470,7 @@ export async function loadAgentMailInstall(
   profileSlug?: string | null,
 ): Promise<AgentMailInstallSummary | null> {
   const keys = agentMailKeys(profileSlug);
-  const [inboxId, email, displayName, webhookId, senderPolicyRaw] =
-    await Promise.all([
+  const [inboxId, email, displayName, webhookId, senderPolicyRaw] = await Promise.all([
       readSecret(projectId, keys.inboxId),
       readSecret(projectId, keys.email),
       readSecret(projectId, keys.displayName),
@@ -535,7 +490,7 @@ export async function loadAgentMailInstall(
     )
     .limit(1);
   return {
-    profileSlug: profileSlug || "kortix_email",
+    profileSlug: profileSlug || 'kortix_email',
     inboxId,
     email,
     displayName: displayName || null,
@@ -640,9 +595,7 @@ export async function loadAgentMailSenderPolicyForInbox(
     }
     if (value !== inboxId) continue;
     const suffix = row.name.slice(AGENTMAIL_INBOX_ID.length);
-    return parseSenderPolicy(
-      await readSecret(projectId, `${AGENTMAIL_SENDER_POLICY}${suffix}`),
-    );
+    return parseSenderPolicy(await readSecret(projectId, `${AGENTMAIL_SENDER_POLICY}${suffix}`));
   }
   return DEFAULT_AGENTMAIL_SENDER_POLICY;
 }
@@ -666,19 +619,19 @@ export async function saveSlackOauthInstall(
   await db
     .insert(chatInstalls)
     .values({
-      platform: "slack",
+      platform: 'slack',
       workspaceId: input.workspaceId,
       projectId: input.projectId,
     })
     .onConflictDoNothing();
 
-  const projectIds = await listProjectsForWorkspace("slack", input.workspaceId);
+  const projectIds = await listProjectsForWorkspace('slack', input.workspaceId);
   if (!projectIds.includes(input.projectId)) projectIds.push(input.projectId);
   for (const projectId of projectIds) {
     await upsertSecret(projectId, SLACK_BOT_TOKEN, input.botToken);
     await upsertSecret(projectId, SLACK_TEAM_ID, input.workspaceId);
     await upsertSecret(projectId, SLACK_BOT_USER_ID, input.botUserId);
-    await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? "");
+    await upsertSecret(projectId, SLACK_TEAM_NAME, input.teamName ?? '');
   }
 
   return {
@@ -696,30 +649,18 @@ export async function listProjectsForWorkspace(
   const rows = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(
-      and(
-        eq(chatInstalls.platform, platform),
-        eq(chatInstalls.workspaceId, workspaceId),
-      ),
-    );
+    .where(and(eq(chatInstalls.platform, platform), eq(chatInstalls.workspaceId, workspaceId)));
   return rows.map((r) => r.projectId);
 }
 
-export async function loadSlackInstall(
-  projectId: string,
-): Promise<SlackInstallSummary | null> {
+export async function loadSlackInstall(projectId: string): Promise<SlackInstallSummary | null> {
   const secrets = await listProjectSecrets(projectId);
   const teamId = secrets[SLACK_TEAM_ID];
   if (!teamId) return null;
   const [row] = await db
     .select({ updatedAt: projectSecrets.updatedAt })
     .from(projectSecrets)
-    .where(
-      and(
-        eq(projectSecrets.projectId, projectId),
-        eq(projectSecrets.name, SLACK_TEAM_ID),
-      ),
-    )
+    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, SLACK_TEAM_ID)))
     .limit(1);
   return {
     workspaceId: teamId,
@@ -729,41 +670,182 @@ export async function loadSlackInstall(
   };
 }
 
-export async function loadSlackTokenForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadSlackTokenForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_BOT_TOKEN);
 }
 
-export async function loadSlackSigningSecretForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadSlackSigningSecretForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_SIGNING_SECRET);
 }
 
-export async function loadSlackBotUserIdForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadSlackBotUserIdForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_BOT_USER_ID);
 }
 
-export async function loadSlackTeamNameForProject(
-  projectId: string,
-): Promise<string | null> {
+export async function loadSlackTeamNameForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_TEAM_NAME);
 }
 
-async function upsertSecret(
-  projectId: string,
-  name: string,
-  value: string,
-): Promise<void> {
+// ─── Microsoft Teams ──────────────────────────────────────────────────────
+
+export const MS_TEAMS_TENANT_ID = 'MS_TEAMS_TENANT_ID';
+export const MS_TEAMS_SERVICE_URL = 'MS_TEAMS_SERVICE_URL';
+export const MS_TEAMS_TEAM_ID = 'MS_TEAMS_TEAM_ID';
+export const MS_TEAMS_TEAM_NAME = 'MS_TEAMS_TEAM_NAME';
+export const MS_TEAMS_BOT_ID = 'MS_TEAMS_BOT_ID';
+export const MS_TEAMS_APP_ID = 'MS_TEAMS_APP_ID';
+export const MS_TEAMS_APP_PASSWORD = 'MS_TEAMS_APP_PASSWORD';
+export const MS_TEAMS_ORG_INSTALLED = 'MS_TEAMS_ORG_INSTALLED';
+export const MS_TEAMS_CATALOG_APP_ID = 'MS_TEAMS_CATALOG_APP_ID';
+
+const TEAMS_KEYS = [
+  MS_TEAMS_TENANT_ID,
+  MS_TEAMS_SERVICE_URL,
+  MS_TEAMS_TEAM_ID,
+  MS_TEAMS_TEAM_NAME,
+  MS_TEAMS_BOT_ID,
+  MS_TEAMS_APP_ID,
+  MS_TEAMS_APP_PASSWORD,
+  MS_TEAMS_ORG_INSTALLED,
+  MS_TEAMS_CATALOG_APP_ID,
+] as const;
+
+export interface TeamsInstallSummary {
+  tenantId: string;
+  teamId: string | null;
+  teamName: string | null;
+  botId: string | null;
+  serviceUrl: string | null;
+  byo: boolean;
+  orgInstalled: boolean;
+  catalogAppId: string | null;
+  installedAt: string;
+}
+
+export interface TeamsInstallInput {
+  projectId: string;
+  tenantId: string;
+  teamId?: string | null;
+  teamName?: string | null;
+  botId?: string | null;
+  serviceUrl?: string | null;
+  appId?: string | null;
+  appPassword?: string | null;
+}
+
+export interface TeamsBotCredentials {
+  appId: string;
+  appPassword: string;
+}
+
+export async function saveTeamsInstall(input: TeamsInstallInput): Promise<TeamsInstallSummary> {
+  const { projectId, tenantId } = input;
+  await db
+    .insert(chatInstalls)
+    .values({ platform: 'teams', workspaceId: tenantId, projectId })
+    .onConflictDoNothing();
+
+  await upsertSecret(projectId, MS_TEAMS_TENANT_ID, tenantId);
+  if (input.teamId != null) await upsertSecret(projectId, MS_TEAMS_TEAM_ID, input.teamId);
+  if (input.teamName != null) await upsertSecret(projectId, MS_TEAMS_TEAM_NAME, input.teamName);
+  if (input.botId != null) await upsertSecret(projectId, MS_TEAMS_BOT_ID, input.botId);
+  if (input.serviceUrl != null) await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, input.serviceUrl);
+  if (input.appId != null) await upsertSecret(projectId, MS_TEAMS_APP_ID, input.appId);
+  if (input.appPassword != null) await upsertSecret(projectId, MS_TEAMS_APP_PASSWORD, input.appPassword);
+
+  return {
+    tenantId,
+    teamId: input.teamId ?? null,
+    teamName: input.teamName ?? null,
+    botId: input.botId ?? null,
+    serviceUrl: input.serviceUrl ?? null,
+    byo: Boolean(input.appId),
+    orgInstalled: false,
+    catalogAppId: null,
+    installedAt: new Date().toISOString(),
+  };
+}
+
+export async function setTeamsOrgInstalled(projectId: string, installed: boolean): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_ORG_INSTALLED, installed ? '1' : '');
+}
+
+export async function setTeamsCatalogAppId(projectId: string, catalogAppId: string): Promise<void> {
+  await upsertSecret(projectId, MS_TEAMS_CATALOG_APP_ID, catalogAppId);
+}
+
+export async function loadTeamsBotCredentials(projectId: string): Promise<TeamsBotCredentials | null> {
+  const secrets = await readTeamsSecrets(projectId);
+  const appId = secrets[MS_TEAMS_APP_ID];
+  const appPassword = secrets[MS_TEAMS_APP_PASSWORD];
+  if (!appId || !appPassword) return null;
+  return { appId, appPassword };
+}
+
+export async function loadTeamsAppIdForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_APP_ID);
+}
+
+/** Update just the conversation serviceUrl — refreshed from each inbound activity. */
+export async function saveTeamsServiceUrl(projectId: string, serviceUrl: string): Promise<void> {
+  if (!serviceUrl) return;
+  await upsertSecret(projectId, MS_TEAMS_SERVICE_URL, serviceUrl);
+}
+
+export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallSummary | null> {
+  const secrets = await readTeamsSecrets(projectId);
+  const tenantId = secrets[MS_TEAMS_TENANT_ID];
+  if (!tenantId) return null;
+  const [row] = await db
+    .select({ updatedAt: projectSecrets.updatedAt })
+    .from(projectSecrets)
+    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, MS_TEAMS_TENANT_ID)))
+    .limit(1);
+  return {
+    tenantId,
+    teamId: secrets[MS_TEAMS_TEAM_ID] || null,
+    teamName: secrets[MS_TEAMS_TEAM_NAME] || null,
+    botId: secrets[MS_TEAMS_BOT_ID] || null,
+    serviceUrl: secrets[MS_TEAMS_SERVICE_URL] || null,
+    byo: Boolean(secrets[MS_TEAMS_APP_ID]),
+    orgInstalled: Boolean(secrets[MS_TEAMS_ORG_INSTALLED]),
+    catalogAppId: secrets[MS_TEAMS_CATALOG_APP_ID] || null,
+    installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
+  };
+}
+
+export async function loadTeamsTenantForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_TENANT_ID);
+}
+
+export async function loadTeamsServiceUrlForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, MS_TEAMS_SERVICE_URL);
+}
+
+export async function deleteTeamsInstall(projectId: string): Promise<void> {
+  for (const name of TEAMS_KEYS) {
+    await db
+      .delete(projectSecrets)
+      .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)));
+  }
+  await db
+    .delete(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)));
+}
+
+async function upsertSecret(projectId: string, name: string, value: string): Promise<void> {
   const valueEnc = encryptProjectSecret(projectId, value);
   const updated = await updateSharedSecret(projectId, name, valueEnc);
   if (updated) return;
 
   try {
-    await db.insert(projectSecrets).values({ projectId, identifier: name, name, valueEnc });
+    await db.insert(projectSecrets).values({
+      projectId,
+      identifier: name,
+      name,
+      valueEnc,
+      scope: 'connector',
+    });
   } catch (err) {
     if (!isUniqueConflict(err)) throw err;
     const retryUpdated = await updateSharedSecret(projectId, name, valueEnc);
@@ -778,7 +860,7 @@ async function updateSharedSecret(
 ): Promise<boolean> {
   const rows = await db
     .update(projectSecrets)
-    .set({ valueEnc, updatedAt: new Date() })
+    .set({ valueEnc, scope: 'connector', updatedAt: new Date() })
     .where(
       and(
         eq(projectSecrets.projectId, projectId),
@@ -791,17 +873,40 @@ async function updateSharedSecret(
 }
 
 function isUniqueConflict(err: unknown): boolean {
+  const error = err as {
+    code?: unknown;
+    cause?: { code?: unknown; cause?: { code?: unknown } };
+  };
   return (
-    (err as any)?.code === "23505" ||
-    (err as any)?.cause?.code === "23505" ||
-    (err as any)?.cause?.cause?.code === "23505"
+    error?.code === '23505' ||
+    error?.cause?.code === '23505' ||
+    error?.cause?.cause?.code === '23505'
   );
 }
 
-async function readSecret(
-  projectId: string,
-  name: string,
-): Promise<string | null> {
+async function readTeamsSecrets(projectId: string): Promise<Record<string, string>> {
+  const rows = await db
+    .select({ name: projectSecrets.name, valueEnc: projectSecrets.valueEnc })
+    .from(projectSecrets)
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        isNull(projectSecrets.ownerUserId),
+        inArray(projectSecrets.name, TEAMS_KEYS as unknown as string[]),
+      ),
+    );
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (!row.valueEnc) continue;
+    try {
+      out[row.name] = decryptProjectSecret(projectId, row.valueEnc);
+    } catch {
+    }
+  }
+  return out;
+}
+
+async function readSecret(projectId: string, name: string): Promise<string | null> {
   const [row] = await db
     .select({ valueEnc: projectSecrets.valueEnc })
     .from(projectSecrets)

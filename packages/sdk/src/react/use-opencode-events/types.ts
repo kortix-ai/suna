@@ -2,7 +2,7 @@
 // `state/event-stream.ts` (the extracted SSE machine dispatches this type).
 // Re-exported here, unchanged, so existing importers in this directory don't
 // need to change their import path.
-export type { OpenCodeEvent } from '../../state/event-stream';
+export type { OpenCodeEvent } from '../../core/stream/event-stream';
 
 /**
  * A file-path-keyed diagnostics normalizer: remaps absolute sandbox paths to

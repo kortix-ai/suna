@@ -15,27 +15,23 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
+  type SandboxAlertSeverity,
+  resolveSandboxAlertSeverity,
+  selectCurrentSandboxFailure,
+} from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
+import {
+  type ProjectSandboxHealth,
   fixSandboxWithAgent,
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
-  type ProjectSandboxHealth,
 } from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { DangerTriangleSolid, SparklesSolid } from '@mynaui/icons-react';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
-type Severity = 'critical' | 'building';
-
-function severityOf(health: ProjectSandboxHealth | null | undefined): Severity | null {
-  if (!health) return null;
-  if (health.latest_failure && !health.ready) return 'critical';
-  if (health.building && !health.ready) return 'building';
-  return null;
-}
-
-const SEVERITY_TONE: Record<Severity, { text: string; icon: string; dot: string }> = {
+const SEVERITY_TONE: Record<SandboxAlertSeverity, { text: string; icon: string; dot: string }> = {
   critical: {
     text: 'text-destructive',
     icon: 'text-destructive',
@@ -44,11 +40,11 @@ const SEVERITY_TONE: Record<Severity, { text: string; icon: string; dot: string 
   building: {
     text: 'text-muted-foreground',
     icon: 'text-muted-foreground',
-    dot: 'bg-blue-500',
+    dot: 'bg-kortix-yellow',
   },
 };
 
-const SEVERITY_LABEL: Record<Severity, string> = {
+const SEVERITY_LABEL: Record<SandboxAlertSeverity, string> = {
   critical: 'Fix sandbox build',
   building: 'Sandbox build running…',
 };
@@ -72,7 +68,7 @@ export function useSandboxHealth(projectId: string) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 15_000;
-      if (data.building || data.latest_failure) return 8_000;
+      if (data.building || selectCurrentSandboxFailure(data)) return 8_000;
       return 30_000;
     },
     refetchOnWindowFocus: true,
@@ -117,12 +113,12 @@ function SandboxAlertContent({
 }: {
   projectId: string;
   health: ProjectSandboxHealth;
-  severity: Severity;
+  severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
-  const failure = health.latest_failure;
+  const failure = selectCurrentSandboxFailure(health);
   // Only offer the agent for failures it can actually act on. Infra categories
   // (quota, provider, timeout, runtime, tunnel) aren't repo-editable, and the fix
   // session itself needs a bootable sandbox — the very thing the failure denied —
@@ -219,7 +215,7 @@ function SandboxAlertContent({
 export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const { data } = useSandboxHealth(projectId);
-  const severity = severityOf(data);
+  const severity = resolveSandboxAlertSeverity(data);
   if (!severity || !data) return null;
   const tone = SEVERITY_TONE[severity];
 
@@ -256,7 +252,7 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
 
 export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }) {
   const { data } = useSandboxHealth(projectId);
-  const severity = severityOf(data);
+  const severity = resolveSandboxAlertSeverity(data);
   if (!severity || !data) return null;
   const tone = SEVERITY_TONE[severity];
 
@@ -266,7 +262,7 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
         <PopoverTrigger asChild>
           <SidebarMenuButton type="button" aria-label={SEVERITY_LABEL[severity]}>
             {severity === 'building' ? (
-              <Loading className={cn('size-4 animate-spin', tone.icon)} />
+              <Loading className={cn('size-4', tone.icon)} />
             ) : (
               <DangerTriangleSolid className={cn('size-4', tone.icon)} />
             )}

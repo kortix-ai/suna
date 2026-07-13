@@ -26,6 +26,10 @@ const {
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const {
+  DESKTOP_CHROME_JS,
+  configureNativeWindowControls,
+} = require('./window-chrome');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -70,82 +74,6 @@ const UA_TOKEN = 'KortixDesktop/0.1.0';
 // the brand surface, never a white flash. Tauri sets this on <body> via CSS;
 // here it's the native window background.
 const BG_COLOR = '#0a0a0a';
-
-// Window-drag zones. Tauri drives dragging with a JS mousedown→startDragging
-// shim because WKWebView ignores `-webkit-app-region`. Electron/Chromium honors
-// app-region natively, so we just mark the same zones draggable and carve every
-// interactive element back out (mirrors the Tauri INTERACTIVE_TAGS + role list).
-// Injected on every load. Two jobs:
-//   1. Mark the window-drag zones with `-webkit-app-region: drag` via an AUTHOR
-//      <style> element. IMPORTANT: `webContents.insertCSS()` does NOT honor
-//      -webkit-app-region — only a real <style>/<link> in the document does, so
-//      we inject it here instead of via insertCSS.
-//   2. Keep a full-width drag strip pinned across the very top of the window so
-//      it's movable from ANYWHERE up top — not just over the sidebar/tab-bar.
-//      The web app reserves a ~40px title-bar band at the top on desktop
-//      (--kx-titlebar-inset), so on pages whose main panel has no tab bar that
-//      band was dead space you couldn't grab. The strip fills it.
-//
-// The strip is the FIRST child of <body> and `pointer-events:none`, which is
-// what lets it coexist with the tab bar instead of covering it (the reason the
-// old strip had to be removed once the app shell mounted):
-//   • Draggable regions resolve in DOM order, so the tab-bar tabs / sidebar
-//     buttons — all marked `no-drag` and later in the DOM — punch holes back
-//     through the strip's drag region and stay grabbable as buttons.
-//   • `pointer-events:none` means clicks in those holes pass straight through to
-//     the real controls; only the bare band stays a drag handle.
-const IS_MAC = process.platform === 'darwin';
-// Skip the macOS traffic-light gutter on the left; Win/Linux have no left
-// controls (their min/max/close render on the right and are `no-drag` buttons).
-const DRAG_STRIP_LEFT = IS_MAC ? 80 : 0;
-// Match the reserved title-bar band (--kx-titlebar-inset: 40px macOS / 28px
-// else); 32px on Win/Linux leaves the strip comfortably grabbable.
-const DRAG_STRIP_HEIGHT = IS_MAC ? 40 : 32;
-const DESKTOP_CHROME_JS = `
-(function () {
-  if (window.__kortixChrome) return;
-  window.__kortixChrome = true;
-
-  var style = document.createElement('style');
-  style.id = 'kortix-chrome-style';
-  style.textContent =
-    '[role="tablist"],[data-sidebar="header"],[data-sidebar="sidebar"],' +
-    '.kx-desktop-drag,.kx-desktop-chrome,#kortix-drag-strip{-webkit-app-region:drag;}' +
-    'button,a,input,textarea,select,option,label,summary,video,audio,iframe,' +
-    '[role="button"],[role="tab"],[role="link"],[role="menuitem"],[role="textbox"],' +
-    '[contenteditable],[data-no-drag]{-webkit-app-region:no-drag;}';
-  (document.head || document.documentElement).appendChild(style);
-
-  var ID = 'kortix-drag-strip';
-  function ensureStrip() {
-    if (!document.body) return;
-    var strip = document.getElementById(ID);
-    if (!strip) {
-      strip = document.createElement('div');
-      strip.id = ID;
-      strip.setAttribute('aria-hidden', 'true');
-      // pointer-events:none → clicks fall through to controls beneath; the drag
-      // region still works (it's OS-level, not pointer-event driven). z-index:0
-      // so it never visually layers over content (it's transparent regardless).
-      strip.style.cssText =
-        'position:fixed;top:0;left:${DRAG_STRIP_LEFT}px;right:0;height:${DRAG_STRIP_HEIGHT}px;' +
-        'z-index:0;pointer-events:none;-webkit-app-region:drag;';
-    }
-    // First child so every interactive element (later in the DOM, all no-drag)
-    // overrides the strip and stays clickable; bare band stays draggable.
-    if (strip !== document.body.firstChild) {
-      document.body.insertBefore(strip, document.body.firstChild);
-    }
-  }
-  ensureStrip();
-  // SPA route changes swap the DOM without a reload — keep the strip first.
-  var t;
-  new MutationObserver(function () {
-    clearTimeout(t);
-    t = setTimeout(ensureStrip, 250);
-  }).observe(document.documentElement, { childList: true, subtree: true });
-})();
-`;
 
 /* ─── Frontend URL override (self-hosting) ────────────────────────────────
    Persisted as a single line in userData/frontend_url — same contract as the
@@ -426,12 +354,9 @@ function createMainWindow() {
     },
   });
 
-  // macOS: hide the native traffic lights — on macOS 26 (Tahoe) they render
-  // permanently gray/inactive for hidden-title-bar Electron windows (even
-  // focused, even on hover). The web app draws its own colored lights in the
-  // same spot (DesktopChrome → MacTrafficLights), wired to the kortix:window
-  // IPC, so close/minimize/zoom keep working.
-  if (isMac) mainWindow.setWindowButtonVisibility(false);
+  // Keep one canonical set of controls. Web-rendered traffic lights could
+  // coexist with native buttons after focus/reload transitions.
+  configureNativeWindowControls(mainWindow, isMac);
 
   // Reveal once content is in. did-finish-load fires when the document + its
   // subresources are loaded — good enough to swap the splash for real chrome
@@ -453,9 +378,8 @@ function createMainWindow() {
     }
   }, 12_000);
 
-  // Inject the drag-zone <style> + fallback strip on every load (full reloads
-  // from the Frontend URL switcher; SPA route changes are handled by the
-  // MutationObserver inside DESKTOP_CHROME_JS).
+  // Inject the drag-zone author style on every full load. The web shell owns
+  // the thin top-edge drag handle; no compositor-level overlay covers content.
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow?.webContents.executeJavaScript(DESKTOP_CHROME_JS).catch(() => {});
     // Render diagnostic (blur): on Retina expect dpr=2 and zoom=1.
@@ -656,11 +580,32 @@ function buildMenu() {
 
 /* ─── IPC: native bridge (consumed via the __TAURI__ shim in preload.js) ───*/
 
+// The preload exposes the native bridge to whatever page is loaded in the main
+// window — including sandbox-preview / tunnel content, which is untrusted
+// (agent- or attacker-rendered). Only the Kortix app shell may drive privileged
+// commands; otherwise a preview page could call e.g. set_frontend_url to
+// permanently repoint the whole desktop app at an attacker origin. Derive the
+// SENDER's current origin and require it be a main-app host.
+function isTrustedSender(event) {
+  try {
+    const url =
+      event.senderFrame?.url ||
+      BrowserWindow.fromWebContents(event.sender)?.webContents?.getURL() ||
+      '';
+    return isMainAppHost(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function registerIpc() {
   // Single funnel matching the Tauri `core.invoke(cmd, args)` contract so the
   // web app's existing calls (set_zoom / open_external / get_frontend_url /
   // set_frontend_url) work unchanged.
   ipcMain.handle('kortix:invoke', (event, cmd, args = {}) => {
+    if (!isTrustedSender(event)) {
+      throw new Error('Unauthorized IPC sender');
+    }
     switch (cmd) {
       case 'set_zoom': {
         const scale = Math.min(3, Math.max(0.5, Number(args.scale) || 1));
@@ -670,7 +615,10 @@ function registerIpc() {
       }
       case 'open_external': {
         const url = String(args.url || '');
-        if (url) shell.openExternal(url);
+        // Only ever hand http(s) URLs to the OS shell — never file:, custom
+        // schemes, or crafted protocol URLs. (Sender is already origin-gated
+        // above; this is defense in depth, matching setWindowOpenHandler.)
+        if (/^https?:\/\//i.test(url)) shell.openExternal(url);
         return null;
       }
       case 'get_frontend_url':
@@ -699,6 +647,9 @@ function registerIpc() {
 
   // Window controls (Tauri `getCurrentWindow().*`).
   ipcMain.handle('kortix:window', (event, action) => {
+    if (!isTrustedSender(event)) {
+      throw new Error('Unauthorized IPC sender');
+    }
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return false;
     switch (action) {

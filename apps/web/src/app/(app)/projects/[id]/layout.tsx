@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 
 import { ProjectAccessBoundary } from '@/components/projects/project-access-boundary';
 import { SessionStreamKeeper } from '@/components/projects/session-stream-keeper';
-import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
 import { createClient } from '@/lib/supabase/server';
 
 interface ProjectLayoutProps {
@@ -24,13 +23,8 @@ export default async function ProjectLayout({ children, params }: ProjectLayoutP
 
   return (
     <ProjectAccessBoundary projectId={projectId}>
-      {/* Contain the "sandbox is still loading" boot race here (web-side, so it
-          hot-reloads reliably) — a stray getClient() during a session switch
-          shows the loader + auto-retries instead of the full-page error route. */}
-      <SandboxLoadingBoundary>
-        <SessionStreamKeeper projectId={projectId} />
-        {children}
-      </SandboxLoadingBoundary>
+      <SessionStreamKeeper projectId={projectId} />
+      {children}
     </ProjectAccessBoundary>
   );
 }

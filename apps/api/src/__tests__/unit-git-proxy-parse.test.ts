@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   extractToken,
+  isValidGitProxyProjectId,
   normalizeProjectId,
   scopeForService,
 } from '../git-proxy/parse';
@@ -13,6 +14,16 @@ describe('normalizeProjectId', () => {
     expect(normalizeProjectId('abc-123.git')).toBe('abc-123');
     expect(normalizeProjectId('abc-123')).toBe('abc-123');
     expect(normalizeProjectId('abc.GIT')).toBe('abc');
+  });
+});
+
+describe('isValidGitProxyProjectId', () => {
+  test('accepts UUID project ids with optional .git and rejects malformed path tokens', () => {
+    expect(isValidGitProxyProjectId('11111111-1111-4111-8111-111111111111')).toBe(true);
+    expect(isValidGitProxyProjectId('11111111-1111-4111-8111-111111111111.git')).toBe(true);
+    expect(isValidGitProxyProjectId('not-a-project')).toBe(false);
+    expect(isValidGitProxyProjectId('../11111111-1111-4111-8111-111111111111')).toBe(false);
+    expect(isValidGitProxyProjectId('11111111-1111-4111-8111-111111111111/refs')).toBe(false);
   });
 });
 

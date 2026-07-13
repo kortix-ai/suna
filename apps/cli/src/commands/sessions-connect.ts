@@ -1,28 +1,30 @@
 import { spawn } from 'node:child_process';
 
 import { OPENCODE_PORT } from '../api/sandbox-proxy.ts';
+import { takeFlagValue } from '../command-helpers.ts';
+import { C, help, status } from '../style.ts';
 import {
-  resolveProjectContext,
-  takeFlagValue,
-} from '../command-helpers.ts';
-import { C, status } from '../style.ts';
-import {
-  chooseRunningSession,
   ensureOpencodeSession,
   loadSessionForChat,
+  resolveRunningSessionId,
 } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-const CONNECT_HELP = `Usage: kortix sessions connect [<session-id>] [options] [-- <opencode attach args…>]
+const CONNECT_HELP = help`Usage: kortix sessions connect [<session-id>] [options] [-- <opencode attach args…>]
 
 Attach your local OpenCode TUI to the OpenCode server already running inside a
 Kortix session sandbox. The CLI opens a local loopback proxy, injects your
 Kortix auth token, then runs \`opencode attach\` against it.
 
+Given a session id, resolves the right host/project on its own: tries the
+active/linked project first, then — unless you pin --host/--project — scans
+every logged-in host and account for the id. One command, no manual
+\`kortix projects use\` / \`kortix hosts use\` first.
+
   --port <N>       Local loopback proxy port (default: random free port).
-  --project <id>   Operate on this project id (default: linked).
-  --host <name>    Operate against a non-default Kortix host.
+  --project <id>   Pin this project id (skips the cross-host scan).
+  --host <name>    Pin this Kortix host (skips the cross-host scan).
   -h, --help       Show this help.
 
 Examples:
@@ -62,30 +64,23 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   if (proxyPort === null) return 2;
 
   const opts: CtxOpts = { projectArg, hostArg };
-  const sessionId = await resolveConnectSessionId(positional[0], opts);
+  const sessionId = await resolveRunningSessionId(positional[0], opts, 'Pick a session to connect to');
   if (!sessionId) return 1;
 
-  const resolved = await loadSessionForChat(sessionId, opts);
+  // A session id may belong to a different project (or host) than the one
+  // currently active/linked — loadSessionForChat locates it on its own
+  // (--project/--host still pin it) instead of surfacing a bare "Not found".
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions connect');
   if (!resolved) return 1;
   const ocSessionId = await ensureOpencodeSession(resolved);
   if (!ocSessionId) return 1;
-
-  const proxyId = proxyIdFromSandboxUrl(resolved.session.sandbox_url)
-    ?? resolved.session.sandbox_id
-    ?? null;
-  if (!proxyId) {
-    process.stderr.write(
-      `${status.err('Session has no reachable sandbox yet — provisioning may not be done.')}\n`,
-    );
-    return 1;
-  }
 
   let proxy: RunningOpenCodeProxy;
   try {
     proxy = startOpenCodeProxy({
       apiBase: resolved.auth.api_base,
       token: resolved.auth.token,
-      sandboxId: proxyId,
+      sandboxId: resolved.proxyId,
       port: proxyPort,
     });
   } catch (err) {
@@ -105,26 +100,6 @@ export async function runSessionsConnect(argv: string[]): Promise<number> {
   } finally {
     proxy.close();
   }
-}
-
-async function resolveConnectSessionId(
-  explicit: string | undefined,
-  opts: CtxOpts,
-): Promise<string | null> {
-  if (explicit) return explicit;
-  const ctx = await resolveProjectContext(opts);
-  if (!ctx) return null;
-  const chosen = await chooseRunningSession(ctx, 'Pick a session to connect to');
-  if (chosen === 'error') return null;
-  if (!chosen) {
-    process.stderr.write(
-      `${status.err('No running session to connect to.')}\n` +
-        `  ${C.dim}Start one: ${C.reset}${C.cyan}kortix sessions new --wait${C.reset}` +
-        `${C.dim}, or pass a session id.${C.reset}\n`,
-    );
-    return null;
-  }
-  return chosen.session_id;
 }
 
 function parseConnectPort(raw: string | undefined): number | null {
@@ -273,12 +248,6 @@ async function forwardOpenCodeHttp(
 function buildProxyBase(apiBase: string, sandboxId: string): string {
   const base = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
   return `${base}/v1/p/${encodeURIComponent(sandboxId)}/${OPENCODE_PORT}`;
-}
-
-function proxyIdFromSandboxUrl(sandboxUrl: string | null): string | null {
-  if (!sandboxUrl) return null;
-  const m = sandboxUrl.match(/\/v1\/p\/([^/]+)\//) ?? sandboxUrl.match(/\/p\/([^/]+)\//);
-  return m?.[1] ?? null;
 }
 
 function buildAttachArgs(

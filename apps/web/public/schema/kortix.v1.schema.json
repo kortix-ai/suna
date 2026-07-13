@@ -375,6 +375,7 @@
             "type": "string",
             "enum": [
               "slack",
+              "teams",
               "email",
               "meet",
               "telegram"
@@ -434,6 +435,22 @@
               "properties": {
                 "slug": {
                   "const": "kortix_slack"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "provider": {
+                  "const": "channel"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slug": {
+                  "const": "kortix_teams"
                 }
               }
             },

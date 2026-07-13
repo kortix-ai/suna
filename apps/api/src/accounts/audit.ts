@@ -16,6 +16,7 @@ import { auditEvents, auditWebhooks } from '@kortix/db';
 import { type SQL, and, asc, desc, eq, gte, like, lt, or } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { deliverTestEvent, generateWebhookSecret } from '../shared/audit-webhooks';
@@ -452,6 +453,15 @@ auditRouter.openapi(
       }
     } catch {
       return c.json({ error: 'url is not a valid URL' }, 400);
+    }
+    // SSRF guard: reject private/link-local/internal targets (e.g. cloud
+    // metadata at 169.254.169.254). This endpoint fires a server-side test
+    // delivery immediately on create, so the same guard used for marketplace
+    // source URLs applies here.
+    try {
+      assertAllowedSourceAddress(url);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
     }
 
     const actionPrefix =

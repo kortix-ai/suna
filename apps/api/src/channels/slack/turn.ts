@@ -131,6 +131,7 @@ setInterval(() => {
         .where(and(eq(chatTurnStreams.finalized, false), lt(chatTurnStreams.updatedAt, cutoff)))
         .limit(50);
       for (const row of stale) {
+        if (row.channelRef) continue;
         if (!(await claimFinalize(row.sessionId))) continue;
         const token = await loadSlackTokenForProject(row.projectId);
         if (token) {

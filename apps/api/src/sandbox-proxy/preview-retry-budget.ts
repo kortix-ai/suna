@@ -9,6 +9,20 @@ export const PROXY_ATTEMPT_TIMEOUT_MS = 15_000;
 
 // Per-attempt upstream fetch timeout, shrunk to whatever budget remains so the
 // retry loop can never run past PROXY_RETRY_BUDGET_MS even if an attempt hangs.
-export function proxyAttemptTimeoutMs(budgetRemainingMs: number): number {
+export function proxyAttemptTimeoutMs(
+  budgetRemainingMs: number,
+  request?: { method: string; path: string },
+): number {
+  // Upload handlers cannot return response headers until the multipart body has
+  // been received and written. Treating that whole interval as a connection
+  // stall aborts every sufficiently large upload at 15s, then retries the same
+  // body until the outer 50s budget is exhausted. Give an upload the remaining
+  // request budget; the outer budget still keeps us below the ALB idle timeout.
+  if (
+    request?.method.toUpperCase() === 'POST' &&
+    /^\/file\/upload(?:$|[/?#])/.test(request.path)
+  ) {
+    return Math.max(1_000, budgetRemainingMs - 500);
+  }
   return Math.max(1_000, Math.min(PROXY_ATTEMPT_TIMEOUT_MS, budgetRemainingMs));
 }

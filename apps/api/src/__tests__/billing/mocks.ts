@@ -135,6 +135,7 @@ export function registerGlobalMocks() {
   mock.module('../../billing/services/webhook-concurrency', () => ({
     recordWebhookEvent: async () =>
       mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
+    forgetWebhookEvent: async () => undefined,
     withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
@@ -420,6 +421,7 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
 export function createMockRevenueCatEvent(type: string, overrides: Record<string, any> = {}) {
   return {
     event: {
+      id: overrides.id ?? `evt_rc_${type.toLowerCase()}`,
       type,
       app_user_id: overrides.app_user_id ?? 'acc_test_123',
       product_id: overrides.product_id ?? 'kortix_pro_monthly',

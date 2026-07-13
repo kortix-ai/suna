@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, FileDiff } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
@@ -12,8 +11,9 @@ import type { ChangeRequest } from '@/features/project-files/api/change-requests
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import { useReviewCenterEnabled } from '@/hooks/projects/use-review-center-enabled';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { getProjectDetail } from '@kortix/sdk/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
 
 interface CrController {
@@ -122,18 +122,19 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // When the Review Center is enabled for this project, this pill becomes the
   // single entry point into the unified inbox (Customize → Review) — change
   // requests, approvals and agent outputs all live in one place — instead of
-  // opening a single CR's detail dialog.
-  const detail = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    enabled: !!projectId,
-    staleTime: 60_000,
-  });
-  const reviewEnabled = detail.data?.project?.experimental?.review_center ?? false;
+  // opening a single CR's detail dialog. Its badge then counts the SAME unified
+  // "needs_you" set the per-session row dots and the Customize rail read, so the
+  // pill, the dots, and the rail always agree on one number.
+  const reviewEnabled = useReviewCenterEnabled(projectId);
+  const reviewSummary = useReviewSessionSummary(projectId, { enabled: reviewEnabled });
 
-  if (c.count === 0) return null;
+  // Flag on → the unified inbox's "awaiting you" count (open CRs are a subset of
+  // needs_you, so this never hides a change request); flag off → legacy open-CR count.
+  const count = reviewEnabled ? reviewSummary.totalNeedsYou : c.count;
 
-  const label = reviewEnabled ? 'Review' : c.count === 1 ? 'Review change' : 'Review changes';
+  if (count === 0) return null;
+
+  const label = reviewEnabled ? 'Review' : count === 1 ? 'Review change' : 'Review changes';
   const baseRef = c.crs[0]?.base_ref ?? '';
 
   const menuButton = (
@@ -150,7 +151,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
     >
       <FileDiff />
       <span>{label}</span>
-      <span className="ml-auto pr-1 text-xs tabular-nums">{c.count}</span>
+      <span className="ml-auto pr-1 text-xs tabular-nums">{count}</span>
     </SidebarMenuButton>
   );
 

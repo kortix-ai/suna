@@ -6,10 +6,10 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
-import { C, status } from '../style.ts';
+import { C, help, status } from '../style.ts';
 import type { ProjectSession } from '../api/types.ts';
 
-const HELP = `Usage: kortix proxy <subcommand> [options]
+const HELP = help`Usage: kortix proxy <subcommand> [options]
 
 Manage shareable public URLs for ports inside a session sandbox. Use
 this to expose a dev server (port 3000, 8080, …) running inside a

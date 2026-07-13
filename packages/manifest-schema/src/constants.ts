@@ -28,7 +28,7 @@ export const TRIGGER_TYPES = ['cron', 'webhook'] as const;
 export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'graphql', 'http', 'channel'] as const;
 export const CONNECTOR_AUTH_TYPES = ['bearer', 'basic', 'custom', 'oauth1', 'none'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'email', 'meet', 'telegram'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'meet', 'telegram'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -36,6 +36,7 @@ export const CHANNEL_PLATFORMS = ['slack', 'email', 'meet', 'telegram'] as const
  */
 export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
+  kortix_teams: 'channel',
   kortix_email: 'channel',
   kortix_meet: 'channel',
   computer: 'computer',

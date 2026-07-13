@@ -1,20 +1,18 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
-  mockIamEngineAllowAll,
-  mockIamMembershipSyncNoop,
-} from './helpers/iam-mocks';
-import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
-import {
   accountMembers,
   projectGitConnections,
   projectGitCredentials,
   projectMembers,
   projectSecrets,
+  projectSessionRuntimeContexts,
   projectSessions,
   projects,
   sessionSandboxes,
 } from '@kortix/db';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
@@ -35,13 +33,22 @@ let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStatus = 'stopped';
+let providerStatusAfterStart: string | null = null;
 let providerStartError: Error | null = null;
-let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' =
-  'unchanged';
+let providerStartGate: Promise<void> | null = null;
+let releaseProviderStart: (() => void) | null = null;
+let providerRecoveryCalls = 0;
+let providerRecoveryEnabled = false;
+let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
+let providerRecoveryGate: Promise<void> | null = null;
+let releaseProviderRecovery: (() => void) | null = null;
+let computeReopenCalls = 0;
+let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>;
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
@@ -80,7 +87,16 @@ function resetState() {
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStatus = 'stopped';
+  providerStatusAfterStart = null;
   providerStartError = null;
+  providerStartGate = null;
+  releaseProviderStart = null;
+  providerRecoveryCalls = 0;
+  providerRecoveryEnabled = false;
+  providerRecoveryStatus = 'unavailable';
+  providerRecoveryGate = null;
+  releaseProviderRecovery = null;
+  computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
   lastProvisionInput = null;
@@ -113,6 +129,7 @@ function resetState() {
   };
   sessionSandboxRows = [];
   secretRows = [];
+  runtimeContextRows = [];
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
@@ -175,6 +192,7 @@ mock.module('../projects/git', () => ({
   getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
+  resolveBranchAheadState: async () => ({ ahead: 0, behind: 0 }),
   getBranchDiff: async () => ({ files: [], diff: '' }),
   getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
@@ -217,8 +235,7 @@ mock.module('../projects/github', () => ({
         .pop()
         ?.replace(/\.git$/, '') ?? 'contract-project',
   }),
-  buildGitHubAppInstallUrl: () =>
-    'https://github.com/apps/kortix-test/installations/new',
+  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
@@ -283,9 +300,20 @@ mock.module('../platform/providers', () => ({
     start: async () => {
       providerStartCalls += 1;
       if (providerStartError) throw providerStartError;
+      if (providerStatusAfterStart) providerStatus = providerStatusAfterStart;
+      if (providerStartGate) await providerStartGate;
     },
     stop: async () => undefined,
     remove: async () => undefined,
+    ...(providerRecoveryEnabled
+      ? {
+          recoverInPlace: async () => {
+            providerRecoveryCalls += 1;
+            if (providerRecoveryGate) await providerRecoveryGate;
+            return providerRecoveryStatus;
+          },
+        }
+      : {}),
   }),
 }));
 
@@ -303,6 +331,16 @@ mock.module('../projects/opencode-mapping', () => ({
     reason: opencodeEnsureReason,
     sessions: [],
   }),
+}));
+
+mock.module('../billing/services/compute-metering', () => ({
+  reopenComputeForSandbox: async () => {
+    computeReopenCalls += 1;
+  },
+  endComputeSession: async () => undefined,
+  pauseComputeSession: async () => undefined,
+  startComputeSession: async () => undefined,
+  tickRunningComputeCharges: async () => undefined,
 }));
 
 // Session create runs the billing gate. Return a billing-active account so the
@@ -345,10 +383,7 @@ mock.module('../repositories/account-tokens', () => ({
 mock.module('../deployments/providers/freestyle', () => ({
   getFreestyleApiKey: async () => 'test-freestyle-key',
   getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (
-    path: string,
-    options: { method: string; body?: unknown },
-  ) => {
+  callFreestyle: async (path: string, options: { method: string; body?: unknown }) => {
     freestyleCalls.push({ path, method: options.method, body: options.body });
     return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
       status: 200,
@@ -369,7 +404,11 @@ mock.module('../deployments/providers/freestyle', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
-  resolveAccountSessionLimit: async () => ({ tier: 'free', limit: 1, source: 'tier' }),
+  resolveAccountSessionLimit: async () => ({
+    tier: 'free',
+    limit: 1,
+    source: 'tier',
+  }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
   accountEntitledToLlmGateway: async () => true,
@@ -392,45 +431,35 @@ mock.module('../shared/supabase', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
   db: {
+    transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return fn(this);
+    },
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
-          then: (
-            resolve: (value: unknown[]) => unknown,
-            reject?: (reason: unknown) => unknown,
-          ) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(
-              resolve,
-              reject,
-            );
+          then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
           orderBy: async () => {
             if (table === projectSecrets) return secretRows;
-            if (table === projectSessions)
-              return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
           limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount'))
               return [{ activeCount: activeSessionCount }];
             if (table === projectSecrets) {
-              return secretRows
-                .filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN')
-                .slice(0, 1);
+              return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
             }
-            if (table === projectGitConnections)
-              return gitConnectionRows.slice(0, 1);
-            if (table === projectGitCredentials)
-              return gitCredentialRows.slice(0, 1);
-            if (table === sessionSandboxes)
-              return sessionSandboxRows.slice(0, 1);
+            if (table === projectSessionRuntimeContexts) return runtimeContextRows.slice(0, 1);
+            if (table === projectGitConnections) return gitConnectionRows.slice(0, 1);
+            if (table === projectGitCredentials) return gitCredentialRows.slice(0, 1);
+            if (table === sessionSandboxes) return sessionSandboxRows.slice(0, 1);
             if (table === projects) return [projectRow];
-            if (table === accountMembers)
-              return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
-            if (table === projectSessions)
-              return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             return [];
           },
         }),
@@ -473,10 +502,7 @@ mock.module('../shared/db', () => ({
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
               metadata: values.metadata ?? {},
-              createdAt:
-                existingIndex >= 0
-                  ? gitConnectionRows[existingIndex]!.createdAt
-                  : now,
+              createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitConnections.$inferSelect;
             if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -485,9 +511,7 @@ mock.module('../shared/db', () => ({
           }
           if (table === projectGitCredentials) {
             const existingIndex = gitCredentialRows.findIndex(
-              (row) =>
-                row.projectId === values.projectId &&
-                row.provider === values.provider,
+              (row) => row.projectId === values.projectId && row.provider === values.provider,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
@@ -501,14 +525,22 @@ mock.module('../shared/db', () => ({
               authMethod: values.authMethod ?? 'token',
               valueEnc: values.valueEnc,
               createdBy: values.createdBy ?? null,
-              createdAt:
-                existingIndex >= 0
-                  ? gitCredentialRows[existingIndex]!.createdAt
-                  : now,
+              createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitCredentials.$inferSelect;
             if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
             else gitCredentialRows.push(row);
+            return [row];
+          }
+          if (table === projectSessionRuntimeContexts) {
+            const row: typeof projectSessionRuntimeContexts.$inferSelect = {
+              sessionId: values.sessionId,
+              context: values.context,
+              byteSize: values.byteSize,
+              createdAt: new Date('2026-01-02T00:00:00Z'),
+              updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+            };
+            runtimeContextRows = [row];
             return [row];
           }
           if (table !== projectSessions) return [];
@@ -533,6 +565,7 @@ mock.module('../shared/db', () => ({
           };
           return [sessionRow];
         },
+        onConflictDoNothing: async () => [],
         onConflictDoUpdate: ({
           set,
         }: {
@@ -569,10 +602,7 @@ mock.module('../shared/db', () => ({
                 lastErrorCode: values.lastErrorCode ?? null,
                 lastErrorMessage: values.lastErrorMessage ?? null,
                 metadata: values.metadata ?? {},
-                createdAt:
-                  existingIndex >= 0
-                    ? gitConnectionRows[existingIndex]!.createdAt
-                    : now,
+                  createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitConnections.$inferSelect;
               if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -581,9 +611,7 @@ mock.module('../shared/db', () => ({
             }
             if (table === projectGitCredentials) {
               const existingIndex = gitCredentialRows.findIndex(
-                (row) =>
-                  row.projectId === values.projectId &&
-                  row.provider === values.provider,
+                  (row) => row.projectId === values.projectId && row.provider === values.provider,
               );
               const now = new Date('2026-01-02T00:00:00Z');
               const row = {
@@ -597,10 +625,7 @@ mock.module('../shared/db', () => ({
                 authMethod: values.authMethod ?? 'token',
                 valueEnc: values.valueEnc,
                 createdBy: values.createdBy ?? null,
-                createdAt:
-                  existingIndex >= 0
-                    ? gitCredentialRows[existingIndex]!.createdAt
-                    : now,
+                  createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitCredentials.$inferSelect;
               if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
@@ -609,8 +634,7 @@ mock.module('../shared/db', () => ({
             }
             if (table !== projectSecrets) return [];
             const existingIndex = secretRows.findIndex(
-              (row) =>
-                row.projectId === values.projectId && row.name === values.name,
+                (row) => row.projectId === values.projectId && row.name === values.name,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row: typeof projectSecrets.$inferSelect = {
@@ -626,15 +650,17 @@ mock.module('../shared/db', () => ({
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
               createdBy: values.createdBy ?? null,
-              createdAt:
-                existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+                createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
             };
             if (existingIndex >= 0) secretRows[existingIndex] = row;
             else secretRows.push(row);
             return [row];
           },
-            then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+            then: (
+              resolve: (value: unknown[]) => unknown,
+              reject?: (reason: unknown) => unknown,
+            ) => {
               conflictResult.returning().then(resolve, reject);
             },
             catch: (reject: (reason: unknown) => unknown) => {
@@ -648,7 +674,12 @@ mock.module('../shared/db', () => ({
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectSecrets) secretRows = [];
+        if (table === projectSessionRuntimeContexts) runtimeContextRows = [];
         if (table === sessionSandboxes) sessionSandboxRows = [];
+        if (table === projectSessions) {
+          sessionRow = null;
+          runtimeContextRows = [];
+        }
       },
     }),
     update: (table: unknown) => ({
@@ -660,11 +691,16 @@ mock.module('../shared/db', () => ({
           returning: async () => {
             if (table === projectSessions) {
               if (!sessionRow) return [];
+              if (
+                typeof (sessionRow.metadata as Record<string, unknown> | null)?.deletedAt ===
+                  'string' &&
+                !('metadata' in updates)
+              )
+                return [];
               sessionRow = {
                 ...sessionRow,
                 ...updates,
-                updatedAt:
-                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
               };
               return [sessionRow];
             }
@@ -674,8 +710,7 @@ mock.module('../shared/db', () => ({
               sessionSandboxRows[0] = {
                 ...row,
                 ...updates,
-                updatedAt:
-                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
               };
               return [sessionSandboxRows[0]];
             }
@@ -692,8 +727,7 @@ mock.module('../shared/db', () => ({
                   sessionRow = {
                     ...sessionRow,
                     ...updates,
-                    updatedAt:
-                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                   };
                   return [sessionRow];
                 }
@@ -703,8 +737,7 @@ mock.module('../shared/db', () => ({
                   sessionSandboxRows[0] = {
                     ...row,
                     ...updates,
-                    updatedAt:
-                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                   };
                   return [sessionSandboxRows[0]];
                 }
@@ -713,6 +746,32 @@ mock.module('../shared/db', () => ({
               return resolve(rows);
             } catch (err) {
               return reject?.(err);
+            }
+          },
+          catch: async (reject: (reason: unknown) => unknown) => {
+            try {
+              if (table === projectSessions) {
+                if (!sessionRow) return [];
+                sessionRow = {
+                  ...sessionRow,
+                  ...updates,
+                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                };
+                return [sessionRow];
+              }
+              if (table === sessionSandboxes) {
+                const row = sessionSandboxRows[0];
+                if (!row) return [];
+                sessionSandboxRows[0] = {
+                  ...row,
+                  ...updates,
+                  updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                };
+                return [sessionSandboxRows[0]];
+              }
+              return [];
+            } catch (err) {
+              return reject(err);
             }
           },
         }),
@@ -729,10 +788,7 @@ function createApp() {
   app.route('/v1/projects', projectsApp);
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
-      return c.json(
-        { error: true, message: err.message, status: err.status },
-        err.status,
-      );
+      return c.json({ error: true, message: err.message, status: err.status }, err.status);
     }
     return c.json({ error: true, message: (err as Error).message }, 500);
   });
@@ -741,10 +797,7 @@ function createApp() {
 
 /** Poll until predicate holds (or timeout) — robustly flushes the
  *  fire-and-forget sandbox-provision IIFE instead of a single racy tick. */
-async function flushUntil(
-  predicate: () => boolean,
-  timeoutMs = 2000,
-): Promise<void> {
+async function flushUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
   const start = Date.now();
   while (!predicate() && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 5));
@@ -796,12 +849,8 @@ describe('project session API contract', () => {
     const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
-    const openAiSecret = listed.items.find(
-      (item: any) => item.name === 'OPENAI_API_KEY',
-    );
-    const gitAuthSecret = listed.items.find(
-      (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
-    );
+    const openAiSecret = listed.items.find((item: any) => item.name === 'OPENAI_API_KEY');
+    const gitAuthSecret = listed.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN');
     expect(openAiSecret).toBeTruthy();
     expect(openAiSecret.value).toBeUndefined();
     expect(openAiSecret.value_enc).toBeUndefined();
@@ -809,12 +858,9 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
 
-    const deleteRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/secrets/openai_api_key`,
-      {
+    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
         method: 'DELETE',
-      },
-    );
+    });
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
@@ -831,19 +877,14 @@ describe('project session API contract', () => {
     expect(before.status).toBe(200);
     const beforeBody = await before.json();
     expect(
-      beforeBody.items.find(
-        (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
-      ),
+      beforeBody.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN'),
     ).toBeUndefined();
 
-    const writeRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git-credential`,
-      {
+    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: 'gitlab-project-token' }),
-      },
-    );
+    });
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
     expect(written).toMatchObject({
@@ -903,12 +944,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
       repo_url: 'https://gitlab.com/acme/private-project.git',
@@ -970,12 +1008,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
       repo_url: 'https://git.freestyle.sh/legacy-private-project',
@@ -1044,12 +1079,9 @@ describe('project session API contract', () => {
     ];
     const app = createApp();
 
-    const cloneRes = await app.request(
-      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
-      {
+    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
         headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-      },
-    );
+    });
 
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
@@ -1114,14 +1146,11 @@ describe('project session API contract', () => {
     ];
 
     for (const { body, message } of forbiddenBodies) {
-      const res = await app.request(
-        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-        {
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        },
-      );
+      });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
     }
@@ -1130,9 +1159,7 @@ describe('project session API contract', () => {
   test('returns deterministic read errors for invalid or missing sessions and pending sandboxes', async () => {
     const app = createApp();
 
-    const listSessions = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions`,
-    );
+    const listSessions = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
     expect(listSessions.status).toBe(200);
     const sessions = await listSessions.json();
     expect(sessions).toHaveLength(1);
@@ -1144,9 +1171,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const readSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-    );
+    const readSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(readSession.status).toBe(200);
     expect(await readSession.json()).toMatchObject({
       session_id: SESSION_ID,
@@ -1156,9 +1181,7 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const invalidSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`,
-    );
+    const invalidSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`);
     expect(invalidSession.status).toBe(400);
     expect(await invalidSession.json()).toMatchObject({
       error: 'Invalid session id',
@@ -1186,9 +1209,7 @@ describe('project session API contract', () => {
     });
 
     sessionRow = null;
-    const missingSession = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-    );
+    const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
     expect(missingSession.status).toBe(404);
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
@@ -1223,10 +1244,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1271,10 +1291,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1321,10 +1340,9 @@ describe('project session API contract', () => {
       },
     ];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1366,10 +1384,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1408,10 +1425,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1424,7 +1440,7 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(0);
   });
 
-  test('dashboard start retires a sandbox that stayed stopped after wake grace', async () => {
+  test('dashboard start preserves a sandbox that stayed stopped after wake grace', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1444,9 +1460,7 @@ describe('project session API contract', () => {
         status: 'active',
         config: {},
         metadata: {
-          runtimeWakeStartedAt: new Date(
-            Date.now() - 2 * 60 * 1000,
-          ).toISOString(),
+          runtimeWakeStartedAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
           runtimeWakeProviderStatus: 'stopped',
         },
         lastUsedAt: null,
@@ -1456,25 +1470,24 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'stopped';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'provisioning',
-      retriable: true,
-      sandbox: null,
-      reason: 'runtime_wake_timeout',
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-stuck-stopped', status: 'stopped' },
     });
 
-    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(providerStartCalls).toBe(0);
-    expect(sessionSandboxRows).toHaveLength(0);
-    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-stuck-stopped');
   });
 
-  test('dashboard start retires an old active row whose provider status stays unknown', async () => {
+  test('dashboard start preserves an old active row whose provider status stays unknown', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1504,22 +1517,21 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'unknown';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'provisioning',
-      retriable: true,
-      sandbox: null,
-      reason: 'runtime_status_unknown_timeout',
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-status-unknown', status: 'stopped' },
     });
 
-    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(providerStartCalls).toBe(0);
-    expect(sessionSandboxRows).toHaveLength(0);
-    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-status-unknown');
   });
 
   test('dashboard start gives a freshly-created active runtime grace when provider status is removed', async () => {
@@ -1553,10 +1565,9 @@ describe('project session API contract', () => {
     ];
     providerStatus = 'removed';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'starting',
@@ -1570,16 +1581,68 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows).toHaveLength(1);
     expect(sessionSandboxRows[0]?.externalId).toBe('box-fresh-eventual-404');
     expect(
-      (sessionSandboxRows[0]?.metadata as Record<string, unknown>)
-        .runtimeWakeStartedAt,
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
     ).toEqual(expect.any(String));
   });
 
-  test('dashboard start retires a provider-removed sandbox and reallocates through the canonical runtime path', async () => {
+  test('concurrent archived resume + transient removed status keeps the original identity fenced', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
       sandboxProvider: 'daytona',
+      status: 'stopped',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-original-archived',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_removed_checking',
+    });
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-original-archived');
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(
+      (sessionSandboxRows[0]?.metadata as Record<string, unknown>).runtimeWakeStartedAt,
+    ).toEqual(expect.any(String));
+    releaseProviderStart?.();
+  });
+
+  test('dashboard start never replaces a provider-removed established sandbox', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
       status: 'running',
       opencodeSessionId: 'ses_root_existing',
       metadata: {
@@ -1594,7 +1657,7 @@ describe('project session API contract', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
@@ -1606,34 +1669,214 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'removed';
+    providerRecoveryEnabled = true;
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'provisioning',
+      stage: 'failed',
       agent_name: 'default',
-      retriable: true,
-      sandbox: null,
-      reason: 'runtime_removed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
     });
 
-    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(providerStartCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionSandboxRows).toHaveLength(0);
-    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
-    expect(
-      lastProvisionInput?.extraEnvVars?.KORTIX_INITIAL_PROMPT,
-    ).toBeUndefined();
-    expect(lastProvisionInput?.extraEnvVars?.KORTIX_OPENCODE_MODEL).toBe(
-      'anthropic/claude-sonnet-4-6',
-    );
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-deleted',
+      status: 'stopped',
+      metadata: {
+        preservedExternalId: 'box-deleted',
+        runtimeIdentityState: 'unavailable',
+      },
+    });
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
   });
 
-  test('dashboard start retires a running sandbox whose OpenCode runtime never becomes reachable', async () => {
+  test('dashboard start restores a provider-removed sandbox in place without provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restorable',
+        status: 'stopped',
+        baseUrl: 'https://box-restorable.test',
+        config: {},
+        metadata: { providerStatusObservedAt: '2026-01-01T00:00:00.000Z' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_restoring_in_place',
+      sandbox: { external_id: 'box-restorable' },
+      opencode_session_id: 'ses_root_existing',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-restorable');
+    expect(sessionSandboxRows[0]?.status).toBe('provisioning');
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    const ready = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toMatchObject({
+      stage: 'ready',
+      sandbox: { external_id: 'box-restorable', status: 'active' },
+      opencode_session_id: 'ses_root_existing',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionRow?.status).toBe('running');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('concurrent dashboard starts issue exactly one same-id provider recovery', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-single-flight',
+        status: 'active',
+        baseUrl: 'https://box-single-flight.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+    providerRecoveryGate = new Promise<void>((resolve) => {
+      releaseProviderRecovery = resolve;
+    });
+
+    const first = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    await flushUntil(() => providerRecoveryCalls === 1);
+    const second = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_recovery_in_progress',
+      sandbox: { external_id: 'box-single-flight' },
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+
+    releaseProviderRecovery?.();
+    expect(await (await first).json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_restoring_in_place',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+  });
+
+  test('explicit deletion winning during recovery prevents status and billing resurrection', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+        opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-delete-race',
+        status: 'active',
+        baseUrl: 'https://box-delete-race.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'running';
+    providerRecoveryGate = new Promise<void>((resolve) => {
+      releaseProviderRecovery = resolve;
+    });
+
+    const request = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    await flushUntil(() => providerRecoveryCalls === 1);
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      metadata: {
+        ...(sessionRow?.metadata ?? {}),
+        deletedAt: new Date().toISOString(),
+      },
+    };
+    sessionSandboxRows[0] = { ...sessionSandboxRows[0]!, status: 'archived' };
+    releaseProviderRecovery?.();
+
+    const res = await request;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'stopped',
+      retriable: false,
+      reason: 'runtime_recovery_cancelled',
+    });
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionSandboxRows[0]?.status).toBe('archived');
+    expect(computeReopenCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1655,9 +1898,7 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(
-            Date.now() - 6 * 60 * 1000,
-          ).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
@@ -1668,29 +1909,28 @@ describe('project session API contract', () => {
     providerStatus = 'running';
     opencodeEnsureReason = 'unreachable';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'provisioning',
-      retriable: true,
-      sandbox: null,
-      reason: 'runtime_unreachable_timeout',
+      stage: 'failed',
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
     });
 
-    await flushUntil(() => sandboxProvisionCalls === 1);
     expect(providerStartCalls).toBe(0);
-    expect(sessionSandboxRows).toHaveLength(0);
-    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
   });
 
-  test('restart of a provider-removed sandbox provisions a replacement instead of leaving the session stopped', async () => {
+  test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       opencodeSessionId: 'ses_root_existing',
     };
@@ -1700,7 +1940,7 @@ describe('project session API contract', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
@@ -1712,24 +1952,168 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'removed';
+    providerRecoveryEnabled = true;
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+      session_id: SESSION_ID,
+      external_id: 'box-deleted',
+      reason: 'runtime_identity_unavailable',
+    });
+
+    expect(providerStartCalls).toBe(0);
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-deleted',
+      status: 'stopped',
+      metadata: {
+        preservedExternalId: 'box-deleted',
+        runtimeIdentityState: 'unavailable',
+      },
+    });
+  });
+
+  test('restart restores a provider-removed sandbox in place without provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restart-restorable',
+        status: 'stopped',
+        baseUrl: 'https://box-restart-restorable.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({
       ok: true,
       session_id: SESSION_ID,
       status: 'provisioning',
-      reason: 'runtime_removed',
+      reason: 'runtime_restoring_in_place',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-restart-restorable',
+      status: 'provisioning',
+    });
+    expect(sessionRow).toMatchObject({
+      status: 'provisioning',
+      opencodeSessionId: 'ses_root_existing',
+    });
+  });
+
+  test('restart preserves identity when provider status is uncertain and start returns not-found', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-missing-on-start',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    providerStartError = Object.assign(new Error('sandbox not found'), {
+      status: 404,
     });
 
-    await flushUntil(() => sandboxProvisionCalls === 1);
-    expect(providerStartCalls).toBe(0);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionSandboxRows).toHaveLength(0);
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sessionRow?.status === 'stopped');
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
+        externalId: 'box-missing-on-start',
+      status: 'stopped',
+      metadata: { preservedExternalId: 'box-missing-on-start' },
+    });
+  });
+
+  test('restart preserves identity when provider accepts start but then reports removed', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-accepted-start-then-removed',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'unknown';
+    providerStatusAfterStart = 'removed';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sessionRow?.status === 'stopped');
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
+        externalId: 'box-accepted-start-then-removed',
+      status: 'stopped',
+      metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
+    });
   });
 
   test('dashboard start recovery of an already-bootstrapped session provisions without replaying the initial prompt', async () => {
@@ -1747,10 +2131,9 @@ describe('project session API contract', () => {
     };
     sessionSandboxRows = [];
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
       stage: 'provisioning',
@@ -1769,17 +2152,14 @@ describe('project session API contract', () => {
 
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'Human name',
           metadata: { custom: 'ok' },
         }),
-      },
-    );
+    });
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -1859,7 +2239,10 @@ describe('project session API contract', () => {
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     const expectedRepoUrl =
       process.env.KORTIX_GIT_PROXY === 'true'
-        ? new URL(`/v1/git/${PROJECT_ID}.git`, process.env.KORTIX_URL ?? 'https://test.kortix.local').toString()
+        ? new URL(
+            `/v1/git/${PROJECT_ID}.git`,
+            process.env.KORTIX_URL ?? 'https://test.kortix.local',
+          ).toString()
         : projectRow.repoUrl;
     expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
@@ -1916,12 +2299,127 @@ describe('project session API contract', () => {
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(
-      lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION,
-    ).toBe('1');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe(
-      'Review the repo',
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+  });
+
+  test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {
+    const app = createApp();
+    const runtimeContext = {
+      workspace_id: 'veyris_org_123',
+      'wrapper.locale': 'de',
+      licensed: true,
+      risk_score: 0.25,
+      optional: null,
+    };
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runtime_context: runtimeContext }),
+    });
+
+    expect(res.status).toBe(201);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(runtimeContextRows).toHaveLength(1);
+    expect(runtimeContextRows[0]?.context).toEqual(runtimeContext);
+    expect(runtimeContextRows[0]?.byteSize).toBe(
+      new TextEncoder().encode(JSON.stringify(runtimeContext)).byteLength,
     );
+    expect(sessionRow?.metadata).not.toHaveProperty('runtime_context');
+    const env = lastProvisionInput?.extraEnvVars ?? {};
+    expect(JSON.parse(env.KORTIX_SESSION_CONTEXT!)).toEqual(runtimeContext);
+    expect(env).not.toHaveProperty('workspace_id');
+    expect(env).not.toHaveProperty('VEYRIS_WORKSPACE_ID');
+  });
+
+  test('rejects invalid runtime_context before persisting or provisioning a session', async () => {
+    const app = createApp();
+    for (const runtimeContext of [
+      { KORTIX_TOKEN: 'shadow' },
+      { workspace_id: { nested: true } },
+      { payload: 'é'.repeat(9_000) },
+    ]) {
+      sessionRow = null;
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runtime_context: runtimeContext }),
+      });
+      expect(res.status).toBe(400);
+      expect(sessionRow).toBeNull();
+      expect(runtimeContextRows).toHaveLength(0);
+      expect(sandboxProvisionCalls).toBe(0);
+    }
+  });
+
+  test('rejects unknown session-create fields at the HTTP boundary', async () => {
+    const app = createApp();
+    sessionRow = null;
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initial_prompt: 'noop', arbitrary_env: 'nope' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(sessionRow).toBeNull();
+    expect(runtimeContextRows).toHaveLength(0);
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('cold /start restores durable runtime_context into a replacement runtime', async () => {
+    const app = createApp();
+    const context = { workspace_id: 'veyris_org_cold', locale: 'fr' };
+    runtimeContextRows = [
+      {
+      sessionId: SESSION_ID,
+      context,
+      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_existing',
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(200);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
+  });
+
+  test('replacement restart restores durable runtime_context', async () => {
+    const app = createApp();
+    const context = { workspace_id: 'veyris_org_restart', locale: 'en' };
+    runtimeContextRows = [
+      {
+      sessionId: SESSION_ID,
+      context,
+      byteSize: new TextEncoder().encode(JSON.stringify(context)).byteLength,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_existing',
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(202);
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(JSON.parse(lastProvisionInput!.extraEnvVars!.KORTIX_SESSION_CONTEXT!)).toEqual(context);
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {
@@ -1949,12 +2447,9 @@ describe('project session API contract', () => {
 
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'DELETE',
-      },
-    );
+    });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -1962,12 +2457,9 @@ describe('project session API contract', () => {
     expect(sessionRow?.branchName).toBe(SESSION_ID);
 
     sessionRow = null;
-    const missing = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
-      {
+    const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
         method: 'DELETE',
-      },
-    );
+    });
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
   });

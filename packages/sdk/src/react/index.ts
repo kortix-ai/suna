@@ -27,17 +27,7 @@ export {
   isBillingError,
   formatBillingErrorForUI,
   type BillingErrorUI,
-} from '../platform/api/errors';
-
-// Fork-draft stash — see `session-start-stash.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
-// directly here (same reasoning as the start-stash exports it lives beside).
-export {
-  forkDraftKey,
-  writeForkDraft,
-  readForkDraft,
-  clearForkDraft,
-} from './session-start-stash';
+} from '../core/http/api/errors';
 
 // The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
@@ -51,7 +41,7 @@ export {
   type EventStreamTimers,
   type OpenCodeEvent,
   type OpenEventStreamOptions,
-} from '../state/event-stream';
+} from '../core/stream/event-stream';
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six

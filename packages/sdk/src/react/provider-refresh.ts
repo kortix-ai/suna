@@ -2,7 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { listProjectSecrets } from '../platform/projects-client';
+import { listProjectSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-opencode-config';
 import { clearProjectProviderCache, opencodeKeys } from './use-opencode-sessions';
