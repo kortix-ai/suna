@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/kortix-bootstrap.log | logger -t kortix-bootstrap -s 2>/dev/console) 2>&1
+
+dnf update -y
+dnf install -y amazon-cloudwatch-agent docker xfsprogs
+systemctl enable --now docker amazon-ssm-agent
+
+install -d -m 0755 /etc/kortix /opt/kortix/releases /var/lib/kortix
+
+volume_id="${data_volume_id}"
+disk_id="nvme-Amazon_Elastic_Block_Store_$${volume_id//-/}"
+disk="/dev/disk/by-id/$${disk_id}"
+for _ in $(seq 1 120); do
+  [ -b "$${disk}" ] && break
+  sleep 2
+done
+[ -b "$${disk}" ] || { echo "persistent EBS volume not attached"; exit 1; }
+
+if ! blkid "$${disk}" >/dev/null 2>&1; then
+  mkfs.xfs -L kortix-data "$${disk}"
+fi
+uuid=$(blkid -s UUID -o value "$${disk}")
+grep -q "$${uuid}" /etc/fstab || echo "UUID=$${uuid} /var/lib/kortix xfs defaults,nofail,nodev,nosuid 0 2" >> /etc/fstab
+mount -a
+
+cat >/etc/kortix/instance.env <<'ENV'
+AWS_REGION=${aws_region}
+KORTIX_INSTANCE=${instance_name}
+KORTIX_RUNTIME_SECRET_ARN=${runtime_secret_arn}
+KORTIX_BACKUP_BUCKET=${backup_bucket}
+KORTIX_RELEASE_CACHE_BUCKET=${release_cache_bucket}
+KORTIX_LOG_GROUP=${log_group}
+ENV
+chmod 0600 /etc/kortix/instance.env
+
+cat >/etc/systemd/system/kortix-supabase.service <<'UNIT'
+[Unit]
+Description=Kortix private Supabase runtime
+After=docker.service var-lib-kortix.mount network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/kortix/instance.env
+ExecStart=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-start ]; then exec /opt/kortix/current/bin/supabase-start; else echo "awaiting signed release reconciliation"; fi'
+ExecStop=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-stop ]; then exec /opt/kortix/current/bin/supabase-stop; fi'
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now kortix-supabase.service

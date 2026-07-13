@@ -1,0 +1,15 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - set -euo pipefail
+      - install -d -m 0755 /opt/kortix-updater
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$KORTIX_UPDATER_BOOTSTRAP_URL" -o /opt/kortix-updater/kortix-enterprise-updater
+      - echo "$KORTIX_UPDATER_BOOTSTRAP_SHA256  /opt/kortix-updater/kortix-enterprise-updater" | sha256sum --check --strict
+      - chmod 0755 /opt/kortix-updater/kortix-enterprise-updater
+  build:
+    commands:
+      - set -euo pipefail
+      - test "$KORTIX_CHANNEL" = stable
+      - /opt/kortix-updater/kortix-enterprise-updater reconcile --instance "$KORTIX_INSTANCE" --channel "$KORTIX_CHANNEL" --repository "$KORTIX_RELEASE_REPOSITORY" --trusted-root-sha256 "$KORTIX_TUF_ROOT_SHA256" --state-table "$KORTIX_STATE_TABLE" --cache-bucket "$KORTIX_RELEASE_CACHE_BUCKET" --apply-role "$KORTIX_APPLY_ROLE_ARN" --maintenance-window "$KORTIX_MAINTENANCE_WINDOW" --execution-input "$KORTIX_EXECUTION_INPUT"
