@@ -2,12 +2,16 @@ import { describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
 import { deriveContext, deriveOutputs } from './derive-panels';
 
-function part(tool: string, input: Record<string, unknown> = {}): ToolPart {
+function part(
+  tool: string,
+  input: Record<string, unknown> = {},
+  extra: { metadata?: Record<string, unknown>; output?: string } = {},
+): ToolPart {
   return {
     type: 'tool',
     tool,
-    callID: `c-${tool}-${JSON.stringify(input)}`,
-    state: { status: 'completed', input },
+    callID: `c-${tool}-${JSON.stringify(input)}-${JSON.stringify(extra)}`,
+    state: { status: 'completed', input, ...extra },
   } as unknown as ToolPart;
 }
 
@@ -116,6 +120,127 @@ describe('deriveOutputs', () => {
     expect(
       deriveOutputs([part('presentation_gen', { action: 'list_presentations' })]),
     ).toEqual([]);
+  });
+
+  // ─── apply_patch: the tool's INPUT is an opaque patch blob — the per-file
+  // paths only exist in its OUTPUT metadata (`state.metadata.files`, the same
+  // shape ApplyPatchTool itself reads — see PatchFileLite). A naive
+  // `getToolPrimaryArg`-based name lookup finds nothing here (there is no
+  // `apply_patch` case in that function and its input has no path-shaped
+  // key), so a task that edited files via apply_patch must not come back
+  // empty. ─────────────────────────────────────────────────────────────────
+
+  it('produces one OutputItem per file an apply_patch call actually changed', () => {
+    const out = deriveOutputs([
+      part(
+        'apply_patch',
+        {},
+        {
+          metadata: {
+            files: [
+              { relativePath: 'src/a.ts', filePath: '/workspace/src/a.ts', type: 'update' },
+              { relativePath: 'src/b.ts', filePath: '/workspace/src/b.ts', type: 'add' },
+            ],
+          },
+        },
+      ),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((o) => o.name)).toEqual(['a.ts', 'b.ts']);
+    expect(out.every((o) => o.kind === 'file')).toBe(true);
+  });
+
+  it('does not crash and emits nothing for an apply_patch call with no usable metadata', () => {
+    expect(deriveOutputs([part('apply_patch', {})])).toEqual([]);
+    expect(deriveOutputs([part('apply_patch', {}, { metadata: {} })])).toEqual([]);
+    expect(deriveOutputs([part('apply_patch', {}, { metadata: { files: [] } })])).toEqual([]);
+    expect(
+      deriveOutputs([part('apply_patch', {}, { metadata: { files: [{ type: 'update' }] } })]),
+    ).toEqual([]);
+    expect(
+      deriveOutputs([part('apply_patch', {}, { metadata: { files: 'not-an-array' } })]),
+    ).toEqual([]);
+  });
+
+  it('skips a deleted file inside an apply_patch call — nothing is left to open', () => {
+    const out = deriveOutputs([
+      part(
+        'apply_patch',
+        {},
+        {
+          metadata: {
+            files: [
+              { relativePath: 'src/a.ts', filePath: '/workspace/src/a.ts', type: 'update' },
+              { relativePath: 'src/gone.ts', filePath: '/workspace/src/gone.ts', type: 'delete' },
+            ],
+          },
+        },
+      ),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('a.ts');
+  });
+
+  // ─── image_gen / presentation_gen: getToolPrimaryArg has no case for these
+  // tools, so the name used to fall back to humanizeToolName(part.tool) —
+  // literally "Image Gen" / "Presentation Gen" instead of the artifact's own
+  // name. Both components resolve the real name by parsing the tool's OUTPUT
+  // payload (JSON with top-level `path`/`image_path`/`output_path`, or
+  // `presentation_name`/`slide_title`) — see parseImageOutput and
+  // parsePresentationOutput. ──────────────────────────────────────────────
+
+  it('names a presentation_gen create_slide output with the real deck/slide name, not "Presentation Gen"', () => {
+    const out = deriveOutputs([
+      part('presentation_gen', {
+        action: 'create_slide',
+        presentation_name: 'Q3 Roadmap',
+        slide_title: 'Overview',
+        slide_number: 1,
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).not.toBe('Presentation Gen');
+    expect(out[0].name).toContain('Q3 Roadmap');
+  });
+
+  it('falls back to the output payload for the deck name when input lacks it', () => {
+    const out = deriveOutputs([
+      part(
+        'presentation_gen',
+        { action: 'export_pptx' },
+        { output: JSON.stringify({ success: true, presentation_name: 'Q3 Roadmap' }) },
+      ),
+    ]);
+    expect(out[0].name).toBe('Q3 Roadmap');
+  });
+
+  it('never falls back to the raw tool name for presentation_gen, even with no name anywhere', () => {
+    const out = deriveOutputs([part('presentation_gen', { action: 'create_slide' })]);
+    expect(out[0].name).not.toBe('Presentation Gen');
+  });
+
+  it('names an image_gen generate output something other than "Image Gen"', () => {
+    const out = deriveOutputs([
+      part('image_gen', { action: 'generate', prompt: 'a red panda in a garden' }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).not.toBe('Image Gen');
+  });
+
+  it('uses the real output image path as the name when the tool produced one', () => {
+    const out = deriveOutputs([
+      part(
+        'image_gen',
+        { action: 'generate', prompt: 'a red panda' },
+        { output: JSON.stringify({ path: '/workspace/output/panda.png' }) },
+      ),
+    ]);
+    expect(out[0].name).toBe('panda.png');
+  });
+
+  it('never falls back to the raw tool name for image_gen, even with no name anywhere', () => {
+    const out = deriveOutputs([part('image_gen', {})]);
+    expect(out[0].name).not.toBe('Image Gen');
   });
 });
 
