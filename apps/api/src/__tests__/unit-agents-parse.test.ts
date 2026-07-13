@@ -41,8 +41,8 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('40 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_CLI.size).toBe(40);
+  test('41 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_CLI.size).toBe(41);
   });
 
   // The three manager-tier project leaves are reachable via a project's
@@ -87,11 +87,11 @@ name = "release-bot"
 [[agents]]
 name = "release-bot"
 connectors = ["github", "stripe-readonly"]
-kortix_cli = ["project.deploy", "project.cr.open"]
+kortix_cli = ["project.trigger.create", "project.cr.open"]
 `);
     expect(errors).toEqual([]);
     expect(specs[0].connectors).toEqual(['github', 'stripe-readonly']);
-    expect(specs[0].kortixCli).toEqual(['project.deploy', 'project.cr.open']);
+    expect(specs[0].kortixCli).toEqual(['project.trigger.create', 'project.cr.open']);
   });
 
   test('"all" grants everything; default kortix agent shape', () => {
@@ -144,9 +144,9 @@ file = ".claude/agents/triage.md"
     const { specs } = parse(`
 [[agents]]
 name = "a"
-kortix_cli = ["project.read", "project.read", "project.deploy"]
+kortix_cli = ["project.read", "project.read", "project.trigger.create"]
 `);
-    expect(specs[0].kortixCli).toEqual(['project.read', 'project.deploy']);
+    expect(specs[0].kortixCli).toEqual(['project.read', 'project.trigger.create']);
   });
 });
 
@@ -221,7 +221,7 @@ describe('[[agents]] — round-trip', () => {
       path: 'kortix.toml#agents.release-bot',
       enabled: true,
       connectors: ['github'],
-      kortixCli: ['project.deploy'],
+      kortixCli: ['project.trigger.create'],
       env: 'all',
       file: null,
       model: 'anthropic/claude-sonnet-4-6',
@@ -235,7 +235,7 @@ kortix_cli = ${JSON.stringify(entry.kortix_cli)}
 model = "${entry.model}"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], kortixCli: ['project.deploy'], model: 'anthropic/claude-sonnet-4-6' });
+    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], kortixCli: ['project.trigger.create'], model: 'anthropic/claude-sonnet-4-6' });
   });
 
   test('minimal spec emits only name', () => {
@@ -456,12 +456,12 @@ describe('kortix_version 2 — `agents:` map', () => {
     const { specs, errors } = parseV2(`
   support:
     connectors: [github, slack]
-    kortix_cli: [project.deploy, project.cr.open]
+    kortix_cli: [project.trigger.create, project.cr.open]
     secrets: [STRIPE_KEY, GH_TOKEN]
 `);
     expect(errors).toEqual([]);
     expect(specs[0].connectors).toEqual(['github', 'slack']);
-    expect(specs[0].kortixCli).toEqual(['project.deploy', 'project.cr.open']);
+    expect(specs[0].kortixCli).toEqual(['project.trigger.create', 'project.cr.open']);
     expect(specs[0].env).toEqual(['STRIPE_KEY', 'GH_TOKEN']);
   });
 

@@ -54,15 +54,14 @@ repositories and tools it should work with.
 - `opencode.config_dir` — agent config location (default `.kortix/opencode`)
 - `agents` — [agent](/docs/concepts/agents) governance (connectors/secrets/CLI/skills grants) and `default_agent`
 - `triggers` — [automations](/docs/concepts/triggers)
-- `apps` — deployable apps (experimental)
 
-Unknown keys are ignored. Dashboard edits to triggers/env/apps are
+Unknown keys are ignored. Dashboard edits to triggers/env are
 read-modify-writes on the same file, so in-session and dashboard edits round-trip.
 
 <Callout type="info" title="v1 equivalents">
 In legacy `kortix.toml` (`kortix_version: 1`) these are TOML tables:
 `[project]`, `[env]`, `[[sandbox.templates]]`, `[opencode]`, `[[agents]]` (array,
-grant field named `env` instead of `secrets`), `[[triggers]]`, `[[apps]]`. v1 also
+grant field named `env` instead of `secrets`), `[[triggers]]`. v1 also
 has `[[channels]]`, removed outright in v2 — channel↔agent routing is dashboard/CLI
 managed, never committed.
 </Callout>

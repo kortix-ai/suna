@@ -14,7 +14,7 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
   });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["freestyle"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
@@ -95,8 +95,8 @@ flow(
   {
     domain: "projects",
     // `stripe` ⇒ the target enforces billing, so a free account is capped at 1
-    // project; `freestyle` ⇒ managed provisioning is available to reach the cap.
-    requires: ["freestyle", "stripe"],
+    // project; `managedGit` ⇒ managed provisioning is available to reach the cap.
+    requires: ["managedGit", "stripe"],
     serial: true,
     routes: ["GET /v1/projects", "POST /v1/projects/provision"],
   },

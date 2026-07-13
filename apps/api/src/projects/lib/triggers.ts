@@ -9,7 +9,6 @@ import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
@@ -979,22 +978,6 @@ export function startProjectTriggerScheduler(): void {
       .catch((error) => {
         console.error('[project-triggers] sweep failed:', error);
       });
-
-    // Same cadence drives the [[apps]] auto-deploy sweep. Run independently
-    // so a slow app deploy never blocks the cron trigger fires. Skipped
-    // entirely when the experimental flag is off — no point reading
-    // every project's manifest just to ignore the `apps` block.
-    if (config.KORTIX_APPS_EXPERIMENTAL) {
-      runProjectAppSweep()
-        .then((result) => {
-          if (result.deployed || result.failed) {
-            console.log('[project-apps] sweep completed', result);
-          }
-        })
-        .catch((error) => {
-          console.error('[project-apps] sweep failed:', error);
-        });
-    }
 
     // Connector reconcile backstop — slower cadence than the trigger sweep so
     // we don't re-read every manifest each tick. Catches out-of-band manifest

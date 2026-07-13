@@ -12,7 +12,7 @@ import {
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
+export type ExperimentalFeatureKey = 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -47,8 +47,6 @@ export interface KortixProject {
   /** Full experimental-feature catalog (drives Customize → Settings →
    *  Experimental). Self-describing so the UI never hard-codes the list. */
   experimental_features?: ExperimentalFeatureView[];
-  /** Back-compat alias for `experimental.apps`. */
-  apps_enabled?: boolean;
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
@@ -300,14 +298,6 @@ export async function updateProjectSandboxProvider(
       provider,
     }),
   );
-}
-
-/** @deprecated Use {@link updateExperimentalFeature}('apps', …). */
-export async function updateAppsConfig(
-  projectId: string,
-  input: { enabled: boolean | null },
-) {
-  return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
 /**

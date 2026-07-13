@@ -302,7 +302,7 @@ both work this way — open their `.md` files to see what they actually do).
 agents:
   release-bot:                          # = the agent's .md name (.kortix/opencode/agents/release-bot.md)
     connectors: [github]                # which connector profiles it may call   (default: none)
-    kortix_cli: [project.deploy, project.cr.open]   # what it may do via the Kortix CLI/API (default: none)
+    kortix_cli: [project.write, project.cr.open]    # what it may do via the Kortix CLI/API (default: none)
 ```
 
 **Which file owns what — never duplicate across the boundary:**
@@ -331,9 +331,9 @@ collapse promoted those three to ACCOUNT owner/admin authority even though they 
 specific project). Run `kortix validate --scopes` to print this list:
 
 ```
-project.read  project.write  project.deploy
+project.read  project.write
 project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
-project.session.read  project.session.start  project.session.stop
+project.session.read  project.session.start  project.session.stop  project.session.bindings.write
 project.members.read
 project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
 project.gateway.logs.read  project.gateway.spend.read  project.gateway.budget.set
@@ -344,7 +344,7 @@ project.file.read  project.file.write
 project.customize.read  project.customize.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
-project.connector.read  project.connector.write   # channels (Slack/meet/email) send + connect are gated here
+project.connector.read  project.connector.write  project.connector.profiles.manage   # channels (Slack/meet/email) send + connect are gated here
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -515,9 +515,6 @@ Things that surprise people:
   `required` to the dashboard so the user knows what to set, but session
   bootstrap won't block on missing values today. Treat `required` as a
   contract with the user, not the platform.
-- **`apps:` is experimental.** Gated behind
-  `KORTIX_APPS_EXPERIMENTAL`. When off, entries are parsed but never
-  acted on.
 </gotchas>
 
 </skill>

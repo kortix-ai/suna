@@ -29,7 +29,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     autoClone: false,
     projectId: 'proj-1',
     apiUrl: undefined,
-    repoUrl: 'https://git.freestyle.sh/repo-abc',
+    repoUrl: 'https://git.example.test/repo-abc',
     branchName: 'session-xyz',
     sessionFresh: false,
     baseSha: undefined,
@@ -59,7 +59,7 @@ function startCloneCredentialServer(opts: {
         return Response.json({ error: 'bad token' }, { status: 401 })
       }
       return Response.json({
-        repo_url: 'https://git.freestyle.sh/repo-abc',
+        repo_url: 'https://git.example.test/repo-abc',
         auth: opts.pushToken
           ? { username: 'x-access-token', token: opts.pushToken, type: 'basic' }
           : null,
@@ -122,14 +122,14 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const { stdout: helper } = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.freestyle.sh.helper'],
+        ['config', '--global', '--get', 'credential.https://git.example.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(helper.trim()).toContain('git-credential')
       expect(helper.trim().startsWith('!')).toBe(true)
       const { stdout: user } = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.freestyle.sh.username'],
+        ['config', '--global', '--get', 'credential.https://git.example.test.username'],
         { env, encoding: 'utf8' },
       )
       expect(user.trim()).toBe('x-access-token')
@@ -147,7 +147,7 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const { stdout } = await execFileAsync(
         'git',
-        ['config', '--global', '--get-all', 'credential.https://git.freestyle.sh.helper'],
+        ['config', '--global', '--get-all', 'credential.https://git.example.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(stdout.trim().split('\n').filter(Boolean)).toHaveLength(1)
@@ -166,13 +166,13 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: '/nonexistent-home-for-test' }
       const { stdout } = await execFileAsync(
         'git',
-        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.freestyle.sh.helper'],
+        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(stdout.trim()).toContain('git-credential')
       const { stdout: user } = await execFileAsync(
         'git',
-        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.freestyle.sh.username'],
+        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.username'],
         { env, encoding: 'utf8' },
       )
       expect(user.trim()).toBe('x-access-token')
@@ -186,7 +186,7 @@ describe('git credential helper', () => {
     try {
       // No `git init` — there's no .git here.
       await configureRepoCredentialHelper(baseConfig(), dir)
-      const res = await execFileAsync('git', ['-C', dir, 'config', '--local', '--get', 'credential.https://git.freestyle.sh.helper'], { encoding: 'utf8' })
+      const res = await execFileAsync('git', ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.helper'], { encoding: 'utf8' })
         .then(() => ({ ok: true }))
         .catch(() => ({ ok: false }))
       expect(res.ok).toBe(false)
@@ -202,7 +202,7 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const res = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.freestyle.sh.helper'],
+        ['config', '--global', '--get', 'credential.https://git.example.test.helper'],
         { env, encoding: 'utf8' },
       ).catch((err: { code?: number }) => ({ code: err.code }))
       // `git config --get` exits 1 when the key is absent.

@@ -584,22 +584,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
-      /** Project apps/deployments — the `/projects/:id/apps/*` family. */
-      apps: {
-        list: () => P.listProjectApps(projectId),
-        create: (input: Parameters<typeof P.createProjectApp>[1]) =>
-          P.createProjectApp(projectId, input),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
-          P.updateProjectApp(projectId, ...a),
-        remove: (slug: string) => P.deleteProjectApp(projectId, slug),
-        deploy: (slug: string) => P.deployProjectApp(projectId, slug),
-        stop: (slug: string) => P.stopProjectApp(projectId, slug),
-        logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
-        /** @deprecated Use `updateExperimentalFeature('apps', enabled)` — kept for parity with the underlying client. */
-        updateConfig: (input: Parameters<typeof P.updateAppsConfig>[1]) =>
-          P.updateAppsConfig(projectId, input),
-      },
-
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */
       updateExperimentalFeature: (
         ...a: DropFirst<Parameters<typeof P.updateExperimentalFeature>>

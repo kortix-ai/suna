@@ -189,6 +189,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                             | `src/opencode/kortix-master.ts`                                                                                                                                                   | OPEN                                                                               |
 | B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
 | B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
+| B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -559,3 +560,22 @@ packed, installed, imported, and constructed `@kortix/sdk` successfully.
 **Shippable to production: YES** for the SDK surface. The two skipped tests are
 the existing browser-bundle tests that only execute after `build:bundles`; this
 change does not touch bundles or runtime transport.
+
+---
+
+### 2026-07-13 — session `remove-freestyle`: B8 project-app surface removal
+
+Completed the explicitly subtractive SDK portion in implementation commit
+`ec8b44dda`: removed the project-app REST module, `project(id).apps` facade,
+associated public types, playground example, API map/docs references, and the
+corresponding runtime/type public-surface snapshot entries. No compatibility
+alias remains because the underlying platform capability itself was removed.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1079 pass / 0 fail** across 72 files
+with 4921 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed the published package successfully.
+
+**Shippable to production: YES** for the SDK subtraction. Repository delivery,
+deployment, and the separate forward database-schema removal remain tracked by
+the parent removal goal.

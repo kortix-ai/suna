@@ -79,25 +79,13 @@ import {
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
 import { db } from '../../shared/db';
-import { extractApps } from '../apps';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
   renewExecutionLease,
 } from '../execution-lease';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
-import {
-  APPS_DISABLED_BODY,
-  type SlackAuthTest,
-  draftToAppSpec,
-  loadAppsForResponse,
-  parseAppDraft,
-  projectAppsEnabled,
-  removeAppFromManifest,
-  specToAppBody,
-  upsertAppInManifest,
-} from '../lib/apps-helpers';
+import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
@@ -142,6 +130,14 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_mode',
   'sessionMode',
 ] as const;
+
+interface SlackAuthTest {
+  ok: boolean;
+  team_id?: string;
+  team?: string;
+  user_id?: string;
+  error?: string;
+}
 
 const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
 
@@ -2587,229 +2583,3 @@ projectsApp.openapi(
     );
   },
 );
-
-// ── apps CRUD + deploy ───────────────────────────────────────────────────────
-//
-// Apps are declared as `apps:` list entries inside kortix.yaml. The manifest
-// is the source of truth; the `deployments` table stores deploy attempts
-// (one row per version per app). The sweep loop in ./app-sweep.ts auto-
-// deploys on manifest drift; the routes below give the UI and CLI a
-// manual path.
-//
-// EXPERIMENTAL. The entire surface is gated PER PROJECT
-// (projects.metadata.apps_enabled, defaulting to KORTIX_APPS_EXPERIMENTAL).
-// When off for a project, every /apps route returns 404 and the sweep skips
-// it. This middleware loads the project's gate and short-circuits before any
-// of the handlers below run.
-
-projectsApp.use('/:projectId/apps/*', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
-    return c.json(APPS_DISABLED_BODY, 404);
-  }
-  await next();
-});
-
-projectsApp.use('/:projectId/apps', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
-    return c.json(APPS_DISABLED_BODY, 404);
-  }
-  await next();
-});
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'GET /:projectId/apps',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.array(AppSchema), 'Apps'),
-      ...errors(404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
-);
-
-// POST /v1/projects/:projectId/apps — add a new app to kortix.yaml
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'POST /:projectId/apps',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      201: json(AppSchema, 'The created app'),
-      ...errors(400, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    const draft = parseAppDraft(body, { existingSlug: null });
-    if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-
-    if (extractApps(manifest).specs.some((s) => s.slug === draft.slug)) {
-      return c.json(
-        {
-          error: `An app with slug "${draft.slug}" already exists. Pick a different name.`,
-        },
-        409,
-      );
-    }
-
-    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(loaded.row, next, `chore: add app ${draft.slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
-  },
-);
-
-// PATCH /v1/projects/:projectId/apps/:slug — partial update merged onto current
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'PATCH /:projectId/apps/:slug',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    const current = extractApps(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-
-    const draft = parseAppDraft(
-      { ...specToAppBody(current), ...body, slug },
-      { existingSlug: slug },
-    );
-    if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(loaded.row, next, `chore: update app ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
-);
-
-// DELETE /v1/projects/:projectId/apps/:slug — remove from manifest. Does
-// NOT auto-stop existing deployments; call /apps/:slug/stop first if needed.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'DELETE /:projectId/apps/:slug',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-      return c.json({ error: 'Invalid slug' }, 400);
-    }
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    if (!extractApps(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const next = removeAppFromManifest(manifest, slug);
-    const result = await commitManifest(loaded.row, next, `chore: delete app ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-    return c.json({ ok: true });
-  },
-);
-
-// POST /v1/projects/:projectId/apps/:slug/deploy — manual deploy. Mirrors
-// what the sweep does on drift but bypasses the hash-equality skip.

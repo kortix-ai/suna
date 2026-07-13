@@ -93,18 +93,6 @@ mock.module('../shared/account-limits', () => ({
   clearAccountLimitCache: () => {},
 }));
 
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://freestyle.example.test',
-  callFreestyle: async () => new Response('{}', { status: 200 }),
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
-    stop: async () => {},
-    logs: async () => ({}),
-  },
-}));
-
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
   ...realAuthMiddleware,

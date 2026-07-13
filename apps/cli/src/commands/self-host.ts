@@ -126,8 +126,6 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_TOKEN: string;
   MANAGED_GIT_GITHUB_OWNER: string;
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
-  FREESTYLE_API_KEY: string;
-  FREESTYLE_API_URL: string;
   INTEGRATION_AUTH_PROVIDER: string;
   KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
   PIPEDREAM_CLIENT_ID: string;
@@ -650,7 +648,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}These power the agent runtime, app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}These power the agent runtime, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
   // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
@@ -660,12 +658,6 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
   env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
   env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-
-  const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
-  if (freestyleMode === 'configure') {
-    env.FREESTYLE_API_KEY = await promptSecret('Freestyle API key', env.FREESTYLE_API_KEY);
-    env.FREESTYLE_API_URL = await prompt('Freestyle API URL', env.FREESTYLE_API_URL || 'https://api.freestyle.sh');
-  }
 
   // Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
   // git repo the server provisions. A PAT is the quickest path; a GitHub App is
@@ -732,10 +724,6 @@ function pipedreamConfigured(env: SelfHostEnv): boolean {
   return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
 }
 
-function freestyleConfigured(env: SelfHostEnv): boolean {
-  return !!env.FREESTYLE_API_KEY;
-}
-
 function sandboxProviders(env: SelfHostEnv): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
@@ -767,7 +755,7 @@ function integrationReviewNeeded(env: SelfHostEnv): boolean {
   if (!sandboxProviderConfigured(env)) return true;
   if (!gitProviderConfigured(env)) return true;
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
-  return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
+  return true;
 }
 
 function shouldPrompt(flags: GlobalFlags): boolean {
@@ -780,11 +768,6 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
       hint: 'DAYTONA_API_KEY (via kortix self-host configure)',
-    },
-    {
-      name: 'App deployments',
-      configured: freestyleConfigured(env),
-      hint: 'FREESTYLE_API_KEY',
     },
     {
       name: 'Managed git for projects (required)',
@@ -1068,8 +1051,6 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MANAGED_GIT_GITHUB_TOKEN: '',
     MANAGED_GIT_GITHUB_OWNER: '',
     MANAGED_GIT_GITHUB_INSTALL_ID: '',
-    FREESTYLE_API_KEY: '',
-    FREESTYLE_API_URL: 'https://api.freestyle.sh',
     INTEGRATION_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',

@@ -76,8 +76,7 @@ One Kortix login can belong to many accounts (personal, a company account, …).
 using Docker Compose. On first interactive setup it always collects a Daytona
 API key (the sandbox runtime — required, or agent sessions can't start) and
 managed GitHub access (a PAT or GitHub App — required to create projects), plus
-the optional integrations you may not need yet: Freestyle for app deployments
-and Pipedream for app connectors. Local ports, Supabase, generated secrets, and
+the optional Pipedream integration for app connectors. Local ports, Supabase, generated secrets, and
 Docker defaults are handled automatically. `start` prints a warning if the
 sandbox provider or git provider still isn't configured.
 
@@ -90,7 +89,7 @@ sandbox provider or git provider still isn't configured.
 | `kortix self-host restart` | Restart the stack. |
 | `kortix self-host status` | Show Docker Compose service status. |
 | `kortix self-host open` | Open the local dashboard in your browser. |
-| `kortix self-host configure` | Re-run the Daytona, Freestyle, GitHub, and Pipedream credential wizard. |
+| `kortix self-host configure` | Re-run the Daytona, GitHub, and Pipedream credential wizard. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
 | `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
 | `kortix self-host logs [service]` | Tail Docker Compose logs. |
@@ -203,22 +202,6 @@ Manages the project's sandbox images — the same surface as the dashboard's Cus
 | `kortix sandboxes fix` | Start a session seeded with the last failed build log so an agent can repair it. |
 
 Options for `add`/`update`: `--image <ref>` (mutually exclusive with `--dockerfile`), `--dockerfile <path>` (repo-relative), `--name <label>` (default: slug), `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
-
-### Apps (experimental)
-
-Manages deployable [apps](/docs/concepts/apps) — the same surface as the dashboard's Apps page. Apps are declared in `[[apps]]` in the manifest and deployed to a provider. Hidden from `kortix help` and refuses to run unless `KORTIX_APPS_EXPERIMENTAL=true` is set locally, in addition to the platform-side apps feature being enabled for the project.
-
-| Command | Effect |
-| --- | --- |
-| `kortix apps ls [--json]` | List apps + latest deployment status. |
-| `kortix apps add <slug> --repo <url> [options]` | Create an app in the manifest. |
-| `kortix apps update <slug> [options]` | Update an app's fields. |
-| `kortix apps rm <slug>` | Remove an app from the manifest. |
-| `kortix apps deploy <slug>` | Deploy now (bypasses the drift check). |
-| `kortix apps stop <slug>` | Tear down the latest deployment. |
-| `kortix apps logs <slug> [--json]` | Fetch provider logs for the latest deploy. |
-
-Options for `add`/`update`: `--name <label>`, `--framework <f>` (e.g. `next`, `vite`, `static`), `--repo <url>` (git source), `--branch <b>`, `--root-path <p>` (subdir to deploy), `--tar <url>` (tarball source, alternative to `--repo`), `--build-command <cmd>`, `--out-dir <dir>`, `--domains <d,d>` (comma-separated), `--disable` (set `enabled=false`). Global: `--project <id>`, `--host <name>`.
 
 ### Marketplace
 
