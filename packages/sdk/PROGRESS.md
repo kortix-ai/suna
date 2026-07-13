@@ -653,3 +653,16 @@ smoke:install` packed, installed, imported, and constructed `@kortix/sdk`
 successfully.
 
 **Shippable to production: YES** for the SDK surface.
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (claim)
+
+Claimed the user-directed personal session-branch preference work. This adds an
+additive SDK/API contract for a project-scoped current-user default and makes
+session base-ref resolution honor it before group and project defaults. No
+existing public names or required fields will be changed. SDK work will follow
+RED -> GREEN -> REFACTOR and finish with typecheck, full suite, and packed-install
+smoke evidence.
+
+**Status:** IN PROGRESS.
