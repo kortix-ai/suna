@@ -271,7 +271,7 @@ export const projects = kortixSchema.table(
     index('idx_projects_account').on(table.accountId),
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
-    uniqueIndex('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+    index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
   ],
 );
 
@@ -2742,9 +2742,6 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
-    /** Deprecated release-compatibility column. The branch hierarchy no longer
-     * reads or writes this value; remove only after the code-removal rollout. */
-    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */

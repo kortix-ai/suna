@@ -36,7 +36,6 @@ const dbState: ProjectsContractDbState = {
   installationRow: null,
   gitConnectionRows: [],
   nextProjectIds: [],
-  repoUniquenessEnforced: true,
 };
 let commitCalls: any[];
 let listRepoFileCalls: any[];
@@ -94,7 +93,6 @@ function resetState() {
   readRepoFileCalls = [];
   archiveCalls = [];
   rejectedBranch = null;
-  dbState.repoUniquenessEnforced = true;
 }
 
 // `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
@@ -385,31 +383,42 @@ describe('projects API contract', () => {
     }));
   });
 
-  test('keeps re-import idempotent while the phase-one unique index remains', async () => {
+  test('creates independent projects for different branches of one repository', async () => {
     const app = createApp();
     const payload = {
       account_id: ACCOUNT_ID,
       repo_url: 'https://github.com/kortix-org/new-project.git',
-      default_branch: 'main',
     };
-    const request = (name: string) => app.request('/v1/projects', {
+    const request = (name: string, defaultBranch: string) => app.request('/v1/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, name }),
+      body: JSON.stringify({ ...payload, name, default_branch: defaultBranch }),
     });
 
-    const first = await request('API development');
-    const second = await request('Web development');
+    const first = await request('Production', 'main');
+    const second = await request('Development', 'dev');
     expect([first.status, second.status]).toEqual([201, 201]);
     const [firstBody, secondBody] = await Promise.all([first.json(), second.json()]);
     expect([firstBody.project_id, secondBody.project_id]).toEqual([
       NEW_PROJECT_ID,
-      NEW_PROJECT_ID,
+      SECOND_NEW_PROJECT_ID,
     ]);
     expect(dbState.projectRows.filter((row) => row.repoUrl === payload.repo_url)).toEqual([
-      expect.objectContaining({ projectId: NEW_PROJECT_ID, name: 'Web development' }),
+      expect.objectContaining({
+        projectId: NEW_PROJECT_ID,
+        name: 'Production',
+        defaultBranch: 'main',
+      }),
+      expect.objectContaining({
+        projectId: SECOND_NEW_PROJECT_ID,
+        name: 'Development',
+        defaultBranch: 'dev',
+      }),
     ]);
-    expect(dbState.gitConnectionRows.map((row) => row.projectId)).toEqual([NEW_PROJECT_ID]);
+    expect(dbState.gitConnectionRows.map((row) => [row.projectId, row.defaultBranch])).toEqual([
+      [NEW_PROJECT_ID, 'main'],
+      [SECOND_NEW_PROJECT_ID, 'dev'],
+    ]);
   });
 
   test('rejects a branch GitHub cannot resolve before inserting the project', async () => {
