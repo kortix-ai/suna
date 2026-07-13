@@ -94,13 +94,15 @@ export function renderFullDockerCompose(composeProject: string): string {
     // `pg_isready` succeeds against the temporary server that the Postgres
     // entrypoint uses while running init scripts. Auth can therefore start
     // before the late 99-roles.sql script has assigned its password and enter
-    // a permanent restart loop. Treat the database as ready only after a real
-    // password-authenticated query using Auth's role succeeds. `$$` defers the
+    // a permanent restart loop. The temporary init server can also accept a
+    // successful query and then shut down underneath a just-started Auth
+    // process, so require PID 1 to be the final postgres process as well as a
+    // real password-authenticated query using Auth's role. `$$` defers the
     // environment expansion from Compose to the healthcheck container.
     database.healthcheck = {
       test: [
         'CMD-SHELL',
-        'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+        'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
       ],
       interval: '5s',
       timeout: '5s',

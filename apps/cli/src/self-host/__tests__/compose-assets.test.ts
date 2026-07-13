@@ -45,7 +45,7 @@ describe('full self-host Docker distribution', () => {
     expect(document.services['supabase-analytics']?.image).toBe('supabase/logflare:1.43.1');
     expect(document.services['supabase-db']?.healthcheck?.test).toEqual([
       'CMD-SHELL',
-      'PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+      'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
     ]);
 
     for (const [name, service] of Object.entries(document.services)) {
