@@ -82,6 +82,16 @@ describe('narrateStep', () => {
     expect(line).not.toContain('_');
     expect(line).not.toContain('/');
   });
+
+  it('names every distinct tool in a group instead of only parts[0]', () => {
+    const line = narrateStep('other', [part('linear/create_issue'), part('slack/send')]);
+    expect(line).toBe('Used Create Issue and Send');
+  });
+
+  it('is count-aware when the same unrecognized tool is called more than once', () => {
+    const line = narrateStep('other', [part('linear/create_issue'), part('linear/create_issue')]);
+    expect(line).toBe('Used Create Issue · 2 times');
+  });
 });
 
 describe('humanizeToolName', () => {
@@ -329,10 +339,22 @@ describe('narrateStep - presentation_gen must resolve its own action, not always
     expect(line.toLowerCase()).not.toContain('delet');
   });
 
-  it('falls back to a vague-but-true sentence when action is missing/unrecognized', () => {
-    const line = narrateStep('create', [part('presentation_gen', {})]);
-    expect(line).not.toBe('');
-    expect(line.toLowerCase()).not.toContain('undefined');
+  it('falls back to a vague-but-true sentence when action is missing/unrecognized (singular)', () => {
+    expect(narrateStep('create', [part('presentation_gen', {})])).toBe('Worked on a presentation');
+  });
+
+  it('falls back to a vague-but-true sentence when action is unrecognized (singular)', () => {
+    expect(narrateStep('create', [part('presentation_gen', { action: 'some_future_action' })])).toBe(
+      'Worked on a presentation',
+    );
+  });
+
+  it('falls back to a vague-but-true sentence when action is missing/unrecognized (grouped)', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', {}),
+      part('presentation_gen', {}),
+    ]);
+    expect(line).toBe('Worked on 2 presentations');
   });
 });
 
@@ -358,12 +380,80 @@ describe('narrateStep - image_gen must resolve its own action, not always "Made 
     expect(line.toLowerCase()).toContain('made');
   });
 
-  it('does not count a delete-ish (non-creation) presentation action among "Made" in a mixed group', () => {
+  it('falls back to a vague-but-true sentence when action is missing (singular)', () => {
+    expect(narrateStep('create', [part('image_gen', {})])).toBe('Worked on an image');
+  });
+
+  it('falls back to a vague-but-true sentence when action is missing (grouped)', () => {
+    const line = narrateStep('create', [part('image_gen', {}), part('image_gen', {})]);
+    expect(line).toBe('Worked on 2 images');
+  });
+
+  it('a mixed group of a real creation and an edit never claims "Made" or "showed"', () => {
+    const line = narrateStep('create', [
+      part('image_gen', { action: 'generate' }),
+      part('image_gen', { action: 'edit' }),
+    ]);
+    expect(line).toBe('Worked on 2 images');
+  });
+
+  it('does not narrate a grouped create_slide + delete_presentation as "Made 2 presentations"', () => {
     const line = narrateStep('create', [
       part('presentation_gen', { action: 'create_slide' }),
       part('presentation_gen', { action: 'delete_presentation' }),
     ]);
-    expect(line).not.toMatch(/Made 2 presentations/);
+    expect(line).toBe('Worked on 2 presentations');
+  });
+});
+
+describe('narrateStep - create family grouped (n > 1) must resolve each part\'s own action, not bucket everything non-creation into "shown"', () => {
+  it('narrates 2x delete_presentation as a deletion, not a display', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'delete_presentation' }),
+      part('presentation_gen', { action: 'delete_presentation' }),
+    ]);
+    expect(line).toBe('Deleted 2 presentations');
+  });
+
+  it('narrates 2x delete_slide as a deletion, not a display', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'delete_slide' }),
+      part('presentation_gen', { action: 'delete_slide' }),
+    ]);
+    expect(line).toBe('Deleted 2 slides');
+  });
+
+  it('narrates 2x image edit as an edit, not a display', () => {
+    const line = narrateStep('create', [
+      part('image_gen', { action: 'edit' }),
+      part('image_gen', { action: 'edit' }),
+    ]);
+    expect(line).toBe('Edited 2 images');
+  });
+
+  it('narrates 2x export_pdf as an export, not a display', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'export_pdf' }),
+      part('presentation_gen', { action: 'export_pdf' }),
+    ]);
+    expect(line).toBe('Exported 2 presentations to PDF');
+  });
+
+  it('narrates 2x list_presentations as a read, not a display', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'list_presentations' }),
+      part('presentation_gen', { action: 'list_presentations' }),
+    ]);
+    expect(line).toBe('Checked your presentations');
+  });
+
+  it('narrates 2x create_slide without claiming 2 presentations were made', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'create_slide' }),
+      part('presentation_gen', { action: 'create_slide' }),
+    ]);
+    expect(line).toBe('Added 2 slides');
+    expect(line).not.toContain('Made 2 presentations');
   });
 });
 
@@ -388,6 +478,21 @@ describe('narrateStep - trigger_test is a dry run, not a mutation', () => {
   it('still says "Adjusted" for pause/resume (genuine control actions)', () => {
     expect(narrateStep('automations', [part('trigger_pause')]).toLowerCase()).toContain('adjusted');
     expect(narrateStep('automations', [part('trigger_resume')]).toLowerCase()).toContain('adjusted');
+  });
+});
+
+describe('narrateStep - automations must not guess a read for an unrecognized action', () => {
+  it('never narrates an unrecognized bare-"triggers" action as a read ("Checked...")', () => {
+    // TriggersTool's own default branch (triggers-tool.tsx) renders a generic
+    // "Triggers" title, NOT the "List Triggers" branch — narration must not
+    // pretend to know it's a read when the tool itself doesn't.
+    const line = narrateStep('automations', [part('triggers', { action: 'disable' })]);
+    expect(line).toBe('Worked with your automations');
+  });
+
+  it('still defaults an absent action to a read (matches TriggersTool:199)', () => {
+    const line = narrateStep('automations', [part('triggers', {})]);
+    expect(line).toBe('Checked your automations');
   });
 });
 

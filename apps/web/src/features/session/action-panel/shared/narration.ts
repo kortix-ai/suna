@@ -220,7 +220,7 @@ function delegateAction(part: ToolPart): DelegateAction {
 
 // ─── automations: create/update vs read vs delete vs pause/resume vs a test dry run ─
 
-type AutomationAction = 'create' | 'update' | 'delete' | 'read' | 'control' | 'test';
+type AutomationAction = 'create' | 'update' | 'delete' | 'read' | 'control' | 'test' | 'unknown';
 
 function classifyAutomationAction(action: string): AutomationAction {
   switch (action) {
@@ -240,8 +240,13 @@ function classifyAutomationAction(action: string): AutomationAction {
       return 'control';
     case 'list':
     case 'get':
-    default:
       return 'read';
+    default:
+      // An action the bare `triggers` tool doesn't recognize either — its own
+      // default branch (TriggersTool) renders a generic "Triggers" title, NOT
+      // the list branch, so narration must not guess 'read' here or a real
+      // mutation under an unrecognized name could pass as a "Checked" no-op.
+      return 'unknown';
   }
 }
 
@@ -357,19 +362,102 @@ function presentationGenSentence(part: ToolPart): string {
   return (action && PRESENTATION_GEN_ACTION_SENTENCE[action]) || 'Worked on a presentation';
 }
 
-/** Only the one action per tool that actually creates new media counts
- * towards a group's "Made N images/presentations" tally — everything else
- * (edit/upscale/delete/export/preview/…) must not be folded into that count.
- * A missing action is treated as a creation, matching each component's own
- * generic default title (e.g. image_gen falls back to "Image Gen"). */
-function isImageCreation(part: ToolPart): boolean {
-  const action = rawInput(part).action as string | undefined;
-  return !action || action === 'generate';
+// ─── create, grouped (n > 1): same classify → allSame → specific-sentence
+// pattern every other multiplexed family in this file already uses. `create`
+// mixes three different media types (image/video/presentation) plus the
+// non-multiplexed `show`/`show_user` display tools, so each part is first
+// reduced to a `media:action` key. When every part in the group resolves to
+// the *same* key, the group gets that key's own truthful, count-aware
+// sentence (below). Otherwise the group is genuinely mixed — actions differ,
+// or media types differ — and gets a vague-but-true sentence naming only
+// what was touched, never what was done to it. A missing/unrecognized action
+// always lands in that tool's own `unknown` key, never in `create`. ────────
+
+type CreateMedia = 'image' | 'video' | 'presentation' | 'shown';
+
+function createMediaOf(key: string): CreateMedia {
+  return key.slice(0, key.indexOf(':')) as CreateMedia;
 }
 
-function isPresentationCreation(part: ToolPart): boolean {
-  const action = rawInput(part).action as string | undefined;
-  return !action || action === 'create_slide';
+const IMAGE_GEN_ACTION_KEY: Record<string, string> = {
+  generate: 'image:generate',
+  edit: 'image:edit',
+  upscale: 'image:upscale',
+  remove_bg: 'image:remove_bg',
+};
+
+const PRESENTATION_GEN_ACTION_KEY: Record<string, string> = {
+  create_slide: 'presentation:create_slide',
+  list_slides: 'presentation:list_slides',
+  list_presentations: 'presentation:list_presentations',
+  delete_slide: 'presentation:delete_slide',
+  delete_presentation: 'presentation:delete_presentation',
+  validate_slide: 'presentation:validate_slide',
+  export_pdf: 'presentation:export_pdf',
+  export_pptx: 'presentation:export_pptx',
+  preview: 'presentation:preview',
+  serve: 'presentation:preview', // same component, same sentence
+};
+
+/** Classify one part into a `media:action` key. Every key this can return
+ * has a matching entry in `CREATE_GROUP_SENTENCE` below. */
+function createPartKey(part: ToolPart): string {
+  const t = normalizeName(part.tool);
+  if (t === 'image_gen') {
+    const action = rawInput(part).action as string | undefined;
+    return (action && IMAGE_GEN_ACTION_KEY[action]) || 'image:unknown';
+  }
+  if (t === 'video_gen') return 'video:create';
+  if (t === 'presentation_gen') {
+    const action = rawInput(part).action as string | undefined;
+    return (action && PRESENTATION_GEN_ACTION_KEY[action]) || 'presentation:unknown';
+  }
+  // `show` / `show_user` never multiplex on an action, and any future tool
+  // this file hasn't been told about yet falls here too — never a raw name.
+  return 'shown:result';
+}
+
+/** One truthful, count-aware sentence per key, used only when every part in
+ * the group shares the exact same key (see `narrateStep`'s 'create' case). */
+const CREATE_GROUP_SENTENCE: Record<string, (n: number) => string> = {
+  'image:generate': (n) => `Made ${n} images`,
+  'image:edit': (n) => `Edited ${n} images`,
+  'image:upscale': (n) => `Upscaled ${n} images`,
+  'image:remove_bg': (n) => `Removed backgrounds from ${n} images`,
+  'image:unknown': (n) => `Worked on ${n} images`,
+  'video:create': (n) => `Made ${n} videos`,
+  'presentation:create_slide': (n) => `Added ${n} slides`,
+  'presentation:delete_slide': (n) => `Deleted ${n} slides`,
+  'presentation:delete_presentation': (n) => `Deleted ${n} presentations`,
+  'presentation:list_slides': () => "Checked a presentation's slides",
+  'presentation:list_presentations': () => 'Checked your presentations',
+  'presentation:validate_slide': () => 'Checked slides',
+  'presentation:export_pdf': (n) => `Exported ${n} presentations to PDF`,
+  'presentation:export_pptx': (n) => `Exported ${n} presentations to PPTX`,
+  'presentation:preview': (n) => `Previewed ${n} presentations`,
+  'presentation:unknown': (n) => `Worked on ${n} presentations`,
+  'shown:result': (n) => `Showed you ${n} results`,
+};
+
+const CREATE_MEDIA_NOUN: Record<CreateMedia, string> = {
+  image: 'image',
+  video: 'video',
+  presentation: 'presentation',
+  shown: 'result',
+};
+
+/** The group's actions (or its media types) genuinely differ — say only what
+ * was touched, in neutral terms that hold no matter which specific action
+ * each part turns out to be. Vague-but-true always beats specific-but-false. */
+function mixedCreateSentence(keys: string[]): string {
+  const counts: Record<CreateMedia, number> = { image: 0, video: 0, presentation: 0, shown: 0 };
+  for (const key of keys) counts[createMediaOf(key)]++;
+  const segments: string[] = [];
+  (Object.keys(counts) as CreateMedia[]).forEach((media) => {
+    const c = counts[media];
+    if (c) segments.push(`${c} ${plural(c, CREATE_MEDIA_NOUN[media], `${CREATE_MEDIA_NOUN[media]}s`)}`);
+  });
+  return `Worked on ${joinWithAnd(segments)}`;
 }
 
 /**
@@ -418,40 +506,9 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
         return arg ? `Showed you ${arg}` : 'Showed you the result';
       }
 
-      let images = 0;
-      let videos = 0;
-      let presentations = 0;
-      let shown = 0;
-      for (const p of parts) {
-        switch (normalizeName(p.tool)) {
-          case 'image_gen':
-            if (isImageCreation(p)) images++;
-            else shown++;
-            break;
-          case 'video_gen':
-            videos++;
-            break;
-          case 'presentation_gen':
-            if (isPresentationCreation(p)) presentations++;
-            else shown++;
-            break;
-          default:
-            shown++;
-            break;
-        }
-      }
-
-      const segments: string[] = [];
-      if (images) segments.push(`${images} ${plural(images, 'image', 'images')}`);
-      if (videos) segments.push(`${videos} ${plural(videos, 'video', 'videos')}`);
-      if (presentations)
-        segments.push(`${presentations} ${plural(presentations, 'presentation', 'presentations')}`);
-
-      if (segments.length === 0) {
-        return `Showed you ${n} ${plural(n, 'result', 'results')}`;
-      }
-      const made = `Made ${joinWithAnd(segments)}`;
-      return shown ? `${made} and showed you more` : made;
+      const keys = parts.map(createPartKey);
+      if (allSame(keys)) return CREATE_GROUP_SENTENCE[keys[0]](n);
+      return mixedCreateSentence(keys);
     }
     case 'plan':
       return n === 1 ? 'Planned the work' : `Planned the work · ${n} steps`;
@@ -525,6 +582,10 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
             return n === 1 ? 'Tested an automation' : `Tested ${n} automations`;
           case 'read':
             return 'Checked your automations';
+          case 'unknown':
+            // An action neither this file nor the tool's own component
+            // recognizes — never guess it's a harmless read.
+            return 'Worked with your automations';
         }
       }
       return 'Worked with your automations';
@@ -559,7 +620,13 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       return 'Asked you a question';
     case 'retired':
       return 'Used an integration that has since been removed';
-    case 'other':
-      return `Used ${humanizeToolName(parts[0].tool)}`;
+    case 'other': {
+      if (n === 1) return `Used ${humanizeToolName(parts[0].tool)}`;
+      // Never inspect only parts[0] — a mixed group of unrecognized/MCP tools
+      // must name every distinct one, not silently drop the rest.
+      const names = Array.from(new Set(parts.map((p) => humanizeToolName(p.tool))));
+      if (names.length === 1) return `Used ${names[0]} · ${n} times`;
+      return `Used ${joinWithAnd(names)}`;
+    }
   }
 }
