@@ -15,6 +15,7 @@ variable "cloudflare_api_token" {
   sensitive = true
 }
 variable "github_oidc_provider_arn" { type = string }
+variable "permissions_boundary_arn" { type = string }
 variable "github_repository" {
   type    = string
   default = "kortix-ai/suna"

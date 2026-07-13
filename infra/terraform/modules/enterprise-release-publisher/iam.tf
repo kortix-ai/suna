@@ -21,6 +21,7 @@ data "aws_iam_policy_document" "github_assume" {
 resource "aws_iam_role" "promotion" {
   name                 = "${var.name}-promotion"
   assume_role_policy   = data.aws_iam_policy_document.github_assume.json
+  permissions_boundary = var.permissions_boundary_arn
   max_session_duration = 3600
   tags                 = local.tags
 }
@@ -44,7 +45,7 @@ data "aws_iam_policy_document" "promotion" {
 
   statement {
     sid       = "EncryptPublishedRepositoryObjects"
-    actions   = ["kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.repository.arn]
   }
 
@@ -110,6 +111,7 @@ data "aws_iam_policy_document" "github_timestamp_refresh_assume" {
 resource "aws_iam_role" "timestamp_refresh" {
   name                 = "${var.name}-timestamp-refresh"
   assume_role_policy   = data.aws_iam_policy_document.github_timestamp_refresh_assume.json
+  permissions_boundary = var.permissions_boundary_arn
   max_session_duration = 3600
   tags                 = merge(local.tags, { TufRole = "timestamp" })
 }
@@ -123,7 +125,7 @@ data "aws_iam_policy_document" "timestamp_refresh" {
 
   statement {
     sid       = "EncryptTimestampMetadata"
-    actions   = ["kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.repository.arn]
   }
 

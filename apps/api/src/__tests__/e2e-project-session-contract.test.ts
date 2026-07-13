@@ -790,6 +790,7 @@ mock.module('../shared/db', () => ({
 
 const { projectsApp } = await import('../projects/index');
 const { encryptProjectSecret } = await import('../projects/secrets');
+const { resumeStoppedSandbox } = await import('../projects/routes/shared');
 
 function createApp() {
   const app = new Hono();
@@ -833,6 +834,72 @@ describe('project session API contract', () => {
   });
 
   beforeEach(() => resetState());
+
+  test('in-place resume clears stale readiness timers and the prior terminal session error', async () => {
+    const staleReadyWaitStartedAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      error:
+        'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'original-provider-identity',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
+          opencodeReadyWaitReason: 'unreachable',
+          runtimeIdentityState: 'unavailable',
+          runtimeUnavailableReason: 'runtime_not_ready_timeout',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStartGate = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+
+    const won = await resumeStoppedSandbox({
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      provider: 'platinum',
+      externalId: 'original-provider-identity',
+      metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+    });
+
+    expect(won).toBe(true);
+    expect(sessionRow).toMatchObject({ status: 'running', error: null });
+    expect(sessionSandboxRows[0]).toMatchObject({
+      status: 'active',
+      externalId: 'original-provider-identity',
+      metadata: {
+        initStatus: 'ready',
+        runtimeWakeProviderStatus: 'starting',
+      },
+    });
+    const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
+    expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
+    expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
+    expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
+    expect(resumedMetadata.runtimeWakeId).toEqual(expect.any(String));
+
+    releaseProviderStart?.();
+  });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
     const app = createApp();

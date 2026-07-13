@@ -218,6 +218,9 @@ resource "aws_s3_bucket_acl" "access_logs" {
   }
 }
 
+# Legacy CloudFront standard logging rejects SSE-KMS destinations; this
+# dedicated object-locked bucket uses SSE-S3 and blocks all public access.
+#trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   #checkov:skip=CKV_AWS_145:Legacy CloudFront standard logging supports SSE-S3, not SSE-KMS, on its ACL-enabled destination bucket.
   bucket = aws_s3_bucket.access_logs.id
