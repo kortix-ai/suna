@@ -23,8 +23,12 @@ variable "vpc_cidr" {
   type        = string
 
   validation {
-    condition     = can(cidrsubnet(var.vpc_cidr, 4, 0)) && endswith(var.vpc_cidr, "/16")
-    error_message = "vpc_cidr must be a valid /16 CIDR."
+    condition = can(cidrsubnet(var.vpc_cidr, 4, 0)) && endswith(var.vpc_cidr, "/16") && (
+      startswith(var.vpc_cidr, "10.") ||
+      can(regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.0\\.0/16$", var.vpc_cidr)) ||
+      var.vpc_cidr == "192.168.0.0/16"
+    )
+    error_message = "vpc_cidr must be a canonical RFC1918 /16 CIDR."
   }
 }
 
