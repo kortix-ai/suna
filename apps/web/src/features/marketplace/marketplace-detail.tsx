@@ -29,6 +29,7 @@ import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
+  groupBundleMembersByType,
   groupCapabilities,
   resolveBundleMembers,
   totalCapabilityCount,
@@ -71,8 +72,21 @@ function RowPanel({ children }: { children: React.ReactNode }) {
 
 /** A bundle/project member — navigates via the surface (route link on public,
  *  detail-store button in the in-project overlay). */
-function BundleMemberRow({ id, title, type }: { id: string; title: string; type: string | null }) {
+function BundleMemberRow({
+  id,
+  title,
+  type,
+  description,
+}: {
+  id: string;
+  title: string;
+  type: string | null;
+  description?: string | null;
+}) {
   const surface = useMarketplaceSurface();
+  // Prefer the member's own description; fall back to the type label (e.g. in a
+  // flat bundle view where the type isn't already the section header).
+  const subtitle = description?.trim() || (type ? typeMeta(type).label : null);
   const body = (
     <>
       {type ? (
@@ -84,8 +98,8 @@ function BundleMemberRow({ id, title, type }: { id: string; title: string; type:
       )}
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm">{title}</span>
-        {type ? (
-          <span className="text-muted-foreground/70 block text-xs">{typeMeta(type).label}</span>
+        {subtitle ? (
+          <span className="text-muted-foreground/70 block truncate text-xs">{subtitle}</span>
         ) : null}
       </span>
     </>
@@ -505,6 +519,9 @@ export function MarketplaceDetail({
         hrefForId: (id) => id,
       })
     : [];
+  // A project renders its contents TYPED (Skills, Agents, Tools, …) with the
+  // file browser demoted to a secondary "Files" view; a plain bundle stays flat.
+  const memberGroups = isProject ? groupBundleMembersByType(bundleMembers) : [];
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -530,6 +547,71 @@ export function MarketplaceDetail({
         { label: itemTitle },
       ];
 
+  const filesSection =
+    data.files.length > 0 ? (
+      <section className="space-y-3">
+        {isProject ? <SectionLabel>Files</SectionLabel> : null}
+        <MarketplaceFileView
+          itemId={data.id}
+          selected={selectedFile}
+          readmeTarget={readmeTarget}
+          readme={readme || null}
+        />
+      </section>
+    ) : readme ? (
+      <section className="space-y-3">
+        <ReadmeMarkdown content={readme} />
+      </section>
+    ) : (
+      <section className="space-y-3">
+        <EmptyState
+          icon={FileText}
+          size="sm"
+          title="No files"
+          description={emptyReadmeCopy(data.type)}
+        />
+      </section>
+    );
+
+  const membersSection =
+    isBundle && bundleMembers.length > 0 ? (
+      isProject ? (
+        <section className="space-y-6">
+          {memberGroups.map((g) => (
+            <div key={g.type}>
+              <SectionLabel count={g.members.length}>{g.label}</SectionLabel>
+              <RowPanel>
+                {g.members.map((m) => (
+                  <BundleMemberRow
+                    key={m.key}
+                    id={m.key}
+                    title={m.title}
+                    type={m.type}
+                    description={m.description}
+                  />
+                ))}
+              </RowPanel>
+            </div>
+          ))}
+        </section>
+      ) : (
+        <section>
+          <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
+          <RowPanel>
+            {bundleMembers.map((member) => (
+              <BundleMemberRow
+                key={member.key}
+                id={member.key}
+                title={member.title}
+                type={member.type}
+                description={member.description}
+              />
+            ))}
+          </RowPanel>
+        </section>
+      )
+    ) : null;
+
   return (
     <>
       {nav ? <DetailPager nav={nav} /> : null}
@@ -548,41 +630,17 @@ export function MarketplaceDetail({
         }
       >
       <div className="space-y-8">
-        <section className="space-y-3">
-          {data.files.length > 0 ? (
-            <MarketplaceFileView
-              itemId={data.id}
-              selected={selectedFile}
-              readmeTarget={readmeTarget}
-              readme={readme || null}
-            />
-          ) : readme ? (
-            <ReadmeMarkdown content={readme} />
-          ) : (
-            <EmptyState
-              icon={FileText}
-              size="sm"
-              title="No files"
-              description={emptyReadmeCopy(data.type)}
-            />
-          )}
-        </section>
-
-        {isBundle && bundleMembers.length > 0 ? (
-          <section>
-            <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
-            <RowPanel>
-              {bundleMembers.map((member) => (
-                <BundleMemberRow
-                  key={member.key}
-                  id={member.key}
-                  title={member.title}
-                  type={member.type}
-                />
-              ))}
-            </RowPanel>
-          </section>
-        ) : null}
+        {isProject ? (
+          <>
+            {membersSection}
+            {filesSection}
+          </>
+        ) : (
+          <>
+            {filesSection}
+            {membersSection}
+          </>
+        )}
 
         {capCount > 0 ? (
           <section>

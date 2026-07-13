@@ -78,5 +78,6 @@ export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:skill', label: 'Skills' },
   { type: 'registry:agent', label: 'Agents' },
   { type: 'registry:command', label: 'Commands' },
+  { type: 'registry:tool', label: 'Tools' },
   { type: 'registry:bundle', label: 'Bundles' },
 ];
