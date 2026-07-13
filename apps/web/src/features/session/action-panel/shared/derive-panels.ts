@@ -142,11 +142,24 @@ function createArtifactName(part: ToolPart): { name: string; path?: string } {
   return { name: getToolPrimaryArg(part) || humanizeToolName(part.tool) };
 }
 
+/** The part's raw `state.status`, however it's currently framed. */
+function statusOf(part: ToolPart): string | undefined {
+  return (part.state as { status?: string } | undefined)?.status;
+}
+
 export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
   const out: OutputItem[] = [];
   const seen = new Set<string>();
 
   for (const part of parts) {
+    // A call that errored produced nothing — surfacing it here would
+    // advertise a file/image/presentation that doesn't exist, and clicking
+    // it would fire `requestFileOpen` on a path that was never written. A
+    // call still 'running'/'pending' hasn't produced anything YET either —
+    // an artifact only exists once the call actually completes.
+    const status = statusOf(part);
+    if (status === 'error' || status === 'running' || status === 'pending') continue;
+
     const family = familyForTool(part.tool);
     if (family === 'hidden') continue;
 
@@ -265,6 +278,11 @@ export function deriveContext(parts: ToolPart[]): {
   const seenTools = new Set<string>();
 
   for (const part of parts) {
+    // A failed call didn't successfully look at anything — it must not
+    // surface as something the agent inspected either (a failed read never
+    // actually saw the file's contents, a failed fetch never saw the page).
+    if (statusOf(part) === 'error') continue;
+
     const family = familyForTool(part.tool);
     if (family === 'hidden') continue; // context-engine bookkeeping — never shown
 

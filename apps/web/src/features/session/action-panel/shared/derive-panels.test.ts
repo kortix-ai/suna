@@ -5,13 +5,18 @@ import { deriveContext, deriveOutputs } from './derive-panels';
 function part(
   tool: string,
   input: Record<string, unknown> = {},
-  extra: { metadata?: Record<string, unknown>; output?: string } = {},
+  extra: {
+    metadata?: Record<string, unknown>;
+    output?: string;
+    status?: 'completed' | 'running' | 'pending' | 'error';
+  } = {},
 ): ToolPart {
+  const { status = 'completed', ...rest } = extra;
   return {
     type: 'tool',
     tool,
     callID: `c-${tool}-${JSON.stringify(input)}-${JSON.stringify(extra)}`,
-    state: { status: 'completed', input, ...extra },
+    state: { status, input, ...rest },
   } as unknown as ToolPart;
 }
 
@@ -242,6 +247,61 @@ describe('deriveOutputs', () => {
     const out = deriveOutputs([part('image_gen', {})]);
     expect(out[0].name).not.toBe('Image Gen');
   });
+
+  // ─── BUG 3 — a FAILED (or not-yet-finished) call must never be advertised
+  // as something the agent made. The Outputs card promises "View and open
+  // files created during this task"; clicking a row for a call that errored
+  // fires `requestFileOpen` on a file that was never actually written. ──────
+
+  it('never reports a write with status "error" as a created file', () => {
+    expect(
+      deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'error' })]),
+    ).toEqual([]);
+  });
+
+  it('never reports a write that is still "running"/"pending" — nothing was produced yet', () => {
+    expect(
+      deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'running' })]),
+    ).toEqual([]);
+    expect(
+      deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'pending' })]),
+    ).toEqual([]);
+  });
+
+  it('never reports a failed image_gen call as a produced image', () => {
+    expect(
+      deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'error' })]),
+    ).toEqual([]);
+  });
+
+  it('never reports an in-flight image_gen call as a produced image', () => {
+    expect(
+      deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'running' })]),
+    ).toEqual([]);
+  });
+
+  it('never reports a failed apply_patch call as produced files', () => {
+    const out = deriveOutputs([
+      part(
+        'apply_patch',
+        {},
+        {
+          status: 'error',
+          metadata: {
+            files: [{ relativePath: 'src/a.ts', filePath: '/workspace/src/a.ts', type: 'update' }],
+          },
+        },
+      ),
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it('still reports a genuinely completed write/image_gen — no regression from the status gate', () => {
+    expect(deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'completed' })])).toHaveLength(1);
+    expect(
+      deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'completed' })]),
+    ).toHaveLength(1);
+  });
 });
 
 describe('deriveContext', () => {
@@ -370,5 +430,27 @@ describe('deriveContext', () => {
   it('still surfaces a genuine unrecognized tool in the tools bucket (not swallowed by the hidden filter)', () => {
     const { tools } = deriveContext([part('memory', { command: 'delete', path: '/mem/x.md' })]);
     expect(tools.some((t) => t.label === 'Memory')).toBe(true);
+  });
+
+  // ─── BUG 3 — a failed call didn't successfully look at anything, so it
+  // must never surface as something the agent inspected either. ────────────
+
+  it('never surfaces a failed read in the Context files bucket', () => {
+    const { files } = deriveContext([
+      part('read', { filePath: '/a/one.ts' }, { status: 'error' }),
+    ]);
+    expect(files).toEqual([]);
+  });
+
+  it('never surfaces a failed web fetch/search in the Context web bucket', () => {
+    const { web } = deriveContext([
+      part('web_fetch', { url: 'https://example.com/docs' }, { status: 'error' }),
+    ]);
+    expect(web).toEqual([]);
+  });
+
+  it('never surfaces a failed tool call in the Context tools bucket', () => {
+    const { tools } = deriveContext([part('bash', { command: 'ls' }, { status: 'error' })]);
+    expect(tools).toEqual([]);
   });
 });
