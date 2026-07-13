@@ -3,10 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
+import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import type { MessageWithParts } from '@/ui';
 import { useState } from 'react';
 
 /**
@@ -507,6 +509,116 @@ const GROUPS: Group[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Easy-mode fixture — a plausible non-technical task: "look into how our
+// competitors price their plans, write it up, and make a cover image."
+// Exercises: grouping (6 consecutive reads → one step, 2 searches + 2 fetches
+// → one mixed step), a `write` (Outputs), `read`s (Context files), a web
+// search + fetch (Context web sources), a running step, and an errored step.
+// ---------------------------------------------------------------------------
+const PRICING_REPORT_CONTENT = `# Pricing comparison
+
+## Acme Corp
+
+- Starter: $12/mo — 3 seats, basic support
+- Growth: $39/mo — 10 seats, priority support
+- Enterprise: custom pricing, SSO + SLA
+
+## Globex Cloud
+
+- Basic: $9/mo — 5 seats
+- Team: $29/mo — unlimited seats, no SSO
+- Enterprise: custom pricing, SSO + dedicated CSM
+
+## Takeaway
+
+Both competitors gate SSO behind their top tier. Our Growth plan
+undercuts Acme's equivalent tier by $10/mo while matching seat count.
+`;
+
+const EASY_PARTS = [
+  // 1. Explore — 6 consecutive reads collapse into "Read 6 files".
+  part('read', done({ filePath: '/workspace/notes/kickoff-brief.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/data/pricing-2026.csv' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/notes/competitor-list.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/docs/brand-guide.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/notes/customer-quotes.md' }, '<content/>')),
+  part('read', done({ filePath: '/workspace/docs/outline.md' }, '<content/>')),
+
+  // 2. Web — 2 searches + 2 fetches, same family, collapse into one mixed
+  // step ("Searched and read 4 sources"); each stays distinct in Context's
+  // "Web sources" bucket.
+  part(
+    'web_search',
+    done({ query: 'Acme Corp pricing plans 2026' }, 'Results for "Acme Corp pricing plans 2026"'),
+  ),
+  part(
+    'web_search',
+    done(
+      { query: 'Globex Cloud pricing tiers comparison' },
+      'Results for "Globex Cloud pricing tiers comparison"',
+    ),
+  ),
+  part(
+    'webfetch',
+    done(
+      { url: 'https://acme.example.com/pricing', format: 'markdown' },
+      '# Pricing\n\nStarter $12/mo · Growth $39/mo · Enterprise — talk to sales.',
+    ),
+  ),
+  part(
+    'webfetch',
+    done(
+      { url: 'https://globex.example.com/plans', format: 'markdown' },
+      '# Plans\n\nBasic $9/mo · Team $29/mo · Enterprise — custom.',
+    ),
+  ),
+
+  // 3. A hiccup along the way — its own errored step, never merged into the
+  // web group above (different family) or the running step below (other
+  // families sit between them).
+  part(
+    'bash',
+    errored(
+      { command: 'pip install matplotlib-extra', description: 'Install charting helper' },
+      'ERROR: Could not find a version that satisfies the requirement matplotlib-extra\nERROR: No matching distribution found for matplotlib-extra',
+    ),
+  ),
+
+  // 4. write — its own step (Outputs card picks this up as a real file).
+  part(
+    'write',
+    done(
+      { filePath: '/workspace/reports/pricing-comparison.md', content: PRICING_REPORT_CONTENT },
+      '',
+    ),
+  ),
+
+  // 5. create — image_gen, its own step (Outputs card, kind "image"). Uses a
+  // locally-served asset as the direct URL so the tool view renders a real
+  // image without needing a live sandbox.
+  part(
+    'image_gen',
+    done(
+      { action: 'generate', prompt: 'Minimal editorial cover image for a pricing comparison report' },
+      JSON.stringify({
+        path: '/workspace/outputs/pricing-cover.png',
+        replicate_url: '/wallpapers/nebula-dark.jpg',
+      }),
+    ),
+  ),
+
+  // 6. Still going — the run isn't finished, so Progress shows the shimmer.
+  part('bash', running({ command: 'pnpm exec pandoc pricing-comparison.md -o pricing-comparison.pdf' })),
+];
+
+const EASY_MESSAGES: MessageWithParts[] = [
+  {
+    info: { id: 'm_easy', role: 'assistant' },
+    parts: EASY_PARTS,
+  } as any,
+];
+
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -533,6 +645,34 @@ export default function DebugToolsPage() {
         >
           {open ? 'Collapse all' : 'Expand all'}
         </button>
+      </div>
+
+      {/* Easy-mode panel preview — the non-technical card home, and the
+          Advanced stepper beside it fed the exact same fixture, so both
+          panel modes are eyeball-comparable side by side without needing a
+          logged-in session or `panelMode` preference. */}
+      <div className="mx-auto w-full max-w-5xl px-6 pt-10">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          Easy mode vs. Advanced
+        </h2>
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Advanced
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Side-panel Actions view preview — the focused navigator that reuses
