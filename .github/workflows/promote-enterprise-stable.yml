@@ -85,14 +85,39 @@ jobs:
           case "$contract_path" in "$GITHUB_WORKSPACE"/infra/enterprise-releases/*) ;; *) echo "compatibility contract must be under infra/enterprise-releases" >&2; exit 1 ;; esac
           test -f "$contract_path"
 
-          git fetch --force origin prod --tags
+          git fetch --force origin \
+            '+refs/heads/prod:refs/remotes/origin/prod' --tags
           gh release view "v$PROD_VERSION" --json isDraft --jq 'select(.isDraft == false) | true' | grep -qx true
-          test "$(git show "v$PROD_VERSION:VERSION" | tr -d '[:space:]')" = "$PROD_VERSION"
-          source_sha=$(git show "v$PROD_VERSION:RELEASE_SOURCE_SHA" | tr -d '[:space:]')
+
+          # GitHub's release tag names the public source tree, while the reviewed
+          # prod release commit records the exact staging image SHA in
+          # RELEASE_SOURCE_SHA. Resolve that version-to-source mapping from prod
+          # history instead of assuming the tag tree contains the provenance
+          # file. All prod commits that introduced this version must agree.
+          mapfile -t source_shas < <(
+            while IFS= read -r commit; do
+              version=$(git show "$commit:VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+              [ "$version" = "$PROD_VERSION" ] || continue
+              git show "$commit:RELEASE_SOURCE_SHA" 2>/dev/null | tr -d '[:space:]'
+              printf '\n'
+            done < <(git rev-list origin/prod -- RELEASE_SOURCE_SHA)
+          )
+          mapfile -t source_shas < <(printf '%s\n' "${source_shas[@]}" | grep -E '^[a-f0-9]{40}$' | sort -u)
+          if [ "${#source_shas[@]}" -ne 1 ]; then
+            echo "::error::prod history must contain exactly one release source for $PROD_VERSION; found ${#source_shas[@]}"
+            exit 1
+          fi
+          source_sha=${source_shas[0]}
           [[ "$source_sha" =~ ^[a-f0-9]{40}$ ]]
           git cat-file -e "$source_sha^{commit}"
+          git merge-base --is-ancestor "$source_sha" origin/prod
 
           enterprise_version="$PROD_VERSION-e$REVISION"
+          test "$(basename "$contract_path")" = "$enterprise_version.json"
+          if jq -e '.migrations[] | select(.id == "baseline")' "$contract_path" >/dev/null; then
+            baseline_sha=$(git archive --format=tar "$source_sha" -- packages/db/migrations | sha256sum | awk '{print $1}')
+            test "$(jq -er '.migrations[] | select(.id == "baseline") | .sha256' "$contract_path")" = "$baseline_sha"
+          fi
           echo "prod_version=$PROD_VERSION" >> "$GITHUB_OUTPUT"
           echo "enterprise_version=$enterprise_version" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
