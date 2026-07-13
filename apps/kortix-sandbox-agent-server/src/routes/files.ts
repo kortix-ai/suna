@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { constants as fsConstants, realpathSync, type Stats } from 'node:fs'
 import crypto from 'node:crypto'
 
 import type { Config } from '../config'
@@ -122,6 +123,13 @@ export function createFilesRouter(cfg: Config): Hono {
   // The configured workspace is always writable, even when it isn't the
   // canonical /workspace (e.g. a non-default KORTIX_WORKSPACE, or tests).
   const allowedRoots = Array.from(new Set([path.resolve(workspace), ...DEFAULT_ALLOWED_ROOTS]))
+  const canonicalAllowedRoots = allowedRoots.map((root) => {
+    try {
+      return realpathSync(root)
+    } catch {
+      return root
+    }
+  })
 
   /**
    * Resolve + validate a path. Relative paths resolve against the workspace.
@@ -135,6 +143,53 @@ export function createFilesRouter(cfg: Config): Hono {
       throw new Error('Access denied: path outside allowed directories')
     }
     return resolved
+  }
+
+  class SecureReadError extends Error {
+    constructor(readonly status: 400 | 403 | 404 | 500, message: string) {
+      super(message)
+    }
+  }
+
+  /** Open first, then prove that the opened inode is the canonical allowed
+   * target before reading from that same handle. O_NOFOLLOW rejects a final
+   * symlink, while the post-open realpath + inode comparison also catches a
+   * parent directory being replaced between path resolution and open. */
+  async function readAllowedFile(raw: string): Promise<{ data: Buffer; stat: Stats; canonical: string }> {
+    const resolved = resolvePath(raw)
+    let handle: Awaited<ReturnType<typeof fs.open>>
+    try {
+      handle = await fs.open(resolved, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') throw new SecureReadError(404, 'File not found')
+      if (code === 'ELOOP') throw new SecureReadError(403, 'Access denied: symbolic links are not readable')
+      throw err
+    }
+    try {
+      const stat = await handle.stat()
+      if (stat.isDirectory()) throw new SecureReadError(400, 'Path is a directory')
+
+      let canonical: string
+      let pathStat: Stats
+      try {
+        ;[canonical, pathStat] = await Promise.all([fs.realpath(resolved), fs.stat(resolved)])
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          throw new SecureReadError(403, 'Access denied: path changed during open')
+        }
+        throw err
+      }
+      if (!canonicalAllowedRoots.some((root) => canonical === root || canonical.startsWith(root + '/'))) {
+        throw new SecureReadError(403, 'Access denied: path outside allowed directories')
+      }
+      if (stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
+        throw new SecureReadError(403, 'Access denied: path changed during open')
+      }
+      return { data: await handle.readFile(), stat, canonical }
+    } finally {
+      await handle.close()
+    }
   }
 
   /** Short high-entropy suffix (~12 chars) for disambiguating filenames. */
@@ -202,14 +257,11 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let opened: Awaited<ReturnType<typeof readAllowedFile>>
     try {
-      data = await fs.readFile(resolved)
+      opened = await readAllowedFile(resolved)
     } catch (err) {
+      if (err instanceof SecureReadError) return c.json({ error: err.message }, err.status)
       logger.warn('[files] raw read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
@@ -217,11 +269,11 @@ export function createFilesRouter(cfg: Config): Hono {
     // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
     // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
     // for the SPA shell and reject it.
-    return new Response(data, {
+    return new Response(opened.data, {
       status: 200,
       headers: {
-        'Content-Type': mimeTypeFor(resolved, true),
-        'Content-Length': String(stat.size),
+        'Content-Type': mimeTypeFor(opened.canonical, true),
+        'Content-Length': String(opened.stat.size),
         'Cache-Control': 'no-store',
       },
     })
@@ -245,33 +297,30 @@ export function createFilesRouter(cfg: Config): Hono {
       return c.json({ error: (err as Error).message }, 403)
     }
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
-
-    let data: Buffer
+    let opened: Awaited<ReturnType<typeof readAllowedFile>>
     try {
-      data = await fs.readFile(resolved)
+      opened = await readAllowedFile(resolved)
     } catch (err) {
+      if (err instanceof SecureReadError) return c.json({ error: err.message }, err.status)
       logger.warn('[files] content read failed', { path: resolved, error: (err as Error).message })
       return c.json({ error: (err as Error).message }, 500)
     }
 
-    const binary = isLikelyBinary(data, resolved)
+    const binary = isLikelyBinary(opened.data, opened.canonical)
     if (binary) {
       return c.json({
         type: 'binary',
-        content: data.toString('base64'),
+        content: opened.data.toString('base64'),
         encoding: 'base64',
-        mimeType: mimeTypeFor(resolved, true),
-        size: stat.size,
+        mimeType: mimeTypeFor(opened.canonical, true),
+        size: opened.stat.size,
       })
     }
     return c.json({
       type: 'text',
-      content: data.toString('utf8'),
-      mimeType: mimeTypeFor(resolved, false),
-      size: stat.size,
+      content: opened.data.toString('utf8'),
+      mimeType: mimeTypeFor(opened.canonical, false),
+      size: opened.stat.size,
     })
   })
 

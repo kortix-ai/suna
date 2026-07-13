@@ -26,6 +26,7 @@
 
 import {
 	buildAuthHeaders,
+	normalizeAuthenticatedUrl,
 	syntheticUnauthenticatedResponse,
 	withDefaultTimeout,
 	withTokenRetry,
@@ -120,6 +121,7 @@ function fetchWithAuth(
   headers: Headers,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const trustedUrl = normalizeAuthenticatedUrl(input, platformConfig().backendUrl);
   if (input instanceof Request) {
     // Clone the Request with our auth headers baked in.
     // This guarantees Authorization is part of the Request itself,
@@ -128,9 +130,20 @@ function fetchWithAuth(
       headers,
       ...(signal ? { signal } : {}),
     });
+    // The Request object preserves method/body semantics; its URL was already
+    // canonicalized and checked against the configured backend above.
+    if (authedRequest.url !== trustedUrl) {
+      throw new Error('Authenticated Request URL changed during canonicalization');
+    }
+    // This is the SDK's intentional credential egress seam: a token obtained
+    // from the host's configured getToken() is sent only to the caller-selected
+    // Kortix platform/session runtime URL after URL canonicalization above.
+    // lgtm[js/file-access-to-http]
     return fetch(authedRequest);
   }
-  return fetch(input, { ...init, headers, ...(signal ? { signal } : {}) });
+  // See the credential-egress justification on the Request branch above.
+  // lgtm[js/file-access-to-http]
+  return fetch(trustedUrl, { ...init, headers, ...(signal ? { signal } : {}) });
 }
 
 // Timeout composition, streaming exemption, and header building live in

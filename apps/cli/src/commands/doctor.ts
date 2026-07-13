@@ -1,5 +1,5 @@
 import { ApiError } from '../api/client.ts';
-import { createAcpClient, projectAcpTranscript, type AcpStoredEnvelope } from '@kortix/sdk/acp';
+import { createKortix, projectAcpTranscript } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { loadLink } from '../project-link.ts';
@@ -173,19 +173,15 @@ export async function runDoctor(argv: string[]): Promise<number> {
     );
 
     // ── 6. Open the session's ACP conversation + send a prompt ──────────
-    const endpoint = `${auth.api_base.replace(/\/$/, '')}/projects/${ctx.projectId}/sessions/${running.session_id}/acp`;
-    const acp = createAcpClient({
-      endpoint,
-      fetch: ((input, init) => fetch(input, {
-        ...init,
-        headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), Authorization: `Bearer ${auth.token}` },
-      })) as typeof fetch,
-    });
+    const sdkSession = createKortix({
+      backendUrl: auth.api_base,
+      getToken: async () => auth.token,
+    }).session(ctx.projectId, running.session_id);
+    let acp: Awaited<ReturnType<typeof sdkSession.acp.client>>;
     let acpSid: string;
     try {
-      await acp.initialize({ protocolVersion: 1, clientInfo: { name: '@kortix/cli-doctor', version: '3' } });
-      const created = await acp.newSession({ cwd: '/workspace', mcpServers: [] });
-      acpSid = created.sessionId;
+      acp = await sdkSession.acp.client();
+      acpSid = await sdkSession.acp.sessionId();
     } catch (err) {
       process.stdout.write(`${status.err(`ACP session create failed: ${describe(err)}`)}\n`);
       return 1;
@@ -196,9 +192,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
     const sendStart = Date.now();
     try {
       await acp.prompt(acpSid, [{ type: 'text', text: flags.prompt }]);
-      const transcript = await ctx.client.get<{ envelopes: AcpStoredEnvelope[] }>(
-        `/projects/${ctx.projectId}/sessions/${running.session_id}/acp/transcript`,
-      );
+      const transcript = await acp.transcript();
       const text = projectAcpTranscript(transcript.envelopes).filter((message) => message.role === 'assistant').at(-1)?.text.trim() ?? '';
       if (!text) {
         process.stdout.write(`${status.err('reply had no text content')}\n`);

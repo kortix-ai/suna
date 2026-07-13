@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import {
 	buildAuthHeaders,
 	isStreamingRequest,
+	normalizeAuthenticatedUrl,
 	syntheticUnauthenticatedResponse,
 	withDefaultTimeout,
 	withTokenRetry,
@@ -137,4 +138,22 @@ test('the synthetic 401 is a JSON fetch-semantics Response (no network call impl
 	const res = syntheticUnauthenticatedResponse();
 	expect(res.status).toBe(401);
 	expect(await res.json()).toEqual({ error: 'Not authenticated' });
+});
+
+test('authenticated request URLs are canonicalized and reject unsafe URL forms', () => {
+	expect(
+		normalizeAuthenticatedUrl(
+			'https://api.kortix.test/v1/projects/p/sessions/s/acp',
+			'https://api.kortix.test/v1',
+		),
+	).toBe('https://api.kortix.test/v1/projects/p/sessions/s/acp');
+	expect(
+		normalizeAuthenticatedUrl('https://runtime.kortix.test/acp', 'https://api.kortix.test/v1'),
+	).toBe('https://runtime.kortix.test/acp');
+	expect(() =>
+		normalizeAuthenticatedUrl('https://user:pass@api.kortix.test/v1', 'https://api.kortix.test/v1'),
+	).toThrow('cannot contain credentials');
+	expect(() =>
+		normalizeAuthenticatedUrl('file:///tmp/token', 'https://api.kortix.test/v1'),
+	).toThrow('must use http or https');
 });

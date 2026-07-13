@@ -113,6 +113,39 @@ export function buildAuthHeaders(
 }
 
 /**
+ * Canonicalize an authenticated request target before it reaches `fetch`.
+ *
+ * Session runtime helpers retain their published ability to target an explicit
+ * proxy/runtime origin, so this cannot require the platform backend origin.
+ * The URL still must be HTTP(S) and must not smuggle credentials in userinfo;
+ * bearer ownership remains centralized in `authenticatedFetch`.
+ */
+export function normalizeAuthenticatedUrl(
+	input: RequestInfo | URL,
+	backendUrl: string,
+): string {
+	const browserOrigin =
+		typeof window !== 'undefined' && window.location?.origin
+			? window.location.origin
+			: undefined;
+	let backend: URL;
+	try {
+		backend = new URL(backendUrl, browserOrigin);
+	} catch {
+		throw new Error('Kortix backend URL must be absolute outside a browser');
+	}
+	const rawTarget = input instanceof Request ? input.url : String(input);
+	const target = new URL(rawTarget, backend);
+	if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+		throw new Error('Authenticated Kortix requests must use http or https');
+	}
+	if (target.username || target.password) {
+		throw new Error('Authenticated Kortix request URLs cannot contain credentials');
+	}
+	return target.toString();
+}
+
+/**
  * The synthetic 401 returned when no token is available — safe for all
  * callers including the Runtime SDK, which expects fetch() semantics
  * (returns a Response, never throws), and it means the request never goes

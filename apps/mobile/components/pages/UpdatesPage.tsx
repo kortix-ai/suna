@@ -25,6 +25,7 @@ import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
+import { normalizeReleaseTitle } from './updates-page-utils';
 
 // ─── Version type classification ─────────────────────────────────────────
 
@@ -37,23 +38,6 @@ function parseVersionType(version: string): VersionType {
   if (parts[2] === '0' && parts[1] === '0') return 'major';
   if (parts[2] === '0') return 'minor';
   return 'patch';
-}
-
-function normalizeReleaseTitle(title: string | undefined, version: string): string | undefined {
-  if (!title) return title;
-  if (version.startsWith('dev-')) return title;
-  const escaped = version.replace(/\./g, '\\.');
-  const patterns = [
-    new RegExp(`^v${escaped}\\s*[—–:-]\\s*`, 'i'),
-    new RegExp(`^${escaped}\\s*[—–:-]\\s*`, 'i'),
-    new RegExp(`^v${escaped}\\s+`, 'i'),
-    new RegExp(`^${escaped}\\s+`, 'i'),
-  ];
-  let normalized = title;
-  for (const pattern of patterns) {
-    normalized = normalized.replace(pattern, '');
-  }
-  return normalized.trim() || title;
 }
 
 function normalizeReleaseBody(body: string | undefined, version: string, title?: string): string | undefined {

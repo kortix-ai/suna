@@ -234,6 +234,24 @@ describe('daemon file write routes', () => {
     expect(res.status).toBe(403)
   })
 
+  it('GET /file/raw rejects a symlink that escapes the allowed roots', async () => {
+    const link = `${WORKSPACE}/outside-raw`
+    await fs.symlink('/etc/hosts', link)
+    const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(link)}`, {
+      headers: authHeaders(),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('GET /file/content rejects a symlink that escapes the allowed roots', async () => {
+    const link = `${WORKSPACE}/outside-content`
+    await fs.symlink('/etc/hosts', link)
+    const res = await fetch(`${base}/file/content?path=${encodeURIComponent(link)}`, {
+      headers: authHeaders(),
+    })
+    expect(res.status).toBe(403)
+  })
+
   it('GET /file/raw requires a signed context (401 unauthenticated)', async () => {
     const res = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/sheet.xlsx`)}`)
     expect(res.status).toBe(401)
