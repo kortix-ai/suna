@@ -337,6 +337,38 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
   return items;
 }
 
+// The marketplace hero: one synthetic "Kortix Starter" project. Its contents
+// (`what's inside`) are every browseable starter skill — resolved typed from the
+// catalog by name — and its files are the whole starter kit (file browser +
+// clone). This is the single project we lead the marketplace with; individual
+// starter skills live *inside* it rather than as their own top-level tiles.
+export const STARTER_KIT_ITEM_NAME = "starter";
+
+function buildStarterKitProjectItem(): RegistryItem {
+  const registry = buildStarterRegistry();
+  const skillNames = (registry.items ?? [])
+    .filter(
+      (it) => it.type === "registry:skill" && !isKortixManagedSkillName(it.name),
+    )
+    .map((it) => it.name)
+    .sort((a, b) => a.localeCompare(b));
+  const files = getStarterFiles({
+    projectName: "Kortix Starter",
+    template: "general-knowledge-worker",
+  }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
+  return {
+    name: STARTER_KIT_ITEM_NAME,
+    type: "registry:project",
+    title: "Kortix Starter",
+    description:
+      "The default Kortix project — a general knowledge worker preloaded with the full skill kit (research, documents, slides, spreadsheets, the web, and more), ready to work from the first session.",
+    categories: ["project", "starter"],
+    registryDependencies: skillNames,
+    files,
+    meta: { source: "kortix", visibility: "global" },
+  };
+}
+
 let BASE: Catalog | null = null;
 
 const KORTIX_REPO = "https://github.com/kortix-ai/suna";
@@ -373,7 +405,10 @@ function getBaseCatalog(): Catalog {
   if (BASE) return BASE;
   const registries: Array<{ name: string; items: RegistryItem[] }> = [
     { name: "kortix-starter", items: buildStarterRegistry().items ?? [] },
-    { name: "kortix-projects", items: buildProjectTemplateRegistry() },
+    {
+      name: "kortix-projects",
+      items: [buildStarterKitProjectItem(), ...buildProjectTemplateRegistry()],
+    },
   ];
   const items: CatalogItem[] = [];
   const byId = new Map<string, CatalogEntry>();
