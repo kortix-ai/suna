@@ -56,7 +56,10 @@ export async function createAuthUser(email: string, options: AuthOptions): Promi
   return body.user ?? body;
 }
 
-export async function deleteAuthUser(userId: string, options: Omit<AuthOptions, 'password'>): Promise<void> {
+export async function deleteAuthUser(
+  userId: string,
+  options: Omit<AuthOptions, 'password'>,
+): Promise<void> {
   const serviceRoleKey = optionalEnvValue(
     'SUPABASE_SERVICE_ROLE_KEY',
     ...(options.envFiles ?? ['apps/web/.env', 'apps/api/.env']),
@@ -110,22 +113,43 @@ export async function installBrowserSession(
   const lockScreen = page.getByText('Click or press Enter to sign in');
   if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
     const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
+    for (
+      let attempt = 0;
+      attempt < 3 && !(await emailInput.isVisible().catch(() => false));
+      attempt++
+    ) {
       await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
       await page.keyboard.press('Enter');
       await page.waitForTimeout(750);
     }
   }
 
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
+  const emailInput = page.locator('input[name="email"]');
+  await expect(emailInput).toBeVisible({ timeout: 15_000 });
+  const signInTab = page.getByRole('tab', { name: /^Sign in$/i });
+  if (await signInTab.isVisible().catch(() => false)) await signInTab.click();
+  await emailInput.fill(session.user.email || '');
+
+  // Current auth is a two-step email → password flow. Older deployments expose
+  // the password mode directly behind a tab/button, so keep both paths usable.
+  const continueButton = page.getByRole('button', { name: /^Continue$/i });
+  if (await continueButton.isVisible().catch(() => false)) await continueButton.click();
+  const usePassword = page.getByText(/Use password instead/i, { exact: true });
+  if (
+    await usePassword
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+  ) {
     await usePassword.click();
   }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
+  const passwordInput = page.locator('input[name="password"]');
+  await expect(passwordInput).toBeVisible({ timeout: 15_000 });
+  await passwordInput.fill(password);
+  const submit = page.locator('form').getByRole('button', { name: /^(Sign in|Continue)$/i });
+  await submit.click();
+  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), {
+    timeout: 30_000,
+  });
   await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
 }

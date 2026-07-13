@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useRuntimeConfig } from '@/hooks/runtime/use-runtime-config';
@@ -11,11 +11,13 @@ import {
   useRuntimeAgents,
   useRuntimeProviders,
 } from '@/hooks/runtime/use-runtime-sessions';
-import { agentRequiresCatalogModel, useProjectConfig } from '@kortix/sdk/react';
+import { agentHarness, agentRequiresCatalogModel, useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
   model?: ModelKey;
+  /** Harness-native model id, applied once when the ACP runtime launches. */
+  runtimeModel?: string;
   variant?: string;
 }
 
@@ -23,12 +25,16 @@ export function buildComposerOptions(input: {
   agent: Agent | undefined;
   lockedAgentName?: string | null;
   model?: ModelKey;
+  runtimeModel?: string | null;
   variant?: string;
 }): ComposerOptions {
   const options: ComposerOptions = {};
   const agentName = input.lockedAgentName?.trim() || input.agent?.name;
   if (agentName) options.agent = agentName;
   if (agentRequiresCatalogModel(input.agent) && input.model) options.model = input.model;
+  if (!agentRequiresCatalogModel(input.agent) && input.runtimeModel?.trim()) {
+    options.runtimeModel = input.runtimeModel.trim();
+  }
   if (input.variant) options.variant = input.variant;
   return options;
 }
@@ -109,6 +115,10 @@ export function ComposerChatInput({
   const SESSION_AGENT_LOCK_ENABLED: boolean = false;
   const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
   const catalogModelRequired = agentRequiresCatalogModel(local.agent.current);
+  const activeHarness = agentHarness(local.agent.current);
+  const nativeHarness = activeHarness && activeHarness !== 'opencode' ? activeHarness : null;
+  const [runtimeModels, setRuntimeModels] = useState<Record<string, string | null>>({});
+  const runtimeModel = nativeHarness ? (runtimeModels[nativeHarness] ?? null) : null;
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
@@ -116,6 +126,7 @@ export function ComposerChatInput({
       agent: local.agent.current,
       lockedAgentName,
       model: local.model.currentKey,
+      runtimeModel,
       variant: local.model.variant.current,
     });
   };
@@ -145,6 +156,16 @@ export function ComposerChatInput({
       selectedModel={catalogModelRequired ? (local.model.currentKey ?? null) : null}
       onModelChange={
         catalogModelRequired ? (m) => local.model.set(m ?? undefined, { recent: true }) : undefined
+      }
+      harnessModel={
+        nativeHarness
+          ? {
+              harness: nativeHarness,
+              selectedModel: runtimeModel,
+              onSelect: (model) =>
+                setRuntimeModels((current) => ({ ...current, [nativeHarness]: model })),
+            }
+          : undefined
       }
       modelRequired={catalogModelRequired}
       modelsLoading={providersLoading}

@@ -96,9 +96,10 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
   const apiUrl = env.KORTIX_API_URL?.replace(/\/$/, '')
   const token = env.KORTIX_TOKEN?.trim()
   const custom = customProvider(env)
+  const runtimeModel = env.KORTIX_RUNTIME_MODEL?.trim()
   if (id === 'opencode') {
     const nativeAgent = env.KORTIX_NATIVE_AGENT?.trim()
-    if (!nativeAgent && custom?.protocol !== 'openai') return Object.keys(native).length ? native : undefined
+    if (!nativeAgent && !runtimeModel && custom?.protocol !== 'openai') return Object.keys(native).length ? native : undefined
     let existing: Record<string, unknown> = {}
     try {
       const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT || '{}')
@@ -128,6 +129,7 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
       OPENCODE_CONFIG_CONTENT: JSON.stringify({
         ...existing,
         ...customConfig,
+        ...(runtimeModel ? { model: runtimeModel } : {}),
         ...(nativeAgent ? { default_agent: nativeAgent } : {}),
       }),
     }
@@ -137,12 +139,24 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // intentionally different: CODEX_AUTH_JSON stays server-side where the
     // Kortix gateway can refresh it, and the adapter authenticates to that
     // gateway with the sandbox token below.
-    if (env.CODEX_API_KEY || env.OPENAI_API_KEY) return Object.keys(native).length ? native : undefined
+    if (env.CODEX_API_KEY || env.OPENAI_API_KEY) {
+      const direct = {
+        ...native,
+        ...(runtimeModel ? { CODEX_CONFIG: JSON.stringify({ model: runtimeModel }) } : {}),
+      }
+      return Object.keys(direct).length ? direct : undefined
+    }
     if (custom?.protocol === 'openai') {
       return {
         ...native,
         NO_BROWSER: '1',
-        ...(custom.model ? { CODEX_CONFIG: JSON.stringify({ model: custom.model }) } : {}),
+        ...(runtimeModel || custom.model
+          ? {
+              CODEX_CONFIG: JSON.stringify({
+                model: runtimeModel || custom.model,
+              }),
+            }
+          : {}),
         DEFAULT_AUTH_REQUEST: JSON.stringify({
           methodId: 'gateway',
           _meta: {
@@ -159,7 +173,7 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     return {
       ...native,
       NO_BROWSER: '1',
-      CODEX_CONFIG: JSON.stringify({ model: 'openai/gpt-5.4' }),
+      CODEX_CONFIG: JSON.stringify({ model: runtimeModel || 'openai/gpt-5.4' }),
       DEFAULT_AUTH_REQUEST: JSON.stringify({
         methodId: 'gateway',
         _meta: {
@@ -185,8 +199,8 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
               authHeader: Boolean(custom.apiKey),
               models: [
                 {
-                  id: custom.model || 'default',
-                  name: custom.model || 'Default',
+                  id: runtimeModel || custom.model || 'default',
+                  name: runtimeModel || custom.model || 'Default',
                   reasoning: true,
                   input: ['text', 'image'],
                   contextWindow: 128000,
@@ -211,8 +225,8 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
             authHeader: true,
             models: [
               {
-                id: 'gpt-5.4',
-                name: 'GPT-5.4',
+                id: runtimeModel || 'gpt-5.4',
+                name: runtimeModel || 'GPT-5.4',
                 reasoning: true,
                 input: ['text', 'image'],
                 contextWindow: 400000,
@@ -226,13 +240,19 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     }
   }
   if (id !== 'claude') return Object.keys(native).length ? native : undefined
-  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) return Object.keys(native).length ? native : undefined
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || env.CLAUDE_CODE_OAUTH_TOKEN) {
+    const direct = {
+      ...native,
+      ...(runtimeModel ? { ANTHROPIC_MODEL: runtimeModel } : {}),
+    }
+    return Object.keys(direct).length ? direct : undefined
+  }
   if (custom?.protocol === 'anthropic') {
     return {
       ...native,
       ANTHROPIC_BASE_URL: custom.baseUrl,
       ...(custom.apiKey ? { ANTHROPIC_AUTH_TOKEN: custom.apiKey } : {}),
-      ...(custom.model ? { ANTHROPIC_MODEL: custom.model } : {}),
+      ...(runtimeModel || custom.model ? { ANTHROPIC_MODEL: runtimeModel || custom.model } : {}),
     }
   }
   if (!apiUrl || !token) return Object.keys(native).length ? native : undefined
@@ -245,7 +265,7 @@ export function resolveAcpHarnessLaunchEnv(id: AcpHarnessId, env: NodeJS.Process
     // never scrapes a styled model name from CLI output or guesses a model the
     // account cannot use. A project-supplied Claude credential keeps native
     // Claude behavior and is intentionally not overridden above.
-    ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+    ANTHROPIC_MODEL: runtimeModel || 'claude-sonnet-4-6',
   }
 }
 

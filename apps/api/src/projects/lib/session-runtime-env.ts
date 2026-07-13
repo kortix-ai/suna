@@ -39,9 +39,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // must never create a parallel OpenCode HTTP session.
     ...(!compiled ? { KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1' } : {}),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(input.runtimeModel && !compiled
-      ? { KORTIX_OPENCODE_MODEL: input.runtimeModel }
-      : {}),
+    ...(input.runtimeModel && !compiled ? { KORTIX_OPENCODE_MODEL: input.runtimeModel } : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (executor MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/opencode.ts). Per-call
@@ -54,6 +52,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_RUNTIME_NAME: acpAgent!.runtime,
           KORTIX_RUNTIME_HARNESS: acpAgent!.harness,
           KORTIX_RUNTIME_CONFIG_DIR: compiled.runtimes[acpAgent!.runtime].configDir,
+          ...(input.runtimeModel ? { KORTIX_RUNTIME_MODEL: input.runtimeModel } : {}),
           ...(acpAgent!.nativeAgent ? { KORTIX_NATIVE_AGENT: acpAgent!.nativeAgent } : {}),
         }
       : {}),

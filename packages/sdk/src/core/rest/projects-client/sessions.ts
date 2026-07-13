@@ -74,6 +74,7 @@ export interface CreateProjectSessionInput {
   sandbox_slug?: string;
   initial_prompt?: string;
   model?: string;
+  /** Optional harness-native model id, applied when this ACP runtime launches. */
   runtime_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */

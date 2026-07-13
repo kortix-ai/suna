@@ -13,9 +13,16 @@ describe('buildNewSessionCreateInput', () => {
   });
 
   it('carries the sandbox slug through alongside the agent', () => {
+    expect(buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' })).toEqual({
+      agent_name: 'builder',
+      sandbox_slug: 'node22',
+    });
+  });
+
+  it('applies a harness-native model at session launch', () => {
     expect(
-      buildNewSessionCreateInput({ agent: 'builder', sandbox_slug: 'node22' }),
-    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
+      buildNewSessionCreateInput({ agent: 'codex', runtimeModel: ' openai/gpt-5.4 ' }),
+    ).toEqual({ agent_name: 'codex', runtime_model: 'openai/gpt-5.4' });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {

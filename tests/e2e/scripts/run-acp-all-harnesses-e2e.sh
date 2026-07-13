@@ -15,7 +15,11 @@ fi
 : "${E2E_SERVICE_ROLE_KEY:-${SUPABASE_SERVICE_ROLE_KEY:?Supabase service-role key is required}}"
 : "${E2E_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:?Supabase anon key is required}}"
 
-harnesses=(opencode claude codex pi)
+if [[ -n "${E2E_ACP_HARNESSES:-}" ]]; then
+  read -r -a harnesses <<<"$E2E_ACP_HARNESSES"
+else
+  harnesses=(opencode claude codex pi)
+fi
 pids=()
 for harness in "${harnesses[@]}"; do
   log="$LOG_DIR/$harness.log"

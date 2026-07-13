@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import type { Agent } from "../core/runtime/wire-types";
 import {
   agentHarness,
+  agentHarnessPresentation,
   agentModelPolicy,
   agentRequiresCatalogModel,
+  harnessPresentation,
 } from "./harness-capabilities";
 
 const agent = (harness?: string): Agent => ({
@@ -27,5 +29,13 @@ describe("ACP harness capabilities", () => {
 
   test("rejects unknown harness metadata", () => {
     expect(agentHarness(agent("unknown"))).toBeNull();
+    expect(agentHarnessPresentation(agent("unknown"))).toBeNull();
+  });
+
+  test("owns the canonical harness labels used by every host", () => {
+    expect(harnessPresentation("claude").label).toBe("Claude Code");
+    expect(harnessPresentation("codex").shortLabel).toBe("Codex");
+    expect(harnessPresentation("opencode").label).toBe("OpenCode");
+    expect(harnessPresentation("pi").description).toContain("ACP");
   });
 });

@@ -39,6 +39,15 @@ describe('ACP harness registry', () => {
     expect(registry.get('claude')?.launch.env).toBeUndefined();
   });
 
+  test('applies the session model to native Claude credentials', () => {
+    expect(
+      resolveAcpHarnessLaunchEnv('claude', {
+        ANTHROPIC_API_KEY: 'project-key',
+        KORTIX_RUNTIME_MODEL: 'claude-custom',
+      }),
+    ).toEqual({ ANTHROPIC_MODEL: 'claude-custom' });
+  });
+
   for (const credential of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] as const) {
     test(`uses ${credential} natively for Claude`, () => {
       expect(
@@ -122,6 +131,23 @@ describe('ACP harness registry', () => {
       OPENAI_API_KEY: 'project-key',
     });
     expect(registry.get('codex')?.launch.env).toBeUndefined();
+  });
+
+  test('applies one harness-neutral session model to Codex, OpenCode, and Pi', () => {
+    const env = {
+      KORTIX_RUNTIME_MODEL: 'custom/session-model',
+      KORTIX_API_URL: 'https://api.test/v1',
+      KORTIX_TOKEN: 'token',
+    };
+    expect(resolveAcpHarnessLaunchEnv('codex', env)?.CODEX_CONFIG).toBe(
+      JSON.stringify({ model: 'custom/session-model' }),
+    );
+    expect(resolveAcpHarnessLaunchEnv('opencode', env)?.OPENCODE_CONFIG_CONTENT).toContain(
+      'custom/session-model',
+    );
+    expect(resolveAcpHarnessLaunchEnv('pi', env)?.KORTIX_PI_MODELS_JSON).toContain(
+      'custom/session-model',
+    );
   });
 
   for (const credential of ['CODEX_API_KEY', 'OPENAI_API_KEY'] as const) {

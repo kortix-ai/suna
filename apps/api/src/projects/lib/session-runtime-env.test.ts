@@ -34,7 +34,7 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
   });
 
-  test('does not leak the legacy model override into an ACP v2 launch', () => {
+  test('translates a model override into the harness-neutral ACP launch key', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledRuntimeConfig: {
@@ -45,6 +45,7 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
       runtimeModel: 'anthropic/claude-opus-4-8',
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-opus-4-8');
   });
 
   test('v3 emits only the selected ACP runtime contract and no OpenCode bootstrap', () => {
@@ -84,5 +85,6 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined();
     expect(env.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('must/not-leak');
   });
 });

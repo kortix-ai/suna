@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -21,6 +22,12 @@ import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import {
+  agentHarness,
+  agentHarnessPresentation,
+  harnessPresentation,
+  type KortixHarness,
+} from '@kortix/sdk/react';
 
 import {
   ArrowUp,
@@ -47,13 +54,14 @@ import {
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
 import { resolveComposerResetOnSend } from './composer-reset';
+import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
-import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { ModelSelector, type ModelDefaultControls } from './model-selector';
 import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
@@ -228,63 +236,78 @@ export function AgentSelector({
   const filteredPrimary = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return primaryAgents;
-    return primaryAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
-    );
+    return primaryAgents.filter((a) => {
+      const presentation = agentHarnessPresentation(a);
+      return (
+        a.name.toLowerCase().includes(q) ||
+        (a.description || '').toLowerCase().includes(q) ||
+        (presentation?.label || '').toLowerCase().includes(q)
+      );
+    });
   }, [primaryAgents, search]);
+
+  const groupedAgents = useMemo(() => {
+    const groups = new Map<KortixHarness | 'other', Agent[]>();
+    for (const agent of filteredPrimary) {
+      const key = agentHarness(agent) ?? 'other';
+      groups.set(key, [...(groups.get(key) ?? []), agent]);
+    }
+    const order: Array<KortixHarness | 'other'> = ['claude', 'codex', 'opencode', 'pi', 'other'];
+    return order
+      .map((harness) => ({ harness, agents: groups.get(harness) ?? [] }))
+      .filter((group) => group.agents.length > 0);
+  }, [filteredPrimary]);
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
   const displayName = currentAgent?.name || 'Agent';
+  const currentHarness = agentHarnessPresentation(currentAgent);
 
   return (
     // When locked we keep the trigger hoverable (no native `disabled`, which
     // would suppress hover) but gate the popover shut, so the tooltip can still
     // explain WHY the agent can't be switched mid-session.
     <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-disabled={disabled || undefined}
-              aria-label={tHardcodedUi.raw(
-                'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
-              )}
+      <Hint
+        side="top"
+        className="max-w-[260px] text-xs"
+        label={
+          disabled
+            ? 'This agent is fixed when the session starts. Start a new session to use another harness.'
+            : 'Choose the agent and ACP harness for this session'
+        }
+      >
+        <CommandPopoverTrigger>
+          <button
+            type="button"
+            aria-disabled={disabled || undefined}
+            aria-label={tHardcodedUi.raw(
+              'componentsSessionSessionChatInput.line211JsxAttrAriaLabelAgentPicker',
+            )}
+            data-testid="agent-selector"
+            data-harness={currentHarness?.id ?? 'unknown'}
+            className={cn(
+              'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] duration-200 active:scale-[0.96]',
+              flash && 'bg-primary/[0.08] text-foreground',
+              open && 'bg-primary/[0.06] text-foreground',
+              disabled &&
+                'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
+            )}
+          >
+            <span className="max-w-[100px] truncate capitalize">{displayName}</span>
+            {currentHarness ? (
+              <span className="text-muted-foreground/60 hidden max-w-[80px] truncate sm:inline">
+                &bull; {currentHarness.shortLabel}
+              </span>
+            ) : null}
+            <ChevronDown
               className={cn(
-                'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium capitalize transition-colors duration-200',
-                flash && 'bg-primary/10 text-foreground',
-                open && 'bg-muted text-foreground',
-                disabled &&
-                  'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
+                'size-3 opacity-50 transition-transform duration-200',
+                open && 'rotate-180',
               )}
-            >
-              <span className="max-w-[100px] truncate">{displayName}</span>
-              <ChevronDown
-                className={cn(
-                  'size-3 opacity-50 transition-transform duration-200',
-                  open && 'rotate-180',
-                )}
-              />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[240px] text-xs">
-          {disabled ? (
-            <p>
-              {
-                "This agent is set when the session starts and can't be changed here. Start a new session to use a different agent."
-              }
-            </p>
-          ) : (
-            <p>
-              {tHardcodedUi.raw('componentsSessionSessionChatInput.line224JsxTextSwitchAgent')}
-              <kbd className="bg-foreground/10 ml-1 rounded px-1.5 py-0.5 font-mono text-xs">
-                Tab
-              </kbd>
-            </p>
-          )}
-        </TooltipContent>
-      </Tooltip>
+            />
+          </button>
+        </CommandPopoverTrigger>
+      </Hint>
 
       <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
@@ -297,53 +320,71 @@ export function AgentSelector({
         />
 
         <CommandList className="max-h-[320px]">
-          {/* Primary agents */}
-          {filteredPrimary.length > 0 && (
-            <CommandGroup heading="Agents" forceMount>
-              {filteredPrimary.map((agent) => {
-                const isSelected =
-                  selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
-                return (
-                  <CommandItem
-                    key={agent.name}
-                    value={`agent-${agent.name}`}
-                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
-                    onSelect={() => {
-                      if (disabled) return;
-                      onSelect(agent.name);
-                      setOpen(false);
-                    }}
-                  >
-                    <div className="min-w-0 flex-1 py-0.5">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <div
-                          className={cn(
-                            'truncate text-sm leading-tight capitalize',
-                            isSelected
-                              ? 'text-foreground font-semibold'
-                              : 'text-foreground/90 font-medium',
-                          )}
-                        >
-                          {agent.name}
+          {groupedAgents.map((group) => {
+            const groupPresentation =
+              group.harness === 'other' ? null : harnessPresentation(group.harness);
+            return (
+              <CommandGroup
+                key={group.harness}
+                heading={
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{groupPresentation?.label ?? 'Other agents'}</span>
+                    <span className="text-muted-foreground/50 tabular-nums">
+                      {group.agents.length}
+                    </span>
+                  </div>
+                }
+                forceMount
+              >
+                {group.agents.map((agent) => {
+                  const isSelected =
+                    selectedAgent === agent.name || (!selectedAgent && agent === primaryAgents[0]);
+                  const presentation = agentHarnessPresentation(agent);
+                  return (
+                    <CommandItem
+                      key={agent.name}
+                      value={`agent-${agent.name}`}
+                      data-testid="agent-option"
+                      data-agent={agent.name}
+                      data-harness={presentation?.id ?? 'unknown'}
+                      className={isSelected ? 'bg-primary/[0.06]' : undefined}
+                      onSelect={() => {
+                        if (disabled) return;
+                        onSelect(agent.name);
+                        setOpen(false);
+                      }}
+                    >
+                      <div className="min-w-0 flex-1 py-0.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <div
+                            className={cn(
+                              'truncate text-sm capitalize leading-tight',
+                              isSelected
+                                ? 'text-foreground font-semibold'
+                                : 'text-foreground/90 font-medium',
+                            )}
+                          >
+                            {agent.name}
+                          </div>
+                          {presentation ? (
+                            <Badge variant="outline" size="xs" className="shrink-0">
+                              {presentation.shortLabel}
+                            </Badge>
+                          ) : null}
                         </div>
-                        {agent.harness && (
-                          <Badge variant="outline" size="xs" className="shrink-0 capitalize">
-                            {agent.harness}
-                          </Badge>
+                        {agent.description && (
+                          <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                            {agent.description}
+                          </p>
                         )}
                       </div>
-                      {agent.description && (
-                        <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
-                          {agent.description}
-                        </p>
-                      )}
-                    </div>
-                    {isSelected && <Check className="text-foreground shrink-0" />}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          )}
+                      {isSelected && <Check className="text-foreground shrink-0" />}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            );
+          })}
 
           {/* No results */}
           {filteredPrimary.length === 0 && search.trim() && (
@@ -664,10 +705,10 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
   if (textPreview) {
     return (
       <div className="absolute inset-0 overflow-hidden p-1">
-        <pre className="text-muted-foreground/70 pointer-events-none m-0 overflow-hidden p-0 font-mono text-xs leading-[1.4] whitespace-pre select-none">
+        <pre className="text-muted-foreground/70 pointer-events-none m-0 select-none overflow-hidden whitespace-pre p-0 font-mono text-xs leading-[1.4]">
           {textPreview}
         </pre>
-        <div className="from-muted/20 absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t to-transparent" />
+        <div className="from-muted/20 absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t to-transparent" />
       </div>
     );
   }
@@ -705,7 +746,7 @@ function AttachmentPreview({
                 <AttachmentThumbnail af={af} name={name} />
                 {/* Extension badge */}
                 {ext && !af.isImage && (
-                  <span className="text-muted-foreground/50 bg-background/80 absolute right-1 bottom-1 z-[5] rounded px-1 py-0.5 text-xs font-medium tracking-wider uppercase">
+                  <span className="text-muted-foreground/50 bg-background/80 absolute bottom-1 right-1 z-[5] rounded px-1 py-0.5 text-xs font-medium uppercase tracking-wider">
                     {ext.toUpperCase()}
                   </span>
                 )}
@@ -721,7 +762,7 @@ function AttachmentPreview({
             {/* Remove button */}
             <button
               onClick={() => onRemove(i)}
-              className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              className="border-card absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
             >
               <X className="h-3 w-3" />
             </button>
@@ -877,7 +918,7 @@ function MentionPopover({
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
         {agents.length > 0 && (
           <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
               Agents
             </div>
             {agents.map((item) => {
@@ -911,7 +952,7 @@ function MentionPopover({
         )}
         {sessions.length > 0 && (
           <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
               Sessions
             </div>
             {sessions.map((item) => {
@@ -943,7 +984,7 @@ function MentionPopover({
         )}
         {files.length > 0 && (
           <>
-            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold tracking-wider uppercase">
+            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase tracking-wider">
               Files
             </div>
             {files.map((item) => {
@@ -1141,6 +1182,8 @@ export interface SessionChatInputProps {
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
+  /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
+  harnessModel?: Pick<HarnessModelSelectorProps, 'harness' | 'selectedModel' | 'onSelect'>;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
@@ -1247,6 +1290,7 @@ export function SessionChatInput({
   models = [],
   selectedModel = null,
   onModelChange,
+  harnessModel,
   modelDefaultControls,
   variants = [],
   selectedVariant = null,
@@ -2189,10 +2233,10 @@ export function SessionChatInput({
 
           {/* Staged command badge */}
           {stagedCommand && (
-            <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
+            <div className="flex min-w-0 items-center gap-2 px-4 pb-0 pt-3">
               <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
                 <Terminal className="text-muted-foreground size-3" />
-                <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
+                <span className="text-foreground max-w-[220px] truncate whitespace-nowrap font-mono text-xs font-medium sm:max-w-[320px]">
                   /{stagedCommand.name}
                 </span>
                 <button
@@ -2225,7 +2269,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
-                  className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
+                  className="text-muted-foreground pointer-events-none absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForApproval ? (
                     <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
@@ -2261,7 +2305,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && stagedCommand && (
                 <div
                   aria-hidden
-                  className="text-muted-foreground/50 pointer-events-none absolute top-4 left-0.5 text-base sm:text-sm"
+                  className="text-muted-foreground/50 pointer-events-none absolute left-0.5 top-4 text-base sm:text-sm"
                 >
                   {tHardcodedUi.raw(
                     'componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc',
@@ -2273,7 +2317,7 @@ export function SessionChatInput({
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
+                  className="text-foreground pointer-events-none absolute inset-0 whitespace-pre-wrap break-words px-0.5 pb-6 pt-4 text-base leading-normal sm:text-sm"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span
@@ -2303,7 +2347,7 @@ export function SessionChatInput({
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
-                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pb-6 pt-4 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2312,7 +2356,7 @@ export function SessionChatInput({
           </div>
 
           {/* Bottom toolbar */}
-          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
+          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pl-2 pr-1.5">
             {/* LEFT: Attach + Agent + Model + Variant */}
             <div className="flex min-w-0 items-center gap-0 overflow-visible">
               <input
@@ -2361,6 +2405,7 @@ export function SessionChatInput({
                   defaultControls={modelDefaultControls}
                 />
               )}
+              {harnessModel ? <HarnessModelSelector {...harnessModel} /> : null}
               {variants.length > 0 && onVariantChange && (
                 <VariantSelector
                   variants={variants}
@@ -2395,8 +2440,8 @@ export function SessionChatInput({
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
-                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
-                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
+                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute bottom-full right-1/2 mb-2 translate-x-1/2 duration-150">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 whitespace-nowrap rounded-2xl px-3 py-1.5 text-xs">
                         <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
                           ESC
                         </kbd>

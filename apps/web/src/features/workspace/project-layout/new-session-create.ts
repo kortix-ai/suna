@@ -3,6 +3,7 @@ import type { ComposerOptions } from '@/features/session/composer-chat-input';
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
+  runtime_model?: string;
 }
 
 export interface NewSessionAgentConfig {
@@ -39,10 +40,11 @@ export function resolveNewSessionAgent(
  * no agent was picked), so callers can omit the create overrides entirely.
  */
 export function buildNewSessionCreateInput(
-  options: Pick<ComposerOptions, 'agent'> & { sandbox_slug?: string } = {},
+  options: Pick<ComposerOptions, 'agent' | 'runtimeModel'> & { sandbox_slug?: string } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
   if (options.sandbox_slug) input.sandbox_slug = options.sandbox_slug;
   if (options.agent) input.agent_name = options.agent;
+  if (options.runtimeModel?.trim()) input.runtime_model = options.runtimeModel.trim();
   return Object.keys(input).length > 0 ? input : undefined;
 }

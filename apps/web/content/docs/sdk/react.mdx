@@ -140,6 +140,45 @@ const config = useProjectConfig(projectId); // default agent, commands, runtime 
 Use the standalone hooks for pickers and configuration surfaces. `useSession`
 stays focused on boot state plus the ACP chat state for one open session.
 
+### Harness-aware model pickers
+
+An agent's `harness` determines which model picker is valid. Use the SDK-owned
+capability helpers so every React host follows the same rule:
+
+```tsx
+import {
+  agentHarness,
+  agentHarnessPresentation,
+  agentRequiresCatalogModel,
+} from '@kortix/sdk/react';
+
+const harness = agentHarness(agent);
+const presentation = agentHarnessPresentation(agent);
+
+if (agentRequiresCatalogModel(agent)) {
+  // OpenCode: render useProjectModels(projectId) and send its provider/model key.
+} else {
+  // Claude Code, Codex, or Pi: render "Harness default" plus an optional
+  // free-form harness model id. Do not leak a previously selected catalog model.
+}
+```
+
+For Claude Code, Codex, and Pi, omitting a model preserves the harness-native
+default and active authentication route. An explicit value is a launch-time,
+session-only override:
+
+```tsx
+await kortix.project(projectId).sessions.create({
+  agent_name: agent.name,
+  runtime_model: customHarnessModel || undefined,
+});
+```
+
+`runtime_model` is not a gateway catalog key. Keep pending values separately per
+harness, clear or hide the catalog picker when leaving OpenCode, and never guess
+a native model list in host UI. If Kortix adds curated native presets later,
+they should come from an authoritative SDK/API capability endpoint.
+
 ## Primitives
 
 Small building blocks the white-label reference uses — all owned by the SDK so

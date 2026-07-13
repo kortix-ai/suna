@@ -16,6 +16,7 @@ const AGENT =
   process.env.E2E_ACP_AGENT || (HARNESS === "opencode" ? "kortix" : HARNESS);
 const PROVIDER = process.env.E2E_ACP_PROVIDER || "daytona";
 const KEEP_PROJECT = process.env.E2E_ACP_KEEP_PROJECT === "1";
+const RUNTIME_MODEL = process.env.E2E_ACP_RUNTIME_MODEL?.trim() || null;
 if (!["opencode", "claude", "codex", "pi"].includes(HARNESS))
   throw new Error(`Unsupported E2E_ACP_HARNESS=${HARNESS}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -146,7 +147,12 @@ async function main() {
     const createdSession = await api(
       "POST",
       `/projects/${projectId}/sessions`,
-      { name: `ACP ${HARNESS} smoke`, provider: PROVIDER, agent_name: AGENT },
+      {
+        name: `ACP ${HARNESS} smoke`,
+        provider: PROVIDER,
+        agent_name: AGENT,
+        ...(RUNTIME_MODEL ? { runtime_model: RUNTIME_MODEL } : {}),
+      },
     );
     const sessionId =
       createdSession.json?.session_id ?? createdSession.json?.id;
@@ -156,6 +162,10 @@ async function main() {
       );
     if (createdSession.json?.agent_name !== AGENT)
       throw new Error(`session did not bind ${AGENT}: ${createdSession.text}`);
+    if (RUNTIME_MODEL && createdSession.json?.metadata?.model !== RUNTIME_MODEL)
+      throw new Error(
+        `session did not persist runtime model ${RUNTIME_MODEL}: ${createdSession.text}`,
+      );
     console.log(`[acp-smoke] session=${sessionId} provider=${PROVIDER}`);
 
     const listedSessions = await api("GET", `/projects/${projectId}/sessions`);

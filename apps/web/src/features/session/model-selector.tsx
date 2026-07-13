@@ -332,6 +332,7 @@ export function ModelSelector({
             <CommandPopoverTrigger>
               <button
                 type="button"
+                data-testid="catalog-model-selector"
                 aria-label={tHardcodedUi.raw(
                   'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
                 )}
@@ -426,7 +427,7 @@ export function ModelSelector({
                             <span className="flex-1">
                               {PROVIDER_LABELS[group.providerID] || group.providerName}
                             </span>
-                            <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                            <span className="text-muted-foreground/30 text-xs normal-case tracking-normal">
                               {group.models.length}
                             </span>
                           </div>

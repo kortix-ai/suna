@@ -109,6 +109,44 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort` (ACP prompt wrappers) · `stream()` / `.acp.*` (ACP live transport) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) |
 | `kortix.runtime()` | structural daemon/runtime helpers for the active session runtime (escape hatch, not the conversation protocol) |
 
+### Harness-aware agent and model selection
+
+Agents declare the ACP harness that executes them: `claude`, `codex`,
+`opencode`, or `pi`. Read that capability from `@kortix/sdk/react` instead of
+branching on agent names:
+
+```ts
+import {
+  agentHarness,
+  agentRequiresCatalogModel,
+  harnessPresentation,
+} from '@kortix/sdk/react';
+
+const harness = agentHarness(agent);
+const usesGatewayCatalog = agentRequiresCatalogModel(agent);
+const label = harness ? harnessPresentation(harness).label : 'Agent';
+```
+
+The model contract intentionally has two paths:
+
+- **OpenCode** uses the project/provider model catalog. Send its selected model
+  through the existing catalog-model field.
+- **Claude Code, Codex, and Pi** own their native default model. Omit a model to
+  keep that default, or send one explicit harness model id as `runtime_model`
+  when the project session is created.
+
+```ts
+await kortix.project(projectId).sessions.create({
+  agent_name: 'codex',
+  runtime_model: 'openai/gpt-5.4', // optional, immutable launch-time override
+});
+```
+
+`runtime_model` is persisted with the project session and applied when the ACP
+runtime launches. It is not a provider/model catalog key, and it should not be
+reused across harness switches. Hosts should keep a separate pending value per
+harness and omit the field for "Harness default".
+
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
 multi-tenant server-wrapper pattern, headless transcript rendering, cost
