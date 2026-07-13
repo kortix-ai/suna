@@ -37,6 +37,7 @@ module "publisher" {
   repository_domain          = var.repository_domain
   repository_certificate_arn = module.repository_certificate.certificate_arn
   github_oidc_provider_arn   = var.github_oidc_provider_arn
+  permissions_boundary_arn   = var.permissions_boundary_arn
   github_repository          = var.github_repository
   github_environment         = var.github_environment
   github_refresh_environment = var.github_refresh_environment

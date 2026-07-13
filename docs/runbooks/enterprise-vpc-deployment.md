@@ -11,8 +11,19 @@ exact certified image and bundle digests; it never rebuilds them.
 The shared publisher is Terraform-owned in the Kortix AWS account. Its
 CloudFront hostname, us-east-1 ACM certificate, Cloudflare validation and CNAME
 records, WAF, encrypted WAF logs, immutable request-log bucket, object-locked
-TUF bucket, KMS signing keys, and GitHub OIDC roles are one deployment. Supply
-the scoped Cloudflare credential only at apply time:
+TUF bucket, KMS signing keys, and GitHub OIDC roles are one deployment.
+
+The one-time `enterprise-release-publisher-bootstrap` root creates the GitHub
+OIDC Terraform role from an authenticated Kortix administrator session. Store
+its `terraform_role_arn` output as the repository variable
+`ENTERPRISE_PUBLISHER_TERRAFORM_ROLE_ARN`; store the Kortix Cloudflare zone as
+`CLOUDFLARE_ZONE_ID`. The protected `enterprise-stable` environment then runs
+`Deploy Enterprise Release Publisher`, consuming the existing
+`CLOUDFLARE_API_TOKEN` secret without exporting it. Plan is the default; apply
+requires the pinned account confirmation and environment approval.
+
+For emergency local recovery only, supply the scoped Cloudflare credential at
+apply time:
 
 ```bash
 export TF_VAR_cloudflare_api_token="$(dotenvx get CLOUDFLARE_API_TOKEN -f apps/api/.env)"
