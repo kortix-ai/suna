@@ -109,3 +109,15 @@ describe('Channels view — Microsoft Teams is a uniform channel row', () => {
     expect(teamsPanelSource).not.toContain('DisconnectedPanel');
   });
 });
+
+describe('Channels view — the table must not overflow its card', () => {
+  test('workspace values truncate (a long tenant id / workspace must not stretch the table)', () => {
+    expect(channelsSource).toMatch(/max-w-\[240px\] truncate/);
+    expect((channelsSource.match(/max-w-\[240px\] truncate/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the actions column hugs its content instead of a fixed width that clips the buttons', () => {
+    expect(channelsSource).toContain('w-[1%] whitespace-nowrap text-right');
+    expect(channelsSource).not.toContain('<TableHead className="w-[120px]">');
+  });
+});
