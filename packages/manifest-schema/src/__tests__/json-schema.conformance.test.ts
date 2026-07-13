@@ -52,7 +52,7 @@ interface Fixture {
 const FIXTURES: Fixture[] = [
   // ─── v1 ──────────────────────────────────────────────────────────────
   {
-    name: 'v1: comprehensive manifest (project/env/opencode/sandbox/triggers/connectors/agents/channels/apps)',
+    name: 'v1: comprehensive manifest (project/env/opencode/sandbox/triggers/connectors/agents/channels)',
     format: 'toml',
     valid: true,
     input: `

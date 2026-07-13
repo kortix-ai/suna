@@ -23,6 +23,7 @@ module "alb_controller_irsa" {
 # to place pods. Write actions are scoped to THIS cluster's ASG via the
 # auto-applied k8s.io/cluster-autoscaler/<name> tag.
 data "aws_iam_policy_document" "cluster_autoscaler" {
+  #checkov:skip=CKV_AWS_356:AWS autoscaling and EC2 discovery APIs require Resource star; scaling writes are constrained by this cluster's ownership tag.
   statement {
     sid    = "Discovery"
     effect = "Allow"
@@ -57,14 +58,15 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 }
 
 module "cluster_autoscaler_irsa" {
-  source            = "../irsa"
-  name              = "${var.cluster_name}-cluster-autoscaler"
-  oidc_provider_arn = var.oidc_provider_arn
-  oidc_provider_url = var.oidc_provider_url
-  namespace         = "kube-system"
-  service_accounts  = ["cluster-autoscaler"]
-  policy_json       = data.aws_iam_policy_document.cluster_autoscaler.json
-  tags              = var.tags
+  source                   = "../irsa"
+  name                     = "${var.cluster_name}-cluster-autoscaler"
+  oidc_provider_arn        = var.oidc_provider_arn
+  oidc_provider_url        = var.oidc_provider_url
+  namespace                = "kube-system"
+  service_accounts         = ["cluster-autoscaler"]
+  policy_json              = data.aws_iam_policy_document.cluster_autoscaler.json
+  permissions_boundary_arn = var.permissions_boundary_arn
+  tags                     = var.tags
 }
 
 # Argo Rollouts controller — reads CloudWatch so the canary AnalysisRuns can
@@ -78,14 +80,15 @@ data "aws_iam_policy_document" "rollouts_cloudwatch" {
 }
 
 module "argo_rollouts_irsa" {
-  source            = "../irsa"
-  name              = "${var.cluster_name}-argo-rollouts"
-  oidc_provider_arn = var.oidc_provider_arn
-  oidc_provider_url = var.oidc_provider_url
-  namespace         = "argo-rollouts"
-  service_accounts  = ["argo-rollouts"]
-  policy_json       = data.aws_iam_policy_document.rollouts_cloudwatch.json
-  tags              = var.tags
+  source                   = "../irsa"
+  name                     = "${var.cluster_name}-argo-rollouts"
+  oidc_provider_arn        = var.oidc_provider_arn
+  oidc_provider_url        = var.oidc_provider_url
+  namespace                = "argo-rollouts"
+  service_accounts         = ["argo-rollouts"]
+  policy_json              = data.aws_iam_policy_document.rollouts_cloudwatch.json
+  permissions_boundary_arn = var.permissions_boundary_arn
+  tags                     = var.tags
 }
 
 # ── Cloudflare API token for external-dns ─────────────────────────────────────

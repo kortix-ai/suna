@@ -6,9 +6,8 @@ Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
 `kortix.toml`) at the root is a Kortix project.
 
 The platform parser is permissive: it never throws on a bad entry.
-Instead, bad triggers and apps go into an `errors` list returned
-alongside the good ones, so a single typo doesn't break the whole
-file.
+Instead, bad triggers go into an `errors` list returned alongside the
+good ones, so a single typo doesn't break the whole file.
 
 **This page documents `kortix_version: 2`** — the current, YAML-only
 manifest schema (`agents:` is a governance-only name→block **map**,
