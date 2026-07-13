@@ -45,7 +45,7 @@ data "aws_iam_policy_document" "promotion" {
 
   statement {
     sid       = "EncryptPublishedRepositoryObjects"
-    actions   = ["kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.repository.arn]
   }
 
@@ -125,7 +125,7 @@ data "aws_iam_policy_document" "timestamp_refresh" {
 
   statement {
     sid       = "EncryptTimestampMetadata"
-    actions   = ["kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.repository.arn]
   }
 

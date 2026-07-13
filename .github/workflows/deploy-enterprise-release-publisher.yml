@@ -103,4 +103,4 @@ jobs:
       - name: Record non-sensitive outputs
         if: ${{ inputs.apply }}
         working-directory: infra/terraform/environments/enterprise-release-publisher
-        run: terraform output -json publisher | jq '{repository_url,repository_bucket,promotion_role_arn,timestamp_refresh_role_arn,cloudfront_distribution_id}'
+        run: terraform output -json publisher | jq '{repository_url,repository_bucket,repository_kms_key_arn,promotion_role_arn,timestamp_refresh_role_arn,cloudfront_distribution_id}'
