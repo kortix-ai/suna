@@ -191,6 +191,7 @@ export async function ensureSandboxImage(
       kickBackgroundRebuild(project, {
         slug: opts.slug,
         accountId: opts.accountId,
+        provider: buildProvider,
         snapshotName: identity.snapshotName,
       });
       console.log(
@@ -661,29 +662,35 @@ async function closeBuildLogFailed(buildId: string, message: string): Promise<vo
 }
 
 /**
- * In-flight background rebuilds, keyed by the target snapshot name. A burst of
- * sessions booting off the same drifted identity must kick exactly one build —
- * concurrent `daytona.snapshot.create` calls under the same name race each
- * other. Cleared when the build settles (success or failure).
+ * In-flight background rebuilds, keyed by provider + target snapshot name. A
+ * burst of sessions booting off the same drifted identity must kick exactly
+ * one build on EACH provider; same-name builds on different providers are
+ * independent and must never suppress each other.
  */
 const inflightBackgroundBuilds = new Set<string>();
 
+export function backgroundBuildKey(provider: string, snapshotName: string): string {
+  return `${provider}:${snapshotName}`;
+}
+
 /**
  * Rebuild the drifted snapshot identity off the hot path. Deduped by target
- * snapshot name so N concurrent session boots trigger one build. Best-effort:
- * a failure just means the next session retries (it'll keep booting last-good
- * until this lands).
+ * provider-qualified snapshot name so N concurrent session boots trigger one
+ * build per provider. Best-effort: a failure just means the next session
+ * retries (it'll keep booting last-good until this lands).
  */
 function kickBackgroundRebuild(
   project: GitBackedProject,
-  opts: { slug?: string; accountId?: string; snapshotName: string },
+  opts: { slug?: string; accountId?: string; provider: string; snapshotName: string },
 ): void {
-  if (inflightBackgroundBuilds.has(opts.snapshotName)) return;
-  inflightBackgroundBuilds.add(opts.snapshotName);
+  const key = backgroundBuildKey(opts.provider, opts.snapshotName);
+  if (inflightBackgroundBuilds.has(key)) return;
+  inflightBackgroundBuilds.add(key);
   void ensureSandboxImage(project, {
     slug: opts.slug,
     accountId: opts.accountId,
     source: 'background',
+    provider: opts.provider,
   })
     .catch((err) =>
       console.warn(
@@ -691,7 +698,7 @@ function kickBackgroundRebuild(
         err instanceof Error ? err.message : err,
       ),
     )
-    .finally(() => inflightBackgroundBuilds.delete(opts.snapshotName));
+    .finally(() => inflightBackgroundBuilds.delete(key));
 }
 
 /**
@@ -702,10 +709,11 @@ function kickBackgroundRebuild(
  */
 function kickBackgroundWarmBuild(
   project: GitBackedProject,
-  opts: { accountId?: string; provider?: string; snapshotName: string },
+  opts: { accountId?: string; provider: string; snapshotName: string },
 ): void {
-  if (inflightBackgroundBuilds.has(opts.snapshotName)) return;
-  inflightBackgroundBuilds.add(opts.snapshotName);
+  const key = backgroundBuildKey(opts.provider, opts.snapshotName);
+  if (inflightBackgroundBuilds.has(key)) return;
+  inflightBackgroundBuilds.add(key);
   void ensurePerProjectWarmImage(project, {
     accountId: opts.accountId,
     provider: opts.provider,
@@ -717,7 +725,7 @@ function kickBackgroundWarmBuild(
         err instanceof Error ? err.message : err,
       ),
     )
-    .finally(() => inflightBackgroundBuilds.delete(opts.snapshotName));
+    .finally(() => inflightBackgroundBuilds.delete(key));
 }
 
 /**
@@ -1055,29 +1063,16 @@ async function resolveWarmRepoContext(project: GitBackedProject): Promise<WarmRe
  * snapshot-COUNT quota) that lag piles up, so we delete superseded tips the moment
  * the new one is active — keeping ~1 image per active project, exactly like prod.
  * Best-effort: a reap failure (list/delete error, provider hiccup) NEVER fails the
- * bake. Provider-branched like prod (Daytona lists+deletes by id; Platinum by
- * name); other providers have no per-project snapshot store to reap here.
+ * bake. Listing/deletion are provider-adapter capabilities, so cleanup remains
+ * identical for Daytona, Platinum, and E2B.
  */
 async function reapOldPerProjectWarm(projectId: string, currentName: string, buildProvider: string): Promise<void> {
   try {
-    if (buildProvider === 'daytona' || buildProvider === 'managed') {
-      const { listDaytonaSnapshots, deleteDaytonaSnapshotById } = await import('../shared/daytona');
-      const snaps = await listDaytonaSnapshots();
-      const targets = new Set(ppwarmReapTargets(projectId, currentName, snaps.map((s) => s.name)));
-      for (const snap of snaps) {
-        if (!targets.has(snap.name)) continue;
-        const ok = await deleteDaytonaSnapshotById(snap.id);
-        console.log(`[snapshots] per-project warm: reaped superseded ${snap.name}: ${ok ? 'ok' : 'failed'}`);
-      }
-    } else if (buildProvider === 'platinum') {
-      const { platinumJson } = await import('../shared/platinum');
-      const { platinumProvider } = await import('./providers/platinum');
-      const list = await platinumJson<Array<{ name?: string }>>('/v1/templates');
-      const names = list.map((t) => t.name ?? '').filter((n): n is string => n.length > 0);
-      for (const name of ppwarmReapTargets(projectId, currentName, names)) {
-        await platinumProvider.deleteSnapshot(name);
-        console.log(`[snapshots] per-project warm: reaped superseded ${name}`);
-      }
+    const provider = getSandboxProvider(buildProvider);
+    const names = (await provider.listSnapshots()).map((snapshot) => snapshot.name);
+    for (const name of ppwarmReapTargets(projectId, currentName, names)) {
+      await provider.deleteSnapshot(name);
+      console.log(`[snapshots] per-project warm: reaped superseded ${name}`);
     }
   } catch (err) {
     console.warn(

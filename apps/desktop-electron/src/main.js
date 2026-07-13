@@ -152,9 +152,7 @@ function isPreviewHost(host) {
   return (
     host.endsWith('.localhost') ||
     host === 'kortix.cloud' ||
-    host.endsWith('.kortix.cloud') ||
-    host === 'justavps.com' ||
-    host.endsWith('.justavps.com')
+    host.endsWith('.kortix.cloud')
   );
 }
 

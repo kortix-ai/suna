@@ -160,3 +160,9 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "permissions_boundary_arn" {
+  description = "Optional customer workload boundary for controller IRSA roles that do not manage VPC trust."
+  type        = string
+  default     = null
+}

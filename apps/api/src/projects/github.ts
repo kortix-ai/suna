@@ -3,6 +3,17 @@ import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
 
+export class GitHubApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly path: string,
+  ) {
+    super(message);
+    this.name = 'GitHubApiError';
+  }
+}
+
 // 'managed' = a Kortix-managed git token minted server-side by the managed backend.
 // 'project_credential' = provider-neutral git credential stored outside
 // user-readable runtime secrets.
@@ -28,6 +39,11 @@ export interface GitHubRepo {
   ssh_url: string;
   default_branch: string;
   description: string | null;
+}
+
+export interface GitHubBranch {
+  name: string;
+  protected: boolean;
 }
 
 interface GitHubInstallationRepositories {
@@ -241,7 +257,11 @@ async function ghFetch<T>(
     } catch {
       detail = await res.text().catch(() => '');
     }
-    throw new Error(`GitHub ${path} failed (${res.status}): ${detail || res.statusText}`);
+    throw new GitHubApiError(
+      `GitHub ${path} failed (${res.status}): ${detail || res.statusText}`,
+      res.status,
+      path,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -302,6 +322,40 @@ export async function listInstallationRepositories(
   } while (totalCount !== null && repositories.length < totalCount);
 
   return repositories;
+}
+
+export async function listRepositoryBranches(input: {
+  owner: string;
+  repo: string;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubBranch[]> {
+  const perPage = 100;
+  const branches: GitHubBranch[] = [];
+
+  for (let page = 1; ; page += 1) {
+    const pageBranches = await ghFetch<GitHubBranch[]>(
+      `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}` +
+        `/branches?per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      input.auth,
+    );
+    branches.push(...pageBranches);
+    if (pageBranches.length < perPage) return branches;
+  }
+}
+
+export async function getRepositoryBranch(input: {
+  owner: string;
+  repo: string;
+  branch: string;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubBranch> {
+  return ghFetch<GitHubBranch>(
+    `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}` +
+      `/branches/${encodeURIComponent(input.branch)}`,
+    { method: 'GET' },
+    input.auth,
+  );
 }
 
 export async function getRepo(opts: {

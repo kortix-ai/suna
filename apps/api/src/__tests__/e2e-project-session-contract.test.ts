@@ -52,7 +52,6 @@ let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
-let freestyleCalls: Array<{ path: string; method: string; body?: unknown }>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -133,7 +132,6 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
-  freestyleCalls = [];
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -271,7 +269,9 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
   listInstallationRepositories: async () => [],
+  listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
   isOrgAccount: async () => true,
@@ -378,24 +378,6 @@ mock.module('../repositories/account-tokens', () => ({
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
   validateAccountToken: async () => null,
-}));
-
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (path: string, options: { method: string; body?: unknown }) => {
-    freestyleCalls.push({ path, method: options.method, body: options.body });
-    return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  },
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({}),
-    stop: async () => undefined,
-    logs: async () => ({}),
-  },
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -960,7 +942,7 @@ describe('project session API contract', () => {
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/legacy-private-project';
+    projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
     secretRows = [
       {
@@ -968,7 +950,7 @@ describe('project session API contract', () => {
         projectId: PROJECT_ID,
         identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
-        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
+        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-git-token'),
         scope: 'runtime',
         ownerUserId: null,
         active: true,
@@ -1013,93 +995,14 @@ describe('project session API contract', () => {
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/legacy-private-project',
+      repo_url: 'https://git.example.test/legacy-private-project',
       source: 'project_credential',
       auth: {
         username: 'x-access-token',
-        token: 'legacy-freestyle-token',
+        token: 'legacy-git-token',
         type: 'basic',
       },
     });
-  });
-
-  test('mints managed Freestyle credentials for legacy project git connections', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/freestyle-repo-id';
-    projectRow.metadata = {
-      git: {
-        provider: 'freestyle',
-        auth: { method: 'managed', ref: 'freestyle-identity-id' },
-        repo_id: 'freestyle-repo-id',
-      },
-    };
-    gitConnectionRows = [
-      {
-        connectionId: '00000000-0000-4000-a000-000000000502',
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'freestyle',
-        repoUrl: 'https://git.freestyle.sh/freestyle-repo-id',
-        upstreamUrl: null,
-        managed: false,
-        repoOwner: null,
-        repoName: null,
-        externalRepoId: 'freestyle-repo-id',
-        defaultBranch: 'main',
-        authMethod: 'managed',
-        installationId: null,
-        credentialRef: 'freestyle-identity-id',
-        permissions: {},
-        visibility: 'private',
-        webhookId: null,
-        status: 'connected',
-        lastValidatedAt: new Date('2026-01-02T00:00:00Z'),
-        lastErrorCode: null,
-        lastErrorMessage: null,
-        metadata: {},
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: null,
-        baseUrl: null,
-        status: 'provisioning',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    const app = createApp();
-
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
-
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/freestyle-repo-id',
-      source: 'managed',
-      auth: {
-        username: 'x-access-token',
-        token: 'freestyle-managed-token',
-        type: 'basic',
-      },
-    });
-    expect(freestyleCalls).toEqual([
-      {
-        path: '/git/v1/identity/freestyle-identity-id/tokens',
-        method: 'POST',
-        body: undefined,
-      },
-    ]);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -2271,14 +2174,14 @@ describe('project session API contract', () => {
     expect(shadowRes.status).toBe(400);
   });
 
-  test('creates a session with the required id, branch, and sandbox invariant', async () => {
+  test('inherits the project environment branch and preserves the session/sandbox invariant', async () => {
+    projectRow.defaultBranch = 'dev';
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         provider: 'daytona',
-        base_ref: 'main',
         name: 'Contract session',
         agent_name: 'reviewer',
         initial_prompt: 'Review the repo',
@@ -2293,13 +2196,16 @@ describe('project session API contract', () => {
     expect(body.session_id).toBe(body.sandbox_id);
     expect(body.session_id).toBe(body.branch_name);
     expect(body.sandbox_provider).toBe('daytona');
+    expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
+    expect(sessionRow?.baseRef).toBe('dev');
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 

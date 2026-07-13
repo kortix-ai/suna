@@ -29,6 +29,9 @@ terraform {
 }
 
 resource "aws_eks_cluster" "this" {
+  #checkov:skip=CKV_AWS_38:Public endpoint exposure is caller-controlled; enterprise-vpc explicitly disables it and supplies no public CIDRs.
+  #checkov:skip=CKV_AWS_39:This reusable module supports legacy public clusters; the enterprise root sets endpoint_public_access=false.
+  #checkov:skip=CKV_AWS_58:Encryption is a caller-supplied KMS key; enterprise-vpc always passes its customer-owned data key.
   name     = var.name
   role_arn = aws_iam_role.cluster.arn
   version  = var.cluster_version
@@ -42,11 +45,21 @@ resource "aws_eks_cluster" "this" {
 
   access_config {
     authentication_mode                         = "API"
-    bootstrap_cluster_creator_admin_permissions = true
+    bootstrap_cluster_creator_admin_permissions = var.bootstrap_cluster_creator_admin_permissions
   }
 
   # Ship control-plane logs to CloudWatch for audit/forensics (SOC 2).
   enabled_cluster_log_types = var.cluster_log_types
+
+  dynamic "encryption_config" {
+    for_each = var.secrets_encryption_kms_key_arn == null ? [] : [var.secrets_encryption_kms_key_arn]
+    content {
+      provider {
+        key_arn = encryption_config.value
+      }
+      resources = ["secrets"]
+    }
+  }
 
   tags = var.tags
 

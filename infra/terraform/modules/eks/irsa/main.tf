@@ -49,12 +49,13 @@ data "aws_iam_policy_document" "assume" {
 resource "aws_iam_role" "this" {
   name                 = var.name
   assume_role_policy   = data.aws_iam_policy_document.assume.json
+  permissions_boundary = var.permissions_boundary_arn
   max_session_duration = var.max_session_duration
   tags                 = var.tags
 }
 
 resource "aws_iam_role_policy" "inline" {
-  count  = var.policy_json == "" ? 0 : 1
+  count  = var.create_inline_policy == null ? (var.policy_json == "" ? 0 : 1) : (var.create_inline_policy ? 1 : 0)
   name   = "${var.name}-inline"
   role   = aws_iam_role.this.id
   policy = var.policy_json

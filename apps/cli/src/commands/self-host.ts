@@ -1,5 +1,4 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomBytes, createHmac } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -10,6 +9,16 @@ import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
 import { prompt, selectFrom } from '../prompts.ts';
 import { C, help, status } from '../style.ts';
+import { runAwsVpcCommand } from '../self-host/aws-vpc.ts';
+import {
+  instanceDir as targetInstanceDir,
+  loadInstanceConfig,
+  parseSelfHostTarget,
+  resolveInstanceTarget,
+  writeInstanceConfig,
+} from '../self-host/config.ts';
+import type { SelfHostCommandFlags } from '../self-host/types.ts';
+import { renderFullDockerCompose, writeSupabaseVendorAssets } from '../self-host/compose-assets.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const DEFAULT_TAG = 'latest';
@@ -24,34 +33,59 @@ const LOCAL_SOURCE_TAG = 'selfhost-local';
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run your own Kortix Cloud locally or on your infrastructure using the
-published Docker images from Docker Hub.
+Run Kortix locally with Docker or deploy a production enterprise stack into
+an AWS VPC. Existing Docker instances remain fully compatible.
 
 Subcommands:
-  init                 Create self-host config with production defaults.
+  init                 Create Docker or AWS VPC instance config.
+  configure            Configure target integrations and secrets.
+  plan                 Preview target changes without applying them.
+  deploy               Bootstrap or converge the selected target.
   start                Pull images and start your self-hosted Kortix.
-  update [--tag <v>]   Pull a newer version, apply migrations, recreate (default: latest).
+  update               Apply a selected Docker tag or signed AWS release.
+  reconcile            Check and converge to the configured release channel.
+  rollback             Roll back to a compatible signed release.
   version              Show the running version and image tags.
   stop                 Stop the stack.
   restart              Restart the stack.
-  status               Show Docker Compose service status.
+  status               Show target health and deployment status.
+  doctor               Validate local tools, credentials, and target access.
   logs [service]       Tail logs.
-  open                 Open the local dashboard.
-  configure            Guided config (sandbox provider, Freestyle, GitHub, Pipedream).
+  open                 Open the target dashboard.
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
+  --target <target>    docker or aws-vpc (default: docker for new instances).
   --tag <tag>          Docker image tag / version (default: ${DEFAULT_TAG}).
+  --release <version>  Immutable enterprise release (for example 0.9.84-e1).
+  --channel <name>     Release channel (AWS default: stable; Docker: latest).
+  --aws-profile <name> AWS CLI profile used to bootstrap/manage the target.
+  --region <region>    AWS region (default: AWS config, then us-west-2).
+  --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS VPC target.
+  --api-domain <name>  Public API DNS name for the AWS target.
+  --frontend-domain <name> Public dashboard DNS name for the AWS target.
+  --release-repository-url <url> Immutable enterprise TUF repository.
+  --tuf-root-sha256 <digest> Offline-reviewed trusted TUF root digest.
+  --updater-bootstrap-url <url> Digest-pinned enterprise updater binary.
+  --updater-bootstrap-sha256 <digest> Updater binary SHA-256.
+  --release-publisher-account-id <id> Account allowed to send wake-up hints.
+  --maintenance-window <window> UTC window, for example Sun:02:00-05:00.
   --local              Use current-source local images instead of registry images.
   --registry           Force registry images even when running from a source checkout.
+  --force              Run now, bypassing only the configured maintenance window.
+  --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
 
 Examples:
   kortix self-host init
   kortix self-host start
+  kortix self-host init --target aws-vpc --instance customer --aws-profile customer --region us-west-2
+  kortix self-host plan --instance customer
+  kortix self-host deploy --instance customer
+  kortix self-host reconcile --instance customer --channel stable
   kortix self-host update                 # update to the latest published version
   kortix self-host update --tag 0.9.72    # pin to a specific version
   kortix self-host version
@@ -59,13 +93,7 @@ Examples:
   kortix hosts ls
 `;
 
-interface GlobalFlags {
-  instance: string;
-  tag: string;
-  yes: boolean;
-  local: boolean;
-  registry: boolean;
-}
+type GlobalFlags = SelfHostCommandFlags;
 
 interface SelfHostEnv {
   KORTIX_VERSION: string;
@@ -107,8 +135,6 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_TOKEN: string;
   MANAGED_GIT_GITHUB_OWNER: string;
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
-  FREESTYLE_API_KEY: string;
-  FREESTYLE_API_URL: string;
   INTEGRATION_AUTH_PROVIDER: string;
   KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: string;
   PIPEDREAM_CLIENT_ID: string;
@@ -139,16 +165,36 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     return 2;
   }
 
+  let target;
+  try {
+    target = resolveInstanceTarget(flags.instance, flags.target);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+
+  if (target === 'aws-vpc') {
+    return runAwsVpcCommand(sub, args, flags);
+  }
+
   switch (sub) {
     case 'init':
     case 'setup':
       return selfHostInit(flags);
+    case 'plan':
+      return selfHostDockerPlan(flags);
+    case 'deploy':
+      return selfHostStart(flags);
     case 'start':
     case 'up':
       return selfHostStart(flags);
     case 'update':
     case 'upgrade':
       return selfHostUpdate(flags);
+    case 'reconcile':
+      return selfHostUpdate(flags);
+    case 'rollback':
+      return selfHostDockerRollback(flags);
     case 'version':
       return selfHostVersion(flags);
     case 'stop':
@@ -159,6 +205,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'status':
     case 'ps':
       return composeCommand(flags, ['ps']);
+    case 'doctor':
+      return selfHostDockerDoctor(flags);
     case 'logs':
       return composeCommand(flags, ['logs', '-f', ...args]);
     case 'open':
@@ -178,15 +226,53 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const yes = takeFlagBool(args, ['--yes', '-y']);
   const local = takeFlagBool(args, ['--local']);
   const registry = takeFlagBool(args, ['--registry']);
+  const json = takeFlagBool(args, ['--json']);
+  const force = takeFlagBool(args, ['--force']);
   const instance = takeFlagValue(args, ['--instance']) ?? DEFAULT_INSTANCE;
-  const tag = takeFlagValue(args, ['--tag', '--version']) ?? DEFAULT_TAG;
+  const release = takeFlagValue(args, ['--release']);
+  const tag = takeFlagValue(args, ['--tag', '--version']) ?? release ?? DEFAULT_TAG;
+  const target = parseSelfHostTarget(takeFlagValue(args, ['--target']));
+  const awsProfile = takeFlagValue(args, ['--aws-profile']);
+  const region = takeFlagValue(args, ['--region']);
+  const channel = takeFlagValue(args, ['--channel']);
+  const vpcCidr = takeFlagValue(args, ['--vpc-cidr']);
+  const apiDomain = takeFlagValue(args, ['--api-domain']);
+  const frontendDomain = takeFlagValue(args, ['--frontend-domain']);
+  const releaseRepositoryUrl = takeFlagValue(args, ['--release-repository-url']);
+  const tufRootSha256 = takeFlagValue(args, ['--tuf-root-sha256']);
+  const updaterBootstrapUrl = takeFlagValue(args, ['--updater-bootstrap-url']);
+  const updaterBootstrapSha256 = takeFlagValue(args, ['--updater-bootstrap-sha256']);
+  const releasePublisherAccountId = takeFlagValue(args, ['--release-publisher-account-id']);
+  const maintenanceWindow = takeFlagValue(args, ['--maintenance-window']);
   if (local && registry) {
     throw new Error('use either --local or --registry, not both');
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
   }
-  return { instance, tag, yes, local, registry };
+  return {
+    instance,
+    tag,
+    release,
+    channel,
+    target,
+    awsProfile,
+    region,
+    vpcCidr,
+    apiDomain,
+    frontendDomain,
+    releaseRepositoryUrl,
+    tufRootSha256,
+    updaterBootstrapUrl,
+    updaterBootstrapSha256,
+    releasePublisherAccountId,
+    maintenanceWindow,
+    yes,
+    local,
+    registry,
+    json,
+    force,
+  };
 }
 
 async function selfHostInit(flags: GlobalFlags): Promise<number> {
@@ -215,9 +301,15 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   }
 
   writeEnv(flags.instance, env);
-  writeDbInit(flags.instance, env);
-  writeKongConfig(flags.instance);
   writeCompose(flags.instance);
+  const existingConfig = loadInstanceConfig(flags.instance);
+  writeInstanceConfig({
+    schema_version: 1,
+    instance: flags.instance,
+    target: 'docker',
+    channel: flags.channel ?? existingConfig?.channel ?? 'latest',
+    ...(flags.release || existingConfig?.release ? { release: flags.release ?? existingConfig?.release } : {}),
+  });
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
@@ -254,8 +346,6 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   }
   const portChanges = await reconcilePorts(flags.instance, env);
   writeEnv(flags.instance, env);
-  writeDbInit(flags.instance, env);
-  writeKongConfig(flags.instance);
   writeCompose(flags.instance);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host start${C.reset}\n`);
@@ -310,6 +400,82 @@ async function selfHostRestart(flags: GlobalFlags): Promise<number> {
   const down = composeCommand(flags, ['down']);
   if (down !== 0) return down;
   return selfHostStart(flags);
+}
+
+function selfHostDockerPlan(flags: GlobalFlags): number {
+  if (!existsSync(composePath(flags.instance)) || !existsSync(envPath(flags.instance))) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+  const code = compose(flags.instance, ['config', '--quiet']);
+  if (code !== 0) return code;
+  if (flags.json) {
+    process.stdout.write(`${JSON.stringify({
+      instance: flags.instance,
+      target: 'docker',
+      valid: true,
+      compose_file: composePath(flags.instance),
+    }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`${status.ok(`Docker Compose plan is valid for ${flags.instance}`)}\n`);
+    process.stdout.write(`${C.dim}No changes were applied.${C.reset}\n`);
+  }
+  return 0;
+}
+
+function selfHostDockerRollback(flags: GlobalFlags): Promise<number> | number {
+  const release = flags.release ?? (flags.tag !== DEFAULT_TAG ? flags.tag : undefined);
+  if (!release) {
+    process.stderr.write(
+      `${status.err('Docker rollback requires an explicit --release <version> or --tag <version>.')}\n`,
+    );
+    return 2;
+  }
+  return selfHostUpdate({ ...flags, tag: release });
+}
+
+function selfHostDockerDoctor(flags: GlobalFlags): number {
+  const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+  for (const [name, args] of [
+    ['docker', ['--version']],
+    ['docker-compose', ['compose', 'version']],
+  ] as const) {
+    const result = spawnSync('docker', args, { encoding: 'utf8' });
+    checks.push({
+      name,
+      ok: !result.error && result.status === 0,
+      detail: result.error?.message ?? (result.stdout || result.stderr).trim().split(/\r?\n/, 1)[0] ?? '',
+    });
+  }
+  if (existsSync(composePath(flags.instance)) && existsSync(envPath(flags.instance))) {
+    const result = spawnSync(
+      'docker',
+      [
+        'compose',
+        '--project-name', composeProject(flags.instance),
+        '--env-file', envPath(flags.instance),
+        '-f', composePath(flags.instance),
+        'config', '--quiet',
+      ],
+      { cwd: instanceDir(flags.instance), encoding: 'utf8' },
+    );
+    checks.push({
+      name: 'compose-config',
+      ok: !result.error && result.status === 0,
+      detail: result.error?.message ?? (result.stderr.trim() || 'valid'),
+    });
+  }
+  const ok = checks.every((check) => check.ok);
+  if (flags.json) {
+    process.stdout.write(`${JSON.stringify({ instance: flags.instance, target: 'docker', ok, checks }, null, 2)}\n`);
+  } else {
+    process.stdout.write(`\n  ${C.bold}kortix self-host doctor${C.reset}\n\n`);
+    for (const check of checks) {
+      process.stdout.write(`${check.ok ? status.ok(check.name) : status.err(check.name)} ${C.dim}${check.detail}${C.reset}\n`);
+    }
+    process.stdout.write('\n');
+  }
+  return ok ? 0 : 1;
 }
 
 /**
@@ -485,8 +651,6 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
       env[pair.slice(0, idx)] = pair.slice(idx + 1);
     }
     writeEnv(flags.instance, env);
-    writeDbInit(flags.instance, env);
-    writeKongConfig(flags.instance);
     writeCompose(flags.instance);
     process.stdout.write(`${status.ok('Updated self-host environment')}\n`);
     return 0;
@@ -503,8 +667,6 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   await configureIntegrations(env);
   writeEnv(flags.instance, env);
-  writeDbInit(flags.instance, env);
-  writeKongConfig(flags.instance);
   writeCompose(flags.instance);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
   renderIntegrationSummary(env);
@@ -513,7 +675,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}These power the agent runtime, app deployments, GitHub repo access, and app connectors.${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}These power the agent runtime, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
 
   // Sandbox runtime — where agents execute. Like Kortix Cloud, self-host runs
@@ -523,12 +685,6 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   env.DAYTONA_API_KEY = await promptSecret('Daytona API key', env.DAYTONA_API_KEY);
   env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
   env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
-
-  const freestyleMode = await selectFrom('App deployments (Freestyle): skip/configure', ['skip', 'configure'] as const, freestyleConfigured(env) ? 'configure' : 'skip');
-  if (freestyleMode === 'configure') {
-    env.FREESTYLE_API_KEY = await promptSecret('Freestyle API key', env.FREESTYLE_API_KEY);
-    env.FREESTYLE_API_URL = await prompt('Freestyle API URL', env.FREESTYLE_API_URL || 'https://api.freestyle.sh');
-  }
 
   // Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
   // git repo the server provisions. A PAT is the quickest path; a GitHub App is
@@ -595,10 +751,6 @@ function pipedreamConfigured(env: SelfHostEnv): boolean {
   return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
 }
 
-function freestyleConfigured(env: SelfHostEnv): boolean {
-  return !!env.FREESTYLE_API_KEY;
-}
-
 function sandboxProviders(env: SelfHostEnv): string[] {
   return (env.ALLOWED_SANDBOX_PROVIDERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
@@ -630,7 +782,7 @@ function integrationReviewNeeded(env: SelfHostEnv): boolean {
   if (!sandboxProviderConfigured(env)) return true;
   if (!gitProviderConfigured(env)) return true;
   if (env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED === 'true') return false;
-  return !(freestyleConfigured(env) && inferGithubMode(env) !== 'none' && pipedreamConfigured(env));
+  return true;
 }
 
 function shouldPrompt(flags: GlobalFlags): boolean {
@@ -643,11 +795,6 @@ function renderIntegrationSummary(env: SelfHostEnv): void {
       name: `Agent sandbox runtime (${sandboxProviders(env).join(',') || 'none'})`,
       configured: sandboxProviderConfigured(env),
       hint: 'DAYTONA_API_KEY (via kortix self-host configure)',
-    },
-    {
-      name: 'App deployments',
-      configured: freestyleConfigured(env),
-      hint: 'FREESTYLE_API_KEY',
     },
     {
       name: 'Managed git for projects (required)',
@@ -748,6 +895,7 @@ async function reconcilePorts(instance: string, env: SelfHostEnv): Promise<strin
   await ensurePort(env, 'API_PORT', 'API_PUBLIC_URL', changes);
   await ensurePort(env, 'SUPABASE_PORT', 'SUPABASE_PUBLIC_URL', changes);
   await ensurePort(env, 'POSTGRES_PORT', undefined, changes);
+  await ensurePort(env, 'POOLER_PORT', undefined, changes);
 
   if (changes.length > 0) {
     writeEnv(instance, env);
@@ -757,7 +905,7 @@ async function reconcilePorts(instance: string, env: SelfHostEnv): Promise<strin
 
 async function ensurePort(
   env: SelfHostEnv,
-  portKey: 'FRONTEND_PORT' | 'API_PORT' | 'SUPABASE_PORT' | 'POSTGRES_PORT',
+  portKey: 'FRONTEND_PORT' | 'API_PORT' | 'SUPABASE_PORT' | 'POSTGRES_PORT' | 'POOLER_PORT',
   urlKey: 'PUBLIC_URL' | 'API_PUBLIC_URL' | 'SUPABASE_PUBLIC_URL' | undefined,
   changes: string[],
 ): Promise<void> {
@@ -842,6 +990,8 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     API_PORT: '13738',
     SUPABASE_PORT: '13740',
     POSTGRES_PORT: '13741',
+    POOLER_PORT: '13742',
+    SUPABASE_POSTGRES_INTERNAL_PORT: '5432',
     FRONTEND_IMAGE: `${DEFAULT_FRONTEND_IMAGE_REPO}:${flags.tag}`,
     API_IMAGE: `${DEFAULT_API_IMAGE_REPO}:${flags.tag}`,
     GATEWAY_IMAGE: `${DEFAULT_GATEWAY_IMAGE_REPO}:${flags.tag}`,
@@ -854,6 +1004,62 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     SUPABASE_JWT_SECRET: jwtSecret,
     SUPABASE_ANON_KEY: supabaseJwt('anon', jwtSecret),
     SUPABASE_SERVICE_ROLE_KEY: supabaseJwt('service_role', jwtSecret),
+    JWT_SECRET: jwtSecret,
+    JWT_JWKS: '',
+    ANON_KEY: supabaseJwt('anon', jwtSecret),
+    SERVICE_ROLE_KEY: supabaseJwt('service_role', jwtSecret),
+    ANON_KEY_ASYMMETRIC: '',
+    SERVICE_ROLE_KEY_ASYMMETRIC: '',
+    SUPABASE_PUBLISHABLE_KEY: '',
+    SUPABASE_SECRET_KEY: '',
+    POSTGRES_HOST: 'supabase-db',
+    POSTGRES_DB: 'postgres',
+    JWT_EXPIRY: '3600',
+    API_EXTERNAL_URL: 'http://localhost:13740/auth/v1',
+    SITE_URL: DEFAULT_PUBLIC_URL,
+    ADDITIONAL_REDIRECT_URLS: '',
+    DISABLE_SIGNUP: 'false',
+    ENABLE_EMAIL_SIGNUP: 'true',
+    ENABLE_EMAIL_AUTOCONFIRM: 'true',
+    ENABLE_ANONYMOUS_USERS: 'false',
+    ENABLE_PHONE_SIGNUP: 'false',
+    ENABLE_PHONE_AUTOCONFIRM: 'false',
+    SMTP_ADMIN_EMAIL: 'admin@localhost',
+    SMTP_HOST: 'localhost',
+    SMTP_PORT: '587',
+    SMTP_USER: 'unused',
+    SMTP_PASS: 'unused',
+    SMTP_SENDER_NAME: 'Kortix',
+    MAILER_URLPATHS_INVITE: '/auth/v1/verify',
+    MAILER_URLPATHS_CONFIRMATION: '/auth/v1/verify',
+    MAILER_URLPATHS_RECOVERY: '/auth/v1/verify',
+    MAILER_URLPATHS_EMAIL_CHANGE: '/auth/v1/verify',
+    DASHBOARD_USERNAME: 'kortix',
+    DASHBOARD_PASSWORD: token(24),
+    SECRET_KEY_BASE: token(48),
+    REALTIME_DB_ENC_KEY: token(8),
+    VAULT_ENC_KEY: token(16),
+    PG_META_CRYPTO_KEY: token(24),
+    LOGFLARE_PUBLIC_ACCESS_TOKEN: token(24),
+    LOGFLARE_PRIVATE_ACCESS_TOKEN: token(24),
+    S3_PROTOCOL_ACCESS_KEY_ID: token(16),
+    S3_PROTOCOL_ACCESS_KEY_SECRET: token(32),
+    PGRST_DB_SCHEMAS: 'public',
+    PGRST_DB_MAX_ROWS: '1000',
+    PGRST_DB_EXTRA_SEARCH_PATH: 'public',
+    POOLER_TENANT_ID: composeProject(flags.instance),
+    POOLER_DEFAULT_POOL_SIZE: '20',
+    POOLER_MAX_CLIENT_CONN: '100',
+    POOLER_DB_POOL_SIZE: '5',
+    STUDIO_DEFAULT_ORGANIZATION: 'Kortix',
+    STUDIO_DEFAULT_PROJECT: flags.instance,
+    OPENAI_API_KEY: '',
+    FUNCTIONS_VERIFY_JWT: 'false',
+    GLOBAL_S3_BUCKET: 'kortix-storage',
+    STORAGE_TENANT_ID: composeProject(flags.instance),
+    REGION: 'local',
+    IMGPROXY_AUTO_WEBP: 'true',
+    DOCKER_SOCKET_LOCATION: '/var/run/docker.sock',
     INTERNAL_SERVICE_KEY: token(32),
     API_KEY_SECRET: token(32),
     TUNNEL_SIGNING_SECRET: token(32),
@@ -872,8 +1078,6 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MANAGED_GIT_GITHUB_TOKEN: '',
     MANAGED_GIT_GITHUB_OWNER: '',
     MANAGED_GIT_GITHUB_INSTALL_ID: '',
-    FREESTYLE_API_KEY: '',
-    FREESTYLE_API_URL: 'https://api.freestyle.sh',
     INTEGRATION_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',
@@ -885,353 +1089,14 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
 }
 
 function writeCompose(instance: string): void {
-  const project = composeProject(instance);
-  const text = `services:
-  supabase-db:
-    image: supabase/postgres:15.8.1.085
-    ports:
-      - "127.0.0.1:\${POSTGRES_PORT}:5432"
-    volumes:
-      - supabase-db-data:/var/lib/postgresql/data
-      - ./volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
-      - ./volumes/db/kortix.sql:/docker-entrypoint-initdb.d/init-scripts/99-kortix.sql:ro
-    environment:
-      POSTGRES_HOST: /var/run/postgresql
-      POSTGRES_PORT: "5432"
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
-      JWT_SECRET: \${SUPABASE_JWT_SECRET}
-      JWT_EXP: "3600"
-    command:
-      - postgres
-      - -c
-      - config_file=/etc/postgresql/postgresql.conf
-      - -c
-      - log_min_messages=fatal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
-  supabase-auth:
-    image: supabase/gotrue:v2.186.0
-    depends_on:
-      supabase-db:
-        condition: service_healthy
-    environment:
-      GOTRUE_API_HOST: 0.0.0.0
-      GOTRUE_API_PORT: "9999"
-      API_EXTERNAL_URL: \${SUPABASE_PUBLIC_URL}
-      GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-      GOTRUE_SITE_URL: \${PUBLIC_URL}
-      GOTRUE_URI_ALLOW_LIST: ""
-      GOTRUE_DISABLE_SIGNUP: "false"
-      GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
-      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
-      GOTRUE_JWT_EXP: "3600"
-      GOTRUE_JWT_SECRET: \${SUPABASE_JWT_SECRET}
-      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
-      GOTRUE_MAILER_AUTOCONFIRM: "true"
-      GOTRUE_SMTP_ADMIN_EMAIL: admin@localhost
-      GOTRUE_SMTP_HOST: localhost
-      GOTRUE_SMTP_PORT: "587"
-      GOTRUE_SMTP_USER: unused
-      GOTRUE_SMTP_PASS: unused
-      GOTRUE_SMTP_SENDER_NAME: Kortix
-      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
-      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
-    restart: unless-stopped
-
-  supabase-rest:
-    image: postgrest/postgrest:v14.5
-    depends_on:
-      supabase-db:
-        condition: service_healthy
-    environment:
-      PGRST_DB_URI: postgres://authenticator:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-      PGRST_DB_SCHEMAS: public
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: \${SUPABASE_JWT_SECRET}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_SECRET: \${SUPABASE_JWT_SECRET}
-      PGRST_APP_SETTINGS_JWT_EXP: "3600"
-    command: ["postgrest"]
-    restart: unless-stopped
-
-  supabase-kong:
-    image: kong:2.8.1
-    ports:
-      - "127.0.0.1:\${SUPABASE_PORT}:8000"
-    volumes:
-      - ./kong.yml:/home/kong/temp.yml:ro
-    depends_on:
-      supabase-auth:
-        condition: service_started
-      supabase-rest:
-        condition: service_started
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
-      SUPABASE_ANON_KEY: \${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_KEY: \${SUPABASE_SERVICE_ROLE_KEY}
-    entrypoint: bash -c 'eval "echo \\"$$(cat ~/temp.yml)\\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
-    restart: unless-stopped
-
-  frontend:
-    image: \${FRONTEND_IMAGE}
-    ports:
-      - "127.0.0.1:\${FRONTEND_PORT}:3000"
-    extra_hosts:
-      - "localhost:host-gateway"
-    environment:
-      KORTIX_PUBLIC_SUPABASE_URL: \${SUPABASE_PUBLIC_URL}
-      KORTIX_PUBLIC_SUPABASE_ANON_KEY: \${SUPABASE_ANON_KEY}
-      KORTIX_PUBLIC_BACKEND_URL: \${API_PUBLIC_URL}/v1
-      KORTIX_PUBLIC_BILLING_ENABLED: "false"
-      KORTIX_PUBLIC_APP_URL: \${PUBLIC_URL}
-      # Self-host has no real email transport, so magic-link sign-in can't work —
-      # password is the only functional method. (Override to "magic,password" if
-      # you wire up SMTP via GoTrue.)
-      KORTIX_PUBLIC_AUTH_METHODS: \${KORTIX_PUBLIC_AUTH_METHODS}
-      SUPABASE_URL: \${SUPABASE_PUBLIC_URL}
-      SUPABASE_SERVER_URL: http://supabase-kong:8000
-      SUPABASE_ANON_KEY: \${SUPABASE_ANON_KEY}
-      BACKEND_URL: \${API_PUBLIC_URL}/v1
-      # Localhost shares one cookie jar across every port, so running several
-      # self-host/dev stacks piles up Supabase auth cookies until the request
-      # header blows Node's 16KB default → HTTP 431 on first navigation. Raise it.
-      NODE_OPTIONS: "--max-http-header-size=131072"
-    depends_on:
-      kortix-api:
-        condition: service_started
-    restart: unless-stopped
-
-  # One-shot: provision the database schema before the API serves traffic.
-  # On a FRESH db this installs the non-kortix prerequisites (public credit
-  # RPCs, welcome webhook, storage buckets) then applies all migrations; on an
-  # already-provisioned db it is a no-op.
-  # Runs the migrator from the API image, which bundles migrations + runner.
-  kortix-migrate:
-    image: \${API_IMAGE}
-    user: "0:0"
-    command: ["bun", "/app/packages/db/scripts/migrate.ts", "bootstrap"]
-    environment:
-      DATABASE_URL: postgresql://postgres:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-    depends_on:
-      supabase-db:
-        condition: service_healthy
-      supabase-auth:
-        condition: service_started
-    restart: "no"
-
-  kortix-api:
-    image: \${API_IMAGE}
-    user: "0:0"
-    ports:
-      - "127.0.0.1:\${API_PORT}:8008"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    env_file:
-      - .env
-    environment:
-      PORT: "8008"
-      SUPABASE_URL: http://supabase-kong:8000
-      DATABASE_URL: postgresql://postgres:\${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-      SUPABASE_SERVICE_ROLE_KEY: \${SUPABASE_SERVICE_ROLE_KEY}
-      ALLOWED_SANDBOX_PROVIDERS: \${ALLOWED_SANDBOX_PROVIDERS}
-      DAYTONA_API_KEY: \${DAYTONA_API_KEY}
-      DAYTONA_SERVER_URL: \${DAYTONA_SERVER_URL}
-      DAYTONA_TARGET: \${DAYTONA_TARGET}
-      KORTIX_URL: http://kortix-api:8008
-      FRONTEND_URL: \${PUBLIC_URL}
-      CORS_ALLOWED_ORIGINS: \${PUBLIC_URL},\${API_PUBLIC_URL}
-      SANDBOX_IMAGE: \${SANDBOX_IMAGE}
-      SANDBOX_NETWORK: ${project}_default
-      KORTIX_LOCAL_IMAGES: \${KORTIX_LOCAL_IMAGES}
-      KORTIX_ROUTER_INTERNAL_ENABLED: "false"
-      KORTIX_BILLING_INTERNAL_ENABLED: "false"
-      LLM_GATEWAY_ENABLED: "true"
-      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
-      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
-      OPENROUTER_API_KEY: \${OPENROUTER_API_KEY}
-    depends_on:
-      supabase-db:
-        condition: service_healthy
-      supabase-kong:
-        condition: service_started
-      kortix-migrate:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-  llm-gateway:
-    image: \${GATEWAY_IMAGE}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      PORT: "8090"
-      KORTIX_API_URL: http://kortix-api:8008
-      GATEWAY_INTERNAL_TOKEN: \${GATEWAY_INTERNAL_TOKEN}
-    depends_on:
-      kortix-api:
-        condition: service_started
-    restart: unless-stopped
-
-volumes:
-  supabase-db-data:
-`;
-  writeFileSync(composePath(instance), text, 'utf8');
+  const root = instanceDir(instance);
+  writeSupabaseVendorAssets(root);
+  writeFileSync(
+    composePath(instance),
+    renderFullDockerCompose(composeProject(instance)),
+    { encoding: 'utf8', mode: 0o600 },
+  );
 }
-
-function writeDbInit(instance: string, env: SelfHostEnv): void {
-  const dbDir = join(instanceDir(instance), 'volumes', 'db');
-  mkdirSync(dbDir, { recursive: true });
-
-  const roles = `-- Supabase roles required by GoTrue and PostgREST
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon NOLOGIN NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
-    CREATE ROLE authenticated NOLOGIN NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN
-    CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
-    CREATE ROLE supabase_auth_admin LOGIN NOINHERIT CREATEROLE CREATEDB;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_admin') THEN
-    CREATE ROLE supabase_admin LOGIN NOINHERIT CREATEROLE CREATEDB REPLICATION BYPASSRLS;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-    CREATE ROLE authenticator LOGIN NOINHERIT;
-  END IF;
-END
-$$;
-
-GRANT anon TO authenticator;
-GRANT authenticated TO authenticator;
-GRANT service_role TO authenticator;
-GRANT supabase_auth_admin TO authenticator;
-GRANT supabase_admin TO postgres;
-
-CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION supabase_auth_admin;
-GRANT ALL ON SCHEMA auth TO supabase_auth_admin;
-GRANT USAGE ON SCHEMA auth TO postgres;
-ALTER ROLE supabase_auth_admin SET search_path = 'auth';
-
-ALTER ROLE supabase_auth_admin WITH PASSWORD '${sqlString(env.POSTGRES_PASSWORD)}';
-ALTER ROLE authenticator WITH PASSWORD '${sqlString(env.POSTGRES_PASSWORD)}';
-ALTER ROLE supabase_admin WITH PASSWORD '${sqlString(env.POSTGRES_PASSWORD)}';
-`;
-
-  const kortix = `-- Kortix bootstrap: extensions and schemas
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
-CREATE SCHEMA IF NOT EXISTS kortix;
-`;
-
-  writeFileSync(join(dbDir, 'roles.sql'), roles, 'utf8');
-  writeFileSync(join(dbDir, 'kortix.sql'), kortix, 'utf8');
-}
-
-function writeKongConfig(instance: string): void {
-  const text = `_format_version: '2.1'
-_transform: true
-
-consumers:
-  - username: anon
-    keyauth_credentials:
-      - key: $SUPABASE_ANON_KEY
-  - username: service_role
-    keyauth_credentials:
-      - key: $SUPABASE_SERVICE_KEY
-
-acls:
-  - consumer: anon
-    group: anon
-  - consumer: service_role
-    group: admin
-
-services:
-  - name: auth-v1-open
-    url: http://supabase-auth:9999/verify
-    routes:
-      - name: auth-v1-open
-        strip_path: true
-        paths:
-          - /auth/v1/verify
-    plugins:
-      - name: cors
-  - name: auth-v1-open-callback
-    url: http://supabase-auth:9999/callback
-    routes:
-      - name: auth-v1-open-callback
-        strip_path: true
-        paths:
-          - /auth/v1/callback
-    plugins:
-      - name: cors
-  - name: auth-v1-open-authorize
-    url: http://supabase-auth:9999/authorize
-    routes:
-      - name: auth-v1-open-authorize
-        strip_path: true
-        paths:
-          - /auth/v1/authorize
-    plugins:
-      - name: cors
-  - name: auth-v1
-    url: http://supabase-auth:9999/
-    routes:
-      - name: auth-v1-all
-        strip_path: true
-        paths:
-          - /auth/v1/
-    plugins:
-      - name: cors
-      - name: key-auth
-        config:
-          hide_credentials: false
-      - name: acl
-        config:
-          hide_groups_header: true
-          allow:
-            - admin
-            - anon
-  - name: rest-v1
-    url: http://supabase-rest:3000/
-    routes:
-      - name: rest-v1-all
-        strip_path: true
-        paths:
-          - /rest/v1/
-    plugins:
-      - name: cors
-      - name: key-auth
-        config:
-          hide_credentials: true
-      - name: acl
-        config:
-          hide_groups_header: true
-          allow:
-            - admin
-            - anon
-`;
-  mkdirSync(instanceDir(instance), { recursive: true });
-  writeFileSync(join(instanceDir(instance), 'kong.yml'), text, 'utf8');
-}
-
 function loadEnv(instance: string): SelfHostEnv | null {
   const path = envPath(instance);
   if (!existsSync(path)) return null;
@@ -1248,15 +1113,35 @@ function loadEnv(instance: string): SelfHostEnv | null {
 function loadEnvWithDefaults(flags: GlobalFlags): SelfHostEnv | null {
   const existing = loadEnv(flags.instance);
   if (!existing) return null;
-  return { ...defaultEnv(flags), ...existing };
+  const env = { ...defaultEnv(flags), ...existing };
+  normalizeFullSupabaseEnv(flags.instance, env);
+  return env;
 }
 
 function writeEnv(instance: string, env: SelfHostEnv): void {
+  normalizeFullSupabaseEnv(instance, env);
   mkdirSync(instanceDir(instance), { recursive: true });
   const lines = Object.entries(env)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`);
   writeFileSync(envPath(instance), `${lines.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+}
+
+function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
+  // The official Supabase distribution uses the unprefixed names. Keep the
+  // historical Kortix variables canonical and derive upstream aliases so an
+  // existing .env upgrades without rotating its JWT or API keys.
+  env.JWT_SECRET = env.SUPABASE_JWT_SECRET;
+  env.ANON_KEY = env.SUPABASE_ANON_KEY;
+  env.SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+  env.POSTGRES_HOST = 'supabase-db';
+  env.POSTGRES_DB = 'postgres';
+  env.SUPABASE_POSTGRES_INTERNAL_PORT = '5432';
+  env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
+  env.SITE_URL = env.PUBLIC_URL;
+  env.POOLER_TENANT_ID ||= composeProject(instance);
+  env.STORAGE_TENANT_ID ||= composeProject(instance);
+  env.STUDIO_DEFAULT_PROJECT ||= instance;
 }
 
 function compose(instance: string, args: string[]): number {
@@ -1286,7 +1171,7 @@ function registerLocalHost(name: string, apiUrl: string): void {
 }
 
 function instanceDir(instance: string): string {
-  return resolve(homedir(), '.config', 'kortix', 'self-host', instance);
+  return targetInstanceDir(instance);
 }
 
 function envPath(instance: string): string {
@@ -1314,10 +1199,6 @@ function supabaseJwt(role: string, secret: string): string {
 
 function b64url(value: string): string {
   return Buffer.from(value).toString('base64url');
-}
-
-function sqlString(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 function openInBrowser(url: string): void {

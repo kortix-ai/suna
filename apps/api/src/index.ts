@@ -46,6 +46,7 @@ import { platformSettings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
@@ -64,8 +65,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
-import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
 import { accountsRouter } from './accounts';
@@ -687,7 +686,6 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
-registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
@@ -774,7 +772,7 @@ app.route('/v1/tunnel', tunnelApp);
 
 // Preview Proxy — unified route for sandbox HTTP access.
 // Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
-// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
+// resolved to a reachable upstream URL via the provider ingress contract.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);
@@ -889,7 +887,6 @@ console.log(`
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
@@ -907,6 +904,9 @@ ${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental
 // Awaited so pricing is available before the first billing request.
 initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
+);
+runtimeModelCatalog.start().catch((err) =>
+  console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
 );
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
@@ -952,7 +952,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
@@ -965,7 +964,6 @@ async function stopSingletonWorkers() {
   singletonWorkersRunning = false;
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
-  stopLegacyMigrationWorker();
   stopSunaMigrationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
@@ -1001,6 +999,7 @@ async function shutdown(signal: string) {
   // node was the leader. Then stop the per-node services.
   await stopLeaderElection();
   stopModelPricing();
+  runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();

@@ -138,6 +138,6 @@ The spec is **baked into the snapshot**, not set per-session: the provider build
 
 Snapshots are content-addressed: the platform hashes your Dockerfile's own bytes + the hardware spec + a platform runtime fingerprint (opencode version + `kortix-agent` binary). Unchanged hash reuses the snapshot; otherwise a new one builds. Rebuilds happen on any push that changes the Dockerfile's text, or any change to the `sandbox` spec — pure code commits, and edits to files your Dockerfile `COPY`s in without touching the Dockerfile itself, reuse the snapshot for free (the hash isn't computed over those copied files today).
 
-Builds run on the sandbox provider (on the default Daytona provider, via `Image.fromDockerfile`). The first session on a new content hash triggers an inline build (a few minutes, shown as "preparing image"); later sessions on the same content hit the cache.
+Builds run on the selected sandbox provider through the same adapter contract: Daytona snapshots, Platinum templates, or E2B templates. The first session on a new content hash triggers an inline build (a few minutes, shown as "preparing image"); later sessions on that provider and content hash hit its cache.
 
 Editing the Dockerfile inside a session takes effect on the **next** session; current ones keep their booted snapshot. The edit reaches `main` only once a [change request](/docs/reference/change-requests) merges it.

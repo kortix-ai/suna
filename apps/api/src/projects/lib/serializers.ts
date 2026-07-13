@@ -10,10 +10,9 @@ import {
 } from '../../snapshots/error-classify';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { type ProjectRole } from '../access';
-import { resolveAppsEnabled } from '../apps-config';
 import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
 import { isGithubAppConfigured, type GitHubRepo } from '../github';
-import { accountGithubInstallations, deployments, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { accountGithubInstallations, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { Context } from 'hono';
 import { parseGitHubRepoUrl } from './git';
@@ -139,17 +138,11 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
-    // Single source of truth for the experimental [[apps]] surface. Threading
-    // the EFFECTIVE per-project value onto the project payload lets the web
-    // client gate the Apps section + sidebar shortcut off the SAME gate that
-    // gates the API routes. Per-project override (metadata.apps_enabled) wins;
-    // KORTIX_APPS_EXPERIMENTAL is the default for projects that haven't chosen.
     // Experimental features (Customize → Settings → Experimental) — `experimental`
     // is the effective on/off map; `experimental_features` is the self-describing
     // catalog the UI renders from. SoT = ../../experimental/features.
     experimental: resolveExperimentalFeatures(row.metadata),
     experimental_features: buildExperimentalCatalog(row.metadata),
-    apps_enabled: resolveAppsEnabled(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
     // `available_sandbox_providers` is the enabled set the picker offers
@@ -158,9 +151,17 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
     // create path (which ignores a disabled/removed pin and falls back), so the
     // picker never shows a value with no matching option.
-    default_sandbox_provider: ((): string | null => {
+    default_sandbox_provider: ((): SandboxProviderName | null => {
       const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
-      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+      if (
+        typeof pin !== 'string'
+        || !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
+      ) {
+        return null;
+      }
+
+      const provider = pin as SandboxProviderName;
+      return config.isProviderEnabled(provider) ? provider : null;
     })(),
     available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
@@ -508,31 +509,6 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
-  };
-}
-
-
-export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
-  return {
-    deployment_id: row.deploymentId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    app_slug: row.appSlug,
-    provider: row.provider,
-    status: row.status,
-    source_type: row.sourceType,
-    source_ref: row.sourceRef,
-    framework: row.framework,
-    domains: row.domains,
-    live_url: row.liveUrl,
-    env_vars: row.envVars,
-    build_config: row.buildConfig,
-    error: row.error,
-    version: row.version,
-    freestyle_id: row.freestyleId,
-    metadata: row.metadata,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
   };
 }
 

@@ -52,8 +52,8 @@ try/catching every call.
 |---|---|---|
 | list / get / create / update | `GET/POST /v1/projects`, `GET/PUT /v1/projects/:id` | ✅ |
 | detail (config+agents+skills+files) | `GET /v1/projects/:id/detail` | ✅ |
-| provision / link repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
-| github installs / repos / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
+| provision / import linked repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
+| github installs / repos / repository branches / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
 | llm-catalog | `GET /v1/projects/:id/llm-catalog` | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 
@@ -236,8 +236,8 @@ facade as `kortix.billing.{checkout, subscription, credits}`:
 ### 16. Transcription / misc session input  🟡
 `POST /v1/transcription` (voice) client now in SDK (`projects-client/transcription.ts`) ✅; hooks still web-local (`hooks/transcription`) 🟡.
 
-### 17. Channels / apps (project-scoped)  🟡
-Slack/email inbound-outbound installs (`projects-client/channels.ts`) and the `/v1/projects/:id/apps/*` deployment family (`projects-client/apps.ts`) — clients ✅ in SDK; hooks web-local.
+### 17. Channels (project-scoped)  🟡
+Slack/email inbound-outbound installs live in `projects-client/channels.ts`; hooks remain web-local.
 Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
 `GET/POST /v1/projects/:id/channels/slack/file[/upload]`) and the Meet
@@ -281,8 +281,8 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Setup links, manifest validate, git token | ✅ complete — facade `project(id).{setupLinks, validateManifest, gitToken}` |
 | Account audit (Enterprise) | ✅ client + facade (`kortix.accounts.audit.*`); 🟡 no hooks yet |
 | Skills create/update/delete | ❌ web-local (daemon file I/O) |
-| Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription, apps | 🟡 client fns ✅ in SDK, hooks still web-local |
-| Channels (Slack/email/Meet installs + apps deploy family) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
+| Git / versions / change-requests, gateway observability, sandbox-admin, billing/account-state, transcription | 🟡 client fns ✅ in SDK, hooks still web-local |
+| Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Executor connectors runtime | 🟡 web-local |
 | kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's an opencode-runtime surface, reached via the opencode-client subpath) |

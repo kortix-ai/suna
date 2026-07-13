@@ -140,6 +140,7 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
@@ -205,7 +206,9 @@ mock.module('../projects/github', () => ({
     default_branch: 'main',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({ name: branch, protected: false }),
   listInstallationRepositories: async () => [],
+  listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
   isOrgAccount: async () => true,
@@ -274,9 +277,7 @@ mock.module('../projects/secrets', () => ({
     secretValues.get(name) ?? null,
 }));
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const triggerDbMock: any = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -485,7 +486,13 @@ mock.module('../shared/db', () => ({
         if (table === sessionLifecycleCommands) lifecycleCommandRows = [];
       },
     }),
-  },
+};
+triggerDbMock.transaction = async (run: (tx: typeof triggerDbMock) => Promise<unknown>) =>
+  run(triggerDbMock);
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: triggerDbMock,
 }));
 
 const {

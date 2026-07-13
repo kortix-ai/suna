@@ -18,7 +18,6 @@ describe('package index re-exports', () => {
       'projects',
       'projectMembers',
       'sandboxes',
-      'deployments',
       'kortixApiKeys',
     ] as const;
     for (const name of expected) {
@@ -29,7 +28,6 @@ describe('package index re-exports', () => {
   test('re-exports the kortix enums', () => {
     const expected = [
       'sandboxStatusEnum',
-      'deploymentStatusEnum',
       'projectStatusEnum',
       'apiKeyTypeEnum',
       'accountRoleEnum',
@@ -50,5 +48,20 @@ describe('package index re-exports', () => {
 
   test('does not collide the public apiKeys with the kortix kortixApiKeys', () => {
     expect(db.apiKeys).not.toBe(db.kortixApiKeys);
+  });
+
+  test('does not export the retired hosted-deployment schema surface', () => {
+    const retiredExports = [
+      ['deployments'],
+      ['deployment', 'Status', 'Enum'],
+      ['deployment', 'Source', 'Enum'],
+      ['deployments', 'Relations'],
+      ['New', 'Deployment'],
+      ['Deployment', 'Select'],
+    ].map((parts) => parts.join(''));
+
+    for (const name of retiredExports) {
+      expect(name in db).toBe(false);
+    }
   });
 });

@@ -220,6 +220,14 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     }
   }
 
+  async listSnapshots(): Promise<Array<{ name: string }>> {
+    if (!isPlatinumConfigured()) return [];
+    return (await platinumJson<PlatinumTemplate[]>('/v1/templates'))
+      .map((template) => template.name)
+      .filter((name): name is string => !!name)
+      .map((name) => ({ name }));
+  }
+
   private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {
     const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
     let last = 'unknown';

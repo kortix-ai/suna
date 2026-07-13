@@ -5,8 +5,6 @@ import { useTranslations } from 'next-intl';
 import { lazy, Suspense, useMemo, type ComponentType } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
-const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
-
 // ---------------------------------------------------------------------------
 // Lazy-load every route-based page component so they can be pre-mounted in the
 // DOM and kept alive when the user switches tabs (CSS show/hide).
@@ -57,12 +55,6 @@ const FilesPage = lazy(() =>
 
 const BoardPage = lazy(() => import('@/components/pages/board/page'));
 
-const DeploymentsPage = lazy(() =>
-	import('@/components/deployments/deployments-page').then((m) => ({
-		default: m.DeploymentsPage,
-	})),
-);
-
 // Admin pages (currently live under the dashboard route group)
 const AdminAnalyticsPage = lazy(() =>
 	import('@/components/pages/admin/analytics/page'),
@@ -104,7 +96,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/scheduled-tasks': TriggersPage,
 	'/files': FilesPage,
 	'/board': BoardPage,
-	...(DEPLOYMENTS_ENABLED ? { '/deployments': DeploymentsPage } : {}),
 	// Admin
 	'/admin/analytics': AdminAnalyticsPage,
 	'/admin/feedback': AdminFeedbackPage,

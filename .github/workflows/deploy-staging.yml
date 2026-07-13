@@ -167,7 +167,7 @@ jobs:
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
-              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
+              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum,e2b",
               KORTIX_WARM_SNAPSHOT_ENABLED: "false"
             }')"
 

@@ -29,31 +29,9 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
 ]);
 
 export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
-  // 'daytona' is the managed cloud backend's identity — new rows write 'daytona'.
-  // 'managed' remains a valid enum value only because the ADD VALUE migration that
-  // introduced it can't be dropped in Postgres; it's a harmless defensive leftover
-  // from the reverted daytona→managed rename (read paths still accept it).
-  'managed',
   'daytona',
-  'local_docker',
-  'justavps',
   'platinum',
-]);
-
-export const deploymentStatusEnum = kortixSchema.enum('deployment_status', [
-  'pending',
-  'building',
-  'deploying',
-  'active',
-  'failed',
-  'stopped',
-]);
-
-export const deploymentSourceEnum = kortixSchema.enum('deployment_source', [
-  'git',
-  'code',
-  'files',
-  'tar',
+  'e2b',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -626,6 +604,42 @@ export const accountModelPreferences = kortixSchema.table(
       table.accountId,
       table.scope,
       table.scopeKey,
+    ),
+  ],
+);
+
+export interface ProjectLlmRoutingRule {
+  model: string;
+  fallbackModels: string[];
+  fallbackOn: 'transient' | 'any-error';
+}
+
+// Project-owned gateway composition. A NULL default_fallback_models inherits
+// the operator policy while [] deliberately disables fallback for `auto`.
+// The project default model remains in account_model_preferences so every
+// existing default-model consumer continues to share one source of truth.
+export const projectLlmRoutingPolicies = kortixSchema.table(
+  'project_llm_routing_policies',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    visionModel: varchar('vision_model', { length: 128 }),
+    defaultFallbackModels: jsonb('default_fallback_models').$type<string[] | null>(),
+    defaultFallbackOn: text('default_fallback_on'),
+    rules: jsonb('rules').default([]).$type<ProjectLlmRoutingRule[]>().notNull(),
+    updatedBy: uuid('updated_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_llm_routing_policies_fallback_pair_check',
+      sql`(${table.defaultFallbackModels} IS NULL AND ${table.defaultFallbackOn} IS NULL) OR (${table.defaultFallbackModels} IS NOT NULL AND ${table.defaultFallbackOn} IN ('transient', 'any-error'))`,
+    ),
+    check(
+      'project_llm_routing_policies_rules_array_check',
+      sql`jsonb_typeof(${table.rules}) = 'array'`,
     ),
   ],
 );
@@ -1233,7 +1247,9 @@ export const sandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    // Historical /instances audit rows may carry retired providers. Current
+    // session runtimes use the strict sandbox_provider enum.
+    provider: text('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     status: sandboxStatusEnum('status').default('provisioning').notNull(),
     baseUrl: text('base_url').notNull(),
@@ -1389,56 +1405,6 @@ export const sunaAccountMigrations = kortixSchema.table(
     index('idx_suna_account_migrations_status').on(table.status),
     index('idx_suna_account_migrations_account').on(table.accountId),
     index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
-  ],
-);
-
-export const deployments = kortixSchema.table(
-  'deployments',
-  {
-    deploymentId: uuid('deployment_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
-    // Optional link back to a Git-backed project + the [[apps]] slug inside
-    // its kortix.yaml manifest. Populated by the /v1/projects/:id/apps path; nullable
-    // for historical deployment rows and future non-project deployment sources.
-    projectId: uuid('project_id'),
-    appSlug: varchar('app_slug', { length: 128 }),
-    // Provider that produced this deployment ("freestyle" today; future:
-    // "vercel", "cloudflare", ...). Nullable for back-compat with rows
-    // written before the provider adapter shipped.
-    provider: varchar('provider', { length: 32 }),
-    freestyleId: text('freestyle_id'),
-    status: deploymentStatusEnum('status').default('pending').notNull(),
-
-    // Source
-    sourceType: deploymentSourceEnum('source_type').notNull(),
-    sourceRef: text('source_ref'),
-    framework: varchar('framework', { length: 50 }),
-
-    // Config
-    domains: jsonb('domains').default([]).$type<string[]>(),
-    liveUrl: text('live_url'),
-    envVars: jsonb('env_vars').default({}).$type<Record<string, string>>(),
-    buildConfig: jsonb('build_config').$type<Record<string, unknown>>(),
-    entrypoint: text('entrypoint'),
-
-    // Metadata
-    error: text('error'),
-    version: integer('version').default(1).notNull(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_deployments_account').on(table.accountId),
-    index('idx_deployments_sandbox').on(table.sandboxId),
-    index('idx_deployments_status').on(table.status),
-    index('idx_deployments_live_url').on(table.liveUrl),
-    index('idx_deployments_created').on(table.createdAt),
-    // Drives the project-apps list view + the auto-deploy sweep lookup
-    // ("latest deployment for this (project, slug)").
-    index('idx_deployments_project_app').on(table.projectId, table.appSlug, table.createdAt),
   ],
 );
 
@@ -1641,7 +1607,6 @@ export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
     fields: [sandboxes.accountId],
     references: [accounts.accountId],
   }),
-  deployments: many(deployments),
   apiKeys: many(kortixApiKeys),
   members: many(sandboxMembers),
 }));
@@ -1733,13 +1698,6 @@ export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
 export const sandboxInvitesRelations = relations(sandboxInvites, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [sandboxInvites.sandboxId],
-    references: [sandboxes.sandboxId],
-  }),
-}));
-
-export const deploymentsRelations = relations(deployments, ({ one }) => ({
-  sandbox: one(sandboxes, {
-    fields: [deployments.sandboxId],
     references: [sandboxes.sandboxId],
   }),
 }));
@@ -2076,6 +2034,7 @@ export const sandboxComputeSessions = kortixSchema.table(
     sandboxId: uuid('sandbox_id').notNull(),
     sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     cpuCores: integer('cpu_cores').notNull(),
     memoryGb: integer('memory_gb').notNull(),
     diskGb: integer('disk_gb').notNull(),
@@ -2100,6 +2059,7 @@ export const sandboxComputeSessions = kortixSchema.table(
   },
   (table) => [
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
+    index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
     index('idx_sandbox_compute_sessions_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),
@@ -2782,6 +2742,9 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
+    /** Deprecated release-compatibility column. The branch hierarchy no longer
+     * reads or writes this value; remove only after the code-removal rollout. */
+    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */

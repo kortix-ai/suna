@@ -30,7 +30,6 @@ import {
 import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
@@ -283,7 +282,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
-              <ProjectAppsNavItem projectId={projectId} />
               {/* Sits directly above Files/Customize so a still-on-v1 manifest
                   is impossible to miss — one click starts the migration session
                   end-to-end. Self-hides once the project is on v2. */}

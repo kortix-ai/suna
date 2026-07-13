@@ -4,8 +4,6 @@ import {
   kortixSchema,
   sandboxStatusEnum,
   sandboxProviderEnum,
-  deploymentStatusEnum,
-  deploymentSourceEnum,
   projectStatusEnum,
   projectSessionStatusEnum,
   sessionLifecycleCommandStatusEnum,
@@ -22,11 +20,13 @@ import {
   accountMembers,
   projects,
   projectMembers,
+  projectGroupGrants,
   projectGitConnections,
+  projectLlmRoutingPolicies,
   sandboxes,
   sandboxMembers,
-  deployments,
   kortixApiKeys,
+  sandboxComputeSessions,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -47,7 +47,7 @@ describe('kortix pgSchema', () => {
   });
 
   test('all sampled tables live in the kortix schema', () => {
-    const tables = [accounts, projects, sandboxes, deployments, kortixApiKeys];
+    const tables = [accounts, projects, sandboxes, kortixApiKeys];
     for (const t of tables) {
       expect(getTableConfig(t).schema).toBe('kortix');
     }
@@ -69,28 +69,10 @@ describe('kortix enums', () => {
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
     expect(sandboxProviderEnum.enumValues).toEqual([
-      'managed',
       'daytona',
-      'local_docker',
-      'justavps',
       'platinum',
+      'e2b',
     ]);
-  });
-
-  test('deployment_status enum has the expected values', () => {
-    expect(deploymentStatusEnum.enumName).toBe('deployment_status');
-    expect(deploymentStatusEnum.enumValues).toEqual([
-      'pending',
-      'building',
-      'deploying',
-      'active',
-      'failed',
-      'stopped',
-    ]);
-  });
-
-  test('deployment_source enum has the expected values', () => {
-    expect(deploymentSourceEnum.enumValues).toEqual(['git', 'code', 'files', 'tar']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -159,6 +141,15 @@ describe('kortix enums', () => {
   test('change_request_status enum is non-empty and named', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('sandbox compute provider attribution', () => {
+  test('compute windows persist the provider and index it with start time', () => {
+    expect(columnNames(sandboxComputeSessions)).toContain('provider');
+    expect(indexNames(sandboxComputeSessions)).toContain(
+      'idx_sandbox_compute_sessions_provider_time',
+    );
   });
 });
 
@@ -253,11 +244,27 @@ describe('projects table', () => {
     expect(col?.default).toBe('active');
   });
 
-  test('enforces a unique account/repo index', () => {
+  test('retains the unique account/repo index through the application rollout', () => {
     const cfg = getTableConfig(projects);
-    const unique = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
-    expect(unique).toBeDefined();
-    expect(unique?.config.unique).toBe(true);
+    const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
+    expect(accountRepo).toBeDefined();
+    expect(accountRepo?.config.unique).toBe(true);
+  });
+});
+
+describe('project_llm_routing_policies table', () => {
+  test('stores one versioned routing document per project with audit fields', () => {
+    expect(getTableConfig(projectLlmRoutingPolicies).name).toBe('project_llm_routing_policies');
+    expect(primaryColumn(projectLlmRoutingPolicies)).toBe('project_id');
+    expect(columnNames(projectLlmRoutingPolicies)).toEqual(expect.arrayContaining([
+      'vision_model',
+      'default_fallback_models',
+      'default_fallback_on',
+      'rules',
+      'updated_by',
+      'created_at',
+      'updated_at',
+    ]));
   });
 });
 
@@ -275,6 +282,16 @@ describe('project_members table', () => {
       (i) => i.config.name === 'idx_project_members_project_user',
     );
     expect(unique?.config.unique).toBe(true);
+  });
+});
+
+describe('project_group_grants table', () => {
+  test('retains the deprecated base-ref column through the code-removal rollout', () => {
+    const col = getTableConfig(projectGroupGrants).columns.find(
+      (column) => column.name === 'default_base_ref',
+    );
+    expect(col).toBeDefined();
+    expect(col?.notNull).toBe(false);
   });
 });
 
@@ -341,27 +358,6 @@ describe('sandbox_members table', () => {
       (c) => c.name === 'current_period_cents',
     );
     expect(col?.default).toBe(0);
-  });
-});
-
-describe('deployments table', () => {
-  test('uses deployment_id as its primary key', () => {
-    expect(primaryColumn(deployments)).toBe('deployment_id');
-  });
-
-  test('status defaults to pending', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'status');
-    expect(col?.default).toBe('pending');
-  });
-
-  test('version defaults to 1', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'version');
-    expect(col?.default).toBe(1);
-  });
-
-  test('source_type is not null', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'source_type');
-    expect(col?.notNull).toBe(true);
   });
 });
 

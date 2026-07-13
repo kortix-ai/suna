@@ -6,6 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Typed GitHub repository branch discovery through
+  `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
+  including GitHub's default branch and branch protection metadata.
 - The root entry `@kortix/sdk` is now canonical: it exports the whole
   framework-free surface (client, session, turns, files, event stream, errors).
 - CDN builds: a minified ESM bundle (`dist/kortix.esm.min.js`) and an IIFE

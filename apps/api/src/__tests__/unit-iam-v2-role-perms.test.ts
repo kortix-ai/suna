@@ -78,7 +78,6 @@ describe('IAM V2 — project role table', () => {
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE)).toBe(true);
     // ...but cannot customize the project in any way.
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_WRITE)).toBe(false);
-    expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_DEPLOY)).toBe(false);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE)).toBe(false);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE)).toBe(false);
     expect(projectRoleAllows('member', PROJECT_ACTIONS.PROJECT_DELETE)).toBe(false);

@@ -317,9 +317,7 @@ bun test src                              # 444 pass, 0 fail (70 files) — full
   `files/components/file-browser.tsx` and
   `project-files/components/file-browser.tsx` (added `getIcon={getFileIcon}`
   prop at both `<FileTreeItem>` call sites; `project-files` additionally
-  passes `historyLabel`), plus the one external deep-importer,
-  `apps/web/src/components/deployments/create-deployment-dialog.tsx`
-  (`@/features/files/types` → `@/features/file-browser/types`).
+  passes `historyLabel`).
 - Net: `features/files` 9,947 → 8,606 lines; `features/project-files` 12,016
   → 10,720 lines; `features/file-browser` (new, shared): 1,418 lines. Line
   count that used to exist twice now exists once.

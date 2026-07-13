@@ -1,4 +1,4 @@
-import { isManagedModelId } from '@kortix/llm-catalog';
+import { isRuntimeManagedModelId } from '../models/managed-models';
 
 // One definition of how a default model/agent is chosen across scopes, shared by
 // the gateway's `auto` resolution (chooseDefaultModel → here) and the apps/api
@@ -16,7 +16,7 @@ const KORTIX_PREFIX = 'kortix/';
 /**
  * The GATEWAY WIRE form of a model ref: a managed model is stored/served bare
  * (`glm-5.2`), so strip the opencode-only `kortix/` namespace before it reaches
- * the gateway (pickAutoModel/resolveCandidates/getManagedModel all expect the
+ * the gateway (route resolution and managed-model lookup both expect the
  * bare id). BYOK (`provider/model`) and codex (`codex/<id>`) refs pass through.
  * This is what `account_model_preferences` stores and what servability checks.
  */
@@ -32,11 +32,11 @@ export function toWireModel(ref: string): string {
  */
 export function toOpencodeModelRef(model: string): string {
   if (model.startsWith(KORTIX_PREFIX)) return model;
-  return isManagedModelId(model) ? `${KORTIX_PREFIX}${model}` : model;
+  return isRuntimeManagedModelId(model) ? `${KORTIX_PREFIX}${model}` : model;
 }
 
 function isManagedRef(ref: string): boolean {
-  return isManagedModelId(toWireModel(ref));
+  return isRuntimeManagedModelId(toWireModel(ref));
 }
 
 /**

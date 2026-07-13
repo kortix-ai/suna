@@ -1,6 +1,8 @@
-import { resolveCatalogUpstream } from '@kortix/llm-gateway';
-import { CATALOG, type CatalogModel, MANAGED_MODELS } from '@kortix/llm-catalog';
+import { type Catalog, type CatalogModel } from '@kortix/llm-catalog';
 import { toWireModel } from '../resolution/effective';
+import { resolveCatalogUpstream } from './provider-registry';
+import { runtimeModelCatalog } from './runtime-catalog';
+import { RUNTIME_MANAGED_MODELS } from './managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
@@ -19,18 +21,31 @@ export interface PickerModel {
   hint?: string;
 }
 
-// provider/model id → catalog model, and the per-provider model id set, built
-// once at load. Used both to LABEL a ref and to verify a flagship candidate
-// actually exists before we ever offer it (no stale ids).
-const catalogModelById = new Map<string, CatalogModel>();
-const providerModelIds = new Map<string, Set<string>>();
-for (const provider of CATALOG.providers) {
-  const ids = new Set<string>();
-  for (const model of provider.models) {
-    catalogModelById.set(`${provider.id}/${model.id}`, model);
-    ids.add(model.id);
+interface PickerCatalogState {
+  revision: number;
+  catalog: Catalog;
+  modelById: Map<string, CatalogModel>;
+  providerModelIds: Map<string, Set<string>>;
+}
+
+let cachedState: PickerCatalogState | null = null;
+
+function catalogState(): PickerCatalogState {
+  const revision = runtimeModelCatalog.status().revision;
+  if (cachedState?.revision === revision) return cachedState;
+  const catalog = runtimeModelCatalog.snapshot();
+  const modelById = new Map<string, CatalogModel>();
+  const providerModelIds = new Map<string, Set<string>>();
+  for (const provider of catalog.providers) {
+    const ids = new Set<string>();
+    for (const model of provider.models) {
+      modelById.set(`${provider.id}/${model.id}`, model);
+      ids.add(model.id);
+    }
+    providerModelIds.set(provider.id, ids);
   }
-  providerModelIds.set(provider.id, ids);
+  cachedState = { revision, catalog, modelById, providerModelIds };
+  return cachedState;
 }
 
 // Curated flagship candidates per provider, in priority order. Every candidate is
@@ -51,14 +66,15 @@ const FLAGSHIP_CANDIDATES: Record<string, string[]> = {
 
 /** The flagship BYOK model id (bare, no provider prefix) for a provider, or null. */
 export function providerFlagship(providerId: string): string | null {
-  const ids = providerModelIds.get(providerId);
+  const state = catalogState();
+  const ids = state.providerModelIds.get(providerId);
   if (!ids || ids.size === 0) return null;
   for (const candidate of FLAGSHIP_CANDIDATES[providerId] ?? []) {
     if (ids.has(candidate)) return candidate;
   }
   // Fallback: the most recently released model the catalog carries for this
   // provider (deterministic, real). Released dates sort lexically (YYYY-MM-DD).
-  const provider = CATALOG.providers.find((p) => p.id === providerId);
+  const provider = state.catalog.providers.find((p) => p.id === providerId);
   if (!provider || provider.models.length === 0) return null;
   const sorted = [...provider.models].sort((a, b) =>
     (b.released ?? '').localeCompare(a.released ?? ''),
@@ -81,7 +97,7 @@ export function isProviderConnected(providerId: string, connectedEnvVars: Set<st
  */
 export function flagshipRefForEnvVar(envVar: string): string | null {
   const upper = envVar.toUpperCase();
-  for (const provider of CATALOG.providers) {
+  for (const provider of catalogState().catalog.providers) {
     const upstream = resolveCatalogUpstream(provider.id);
     if (!upstream || upstream.envVar.toUpperCase() !== upper) continue;
     const flagship = providerFlagship(provider.id);
@@ -92,21 +108,22 @@ export function flagshipRefForEnvVar(envVar: string): string | null {
 
 /** A friendly label for any model ref (managed, BYOK, codex, or raw). */
 export function labelForModelRef(ref: string): string {
+  const modelById = catalogState().modelById;
   const wire = toWireModel(ref);
-  const managed = MANAGED_MODELS.find((m) => m.id === wire);
+  const managed = RUNTIME_MANAGED_MODELS.find((m) => m.id === wire);
   if (managed) return managed.name;
   if (wire.startsWith('codex/')) {
     const inner = wire.slice('codex/'.length);
-    return `${catalogModelById.get(`openai/${inner}`)?.name ?? inner} (ChatGPT)`;
+    return `${modelById.get(`openai/${inner}`)?.name ?? inner} (ChatGPT)`;
   }
-  const catalog = catalogModelById.get(wire);
+  const catalog = modelById.get(wire);
   if (catalog) return catalog.name;
   return ref;
 }
 
 /** Managed models as opencode refs (`kortix/<id>`), with tier hints. */
 export function managedPickerModels(): PickerModel[] {
-  return MANAGED_MODELS.map((m) => ({
+  return RUNTIME_MANAGED_MODELS.map((m) => ({
     id: `kortix/${m.id}`,
     label: m.name,
     provider: 'kortix',
@@ -119,7 +136,7 @@ export function managedPickerModels(): PickerModel[] {
 /** Flagship picker entries for the CONNECTED BYOK providers in `connectedEnvVars`. */
 export function connectedByokPickerModels(connectedEnvVars: Set<string>): PickerModel[] {
   const models: PickerModel[] = [];
-  for (const provider of CATALOG.providers) {
+  for (const provider of catalogState().catalog.providers) {
     if (!isProviderConnected(provider.id, connectedEnvVars)) continue;
     const flagship = providerFlagship(provider.id);
     if (!flagship) continue;

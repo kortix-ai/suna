@@ -95,21 +95,6 @@ mock.module('../projects/git-backends', () => ({
   managedGithubToken: () => managedPat,
 }));
 
-// Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
-// git) so loading the projects module graph doesn't drag real deployment code —
-// and its transitive DB imports — into this lightweight test.
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://freestyle.example.test',
-  callFreestyle: async () => new Response('{}', { status: 200 }),
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
-    stop: async () => {},
-    logs: async () => ({}),
-  },
-}));
-
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
   ...realAuthMiddleware,
@@ -297,6 +282,9 @@ mock.module('../shared/db', () => ({
           return Promise.resolve([]);
         },
         onConflictDoUpdate: () => {
+          if (table === projects) {
+            throw new Error('managed project provisioning must insert a fresh project row');
+          }
           if (table === projectMembers) {
             grantedProjectRole = values;
             return Promise.resolve([]);

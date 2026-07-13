@@ -74,8 +74,6 @@ import {
 } from 'lucide-react';
 import { IconType } from 'react-icons/lib';
 
-const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
-
 // ============================================================================
 // Types
 // ============================================================================

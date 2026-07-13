@@ -147,6 +147,8 @@ console.log(
 
 // LLM gateway observability — cost, latency, per-model breakdown
 const overview = await project.gateway.overview(7);
+const routing = await project.gateway.routing.get();
+const preview = await project.gateway.routing.preview({ requestedModel: 'auto', imageInput: false });
 
 // Channels: connect the project to Slack, email, or a meeting bot
 const slack = await project.channels.slack.installation();

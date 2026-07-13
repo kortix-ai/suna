@@ -12,7 +12,8 @@ import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
+import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/project-registration';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
@@ -44,6 +45,9 @@ projectsApp.openapi(
     : repoUrlInput;
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
+  const quota = await enforceProjectQuota(c, scope.accountId);
+  if (quota) return quota;
+
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   // PAT path: link an existing repo with a caller-supplied token — no GitHub
@@ -63,8 +67,6 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
-    const patQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: patImport.repo.clone_url });
-    if (patQuota) return patQuota;
     const row = await registerPatLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
@@ -79,7 +81,7 @@ projectsApp.openapi(
       { accountId: scope.accountId, source: 'project-create' },
     );
     return c.json({
-      project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
+      project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
       git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
     }, 201);
   }
@@ -101,9 +103,6 @@ projectsApp.openapi(
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
-
-  const linkQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
-  if (linkQuota) return linkQuota;
 
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
@@ -127,7 +126,7 @@ projectsApp.openapi(
   );
 
   return c.json({
-    project: serializeProject(row, { projectRole: 'editor', effectiveRole: 'editor' }),
+    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
   }, 201);
 },
