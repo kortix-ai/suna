@@ -25,12 +25,6 @@ import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/
 import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { cn } from '@/lib/utils';
 import {
-  describeProviderCoverage,
-  describeProviderMode,
-  sandboxProviderLabel,
-  type SandboxProviderMode,
-} from './sandbox-provider-coverage';
-import {
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
   type SandboxTemplate,
@@ -40,11 +34,7 @@ import {
   getProject,
   listProjectSnapshots,
 } from '@kortix/sdk/projects-client';
-import {
-  CheckCircleSolid,
-  SparklesSolid,
-  XCircleSolid,
-} from '@mynaui/icons-react';
+import { CheckCircleSolid, SparklesSolid, XCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -58,8 +48,21 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useState } from 'react';
+import {
+  type SandboxProviderMode,
+  describeProviderCoverage,
+  describeProviderMode,
+  sandboxProviderLabel,
+} from './sandbox-provider-coverage';
 
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
+const TEMPLATE_SKELETON_ROWS = [
+  'sandbox-template-skeleton-1',
+  'sandbox-template-skeleton-2',
+  'sandbox-template-skeleton-3',
+  'sandbox-template-skeleton-4',
+  'sandbox-template-skeleton-5',
+] as const;
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
@@ -280,11 +283,15 @@ function ProviderCoverage({
             {provider}
             {selected ? (
               <>
-                <span className="opacity-50" aria-hidden="true">&bull;</span>
+                <span className="opacity-50" aria-hidden="true">
+                  &bull;
+                </span>
                 Selected
               </>
             ) : null}
-            <span className="opacity-50" aria-hidden="true">&bull;</span>
+            <span className="opacity-50" aria-hidden="true">
+              &bull;
+            </span>
             {state.label}
           </Badge>
         );
@@ -418,8 +425,13 @@ function TemplateRow({
   const queryClient = useQueryClient();
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const templateId = template.template_id ?? null;
+  const requireTemplateId = () => {
+    if (!templateId) throw new Error('Sandbox template id is missing');
+    return templateId;
+  };
   const buildMut = useMutation({
-    mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
+    mutationFn: () => buildSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Rebuild started for "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
@@ -427,7 +439,7 @@ function TemplateRow({
     onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
   const deleteMut = useMutation({
-    mutationFn: () => deleteSandboxTemplate(projectId, template.template_id!),
+    mutationFn: () => deleteSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Deleted "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
@@ -495,7 +507,7 @@ function TemplateRow({
         ) : null}
         {canManage && (
           <div className="flex items-center gap-1">
-            {template.template_id && !template.is_default && (
+            {templateId && !template.is_default && (
               <>
                 <Button
                   size="sm"
@@ -526,7 +538,7 @@ function TemplateRow({
                 </Button>
               </>
             )}
-            {template.template_id && (
+            {templateId && (
               <Button
                 size="sm"
                 variant="outline"
@@ -595,9 +607,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const data = snapshotsQuery.data;
   const builds = Array.isArray(data?.builds) ? data.builds : [];
   const templates = Array.isArray(data?.templates) ? data.templates : [];
-  const providerMode: SandboxProviderMode = data?.provider_mode === 'pinned'
-    ? 'pinned'
-    : 'automatic';
+  const providerMode: SandboxProviderMode =
+    data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
   const selectedProvider = data?.selected_provider ?? null;
   const latestFailure = currentFailedBuild(builds);
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
@@ -639,8 +650,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
     >
       {snapshotsQuery.isLoading ? (
         <div className="space-y-1">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 rounded-md" />
+          {TEMPLATE_SKELETON_ROWS.map((row) => (
+            <Skeleton key={row} className="h-10 rounded-md" />
           ))}
         </div>
       ) : snapshotsQuery.isError ? (

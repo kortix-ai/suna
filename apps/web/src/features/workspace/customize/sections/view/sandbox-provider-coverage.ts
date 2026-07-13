@@ -31,9 +31,10 @@ export function describeProviderMode(
   };
 }
 
-export function describeProviderCoverage(
-  status: ProviderCoverageStatus,
-): { label: string; tone: 'ok' | 'busy' | 'fail' | 'idle' } {
+export function describeProviderCoverage(status: ProviderCoverageStatus): {
+  label: string;
+  tone: 'ok' | 'busy' | 'fail' | 'idle';
+} {
   switch (status) {
     case 'ready':
       return { label: 'Latest', tone: 'ok' };
