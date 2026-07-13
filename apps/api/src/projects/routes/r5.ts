@@ -522,6 +522,19 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
+  // Visibility isolation: a scoped-out member can't read the commit history of
+  // an agent/skill they aren't granted — return the same 404 as a missing file
+  // so the path isn't confirmed to exist. Mirrors files/content (r5.ts:477-484).
+  // See F-5 (weekly pentest run #4).
+  const denier = await resourceDenierForRequest({
+    userId: loaded.userId,
+    accountId: loaded.row.accountId,
+    projectId,
+    actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+    row: loaded.row,
+  });
+  if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   const limit = Number(c.req.query('limit') || '50');
   const skip = Number(c.req.query('skip') || '0');
