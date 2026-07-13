@@ -1,9 +1,17 @@
 'use client';
 
 import {
+  type EmailInstallation,
+  type EmailMode,
+  type EmailSenderPolicy,
+  type SlackInstallation,
+  type SlackMode,
+  type TelegramInstallation,
+  type TelegramPairing,
   connectEmail,
   connectSlack,
   connectTelegram,
+  createTelegramPairingCode,
   disconnectEmail,
   disconnectSlack,
   disconnectTelegram,
@@ -13,13 +21,8 @@ import {
   getSlackManifest,
   getSlackMode,
   getTelegramInstallation,
+  removeTelegramAllowedUser,
   updateEmailPolicy,
-  type EmailInstallation,
-  type EmailMode,
-  type EmailSenderPolicy,
-  type SlackInstallation,
-  type SlackMode,
-  type TelegramInstallation,
 } from '@kortix/sdk/projects-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -30,6 +33,7 @@ export type {
   SlackInstallation,
   SlackMode,
   TelegramInstallation,
+  TelegramPairing,
 };
 
 const key = (projectId: string | null) =>
@@ -70,7 +74,9 @@ export function useSlackMode(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 60_000,
     queryFn: () =>
-      projectId ? getSlackMode(projectId) : ({ oauth_available: false, install_url: null } satisfies SlackMode),
+      projectId
+        ? getSlackMode(projectId)
+        : ({ oauth_available: false, install_url: null } satisfies SlackMode),
   });
 }
 
@@ -123,6 +129,23 @@ export function useConnectTelegram() {
     onSuccess: (_data, { projectId }) => {
       qc.invalidateQueries({ queryKey: telegramKey(projectId) });
       qc.invalidateQueries({ queryKey: ['project-connectors', projectId] });
+    },
+  });
+}
+
+export function useCreateTelegramPairingCode() {
+  return useMutation({
+    mutationFn: (projectId: string) => createTelegramPairingCode(projectId),
+  });
+}
+
+export function useRemoveTelegramAllowedUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, userId }: { projectId: string; userId: string }) =>
+      removeTelegramAllowedUser(projectId, userId),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: telegramKey(projectId) });
     },
   });
 }

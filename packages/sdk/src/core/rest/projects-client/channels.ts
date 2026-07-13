@@ -44,6 +44,16 @@ export interface TelegramInstallation {
   botId: string;
   botUsername: string | null;
   installedAt: string;
+  /** Telegram user ids allowed to drive the agent (the pairing allowlist). */
+  allowedUserIds?: string[];
+  /** Whether the server enforces the sender allowlist (TELEGRAM_REQUIRE_USER_IDENTITY). */
+  pairingRequired?: boolean;
+}
+
+/** Single-use sender-pairing code — the user sends `/start <code>` to the bot. */
+export interface TelegramPairing {
+  code: string;
+  expiresAt: string;
 }
 
 export async function getTelegramInstallation(
@@ -61,19 +71,51 @@ export interface ConnectTelegramInput {
   bot_token: string;
 }
 
+export interface ConnectTelegramResult extends TelegramInstallation {
+  /** First pairing code, minted with the install so the connect flow can walk
+   *  the user straight onto the sender allowlist. */
+  pairing?: TelegramPairing;
+}
+
 /** Validates the token with Telegram and registers the webhook server-side —
  *  the token never comes back in the response. */
 export async function connectTelegram(
   projectId: string,
   input: ConnectTelegramInput,
-): Promise<TelegramInstallation> {
+): Promise<ConnectTelegramResult> {
   return unwrap(
-    await backendApi.post<TelegramInstallation>(
+    await backendApi.post<ConnectTelegramResult>(
       `/projects/${encodeURIComponent(projectId)}/channels/telegram/connect`,
       input,
       { showErrors: false },
     ),
     'Failed to connect',
+  );
+}
+
+/** Mint a fresh single-use pairing code (replaces any outstanding one). */
+export async function createTelegramPairingCode(projectId: string): Promise<TelegramPairing> {
+  return unwrap(
+    await backendApi.post<TelegramPairing>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/pairing-code`,
+      {},
+      { showErrors: false },
+    ),
+    'Failed to create pairing code',
+  );
+}
+
+/** Remove a paired Telegram sender from the project allowlist. */
+export async function removeTelegramAllowedUser(
+  projectId: string,
+  userId: string,
+): Promise<{ removed: boolean }> {
+  return unwrap(
+    await backendApi.delete<{ removed: boolean }>(
+      `/projects/${encodeURIComponent(projectId)}/channels/telegram/allowed-users/${encodeURIComponent(userId)}`,
+      { showErrors: false },
+    ),
+    'Failed to remove paired user',
   );
 }
 
