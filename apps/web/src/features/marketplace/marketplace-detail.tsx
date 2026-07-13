@@ -1,6 +1,6 @@
 'use client';
 
-import { Boxes, ChevronLeft, ChevronRight, FileText, Trash2 } from 'lucide-react';
+import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -20,11 +20,8 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { useUninstallMarketplaceItem } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail, MarketplaceSummary } from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
-import { AddProjectToProjectModal } from './add-project-to-project-modal';
 import { AddToProjectModal } from './add-to-project-modal';
-import { MarketplaceAddButton } from './marketplace-add-button';
 import { MarketplaceAvatar } from './marketplace-avatar';
-import { MarketplaceCloneButton } from './marketplace-clone-button';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
@@ -169,56 +166,37 @@ function ExpandableText({ text }: { text: string }) {
   );
 }
 
-/** The primary CTA area — variant-driven. Public: clone / add-to-a-project
- *  (picker) / auth prompt. In-project: install into THIS project (no picker),
- *  with Re-install + Remove once installed. */
+/** The primary CTA area — ONE "Add to a project" action (opens
+ *  `AddToProjectModal`, which handles target + method) for every item type on
+ *  every surface. Public + signed-out gets an auth-redirect button instead;
+ *  in-project + already-installed keeps the Remove affordance alongside it. */
 function ItemActions({ data }: { data: MarketplaceItemDetail }) {
   const surface = useMarketplaceSurface();
   const { user, isLoading: authLoading } = useAuth();
-  const isProject = data.type === 'registry:project';
 
-  const [addToExistingOpen, setAddToExistingOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const uninstall = useUninstallMarketplaceItem();
 
-  // A whole project is always cloned as a NEW project (or agent-merged into an
-  // existing one) — never fixed-installed — so its actions are the same on
-  // both surfaces.
-  if (isProject) {
+  const inProject = surface.variant === 'project';
+  const installed = inProject && surface.installedNames.has(data.name);
+
+  if (!authLoading && !user && surface.variant === 'public') {
+    const redirectHref = surface.itemHref(data.id);
     return (
-      <>
-        <MarketplaceCloneButton item={data} />
-        {!authLoading && user ? (
-          <button
-            type="button"
-            onClick={() => setAddToExistingOpen(true)}
-            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
-          >
-            Or install into a project you already have
-          </button>
-        ) : null}
-        <AddProjectToProjectModal
-          item={data}
-          open={addToExistingOpen}
-          onOpenChange={setAddToExistingOpen}
-        />
-      </>
+      <Button variant="default" className="w-full gap-1.5" asChild>
+        <Link href={`/auth?redirect=${encodeURIComponent(redirectHref)}`}>
+          Sign in to add
+          <ArrowRight className="size-4" />
+        </Link>
+      </Button>
     );
   }
 
-  // A skill/agent/command on the public surface — auth-gated add via a picker.
-  if (surface.variant === 'public') {
-    return <MarketplaceAddButton item={data} />;
-  }
-
-  // In-project surface — install into the fixed project, no picker.
-  const { projectId, installedNames } = surface;
-  const installed = installedNames.has(data.name);
-
   const onRemove = async () => {
+    if (!inProject) return;
     try {
-      const res = await uninstall.mutateAsync({ projectId, name: data.name });
+      const res = await uninstall.mutateAsync({ projectId: surface.projectId, name: data.name });
       successToast(`Removed ${data.name}`, {
         description: `Removed ${res.file_count} file${res.file_count === 1 ? '' : 's'} from the repo.`,
       });
@@ -234,9 +212,10 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
         <Button
           variant={installed ? 'secondary' : 'default'}
           className="flex-1 gap-1.5"
+          disabled={authLoading}
           onClick={() => setAddOpen(true)}
         >
-          {installed ? 'Re-install' : 'Install into this project'}
+          {installed ? 'Re-add / update' : 'Add to a project'}
         </Button>
         {installed ? (
           <Button
@@ -253,19 +232,21 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
         item={data}
         open={addOpen}
         onOpenChange={setAddOpen}
-        fixedProjectId={projectId}
+        fixedProjectId={inProject ? surface.projectId : undefined}
       />
-      <ConfirmDialog
-        open={removeOpen}
-        onOpenChange={setRemoveOpen}
-        title={`Remove ${data.title}?`}
-        description="This commits a change removing its files from the project's repo. It stays available to re-install."
-        confirmLabel="Remove"
-        confirmVariant="destructive"
-        confirmIcon={uninstall.isPending ? <Loading className="size-4 shrink-0" /> : undefined}
-        isPending={uninstall.isPending}
-        onConfirm={onRemove}
-      />
+      {inProject ? (
+        <ConfirmDialog
+          open={removeOpen}
+          onOpenChange={setRemoveOpen}
+          title={`Remove ${data.title}?`}
+          description="This commits a change removing its files from the project's repo. It stays available to re-install."
+          confirmLabel="Remove"
+          confirmVariant="destructive"
+          confirmIcon={uninstall.isPending ? <Loading className="size-4 shrink-0" /> : undefined}
+          isPending={uninstall.isPending}
+          onConfirm={onRemove}
+        />
+      ) : null}
     </>
   );
 }

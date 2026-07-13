@@ -242,10 +242,13 @@ export async function installMarketplaceItem(
   );
 }
 
-/** Merge a `registry:project` item into an EXISTING project — agent-driven
- *  (not a deterministic file commit, which would clobber the project's own
- *  kortix.yaml). Starts a session with a constructed prompt; the caller
- *  should navigate into `session_id` to watch it work. */
+/** Install ANY marketplace item (skill/agent/command/tool, or a whole
+ *  `registry:project`) into a project via an agent session instead of a
+ *  deterministic file commit — the session installs it and wires up whatever
+ *  it needs (connectors, secrets), or for a `registry:project` merges it into
+ *  an existing project's kortix.yaml, which isn't safe to do deterministically.
+ *  Starts a session with a constructed prompt; the caller should navigate into
+ *  `session_id` to watch it work. */
 export async function installMarketplaceItemAsSession(
   projectId: string,
   id: string,

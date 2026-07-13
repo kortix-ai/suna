@@ -9,11 +9,11 @@ import { projectBannerClass } from './marketplace-project-visual';
 import { useMarketplaceSurface } from './marketplace-surface';
 
 /**
- * A whole clonable project — the primary surface of the marketplace, so this
- * reads as an action card (banner + explicit "Clone" affordance), not a small
+ * A whole installable project — the primary surface of the marketplace, so
+ * this reads as an action card (banner + "Install" affordance), not a small
  * utility row like `MarketplaceExploreCard` (skills/agents/commands). Still
- * just a link to the item's detail page — the real Clone button lives there
- * (`MarketplaceCloneButton`); this is a preview + fast path into it.
+ * just a link to the item's detail page — the real "Add to a project" button
+ * lives there (`AddToProjectModal`); this is a preview + fast path into it.
  *
  * `size="featured"` is the showcase treatment used in the landing hero;
  * `"default"` is the compact form used for cross-links (e.g. "Other

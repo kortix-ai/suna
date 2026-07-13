@@ -7,14 +7,11 @@ import { useAuth } from '@/features/providers/auth-provider';
 import { listProjectsForAccount } from '@kortix/sdk/projects-client';
 
 /**
- * Shared "pick a project to install/merge into" query + auto-select state.
- * Used by both `AddToProjectModal` (installs a single item into one project —
- * a picker, or a fixed target when `enabled` is false) and
- * `AddProjectToProjectModal` (always a picker — merges a whole
- * `registry:project` item into one of the user's existing projects). Both
- * list the same account's projects under the same query key and auto-pick a
- * sensible default the first time the list loads, so this keeps that
- * query + auto-select behavior in one place instead of forked per modal.
+ * Shared "pick a project to add this item to" query + auto-select state, used
+ * by the one unified `AddToProjectModal` (which also offers a "＋ New
+ * project" sentinel alongside whatever this returns). Lists the caller's
+ * projects under one query key and auto-picks a sensible default the first
+ * time the list loads.
  */
 export function useProjectPicker({
   open,

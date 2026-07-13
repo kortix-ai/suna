@@ -1,9 +1,9 @@
 'use client';
 
 import { KeyRound, Plug, Wrench } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,16 +15,17 @@ import {
   FieldLabel,
   FieldTitle,
 } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
   ModalContent,
-  ModalDescription,
   ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -33,152 +34,230 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useInstallMarketplaceItem, useInstalledItems } from '@/hooks/marketplace';
-import type { MarketplaceItem } from '@/lib/marketplace-client';
-import {
-  buildInstallSuccessSummary,
-  capabilityCount,
-  hasCapabilities,
-  isInstallDisabled,
-  projectMarketplaceHref,
-} from './marketplace-install';
-import { typeMeta } from './marketplace-meta';
+import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
+import { useInstallMarketplaceItem, useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
+import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
+import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
+import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
 
+/** Sentinel `Select` value for "create a new project" (real project ids are
+ *  UUIDs, so this can never collide). */
+const NEW_PROJECT = '__new__';
+
+type Method = 'agent' | 'direct';
+
+/**
+ * The ONE "install this marketplace item" modal — replaces the old
+ * clone-a-project / add-a-skill / merge-a-project-into-a-project fork with a
+ * single target + method choice:
+ *
+ * - Target: an existing project, or a brand new one (provisioned inline).
+ * - Method: an agent session that installs + wires the item up
+ *   (recommended — the only safe way to merge a whole `registry:project`
+ *   into an EXISTING project), or a deterministic file commit with no agent
+ *   (skills/agents/commands only).
+ */
 export function AddToProjectModal({
   item,
   open,
   onOpenChange,
   fixedProjectId,
-  fixedProjectName,
 }: {
-  item: MarketplaceItem | null;
+  item: MarketplaceItemDetail | MarketplaceItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** When set, install straight into this project (no picker). */
+  /** Pre-selects this project as the target (still switchable — not a lock). */
   fixedProjectId?: string;
-  fixedProjectName?: string;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
-  const usePicker = !fixedProjectId;
-  const install = useInstallMarketplaceItem();
+  const queryClient = useQueryClient();
+  const isProject = item.type === 'registry:project';
+  const humanizedTitle = item.title.replaceAll('-', ' ');
 
-  const { projects, projectsQuery, pickedProjectId, setPickedProjectId } = useProjectPicker({
+  const { projects, projectsQuery } = useProjectPicker({
     open,
-    enabled: usePicker,
+    preferredProjectId: fixedProjectId,
   });
 
-  const targetProjectId = fixedProjectId ?? pickedProjectId;
-  const caps = item?.capabilities;
+  const [target, setTarget] = useState<string>(fixedProjectId ?? NEW_PROJECT);
+  const [newProjectName, setNewProjectName] = useState(humanizedTitle);
+  const [method, setMethod] = useState<Method>('agent');
+  const [busy, setBusy] = useState(false);
+
+  const installSession = useInstallMarketplaceItemAsSession();
+  const installDirect = useInstallMarketplaceItem();
+
+  // Reset to sensible defaults each time the modal opens for a (possibly new) item.
+  useEffect(() => {
+    if (!open) return;
+    setTarget(fixedProjectId ?? NEW_PROJECT);
+    setNewProjectName(humanizedTitle);
+    setMethod('agent');
+  }, [open, fixedProjectId, humanizedTitle]);
+
+  // A whole project merged into an EXISTING project is agent-only — merging
+  // one project's kortix.yaml into another deterministically is unsafe.
+  const directDisabled = isProject && target !== NEW_PROJECT;
+  useEffect(() => {
+    if (directDisabled && method === 'direct') setMethod('agent');
+  }, [directDisabled, method]);
+
+  const caps = item.capabilities;
   const showCaps = hasCapabilities(caps);
   const capCount = capabilityCount(caps);
 
-  const installedQuery = useInstalledItems(targetProjectId || null);
-  const alreadyInstalled = !!(
-    item && installedQuery.data?.some((installed) => installed.name === item.name)
-  );
-
-  const disabled = isInstallDisabled({
-    hasItem: !!item,
-    targetProjectId,
-    pending: install.isPending,
-  });
-
   const guardedOpenChange = (next: boolean) => {
     // Block the modal from closing mid-flight — losing the pending/error
-    // feedback would leave the user unsure whether the install landed.
-    if (install.isPending) return;
+    // feedback would leave the user unsure whether the request landed.
+    if (busy) return;
     onOpenChange(next);
   };
 
-  const onInstall = async () => {
-    if (!item || disabled) return;
+  const onConfirm = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
-      const res = await install.mutateAsync({ projectId: targetProjectId, id: item.id });
-      const summary = buildInstallSuccessSummary(item.title, res);
-      successToast(summary.title, {
-        description: summary.description,
-        button: (
-          <Button size="sm" onClick={() => router.push(projectMarketplaceHref(targetProjectId))}>
-            View in project
-          </Button>
-        ),
-      });
-      onOpenChange(false);
+      if (target === NEW_PROJECT) {
+        const accounts = await listAccounts();
+        // No `personal_account` flag on this API — the bootstrapped personal
+        // account is the one where the caller is the primary owner.
+        const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
+        if (!account) throw new Error('No account available to create a project in');
+
+        const project = await provisionProject({
+          account_id: account.account_id,
+          name: newProjectName.trim() || humanizedTitle,
+          starter_template: 'general-knowledge-worker',
+          source_item_id: isProject ? item.id : undefined,
+        });
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+
+        if (method === 'agent') {
+          const sessionId = isProject
+            ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
+            : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
+                .session_id;
+          onOpenChange(false);
+          router.replace(
+            sessionId
+              ? `/projects/${project.project_id}/sessions/${sessionId}`
+              : `/projects/${project.project_id}`,
+          );
+        } else {
+          // A project's files are already seeded deterministically via
+          // `source_item_id` above — nothing left to commit for it here.
+          if (!isProject) {
+            await installDirect.mutateAsync({ projectId: project.project_id, id: item.id });
+          }
+          onOpenChange(false);
+          router.replace(`/projects/${project.project_id}`);
+        }
+        return;
+      }
+
+      const projectId = target;
+      if (method === 'agent') {
+        const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
+        onOpenChange(false);
+        router.push(`/projects/${projectId}/sessions/${session_id}`);
+      } else {
+        await installDirect.mutateAsync({ projectId, id: item.id });
+        successToast(`Added ${item.title}`, {
+          description: 'Committed into the project — live in the next session.',
+        });
+        queryClient.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+        onOpenChange(false);
+      }
     } catch (e) {
-      errorToast('Install failed', { description: (e as Error).message });
+      errorToast('Could not add to project', { description: (e as Error).message });
+    } finally {
+      setBusy(false);
     }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onInstall();
+    onConfirm();
   };
+
+  const confirmDisabled =
+    busy || (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Modal open={open} onOpenChange={guardedOpenChange}>
-      <ModalContent className="lg:max-w-md" closeOnOutsideClick={!install.isPending}>
+      <ModalContent className="lg:max-w-md" closeOnOutsideClick={!busy}>
         <ModalHeader>
-          <ModalTitle>
-            Add {item?.title}
-            {fixedProjectName ? ` to ${fixedProjectName}` : ''}
-          </ModalTitle>
-          <ModalDescription>
-            {tI18nHardcoded.raw(
-              'autoComponentsMarketplaceAddToProjectModalJsxTextCommitsThis7b891a43',
-            )}
-            {typeMeta(item?.type ?? '').label.toLowerCase()}{' '}
-            {tI18nHardcoded.raw('autoComponentsMarketplaceAddToProjectModalJsxTextIntoThe7714c57a')}
-          </ModalDescription>
+          <ModalTitle>Add {humanizedTitle} to a project</ModalTitle>
         </ModalHeader>
 
         <form onSubmit={handleSubmit}>
           <ModalBody>
             <FieldGroup className="gap-4">
-              {usePicker && (
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="mp-target-project">Project</FieldLabel>
+                <Select value={target} onValueChange={setTarget}>
+                  <SelectTrigger id="mp-target-project">
+                    <SelectValue
+                      placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.project_id} value={p.project_id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {target === NEW_PROJECT && (
                 <Field className="gap-1.5">
-                  <FieldLabel htmlFor="mp-project">Project</FieldLabel>
-                  <Select value={pickedProjectId} onValueChange={setPickedProjectId}>
-                    <SelectTrigger id="mp-project">
-                      <SelectValue
-                        placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => (
-                        <SelectItem key={p.project_id} value={p.project_id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {!projectsQuery.isLoading && projects.length === 0 && (
-                    <FieldDescription>
-                      {tI18nHardcoded.raw(
-                        'autoComponentsMarketplaceAddToProjectModalJsxTextYouHavec6bfb213',
-                      )}
-                    </FieldDescription>
-                  )}
+                  <FieldLabel htmlFor="mp-new-project-name">Name</FieldLabel>
+                  <Input
+                    id="mp-new-project-name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    placeholder={humanizedTitle}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                  />
                 </Field>
               )}
 
-              {alreadyInstalled && (
-                <div className="bg-popover flex items-center gap-2 rounded-md border px-4 py-2.5">
-                  <Badge variant="success" size="sm">
-                    Already installed
-                  </Badge>
-                  <span className="text-muted-foreground text-xs">
-                    Adding again reinstalls it from source.
-                  </span>
-                </div>
-              )}
+              <Field className="gap-1.5">
+                <FieldLabel>Method</FieldLabel>
+                <RadioGroup value={method} onValueChange={(v) => setMethod(v as Method)}>
+                  <RadioGroupItem
+                    value="agent"
+                    label={
+                      <span className="inline-flex items-center gap-1.5">
+                        Set it up with an agent
+                        <Badge variant="outline" size="sm">
+                          Recommended
+                        </Badge>
+                      </span>
+                    }
+                    description="Runs a session that installs it and wires up whatever it needs."
+                  />
+                  <RadioGroupItem
+                    value="direct"
+                    label="Add files directly"
+                    description={
+                      directDisabled
+                        ? 'Whole projects are merged by an agent'
+                        : 'A deterministic commit — no agent.'
+                    }
+                    disabled={directDisabled}
+                  />
+                </RadioGroup>
+              </Field>
 
-              {item && item.dependencies.length > 0 && (
+              {item.dependencies.length > 0 && (
                 <FieldDescription>
-                  {tI18nHardcoded.raw(
-                    'autoComponentsMarketplaceAddToProjectModalJsxTextAlsoInstallsac6dcc9a',
-                  )}
+                  Also installs:{' '}
                   <span className="text-foreground">{item.dependencies.join(', ')}</span>
                 </FieldDescription>
               )}
@@ -187,11 +266,7 @@ export function AddToProjectModal({
                 <Field variant="outline">
                   <FieldContent>
                     <div className="flex items-center gap-2">
-                      <FieldTitle>
-                        {tI18nHardcoded.raw(
-                          'autoComponentsMarketplaceAddToProjectModalJsxTextThisItem2bb697bd',
-                        )}
-                      </FieldTitle>
+                      <FieldTitle>This item requires</FieldTitle>
                       <Badge variant="outline" size="sm">
                         {capCount}
                       </Badge>
@@ -240,11 +315,7 @@ export function AddToProjectModal({
                   </FieldContent>
                 </Field>
               ) : (
-                <FieldDescription>
-                  {tI18nHardcoded.raw(
-                    'autoComponentsMarketplaceAddToProjectModalJsxTextNoSpecial521751ba',
-                  )}
-                </FieldDescription>
+                <FieldDescription>No special requirements — this item just works.</FieldDescription>
               )}
             </FieldGroup>
           </ModalBody>
@@ -254,14 +325,14 @@ export function AddToProjectModal({
               type="button"
               variant="outline-ghost"
               size="sm"
-              disabled={install.isPending}
+              disabled={busy}
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={disabled}>
-              {install.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-              {install.isPending ? 'Adding…' : alreadyInstalled ? 'Reinstall' : 'Add'}
+            <Button type="submit" size="sm" disabled={confirmDisabled}>
+              {busy ? <Loading className="size-3.5 shrink-0" /> : null}
+              {busy ? 'Adding…' : 'Add to project'}
             </Button>
           </ModalFooter>
         </form>

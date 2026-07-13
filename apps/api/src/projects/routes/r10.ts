@@ -201,6 +201,42 @@ function buildRegistryProjectInstallPrompt(
   return lines.join('\n');
 }
 
+/** Agent-driven install of a skill/agent/command/tool into THIS project: the
+ *  session installs its files, then wires up whatever it needs (connectors,
+ *  secrets). The counterpart to `handleMarketplaceInstall`'s deterministic
+ *  commit — chosen when the user wants the item set up, not just dropped in. */
+function buildItemInstallPrompt(
+  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
+  id: string,
+): string {
+  const item = entry.item;
+  const typeLabel = item.type.replace('registry:', '');
+  const meta = (item.meta ?? {}) as { capabilities?: { connectors?: string[]; secrets?: string[] } };
+  const needs = [
+    ...(meta.capabilities?.connectors ?? []),
+    ...(meta.capabilities?.secrets ?? []),
+    ...Object.keys((item as { envVars?: Record<string, unknown> }).envVars ?? {}),
+  ];
+  const lines: string[] = [
+    `Add the "${item.title ?? item.name}" ${typeLabel} to THIS project and set it up.`,
+    '',
+    item.description ?? '',
+    '',
+    'Steps:',
+    `1. Install it — run \`kortix marketplace install ${id}\` to commit its files into the project.`,
+    '2. Read its SKILL.md to see what it does and what it needs.',
+  ];
+  if (needs.length) {
+    lines.push(
+      `3. It needs these connected: ${needs.join(', ')}. Mint a setup link with the \`request_secret\` / \`connect\` tools (or \`kortix secrets request\` / \`kortix connectors link\`) — never ask me to paste a raw key.`,
+      '4. Tell me in one line what it can now do and how to use it.',
+    );
+  } else {
+    lines.push('3. Tell me in one line what it can now do and how to use it.');
+  }
+  return lines.join('\n');
+}
+
 async function handleMarketplaceInstallSession(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -211,15 +247,17 @@ async function handleMarketplaceInstallSession(c: any) {
   if (!id) return c.json({ error: 'id is required' }, 400);
 
   const entry = await getCatalogEntry(id);
-  if (!entry || entry.item.type !== 'registry:project') {
-    return c.json({ error: `Unknown or non-project item "${id}" — this endpoint only merges whole projects.` }, 400);
-  }
+  if (!entry) return c.json({ error: `Unknown item "${id}"` }, 400);
 
   const project = await loadGitProject(loaded);
-  const manifestRaw = await manifestRawOrNull(project);
   let prompt: string;
   try {
-    prompt = buildRegistryProjectInstallPrompt(entry, manifestRaw);
+    // Whole projects get merged (judgment-heavy, guards the target's kortix.yaml);
+    // everything else is a straight install + setup.
+    prompt =
+      entry.item.type === 'registry:project'
+        ? buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project))
+        : buildItemInstallPrompt(entry, id);
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
@@ -230,7 +268,7 @@ async function handleMarketplaceInstallSession(c: any) {
     body: {
       initial_prompt: prompt,
       name: `Add ${entry.item.title ?? entry.item.name}`,
-      metadata: { kind: 'registry-project-install', item_id: id },
+      metadata: { kind: 'marketplace-install', item_id: id },
     },
     visibility: 'project',
     request: requestAuditContext(c),
