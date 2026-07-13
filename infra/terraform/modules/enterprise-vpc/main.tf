@@ -11,6 +11,47 @@ locals {
   region       = data.aws_region.current.region
   partition    = data.aws_partition.current.partition
   supabase_ami = coalesce(var.supabase_ami_id, try(data.aws_ssm_parameter.al2023_ami[0].value, null))
+  kms_owner_actions = [
+    "kms:CancelKeyDeletion",
+    "kms:CreateAlias",
+    "kms:CreateGrant",
+    "kms:CreateKey",
+    "kms:Decrypt",
+    "kms:DeleteAlias",
+    "kms:DeleteImportedKeyMaterial",
+    "kms:DescribeKey",
+    "kms:DisableKey",
+    "kms:DisableKeyRotation",
+    "kms:EnableKey",
+    "kms:EnableKeyRotation",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:GetKeyPolicy",
+    "kms:GetKeyRotationStatus",
+    "kms:GetParametersForImport",
+    "kms:GetPublicKey",
+    "kms:ImportKeyMaterial",
+    "kms:ListAliases",
+    "kms:ListGrants",
+    "kms:ListKeyPolicies",
+    "kms:ListKeys",
+    "kms:ListResourceTags",
+    "kms:ListRetirableGrants",
+    "kms:PutKeyPolicy",
+    "kms:ReEncrypt*",
+    "kms:ReplicateKey",
+    "kms:RetireGrant",
+    "kms:RevokeGrant",
+    "kms:ScheduleKeyDeletion",
+    "kms:Sign",
+    "kms:SynchronizeMultiRegionKey",
+    "kms:TagResource",
+    "kms:UntagResource",
+    "kms:UpdateAlias",
+    "kms:UpdateKeyDescription",
+    "kms:UpdatePrimaryRegion",
+    "kms:Verify",
+  ]
   tags = merge(var.tags, {
     ManagedBy      = "terraform"
     Platform       = "kortix-enterprise"

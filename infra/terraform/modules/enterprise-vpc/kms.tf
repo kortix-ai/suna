@@ -7,7 +7,7 @@ data "aws_iam_policy_document" "data_key" {
   statement {
     sid       = "AccountOwnsKey"
     effect    = "Allow"
-    actions   = ["kms:*"]
+    actions   = local.kms_owner_actions
     resources = ["*"]
     principals {
       type        = "AWS"
@@ -103,7 +103,7 @@ data "aws_iam_policy_document" "secrets_key" {
   statement {
     sid       = "AccountOwnsKey"
     effect    = "Allow"
-    actions   = ["kms:*"]
+    actions   = local.kms_owner_actions
     resources = ["*"]
     principals {
       type        = "AWS"

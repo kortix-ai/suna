@@ -4,6 +4,47 @@ data "aws_region" "current" {}
 
 locals {
   state_log_bucket_name = "${substr(var.state_bucket_name, 0, 49)}-${substr(sha256(var.state_bucket_name), 0, 8)}-logs"
+  kms_owner_actions = [
+    "kms:CancelKeyDeletion",
+    "kms:CreateAlias",
+    "kms:CreateGrant",
+    "kms:CreateKey",
+    "kms:Decrypt",
+    "kms:DeleteAlias",
+    "kms:DeleteImportedKeyMaterial",
+    "kms:DescribeKey",
+    "kms:DisableKey",
+    "kms:DisableKeyRotation",
+    "kms:EnableKey",
+    "kms:EnableKeyRotation",
+    "kms:Encrypt",
+    "kms:GenerateDataKey*",
+    "kms:GetKeyPolicy",
+    "kms:GetKeyRotationStatus",
+    "kms:GetParametersForImport",
+    "kms:GetPublicKey",
+    "kms:ImportKeyMaterial",
+    "kms:ListAliases",
+    "kms:ListGrants",
+    "kms:ListKeyPolicies",
+    "kms:ListKeys",
+    "kms:ListResourceTags",
+    "kms:ListRetirableGrants",
+    "kms:PutKeyPolicy",
+    "kms:ReEncrypt*",
+    "kms:ReplicateKey",
+    "kms:RetireGrant",
+    "kms:RevokeGrant",
+    "kms:ScheduleKeyDeletion",
+    "kms:Sign",
+    "kms:SynchronizeMultiRegionKey",
+    "kms:TagResource",
+    "kms:UntagResource",
+    "kms:UpdateAlias",
+    "kms:UpdateKeyDescription",
+    "kms:UpdatePrimaryRegion",
+    "kms:Verify",
+  ]
   tags = merge(var.tags, {
     ManagedBy      = "terraform"
     Platform       = "kortix-enterprise-state"
@@ -16,19 +57,51 @@ locals {
 # perform their narrow identity-policy actions, but can never mutate IAM/KMS
 # trust, network boundaries, release-event trust, or storage access policies.
 data "aws_iam_policy_document" "role_boundary" {
-  #checkov:skip=CKV_AWS_1:This is a permissions boundary, not an identity grant; attached least-privilege role policies are still required and explicit denies protect the trust plane.
-  #checkov:skip=CKV2_AWS_40:Allow star is the maximum side of a permissions boundary and grants no IAM permission by itself.
-  #checkov:skip=CKV_AWS_49:A reusable permissions boundary requires a maximum Allow star; explicit denies and intersected identity policies constrain effective permissions.
   #checkov:skip=CKV_AWS_107:This boundary grants nothing alone; effective permissions are the intersection with narrow identity policies.
   #checkov:skip=CKV_AWS_108:This boundary grants nothing alone; storage/network trust mutation is explicitly denied and identity policies scope data access.
   #checkov:skip=CKV_AWS_109:This boundary grants nothing alone and explicitly denies IAM, KMS, network, storage-policy, and event-trust mutation.
   #checkov:skip=CKV_AWS_110:Privilege-escalation actions are explicitly denied by this customer-owned boundary.
-  #checkov:skip=CKV_AWS_111:The Allow star is the maximum side of a permissions boundary, not an identity grant.
-  #checkov:skip=CKV_AWS_356:The wildcard is required for a reusable permissions boundary and grants nothing by itself.
+  #checkov:skip=CKV_AWS_111:These are service-scoped maxima in a permissions boundary, not identity grants; every attached role still requires a narrow identity policy.
+  #checkov:skip=CKV_AWS_356:Reusable boundary resources cannot be known in advance and the boundary grants nothing by itself.
   statement {
-    sid       = "BoundRuntimeIdentityPolicies"
-    effect    = "Allow"
-    actions   = ["*"]
+    sid    = "BoundRuntimeIdentityPolicies"
+    effect = "Allow"
+    actions = [
+      "acm:*",
+      "autoscaling:*",
+      "backup:*",
+      "cloudtrail:*",
+      "cloudwatch:*",
+      "codebuild:*",
+      "dynamodb:*",
+      "ec2:*",
+      "ecr:*",
+      "eks:*",
+      "elasticloadbalancing:*",
+      "events:*",
+      "iam:Get*",
+      "iam:List*",
+      "kms:CreateGrant",
+      "kms:Decrypt",
+      "kms:DescribeKey",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*",
+      "kms:List*",
+      "kms:ReEncrypt*",
+      "kms:RetireGrant",
+      "kms:RevokeGrant",
+      "logs:*",
+      "s3:*",
+      "secretsmanager:*",
+      "sns:*",
+      "ssm:*",
+      "states:*",
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:GetCallerIdentity",
+      "tag:*",
+      "xray:*",
+    ]
     resources = ["*"]
   }
 
@@ -55,7 +128,6 @@ data "aws_iam_policy_document" "role_boundary" {
       "kms:Enable*",
       "kms:ImportKeyMaterial",
       "kms:Put*",
-      "kms:Revoke*",
       "kms:ScheduleKeyDeletion",
       "kms:TagResource",
       "kms:UntagResource",
@@ -138,7 +210,7 @@ data "aws_iam_policy_document" "state_key" {
   #checkov:skip=CKV_AWS_111:KMS key policy Resource must be star and is scoped by attachment to this key.
   #checkov:skip=CKV_AWS_356:KMS rejects its own key ARN in a key policy; Resource star is the documented form.
   statement {
-    actions   = ["kms:*"]
+    actions   = local.kms_owner_actions
     resources = ["*"]
     principals {
       type        = "AWS"
