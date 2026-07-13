@@ -194,6 +194,47 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /^Cannot use import statement outside a module$/,
 ];
 
+// Android System WebView native-bridge instrumentation noise. The Android
+// WebView injects a synthetic `app://navigation_performance_logger_android`
+// script that records navigation timing (FBNavResponseStart / FBNavDomContent-
+// Loaded / …) and ships it back to its native Java bridge via
+// `sendDataToNative` → `postMessage`. The bridge holds only a WEAK reference
+// to its Java object, so once that object is garbage-collected — page
+// navigation, WebView teardown, or the host in-app browser (Threads/Barcelona,
+// Facebook, Instagram, …) dismissing the tab — the next `postMessage` throws
+// `Error invoking postMessage: Java object is gone`. This is the WebView's OWN
+// instrumentation, never first-party code: `app://navigation_performance_logger_android`
+// is a synthetic source injected by the System WebView (NOT an `app:///_next/…`
+// bundle frame and NOT a de-minified `apps/web/src/…` frame), and
+// `sendDataToNative` / `sendJsBlockingTimeMessage` are its internal functions.
+// Sentry's `BrowserApiErrors` integration auto-wraps `addEventListener` on
+// `EventTarget`, captures the throw, and leaks it to Better Stack as a global
+// error. Seen once (pattern `e6a45fe4…`, 1 occurrence, 0 identified users,
+// 2026-07-12 19:31:47 UTC) from a Threads (Barcelona) in-app WebView on Android
+// 14 / Chrome 149 visiting the marketing homepage (`https://kortix.com/`,
+// referer `https://l.threads.com/`).
+//
+// The message wording is generic enough that a genuine first-party
+// `window.postMessage` failure could conceivably share it, so — like the
+// stale-webpack-runtime and old-browser-SyntaxError classes — this is anchored
+// on BOTH the exact message AND a frame whose filename is the Android
+// navigation-performance-logger bridge source. A real app `postMessage` error
+// throws inside an `app:///_next/…` chunk (or a de-minified `apps/web/src/…`
+// frame), never from `app://navigation_performance_logger_android`, so it keeps
+// reporting. Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors`
+// list — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party postMessage failure; the frame-aware `beforeSend`
+// hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES = [
+  'Error invoking postMessage: Java object is gone',
+] as const;
+
+const ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE = 'app://navigation_performance_logger_android';
+
+function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
+  return normalizeString(filename) === ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE;
+}
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -595,6 +636,41 @@ export function isOldBrowserSyntaxParseError(input: {
   return sources.some((filename) => isMinifiedChunkSource(filename));
 }
 
+/**
+ * Whether an event is the Android System WebView native-bridge
+ * `Error invoking postMessage: Java object is gone` noise class: the WebView's
+ * injected `app://navigation_performance_logger_android` script calls
+ * `sendDataToNative` → `postMessage` on a native Java bridge whose object has
+ * been garbage-collected (page navigation / WebView teardown / in-app browser
+ * dismiss). This is the WebView's own instrumentation, not first-party code.
+ * Requires BOTH the exact message AND a frame whose filename is the Android
+ * navigation-performance-logger bridge source, so a genuine first-party
+ * `window.postMessage` failure (which throws from an app chunk or a
+ * de-minified `apps/web/src/…` frame) keeps reporting. Never page Better Stack
+ * for this class. See
+ * `ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES` for the full
+ * rationale.
+ */
+export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (
+    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES.some(
+      (noise) => message === noise,
+    )
+  ) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -668,6 +744,20 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Requires a `_next/static/chunks/` / `?dpl=dpl_…` filename so a real
   // first-party eval/`new Function` SyntaxError keeps reporting.
   if (isOldBrowserSyntaxParseError({ message, filename: input.filename })) {
+    return true;
+  }
+
+  // Android System WebView native-bridge instrumentation noise — the WebView's
+  // injected `app://navigation_performance_logger_android` script
+  // `sendDataToNative` → `postMessage` to a GC'd Java bridge object. Requires
+  // BOTH the exact message AND the Android bridge frame/filename, so a real
+  // first-party `window.postMessage` failure keeps reporting.
+  if (
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
     return true;
   }
 
@@ -783,6 +873,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
   // safe gate because it can anchor on the chunk frame.
   if (isOldBrowserSyntaxParseError({ message, frames })) {
+    return true;
+  }
+
+  // Android System WebView native-bridge instrumentation noise — the WebView's
+  // injected `app://navigation_performance_logger_android` script
+  // `sendDataToNative` → `postMessage` to a GC'd Java bridge object, captured
+  // by Sentry's `BrowserApiErrors` addEventListener auto-wrapper. Requires BOTH
+  // the exact message AND a frame whose filename is the Android bridge source,
+  // so a genuine first-party `window.postMessage` failure keeps reporting. Not
+  // in `ignoreErrors` (no frame context there).
+  if (isAndroidWebViewNativeBridgePostMessageNoise({ message, frames })) {
     return true;
   }
 
