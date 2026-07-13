@@ -6,8 +6,8 @@ import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ActionPanel } from '@/features/session/action-panel';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
-import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
@@ -24,6 +24,7 @@ import {
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
 import { useTabStore } from '@/stores/tab-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
 import { PanelRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -82,10 +83,21 @@ export const SessionLayout = memo(function SessionLayout({
   const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const setActivePanelSession = useSessionBrowserStore((s) => s.setActiveSessionId);
-  const showBrowser = panelView === 'browser';
-  const showExplorer = panelView === 'explorer';
-  const showTerminal = panelView === 'terminal';
-  const showAudit = panelView === 'audit';
+
+  // Existing users' persisted preferences predate this key.
+  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
+  const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
+  const isEasy = panelMode === 'easy';
+
+  // Easy mode is only ever the card home — the other views are engineer
+  // surfaces reached through the (hidden) tab strip. Force the view and skip
+  // their bodies entirely; `session-browser-store`'s `viewBySession` stays
+  // untouched so Advanced mode picks up right where the user left it.
+  const effectiveView: SessionPanelView = isEasy ? 'actions' : panelView;
+  const showBrowser = !isEasy && effectiveView === 'browser';
+  const showExplorer = !isEasy && effectiveView === 'explorer';
+  const showTerminal = !isEasy && effectiveView === 'terminal';
+  const showAudit = !isEasy && effectiveView === 'audit';
 
   // Pending-approval count for the "Audit" tab badge. Shares the header nudge's
   // query key so this is one deduped request; skipped while booting/transient.
@@ -214,11 +226,13 @@ export const SessionLayout = memo(function SessionLayout({
 
   const panelHeader = (
     <PanelHeaderSwitcher
-      view={panelView}
+      view={effectiveView}
       onChangeView={(v) => setPanelView(sessionId, v)}
       isSidePanelOpen={isSidePanelOpen}
       onTogglePanel={handleTogglePanel}
       auditBadge={auditPendingCount}
+      isEasy={isEasy}
+      onToggleMode={togglePanelMode}
     />
   );
 
@@ -241,7 +255,12 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <AdvancedPanel sessionId={sessionId} messages={messages} />
+    <ActionPanel
+      sessionId={sessionId}
+      messages={messages}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   );
   const panelBody = (
     <div className="relative h-full w-full">
@@ -373,6 +392,8 @@ function PanelHeaderSwitcher({
   isSidePanelOpen,
   onTogglePanel,
   auditBadge = 0,
+  isEasy,
+  onToggleMode,
 }: {
   view: SessionPanelView;
   onChangeView: (next: SessionPanelView) => void;
@@ -380,8 +401,62 @@ function PanelHeaderSwitcher({
   onTogglePanel: () => void;
   /** Pending-approval count shown on the "Audit" tab; 0 hides the badge. */
   auditBadge?: number;
+  /** Easy mode has no tab strip — just the card home and the mode affordance. */
+  isEasy: boolean;
+  /** Flips `preferences.panelMode` between 'easy' and 'advanced'. */
+  onToggleMode: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+
+  const panelToggle = (
+    <Hint
+      side="bottom"
+      sideOffset={4}
+      delayDuration={300}
+      label={
+        <span className="flex items-center gap-1.5">
+          {isSidePanelOpen ? 'Close' : 'Open'} panel
+          <KbdGroup>
+            <Kbd className="font-mono">
+              {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
+            </Kbd>
+          </KbdGroup>
+        </span>
+      }
+    >
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onTogglePanel}
+        className={cn(
+          'h-7 cursor-pointer transition-colors',
+          isSidePanelOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <PanelRight className="h-4 w-4" />
+      </Button>
+    </Hint>
+  );
+
+  if (isEasy) {
+    return (
+      <div className="flex shrink-0 items-center justify-between border-b p-2">
+        <span className="text-foreground pl-2 text-sm font-medium">Activity</span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleMode}
+            className="text-muted-foreground hover:text-foreground h-7 cursor-pointer text-xs"
+          >
+            Advanced
+          </Button>
+          {panelToggle}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex shrink-0 items-center justify-between border-b p-2">
       <Tabs
@@ -415,33 +490,17 @@ function PanelHeaderSwitcher({
           </TabsTrigger>
         </TabsList>
       </Tabs>
-      <Hint
-        side="bottom"
-        sideOffset={4}
-        delayDuration={300}
-        label={
-          <span className="flex items-center gap-1.5">
-            {isSidePanelOpen ? 'Close' : 'Open'} panel
-            <KbdGroup>
-              <Kbd className="font-mono">
-                {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
-              </Kbd>
-            </KbdGroup>
-          </span>
-        }
-      >
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
-          size="icon"
-          onClick={onTogglePanel}
-          className={cn(
-            'h-7 cursor-pointer transition-colors',
-            isSidePanelOpen ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
+          size="sm"
+          onClick={onToggleMode}
+          className="text-muted-foreground hover:text-foreground h-7 cursor-pointer text-xs"
         >
-          <PanelRight className="h-4 w-4" />
+          Easy
         </Button>
-      </Hint>
+        {panelToggle}
+      </div>
     </div>
   );
 }
