@@ -10,7 +10,7 @@
 
 import { rm } from 'node:fs/promises';
 import { Image } from '@daytonaio/sdk';
-import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
+import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
 import {
   stageBuildContext,
@@ -185,6 +185,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     } catch {
       // not found / transient — treat as already gone
     }
+  }
+
+  async listSnapshots(): Promise<Array<{ name: string }>> {
+    if (!isDaytonaConfigured()) return [];
+    return (await listDaytonaSnapshots()).map((snapshot) => ({ name: snapshot.name }));
   }
 
   private async waitForActive(name: string): Promise<void> {

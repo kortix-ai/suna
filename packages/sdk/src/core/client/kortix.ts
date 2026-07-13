@@ -622,7 +622,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removeTemplate: (templateId: string) => P.deleteSandboxTemplate(projectId, templateId),
         buildTemplate: (templateId: string) => P.buildSandboxTemplate(projectId, templateId),
         /** Pin/clear the per-project sandbox provider (null = follow the platform default). */
-        setProvider: (provider: string | null) =>
+        setProvider: (provider: Parameters<typeof P.updateProjectSandboxProvider>[1]) =>
           P.updateProjectSandboxProvider(projectId, provider),
       },
 

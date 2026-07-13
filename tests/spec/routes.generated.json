@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 473,
+  "count": 479,
   "routes": [
     {
       "method": "GET",
@@ -29,6 +29,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/models"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/resolve-route"
     },
     {
       "method": "POST",
@@ -68,6 +72,22 @@
     },
     {
       "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/ResourceTypes"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/ResourceTypes/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Schemas"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Schemas/:id"
+    },
+    {
+      "method": "GET",
       "path": "/scim/v2/accounts/:accountId/ServiceProviderConfig"
     },
     {
@@ -88,6 +108,10 @@
     },
     {
       "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "PUT",
       "path": "/scim/v2/accounts/:accountId/Users/:userId"
     },
     {
@@ -659,6 +683,14 @@
       "path": "/v1/channels/slack/identity/login/:token"
     },
     {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
       "method": "GET",
       "path": "/v1/docs"
     },
@@ -775,6 +807,18 @@
       "path": "/v1/health/live"
     },
     {
+      "method": "POST",
+      "path": "/v1/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/llm/models"
+    },
+    {
       "method": "GET",
       "path": "/v1/marketplace/items"
     },
@@ -817,10 +861,6 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/oauth/claimable-machines"
     },
     {
       "method": "POST",
@@ -1068,6 +1108,10 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/bind-thread"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/channels/slack/connect"
     },
     {
@@ -1089,6 +1133,34 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/slack/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/manifest"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/mode"
     },
     {
       "method": "GET",
@@ -1117,6 +1189,30 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/connect-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/connector-profiles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/connector-profiles"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/activate"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/connector-profiles/:profileId/revoke"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/default-agent"
     },
     {
       "method": "GET",
@@ -1567,18 +1663,6 @@
       "path": "/v1/projects/github/repositories"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/legacy-migration/eligibility"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/legacy-migration/start"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/legacy-migration/status"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/link-repository"
     },
@@ -1652,42 +1736,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/setup/bootstrap-owner"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/install-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/sandbox-providers"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-complete"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/setup/setup-wizard-step"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/setup/status"
-    },
-    {
-      "method": "POST",
       "path": "/v1/system/demo-request"
     },
     {
@@ -1701,6 +1749,18 @@
     {
       "method": "GET",
       "path": "/v1/system/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/templates"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/templates/:id"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/templates/:id/install"
     },
     {
       "method": "GET",
@@ -1844,46 +1904,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/webhooks/telegram/:projectId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/channels/teams/identity/bind"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/channels/teams/identity/login/:token"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/teams/connect"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/file"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/channels/teams/file/upload"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/channels/teams/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/installation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/manifest"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/channels/teams/mode"
-    },
-    {
-      "method": "POST",
       "path": "/v1/webhooks/teams/:projectId/messages"
     },
     {
@@ -1893,6 +1913,10 @@
     {
       "method": "GET",
       "path": "/v1/webhooks/teams/oauth/callback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/telegram/:projectId"
     }
   ]
 }

@@ -140,7 +140,7 @@ function describeState(state: string): { label: string; tone: 'ok' | 'busy' | 'f
   return DAYTONA_STATE_LABEL[state] ?? { label: state || 'Unknown', tone: 'idle' };
 }
 
-// Small, muted chip naming the sandbox provider (Daytona / Platinum / Managed)
+// Small, muted chip naming the sandbox provider (Daytona / Platinum / E2B)
 // a template/build belongs to — reads the provider field directly, capitalized.
 // Omitted entirely when the provider is unknown — we never render "Unknown".
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
