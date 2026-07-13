@@ -597,3 +597,16 @@ package successfully.
 
 **Shippable to production: YES** — documentation-only SDK follow-up with the
 full published-package gates green.
+
+---
+
+### 2026-07-13 — session `gateway-routing-ui` (claim)
+
+Claimed the user-directed additive project LLM routing-policy surface: persisted
+default and vision models, an ordered default fallback chain, exact-model
+overrides, bounded `transient` / `any-error` conditions, and a route-preview
+contract exposed through `@kortix/sdk` for the Customize UI. Existing model
+default names and behavior remain unchanged. SDK work will follow RED → GREEN →
+REFACTOR and finish on the full typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
