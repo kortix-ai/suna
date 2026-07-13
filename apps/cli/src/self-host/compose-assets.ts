@@ -89,6 +89,30 @@ export function renderFullDockerCompose(composeProject: string): string {
 
   const kong = services['supabase-kong'];
   if (kong) kong.ports = ['127.0.0.1:${SUPABASE_PORT}:8000'];
+  const database = services['supabase-db'];
+  if (database) {
+    // `pg_isready` succeeds against the temporary server that the Postgres
+    // entrypoint uses while running init scripts. Auth can therefore start
+    // before the late 99-roles.sql script has assigned its password and enter
+    // a permanent restart loop. The temporary init server can also accept a
+    // successful query and then shut down underneath a just-started Auth
+    // process, so require PID 1 to be the final postgres process as well as a
+    // real password-authenticated query using Auth's role over the Docker
+    // network. The network hop is important: localhost can use a more
+    // permissive pg_hba rule than Auth's container and hide a bad role
+    // password. `$$` defers environment expansion from Compose to the
+    // healthcheck container.
+    database.healthcheck = {
+      test: [
+        'CMD-SHELL',
+        'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h supabase-db -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+      ],
+      interval: '5s',
+      timeout: '5s',
+      retries: 20,
+      start_period: '10s',
+    };
+  }
   const supavisor = services['supabase-supavisor'];
   if (supavisor) {
     supavisor.ports = [
@@ -111,9 +135,17 @@ export function renderFullDockerCompose(composeProject: string): string {
 export function writeSupabaseVendorAssets(root: string): void {
   for (const [relativePath, content] of Object.entries(supabaseVendorAssets)) {
     const path = join(root, relativePath);
+    const mode = relativePath.endsWith('.sh') ? 0o755 : 0o644;
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content, { encoding: 'utf8', mode: relativePath.endsWith('.sh') ? 0o700 : 0o600 });
-    if (relativePath.endsWith('.sh')) chmodSync(path, 0o700);
+    // These files are bind-mounted into containers that intentionally run as
+    // non-root users. Docker Desktop can mask restrictive host modes, while a
+    // native Linux Docker engine preserves them and rejects a 0600 SQL/config
+    // file owned by the host user. The assets contain no secrets; runtime
+    // secrets remain in the separately protected .env file.
+    writeFileSync(path, content, { encoding: 'utf8', mode });
+    // `mode` only applies when creating a file. Reconcile an existing install
+    // too so upgrading repairs assets emitted by an older CLI.
+    chmodSync(path, mode);
   }
   mkdirSync(join(root, 'volumes', 'db', 'data'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'storage'), { recursive: true, mode: 0o700 });

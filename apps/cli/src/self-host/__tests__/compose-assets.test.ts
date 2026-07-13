@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 
 import {
   renderFullDockerCompose,
   SUPABASE_UPSTREAM_COMMIT,
   supabaseVendorAssets,
+  writeSupabaseVendorAssets,
 } from '../compose-assets.ts';
 
 describe('full self-host Docker distribution', () => {
@@ -17,6 +20,7 @@ describe('full self-host Docker distribution', () => {
         container_name?: string;
         ports?: string[];
         depends_on?: Record<string, unknown>;
+        healthcheck?: { test?: string[] };
       }>;
     };
 
@@ -42,6 +46,10 @@ describe('full self-host Docker distribution', () => {
     expect(document.services['supabase-db']?.image).toBe('supabase/postgres:17.6.1.136');
     expect(document.services['supabase-studio']?.image).toBe('supabase/studio:2026.07.07-sha-a6a04f2');
     expect(document.services['supabase-analytics']?.image).toBe('supabase/logflare:1.43.1');
+    expect(document.services['supabase-db']?.healthcheck?.test).toEqual([
+      'CMD-SHELL',
+      'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h supabase-db -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+    ]);
 
     for (const [name, service] of Object.entries(document.services)) {
       expect(service.container_name, `${name} must support multiple Kortix instances`).toBeUndefined();
@@ -75,6 +83,20 @@ describe('full self-host Docker distribution', () => {
     ]);
     for (const [path, content] of Object.entries(supabaseVendorAssets)) {
       expect(content.length, `${path} must not be empty`).toBeGreaterThan(10);
+    }
+  });
+
+  test('writes bind-mounted assets with container-readable modes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-supabase-assets-'));
+    try {
+      writeSupabaseVendorAssets(root);
+
+      for (const relativePath of Object.keys(supabaseVendorAssets)) {
+        const mode = statSync(join(root, relativePath)).mode & 0o777;
+        expect(mode, relativePath).toBe(relativePath.endsWith('.sh') ? 0o755 : 0o644);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

@@ -37,6 +37,38 @@ die() { printf "  ${RED}✗${RESET} %s\n" "$1" >&2; exit 1; }
 compose() { docker compose --project-name "kortix-$INSTANCE" --env-file "$CONFIG_DIR/.env" -f "$CONFIG_DIR/docker-compose.yml" "$@"; }
 psqls() { compose exec -T supabase-db psql -v ON_ERROR_STOP=0 -tAU postgres -d postgres "$@" 2>&1; }
 
+container_id() { compose ps -aq "$1"; }
+
+wait_healthy() {
+  local service=$1 timeout=${2:-120} start id state
+  start=$(date +%s)
+  while true; do
+    id=$(container_id "$service")
+    state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || true)
+    [ "$state" = "healthy" ] && return 0
+    if [ $(( $(date +%s) - start )) -ge "$timeout" ]; then
+      compose logs "$service" 2>&1 | tail -80 >&2
+      die "$service never became healthy (state=${state:-missing})"
+    fi
+    sleep 2
+  done
+}
+
+wait_completed() {
+  local service=$1 timeout=${2:-180} start id state
+  start=$(date +%s)
+  while true; do
+    id=$(container_id "$service")
+    state=$(docker inspect -f '{{.State.Status}}' "$id" 2>/dev/null || true)
+    [ "$state" = "exited" ] && return 0
+    if [ $(( $(date +%s) - start )) -ge "$timeout" ]; then
+      compose logs "$service" 2>&1 | tail -80 >&2
+      die "$service did not complete (state=${state:-missing})"
+    fi
+    sleep 2
+  done
+}
+
 cleanup() {
   local rc=$?
   set +e
@@ -78,7 +110,21 @@ $CLI self-host env set --instance "$INSTANCE" \
 ok "config initialized"
 
 section "Bring Up Data Plane (db, auth, rest, kong, migrate, api)"
-compose up -d supabase-db supabase-auth supabase-rest supabase-kong kortix-api
+# Start the schema gate's deliberately small service set explicitly. The full
+# official Supabase graph makes Kong wait for Studio, which in turn starts the
+# analytics stack; that is correct for a real full-stack boot but wastes CI
+# resources and made this focused gate vulnerable to unrelated Logflare/Studio
+# startup timing. `--no-deps` keeps this test honest about exactly what it uses.
+compose up -d --no-deps supabase-db
+wait_healthy supabase-db 120
+compose up -d --no-deps supabase-auth supabase-rest
+wait_healthy supabase-auth 120
+wait_healthy supabase-rest 120
+compose up -d --no-deps kortix-migrate
+wait_completed kortix-migrate 180
+compose up -d --no-deps supabase-kong
+wait_healthy supabase-kong 120
+compose up -d --no-deps kortix-api
 ok "compose up"
 
 section "Schema Bootstrap (migrate one-shot)"
