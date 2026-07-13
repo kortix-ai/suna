@@ -116,7 +116,7 @@ function SearchPicker({
                     type="button"
                     className={cn(
                       'hover:bg-muted flex min-h-10 w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-[color,background-color,transform] active:scale-[0.96]',
-                      active && 'bg-muted/70',
+                      active && 'bg-primary/[0.06]',
                     )}
                     onClick={() => {
                       onValueChange(option.value);
@@ -136,9 +136,15 @@ function SearchPicker({
                         </span>
                       ) : null}
                     </span>
-                    {active ? (
-                      <CheckCircleSolid className="text-kortix-green size-4 shrink-0" />
-                    ) : null}
+                    <CheckCircleSolid
+                      aria-hidden="true"
+                      className={cn(
+                        'text-kortix-green size-4 shrink-0 transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
+                        active
+                          ? 'scale-100 opacity-100 blur-0'
+                          : 'scale-[0.25] opacity-0 blur-[4px]',
+                      )}
+                    />
                   </button>
                 </li>
               );

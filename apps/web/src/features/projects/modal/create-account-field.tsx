@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
 import { CheckCircleSolid } from '@mynaui/icons-react';
 import { ChevronsUpDown } from 'lucide-react';
@@ -70,9 +71,15 @@ export function CreateAccountField({
                     <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
                       {itemLabel}
                     </span>
-                    {active ? (
-                      <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />
-                    ) : null}
+                    <CheckCircleSolid
+                      aria-hidden="true"
+                      className={cn(
+                        'text-kortix-green size-3.5 shrink-0 transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]',
+                        active
+                          ? 'scale-100 opacity-100 blur-0'
+                          : 'scale-[0.25] opacity-0 blur-[4px]',
+                      )}
+                    />
                   </DropdownMenuItem>
                 );
               })}

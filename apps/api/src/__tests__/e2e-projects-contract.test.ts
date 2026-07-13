@@ -3,17 +3,12 @@ import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
-  accountGithubInstallations,
-  accountMembers,
-  projectGitConnections,
-  projectMembers,
-  projects,
-} from '@kortix/db';
-import {
-  collectConditionValues,
-  extractStringArray,
-  queryResult,
-} from './helpers/drizzle-query-mock';
+  baseDate,
+  createProjectsContractDbMock,
+  projectRow,
+  type ProjectRow,
+  type ProjectsContractDbState,
+} from './helpers/projects-contract-db-mock';
 
 const OWNER_ID = '00000000-0000-4000-a000-000000000001';
 const MEMBER_ID = '00000000-0000-4000-a000-000000000002';
@@ -25,41 +20,6 @@ const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
 const SECOND_NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000205';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
-type AccountRole = 'owner' | 'admin' | 'member';
-type ProjectRole = 'manager' | 'editor' | 'member';
-
-interface ProjectRow {
-  projectId: string;
-  accountId: string;
-  name: string;
-  repoUrl: string;
-  defaultBranch: string;
-  manifestPath: string;
-  status: 'active' | 'archived';
-  metadata: Record<string, unknown>;
-  lastOpenedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface AccountMemberRow {
-  userId: string;
-  accountId: string;
-  accountRole: AccountRole;
-  joinedAt: Date;
-}
-
-interface ProjectMemberRow {
-  accountId: string;
-  projectId: string;
-  userId: string;
-  projectRole: ProjectRole;
-  grantedBy: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-const baseDate = new Date('2026-01-01T00:00:00Z');
 const repoFiles = [
   { path: 'README.md', type: 'file', size: 18 },
   { path: 'kortix.yaml', type: 'file', size: 42 },
@@ -69,18 +29,20 @@ const repoFiles = [
 
 let currentUserId: string;
 let currentUserEmail: string;
-let accountMemberRows: AccountMemberRow[];
-let projectRows: ProjectRow[];
-let projectMemberRows: ProjectMemberRow[];
-let installationRow: typeof accountGithubInstallations.$inferSelect | null;
-let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
-let nextProjectIds: string[];
+const dbState: ProjectsContractDbState = {
+  accountMemberRows: [],
+  projectRows: [],
+  projectMemberRows: [],
+  installationRow: null,
+  gitConnectionRows: [],
+  nextProjectIds: [],
+  repoUniquenessEnforced: true,
+};
 let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
 let rejectedBranch: string | null;
-let repoUniquenessEnforced: boolean;
 
 function setCurrentUser(userId: string, userEmail: string) {
   currentUserId = userId;
@@ -92,30 +54,13 @@ function getTestAuth() {
   return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: currentUserId, userEmail: currentUserEmail };
 }
 
-function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
-  return {
-    projectId: PROJECT_ID,
-    accountId: ACCOUNT_ID,
-    name: 'Existing Project',
-    repoUrl: 'https://github.com/kortix/existing-project.git',
-    defaultBranch: 'main',
-    manifestPath: 'kortix.yaml',
-    status: 'active',
-    metadata: {},
-    lastOpenedAt: null,
-    createdAt: baseDate,
-    updatedAt: baseDate,
-    ...overrides,
-  };
-}
-
 function resetState() {
   setCurrentUser(OWNER_ID, 'owner@example.test');
-  accountMemberRows = [
+  dbState.accountMemberRows = [
     { userId: OWNER_ID, accountId: ACCOUNT_ID, accountRole: 'owner', joinedAt: baseDate },
     { userId: MEMBER_ID, accountId: ACCOUNT_ID, accountRole: 'member', joinedAt: baseDate },
   ];
-  projectRows = [
+  dbState.projectRows = [
     projectRow(),
     projectRow({
       projectId: OTHER_PROJECT_ID,
@@ -129,8 +74,8 @@ function resetState() {
       status: 'archived',
     }),
   ];
-  projectMemberRows = [];
-  installationRow = {
+  dbState.projectMemberRows = [];
+  dbState.installationRow = {
     installationRowId: '00000000-0000-4000-a000-000000000041',
     accountId: ACCOUNT_ID,
     installationId: '42',
@@ -142,103 +87,14 @@ function resetState() {
     createdAt: baseDate,
     updatedAt: baseDate,
   };
-  gitConnectionRows = [];
-  nextProjectIds = [NEW_PROJECT_ID, SECOND_NEW_PROJECT_ID];
+  dbState.gitConnectionRows = [];
+  dbState.nextProjectIds = [NEW_PROJECT_ID, SECOND_NEW_PROJECT_ID];
   commitCalls = [];
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
   rejectedBranch = null;
-  repoUniquenessEnforced = true;
-}
-
-function selectRows(table: unknown, fields: Record<string, unknown> | undefined, condition: unknown): any[] {
-  const values = collectConditionValues(condition);
-  const accountId = values.account_id as string | undefined;
-  const userId = values.user_id as string | undefined;
-  const projectId = values.project_id as string | undefined;
-  const repoUrl = values.repo_url as string | undefined;
-  const status = values.status as string | undefined;
-
-  if (table === accountMembers) {
-    return accountMemberRows
-      .filter((row) =>
-        (!accountId || row.accountId === accountId) &&
-        (!userId || row.userId === userId)
-      );
-  }
-
-  if (table === projectMembers) {
-    return projectMemberRows
-      .filter((row) =>
-        (!accountId || row.accountId === accountId) &&
-        (!projectId || row.projectId === projectId) &&
-        (!userId || row.userId === userId)
-      );
-  }
-
-  if (table === accountGithubInstallations) {
-    return installationRow ? [installationRow] : [];
-  }
-
-  if (table === projectGitConnections) {
-    return gitConnectionRows.filter((row) =>
-      (!accountId || row.accountId === accountId) &&
-      (!projectId || row.projectId === projectId)
-    );
-  }
-
-  if (table === projects) {
-    const inArrayProjectIds = extractStringArray(condition);
-    return projectRows.filter((row) =>
-      (!accountId || row.accountId === accountId) &&
-      (!projectId || row.projectId === projectId) &&
-      (!repoUrl || row.repoUrl === repoUrl) &&
-      (!status || row.status === status) &&
-      (!inArrayProjectIds || inArrayProjectIds.includes(row.projectId))
-    );
-  }
-
-  return [];
-}
-
-function insertProject(values: any) {
-  const projectId = nextProjectIds.shift();
-  if (!projectId) throw new Error('test project id pool exhausted');
-  const row: ProjectRow = {
-    projectId,
-    accountId: values.accountId,
-    name: values.name,
-    repoUrl: values.repoUrl,
-    defaultBranch: values.defaultBranch ?? 'main',
-    manifestPath: values.manifestPath ?? 'kortix.yaml',
-    status: values.status ?? 'active',
-    metadata: values.metadata ?? {},
-    lastOpenedAt: null,
-    createdAt: baseDate,
-    updatedAt: values.updatedAt ?? baseDate,
-  };
-  projectRows.push(row);
-  return row;
-}
-
-function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
-  const existing = projectMemberRows.find((row) => row.projectId === values.projectId && row.userId === values.userId);
-  if (existing) {
-    Object.assign(existing, set ?? values);
-    return existing;
-  }
-  const row: ProjectMemberRow = {
-    accountId: values.accountId,
-    projectId: values.projectId,
-    userId: values.userId,
-    projectRole: values.projectRole,
-    grantedBy: values.grantedBy ?? null,
-    createdAt: baseDate,
-    updatedAt: values.updatedAt ?? baseDate,
-  };
-  projectMemberRows.push(row);
-  return row;
+  dbState.repoUniquenessEnforced = true;
 }
 
 // `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
@@ -248,14 +104,14 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
 // exercised after the IAM-engine switch.
 mock.module('../iam/dispatcher', () => {
   const isManager = (userId: string): boolean => {
-    const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
   };
   const decide = (userId: string, action: string): boolean => {
-    const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     if (!am) return false;
     if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
-    const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
+    const pm = dbState.projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
     const pr = pm?.projectRole ?? null;
     if (action === 'project.read') return pr === 'member' || pr === 'editor' || pr === 'manager';
     // Session lifecycle: any project member (a plain `member` included) may run sessions.
@@ -271,11 +127,11 @@ mock.module('../iam/dispatcher', () => {
     // Account managers see every project ('all'); members see only the projects
     // they hold an explicit grant on ('allow_only'); outsiders see none.
     listAccessibleResources: async (userId: string) => {
-      const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+      const am = dbState.accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
       if (!am) return { mode: 'none', allowed: new Set<string>() };
       if (isManager(userId)) return { mode: 'all', allowed: new Set<string>() };
       const allowed = new Set(
-        projectMemberRows.filter((r) => r.userId === userId).map((r) => r.projectId),
+        dbState.projectMemberRows.filter((r) => r.userId === userId).map((r) => r.projectId),
       );
       return allowed.size === 0
         ? { mode: 'none', allowed }
@@ -453,133 +309,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-const projectDbMock: any = {
-    execute: async () => [],
-    select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
-        orderBy: async () => selectRows(table, fields, undefined),
-        // Joins are keyed off the FROM table; the test models no group grants
-        // (projectGroupGrants/accountGroups) so the joined result is empty.
-        innerJoin: () => ({
-          where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
-        }),
-      }),
-    }),
-    insert: (table: unknown) => ({
-      values: (values: any) => ({
-        onConflictDoNothing: () => ({
-          returning: async () => {
-            if (table !== projects) return [];
-            const conflicts = repoUniquenessEnforced && projectRows.some(
-              (row) => row.accountId === values.accountId && row.repoUrl === values.repoUrl,
-            );
-            return conflicts ? [] : [insertProject(values)];
-          },
-        }),
-        onConflictDoUpdate: ({ set }: { set?: Record<string, unknown> }) => ({
-          returning: async () => {
-            if (table === projects) {
-              throw new Error('project imports must insert instead of updating by repository');
-            }
-            if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
-              const row = {
-                connectionId: existingIndex >= 0
-                  ? gitConnectionRows[existingIndex]!.connectionId
-                  : '00000000-0000-4000-a000-000000000501',
-                accountId: values.accountId,
-                projectId: values.projectId,
-                provider: values.provider,
-                repoUrl: values.repoUrl,
-                repoOwner: values.repoOwner ?? null,
-                repoName: values.repoName ?? null,
-                externalRepoId: values.externalRepoId ?? null,
-                defaultBranch: values.defaultBranch,
-                authMethod: values.authMethod,
-                installationId: values.installationId ?? null,
-                credentialRef: values.credentialRef ?? null,
-                permissions: values.permissions ?? {},
-                visibility: values.visibility ?? null,
-                webhookId: values.webhookId ?? null,
-                status: values.status ?? 'connected',
-                lastValidatedAt: values.lastValidatedAt ?? baseDate,
-                lastErrorCode: values.lastErrorCode ?? null,
-                lastErrorMessage: values.lastErrorMessage ?? null,
-                metadata: values.metadata ?? {},
-                createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : baseDate,
-                updatedAt: values.updatedAt ?? baseDate,
-              } as typeof projectGitConnections.$inferSelect;
-              if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
-              else gitConnectionRows.push(row);
-              return [row];
-            }
-            if (table === projectMembers) {
-              return [grantProjectRole(values, set as Partial<ProjectMemberRow>)];
-            }
-            return [];
-          },
-          then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
-            if (table === projectMembers) {
-              return Promise.resolve([grantProjectRole(values, set as Partial<ProjectMemberRow>)]).then(resolve, reject);
-            }
-            return Promise.resolve([]).then(resolve, reject);
-          },
-          catch: () => undefined,
-        }),
-        returning: async () => {
-          if (table === projects) return [insertProject(values)];
-          if (table === projectGitConnections) {
-            return projectDbMock.insert(table).values(values).onConflictDoUpdate({}).returning();
-          }
-          if (table === projectMembers) return [grantProjectRole(values)];
-          return [];
-        },
-      }),
-    }),
-    update: (table: unknown) => ({
-      set: (updates: Partial<ProjectRow>) => ({
-        where: (condition: unknown) => {
-          const update = async () => {
-            const values = collectConditionValues(condition);
-            if (table !== projects) return [];
-            const row = projectRows.find((project) => project.projectId === values.project_id);
-            if (!row) return [];
-            const normalizedUpdates = { ...updates };
-            if (
-              normalizedUpdates.metadata &&
-              typeof normalizedUpdates.metadata === 'object' &&
-              'queryChunks' in normalizedUpdates.metadata
-            ) {
-              delete normalizedUpdates.metadata;
-            }
-            Object.assign(row, normalizedUpdates);
-            return [row];
-          };
-          return {
-            returning: update,
-            then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
-              update().then(resolve, reject),
-          };
-        },
-      }),
-    }),
-    delete: (table: unknown) => ({
-      where: async (condition: unknown) => {
-        const values = collectConditionValues(condition);
-        if (table === projectMembers) {
-          projectMemberRows = projectMemberRows.filter((row) =>
-            !(
-              (!values.project_id || row.projectId === values.project_id) &&
-              (!values.user_id || row.userId === values.user_id)
-            )
-          );
-        }
-      },
-    }),
-};
-projectDbMock.transaction = async (run: (tx: typeof projectDbMock) => Promise<unknown>) =>
-  run(projectDbMock);
+const projectDbMock = createProjectsContractDbMock(dbState);
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -636,7 +366,7 @@ describe('projects API contract', () => {
       effective_project_role: 'manager',
     });
     expect(commitCalls).toHaveLength(0);
-    expect(gitConnectionRows).toContainEqual(expect.objectContaining({
+    expect(dbState.gitConnectionRows).toContainEqual(expect.objectContaining({
       projectId: NEW_PROJECT_ID,
       provider: 'github',
       repoUrl: 'https://github.com/kortix-org/new-project.git',
@@ -648,7 +378,7 @@ describe('projects API contract', () => {
       visibility: 'private',
       status: 'connected',
     }));
-    expect(projectMemberRows).toContainEqual(expect.objectContaining({
+    expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: NEW_PROJECT_ID,
       userId: OWNER_ID,
       projectRole: 'manager',
@@ -676,10 +406,10 @@ describe('projects API contract', () => {
       NEW_PROJECT_ID,
       NEW_PROJECT_ID,
     ]);
-    expect(projectRows.filter((row) => row.repoUrl === payload.repo_url)).toEqual([
+    expect(dbState.projectRows.filter((row) => row.repoUrl === payload.repo_url)).toEqual([
       expect.objectContaining({ projectId: NEW_PROJECT_ID, name: 'Web development' }),
     ]);
-    expect(gitConnectionRows.map((row) => row.projectId)).toEqual([NEW_PROJECT_ID]);
+    expect(dbState.gitConnectionRows.map((row) => row.projectId)).toEqual([NEW_PROJECT_ID]);
   });
 
   test('rejects a branch GitHub cannot resolve before inserting the project', async () => {
@@ -698,7 +428,7 @@ describe('projects API contract', () => {
     expect(await res.json()).toEqual({
       error: 'Selected branch "missing-branch" does not exist in kortix-org/new-project',
     });
-    expect(projectRows.some((row) => row.defaultBranch === rejectedBranch)).toBe(false);
+    expect(dbState.projectRows.some((row) => row.defaultBranch === rejectedBranch)).toBe(false);
   });
 
   test('lists all active projects for account managers and only explicit grants for members', async () => {
@@ -709,7 +439,7 @@ describe('projects API contract', () => {
     expect(body.map((project: any) => project.project_id).sort()).toEqual([PROJECT_ID, OTHER_PROJECT_ID]);
     expect(body.every((project: any) => project.effective_project_role === 'manager')).toBe(true);
 
-    projectMemberRows.push({
+    dbState.projectMemberRows.push({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
@@ -770,7 +500,7 @@ describe('projects API contract', () => {
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
-    expect(projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
   });
 
   test('streams a zip archive of the repo / subtree', async () => {
@@ -838,7 +568,7 @@ describe('projects API contract', () => {
 
   test('patches only project config fields and archives projects', async () => {
     const app = createApp();
-    const beforeRepoUrl = projectRows.find((project) => project.projectId === PROJECT_ID)!.repoUrl;
+    const beforeRepoUrl = dbState.projectRows.find((project) => project.projectId === PROJECT_ID)!.repoUrl;
     const patch = await app.request(`/v1/projects/${PROJECT_ID}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -861,7 +591,7 @@ describe('projects API contract', () => {
     const del = await app.request(`/v1/projects/${PROJECT_ID}`, { method: 'DELETE' });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ ok: true });
-    expect(projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
+    expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.status).toBe('archived');
 
     const after = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(after.status).toBe(404);
@@ -915,7 +645,7 @@ describe('projects API contract', () => {
       effective_project_role: 'editor',
       has_implicit_access: false,
     });
-    expect(projectMemberRows).toContainEqual(expect.objectContaining({
+    expect(dbState.projectMemberRows).toContainEqual(expect.objectContaining({
       projectId: PROJECT_ID,
       userId: MEMBER_ID,
       projectRole: 'editor',
@@ -954,14 +684,14 @@ describe('projects API contract', () => {
     });
     expect(removeMember.status).toBe(200);
     expect(await removeMember.json()).toEqual({ ok: true });
-    expect(projectMemberRows.some((row) => row.userId === MEMBER_ID && row.projectId === PROJECT_ID)).toBe(false);
+    expect(dbState.projectMemberRows.some((row) => row.userId === MEMBER_ID && row.projectId === PROJECT_ID)).toBe(false);
   });
 
   test('GET /access drops shadow members whose user_id is not a real auth user', async () => {
     // Regression: a self-referential account_members row (user_id == account_id)
     // with no backing auth user used to surface as a bare UUID in the access list
     // (the email never resolves, so the UI fell back to the raw id).
-    accountMemberRows.push({
+    dbState.accountMemberRows.push({
       userId: ACCOUNT_ID,
       accountId: ACCOUNT_ID,
       accountRole: 'owner',
@@ -984,7 +714,7 @@ describe('projects API contract', () => {
     expect(outsider.status).toBe(403);
 
     setCurrentUser(MEMBER_ID, 'member@example.test');
-    projectMemberRows.push({
+    dbState.projectMemberRows.push({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       userId: MEMBER_ID,

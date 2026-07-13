@@ -680,3 +680,22 @@ API remains compatible, but no preference hierarchy or environment entity will b
 added.
 
 **Status:** WON'T DO (superseded by independent same-repository projects).
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (replacement completion)
+
+Completed the replacement project-as-environment SDK surface. GitHub imports can
+now discover existing repository branches through the typed
+`kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`
+facade. A Kortix project owns one selected repository branch as its canonical
+`default_branch`; no personal/group preference hierarchy remains in the SDK.
+Existing per-session `base_ref` support remains backward compatible.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1085 pass / 0 fail** across 77 files
+with 4960 assertions; `pnpm --filter @kortix/sdk smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the public addition is typed, additive,
+snapshot-locked, and verified from the packed package.

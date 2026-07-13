@@ -337,6 +337,23 @@ async function selectRowsForTable(table: unknown) {
   return [];
 }
 
+function storedProject(values: any) {
+  insertedProject = values;
+  return {
+    projectId: PROJECT_ID,
+    accountId: values.accountId,
+    name: values.name,
+    repoUrl: values.repoUrl,
+    defaultBranch: values.defaultBranch,
+    manifestPath: values.manifestPath,
+    status: values.status,
+    metadata: values.metadata,
+    lastOpenedAt: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
+  };
+}
+
 const starterDbMock: any = {
     select: () => ({
       from: (table: unknown) => ({
@@ -357,10 +374,20 @@ const starterDbMock: any = {
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
+        onConflictDoNothing: () => ({
+          returning: async () => table === projects ? [storedProject(values)] : [],
+        }),
         onConflictDoUpdate: () => {
           if (table === projectMembers) {
-            grantedProjectRole = values;
-            return Promise.resolve([]);
+            const persist = () => {
+              grantedProjectRole = values;
+              return [values];
+            };
+            return {
+              returning: async () => persist(),
+              then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) =>
+                Promise.resolve(persist()).then(resolve, reject),
+            };
           }
           return {
             returning: async () => {
@@ -422,20 +449,7 @@ const starterDbMock: any = {
                 return [row];
               }
               if (table !== projects) return [];
-              insertedProject = values;
-              return [{
-                projectId: PROJECT_ID,
-                accountId: values.accountId,
-                name: values.name,
-                repoUrl: values.repoUrl,
-                defaultBranch: values.defaultBranch,
-                manifestPath: values.manifestPath,
-                status: values.status,
-                metadata: values.metadata,
-                lastOpenedAt: null,
-                createdAt: new Date('2026-01-01T00:00:00Z'),
-                updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
-              }];
+              return [storedProject(values)];
             },
           };
         },
@@ -448,20 +462,7 @@ const starterDbMock: any = {
             return [values];
           }
           if (table !== projects) return [];
-          insertedProject = values;
-          return [{
-            projectId: PROJECT_ID,
-            accountId: values.accountId,
-            name: values.name,
-            repoUrl: values.repoUrl,
-            defaultBranch: values.defaultBranch,
-            manifestPath: values.manifestPath,
-            status: values.status,
-            metadata: values.metadata,
-            lastOpenedAt: null,
-            createdAt: new Date('2026-01-01T00:00:00Z'),
-            updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
-          }];
+          return [storedProject(values)];
         },
       }),
     }),

@@ -109,6 +109,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {
+      const valueEnc = encryptProjectSecret(project.projectId, input.auth.token);
       const [credential] = await tx
         .insert(projectGitCredentials)
         .values({
@@ -116,14 +117,14 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
           projectId: project.projectId,
           provider: 'github',
           authMethod: 'token',
-          valueEnc: encryptProjectSecret(project.projectId, input.auth.token),
+          valueEnc,
           createdBy: input.userId,
           updatedAt: now,
         })
         .onConflictDoUpdate({
           target: [projectGitCredentials.projectId, projectGitCredentials.provider],
           set: {
-            valueEnc: encryptProjectSecret(project.projectId, input.auth.token),
+            valueEnc,
             createdBy: input.userId,
             updatedAt: now,
           },
@@ -133,56 +134,39 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       credentialRef = credential.credentialId;
     }
 
+    const connection = {
+      provider: 'github',
+      repoUrl: input.repo.clone_url,
+      repoOwner: owner,
+      repoName: input.repo.name,
+      externalRepoId: String(input.repo.id),
+      defaultBranch: input.defaultBranch,
+      authMethod,
+      installationId: githubApp?.installationId ?? null,
+      credentialRef,
+      permissions: githubApp?.permissions ?? {},
+      visibility: input.repo.private ? 'private' : 'public',
+      status: 'connected',
+      lastValidatedAt: now,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      metadata: {
+        full_name: input.repo.full_name,
+        html_url: input.repo.html_url,
+        ssh_url: input.repo.ssh_url,
+      },
+      updatedAt: now,
+    };
     await tx
       .insert(projectGitConnections)
       .values({
         accountId: input.accountId,
         projectId: project.projectId,
-        provider: 'github',
-        repoUrl: input.repo.clone_url,
-        repoOwner: owner,
-        repoName: input.repo.name,
-        externalRepoId: String(input.repo.id),
-        defaultBranch: input.defaultBranch,
-        authMethod,
-        installationId: githubApp?.installationId ?? null,
-        credentialRef,
-        permissions: githubApp?.permissions ?? {},
-        visibility: input.repo.private ? 'private' : 'public',
-        status: 'connected',
-        lastValidatedAt: now,
-        metadata: {
-          full_name: input.repo.full_name,
-          html_url: input.repo.html_url,
-          ssh_url: input.repo.ssh_url,
-        },
-        updatedAt: now,
+        ...connection,
       })
       .onConflictDoUpdate({
         target: projectGitConnections.projectId,
-        set: {
-          provider: 'github',
-          repoUrl: input.repo.clone_url,
-          repoOwner: owner,
-          repoName: input.repo.name,
-          externalRepoId: String(input.repo.id),
-          defaultBranch: input.defaultBranch,
-          authMethod,
-          installationId: githubApp?.installationId ?? null,
-          credentialRef,
-          permissions: githubApp?.permissions ?? {},
-          visibility: input.repo.private ? 'private' : 'public',
-          status: 'connected',
-          lastValidatedAt: now,
-          lastErrorCode: null,
-          lastErrorMessage: null,
-          metadata: {
-            full_name: input.repo.full_name,
-            html_url: input.repo.html_url,
-            ssh_url: input.repo.ssh_url,
-          },
-          updatedAt: now,
-        },
+        set: connection,
       })
       .returning();
 
