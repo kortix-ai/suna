@@ -196,6 +196,12 @@ test('project(id).modelDefaults gets/sets/clears the default model', async () =>
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).modelPicker loads the compact selector catalog', async () => {
+  await kortix.project('PID123').modelPicker();
+  expect(last().url).toContain('/projects/PID123/model-picker');
+  expect(last().method).toBe('GET');
+});
+
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
   await kortix.project('PID123').sandbox.list();
   expect(last().url).toContain('/projects/PID123/sandboxes');

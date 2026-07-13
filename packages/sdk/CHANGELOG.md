@@ -6,6 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
+  `kortix.project(id).modelPicker()` for the compact, connection-aware selector
+  catalog; the existing `llmCatalog` remains the complete runtime catalog.
 - Typed GitHub repository branch discovery through
   `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
   including GitHub's default branch and branch protection metadata.

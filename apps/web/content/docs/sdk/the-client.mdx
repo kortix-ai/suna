@@ -85,7 +85,8 @@ signed in) yet, so these take only an `inviteId`, not an `accountId`.
 | `createRepo(input)`                          | create a project backed by a brand-new Kortix-managed GitHub repo |
 | `provision(id)`                              | provision its runtime                                             |
 | `update(id, input)` · `archive(id)`          | update settings · archive                                         |
-| `llmCatalog(id)`                             | available models                                                  |
+| `llmCatalog(id)`                             | complete runtime model catalog                                    |
+| `modelPicker(id)`                            | compact connected models for interactive selectors                |
 | `sandboxTemplates(id)`                       | sandbox build templates (Dockerfile/image/warm-pool)              |
 | `sandboxHealth(id)`                          | sandbox-image build health                                        |
 | `sessions(id)` · `createSession(id, input?)` | list · create sessions                                            |
@@ -181,11 +182,12 @@ const p = kortix.project(projectId);
 await p.detail();
 await p.update({ name });
 await p.llmCatalog();
+await p.modelPicker();
 await p.onboardingComplete();
 await p.archive();
 ```
 
-Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `sandboxHealth` · `onboardingComplete` · `validateManifest(raw)` (validate a `kortix.yaml` or legacy `kortix.toml` manifest's raw text server-side — format is auto-resolved from the project's manifest path — the same schema `kortix ship`/CR-merge use) · `gitToken()` (mint a fresh scoped git push token; 409 for BYO repos) · `setAgentScope(agentName, scope)` (bind an agent's allowed secrets + connectors — the inheritance pyramid's declaration step).
+Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `modelPicker` · `sandboxHealth` · `onboardingComplete` · `validateManifest(raw)` (validate a `kortix.yaml` or legacy `kortix.toml` manifest's raw text server-side — format is auto-resolved from the project's manifest path — the same schema `kortix ship`/CR-merge use) · `gitToken()` (mint a fresh scoped git push token; 409 for BYO repos) · `setAgentScope(agentName, scope)` (bind an agent's allowed secrets + connectors — the inheritance pyramid's declaration step).
 
 ### `p.tokens` — project-scoped CLI PATs
 

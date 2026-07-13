@@ -1,24 +1,23 @@
 'use client';
 
 /**
- * Account-scoped default model preferences, server-backed.
+ * Server-backed model defaults across project, account, and agent scopes.
  *
  * The LLM gateway is the source of truth for the default model: a request for
- * the synthetic `auto` resolves server-side to the per-agent default → account
- * default → platform default. This hook reads those defaults (for picker
- * display) and writes them (account-level and per-agent), replacing the old
- * localStorage `globalDefault` authority and the per-sandbox
+ * the synthetic `auto` resolves server-side to the per-agent default → project
+ * default → account default → platform default. This hook reads and writes those
+ * defaults, replacing the old localStorage `globalDefault` authority and per-sandbox
  * `/kortix/preferences/model` round-trip.
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   clearModelDefault,
   getModelDefaults,
   type ModelDefaultsResponse,
   setModelDefault,
 } from '@kortix/sdk/projects-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   type ModelKey,
   modelKeyToWire,
@@ -30,6 +29,7 @@ import {
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
   isLoading: boolean;
+  isUpdating: boolean;
   accountDefault: ModelKey | undefined;
   agentDefaults: Record<string, ModelKey>;
   projectDefault: ModelKey | undefined;
@@ -66,13 +66,21 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
     );
   }, [data?.accountDefault]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey });
-  }, [queryClient, queryKey]);
+  const invalidate = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey }),
+      queryClient.invalidateQueries({ queryKey: ['gateway-routing-policy', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['project-model-picker', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['project-providers', projectId] }),
+    ]);
+  }, [projectId, queryClient, queryKey]);
 
   const setMutation = useMutation({
-    mutationFn: (input: { scope: 'account' | 'agent' | 'project'; agentName?: string; model: string }) =>
-      setModelDefault(projectId as string, input),
+    mutationFn: (input: {
+      scope: 'account' | 'agent' | 'project';
+      agentName?: string;
+      model: string;
+    }) => setModelDefault(projectId as string, input),
     onSuccess: invalidate,
   });
   const clearMutation = useMutation({
@@ -149,6 +157,7 @@ export function useModelDefaults(projectId: string | null | undefined): UseModel
   return {
     data,
     isLoading,
+    isUpdating: setMutation.isPending || clearMutation.isPending,
     accountDefault,
     agentDefaults,
     projectDefault,

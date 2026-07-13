@@ -699,3 +699,41 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** — the public addition is typed, additive,
 snapshot-locked, and verified from the packed package.
+
+---
+
+### 2026-07-13 — session `gateway-routing-ux` (claim)
+
+Claimed the user-directed LLM Gateway routing UX simplification. The SDK scope is
+an additive compact project model-picker REST surface so chat and settings model
+selectors no longer download the full 5,262-model runtime catalog. The existing
+`llm-catalog`, model-default, and routing-policy APIs remain backward compatible.
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+### 2026-07-13 — session `gateway-routing-ux` (completion)
+
+Completed the additive compact project model-picker SDK surface. The project
+transport and `createKortix().project(id).models.picker()` facade now load the
+connection-aware picker projection rather than the full runtime catalog, while
+the existing `llm-catalog` API remains available and unchanged. React project
+model/provider hooks share the compact project cache, and model visibility now
+uses an indexed lookup instead of repeatedly scanning the catalog. Runtime and
+type public-surface snapshots contain additions only.
+
+The surrounding product flow now uses the shared model selector for the single
+project-default control and every fallback choice. Routing saves and project-
+default writes are mutually excluded through a shared mutation key, and an
+effective-default refetch cannot replace unsaved fallback edits.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1094 pass / 0 fail** across 79 files
+with 4988 assertions; `pnpm --filter @kortix/sdk smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the SDK change is additive, snapshot-locked,
+install-verified, and backed by the real local compact-picker API flow.
+
+---
