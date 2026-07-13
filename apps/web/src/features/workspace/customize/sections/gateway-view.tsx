@@ -139,7 +139,11 @@ export function LlmManagementView({ projectId }: { projectId: string }) {
         <GatewayOverview projectId={projectId} />
       </TabsContent>
       <TabsContent value="routing" className="min-h-0 overflow-y-auto">
-        <GatewayRouting projectId={projectId} canWrite={canWrite} />
+        <GatewayRouting
+          projectId={projectId}
+          canWrite={canWrite}
+          projectDefaultPending={modelDefaults.isUpdating}
+        />
       </TabsContent>
       <TabsContent value="logs" className="min-h-0 overflow-y-auto">
         <GatewayLogs projectId={projectId} />
