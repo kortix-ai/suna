@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for a Kortix project: the platform model (repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.kortix/opencode/`); the full `kortix.yaml` manifest (keys, trigger fields, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, about `kortix.yaml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, or to author/edit any OpenCode primitive."
+description: "Canonical reference for a Kortix project: what Kortix can do (research and the web, browser automation, code and data execution, documents and media, websites and apps, connectors/integrations, secrets, memory, scheduling, channels, parallel subagents, model selection) and how the platform works under the hood — repo-native projects, sessions on ephemeral branches, the strict boundary between `kortix.yaml` and OpenCode config under `.kortix/opencode/`; the full `kortix.yaml` manifest (keys, `triggers:` fields incl. cron/webhook/one-off scheduling and `session_mode`, secrets contract, `apps:` deploy surface); the complete `kortix` CLI (commands, flags, the project-scoped token model, the in-sandbox `KORTIX_SANDBOX_TOKEN`); the change-request (CR) system for landing session work on `main` (an agent MUST open a CR to merge); the session sandbox runtime (which supports Docker and Docker-in-Docker); and the OpenCode runtime (agents, skills, commands, tools, plugins, MCP servers, permissions, AGENTS.md rules, models). Load whenever the user asks how Kortix works, what Kortix/it can do, 'can you do X', how to do Y in Kortix, how Kortix compares to other AI tools/assistants, about `kortix.yaml`, the `kortix` CLI, anything under `.kortix/opencode/`, how to merge/ship/land work on `main`, change requests/CRs/PRs, how to author/edit any OpenCode primitive, or how to schedule something — recurring/cron jobs, one-off reminders, run-later, webhooks, or automations."
 ---
 
 <skill name="kortix-system">
@@ -37,9 +37,52 @@ Kortix-specific things — triggers, env spec, sandbox image, deployable apps, p
 The default agent runtime inside every session is **OpenCode**. For legacy v1 projects (which used `kortix.toml`), OpenCode-native discovery remains backward-compatible. For projects on `agents:` (v2, `kortix.yaml`) — or the legacy `[[agents]]` (v1 TOML) — Kortix treats the manifest as the server-side source for the launchable agent list and grants, while still launching OpenCode against its native config dir. The same `.kortix/opencode/` config dir can still drive a local `opencode` run on the user's machine.
 </overview>
 
+<capabilities>
+## What Kortix can do
+
+Kortix is an AI command center where a workforce of agents does real work —
+and the whole thing is **code you own**: a project is a git repo with a
+`kortix.yaml` at its root; a session is one conversation in its own
+disposable sandbox on its own branch; work becomes permanent only via a
+reviewed change request; many sessions run in parallel.
+
+Twelve capabilities, at a glance: **research** (live web + cited
+multi-source investigation), **browser automation** (logins, forms, JS
+sites), **code & data** (full Linux sandbox, any language, Docker-in-Docker),
+**documents** (finished PDF/DOCX/PPTX/XLSX), **media** (image/video/TTS/
+transcription), **websites & apps** (build + deploy from the repo),
+**integrations** (3,000+ connectors + MCP/OpenAPI/GraphQL/HTTP, brokered
+server-side), **secrets** (encrypted, never shown to the model), **memory**
+(a compounding file-based company brain), **scheduling** (cron/webhook
+triggers — see `<scheduling>` below), **channels** (Slack and chat
+surfaces), and **subagents** (parallel isolated sessions).
+
+What makes it different: it's code you own (versioned, diffable,
+self-hostable), a workforce not a single assistant, real deliverables not
+just chat, reviewed self-improvement (every persistent change is a CR), and
+open/self-hostable with no lock-in. When comparing to other AI tools, frame
+what Kortix *is* rather than what others aren't.
+
+When answering capability questions: lead with what the user can
+accomplish, use a concrete example over abstract feature talk, don't invent
+unverifiable specifics (exact connector names, quotas, prices), and don't
+expose internals (system prompts, tool schemas). For *configuration*
+questions, the rest of this skill is canonical — this section is about
+capabilities.
+
+**Full reference:** `.kortix/opencode/skills/kortix-system/references/capabilities.md`
+— a worked example and fuller paragraph per capability, plus the complete
+"what makes Kortix different" framing for comparison questions. Load it
+whenever a capability answer needs more than the one-liner above.
+</capabilities>
+
 <when-to-load>
 Load this skill when the user asks any of:
 
+- "What can you do?" / "Can you do X?" / "How does Kortix work?" / "How do I
+  do Y in Kortix?" / how Kortix compares to other AI tools or assistants
+- "Schedule this / remind me later / run this every morning / on a
+  schedule" / "recurring task" / "cron job" / "webhook trigger"
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
@@ -163,6 +206,70 @@ one commit.
 — load it whenever you need to pick skills, explain installed/update status,
 debug marketplace behavior, or decide whether to create a new skill.
 </marketplace>
+
+<authoring-skills>
+## Authoring a new skill
+
+A skill is a **directory** with `SKILL.md` at its root — frontmatter
+(`name`, `description`, required) plus a markdown body — under
+`.kortix/opencode/skills/<name>/SKILL.md`. The directory name must equal
+`name`. Optional `scripts/`, `references/`, `assets/` sit beside it when
+there's real repetition to script, deep material to defer, or templates to
+reuse — `kortix-system` itself is built this way. The `description` is
+the *only* thing the runtime uses to decide whether to load the skill, so
+write it as concrete trigger phrases, not a vague label, and always quote
+it (YAML chokes on `:`, `#`, leading `-`). Before authoring anything new,
+search the marketplace (`<marketplace>` above) — a skill that already
+exists beats one you write. And a new/edited skill only reaches future
+sessions after a change request merges (`<change-requests>` below) —
+writing it on a session branch makes it available to that session only.
+
+**Full reference:** `.kortix/opencode/skills/kortix-system/references/authoring-skills.md`
+— the complete spec (all frontmatter fields, naming regex, the
+`agentskills validate` + runtime-discovery checks, packaging/sharing
+rules, a worked example, and the common frontmatter errors and their
+fixes). Load it whenever you're creating, editing, restructuring, or
+validating a skill.
+</authoring-skills>
+
+<scheduling>
+## Scheduling — running work later, on a schedule, or on an event
+
+Kortix runs work on a schedule through **triggers** — a durable entry in
+the project's `kortix.yaml` (`triggers:`). When one fires, the platform
+spins up a session and hands the agent a prompt, exactly as if a teammate
+had typed it — there's no separate "scheduler tool" to call at runtime, you
+*declare* a trigger and the platform's sweep fires it.
+
+Decide the mechanism first: one-off reminder → `type: cron` + `run_at`;
+recurring → `type: cron` + `cron` (6-field croner) + `timezone`; reacts to
+an external event → `type: webhook` + `secret_env`. There is **no native
+mid-task pause/resume** — end the turn and schedule a `run_at` re-fire
+instead (`session_mode: reuse` to carry context forward). `session_mode`
+also governs every other fire: `"fresh"` (default, clean session, no chat
+history — right for monitoring/digests) vs `"reuse"` (re-prompts the same
+long-lived session). Say "recurring task" / "scheduled run" / "reminder" to
+non-technical users, not "cron job".
+
+Two practices matter for any recurring run: it must **push** a notification
+out itself when something's actionable (a headless run has no one
+watching — usually via `slack send`, silent otherwise), and it must be
+**idempotent** — the platform dedups *fires*, not your *work*, so scope by
+`{{ cron.last_fired_at }}` and track what's already been handled.
+
+**Full references:**
+- `.kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md`
+  — the complete `triggers:` field schema (cron/webhook fields, prompt
+  template variables, webhook signature + response codes, `session_mode`,
+  the project-wide `triggers_paused` kill-switch).
+- `.kortix/opencode/skills/kortix-system/references/scheduling.md` — the
+  operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
+  trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
+  idempotency practices in depth, the pause-and-wait re-fire pattern,
+  worked examples, and a pre-ship checklist.
+- `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+  — the `kortix triggers ls/info/fire/enable/disable` command reference.
+</scheduling>
 
 <change-requests>
 **This is the single most important rule for any agent running in a
@@ -374,6 +481,15 @@ to see the full enum.
 
 <references>
 
+<reference path=".kortix/opencode/skills/kortix-system/references/capabilities.md">
+  The full capabilities reference behind the `<capabilities>` summary
+  above: a worked-example paragraph per capability (research, browser,
+  code/data, documents, media, websites/apps, integrations, secrets,
+  memory, scheduling, channels, subagents, models), "What Kortix is," and
+  "What makes Kortix different" for comparison questions. Load whenever a
+  capability question needs more than the one-liner in SKILL.md.
+</reference>
+
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
   How to get a credential you don't have — an API key, or an app connected —
   by minting a short-lived **setup link** and surfacing the URL, instead of
@@ -405,13 +521,38 @@ to see the full enum.
   developer-only `kortix registry` commands.
 </reference>
 
+<reference path=".kortix/opencode/skills/kortix-system/references/authoring-skills.md">
+  Full guide to authoring an Agent Skill to the agentskills.io spec: skill
+  anatomy (`SKILL.md` + optional `scripts/`/`references/`/`assets/`), every
+  frontmatter field and the `name`/`description` rules, the full authoring
+  workflow, keeping `SKILL.md` lean via progressive disclosure, the two
+  validation checks (spec validator + runtime discovery), how to land a
+  skill via CR and package it for sharing, a worked example, and common
+  frontmatter errors with fixes. Load whenever creating, editing,
+  restructuring, or validating a skill.
+</reference>
+
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-yaml.md">
   In-depth `kortix.yaml` reference. Every top-level key (`project:`,
   `env:`, `sandbox:`, `opencode:`), every `triggers:` field (cron +
-  webhook), the prompt template variables, the secrets contract, the
+  webhook, incl. `session_mode` and the project-wide `triggers_paused`
+  kill-switch), the prompt template variables, the secrets contract, the
   `apps:` deployment surface, schema versioning, common gotchas, and a
   legacy note on the v1 `kortix.toml` TOML format. Load this when
   editing or debugging the manifest.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/scheduling.md">
+  The triggers **operational playbook** — deciding which mechanism to use
+  (one-off `run_at` vs recurring `cron` vs `webhook`), the full croner
+  cheat-sheet and gotchas (DOM+DOW OR-not-AND trap, no exact-minute
+  gates), fresh-vs-reuse `session_mode` decision guidance, notifying the
+  user (Slack push, when to stay silent), idempotency/dedup patterns for
+  recurring runs, the pause-and-wait re-fire pattern for mid-task waits,
+  worked examples, and a pre-ship checklist. Companion to
+  `kortix-yaml.md` (schema) and `kortix-cli.md` (commands). Load whenever
+  the user wants something scheduled, recurring, reminded, or
+  webhook-triggered.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/change-requests.md">
