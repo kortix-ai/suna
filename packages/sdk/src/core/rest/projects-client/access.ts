@@ -229,8 +229,6 @@ export interface ProjectGroupGrant {
   group_id: string;
   group_name: string;
   role: ProjectRole;
-  /** Optional branch new sessions from this group fork from. null = project default. */
-  default_base_ref?: string | null;
   granted_by: string | null;
   created_at: string;
   /** Auto-revoke timestamp (ISO). null = permanent. */
@@ -255,15 +253,14 @@ export async function attachGroupToProject(
   groupId: string,
   role: ProjectRole,
   expiresAt?: string | null,
-  defaultBaseRef?: string | null,
 ) {
-  const body: Record<string, unknown> = { group_id: groupId, role };
-  if (expiresAt !== undefined) body.expires_at = expiresAt;
-  if (defaultBaseRef !== undefined) body.default_base_ref = defaultBaseRef;
   return unwrap(
     await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
       `/projects/${projectId}/group-grants`,
-      body,
+      // undefined = field omitted (don't touch); null = clear expiry.
+      expiresAt === undefined
+        ? { group_id: groupId, role }
+        : { group_id: groupId, role, expires_at: expiresAt },
     ),
   );
 }
@@ -273,15 +270,11 @@ export async function updateProjectGroupGrant(
   groupId: string,
   role: ProjectRole,
   expiresAt?: string | null,
-  defaultBaseRef?: string | null,
 ) {
-  const body: Record<string, unknown> = { role };
-  if (expiresAt !== undefined) body.expires_at = expiresAt;
-  if (defaultBaseRef !== undefined) body.default_base_ref = defaultBaseRef;
   return unwrap(
     await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
       `/projects/${projectId}/group-grants/${groupId}`,
-      body,
+      expiresAt === undefined ? { role } : { role, expires_at: expiresAt },
     ),
   );
 }

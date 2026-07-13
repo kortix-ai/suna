@@ -20,7 +20,6 @@ import {
   accountMembers,
   projects,
   projectMembers,
-  projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
   sandboxes,
@@ -282,16 +281,6 @@ describe('project_members table', () => {
       (i) => i.config.name === 'idx_project_members_project_user',
     );
     expect(unique?.config.unique).toBe(true);
-  });
-});
-
-describe('project_group_grants table', () => {
-  test('stores an optional default base ref for sessions started by group members', () => {
-    const col = getTableConfig(projectGroupGrants).columns.find(
-      (column) => column.name === 'default_base_ref',
-    );
-    expect(col).toBeDefined();
-    expect(col?.notNull).toBe(false);
   });
 });
 

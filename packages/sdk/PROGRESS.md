@@ -666,3 +666,17 @@ RED -> GREEN -> REFACTOR and finish with typecheck, full suite, and packed-insta
 smoke evidence.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `personal-session-branch` (abandoned)
+
+Abandoned the personal/group session-branch preference claim by explicit product
+decision. Branch choice belongs to an ordinary isolated Kortix project: users may
+connect the same Git repository more than once, choose an existing branch during
+project creation, and keep each project's secrets, access, sessions, triggers,
+deployments, and runtime settings independent. The advanced per-session `base_ref`
+API remains compatible, but no preference hierarchy or environment entity will be
+added.
+
+**Status:** WON'T DO (superseded by independent same-repository projects).
