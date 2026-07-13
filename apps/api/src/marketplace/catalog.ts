@@ -285,6 +285,8 @@ interface ProjectTemplateMeta {
   description?: string;
   categories?: string[];
   dependencies?: string[];
+  /** Hide the template from the marketplace entirely (browse + detail-by-id). */
+  hidden?: boolean;
 }
 
 // ── project catalog (sync, whole-project clone fixtures) ───────────────────
@@ -334,7 +336,7 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
       files: files
         .filter((f) => f.path !== "project.json")
         .map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content })),
-      meta: { source: "kortix", visibility: "global" },
+      meta: { source: "kortix", visibility: "global", ...(meta.hidden ? { hidden: true } : {}) },
     });
   }
   return items;
