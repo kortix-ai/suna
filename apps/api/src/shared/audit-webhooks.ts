@@ -8,6 +8,7 @@ import { auditWebhooks } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { safeEgressFetch } from './ssrf-guard';
 import { db } from './db';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
@@ -135,7 +136,7 @@ async function deliverOne(
   const timer = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
 
   try {
-    const res = await fetch(hook.url, {
+    const res = await safeEgressFetch(hook.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -150,6 +151,9 @@ async function deliverOne(
       },
       body,
       signal: controller.signal,
+      // Audit-webhook URLs are customer-supplied and may legitimately be http
+      // on internal deployments; the SSRF DNS guard still applies.
+      allowHttp: true,
     });
 
     if (res.ok) {

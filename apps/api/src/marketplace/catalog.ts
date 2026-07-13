@@ -31,6 +31,7 @@ import {
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
+import { safeEgressFetch } from "../shared/ssrf-guard";
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -521,7 +522,10 @@ const githubFetch: typeof fetch = !GITHUB_TOKEN
           headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
         return fetch(input, { ...init, headers });
       }
-      return fetch(input, init);
+      // Non-GitHub host (url-kind registry source) — route through the
+      // DNS-resolving SSRF guard so a public domain that resolves to a
+      // private/metadata IP is blocked at fetch time. See F-1.
+      return safeEgressFetch(url, init);
     }) as typeof fetch);
 
 /** Loader options that authenticate GitHub calls (shared by catalog + install). */

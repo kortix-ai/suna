@@ -22,6 +22,7 @@ import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveExperimentalFeature } from '../experimental/features';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { safeEgressFetch } from '../shared/ssrf-guard';
 import {
   type ConnectorSpec,
   extractConnectors,
@@ -527,7 +528,7 @@ async function loadSpecDoc(project: GitBackedProject, spec: string): Promise<any
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
-    const res = await fetch(spec, {
+    const res = await safeEgressFetch(spec, {
       // Signal we accept either form; servers that content-negotiate may hand
       // back JSON, but we parse whatever comes regardless.
       headers: { accept: 'application/json, application/yaml, text/yaml, text/plain, */*' },
@@ -549,7 +550,7 @@ async function loadHttpRoutes(
   if (!spec) return [];
   if (/^https?:\/\//i.test(spec)) assertAllowedSourceAddress(spec);
   const raw = /^https?:\/\//i.test(spec)
-    ? await (await fetch(spec)).text()
+    ? await (await safeEgressFetch(spec)).text()
     : await readRepoFile(project, spec, project.defaultBranch);
   const parsed = /\.toml$/i.test(spec) ? (parseToml(raw) as any) : JSON.parse(raw);
   const routes = Array.isArray(parsed?.routes) ? parsed.routes : [];
@@ -559,7 +560,7 @@ async function loadHttpRoutes(
 async function introspectGraphql(endpoint: string): Promise<any> {
   assertAllowedSourceAddress(endpoint);
   const query = `query{__schema{queryType{name} mutationType{name} types{name fields{name description args{name type{kind name ofType{name}}} type{name ofType{name}}}}}}`;
-  const res = await fetch(endpoint, {
+  const res = await safeEgressFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -601,7 +602,7 @@ async function reconcileProjectPolicies(
 
 async function listMcpTools(url: string): Promise<any[]> {
   assertAllowedSourceAddress(url);
-  const res = await fetch(url, {
+  const res = await safeEgressFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
