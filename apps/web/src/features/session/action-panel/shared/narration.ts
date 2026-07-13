@@ -417,6 +417,54 @@ function createPartKey(part: ToolPart): string {
   return 'shown:result';
 }
 
+// ─── Outputs: which create-family parts are something the agent actually
+// MADE, versus one it merely inspected, exported again, or removed. Used by
+// derive-panels.ts's `deriveOutputs` (the Easy-mode "Outputs" card) so that
+// card can never disagree with what this file's own narration just said
+// happened — a `delete_presentation` narrated above as a deletion must never
+// also surface as "a presentation the agent made", and `list_presentations`
+// (a pure read) is not an output at all. A missing/unrecognized action
+// defaults to "yes, it's an artifact" — the same vague-but-true bias
+// `imageGenSentence` / `presentationGenSentence` use for narration. ─────────
+
+export type CreateArtifactKind = 'image' | 'video' | 'presentation';
+
+/** image_gen actions that modify an image that already existed rather than
+ * make a new one. The component still renders a resulting image for all of
+ * these (see ImageGenTool), so a real file exists — but it is not something
+ * newly *made*, so Outputs must not list it as a freshly generated image. */
+const IMAGE_GEN_DERIVATIVE_ACTIONS = new Set(['edit', 'upscale', 'remove_bg']);
+
+/** presentation_gen actions that extend or export the deck itself. The other
+ * six actions are pure reads (list_slides, list_presentations,
+ * validate_slide, preview, serve) or destructive (delete_slide,
+ * delete_presentation) — none of those produced anything the agent made. */
+const PRESENTATION_GEN_ARTIFACT_ACTIONS = new Set(['create_slide', 'export_pdf', 'export_pptx']);
+
+/**
+ * The kind of artifact this call produced, or `null` if it did not make
+ * anything worth surfacing in Outputs (a delete, a listing, a preview, an
+ * edit of a pre-existing image, …).
+ */
+export function createArtifactKind(part: ToolPart): CreateArtifactKind | null {
+  const t = normalizeName(part.tool);
+  if (t === 'image_gen') {
+    const action = rawInput(part).action as string | undefined;
+    if (action && IMAGE_GEN_DERIVATIVE_ACTIONS.has(action)) return null;
+    return 'image';
+  }
+  if (t === 'video_gen') return 'video';
+  if (t === 'presentation_gen') {
+    const action = rawInput(part).action as string | undefined;
+    if (!action) return 'presentation';
+    return PRESENTATION_GEN_ARTIFACT_ACTIONS.has(action) ? 'presentation' : null;
+  }
+  // `show` / `show_user` display an existing result rather than make a new
+  // artifact, and any future `create`-family tool this file hasn't been
+  // taught about yet falls here too — never guess it made something.
+  return null;
+}
+
 /** One truthful, count-aware sentence per key, used only when every part in
  * the group shares the exact same key (see `narrateStep`'s 'create' case). */
 const CREATE_GROUP_SENTENCE: Record<string, (n: number) => string> = {
