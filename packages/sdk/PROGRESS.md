@@ -686,7 +686,23 @@ must not check-then-open through a swappable path, and mobile release-title
 normalization must escape arbitrary version text safely. RED regressions precede
 implementation; affected/full gates and a green PR CodeQL aggregate are required.
 
-**Status: IN PROGRESS.** PR #4510 remains open and must not be merged.
+**Closure:** `fa5731a79` completed the RED/GREEN security wave. CLI doctor now
+uses `createKortix(...).session(...).acp`; authenticated SDK HTTP targets reject
+embedded URL credentials and expose the intentional token-egress seam to
+CodeQL; daemon reads validate and consume the same opened inode; and mobile
+release-title normalization escapes every regex metacharacter. Focused
+regressions and the full post-implementation suites passed: SDK **970 pass / 0
+fail**, CLI **233 pass / 0 fail**, mobile **36 pass / 0 fail**, and daemon **125
+pass / 0 fail**, with SDK typecheck and packed-install smoke green. GitHub then
+reported both JavaScript analyses and the aggregate `CodeQL` check successful
+for implementation head `9b8aa453e`.
+
+The branch subsequently merged the latest `origin/main` at `a658091a3` without
+conflicts; its new AWS remote-state recovery regression is **15 pass / 0 fail**.
+Delivery remains the open, unmerged PR #4510 by explicit user instruction.
+
+**Status: DONE. Shippable to production: YES.** PR #4510 must not be merged
+without separate authorization.
 
 ---
 
