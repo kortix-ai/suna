@@ -1,34 +1,18 @@
-import { test, expect, beforeEach, afterEach } from 'bun:test';
+import { test, expect } from 'bun:test';
 import {
   configureKortix,
   platformConfig,
   isConfigured,
-  __setConfigResolver,
-  __getConfigResolver,
 } from './config';
+import { runWithKortix } from '../../platform/config-node';
 
-// This file deliberately never imports `./config-node` (the `@kortix/sdk/server`
-// AsyncLocalStorage layer) — it exercises the plain browser/single-config path
-// that every host without a registered resolver still gets: `platformConfig()`
-// falls back to the process-global `current` set by `configureKortix()`, exactly
-// as before the per-request isolation layer existed.
-//
-// `bun test src` runs every test file in one process, sharing `config.ts`'s
-// module state — if some OTHER file in the same run imports `config-node.ts`
-// (registering the real AsyncLocalStorage resolver as an import-time side
-// effect), that registration is process-global too. Save + restore whatever
-// resolver was active before each test here, so this file's "no resolver"
-// experiments never permanently clobber another file's registration.
-let savedResolver: ReturnType<typeof __getConfigResolver>;
-beforeEach(() => {
-  savedResolver = __getConfigResolver();
-  __setConfigResolver(null);
-});
-afterEach(() => {
-  __setConfigResolver(savedResolver);
-});
+// `bun test src` runs SDK test files in one process. Do not mutate the internal
+// config resolver here: `@kortix/sdk/server` installs the real AsyncLocalStorage
+// resolver as a process-global import-time side effect, and clearing it from
+// this file can race other async tests. These assertions exercise the fallback
+// and scoped paths through the public-ish Node helper instead.
 
-test('with no resolver registered, platformConfig() reads the process-global set by configureKortix()', () => {
+test('with no active scoped config, platformConfig() reads the process-global set by configureKortix()', () => {
   configureKortix({ backendUrl: 'http://global.local', getToken: async () => 'global-tok' });
   expect(platformConfig().backendUrl).toBe('http://global.local');
   expect(isConfigured()).toBe(true);
@@ -41,11 +25,14 @@ test('configureKortix(config, { global: false }) does not touch the process-glob
   expect(platformConfig().backendUrl).toBe('http://one.local');
 });
 
-test('a registered resolver takes priority over the process-global config', () => {
+test('an active scoped resolver takes priority over the process-global config', async () => {
   configureKortix({ backendUrl: 'http://global.local', getToken: async () => 'global-tok' });
-  __setConfigResolver(() => ({ backendUrl: 'http://scoped.local', getToken: async () => 'scoped-tok' }));
-  expect(platformConfig().backendUrl).toBe('http://scoped.local');
+  await runWithKortix(
+    { backendUrl: 'http://scoped.local', getToken: async () => 'scoped-tok' },
+    async () => {
+      expect(platformConfig().backendUrl).toBe('http://scoped.local');
+    },
+  );
 
-  __setConfigResolver(() => undefined);
   expect(platformConfig().backendUrl).toBe('http://global.local');
 });

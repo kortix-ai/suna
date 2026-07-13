@@ -203,7 +203,7 @@ function OAuthConsent() {
           </p>
         </div>
 
-        <div className="border-border bg-muted/30 space-y-3 rounded-2xl border p-4">
+        <div className="border-border bg-muted/30 space-y-3 rounded-md border p-4">
           <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
             {tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')} {clientName} to:
           </p>
@@ -217,7 +217,7 @@ function OAuthConsent() {
           </ul>
         </div>
 
-        <div className="border-border bg-muted/20 rounded-2xl border px-4 py-3">
+        <div className="border-border bg-muted/20 rounded-md border px-4 py-3">
           <p className="text-muted-foreground text-xs">
             {tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}
           </p>
@@ -225,7 +225,7 @@ function OAuthConsent() {
         </div>
 
         {error && (
-          <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-2xl border p-3 text-sm">
+          <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-md border p-3 text-sm">
             {error}
           </div>
         )}

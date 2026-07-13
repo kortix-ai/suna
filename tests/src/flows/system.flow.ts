@@ -35,6 +35,25 @@ flow("SYS-6", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/main
   });
 });
 
+flow("SYS-7", { domain: "system", tags: ["smoke"], routes: ["POST /v1/system/demo-request"] }, async (ctx) => {
+  await ctx.step("POST /v1/system/demo-request (invalid email) → 400", async () => {
+    const r = await ctx.client.post("/v1/system/demo-request", { email: "not-an-email" });
+    r.status(400);
+  });
+  await ctx.step("POST /v1/system/demo-request (valid) → 200 accepted", async () => {
+    // Public lead capture. `emailed` is false when Mailtrap isn't configured on
+    // the target env — the request is still accepted (graceful skip).
+    const r = await ctx.client.post("/v1/system/demo-request", {
+      name: "ke2e probe",
+      email: `probe-${Date.now()}@ke2e.kortix.test`,
+      company_name: "KE2E Labs",
+      company_size: "51-200",
+      source: "ke2e",
+    });
+    r.status(200).body().has("$.ok", true).exists("$.emailed");
+  });
+});
+
 flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
   await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
     const r = await ctx.client.get("/v1/openapi.json");

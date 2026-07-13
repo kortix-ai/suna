@@ -25,7 +25,6 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 
-import { resolveComposerResetOnSend } from './composer-reset';
 import {
   ArrowUp,
   ArrowUpLeft,
@@ -45,12 +44,20 @@ import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { resolveComposerResetOnSend } from './composer-reset';
+import {
+  mergeFailedSubmissionFiles,
+  mergeFailedSubmissionMentions,
+  mergeFailedSubmissionText,
+} from './composer-draft-recovery';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
   NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
+import { ModelConnectionBar } from './model-connection-gate';
 import { type ModelDefaultControls, ModelSelector } from './model-selector';
+import { useModelConnectionGate } from './use-model-connection-gate';
 import { VoiceRecorder } from './voice-recorder';
 
 import {
@@ -1153,11 +1160,22 @@ export interface SessionChatInputProps {
   clearOnSend?: boolean;
   /** If true, a concrete model must be selected before a chat/command send. */
   modelRequired?: boolean;
+  /** True while the provider/model catalog is still being fetched — suppresses
+   *  the full-block "connect a model" gate so it doesn't flash for accounts
+   *  that do have models but are mid-load (e.g. sandbox still warming up). */
+  modelsLoading?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
-  /** Imperative draft prefill used by parent composers for starter prompts. */
-  prefill?: { text: string; id: number } | null;
+  /** Imperative draft prefill used by parent composers for starter prompts or
+   * failed first-turn recovery. Recovery merges instead of overwriting any
+   * draft the user typed while the request was in flight. */
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
 
   /** Callback to search files via SDK for @ mentions */
   onFileSearch?: (query: string) => Promise<string[]>;
@@ -1231,6 +1249,7 @@ export function SessionChatInput({
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
+  modelsLoading = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1317,9 +1336,24 @@ export function SessionChatInput({
   const fileResultsCache = useRef<Set<string>>(new Set());
 
   const savedTextBeforeQuestionRef = useRef('');
+  const prefillId = prefill?.id;
+  const prefillText = prefill?.text ?? '';
+  const prefillFiles = prefill?.files;
+  const prefillMode = prefill?.mode;
   useEffect(() => {
-    if (!prefill?.text) return;
-    setText(prefill.text);
+    if (prefillId === undefined || (!prefillText && !prefillFiles?.length)) return;
+    setText((current) =>
+      prefillMode === 'merge'
+        ? mergeFailedSubmissionText(current, prefillText)
+        : prefillText,
+    );
+    if (prefillFiles?.length) {
+      setAttachedFiles((current) =>
+        prefillMode === 'merge'
+          ? mergeFailedSubmissionFiles(current, prefillFiles)
+          : [...prefillFiles],
+      );
+    }
     setStagedCommand(null);
     setSlashFilter(null);
     setMentionQuery(null);
@@ -1328,14 +1362,14 @@ export function SessionChatInput({
       const ta = textareaRef.current;
       if (!ta) return;
       ta.focus();
-      ta.setSelectionRange(prefill.text.length, prefill.text.length);
+      ta.setSelectionRange(prefillText.length, prefillText.length);
       ta.style.height = 'auto';
       ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
       if (highlightRef.current) {
         highlightRef.current.style.height = ta.style.height;
       }
     });
-  }, [prefill?.id, prefill?.text]);
+  }, [prefillId, prefillText, prefillFiles, prefillMode]);
 
   useEffect(() => {
     if (lockForQuestion) {
@@ -1669,6 +1703,26 @@ export function SessionChatInput({
     selectedModel,
     lockForQuestion,
   });
+  // Drives the "connect a model" bar under the input. Two distinct dead-end
+  // states both surface it — either way the composer cannot send and needs to
+  // say why:
+  //  1. Nothing SELECTED (`!selectedModel`, i.e. `modelUnavailable`) — the
+  //     send button is hard-disabled with only a tooltip explaining it.
+  //  2. Nothing USABLE (`!hasSelectableModels`) — entitlement check: NOT
+  //     `models.length === 0`, because the gateway bakes its whole catalog
+  //     into every project regardless of plan or connected keys; this accounts
+  //     for free-tier gating and which providers are actually connected.
+  // Both are only consulted after every input settles (`modelsLoading` for the
+  // provider catalog, `entitlementsPending` for account/secrets/project), so
+  // the bar renders exactly once with the final answer instead of flashing in
+  // on half-loaded data and vanishing when the account state arrives.
+  const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
+  const noModelsConnected =
+    modelRequired &&
+    !lockForQuestion &&
+    !modelsLoading &&
+    !entitlementsPending &&
+    (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
   const submitDisabled = disabled || modelUnavailable || lockForApproval;
 
@@ -1741,7 +1795,6 @@ export function SessionChatInput({
       setSlashFilter(null);
       setMentionQuery(null);
       setMentions([]);
-      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
       setAttachedFiles([]);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -1763,12 +1816,21 @@ export function SessionChatInput({
     // without queuing — this path is only reached when no queue is wired up.
     try {
       await onSend(trimmed, filesToSend, mentionsToSend);
+      for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
     } catch {
-      // Restore the text so the user can retry. The failure itself is surfaced
-      // by the persistent typed banner (commandError → TurnErrorDisplay) set in
-      // handleSend's catch — a toast here would double-display it. (No-op when
-      // clearOnSend is false: the text was never cleared.)
-      if (clearOnSend) setText(trimmed);
+      // Restore the entire submitted draft, not just its text. Object URLs stay
+      // alive until success, so local files remain retryable. Merge with any
+      // text/files/mentions added while the request was in flight instead of
+      // overwriting newer work.
+      if (clearOnSend) {
+        setText((current) => mergeFailedSubmissionText(current, trimmed));
+        setAttachedFiles((current) =>
+          mergeFailedSubmissionFiles(current, filesToSend ?? []),
+        );
+        setMentions((current) =>
+          mergeFailedSubmissionMentions(current, mentionsToSend ?? []),
+        );
+      }
     }
   }, [
     text,
@@ -2415,6 +2477,7 @@ export function SessionChatInput({
           </div>
         </div>
       </div>
+      <ModelConnectionBar show={noModelsConnected} />
     </div>
   );
 }

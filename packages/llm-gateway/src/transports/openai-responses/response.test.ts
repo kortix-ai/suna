@@ -157,6 +157,34 @@ describe('responsesJsonToChat', () => {
 });
 
 describe('translateResponsesResponse (streaming)', () => {
+  test('collects a forced Codex event stream into a non-streaming chat completion', async () => {
+    const withHeaders = sseResponse([
+      { type: 'response.created', response: { id: 'resp_56', model: 'gpt-5.6-sol' } },
+      { type: 'response.output_text.delta', delta: 'Codex' },
+      { type: 'response.output_text.delta', delta: ' works' },
+      { type: 'response.completed', response: { model: 'gpt-5.6-sol', usage: { input_tokens: 7, output_tokens: 2, total_tokens: 9 } } },
+    ]);
+    // The real ChatGPT Codex endpoint currently omits Content-Type on its SSE
+    // response, so descriptor context — not the header — must select collection.
+    const upstream = new Response(withHeaders.body, { status: 200 });
+
+    const translated = await translateResponsesResponse(upstream, {
+      streaming: false,
+      descriptor: codex,
+    });
+    expect(translated.headers.get('content-type')).toBe('application/json');
+    const body = await translated.json() as any;
+    expect(body.model).toBe('gpt-5.6-sol');
+    expect(body.choices[0].message.content).toBe('Codex works');
+    expect(body.choices[0].finish_reason).toBe('stop');
+    expect(body.usage).toEqual({
+      prompt_tokens: 7,
+      completion_tokens: 2,
+      total_tokens: 9,
+      prompt_tokens_details: { cached_tokens: 0 },
+    });
+  });
+
   test('translates a text stream into openai chunks with usage', async () => {
     const upstream = sseResponse([
       { type: 'response.created', response: { id: 'resp_1', model: 'gpt-5-codex' } },

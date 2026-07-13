@@ -21,6 +21,9 @@ class TunnelRateLimiter {
     deviceAuthCreateGlobal: { limit: 100, windowMs: 60_000 },
     deviceAuthCreate: { limit: 5, windowMs: 60_000 },
     deviceAuthPoll: { limit: 30, windowMs: 60_000 },
+    deviceAuthInfo: { limit: 30, windowMs: 60_000 },
+    deviceAuthApprove: { limit: 10, windowMs: 60_000 },
+    deviceAuthDeny: { limit: 10, windowMs: 60_000 },
   };
 
   check(endpoint: string, key: string): { allowed: boolean; retryAfterMs?: number } {

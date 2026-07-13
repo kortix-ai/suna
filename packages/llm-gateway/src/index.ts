@@ -51,6 +51,8 @@ export type {
   GatewayHooks,
   GatewayLogger,
   GatewayTrace,
+  ModelFallbackCondition,
+  ModelFallbackRoute,
   ModelCatalog,
   ModelInfo,
   ProviderKind,

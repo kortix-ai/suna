@@ -59,6 +59,7 @@ export interface ProvisionResult {
 }
 
 export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'unknown';
+export type InPlaceRecoveryStatus = 'running' | 'recovering' | 'unavailable';
 
 export interface ResolvedEndpoint {
   url: string;
@@ -94,6 +95,13 @@ export interface SandboxProvider {
   stop(externalId: string): Promise<void>;
   remove(externalId: string): Promise<void>;
   getStatus(externalId: string): Promise<SandboxStatus>;
+  /**
+   * Recover the SAME provider object when provider state looks terminal.
+   * Implementations may restore a provider-native disk backup, but must never
+   * create or return a different external identity. Callers fail closed when
+   * this capability is absent or returns unavailable.
+   */
+  recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
   /**
    * Resolve a reachable upstream URL for an arbitrary port — the data path the

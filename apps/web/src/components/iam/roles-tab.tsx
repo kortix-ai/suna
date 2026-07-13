@@ -17,7 +17,6 @@ import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucid
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
-import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -84,6 +84,7 @@ interface RolePrefill {
 }
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
+  const openDemo = useRequestDemo();
   return (
     <div className="space-y-6">
       {canManage && !rbacEnabled && (
@@ -91,10 +92,12 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           tone="info"
           title="Enterprise feature"
           action={
-            <Button asChild variant="outline" size="sm">
-              <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
-                Contact sales
-              </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDemo({ source: 'accounts-roles' })}
+            >
+              Contact sales
             </Button>
           }
         >

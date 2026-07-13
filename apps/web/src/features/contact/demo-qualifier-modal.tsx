@@ -112,6 +112,11 @@ export function DemoQualifierModal({
   }, [defaultEmail]);
 
   useEffect(() => {
+    // Only touch the Cal.com embed API once the modal is actually open. This
+    // keeps the modal cheap to mount app-wide (it lives in the root layout so
+    // every enterprise CTA can open it) — the embed script loads lazily on
+    // open, not on every page paint.
+    if (!open) return;
     (async function () {
       const cal = await getCalApi({ namespace: calNamespace });
       cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
@@ -123,7 +128,7 @@ export function DemoQualifierModal({
         },
       });
     })();
-  }, [calNamespace, onOpenChange, onBookingSuccessful]);
+  }, [open, calNamespace, onOpenChange, onBookingSuccessful]);
 
   const submit = useCallback(async () => {
     if (!EMAIL_RE.test(email.trim())) {

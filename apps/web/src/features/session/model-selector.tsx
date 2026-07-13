@@ -33,25 +33,21 @@ import {
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
-import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import { accountStateSelectors, useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/opencode/provider-selection';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { featureFlags } from '@kortix/sdk/feature-flags';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
-import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
+import { featureFlags } from '@kortix/sdk/feature-flags';
+import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
+import { useModelConnectionGate } from './use-model-connection-gate';
 
 // Re-export for consumers
 export { ConnectProviderContent } from '@/features/providers/connect-provider-content';
@@ -129,6 +125,14 @@ export interface ModelSelectorProps {
   onSelect: (model: { providerID: string; modelID: string } | null) => void;
   providers?: ProviderListResponse;
   defaultControls?: ModelDefaultControls;
+  /**
+   * Trigger label shown when `selectedModel` is null. Defaults to "No model"
+   * (the chat-input/schedule meaning: falls back to the agent/account/platform
+   * chain). Pass e.g. "Project default" where null specifically means "inherit
+   * the project's configured default" so the pill never implies nothing was
+   * chosen when something concrete will actually run.
+   */
+  unsetLabel?: string;
 }
 
 export function ModelSelector({
@@ -136,6 +140,7 @@ export function ModelSelector({
   selectedModel,
   onSelect,
   defaultControls,
+  unsetLabel = 'No model',
 }: ModelSelectorProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
@@ -143,14 +148,14 @@ export function ModelSelector({
   // When AUTO is on, the manual provider list is hidden by default. This reveals
   // it (so the user can switch to a specific model) without turning AUTO off yet.
   const [expandManual, setExpandManual] = useState(false);
-  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const openCustomize = useCustomizeStore((s) => s.openCustomize);
-  const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
+  // Where Upgrade / Connect provider should route, given the current route
+  // context — shared with the chat input's full-block gate and onboarding so
+  // they all open the exact same dialogs.
+  const { openConnectProvider, openUpgrade, modal: connectionModal } = useModelConnectionGate();
 
-  // When mounted under /projects/[id]/..., route the action buttons to the
-  // per-project provider modal so credentials land in `project_secrets`. On
-  // every other route (instance dashboard, /milano, /berlin, etc.) we keep
-  // the legacy GlobalProviderModal that writes to the active sandbox.
+  // When mounted under /projects/[id]/..., route model filtering to the
+  // per-project gateway catalog. On every other route (instance dashboard,
+  // /milano, /berlin, etc.) we filter to native (non-gateway) models.
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const projectDetailQuery = useQuery({
@@ -160,20 +165,9 @@ export function ModelSelector({
     staleTime: 30_000,
   });
   const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
-  // The legacy (non-gateway) provider modal lets you connect/disconnect
-  // providers — all writes. Gate them so a read-only member sees the catalog
-  // but no mutating controls (fails safe to read-only until the probe resolves).
-  const canWriteProviders =
-    useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
-      accountId: projectDetailQuery.data?.project.account_id,
-    }).allowed === true;
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
-  const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
-    'catalog',
-  );
 
   // Track project secrets whenever we're in a project (not only while the picker
   // is open) so connecting/disconnecting a provider flips model visibility live —
@@ -215,7 +209,7 @@ export function ModelSelector({
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || 'No model';
+  const displayName = current?.modelName || unsetLabel;
 
   // Reset transient picker state when closing.
   useEffect(() => {
@@ -319,43 +313,19 @@ export function ModelSelector({
   const handleOpenProviderModal = useCallback(
     (tab: ProviderModalTab) => {
       setOpen(false);
-      if (projectId) {
-        if (llmGatewayEnabled) {
-          // Plus → "Add provider" (the core surface); the sliders / manage-models
-          // button → "Models". Both land on LLM → Providers, never Files.
-          openCustomize('llm-providers', {
-            llmProvidersTab: tab === 'models' ? 'models' : 'catalog',
-          });
-        } else {
-          setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-          setProjectModalOpen(true);
-        }
-        return;
-      }
-      openProviderModal(tab);
+      openConnectProvider(tab);
     },
-    [projectId, llmGatewayEnabled, openProviderModal, openCustomize],
+    [openConnectProvider],
   );
 
   const handleUpgrade = useCallback(() => {
     setOpen(false);
-    openUpgradeDialog({
-      reason: 'subscription_required',
-      accountId: projectDetailQuery.data?.project.account_id,
-    });
-  }, [openUpgradeDialog, projectDetailQuery.data?.project.account_id]);
+    openUpgrade();
+  }, [openUpgrade]);
 
   return (
     <>
-      {projectId && (
-        <ProjectProviderModal
-          projectId={projectId}
-          open={projectModalOpen}
-          onOpenChange={setProjectModalOpen}
-          defaultTab={projectModalTab}
-          canWrite={canWriteProviders}
-        />
-      )}
+      {connectionModal}
       <CommandPopover open={open} onOpenChange={setOpen}>
         <Tooltip>
           <TooltipTrigger asChild>

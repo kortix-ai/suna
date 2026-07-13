@@ -1,6 +1,6 @@
 import type { OpenAPIHono } from '@hono/zod-openapi';
+import { pickAutoModel, routeDefaultModelFallbacks } from '@kortix/llm-catalog';
 import { createGateway } from '@kortix/llm-gateway';
-import { pickAutoModel } from '@kortix/llm-catalog';
 import { Hono } from 'hono';
 import { config } from '../config';
 import { createInProcessGatewayHooks } from './hooks';
@@ -27,6 +27,7 @@ export function mountLlmGateway(app: OpenAPIHono): void {
       // withResolvedTier at authentication; undefined → the platform default).
       autoRouter: (model, body, principal) =>
         pickAutoModel(model, body, { defaultModel: principal.defaultModel }),
+      modelFallbackRouter: (model) => routeDefaultModelFallbacks(model),
     });
     const llm = new Hono();
     llm.get('/health', (c) =>

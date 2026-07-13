@@ -27,11 +27,15 @@ import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
   deleteSlackInstall,
+  deleteTeamsInstall,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadTeamsAppIdForProject,
+  loadTeamsInstall,
   normalizeSenderPolicy,
   saveAgentMailInstall,
   saveSlackInstall,
+  saveTeamsInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
 import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
@@ -44,17 +48,18 @@ import {
   setProjectBotName,
   setProjectVoice,
 } from '../../channels/meet-voices';
+import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import {
-  type QuestionInfo,
-  postQuestion,
-  relayTurnAnswer,
-  relayTurnEnd,
-  relayTurnStep,
-} from '../../channels/slack-webhook';
+import { type QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
+import { teamsChannelEnabled } from '../../channels/teams-auth';
+import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
+import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
+import { buildTeamsManifest } from '../../channels/teams-manifest';
+import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
+import { relayTurnAnswer, relayTurnEnd, relayTurnQuestion, relayTurnStep } from '../../channels/turn-relay';
 import { config } from '../../config';
 import { upsertProfileCredential } from '../../executor/credentials';
 import { reconcileChannelConnectors } from '../../executor/sync';
@@ -867,6 +872,215 @@ projectsApp.openapi(
   },
 );
 
+function teamsPublicBaseUrl(): string | undefined {
+  return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
+}
+
+// ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const install = await loadTeamsInstall(projectId);
+    return c.json(install ?? null);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/mode',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    const install = await loadTeamsInstall(projectId).catch(() => null);
+    return c.json({
+      ...teamsMode(baseUrl, { projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      orgInstalled: install?.orgInstalled ?? false,
+      deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/manifest',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/manifest',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    if (!mode.available || !mode.appId) {
+      return c.json({ error: 'Teams is not configured on this server' }, 409);
+    }
+    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl, appName: config.TEAMS_APP_NAME, botName: config.TEAMS_APP_NAME }));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/connect',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const tenantId = body.tenant_id?.trim();
+    const isGuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
+    if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
+      return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
+    }
+
+    const appId = body.app_id?.trim() || null;
+    const appPassword = body.app_password?.trim() || null;
+    if ((appId && !appPassword) || (!appId && appPassword)) {
+      return c.json({ error: 'app_id and app_password must be provided together for a bring-your-own bot' }, 400);
+    }
+    if (appId && !isGuid(appId)) {
+      return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
+    }
+
+    const summary = await saveTeamsInstall({
+      projectId,
+      tenantId,
+      teamName: body.team_name?.trim() || null,
+      appId,
+      appPassword,
+    });
+    void reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await deleteTeamsInstall(projectId);
+    void reconcileChannelConnectors(projectId);
+    return c.json({ status: 'disconnected' });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ url: z.string() }),
+    },
+    responses: {
+      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
+    return c.body(result.body);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(), 'Consent card sent'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await readBody(c);
+    const result = await initiateTeamsUpload(projectId, {
+      serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      description: typeof body.description === 'string' ? body.description : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, uploadId: result.uploadId });
+  },
+);
+
 // ─── Email install — AgentMail-backed inbox per project ─────────────────────
 
 function emailChannelEnabled(metadata: unknown): boolean {
@@ -1327,6 +1541,13 @@ projectsApp.openapi(
     } else {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      );
     }
 
     let body: {
@@ -2271,7 +2492,7 @@ projectsApp.openapi(
     // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
     // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
     // image (resumes opencode from them) unblocked.
-    const result = await postQuestion(sessionId, questions);
+    const result = await relayTurnQuestion(sessionId, questions);
     if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
     return c.json({ ok: true, answers: result.answers });
   },

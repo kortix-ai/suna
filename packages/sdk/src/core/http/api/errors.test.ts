@@ -79,6 +79,43 @@ test('ApiError message stays writable/configurable after construction', () => {
   expect(err.message).toBe('updated');
 });
 
+// ── ApiError non-string message coercion (regression for prod TypeError ──────
+//   "t.message.includes is not a function" — a backend JSON body like
+//   `{ "message": { ... } }` or `{ "detail": { "message": 403 } }` can reach
+//   `new ApiError(message, …)` with a non-string `message`. `ApiError.message`
+//   MUST always be a string so every consumer doing `err.message.includes(...)`
+//   (file-list retry callbacks, provider disconnect, error-handler, …) is safe.
+test('ApiError coerces a non-string object message to a string so .includes never crashes', () => {
+  const err = new ApiError({ code: 'FORBIDDEN' } as any, { status: 403 });
+  expect(typeof err.message).toBe('string');
+  expect(() => err.message.includes('404')).not.toThrow();
+  expect(err.message.includes('404')).toBe(false);
+});
+
+test('ApiError coerces a numeric message to a string', () => {
+  const err = new ApiError(403 as any, { status: 403 });
+  expect(typeof err.message).toBe('string');
+  expect(err.message.includes('403')).toBe(true);
+});
+
+test('ApiError coerces null/undefined message to an empty string', () => {
+  expect(new ApiError(null as any).message).toBe('');
+  expect(new ApiError(undefined as any).message).toBe('');
+});
+
+test('ApiError preserves a real string message and .includes still matches', () => {
+  const err = new ApiError('HTTP 404: Not Found', { status: 404 });
+  expect(err.message).toBe('HTTP 404: Not Found');
+  expect(err.message.includes('404')).toBe(true);
+  expect(err.message.includes('403')).toBe(false);
+});
+
+test('ApiError coerced message stays an enumerable own property (survives JSON.stringify + spread)', () => {
+  const err = new ApiError({ code: 'FORBIDDEN' } as any, { status: 403 });
+  expect(JSON.parse(JSON.stringify(err)).message).toBe(err.message);
+  expect({ ...err }.message).toBe(err.message);
+});
+
 test('ApiError with both a `name` and `stack` override applies both without touching unrelated fields', () => {
   const err = new ApiError('boom', { name: 'AbortError', stack: 'custom-stack', status: 408 });
   expect(err.name).toBe('AbortError');

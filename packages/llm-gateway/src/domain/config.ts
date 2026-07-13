@@ -1,6 +1,15 @@
 import type { CircuitBreakerOptions, RetryOptions } from '../resilience';
 import type { AuthedPrincipal } from './principal';
 
+export type ModelFallbackCondition = 'transient' | 'any-error';
+
+export interface ModelFallbackRoute {
+  /** Ordered model ids attempted after the routed primary. Duplicates are removed. */
+  fallbackModels: readonly string[];
+  /** `transient` preserves normal 4xx behavior; `any-error` also falls back on upstream 4xx. */
+  fallbackOn?: ModelFallbackCondition;
+}
+
 export interface GatewayConfig {
   retry?: RetryOptions;
   breaker?: CircuitBreakerOptions;
@@ -21,4 +30,14 @@ export interface GatewayConfig {
     body: Record<string, unknown>,
     principal: AuthedPrincipal,
   ) => string | null;
+  // Optional model-to-model router. It runs after autoRouter and returns a
+  // finite ordered fallback chain. The handler de-duplicates the chain and
+  // enforces maxFallbackModels, so a bad policy cannot recurse or retry forever.
+  modelFallbackRouter?: (
+    model: string,
+    body: Record<string, unknown>,
+    principal: AuthedPrincipal,
+  ) => ModelFallbackRoute | null;
+  /** Maximum number of fallback models after the primary. Defaults to 3, hard-capped at 8. */
+  maxFallbackModels?: number;
 }

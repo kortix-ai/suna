@@ -188,6 +188,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B4  | `**.name` on `ApiError` is duck-typed by legacy sniffers.** Changing it is a *silent runtime* break, not a compile break.                            | `src/platform/api/errors.ts:59` — `this.name = 'ApiError'`, with a comment noting legacy sniffers                                                                                 | WON'T DO for now — documented in `AGENTS.md`; revisit only with a deprecation path |
 | B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                             | `src/opencode/kortix-master.ts`                                                                                                                                                   | OPEN                                                                               |
 | B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
+| B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -483,3 +484,36 @@ check, outside the repo); Safari/Workers legs of the runtime matrix.
 (its sole blocker, D2a/D3, is now observed passing). Remaining for Jay:
 commit/merge decision (fix wave is uncommitted by request), CDN CORS policy,
 Trusted Publishing check.
+
+---
+
+### 2026-07-12 — session `gateway-fallbacks`: B7 provider-qualified default lock
+
+The platform gateway default is now `codex/gpt-5.6-sol`, but it remains a
+Kortix gateway wire model in the picker: `{ providerID: 'kortix', modelID:
+'codex/gpt-5.6-sol' }`. This deliberately does not expose or classify it as a
+native OpenCode `codex` provider. Implementation: `ee7d2cc09`.
+
+**TDD/regression evidence:** the focused picker regression is green (14 pass,
+0 fail). Final full SDK suite: **1076 pass / 0 fail / 72 files** and **4958
+expect() calls**. `pnpm --filter @kortix/sdk typecheck` exited 0, and
+`pnpm --filter @kortix/sdk smoke:install` packed, installed, imported, and
+constructed the published package successfully.
+
+**Cross-package evidence:** gateway **144 pass / 0 fail**; catalog **25 pass /
+0 fail**; focused API resolution/catalog/entitlement suite **45 pass / 0
+fail**; standalone gateway server **13 pass / 0 fail**. Typechecks exited 0
+for gateway, catalog, SDK, API, and standalone gateway. `git diff --check`
+was clean.
+
+**Real local E2E:** through `POST http://localhost:20908/v1/llm-gateway/v1/chat/completions`,
+streaming `auto` selected `openai-codex` / `gpt-5.6-sol` and returned the exact
+marker `AUTO_DEFAULT_CODEX_56_SOL_OK`; forced Codex 401 selected OpenRouter /
+`z-ai/glm-5.2-20260616`, returned `CODEX_STREAM_401_TO_GLM_OK`, completed with
+`[DONE]`, and persisted routing metadata selecting `glm-5.2`. Non-streaming
+Codex primary and forced-401 fallback also returned exact markers. Temporary
+gateway credentials were revoked and the Codex-secret mutation was restored.
+
+**Shippable to production: YES** — SDK public behavior is regression-locked;
+the wider gateway change still follows its normal PR, deploy-dev, and live-dev
+verification lifecycle.

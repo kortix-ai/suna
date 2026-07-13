@@ -221,6 +221,23 @@ const envSchema = z.object({
   ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
   ELEVENLABS_API_KEY:          optStr,
 
+  // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
+  // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
+  // serve every tenant; the per-conversation tenant id arrives on each inbound
+  // activity. Outbound auth is a short-lived AAD token minted per scope at call
+  // time (channels/teams-auth.ts) — there is no static bot token to store.
+  MICROSOFT_APP_ID:            optStr,
+  MICROSOFT_APP_PASSWORD:      optStr,
+  // The bot's home tenant. Multi-tenant bots authenticate against the shared
+  // `botframework.com` tenant; single-tenant deployments set their own.
+  MICROSOFT_APP_TENANT:        optStrDefault('botframework.com'),
+  // OpenID metadata used to validate the signed JWT on every inbound activity
+  // (the Teams analog of Slack signature verification).
+  MICROSOFT_BOT_OPENID_METADATA: optUrl('https://login.botframework.com/v1/.well-known/openidconfiguration'),
+  TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
+  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  TEAMS_APP_NAME: optStrDefault('Kortix'),
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -379,6 +396,7 @@ const envSchema = z.object({
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN:       optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
@@ -394,6 +412,8 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN:          optStr,
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
+  // Where public demo-request / "book a demo" lead notifications are sent.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN:   optStr,  // Logtail source token for structured logs
@@ -641,6 +661,15 @@ export const config = {
   ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
   ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
 
+  // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
+  MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
+  MICROSOFT_APP_PASSWORD: env.MICROSOFT_APP_PASSWORD,
+  MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
+  MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
+  TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
+  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
+  TEAMS_APP_NAME: env.TEAMS_APP_NAME,
+
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
@@ -762,6 +791,8 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
@@ -778,6 +809,7 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
+  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,

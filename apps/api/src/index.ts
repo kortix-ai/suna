@@ -17,6 +17,8 @@ import { getRequestUrl } from './lib/request-url';
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -32,7 +34,7 @@ import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { requestDeadline } from './middleware/request-deadline';
+import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -350,6 +352,8 @@ const HealthSchema = z
     status: z.string(),
     service: z.string(),
     timestamp: z.string(),
+    environment: z.string(),
+    version: z.string(),
   })
   .openapi('Health');
 
@@ -358,6 +362,8 @@ const healthHandler = (c: any) =>
     status: 'ok',
     service: 'kortix-api',
     timestamp: new Date().toISOString(),
+    environment: config.INTERNAL_KORTIX_ENV,
+    version: API_VERSION,
   });
 
 app.openapi(
@@ -553,6 +559,65 @@ app.openapi(
   },
 );
 
+// ─── Demo request (public lead capture) ─────────────────────────────────────
+// POST /v1/system/demo-request — public, unauthenticated. The marketing site's
+// "Book a demo" qualifier form POSTs the first-step details here (via the web
+// server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
+// submission, whether or not the lead goes on to book a Cal slot. The email uses
+// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
+// never needs the secret. IP rate-limited; a missing Mailtrap token is a
+// graceful skip, so lead capture never fails on account of email.
+const DemoRequestSchema = z
+  .object({
+    name: z.string().max(200).optional(),
+    email: z.string().email(),
+    company_name: z.string().max(200).optional(),
+    company_size: z.string().max(50).optional(),
+    goal: z.string().max(2000).optional(),
+    qualified: z.boolean().optional(),
+    source: z.string().max(100).optional(),
+  })
+  .openapi('DemoRequest');
+
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/system/demo-request',
+    tags: ['system'],
+    summary: 'Submit a public demo request (emails an internal notification)',
+    middleware: [createDemoRequestRateLimitMiddleware()] as const,
+    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
+        'Accepted',
+      ),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    const email = String(body?.email ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: 'Invalid email' }, 400);
+    }
+    const result = await sendDemoRequestNotification({
+      name: typeof body.name === 'string' ? body.name : undefined,
+      email,
+      company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+      company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+      source: typeof body.source === 'string' ? body.source : undefined,
+      user_agent: c.req.header('user-agent')?.slice(0, 500) ?? null,
+    });
+    if (!result.ok && !('skipped' in result && result.skipped)) {
+      console.error('[system/demo-request] notification not sent:', result);
+    }
+    return c.json({ ok: true, emailed: result.ok });
+  },
+);
+
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
 // These endpoints are called by the frontend but were never implemented.
 // Adding proper stubs stops 404 noise and provides correct responses.
@@ -648,10 +713,13 @@ app.route('/v1/templates', templatesApp); // /v1/templates — installable use-c
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
@@ -734,8 +802,14 @@ app.onError((err, c) => {
   }
 
   if (err instanceof HTTPException) {
-    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected)
-    if (err.status >= 500) {
+    // Only capture 5xx HTTP exceptions to Sentry (4xx are expected). The
+    // request-deadline 503 is an EXPECTED, typed, retryable degradation (the
+    // deadline net bounding a slow request) — already logged + metriced
+    // per-route and returned with Retry-After. Capturing it to Sentry produced
+    // the recurring Better Stack pattern `29af03…` "Request exceeded the 25s
+    // server processing deadline" (the system working as designed), so classify
+    // it out. See middleware/request-deadline.ts.
+    if (err.status >= 500 && !isRequestDeadlineHTTPException(err)) {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {

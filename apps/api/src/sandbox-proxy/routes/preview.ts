@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
@@ -352,6 +353,22 @@ function principalUserId(access: PreviewProxyAccess): string {
 // reachability, never the auth/control surface.
 const OPENCODE_INTERNAL_PORT = 4096;
 const SANDBOX_AGENT_PORT = 8000;
+
+/**
+ * Should the data-path proxy WAKE a stopped box instead of 503ing it? Only when a
+ * real user (principal) is actively hitting the OpenCode daemon (port 8000) — never
+ * on passive asset/preview traffic or non-user (service) access. That gate is what
+ * lets the runtime path auto-resume like `/start` WITHOUT fighting the reaper's
+ * idle-quiesce "don't resurrect on passive traffic" policy. Pure + exported so the
+ * gate is unit-tested without provisioning a sandbox.
+ */
+export function shouldAutoResumeStoppedSandbox(
+  status: string,
+  upstreamPort: number,
+  accessKind: string,
+): boolean {
+  return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
+}
 function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
   return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
     ? SANDBOX_AGENT_PORT
@@ -382,7 +399,7 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
@@ -429,13 +446,35 @@ export async function forwardToSandbox(
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
-    return portUnreachableResponse({
-      port,
-      status: 503,
-      origin,
-      incomingHeaders,
-      reason: `sandbox not ready (status: ${record.status})`,
-    });
+    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
+    // (port 8000, principal) should wake in place — the same resume `/start` does —
+    // rather than dead-end with a manual-Restart card. This closes the stale-ready
+    // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
+    // next runtime call used to 503 forever. resumeStoppedSandboxByExternalId is
+    // idempotent, clears the reaper's idle-quiesce marker, and its DB conditional
+    // lock de-dupes the concurrent session.list retries (one provider start). Gated
+    // so passive asset/preview traffic still 503s — we don't fight idle-quiesce.
+    if (shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind)) {
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
+        return false;
+      });
+      // Re-read: the resume flips the row → 'active' (this call or a concurrent
+      // one). The box boots in the background; the wake/retry loop below tolerates
+      // the gap and forwards once it's up (and subsequent client retries recover).
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return portUnreachableResponse({
+        port,
+        status: 503,
+        origin,
+        incomingHeaders,
+        reason: `sandbox not ready (status: ${record.status})`,
+      });
+    }
   }
   const serviceKey = record.serviceKey;
 
@@ -579,8 +618,11 @@ export async function forwardToSandbox(
       // a stream) so aborting only kills the in-flight attempt, never truncates
       // an upload mid-stream.
       //
-      // CRITICAL: the timeout bounds ONLY the connect/header phase — the timer
-      // is cleared the moment `fetch` resolves. The previous
+      // CRITICAL: for ordinary requests the timeout bounds ONLY the
+      // connect/header phase — the timer is cleared the moment `fetch` resolves.
+      // Multipart uploads are the exception: their handler cannot return
+      // headers until the body is written, so they receive the remaining outer
+      // proxy budget instead of the generic 15s cutoff. The previous
       // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
       // severed every streaming response body at ~15s: the `/global/event` SSE
       // stream (each open session tab then reconnected ~250ms later, forever —
@@ -593,7 +635,7 @@ export async function forwardToSandbox(
           attemptController.abort(
             new DOMException('proxy attempt connect timeout', 'TimeoutError'),
           ),
-        proxyAttemptTimeoutMs(budgetRemainingMs),
+        proxyAttemptTimeoutMs(budgetRemainingMs, { method, path: remainingPath }),
       );
       let upstream: Response;
       try {
