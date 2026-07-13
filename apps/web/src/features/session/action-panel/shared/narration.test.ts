@@ -547,6 +547,69 @@ describe('narrateStep - the bare "memory" tool multiplexes over `command`, not a
   });
 });
 
+// ─── show/show_user must never leak a raw sandbox path or URL — rule 2 is
+// that a raw tool identifier, path, or URL must never reach a non-technical
+// user. `show`/`show_user` have no case in `getToolPrimaryArg`, so narration
+// used to fall through to the generic input-key fallback (path/url, verbatim,
+// no basename/domain treatment) — the exact opposite of every other family's
+// treatment of paths and URLs in this file. ─────────────────────────────────
+describe('narrateStep - show/show_user never leak a raw path or URL', () => {
+  it('prefers the tool input title over anything else', () => {
+    const line = narrateStep('create', [
+      part('show', {
+        title: 'Q3 report',
+        path: '/workspace/reports/q3.html',
+        url: 'https://8080-abc123.e2b.app/preview',
+      }),
+    ]);
+    expect(line).toBe('Showed you Q3 report');
+  });
+
+  it('falls back to description when there is no title', () => {
+    const line = narrateStep('create', [
+      part('show', { description: 'The finished report', path: '/workspace/reports/q3.html' }),
+    ]);
+    expect(line).toBe('Showed you The finished report');
+  });
+
+  it('never renders a raw sandbox path — falls back to a basename', () => {
+    const line = narrateStep('create', [part('show', { path: '/workspace/reports/q3.html' })]);
+    expect(line).toBe('Showed you q3.html');
+    expect(line).not.toContain('/workspace');
+  });
+
+  it('never renders a raw URL — falls back to a domain', () => {
+    const line = narrateStep('create', [
+      part('show', { type: 'url', url: 'https://8080-abc123.e2b.app/preview' }),
+    ]);
+    expect(line).not.toContain('https://');
+    expect(line).not.toContain('/preview');
+    expect(line).toBe('Showed you 8080-abc123.e2b.app');
+  });
+
+  it('falls back to the vague-but-true default when nothing at all is available', () => {
+    const line = narrateStep('create', [part('show', {})]);
+    expect(line).toBe('Showed you the result');
+  });
+
+  it('show_user is treated identically to show', () => {
+    const line = narrateStep('create', [part('show_user', { path: '/a/b/c/report.pdf' })]);
+    expect(line).toBe('Showed you report.pdf');
+  });
+});
+
+describe('humanizeToolName - MCP tools using `__` separators must not read as a raw identifier', () => {
+  it('normalizes `__` the same way `/` is normalized', () => {
+    expect(humanizeToolName('mcp__linear__create_issue')).toBe('Create Issue');
+  });
+
+  it('never leaves double spaces or underscores from an un-normalized `__`', () => {
+    const label = humanizeToolName('mcp__linear__create_issue');
+    expect(label).not.toContain('  ');
+    expect(label).not.toContain('_');
+  });
+});
+
 describe('narrateStep - task_update/agent_task_update resolve their own action field', () => {
   it('never narrates a cancel-via-update as sending a message', () => {
     const line = narrateStep('delegate', [part('task_update', { action: 'cancel' })]);

@@ -18,6 +18,7 @@
  */
 
 import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
+import { wsDomain } from '../../tool/shared/web-helpers';
 import type { ToolPart } from '@/ui';
 
 export type StepFamily =
@@ -118,9 +119,19 @@ export function familyForTool(toolName: string): StepFamily | 'hidden' {
   return FAMILY_BY_TOOL[n] ?? 'other';
 }
 
-/** `linear/create_issue` → `Create Issue`. Never returns a raw identifier. */
+/**
+ * `linear/create_issue` → `Create Issue`. Never returns a raw identifier.
+ *
+ * MCP tool ids also arrive as `mcp__server__tool_name` — `__` is that
+ * format's hierarchy separator, the same role `/` plays elsewhere. Without
+ * normalizing it first, only the trailing `_` gets word-split, leaving the
+ * server segment glued onto the leaf ("Mcp  Linear  Create Issue", still
+ * effectively the raw identifier) — collapsing `__` to `/` first lets the
+ * existing leaf-splitting logic below do the same job it already does for
+ * `linear/create_issue`.
+ */
 export function humanizeToolName(toolName: string): string {
-  const n = normalizeName(toolName);
+  const n = normalizeName(toolName).replace(/__+/g, '/');
   const leaf = n.includes('/') ? n.slice(n.lastIndexOf('/') + 1) : n;
   return leaf
     .replace(/_/g, ' ')
@@ -352,6 +363,45 @@ const PRESENTATION_GEN_ACTION_SENTENCE: Record<string, string> = {
   serve: 'Previewed a presentation',
 };
 
+/** Last path segment, tolerant of both `/` and `\` separators — mirrors the
+ * private helper `tool-meta.ts`/`derive-panels.ts` each keep their own copy
+ * of, rather than exporting one from the off-limits `tool/` directory. */
+function basename(p: string): string {
+  const cleaned = p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const idx = cleaned.lastIndexOf('/');
+  return idx >= 0 ? cleaned.slice(idx + 1) : cleaned;
+}
+
+/**
+ * `show`/`show_user` display an existing result — a file, a link, a block of
+ * text. `getToolPrimaryArg` has no case for them, so it used to fall through
+ * to its generic fallback-key list, which returns `input.path`/`input.url`
+ * completely verbatim (a real sandbox path or e2b preview URL straight to a
+ * non-technical user — rule 2 forbids exactly this). ShowTool itself renders
+ * `input.title` as its own heading, so prefer that; then a description; and
+ * only when neither exists fall back to a BASENAME or DOMAIN — never the raw
+ * path/URL itself.
+ */
+function showLabel(part: ToolPart): string {
+  const input = rawInput(part);
+  const title = typeof input.title === 'string' ? input.title.trim() : '';
+  if (title) return title;
+  const description = typeof input.description === 'string' ? input.description.trim() : '';
+  if (description) return truncate(description, 60);
+  const path = typeof input.path === 'string' ? input.path : '';
+  if (path) return basename(path);
+  const url = typeof input.url === 'string' ? input.url : '';
+  if (url) return wsDomain(url);
+  return '';
+}
+
+/** Trim + collapse-whitespace + ellipsize a free-text label. Mirrors the
+ * private helper of the same name in `tool-meta.ts`/`derive-panels.ts`. */
+function truncate(s: string, max = 60): string {
+  const trimmed = s.replace(/\s+/g, ' ').trim();
+  return trimmed.length > max ? trimmed.slice(0, max - 1) + '…' : trimmed;
+}
+
 function imageGenSentence(part: ToolPart): string {
   const action = rawInput(part).action as string | undefined;
   return (action && IMAGE_GEN_ACTION_SENTENCE[action]) || 'Worked on an image';
@@ -549,7 +599,11 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
         if (t === 'image_gen') return imageGenSentence(p);
         if (t === 'video_gen') return 'Made a video';
         if (t === 'presentation_gen') return presentationGenSentence(p);
-        return arg ? `Showed you ${arg}` : 'Showed you the result';
+        // `show` / `show_user`, and any future create-family tool this file
+        // hasn't been taught about yet — never route through the generic
+        // `getToolPrimaryArg` fallback (it returns raw paths/URLs verbatim).
+        const label = showLabel(p);
+        return label ? `Showed you ${label}` : 'Showed you the result';
       }
 
       const keys = parts.map(createPartKey);
