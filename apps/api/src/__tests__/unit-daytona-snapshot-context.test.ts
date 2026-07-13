@@ -34,6 +34,7 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH = slackCliPath;
   process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
+  getSnapshotImpl = async () => ({ state: snapshotState() });
 });
 
 let dockerfileSeen = '';
@@ -45,6 +46,7 @@ const contextPaths: string[] = [];
 // Per-test behavior (default: a clean successful build), driven by the tests.
 let createImpl: () => Promise<void> = async () => {};
 let snapshotState: () => string = () => 'active';
+let getSnapshotImpl: () => Promise<{ state: string }> = async () => ({ state: snapshotState() });
 
 mock.module('@daytonaio/sdk', () => ({
   Image: {
@@ -68,7 +70,7 @@ mock.module('../shared/daytona', () => ({
       create: async () => {
         await createImpl();
       },
-      get: async () => ({ state: snapshotState() }),
+      get: async () => getSnapshotImpl(),
       delete: async () => undefined,
     },
   }),
@@ -98,6 +100,29 @@ describe('Daytona snapshot build context', () => {
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
     expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
+  });
+});
+
+describe('Daytona snapshot state', () => {
+  test('reports a Daytona 404 as missing so a new template can be built', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('Snapshot with name kortix-new-template not found'), {
+        name: 'DaytonaNotFoundError',
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('missing');
+  });
+
+  test('keeps a transient Daytona probe failure unknown', async () => {
+    getSnapshotImpl = async () => {
+      throw Object.assign(new Error('upstream unavailable'), {
+        statusCode: 503,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('unknown');
   });
 });
 
