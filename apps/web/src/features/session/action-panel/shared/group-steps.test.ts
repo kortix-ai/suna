@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import type { ToolPart } from '@/ui';
+import type { MessageWithParts, ToolPart } from '@/ui';
+import { collectAllToolParts } from './collect-tool-parts';
 import { groupSteps } from './group-steps';
 
 function part(
@@ -58,5 +59,22 @@ describe('groupSteps', () => {
   it('marks a step errored when any of its parts errored', () => {
     const steps = groupSteps([part('bash', 'error')]);
     expect(steps[0].status).toBe('error');
+  });
+
+  it('end-to-end: Easy mode collects reads that Advanced hides, and narrates them as one step', () => {
+    // This is the regression the plan defect would have reintroduced: if Easy
+    // mode fed its Progress card from `collectToolParts` (the Advanced/actions-
+    // panel collector), `read` parts would be filtered out before `groupSteps`
+    // ever saw them, and "Read 3 files" would never appear.
+    const messages: MessageWithParts[] = [
+      {
+        info: {} as MessageWithParts['info'],
+        parts: [part('read'), part('read'), part('read')],
+      },
+    ];
+    const steps = groupSteps(collectAllToolParts(messages));
+    expect(steps).toHaveLength(1);
+    expect(steps[0].family).toBe('explore');
+    expect(steps[0].label).toBe('Read 3 files');
   });
 });
