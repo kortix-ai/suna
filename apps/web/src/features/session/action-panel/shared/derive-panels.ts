@@ -36,6 +36,9 @@ export interface ContextItem {
   /** The real URL a `web` item points at — never rendered as the label
    * itself, only as a title attribute / link target for the row. */
   url?: string;
+  /** Every call behind a `tool` item, so the UI can show what the tool
+   * actually did (its real tool views) when the user opens the chip. */
+  parts?: ToolPart[];
 }
 
 function filePathOf(part: ToolPart): string | undefined {
@@ -275,7 +278,7 @@ export function deriveContext(parts: ToolPart[]): {
   const tools: ContextItem[] = [];
   const seenFiles = new Set<string>();
   const seenWeb = new Set<string>();
-  const seenTools = new Set<string>();
+  const seenTools = new Map<string, ContextItem>();
 
   for (const part of parts) {
     // A failed call didn't successfully look at anything — it must not
@@ -323,10 +326,17 @@ export function deriveContext(parts: ToolPart[]): {
     }
 
     // Everything else is recorded once, by name, as "a tool that was used".
+    // Every call to that tool rides along on `parts` so the UI can show what
+    // the tool actually did when the user asks — one chip, all its calls.
     const label = humanizeToolName(part.tool);
-    if (seenTools.has(label)) continue;
-    seenTools.add(label);
-    tools.push({ callID: part.callID, label, kind: 'tool' });
+    const seen = seenTools.get(label);
+    if (seen) {
+      (seen.parts ??= []).push(part);
+      continue;
+    }
+    const item: ContextItem = { callID: part.callID, label, kind: 'tool', parts: [part] };
+    seenTools.set(label, item);
+    tools.push(item);
   }
 
   return { files, web, tools };

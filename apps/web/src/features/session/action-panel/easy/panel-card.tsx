@@ -8,29 +8,32 @@
  * and one plain sentence saying what will show up here. Nothing technical is
  * visible until the user asks for it.
  *
- * The chevron rotates down and the header toggles an in-place body (Outputs /
- * Context). Progress is the odd one out — it navigates to a full-height step
- * list instead of expanding in place, so it hand-rolls its own row rather
- * than using this shell (see `ProgressCard`).
+ * The chevron rotates down and the header toggles an in-place body. All three
+ * cards work this way: expanding one never hides the others, so the panel is
+ * always the same three rows and never navigates away from itself.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Empty, EmptyDescription, EmptyMedia } from '@/components/ui/empty';
 import { cn } from '@/lib/utils';
-import { ChevronDown } from 'lucide-react';
+import { ChevronRight } from '@mynaui/icons-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 export interface PanelCardProps {
   title: string;
   count?: number;
+  /** Second line under the title — Progress uses it for its live step label. */
+  subtitle?: ReactNode;
   children?: ReactNode;
   /** Soft placeholder art shown above `emptyText` — the "promise" state. */
   emptyArt?: ReactNode;
   emptyText?: string;
   isEmpty: boolean;
   defaultExpanded?: boolean;
+  /** Override the body padding — a full-bleed list (Progress) wants none. */
+  contentClassName?: string;
 }
 
 /** Full-width row trigger, clipped by the parent's `overflow-hidden` so its square corners never peek past the card's rounded-md border. */
@@ -43,21 +46,26 @@ const HEADER_CLASS = cn(
 function CardTitleRow({
   title,
   count,
+  subtitle,
   chevron,
 }: {
   title: string;
   count?: number;
+  subtitle?: ReactNode;
   chevron: ReactNode;
 }) {
   return (
     <>
-      <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="text-foreground truncate text-sm font-semibold">{title}</span>
-        {typeof count === 'number' && count > 0 && (
-          <Badge variant="secondary" size="sm" className="tabular-nums">
-            {count}
-          </Badge>
-        )}
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex min-w-0 items-baseline gap-1.5">
+          <span className="text-foreground truncate text-sm font-semibold">{title}</span>
+          {typeof count === 'number' && count > 0 && (
+            <Badge variant="secondary" size="sm" className="tabular-nums">
+              {count}
+            </Badge>
+          )}
+        </span>
+        {subtitle}
       </span>
       {chevron}
     </>
@@ -67,11 +75,13 @@ function CardTitleRow({
 export function PanelCard({
   title,
   count,
+  subtitle,
   children,
   emptyArt,
   emptyText,
   isEmpty,
   defaultExpanded = false,
+  contentClassName = 'border-border border-t p-4',
 }: PanelCardProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const reduce = useReducedMotion();
@@ -98,7 +108,7 @@ export function PanelCard({
       // out of room — clipping a row in half instead of ever scrolling. The
       // column's own `overflow-auto` (see `easy-panel.tsx`) is what should
       // handle overflow, not a silent shrink of this card.
-      className="bg-popover shrink-0 overflow-hidden"
+      className="bg-popover shrink-0 overflow-hidden shadow"
       transition={transition}
     >
       <DisclosureTrigger variant="outline">
@@ -106,19 +116,20 @@ export function PanelCard({
           <CardTitleRow
             title={title}
             count={count}
+            subtitle={subtitle}
             chevron={
               <motion.span
-                animate={{ rotate: expanded ? 180 : 0 }}
+                animate={{ rotate: expanded ? 90 : 0 }}
                 transition={transition}
                 className="text-muted-foreground shrink-0"
               >
-                <ChevronDown className="size-4" />
+                <ChevronRight className="size-4" />
               </motion.span>
             }
           />
         </button>
       </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName="border-border border-t px-4 py-5">
+      <DisclosureContent variant="outline" contentClassName={contentClassName}>
         {isEmpty ? (
           <Empty className="flex-none gap-3 rounded-none border-none p-0 text-center">
             {emptyArt && <EmptyMedia className="mb-0">{emptyArt}</EmptyMedia>}

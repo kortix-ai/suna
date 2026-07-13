@@ -241,7 +241,6 @@ export const SessionLayout = memo(function SessionLayout({
       isSidePanelOpen={isSidePanelOpen}
       onTogglePanel={handleTogglePanel}
       auditBadge={auditPendingCount}
-      isEasy={isEasy}
       onToggleMode={togglePanelMode}
     />
   );
@@ -304,7 +303,12 @@ export const SessionLayout = memo(function SessionLayout({
   // title would be redundant), filling the whole card so it's perfectly
   // centered. The runtime-coupled views (Actions/Files/Terminal/Browser) need a
   // live sandbox, so they only render once booted.
-  const effectivePanelHeader = booting ? null : panelHeader;
+  //
+  // Easy mode has no header either: it is the three cards and nothing else. No
+  // title, no view tabs, no mode button, no border. The mode is switched from
+  // Settings → Appearance and the command palette; the chat header's own panel
+  // toggle still closes the panel (as does ⌘I), so nothing here is a dead end.
+  const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
     <SessionStartingLoader
       stage={bootStage ?? 'provisioning'}
@@ -384,7 +388,14 @@ export const SessionLayout = memo(function SessionLayout({
               <div
                 className={cn('bg-background h-full transition-[padding] duration-300 ease-out')}
               >
-                <div className="border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden border-l">
+                <div
+                  className={cn(
+                    'border-border flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
+                    // Easy mode is chrome-free — the cards carry their own
+                    // borders, so a panel border would just box a box.
+                    !isEasy && 'border-l',
+                  )}
+                >
                   {effectivePanelHeader}
                   <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
                 </div>
@@ -403,7 +414,6 @@ function PanelHeaderSwitcher({
   isSidePanelOpen,
   onTogglePanel,
   auditBadge = 0,
-  isEasy,
   onToggleMode,
 }: {
   view: SessionPanelView;
@@ -412,9 +422,8 @@ function PanelHeaderSwitcher({
   onTogglePanel: () => void;
   /** Pending-approval count shown on the "Audit" tab; 0 hides the badge. */
   auditBadge?: number;
-  /** Easy mode has no tab strip — just the card home and the mode affordance. */
-  isEasy: boolean;
-  /** Flips `preferences.panelMode` between 'easy' and 'advanced'. */
+  /** Flips `preferences.panelMode` back to 'easy'. Advanced-only — Easy mode
+   *  renders no header at all, so it has no button to switch with. */
   onToggleMode: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -448,25 +457,6 @@ function PanelHeaderSwitcher({
       </Button>
     </Hint>
   );
-
-  if (isEasy) {
-    return (
-      <div className="flex shrink-0 items-center justify-between border-b p-2">
-        <span className="text-foreground pl-2 text-sm font-medium">Activity</span>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleMode}
-            className="text-muted-foreground hover:text-foreground h-7 cursor-pointer text-xs"
-          >
-            Advanced
-          </Button>
-          {panelToggle}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex shrink-0 items-center justify-between border-b p-2">

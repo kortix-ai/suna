@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
+import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
@@ -117,6 +118,95 @@ const GLOB_OUTPUT = `/workspace/apps/web/src/components/ui/button.tsx
 const LIST_OUTPUT = `/workspace/apps/web/src/app/page.tsx
 /workspace/apps/web/src/app/layout.tsx
 /workspace/apps/web/src/app/globals.css`;
+
+// ---------------------------------------------------------------------------
+// FileViewer fixture — the sandbox fetch behind FilePreview always
+// fails on this page (no live sandbox), so the toggle can't be reached
+// through Outputs. Render it directly with realistic content: one markdown
+// file (proves the Preview/Raw split + real DocMarkdown rendering) and one
+// non-markdown file (proves the source-only path — no tabs, just a language
+// label).
+// ---------------------------------------------------------------------------
+const MARKDOWN_PREVIEW_CONTENT = `# Jay Suthar
+
+## Summary
+
+Frontend engineer focused on **design systems** and *motion-first* UI. Ships
+polished, production-grade interfaces and enjoys sweating the details other
+teams skip.
+
+## Highlights
+
+- Rebuilt the Easy-mode session panel's detail layer as an inset card, not a
+  full-bleed sheet
+- Cut card body padding to match content density per section
+- Replaced the file-manager drill-in with a single-file \`FilePreview\`
+- Shipped \`FileViewer\` — rendered preview, copy, download and full screen
+
+## Example
+
+Here's a minimal handler used in the file-preview fallback path:
+
+\`\`\`ts
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return \`\${(bytes / 1024 ** i).toFixed(1)} \${units[i]}\`;
+}
+\`\`\`
+
+Read more on the [Kortix design system](https://kortix.com) or ping me on
+Slack.
+`;
+
+const TS_SOURCE_CONTENT = `import { useCallback, useState } from 'react';
+
+export interface Counter {
+  value: number;
+  increment: () => void;
+  reset: () => void;
+}
+
+/** A minimal counter hook — used here only to prove Shiki highlighting on a
+ * non-markdown file inside \`FileViewer\`'s source-only path. */
+export function useCounter(initial = 0): Counter {
+  const [value, setValue] = useState(initial);
+
+  const increment = useCallback(() => {
+    setValue((v) => v + 1);
+  }, []);
+
+  const reset = useCallback(() => {
+    setValue(initial);
+  }, [initial]);
+
+  return { value, increment, reset };
+}
+`;
+
+/** HTML is the ONE file type whose rendered form and source are both worth
+ *  seeing, so it is the only one FileViewer gives a Preview/Source toggle. */
+const HTML_PREVIEW_CONTENT = `<!doctype html>
+<meta charset="utf-8" />
+<title>Pricing comparison</title>
+<style>
+  body { font: 15px/1.6 system-ui, sans-serif; margin: 24px; color: #111; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: #666; margin: 0 0 20px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #e5e5e5; padding: 8px 10px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+</style>
+<h1>Pricing comparison</h1>
+<p class="sub">Generated from 5 sources</p>
+<table>
+  <tr><th>Plan</th><th>Acme</th><th>Globex</th></tr>
+  <tr><td>Starter</td><td>$19/mo</td><td>$25/mo</td></tr>
+  <tr><td>Team</td><td>$49/mo</td><td>$45/mo</td></tr>
+  <tr><td>Enterprise</td><td>Custom</td><td>Custom</td></tr>
+</table>
+`;
 
 type Row = { label: string; node: React.ReactNode };
 type Group = { title: string; rows: Row[] };
@@ -512,12 +602,12 @@ const GROUPS: Group[] = [
 // ---------------------------------------------------------------------------
 // Easy-mode fixture — a plausible non-technical task: "look into how our
 // competitors price their plans, write it up, and make a cover image."
-// Exercises: grouping (6 consecutive reads → one step, 2 searches + 2 fetches
+// Exercises: grouping (6 consecutive reads → one step, 3 searches + 2 fetches
 // → one mixed step), a `write` (Outputs), `read`s (Context files), a web
-// search + fetch (Context web sources), a running step, an errored step, and
-// a `show` call whose only input is a raw sandbox path (Easy mode must never
-// render that path — see the `show` row in Progress, which narrates it by
-// basename instead).
+// search + fetch (Context web sources, incl. real, favicon-resolvable
+// domains), a running step, an errored step, and a `show` call whose only
+// input is a raw sandbox path (Easy mode must never render that path — see
+// the `show` row in Progress, which narrates it by basename instead).
 // ---------------------------------------------------------------------------
 const PRICING_REPORT_CONTENT = `# Pricing comparison
 
@@ -548,9 +638,15 @@ const EASY_PARTS = [
   part('read', done({ filePath: '/workspace/notes/customer-quotes.md' }, '<content/>')),
   part('read', done({ filePath: '/workspace/docs/outline.md' }, '<content/>')),
 
-  // 2. Web — 2 searches + 2 fetches, same family, collapse into one mixed
-  // step ("Searched and read 4 sources"); each stays distinct in Context's
-  // "Web sources" bucket.
+  // 2. Web — 3 searches + 2 fetches, same family, collapse into one mixed
+  // step ("Searched and read 5 sources"); each stays distinct in Context's
+  // "Web sources" bucket. The third search uses real, resolvable domains
+  // (github.com/wikipedia.org/stackoverflow.com) rather than the fictional
+  // acme.example.com/globex.example.com competitor sites above — those don't
+  // exist, so Google's favicon service can only ever return the generic
+  // globe fallback for them. Without at least one real domain, the
+  // "Web sources" row favicons would be unverifiable — every row would look
+  // the same regardless of whether real-favicon rendering actually works.
   part(
     'web_search',
     done(
@@ -571,6 +667,29 @@ const EASY_PARTS = [
         query: 'Globex Cloud pricing tiers comparison',
         results: [
           { title: 'Globex Cloud — Plans & Pricing', url: 'https://globex.example.com/plans' },
+        ],
+      }),
+    ),
+  ),
+  part(
+    'web_search',
+    done(
+      { query: 'SaaS pricing page best practices' },
+      JSON.stringify({
+        query: 'SaaS pricing page best practices',
+        results: [
+          {
+            title: 'Pricing page examples · GitHub Topics',
+            url: 'https://github.com/topics/pricing-page',
+          },
+          {
+            title: 'Pricing strategies - Wikipedia',
+            url: 'https://en.wikipedia.org/wiki/Pricing_strategies',
+          },
+          {
+            title: 'What tier structure works best for a B2B SaaS product? - Stack Overflow',
+            url: 'https://stackoverflow.com/questions/71234567/saas-pricing-tier-structure',
+          },
         ],
       }),
     ),
@@ -598,6 +717,31 @@ const EASY_PARTS = [
     errored(
       { command: 'pip install matplotlib-extra', description: 'Install charting helper' },
       'ERROR: Could not find a version that satisfies the requirement matplotlib-extra\nERROR: No matching distribution found for matplotlib-extra',
+    ),
+  ),
+
+  // 3b. Memory — a recall from an earlier session, its own step (different
+  // family from the `run` step above and the `edit` step below, so it never
+  // merges into either). Exercises the Memory badge + Brain glyph in Context
+  // and the Progress stepper's memory family icon — without this, neither
+  // could be verified against a real fixture.
+  part(
+    'memory_search',
+    done(
+      { query: 'competitor pricing notes' },
+      JSON.stringify({
+        query: 'competitor pricing notes',
+        results: [
+          {
+            id: 'mem_204',
+            type: 'note',
+            source: 'ltm',
+            confidence: 0.86,
+            content:
+              'User previously flagged that Acme undercuts on annual billing discounts — check before finalizing the comparison.',
+          },
+        ],
+      }),
     ),
   ),
 
@@ -730,6 +874,61 @@ export default function DebugToolsPage() {
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
               <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* FileViewer fixture — /debug/tools has no live sandbox, so FilePreview's
+          fetch always fails and the viewer can never be reached through Outputs.
+          Render it directly, three times, one per toolbar shape:
+            - markdown  → file icon + name, rendered document, NO toggle
+            - html      → Preview/Source toggle at the far left (the only type
+                          whose rendered form and source are both worth seeing)
+            - other     → file icon + name, source only, NO toggle
+          All three share the same right-hand actions. */}
+      <div className="mx-auto w-full max-w-6xl px-6 pt-10">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          FileViewer
+        </h2>
+        <div className="flex flex-wrap items-start gap-6">
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              markdown — no toggle
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={MARKDOWN_PREVIEW_CONTENT}
+                fileName="jay-suthar.md"
+                path="/workspace/jay-suthar.md"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              html — preview / source toggle
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={HTML_PREVIEW_CONTENT}
+                fileName="report.html"
+                path="/workspace/report.html"
+                onClose={() => {}}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              other — source only
+            </div>
+            <div className="border-border bg-popover h-[560px] w-[520px] overflow-hidden rounded-2xl border">
+              <FileViewer
+                content={TS_SOURCE_CONTENT}
+                fileName="example.ts"
+                path="/workspace/example.ts"
+                onClose={() => {}}
+              />
             </div>
           </div>
         </div>

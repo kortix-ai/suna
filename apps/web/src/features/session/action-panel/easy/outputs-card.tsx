@@ -10,6 +10,7 @@
  * show.
  */
 
+import { getFileIcon } from '@/features/project-files';
 import {
   FileText,
   Image as ImageIcon,
@@ -27,6 +28,64 @@ const KIND_ICON = {
   presentation: PresentationIcon,
 } as const;
 
+/**
+ * A file gets its real per-extension glyph (the `.md` tile, the `.png` tile) —
+ * the same one the files explorer uses, so an output looks like the thing the
+ * user will open. Generated media has no filename to key off, so it keeps its
+ * kind icon.
+ */
+function OutputIcon({ output }: { output: OutputItem }) {
+  const tile = ' flex size-7 shrink-0 items-center justify-center rounded-sm';
+
+  if (output.kind === 'file') {
+    return (
+      <span className={tile}>
+        {getFileIcon(output.name, { className: 'size-3.5', variant: 'monochrome' })}
+      </span>
+    );
+  }
+
+  const Ico = KIND_ICON[output.kind];
+  return (
+    <span className={tile}>
+      <Ico className="text-muted-foreground size-3.5" />
+    </span>
+  );
+}
+
+/**
+ * The list of files, as tappable rows. Shared: the Outputs card uses it, and so
+ * does a Progress step that touched more than one file — a "Wrote 3 files" step
+ * and the Outputs card are showing the same kind of thing, so they should look
+ * like the same kind of thing.
+ */
+export function OutputRows({
+  outputs,
+  onOpenOutput,
+}: {
+  outputs: OutputItem[];
+  /** Only called for outputs with a real path — see the disabled state below. */
+  onOpenOutput: (output: OutputItem) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-0">
+      {outputs.map((o) => (
+        <li key={outputKey(o)}>
+          <button
+            type="button"
+            disabled={!o.path}
+            onClick={() => o.path && onOpenOutput(o)}
+            className="flex items-center gap-2.5 py-1.5 px-1 -mx-0.5 rounded-sm w-full text-left hover:bg-accent"
+          >
+            <OutputIcon output={o} />
+            <span className="text-foreground truncate text-sm">{o.name}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function OutputsCard({
   outputs,
   defaultExpanded,
@@ -35,7 +94,6 @@ export function OutputsCard({
   outputs: OutputItem[];
   /** Auto-expands when a run finishes with something to show — the payoff moment. */
   defaultExpanded: boolean;
-  /** Only called for outputs with a real path — see the disabled state below. */
   onOpenOutput: (output: OutputItem) => void;
 }) {
   return (
@@ -46,25 +104,11 @@ export function OutputsCard({
       defaultExpanded={defaultExpanded}
       emptyArt={<OutputsArt />}
       emptyText="View and open files created during this task."
+      // The card body carries the horizontal padding; the rows carry none, so a
+      // row's tint runs the full width of the list instead of being inset twice.
+      contentClassName="border-border border-t px-2 py-2"
     >
-      <ul className="flex flex-col gap-0.5">
-        {outputs.map((o) => {
-          const Ico = KIND_ICON[o.kind];
-          return (
-            <li key={outputKey(o)}>
-              <button
-                type="button"
-                disabled={!o.path}
-                onClick={() => o.path && onOpenOutput(o)}
-                className="hover:bg-muted-foreground/[0.06] flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition-[background-color,transform] active:scale-[0.998] disabled:cursor-default disabled:active:scale-100"
-              >
-                <Ico className="text-muted-foreground size-4 shrink-0" />
-                <span className="text-foreground truncate text-sm">{o.name}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <OutputRows outputs={outputs} onOpenOutput={onOpenOutput} />
     </PanelCard>
   );
 }
