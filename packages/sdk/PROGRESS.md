@@ -530,3 +530,32 @@ full SDK typecheck, test, and packed-install smoke gates are required before thi
 claim is closed.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `session-base-branches` (completion)
+
+Completed the additive session branch-environment surface in implementation
+commit `0843d870c`: `ProjectBranchesResponse` now reports the caller's effective
+session default and group-conflict metadata, while project group grants accept
+an optional nullable `default_base_ref`. Existing names and required fields are
+unchanged; compatibility with older servers is preserved through optional
+response fields.
+
+**TDD/regression evidence:** the focused cross-package run passed **103 tests / 0
+failures** across the SDK access client, API branch resolver, DB schema, and web
+session-create input. The real isolated API then proved: attached group default
+`staging` -> persisted session `base_ref: staging`; explicit `dev` -> persisted
+`base_ref: dev`; conflicting `dev`/`staging` group defaults -> project `dev` with
+`session_default_conflict: true`; PATCH `default_base_ref: null` -> effective
+default returned to `staging`. Both sessions retained their generated UUID as
+`branch_name`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1077 pass / 2 skip / 0 fail** across
+72 files with 4955 assertions; `pnpm --filter @kortix/sdk run smoke:install`
+packed, installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. The two skipped tests are
+the existing browser-bundle tests that only execute after `build:bundles`; this
+change does not touch bundles or runtime transport.
