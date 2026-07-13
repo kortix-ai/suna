@@ -14,6 +14,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
+  isTronLinkProxyNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -1282,6 +1283,170 @@ test('does NOT suppress a real app TypeError with a different null-property name
       }),
       false,
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
+    )
+  }
+})
+
+// ---------------------------------------------------------------------------
+// TronLink browser-extension injected-Proxy `set`-trap noise
+// (Better Stack pattern 951c1a316cae8595da3f73877cb1fa8a77d04315ae1a2987b6348a97ec9a049a,
+// Kortix Frontend prod, application_id 2346967). The TronLink wallet extension
+// injects `app:///injected/injected.js` (function `BI`) which wraps a page
+// object in a Proxy exposing `tronlinkParams`; a `set` the trap declines throws
+// `TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'`.
+// 2 occurrences, 0 identified users, first/last 2026-07-12. The throw is inside
+// the EXTENSION's injected script, never first-party code. The matcher requires
+// BOTH the TronLink property name AND an injected/extension source so a real
+// first-party Proxy `set` failure keeps reporting.
+// ---------------------------------------------------------------------------
+
+const TRONLINK_INJECTED_FRAME = { filename: 'app:///injected/injected.js', function: 'BI' }
+
+const TRONLINK_PROXY_EVENTS = [
+  // The exact assigned production message (V8/Chrome).
+  "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // Bare message (no `TypeError:` prefix).
+  "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // SpiderMonkey (Firefox) wording, same TronLink property.
+  "proxy set handler returned false for property 'tronlinkParams'",
+  "TypeError: proxy set handler returned false for property 'tronlinkParams'",
+]
+
+test('classifies every TronLink proxy-trap variant as noise when sourced from the injected script', () => {
+  for (const message of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      isTronLinkProxyNoise({ message, filename: 'app:///injected/injected.js' }),
+      true,
+      `expected "${message}" from injected.js to be TronLink noise`,
+    )
+    assert.equal(
+      isTronLinkProxyNoise({ message, frames: [TRONLINK_INJECTED_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be TronLink noise`,
+    )
+  }
+})
+
+test('classifies TronLink proxy-trap noise from a chrome-extension:// frame', () => {
+  assert.equal(
+    isTronLinkProxyNoise({
+      message: "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      frames: [{ filename: 'chrome-extension://egjidmnggjknjgkbjopmfcfhkagpnbgh/injected.js' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses the TronLink proxy-trap Sentry event from the injected script', () => {
+  for (const value of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [TRONLINK_INJECTED_FRAME] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the TronLink proxy-trap unhandled rejection from the browser (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        "Unhandled promise rejection: TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      filename: 'app:///injected/injected.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a TronLink-worded event with NO injected/extension source (conservative — keep reporting)', () => {
+  // No source anchor → can't confirm extension origin; a first-party Proxy
+  // could theoretically throw the same wording, so keep reporting.
+  for (const value of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      isTronLinkProxyNoise({ message: value }),
+      false,
+      `expected frameless "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a TronLink-worded event from a first-party app frame', () => {
+  // A genuine first-party Proxy `set` trap returning falsish (MobX/Immer/
+  // Zustand/hand-rolled Proxy) throws the SAME wording but inside app code —
+  // the de-minified frame is `apps/web/src/…`, not the extension's injected
+  // script. It must keep reporting so a real Proxy bug is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/store.ts' },
+    { filename: 'apps/web/src/lib/store.ts' },
+    { filename: 'https://app.kortix.com/_next/static/chunks/store.js' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
+    assert.equal(
+      isTronLinkProxyNoise({
+        message: "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+        frames,
+      }),
+      false,
+      `expected TronLink-worded event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting TronLink-worded event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      filename: 'app:///apps/web/src/lib/store.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT property', () => {
+  // The generic `'set' on proxy: trap returned falsish for property '<X>'`
+  // wording with a non-TronLink property name is a real app Proxy bug — even
+  // from the injected script frame, the property name is the TronLink marker,
+  // so a different property must keep reporting regardless of source.
+  for (const value of [
+    "'set' on proxy: trap returned falsish for property 'foo'",
+    "TypeError: 'set' on proxy: trap returned falsish for property 'bar'",
+    "'set' on proxy: trap returned falsish for property 'tronlinkParams_extra'",
+  ]) {
+    assert.equal(
+      isTronLinkProxyNoise({ message: value, filename: 'app:///injected/injected.js' }),
+      false,
+      `expected non-TronLink Proxy message "${value}" to keep reporting`,
     )
   }
 })

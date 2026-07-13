@@ -239,6 +239,40 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/embed\/embed\.js$/,
 ] as const;
 
+// TronLink (Tron blockchain wallet) browser-extension injected-script noise.
+// The TronLink extension injects a content script
+// (`app:///injected/injected.js`, function `BI`) that wraps a page object
+// (e.g. `window`) in a Proxy and exposes a `tronlinkParams` property for its
+// dapp provider. When the extension's own injected code — or another on-page
+// script — attempts a `set` on that proxied object and the trap declines the
+// assignment (returns falsish), the engine throws
+// `TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'`
+// (V8) / `proxy set handler returned false for property 'tronlinkParams'`
+// (SpiderMonkey). The throw originates INSIDE the extension's injected script,
+// never in first-party app code: `tronlinkParams` is a TronLink-private
+// property our app never touches. Better Stack pattern `951c1a31…`, Kortix
+// Frontend (prod, application_id 2346967), 2 occurrences, 0 identified users,
+// first/last 2026-07-12, call site `app:///injected/injected.js` function `BI`.
+//
+// The `'set' on proxy: trap returned falsish for property '<X>'` wording is a
+// GENERIC Proxy `set`-trap failure that legitimate first-party Proxy users
+// (MobX / Immer / Zustand middleware / a hand-rolled `new Proxy(...)` guard)
+// can also throw when their `set` trap returns `false`. Matching on message
+// alone would swallow those real app Proxy bugs. Require BOTH the
+// TronLink-specific property name AND an injected/extension frame/source so a
+// real first-party Proxy `set` failure keeps reporting.
+const TRONLINK_PROXY_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording.
+  /'set' on proxy: trap returned falsish for property 'tronlinkParams'/,
+  // SpiderMonkey (Firefox): different engine, same TronLink property.
+  /proxy set handler returned false for property 'tronlinkParams'/,
+]
+
+function isTronLinkInjectedSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return /^app:\/\/\/injected\/injected\.js$/.test(normalized);
+}
+
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => message.includes(pattern));
 }
@@ -356,6 +390,38 @@ export function isExtensionSource(filename: unknown): boolean {
 export function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the TronLink browser-extension
+ * injected-Proxy `set`-trap noise class: a `'set' on proxy: trap returned
+ * falsish for property 'tronlinkParams'` `TypeError` thrown from the
+ * extension's own injected script (`app:///injected/injected.js`) or an
+ * extension-origin frame. TronLink wraps a page object in a Proxy and exposes
+ * `tronlinkParams` for its dapp provider; the throw is in the extension, never
+ * in first-party app code. Requires BOTH the TronLink-specific property name
+ * AND an injected/extension source so a real first-party Proxy `set` failure
+ * (MobX/Immer/Zustand/hand-rolled Proxy) keeps reporting. Returns false when
+ * there is no source anchor at all (can't confirm extension origin — keep
+ * reporting rather than swallow a possible app Proxy bug). See
+ * `TRONLINK_PROXY_NOISE_PATTERNS` for the full rationale.
+ */
+export function isTronLinkProxyNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!TRONLINK_PROXY_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(
+    (filename) => isTronLinkInjectedSource(filename) || isExtensionSource(filename),
+  );
 }
 
 export function isKnownTestNoiseMessage(message: unknown): boolean {
@@ -609,6 +675,15 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // TronLink browser-extension injected-Proxy `set`-trap noise — the
+  // extension's `injected.js` wraps a page object in a Proxy and a `set` on
+  // `tronlinkParams` is declined. Requires BOTH the TronLink property name AND
+  // an injected/extension source so a real first-party Proxy `set` failure
+  // keeps reporting. See `isTronLinkProxyNoise`.
+  if (isTronLinkProxyNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
@@ -738,6 +813,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (frames.some((frame) => isInjectedAppSource(frame.filename))) {
+    return true;
+  }
+
+  // TronLink browser-extension injected-Proxy `set`-trap noise — the
+  // extension's `injected.js` (or an extension-origin frame) declines a `set`
+  // on `tronlinkParams`. Requires BOTH the TronLink property name AND an
+  // injected/extension frame so a real first-party Proxy `set` failure keeps
+  // reporting. See `isTronLinkProxyNoise`.
+  if (isTronLinkProxyNoise({ message, frames })) {
     return true;
   }
 
