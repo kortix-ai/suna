@@ -25,7 +25,6 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -33,9 +32,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast } from '@/components/ui/toast';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
-import { useInstallMarketplaceItem, useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
+import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { listAccounts, provisionProject } from '@kortix/sdk/projects-client';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
@@ -45,18 +44,12 @@ import { useProjectPicker } from './marketplace-project-picker';
  *  UUIDs, so this can never collide). */
 const NEW_PROJECT = '__new__';
 
-type Method = 'agent' | 'direct';
-
 /**
  * The ONE "install this marketplace item" modal — replaces the old
  * clone-a-project / add-a-skill / merge-a-project-into-a-project fork with a
- * single target + method choice:
- *
- * - Target: an existing project, or a brand new one (provisioned inline).
- * - Method: an agent session that installs + wires the item up
- *   (recommended — the only safe way to merge a whole `registry:project`
- *   into an EXISTING project), or a deterministic file commit with no agent
- *   (skills/agents/commands only).
+ * single target choice (an existing project, or a brand new one, provisioned
+ * inline). Installing is always an agent import: a session clones the item's
+ * source repo, reads it, and merges what fits into the project's own files.
  */
 export function AddToProjectModal({
   item,
@@ -82,26 +75,16 @@ export function AddToProjectModal({
 
   const [target, setTarget] = useState<string>(fixedProjectId ?? NEW_PROJECT);
   const [newProjectName, setNewProjectName] = useState(humanizedTitle);
-  const [method, setMethod] = useState<Method>('agent');
   const [busy, setBusy] = useState(false);
 
   const installSession = useInstallMarketplaceItemAsSession();
-  const installDirect = useInstallMarketplaceItem();
 
   // Reset to sensible defaults each time the modal opens for a (possibly new) item.
   useEffect(() => {
     if (!open) return;
     setTarget(fixedProjectId ?? NEW_PROJECT);
     setNewProjectName(humanizedTitle);
-    setMethod('agent');
   }, [open, fixedProjectId, humanizedTitle]);
-
-  // A whole project merged into an EXISTING project is agent-only — merging
-  // one project's kortix.yaml into another deterministically is unsafe.
-  const directDisabled = isProject && target !== NEW_PROJECT;
-  useEffect(() => {
-    if (directDisabled && method === 'direct') setMethod('agent');
-  }, [directDisabled, method]);
 
   const caps = item.capabilities;
   const showCaps = hasCapabilities(caps);
@@ -133,42 +116,23 @@ export function AddToProjectModal({
         });
         queryClient.invalidateQueries({ queryKey: ['projects'] });
 
-        if (method === 'agent') {
-          const sessionId = isProject
-            ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
-            : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
-                .session_id;
-          onOpenChange(false);
-          router.replace(
-            sessionId
-              ? `/projects/${project.project_id}/sessions/${sessionId}`
-              : `/projects/${project.project_id}`,
-          );
-        } else {
-          // A project's files are already seeded deterministically via
-          // `source_item_id` above — nothing left to commit for it here.
-          if (!isProject) {
-            await installDirect.mutateAsync({ projectId: project.project_id, id: item.id });
-          }
-          onOpenChange(false);
-          router.replace(`/projects/${project.project_id}`);
-        }
+        const sessionId = isProject
+          ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
+          : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
+              .session_id;
+        onOpenChange(false);
+        router.replace(
+          sessionId
+            ? `/projects/${project.project_id}/sessions/${sessionId}`
+            : `/projects/${project.project_id}`,
+        );
         return;
       }
 
       const projectId = target;
-      if (method === 'agent') {
-        const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
-        onOpenChange(false);
-        router.push(`/projects/${projectId}/sessions/${session_id}`);
-      } else {
-        await installDirect.mutateAsync({ projectId, id: item.id });
-        successToast(`Added ${item.title}`, {
-          description: 'Committed into the project — live in the next session.',
-        });
-        queryClient.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
-        onOpenChange(false);
-      }
+      const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
+      onOpenChange(false);
+      router.push(`/projects/${projectId}/sessions/${session_id}`);
     } catch (e) {
       errorToast('Could not add to project', { description: (e as Error).message });
     } finally {
@@ -226,34 +190,6 @@ export function AddToProjectModal({
                   />
                 </Field>
               )}
-
-              <Field className="gap-1.5">
-                <FieldLabel>Method</FieldLabel>
-                <RadioGroup value={method} onValueChange={(v) => setMethod(v as Method)}>
-                  <RadioGroupItem
-                    value="agent"
-                    label={
-                      <span className="inline-flex items-center gap-1.5">
-                        Set it up with an agent
-                        <Badge variant="outline" size="sm">
-                          Recommended
-                        </Badge>
-                      </span>
-                    }
-                    description="Runs a session that installs it and wires up whatever it needs."
-                  />
-                  <RadioGroupItem
-                    value="direct"
-                    label="Add files directly"
-                    description={
-                      directDisabled
-                        ? 'Whole projects are merged by an agent'
-                        : 'A deterministic commit — no agent.'
-                    }
-                    disabled={directDisabled}
-                  />
-                </RadioGroup>
-              </Field>
 
               {item.dependencies.length > 0 && (
                 <FieldDescription>

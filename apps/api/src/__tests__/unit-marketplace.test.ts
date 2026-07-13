@@ -6,7 +6,9 @@ process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 import {
   DEFAULT_MARKETPLACES,
   assertAllowedSourceAddress,
+  findCatalogEntryByName,
   getCatalogItemDetail,
+  getCatalogItemFile,
   githubLoaderOptions,
   listCatalogItems,
   listMarketplaces,
@@ -14,88 +16,128 @@ import {
   registerMarketplaceSourceProvider,
   _resetExternalCache,
 } from '../marketplace/catalog';
-import { compareInstalled } from '@kortix/registry';
-import { buildInstall, buildInstallBatch, resolveItemFiles } from '../marketplace/install-service';
 
 describe('marketplace catalog', () => {
-  test('default external sources are Anthropic only; Hermes stays opt-in', () => {
-    expect(DEFAULT_MARKETPLACES).toEqual([
-      'anthropics/skills',
-      'anthropics/knowledge-work-plugins',
-    ]);
+  test('no external marketplaces are enabled by default — Anthropic and Hermes both stay opt-in', () => {
+    // Only Kortix loads out of the box; every external source (Anthropic
+    // included) is a one-click "Add a source" from FEATURED_MARKETPLACES.
+    expect(DEFAULT_MARKETPLACES).toEqual([]);
     expect(DEFAULT_MARKETPLACES).not.toContain('NousResearch/hermes-agent');
+    expect(DEFAULT_MARKETPLACES).not.toContain('anthropics/skills');
   });
 
-  test('surfaces skills + projects through browse; support types stay internal', async () => {
+  test('surfaces the starter project through browse; folded skills + support types stay internal', async () => {
     const all = await listCatalogItems();
-    expect(all.length).toBeGreaterThan(50);
 
-    // The marketplace surfaces the one-click importables (skills, agents,
-    // commands, whole projects). No curated Kortix bundles anymore — those
-    // were removed as low-value; tools/files stay internal for dependency
-    // handling.
+    // The marketplace now leads with the "Kortix Starter" project as the hero —
+    // individual kortix-starter skills are folded inside it rather than listed
+    // as their own top-level tiles. Support types (bundles/tools/files) stay
+    // internal for dependency handling.
     expect(all.some((i) => i.type === 'registry:bundle')).toBe(false);
     expect(all.some((i) => i.type === 'registry:project')).toBe(true);
     expect(all.some((i) => i.type === 'registry:tool')).toBe(false);
     expect(all.some((i) => i.type === 'registry:file')).toBe(false);
-    expect(all.find((i) => i.id === 'kortix-projects:research-analyst')).toBeTruthy();
+    expect(all.find((i) => i.id === 'kortix-projects:starter')).toBeTruthy();
 
-    expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
+    // Folded: a starter skill like `pdf` is no longer a browse tile…
+    expect(all.find((i) => i.name === 'pdf')).toBeUndefined();
+
+    // …but it's still resolvable by id and shows up typed inside the starter
+    // project's "what's inside" list.
+    const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
+    expect(starterDetail).toBeTruthy();
+    expect(starterDetail!.dependencyItems.some((d) => d.name === 'pdf')).toBe(true);
   });
 
   test('lists only optional Kortix skills through the marketplace', async () => {
+    // agent-browser is folded out of the top-level browse list along with every
+    // other kortix-starter skill, but it stays fully resolvable by id and shows
+    // up inside the starter project's dependencyItems.
     const all = await listCatalogItems({ source: 'kortix' });
-    const agentBrowser = all.find((i) => i.name === 'agent-browser');
+    expect(all.find((i) => i.name === 'agent-browser')).toBeUndefined();
+
+    const agentBrowser = await findCatalogEntryByName('agent-browser');
     expect(agentBrowser).toBeTruthy();
-    expect(agentBrowser!.marketplaceId).toBe('kortix');
-    expect(agentBrowser!.type).toBe('registry:skill');
-    expect(agentBrowser!.managedBy).toBeUndefined();
-    expect(agentBrowser!.defaultProjectInstall).toBe(true);
+    expect(agentBrowser!.item.type).toBe('registry:skill');
+    expect(agentBrowser!.item.meta?.managedBy).toBeUndefined();
+
+    const agentBrowserDetail = await getCatalogItemDetail('kortix-starter:agent-browser');
+    expect(agentBrowserDetail).toBeTruthy();
+    expect(agentBrowserDetail!.marketplaceId).toBe('kortix');
+    expect(agentBrowserDetail!.type).toBe('registry:skill');
+    expect(agentBrowserDetail!.managedBy).toBeUndefined();
+    expect(agentBrowserDetail!.defaultProjectInstall).toBe(true);
+
+    const starterDetail = await getCatalogItemDetail('kortix-projects:starter');
+    expect(starterDetail!.dependencyItems.some((d) => d.name === 'agent-browser')).toBe(true);
+
+    // Support types / internal-only names never surface, by name or by fold.
+    expect(await findCatalogEntryByName('pty')).toBeNull();
+    expect(await findCatalogEntryByName('kortix-simple-memory')).toBeNull();
+    expect((await findCatalogEntryByName('web_search'))?.item.type).toBe('registry:tool');
+    expect((await findCatalogEntryByName('scrape_webpage'))?.item.type).toBe('registry:tool');
+    expect((await findCatalogEntryByName('image_search'))?.item.type).toBe('registry:tool');
     expect(all.find((i) => i.name === 'pty')).toBeUndefined();
     expect(all.find((i) => i.name === 'kortix-simple-memory')).toBeUndefined();
     expect(all.find((i) => i.name === 'web_search')).toBeUndefined();
     expect(all.find((i) => i.name === 'scrape_webpage')).toBeUndefined();
     expect(all.find((i) => i.name === 'image_search')).toBeUndefined();
-    expect(all
-      .filter((i) => i.defaultProjectInstall)
-      .map((i) => i.name)
-      .sort()).toEqual([
-        'agent-browser',
-        'deep-research',
-        'document-review',
-        'docx',
-        'pdf',
-        'presentations',
-        'research-report',
-        'website-building',
-        'xlsx',
-      ]);
-    expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
+    expect(await findCatalogEntryByName('kortix-tool-env')).toBeNull();
+
+    // The known default-install skills are still marked as such (resolved by
+    // id, since the browse list no longer carries individual skills).
+    const depIds = starterDetail!.dependencyItems.map((d) => d.id);
+    const depDetails = await Promise.all(depIds.map((id) => getCatalogItemDetail(id)));
+    const defaultInstallNames = new Set(
+      depDetails.filter((d) => d?.defaultProjectInstall).map((d) => d!.name),
+    );
+    for (const name of [
+      'agent-browser',
+      'deep-research',
+      'document-review',
+      'docx',
+      'pdf',
+      'presentations',
+      'research-report',
+      'website-building',
+      'xlsx',
+    ]) {
+      expect(defaultInstallNames.has(name)).toBe(true);
+    }
   });
 
   test('marks only kortix-* runtime skills as Kortix-managed', async () => {
-    const all = await listCatalogItems();
-    const managed = all.filter((i) => i.managedBy === 'kortix').map((i) => i.name).sort();
-
-    expect(managed).toEqual([
+    // Managed system skills are excluded from the starter project's
+    // dependencyItems (they're server-injected platform floor, not a project's
+    // "what's inside" list) and from browse/detail (not browseable) — so managed
+    // status is checked by name lookup instead.
+    const managedCandidates = [
       'kortix-computer',
       'kortix-executor',
+      'kortix-marketplace',
+      'kortix-meet',
       'kortix-memory',
+      'kortix-onboarding',
       'kortix-slack',
       'kortix-system',
-    ]);
-    expect(all.find((i) => i.name === 'agent-browser')?.managedBy).toBeUndefined();
-    expect(all.find((i) => i.name === 'kortix')?.managedBy).toBeUndefined();
-    expect(all.find((i) => i.name === 'memory-reflector')?.managedBy).toBeUndefined();
-    expect(all.find((i) => i.name === 'web_search')?.managedBy).toBeUndefined();
-    expect(all.find((i) => i.name === 'pdf')?.managedBy).toBeUndefined();
+    ];
+    for (const name of managedCandidates) {
+      const entry = await findCatalogEntryByName(name);
+      expect(entry?.item.meta?.managedBy).toBe('kortix');
+    }
+    for (const name of ['agent-browser', 'kortix', 'memory-reflector', 'web_search', 'pdf']) {
+      const entry = await findCatalogEntryByName(name);
+      expect(entry?.item.meta?.managedBy).toBeUndefined();
+    }
   });
 
   test('filters by type and query', async () => {
     const projects = await listCatalogItems({ type: 'project' });
     expect(projects.length).toBeGreaterThan(0); // whole projects are browseable one-click clones
     expect(projects.every((i) => i.type === 'registry:project')).toBe(true);
-    expect((await listCatalogItems({ query: 'pdf' })).some((i) => i.name === 'pdf')).toBe(true);
+    // `pdf` folded into the starter project — no longer a query hit in browse.
+    expect((await listCatalogItems({ query: 'pdf' })).some((i) => i.name === 'pdf')).toBe(false);
+    expect((await listCatalogItems({ query: 'starter' })).some((i) => i.id === 'kortix-projects:starter')).toBe(true);
     expect((await listCatalogItems({ query: 'zzzznotathing' })).length).toBe(0);
   });
 
@@ -119,7 +161,10 @@ describe('marketplace catalog', () => {
     expect(kortix).toBeTruthy();
     expect(kortix.label).toBe('Kortix');
     expect(kortix.external).toBe(false);
-    expect(kortix.count).toBeGreaterThan(50);
+    // Kortix now browses as a single hero project — the "Kortix Starter" — with
+    // every individual kortix-starter skill folded inside it (counted, not
+    // listed) rather than as separate top-level browse tiles.
+    expect(kortix.count).toBe(1);
 
     // The base registries (kortix bundles + kortix-starter skills) collapse to one id…
     expect(marketplaceIdOf('kortix-starter')).toBe('kortix');
@@ -133,129 +178,23 @@ describe('marketplace catalog', () => {
   });
 
   test('surfaces capability hints (secrets / tools) on known skills', async () => {
-    const all = await listCatalogItems();
-    expect(all.find((i) => i.name === 'elevenlabs')?.capabilities.secrets).toContain('ELEVENLABS_API_KEY');
-    expect(all.find((i) => i.name === 'replicate')?.capabilities.secrets).toContain('REPLICATE_API_TOKEN');
-    expect(all.find((i) => i.name === 'deep-research')?.capabilities.tools).toContain('web_search');
+    // Folded skills no longer live in the browse list — fetch them by id instead.
+    const deepResearch = await getCatalogItemDetail('kortix-starter:deep-research');
+    expect(deepResearch?.capabilities.tools).toContain('web_search');
+    const domainResearch = await getCatalogItemDetail('kortix-starter:domain-research');
+    expect(domainResearch?.capabilities.network).toContain('rdap.org');
     // A plain skill has no special permissions.
-    expect(all.find((i) => i.name === 'pdf')?.capabilities.secrets.length).toBe(0);
+    const pdf = await getCatalogItemDetail('kortix-starter:pdf');
+    expect(pdf?.capabilities.secrets.length).toBe(0);
   });
 
   test('item detail carries files + a readme', async () => {
-    const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
-    const detail = (await getCatalogItemDetail(pdf.id))!;
+    const detail = (await getCatalogItemDetail('kortix-starter:pdf'))!;
     expect(detail.files.length).toBeGreaterThan(1);
     expect(detail.files.every((f) => f.target.startsWith('@skills/'))).toBe(true);
     expect(detail.readme).toContain('---');
   });
 
-  test('buildInstall(skill) → expanded files + a valid v2 lock', async () => {
-    const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
-    const built = await buildInstall({
-      id: pdf.id,
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-    expect(built.files.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
-    expect(built.installed.map((i) => i.name)).toContain('pdf');
-    const lock = JSON.parse(built.files.find((f) => f.path === 'registry-lock.json')!.content);
-    expect(lock.version).toBe(2);
-    expect(lock.items.pdf.type).toBe('registry:skill');
-  });
-
-  test('buildInstall(agent-browser) installs the default marketplace skill', async () => {
-    const agentBrowser = (await listCatalogItems({ query: 'agent-browser', source: 'kortix' })).find((i) => i.name === 'agent-browser')!;
-    const built = await buildInstall({
-      id: agentBrowser.id,
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-
-    const paths = built.files.map((f) => f.path);
-    expect(paths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(built.installed.map((i) => i.name)).toEqual(['agent-browser']);
-    expect(built.capabilities.tools).toContain('agent-browser');
-  });
-
-  test('buildInstall(registry:project) → pulls every declared dependency in one commit', async () => {
-    const built = await buildInstall({
-      id: 'kortix-projects:research-analyst',
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-    const names = built.installed.map((i) => i.name);
-    for (const dep of ['deep-research', 'research-report', 'openalex-paper-search']) {
-      expect(names).toContain(dep);
-    }
-    expect(built.files.filter((f) => f.path.endsWith('/SKILL.md')).length).toBeGreaterThanOrEqual(3);
-  });
-
-  test('update detection — installed item compares up-to-date against its source', async () => {
-    const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
-    const built = await buildInstall({
-      id: pdf.id,
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-    const lock = JSON.parse(built.files.find((f) => f.path === 'registry-lock.json')!.content);
-    const lockedPdf = lock.items.pdf.files as Array<{ target: string; hash: string }>;
-
-    const fresh = await resolveItemFiles('pdf', '.kortix/opencode');
-    expect(fresh).not.toBeNull();
-    expect(compareInstalled(lockedPdf, fresh).status).toBe('up-to-date');
-
-    // A tampered/older hash in the lock ⇒ update-available.
-    const stale = lockedPdf.map((f, i) => (i === 0 ? { ...f, hash: 'deadbeef' } : f));
-    expect(compareInstalled(stale, fresh).status).toBe('update-available');
-
-    // An item that's no longer in the catalog ⇒ orphaned (null fresh files).
-    expect(await resolveItemFiles('zzz-not-a-real-skill', '.kortix/opencode')).toBeNull();
-  });
-
-  test('buildInstall merges into an existing lock instead of clobbering it', async () => {
-    const existing = JSON.stringify({
-      version: 2,
-      items: { 'prior-skill': { type: 'registry:skill', source: 'x', sourceType: 'local', files: [] } },
-    });
-    const pdf = (await listCatalogItems({ query: 'pdf' })).find((i) => i.name === 'pdf')!;
-    const built = await buildInstall({
-      id: pdf.id,
-      configDir: '.kortix/opencode',
-      existingLockRaw: existing,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-    const lock = JSON.parse(built.files.find((f) => f.path === 'registry-lock.json')!.content);
-    expect(lock.items['prior-skill']).toBeTruthy();
-    expect(lock.items.pdf).toBeTruthy();
-  });
-
-  test('buildInstallBatch updates multiple items into one combined lock write', async () => {
-    const catalog = await listCatalogItems({ source: 'kortix' });
-    const pdf = catalog.find((i) => i.name === 'pdf')!;
-    const docx = catalog.find((i) => i.name === 'docx')!;
-    const built = await buildInstallBatch({
-      ids: [pdf.id, docx.id],
-      configDir: '.kortix/opencode',
-      existingLockRaw: null,
-      legacyLockRaw: null,
-      now: '2026-06-16T00:00:00.000Z',
-    });
-    const lockWrites = built.files.filter((f) => f.path === 'registry-lock.json');
-    expect(lockWrites).toHaveLength(1);
-    const lock = JSON.parse(lockWrites[0]!.content);
-    expect(lock.items.pdf.type).toBe('registry:skill');
-    expect(lock.items.docx.type).toBe('registry:skill');
-    expect(built.installed.map((i) => i.name).sort()).toEqual(['docx', 'pdf']);
-  });
 });
 
 describe('marketplace external registries (skills.sh / GitHub path)', () => {
@@ -279,7 +218,7 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
     githubLoaderOptions.fetchImpl = ORIG_GITHUB_FETCH;
   }
 
-  test.serial('ingests an external registry + installs its item from source', async () => {
+  test.serial('ingests an external registry + surfaces its item through discovery', async () => {
     stub({
       [`${RAW}/registry.json`]: JSON.stringify({
         name: 'mock-skills',
@@ -304,16 +243,13 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
       expect(ext!.id).toBe('mock-skills:hello-ext');
       expect(ext!.sourceUrl).toBe('https://github.com/mockorg/mockrepo');
 
-      const built = await buildInstall({
-        id: 'mock-skills:hello-ext',
-        configDir: '.kortix/opencode',
-        existingLockRaw: null,
-        legacyLockRaw: null,
-        now: '2026-06-16T00:00:00.000Z',
-      });
-      const skillFile = built.files.find((f) => f.path === '.kortix/opencode/skills/hello-ext/SKILL.md');
+      const detail = await getCatalogItemDetail('mock-skills:hello-ext');
+      expect(detail).toBeTruthy();
+      const skillFile = detail!.files.find((f) => f.target === '@skills/hello-ext/SKILL.md');
       expect(skillFile).toBeTruthy();
-      expect(skillFile!.content).toContain('Hi from an external registry');
+
+      const fetched = await getCatalogItemFile('mock-skills:hello-ext', '@skills/hello-ext/SKILL.md');
+      expect(fetched?.content).toContain('Hi from an external registry');
     } finally {
       restoreFetch();
       delete process.env.KORTIX_MARKETPLACE_REGISTRIES;
@@ -327,7 +263,10 @@ describe('marketplace external registries (skills.sh / GitHub path)', () => {
     _resetExternalCache();
     try {
       const all = await listCatalogItems();
-      expect(all.find((i) => i.name === 'pdf')).toBeTruthy(); // base intact
+      // Base intact — the starter project (browse now folds individual
+      // kortix-starter skills like `pdf` inside it, so check by id/detail).
+      expect(all.find((i) => i.id === 'kortix-projects:starter')).toBeTruthy();
+      expect((await getCatalogItemDetail('kortix-starter:pdf'))).toBeTruthy();
       expect(all.find((i) => i.name === 'hello-ext')).toBeUndefined();
     } finally {
       restoreFetch();

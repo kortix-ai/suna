@@ -229,8 +229,8 @@ export async function commitFileToBranch(
  * Contents-API path. Git plumbing in the bare mirror: hash each new blob, splice
  * writes/removals into the branch tip's tree through a throwaway index,
  * `commit-tree` once, then push (creating the branch from an empty tree if it
- * doesn't exist). The marketplace install/uninstall paths commit an item's files
- * + the updated registry-lock.json atomically.
+ * doesn't exist). Used anywhere multiple files need one atomic commit — e.g.
+ * an agent-driven marketplace import's change request.
  */
 export async function commitMultipleFilesToBranch(
   project: GitBackedProject,

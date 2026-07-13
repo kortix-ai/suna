@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText, Trash2 } from 'lucide-react';
+import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -10,14 +10,10 @@ import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Loading from '@/components/ui/loading';
 import { Portal } from '@/components/ui/portal';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useUninstallMarketplaceItem } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail, MarketplaceSummary } from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { AddToProjectModal } from './add-to-project-modal';
@@ -183,19 +179,17 @@ function ExpandableText({ text }: { text: string }) {
 }
 
 /** The primary CTA area — ONE "Add to a project" action (opens
- *  `AddToProjectModal`, which handles target + method) for every item type on
- *  every surface. Public + signed-out gets an auth-redirect button instead;
- *  in-project + already-installed keeps the Remove affordance alongside it. */
+ *  `AddToProjectModal`, which starts an agent-import session) for every item
+ *  type on every surface. Public + signed-out gets an auth-redirect button
+ *  instead. Adding is always an agent import now, so there's no deterministic
+ *  "installed" state to track here and no Remove affordance. */
 function ItemActions({ data }: { data: MarketplaceItemDetail }) {
   const surface = useMarketplaceSurface();
   const { user, isLoading: authLoading } = useAuth();
 
   const [addOpen, setAddOpen] = useState(false);
-  const [removeOpen, setRemoveOpen] = useState(false);
-  const uninstall = useUninstallMarketplaceItem();
 
   const inProject = surface.variant === 'project';
-  const installed = inProject && surface.installedNames.has(data.name);
 
   if (!authLoading && !user && surface.variant === 'public') {
     const redirectHref = surface.itemHref(data.id);
@@ -209,40 +203,17 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
     );
   }
 
-  const onRemove = async () => {
-    if (!inProject) return;
-    try {
-      const res = await uninstall.mutateAsync({ projectId: surface.projectId, name: data.name });
-      successToast(`Removed ${data.name}`, {
-        description: `Removed ${res.file_count} file${res.file_count === 1 ? '' : 's'} from the repo.`,
-      });
-      setRemoveOpen(false);
-    } catch (e) {
-      errorToast('Remove failed', { description: (e as Error).message });
-    }
-  };
-
   return (
     <>
       <div className="flex w-full items-center gap-2">
         <Button
-          variant={installed ? 'secondary' : 'default'}
+          variant="default"
           className="flex-1 gap-1.5"
           disabled={authLoading}
           onClick={() => setAddOpen(true)}
         >
-          {installed ? 'Re-add / update' : 'Add to a project'}
+          Add to a project
         </Button>
-        {installed ? (
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Remove"
-            onClick={() => setRemoveOpen(true)}
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        ) : null}
       </div>
       <AddToProjectModal
         item={data}
@@ -250,19 +221,6 @@ function ItemActions({ data }: { data: MarketplaceItemDetail }) {
         onOpenChange={setAddOpen}
         fixedProjectId={inProject ? surface.projectId : undefined}
       />
-      {inProject ? (
-        <ConfirmDialog
-          open={removeOpen}
-          onOpenChange={setRemoveOpen}
-          title={`Remove ${data.title}?`}
-          description="This commits a change removing its files from the project's repo. It stays available to re-install."
-          confirmLabel="Remove"
-          confirmVariant="destructive"
-          confirmIcon={uninstall.isPending ? <Loading className="size-4 shrink-0" /> : undefined}
-          isPending={uninstall.isPending}
-          onConfirm={onRemove}
-        />
-      ) : null}
     </>
   );
 }

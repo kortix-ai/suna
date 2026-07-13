@@ -1,73 +1,91 @@
 ---
 name: kortix-marketplace
-description: "The Kortix marketplace — how to discover and add capabilities to a Kortix project: install skills, clone or merge whole ready-made PROJECTS (registry:project), add new git sources (any SKILL.md / marketplace.json repo, e.g. skills.sh, anthropics/skills), and check for/apply updates. Use when the user wants to browse/search the Kortix catalog, install a skill or a full project into a project, 'add a source', 'clone the <X> project', enable another registry, or update installed marketplace items. For the open npx-skills ecosystem specifically, see the find-skills-sh skill."
+description: "The Kortix marketplace — how to discover capabilities and IMPORT them into this project. The marketplace is a catalog of open git repos: whole ready-made PROJECTS (registry:project) and individual skills/agents/tools. There is no deterministic 'installer' — you (the agent) import an item by reading its source and merging the files that fit into this project, then opening a change request. Use when the user wants to browse/search the Kortix catalog, 'add/clone the <X> project', 'import that skill/agent', pull in a marketplace capability, or add a new source. For the open npx-skills ecosystem, see find-skills-sh."
 ---
 
 <skill name="kortix-marketplace">
 
-The **Kortix marketplace** is the Kortix-native catalog. It's deeper than a
-skill index: it carries **skills**, whole clonable **projects**
-(`registry:project` — a full working Kortix project you spin up in one step),
-and any **source** you point it at. Everything installs by committing files into
-a project's git repo (git owns the state — see `kortix-system`), and every
-marketplace source is just a git repo, so the catalog is fully extensible.
+The **Kortix marketplace** is the Kortix-native catalog. Every item is an **open
+git repo** made of plain files — a whole clonable **project** (its `kortix.yaml`,
+agents, skills, tools) or an individual **skill / agent / tool**. There is **no
+deterministic installer, no version lock, and no update system**: you add an item
+by **importing** it — reading its source and merging what fits into this
+project's own files, then opening a change request. Everything you import becomes
+**100% user-owned files** in this repo, exactly like any other code you write.
 
-<what-is-in-it>
-- **Skills** — add reusable know-how to a project (`.kortix/opencode/skills/…`).
-- **Projects** (`registry:project`) — clone a complete, working project (its
-  `kortix.yaml`, agents, skills) as a **new** project, or merge it into one you
-  already have.
-- **Sources** — extra registries (a GitHub repo / git URL with `SKILL.md` or a
-  `marketplace.json`) whose items merge into the catalog. The curated sources
-  (Anthropic, OpenAI, and the rest) are one-click; any public repo can be added.
-</what-is-in-it>
+Why it works this way: the Kortix *system* layer (this `kortix-*` family, the
+`kortix` CLI) is served live and always-latest, so it never goes stale. Marketplace
+items are the opposite — they're *yours* to own and edit, so they're imported as
+files, not pinned to an upstream that could clobber your changes.
 
-<cli>
-Drive it from the `kortix` CLI (already authenticated in the sandbox):
+<discovery>
+Browse/search the catalog from the `kortix` CLI (already authenticated here):
 
 ```bash
-kortix marketplace search "<query>"     # search the catalog (add --json to parse)
-kortix marketplace show <id>            # inspect one item (type, files, capabilities)
-kortix marketplace install <id>         # install into THIS project (commits its files)
-kortix marketplace status               # what's installed here
-kortix marketplace updates              # which installed items are outdated
-kortix marketplace update [<name>]      # update one / all
-kortix marketplace remove <name>        # uninstall (commits a removal)
+kortix marketplace search "<query>" --json    # find items (parse the JSON)
+kortix marketplace show <id> --json           # inspect one item: type, files, source repo
 ```
 
-Installing is a git commit into the project repo — no hidden runtime state. Use
-`--json` on reads and parse that, don't scrape the tables.
-</cli>
+Read-only. There is no `install` / `update` / `remove` subcommand anymore —
+adding an item is the import flow below.
+</discovery>
+
+<importing>
+**The standard import recipe.** To add a marketplace item to this project:
+
+1. **Get the source.** From `kortix marketplace show <id> --json`, take the item's
+   source git repo/ref (or its inline files). Clone/read it in the sandbox.
+2. **Detect what it is** from its file structure:
+   - a `kortix.yaml` at the repo root → a **project** (agents + skills + tools +
+     config),
+   - a `SKILL.md` → a **skill**,
+   - an agent definition (an `agents/*.md`) → an **agent**,
+   - a tool file (a `tools/*.ts`) → a **tool**.
+3. **Merge what fits into this project**, in the right place:
+   - skills → `.kortix/opencode/skills/<name>/`,
+   - agents → `.kortix/opencode/agents/`, tools → `.kortix/opencode/tools/`,
+   - for a **whole project**: pull in its skills/agents/tools and reconcile its
+     `kortix.yaml` into this project's (merge connectors/triggers/agents — never
+     blindly overwrite the user's manifest). Use judgment; keep what's relevant.
+4. **Adapt it to this project.** If a skill carries a "TODO: make this yours"
+   placeholder or generic copy, tailor it to what this project actually does.
+5. **Wire up its needs.** If the item requires a connector/secret, don't hardcode
+   anything — mint a setup link (`kortix secrets request …` / the executor
+   connect flow) and surface it to the user.
+6. **Commit + open a CR.** `git add`/`commit`, `git push origin HEAD`, then
+   `kortix cr open --title "Import <item>"`. The user reviews the diff and merges
+   — that's how it becomes permanent (see `kortix-system` for the CR mandate).
+
+Importing is just you reading files and writing files, landed through a change
+request. No lock file, no tracked "installed" state — **git is the source of
+truth** for what's in this project.
+</importing>
 
 <projects>
-A whole-project item is spun up as its **own** project (its config seeded in),
-not dropped into an existing one — that's the marketplace's main growth path.
-From the web UI, "Add to a project" lets the user pick an existing project or a
-new one, and choose to set it up with an agent (recommended — a session installs
-it and wires up connectors/secrets) or add the files directly. Merging a whole
-project into an *existing* one is agent-driven (it can't blindly overwrite that
-project's `kortix.yaml`).
+A whole **project** item is the richest thing in the marketplace — a working,
+end-to-end Kortix project focused on a function. You can spin it up as its **own
+new project** (from the web UI's "Add to a project" → new project, which seeds
+the files deterministically), or **import/merge it into this existing project**
+via the recipe above to make this project bigger. It's all just files.
 </projects>
 
 <adding-a-source>
-To make another registry's items available in this project's catalog, add it as
-a source — any public git repo that ships `SKILL.md` files or a
-`marketplace.json` works (e.g. `anthropics/skills`, `openai/…`, community repos
-from skills.sh). Curated sources enable in one click; an arbitrary git URL is an
-admin-gated action. Once added, its skills/projects show up in search and
-install like any other catalog item.
+To make another registry's items discoverable here, add it as a **source** — any
+public git repo that ships `SKILL.md` files or a `marketplace.json` (e.g.
+`anthropics/skills`, community repos from skills.sh). Curated sources enable in
+one click; an arbitrary git URL is admin-gated. Once added, its items show up in
+`kortix marketplace search`, and you import them the same way.
 </adding-a-source>
 
 <vs-find-skills-sh>
-- **`kortix-marketplace`** (this) — the Kortix catalog: skills **and** whole
-  projects, installed through the platform (git-committed, tracked in
-  `registry-lock.json`, updatable, agent-set-up).
+- **`kortix-marketplace`** (this) — the Kortix catalog: whole projects + skills/
+  agents/tools, imported into this repo as owned files via a CR.
 - **`find-skills-sh`** — the open `npx skills` / skills.sh ecosystem, for pulling a
   battle-tested community skill when the Kortix catalog doesn't have it.
 
-Reach for the Kortix marketplace first for anything project-shaped or that
-should be tracked/updatable in this repo; reach for `find-skills-sh` to tap the
-wider open ecosystem.
+Reach for the Kortix marketplace first for anything project-shaped; reach for
+`find-skills-sh` to tap the wider open ecosystem. Either way you end up importing
+plain files you own.
 </vs-find-skills-sh>
 
 </skill>

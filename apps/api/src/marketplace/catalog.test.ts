@@ -6,10 +6,14 @@ import {
   type CatalogItem,
 } from './catalog';
 
+// Default fixtures use a neutral external registry ('acme') so generic
+// filter/pagination behavior is tested independent of the `kortix-starter`
+// fold rule (those skills live inside the "Kortix Starter" project now and are
+// covered by their own test below).
 function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
   return {
-    id: `kortix:${overrides.name ?? 'item'}`,
-    registry: 'kortix-starter',
+    id: `acme:${overrides.name ?? 'item'}`,
+    registry: 'acme',
     name: 'item',
     type: 'registry:skill',
     title: 'Item',
@@ -18,9 +22,9 @@ function item(overrides: Partial<CatalogItem> = {}): CatalogItem {
     capabilities: { secrets: [], connectors: [], tools: [], network: [] },
     dependencies: [],
     fileCount: 1,
-    external: false,
-    marketplaceId: 'kortix',
-    marketplaceLabel: 'Kortix',
+    external: true,
+    marketplaceId: 'acme',
+    marketplaceLabel: 'Acme',
     ...overrides,
   };
 }
@@ -99,15 +103,27 @@ describe('pageCatalogItems', () => {
   });
 
   test('query/type/source filters compose with paging and the visible-type filter stays intact', () => {
+    // 'kortix-projects' is a browseable Kortix registry (maps to source 'kortix');
+    // 'kortix-starter' items are folded away, so we use projects here.
     const items = [
-      ...synthetic(3, (i) => ({ name: `alpha-${i}`, title: `Alpha ${i}`, type: 'registry:skill', registry: 'kortix-starter' })),
+      ...synthetic(3, (i) => ({ name: `alpha-${i}`, title: `Alpha ${i}`, type: 'registry:skill', registry: 'kortix-projects', marketplaceId: 'kortix' })),
       ...synthetic(3, (i) => ({ name: `beta-${i}`, title: `Beta ${i}`, type: 'registry:skill', registry: 'other-registry' })),
-      item({ id: 'hidden-tool', name: 'hidden-tool', title: 'Hidden Tool', type: 'registry:tool', registry: 'kortix-starter' }),
+      item({ id: 'hidden-tool', name: 'hidden-tool', title: 'Hidden Tool', type: 'registry:tool', registry: 'kortix-projects' }),
     ];
     const result = pageCatalogItems(items, { query: 'alpha', source: 'kortix', limit: 2, offset: 0 });
     expect(result.total).toBe(3);
     expect(result.items.length).toBe(2);
     expect(result.items.every((it) => it.name.startsWith('alpha'))).toBe(true);
+  });
+
+  test('folds kortix-starter skills out of the browse list (they live inside the Kortix Starter project)', () => {
+    const items = [
+      item({ id: 'kortix-starter:pdf', name: 'pdf', type: 'registry:skill', registry: 'kortix-starter' }),
+      item({ id: 'kortix-projects:starter', name: 'starter', type: 'registry:project', registry: 'kortix-projects' }),
+    ];
+    const result = pageCatalogItems(items, {});
+    expect(result.items.map((it) => it.name)).toEqual(['starter']);
+    expect(result.total).toBe(1);
   });
 
   test('surfaces skills and projects as browseable; hides agents/commands/bundles/support types', () => {

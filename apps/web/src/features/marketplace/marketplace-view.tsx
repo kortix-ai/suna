@@ -1,41 +1,37 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { useInstalledItems, useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
+import { useMarketplaceItem, useMarketplaces, useMarketplaceItems } from '@/hooks/marketplace';
 import { useMarketplaceDetailStore } from '@/stores/marketplace-detail-store';
 import { MarketplaceDetail, useDetailNav } from './marketplace-detail';
 import { MarketplaceExplore } from './marketplace-explore';
-import { MarketplaceInstalledPanel } from './marketplace-installed-panel';
 import { MarketplaceSurfaceProvider, type MarketplaceSurface } from './marketplace-surface';
 
-/** In-project marketplace (Customize → Marketplace). The Explore tab renders
- *  the exact same `MarketplaceExplore` as the public `/marketplace` page —
- *  same source rail, projects showcase, featured + sectioned skills, cards,
- *  and detail — just embedded in the panel and driven through the "project"
- *  surface (installs commit into THIS project, in-panel overlay navigation).
- *  The Installed tab is the one project-only surface. */
+/** Stable empty set — installing is agent-driven now (no registry-lock to
+ *  read), so there's no "installed" state to track here; kept as an empty
+ *  `Set` purely so `MarketplaceSurface` consumers still compile. */
+const NO_INSTALLED_NAMES = new Set<string>();
+
+/** In-project marketplace (Customize → Marketplace). Renders the exact same
+ *  `MarketplaceExplore` as the public `/marketplace` page — same source rail,
+ *  projects showcase, featured + sectioned skills, cards, and detail — just
+ *  embedded in the panel and driven through the "project" surface (adds
+ *  start an agent-import session in THIS project, in-panel overlay
+ *  navigation). */
 export function MarketplaceView({ projectId }: { projectId: string }) {
   const openId = useMarketplaceDetailStore((s) => s.openId);
   const openItem = useMarketplaceDetailStore((s) => s.openItem);
   const closeDetail = useMarketplaceDetailStore((s) => s.close);
 
-  const [tab, setTab] = useState<'explore' | 'installed'>('explore');
   const browseScrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const installed = useInstalledItems(projectId);
-  const installedNames = useMemo(
-    () => new Set((installed.data ?? []).map((i) => i.name)),
-    [installed.data],
-  );
-
   const surface = useMemo<MarketplaceSurface>(
-    () => ({ variant: 'project', projectId, installedNames, openItem }),
-    [projectId, installedNames, openItem],
+    () => ({ variant: 'project', projectId, installedNames: NO_INSTALLED_NAMES, openItem }),
+    [projectId, openItem],
   );
 
   return (
@@ -45,31 +41,16 @@ export function MarketplaceView({ projectId }: { projectId: string }) {
           <MarketplaceDetailOverlay onBack={closeDetail} />
         </div>
       ) : (
-        <Tabs
-          value={tab}
-          onValueChange={(v) => setTab(v as 'explore' | 'installed')}
-          className="flex h-full min-h-0 flex-col"
-        >
-          {/* Fixed top bar — the tabs stay put; the tab panels below scroll. */}
-          <div className="border-border/60 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
+        <div className="flex h-full min-h-0 flex-col">
+          {/* Fixed top bar — stays put; the content below scrolls. */}
+          <div className="border-border/60 flex shrink-0 items-center gap-3 border-b px-4 py-2.5">
             <h2 className="text-foreground text-sm font-medium">Marketplace</h2>
-            <TabsListCompact>
-              <TabsTriggerCompact value="explore">Explore</TabsTriggerCompact>
-              <TabsTriggerCompact value="installed">Installed</TabsTriggerCompact>
-            </TabsListCompact>
           </div>
 
-          <TabsContent value="explore" className="mt-0 min-h-0 flex-1 outline-none">
-            <div className="h-full px-4 py-4">
-              <MarketplaceExploreTab scrollContainerRef={browseScrollContainerRef} />
-            </div>
-          </TabsContent>
-          <TabsContent value="installed" className="mt-0 min-h-0 flex-1 overflow-y-auto outline-none">
-            <div className="mx-auto max-w-3xl px-4 py-4">
-              <MarketplaceInstalledPanel projectId={projectId} onBrowse={() => setTab('explore')} />
-            </div>
-          </TabsContent>
-        </Tabs>
+          <div className="h-full min-h-0 flex-1 px-4 py-4">
+            <MarketplaceExploreTab scrollContainerRef={browseScrollContainerRef} />
+          </div>
+        </div>
       )}
     </MarketplaceSurfaceProvider>
   );

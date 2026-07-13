@@ -8,8 +8,11 @@
  *     that just have SKILL.md files). Their items merge in; content is fetched
  *     from source at install time. Failures degrade to the base catalog.
  *
- * This module owns catalog *construction + read*. The install path (resolve a
- * catalog entry → plan → files to commit) lives in `install-service.ts`.
+ * This module owns catalog *construction + read*. There is no deterministic
+ * install engine anymore — adding an item to an existing project is an agent
+ * import (POST /:projectId/marketplace/install-session, in
+ * projects/routes/r10.ts), which resolves an entry by id via `getCatalogEntry`
+ * and hands its files to a session to read/merge/CR.
  */
 
 import {

@@ -63,14 +63,6 @@ export interface InstallResult {
   capabilities: ItemCapabilities;
 }
 
-export interface InstalledItem {
-  name: string;
-  type: string;
-  source: string;
-  installed_at: string | null;
-  file_count: number;
-}
-
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }): T {
   if (!response.success || response.data === undefined) {
     throw response.error ?? new Error('Request failed');
@@ -233,15 +225,6 @@ export async function getMarketplaceItemFile(
   );
 }
 
-export async function installMarketplaceItem(
-  projectId: string,
-  id: string,
-): Promise<InstallResult> {
-  return unwrap(
-    await backendApi.post<InstallResult>(`/projects/${projectId}/registry/install`, { id }),
-  );
-}
-
 /** Install ANY marketplace item (skill/agent/command/tool, or a whole
  *  `registry:project`) into a project via an agent session instead of a
  *  deterministic file commit — the session installs it and wires up whatever
@@ -258,86 +241,6 @@ export async function installMarketplaceItemAsSession(
       `/projects/${projectId}/marketplace/install-session`,
       { id },
     ),
-  );
-}
-
-export async function listInstalledItems(projectId: string): Promise<InstalledItem[]> {
-  try {
-    const res = unwrap(
-      await backendApi.get<{ installed: InstalledItem[] }>(`/projects/${projectId}/registry`),
-    );
-    return res.installed ?? [];
-  } catch (e) {
-    // A project with no registry yet — or a scratch/debug project that doesn't
-    // exist — 404s. That just means "nothing installed", not a real error, so
-    // don't let it bubble up as a failed query (it also stops the retry spam).
-    if ((e as { status?: number })?.status === 404) return [];
-    throw e;
-  }
-}
-
-export type RegistryItemStatus = 'up-to-date' | 'update-available' | 'orphaned';
-
-export interface RegistryUpdate {
-  name: string;
-  type: string;
-  status: RegistryItemStatus;
-  /** Count of changed/added/removed files at the source. */
-  changed: number;
-}
-
-export async function listRegistryUpdates(
-  projectId: string,
-): Promise<{ updates: RegistryUpdate[]; update_available: string[] }> {
-  try {
-    return unwrap(
-      await backendApi.get<{ updates: RegistryUpdate[]; update_available: string[] }>(
-        `/projects/${projectId}/registry/updates`,
-      ),
-    );
-  } catch (e) {
-    // No registry yet / scratch project → nothing to update (see listInstalledItems).
-    if ((e as { status?: number })?.status === 404) return { updates: [], update_available: [] };
-    throw e;
-  }
-}
-
-export async function updateMarketplaceItem(
-  projectId: string,
-  name: string,
-): Promise<{ ok: boolean; updated: string; commit_sha: string; file_count: number }> {
-  return unwrap(
-    await backendApi.post<{ ok: boolean; updated: string; commit_sha: string; file_count: number }>(
-      `/projects/${projectId}/registry/update`,
-      { name },
-    ),
-  );
-}
-
-export async function updateAllMarketplaceItems(
-  projectId: string,
-): Promise<{ ok: boolean; updated: string[]; commit_sha: string | null; file_count: number }> {
-  return unwrap(
-    await backendApi.post<{
-      ok: boolean;
-      updated: string[];
-      commit_sha: string | null;
-      file_count: number;
-    }>(`/projects/${projectId}/marketplace/update-all`),
-  );
-}
-
-export async function uninstallMarketplaceItem(
-  projectId: string,
-  name: string,
-): Promise<{ ok: boolean; removed: string; commit_sha: string; file_count: number }> {
-  return unwrap(
-    await backendApi.delete<{
-      ok: boolean;
-      removed: string;
-      commit_sha: string;
-      file_count: number;
-    }>(`/projects/${projectId}/registry/${encodeURIComponent(name)}`),
   );
 }
 

@@ -1,12 +1,16 @@
 import { interpolateVars, type StarterTemplateId } from '@kortix/starter';
-import { hashContent, parseLockContent, serializeLock } from '@kortix/registry';
-import { buildInstall, buildInstallBatch } from '../marketplace/install-service';
+import { findCatalogEntryByName, getCatalogEntry } from '../marketplace/catalog';
 import { buildStarterFiles } from './starter';
 
 export interface ProjectSeedFilesInput {
   projectName: string;
   repoFullName: string;
   template: StarterTemplateId;
+  /** Accepted for API back-compat; no longer deterministically installed at
+   *  provision time — see docs/specs/2026-07-13-marketplace-as-projects.md.
+   *  Adding a marketplace item to a project is now an agent import
+   *  (POST /:projectId/marketplace/install-session), which needs a session
+   *  (and therefore an already-existing project) to run. */
   marketplaceItems: string[];
   now: string;
 }
@@ -33,58 +37,12 @@ function mergeSeedFiles(
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
-function starterSkillName(path: string): string | null {
-  const marker = '.kortix/opencode/skills/';
-  if (!path.startsWith(marker)) return null;
-  const parts = path.slice(marker.length).split('/');
-  if (parts.length < 2) return null;
-  return parts[0] === 'GENERAL-KNOWLEDGE-WORKER' ? parts[1] ?? null : parts[0] ?? null;
-}
-
-function starterSkillLockFile(files: Array<{ path: string; content: string }>, now: string): {
-  path: string;
-  content: string;
-} | null {
-  const grouped = new Map<string, Array<{ target: string; hash: string }>>();
-  for (const file of files) {
-    const name = starterSkillName(file.path);
-    if (!name) continue;
-    const group = grouped.get(name) ?? [];
-    group.push({ target: file.path, hash: hashContent(file.content) });
-    grouped.set(name, group);
-  }
-  if (grouped.size === 0) return null;
-
-  const lock = parseLockContent(null);
-  for (const [name, skillFiles] of grouped) {
-    lock.items[name] = {
-      type: 'registry:skill',
-      source: 'kortix-starter',
-      sourceType: 'local',
-      files: skillFiles.sort((a, b) => a.target.localeCompare(b.target)),
-      installedAt: now,
-    };
-  }
-  return { path: 'registry-lock.json', content: serializeLock(lock) };
-}
-
-/** Shared skeleton every project-seeding path starts from: the starter's own
- *  runtime files for `template`, plus a `registry-lock.json` recording the
- *  baked-in base skills — computed together so the lock step can't be
- *  forgotten by a caller that layers more files on top (see
- *  `buildProjectSeedFilesFromItem`, which used to skip it). */
-function starterFilesWithLock(
-  projectName: string,
-  repoFullName: string,
-  template: StarterTemplateId,
-  now: string,
-): { files: Array<{ path: string; content: string }>; lockContent: string | null } {
-  let files = buildStarterFiles({ projectName, repoFullName, template });
-  const starterLockFile = starterSkillLockFile(files, now);
-  if (starterLockFile) files = mergeSeedFiles(files, [starterLockFile]);
-  return { files, lockContent: starterLockFile?.content ?? null };
-}
-
+/**
+ * Seed a brand-new project's deterministic scaffold: just the starter's own
+ * runtime files (kortix.yaml, opencode config, base skills) for `template`.
+ * No lock, no dependency engine — marketplace items are never deterministically
+ * installed at provision time; adding one to a project is an agent import.
+ */
 export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promise<{
   files: Array<{ path: string; content: string }>;
   baseFiles: Array<{ path: string; content: string }>;
@@ -94,24 +52,11 @@ export async function buildProjectSeedFiles(input: ProjectSeedFilesInput): Promi
     repoFullName: 'kortix/kortix-project',
     template: input.template,
   });
-  const { files: starterFiles, lockContent } = starterFilesWithLock(
-    input.projectName,
-    input.repoFullName,
-    input.template,
-    input.now,
-  );
-  let files = starterFiles;
-
-  if (input.marketplaceItems.length > 0) {
-    const marketplace = await buildInstallBatch({
-      ids: input.marketplaceItems,
-      configDir: '.kortix/opencode',
-      existingLockRaw: lockContent,
-      legacyLockRaw: null,
-      now: input.now,
-    });
-    files = mergeSeedFiles(files, marketplace.files);
-  }
+  const files = buildStarterFiles({
+    projectName: input.projectName,
+    repoFullName: input.repoFullName,
+    template: input.template,
+  });
 
   return { files, baseFiles };
 }
@@ -121,6 +66,8 @@ export interface ProjectSeedFilesFromItemInput {
   id: string;
   projectName: string;
   repoFullName: string;
+  /** Accepted for API back-compat; no longer deterministically installed —
+   *  see `ProjectSeedFilesInput.marketplaceItems`. */
   extraMarketplaceItems: string[];
   now: string;
 }
@@ -129,10 +76,11 @@ export interface ProjectSeedFilesFromItemInput {
  * Seed a brand-new project by cloning a `registry:project` marketplace item.
  * The minimal starter gives the new repo its opencode runtime (tools,
  * plugins, opencode.jsonc, base skills) exactly like any other new project;
- * the project item's own files (its kortix.yaml, agent personas, and any
- * `registryDependencies` skills it declares) are resolved via the normal
- * install engine and layered on top, replacing the starter's placeholder
- * kortix.yaml with the source project's real one.
+ * the project item's own files (its kortix.yaml, agent personas, …) are
+ * already inline on the catalog entry (`entry.item.files`, see
+ * `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts) — no
+ * install engine, no lock, just a plain file union with the destination
+ * project's name interpolated in.
  */
 export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromItemInput): Promise<{
   files: Array<{ path: string; content: string }>;
@@ -143,43 +91,26 @@ export async function buildProjectSeedFilesFromItem(input: ProjectSeedFilesFromI
     repoFullName: 'kortix/kortix-project',
     template: 'minimal',
   });
-  const { files: starterFiles, lockContent } = starterFilesWithLock(
-    input.projectName,
-    input.repoFullName,
-    'minimal',
-    input.now,
-  );
-  let files = starterFiles;
-
-  const built = await buildInstall({
-    id: input.id,
-    configDir: '.kortix/opencode',
-    existingLockRaw: lockContent,
-    legacyLockRaw: null,
-    now: input.now,
+  const starterFiles = buildStarterFiles({
+    projectName: input.projectName,
+    repoFullName: input.repoFullName,
+    template: 'minimal',
   });
+
+  const entry = (await getCatalogEntry(input.id)) ?? (await findCatalogEntryByName(input.id));
+  if (!entry) throw new Error(`unknown item "${input.id}"`);
+
   // Project-item catalog content ships with `{{var}}` placeholders unresolved
   // (see `buildProjectTemplateRegistry` in apps/api/src/marketplace/catalog.ts)
   // so they can be resolved here against the real destination project's name
   // instead of a generic catalog-display placeholder. Reuses @kortix/starter's
   // own `{{var}}` convention rather than a local reimplementation.
   const vars = { projectName: input.projectName, repoFullName: input.repoFullName };
-  const projectFiles = built.files.map((f) => ({
-    path: f.path,
-    content: interpolateVars(f.content, vars),
-  }));
-  files = mergeSeedFiles(files, projectFiles);
+  const ownFiles = (entry.item.files ?? [])
+    .filter((f) => typeof f.content === 'string')
+    .map((f) => ({ path: f.path, content: interpolateVars(f.content as string, vars) }));
 
-  if (input.extraMarketplaceItems.length > 0) {
-    const extra = await buildInstallBatch({
-      ids: input.extraMarketplaceItems,
-      configDir: '.kortix/opencode',
-      existingLockRaw: projectFiles.find((f) => f.path === 'registry-lock.json')?.content ?? null,
-      legacyLockRaw: null,
-      now: input.now,
-    });
-    files = mergeSeedFiles(files, extra.files);
-  }
+  const files = mergeSeedFiles(starterFiles, ownFiles);
 
   return { files, baseFiles };
 }

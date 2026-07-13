@@ -16,9 +16,9 @@ import { marketplaceItemHref } from '@/lib/marketplace-slug';
  * - **public** (`/marketplace`): route-based navigation (`itemHref` → real
  *   `<Link>`), no project bound, no installed state.
  * - **project** (Customize → Marketplace): in-panel overlay navigation
- *   (`openItem` drives the detail store, no `itemHref`), installs commit into
- *   `projectId`, and `installedNames` drives "Installed" badges + Re-install /
- *   Remove affordances.
+ *   (`openItem` drives the detail store, no `itemHref`); adding an item starts
+ *   an agent-import session in `projectId`. `installedNames` is always empty
+ *   now (see the field doc) — there's no deterministic lock to derive it from.
  */
 export type MarketplaceSurface =
   | {
@@ -32,8 +32,11 @@ export type MarketplaceSurface =
       variant: 'project';
       /** The fixed install/commit target. */
       projectId: string;
-      /** Names present in this project's registry-lock — drives "Installed"
-       *  badges + Re-install / Remove affordances. */
+      /** Formerly populated from the project's registry-lock to drive
+       *  "Installed" badges + Re-install / Remove affordances. Installing is
+       *  agent-driven now (no deterministic lock to read), so this is always
+       *  an empty `Set` — kept only so `MarketplaceSurface` consumers on the
+       *  `project` variant still compile without a shape change. */
       installedNames: Set<string>;
       /** Opens the detail store overlay (no route to push to). */
       openItem: (id: string) => void;
