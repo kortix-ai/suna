@@ -19,8 +19,16 @@ const forbiddenCapabilityIdentifiers = [
   'use-apps-enabled',
   'use-project-apps',
   'use-deployments',
+  'deploymentStatusEnum',
+  'deploymentSourceEnum',
+  'deploymentsRelations',
+  'NewDeployment',
+  'DeploymentSelect',
 ];
-const transitionalSchemaPrefix = 'packages/db/';
+const immutableSchemaHistoryPrefixes = [
+  'packages/db/drizzle/',
+  'packages/db/migrations/',
+];
 const trackingFiles = new Set([
   'packages/sdk/PROGRESS.md',
   'apps/api/src/__tests__/unit-hosted-deployment-vendor-removal.test.ts',
@@ -35,7 +43,9 @@ function trackedTextFiles(): string[] {
     .filter(Boolean)
     .filter((file) => existsSync(resolve(repoRoot, file)))
     .filter((file) => !trackingFiles.has(file))
-    .filter((file) => !file.startsWith(transitionalSchemaPrefix));
+    .filter(
+      (file) => !immutableSchemaHistoryPrefixes.some((prefix) => file.startsWith(prefix)),
+    );
 }
 
 describe('retired hosted deployment vendor', () => {
