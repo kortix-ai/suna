@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  TELEGRAM_PAIRING_TTL_MS,
   addTelegramAllowedUser,
   generateTelegramPairingCode,
   normalizeTelegramPairingCode,
   removeTelegramAllowedUser,
-  TELEGRAM_PAIRING_TTL_MS,
   telegramAllowedUserIds,
   telegramPairingMatches,
 } from './pairing';

@@ -41,6 +41,7 @@ import {
   saveSlackInstall,
   saveTeamsInstall,
   saveTelegramInstall,
+  saveTelegramPairing,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
 import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
@@ -75,6 +76,13 @@ import {
 } from '../../channels/telegram-api';
 import { downloadTelegramFile, uploadTelegramFile } from '../../channels/telegram/file-proxy';
 import { TELEGRAM_BOT_COMMANDS } from '../../channels/telegram/inbound';
+import {
+  generateTelegramPairingCode,
+  removeTelegramAllowedUser,
+  TELEGRAM_PAIRING_TTL_MS,
+  telegramAllowedUserIds,
+} from '../../channels/telegram/pairing';
+import { telegramRequireUserIdentityForTest } from '../../channels/telegram-webhook';
 import {
   relayTelegramTurnAnswer,
   relayTelegramTurnEnd,
@@ -921,7 +929,14 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, "read");
     if (!loaded) return c.json({ error: "Not found" }, 404);
     const install = await loadTelegramInstall(projectId);
-    return c.json(install ?? null);
+    if (!install) return c.json(null);
+    return c.json({
+      ...install,
+      // Who may drive the agent from Telegram (see telegram/pairing.ts) and
+      // whether the identity gate is enforcing — the dashboard's pairing UI.
+      allowedUserIds: telegramAllowedUserIds(loaded.row.metadata),
+      pairingRequired: telegramRequireUserIdentityForTest(),
+    });
   },
 );
 
@@ -1007,9 +1022,89 @@ projectsApp.openapi(
       botUsername: me.bot.username ?? null,
     });
     await reconcileChannelConnectors(projectId);
-    return c.json(summary);
+    // Mint the first pairing code with the install so the connect modal can
+    // walk the user straight onto the sender allowlist (see telegram/pairing.ts).
+    const pairing = await mintTelegramPairing(projectId);
+    return c.json({ ...summary, pairing });
   },
 );
+
+// POST /v1/projects/:projectId/channels/telegram/pairing-code
+// Mint a fresh single-use pairing code (replaces any outstanding one). The
+// user completes the handshake by sending `/start <code>` to the bot, which
+// allowlists their Telegram user id for this project.
+
+projectsApp.openapi(
+  createRoute({
+    method: "post",
+    path: "/{projectId}/channels/telegram/pairing-code",
+    tags: ["channels"],
+    summary: "POST /:projectId/channels/telegram/pairing-code",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    // Pairing hands a stranger's Telegram id the power to drive this project's
+    // agent — same connector-write gate as connect/disconnect.
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const install = await loadTelegramInstall(projectId);
+    if (!install) return c.json({ error: "Telegram is not connected" }, 404);
+    return c.json(await mintTelegramPairing(projectId));
+  },
+);
+
+// DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:userId
+// Un-pair a Telegram sender. Metadata-only, so it works even after a
+// disconnect (the allowlist survives reconnects on purpose).
+
+projectsApp.openapi(
+  createRoute({
+    method: "delete",
+    path: "/{projectId}/channels/telegram/allowed-users/{userId}",
+    tags: ["channels"],
+    summary: "DELETE /:projectId/channels/telegram/allowed-users/:userId",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), userId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), "OK"),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param("projectId");
+    const loaded = await loadProjectForUser(c, projectId, "manage");
+    if (!loaded) return c.json({ error: "Not found" }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
+    const { metadata, removed } = removeTelegramAllowedUser(
+      loaded.row.metadata,
+      c.req.param("userId"),
+    );
+    if (removed) {
+      await db.update(projects).set({ metadata }).where(eq(projects.projectId, projectId));
+    }
+    return c.json({ removed });
+  },
+);
+
+async function mintTelegramPairing(projectId: string) {
+  const pairing = {
+    code: generateTelegramPairingCode(randomBytes(8)),
+    expiresAt: new Date(Date.now() + TELEGRAM_PAIRING_TTL_MS).toISOString(),
+  };
+  await saveTelegramPairing(projectId, pairing);
+  return pairing;
+}
 
 // DELETE /v1/projects/:projectId/channels/telegram/installation
 

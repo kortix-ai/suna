@@ -59,7 +59,8 @@ export function telegramAllowedUserIds(metadata: unknown): string[] {
 }
 
 function withAllowedUserIds(metadata: unknown, ids: string[]): Record<string, unknown> {
-  const base = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
+  const base =
+    metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
   const telegram =
     base.telegram && typeof base.telegram === 'object'
       ? (base.telegram as Record<string, unknown>)

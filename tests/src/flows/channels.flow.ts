@@ -643,36 +643,32 @@ flow(
     await ctx.step("garbage token shape → 400 BEFORE any Telegram call", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/telegram/connect", {
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-telegram-token" }, {
           params: { projectId: p.id },
-          body: { bot_token: "not-a-telegram-token" },
         });
       r.status(400);
     });
     await ctx.step("well-shaped but fake token → 400 (Telegram rejects) or 502 (unreachable)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/telegram/connect", {
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" }, {
           params: { projectId: p.id },
-          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
         });
       r.status([400, 502]);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/channels/telegram/connect", {
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" }, {
           params: { projectId: p.id },
-          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
         });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/channels/telegram/connect", {
+        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" }, {
           params: { projectId: p.id },
-          body: { bot_token: "1234567890:AAF0eXaMpLeToKeNBoDy_1234-abcdEFGHijk" },
         });
       r.status(401);
     });
@@ -733,27 +729,24 @@ flow(
     await ctx.step("send: upload with no install → 404 not connected", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", { chat_id: "1", filename: "x.txt", content_base64: "aGk=" }, {
           params: { projectId: p.id },
-          body: { chat_id: "1", filename: "x.txt", content_base64: "aGk=" },
         });
       r.status(404);
     });
     await ctx.step("upload with missing required fields → 400 (validated before any token use)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", {}, {
           params: { projectId: p.id },
-          body: {},
         });
       r.status(400);
     });
     await ctx.step("NONMEMBER upload → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/channels/telegram/file/upload", {
+        .post("/v1/projects/:projectId/channels/telegram/file/upload", { chat_id: "1", filename: "x.txt", content_base64: "aGk=" }, {
           params: { projectId: p.id },
-          body: { chat_id: "1", filename: "x.txt", content_base64: "aGk=" },
         });
       r.status([403, 404]);
     });
@@ -762,6 +755,82 @@ flow(
         .as(ctx.P.ANON)
         .get("/v1/projects/:projectId/channels/telegram/file?file_id=ABC-123", {
           params: { projectId: p.id },
+        });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-25 — Telegram pairing-code mint: manage ACL, fails closed without an
+// install (live suites have no real bot; code+/start mechanics are pinned by
+// channels/telegram/pairing.test.ts).
+flow(
+  "CHN-25",
+  {
+    domain: "channels",
+    routes: ["POST /v1/projects/:projectId/channels/telegram/pairing-code"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER without an install → 404 (not connected)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/channels/telegram/pairing-code", {}, {
+          params: { projectId: p.id },
+        });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/channels/telegram/pairing-code", {}, {
+          params: { projectId: p.id },
+        });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/:projectId/channels/telegram/pairing-code", {}, {
+          params: { projectId: p.id },
+        });
+      r.status(401);
+    });
+  },
+);
+
+// CHN-26 — Telegram allowlist removal: manage ACL, metadata-only (works
+// without an install), unknown id reports removed:false.
+flow(
+  "CHN-26",
+  {
+    domain: "channels",
+    routes: ["DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:userId"],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    await ctx.step("OWNER removes an id that was never paired → 200 removed:false", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/channels/telegram/allowed-users/:userId", {
+          params: { projectId: p.id, userId: "999999999" },
+        });
+      r.status(200);
+      r.body().has("$.removed", false);
+    });
+    await ctx.step("NONMEMBER → 403/404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .del("/v1/projects/:projectId/channels/telegram/allowed-users/:userId", {
+          params: { projectId: p.id, userId: "999999999" },
+        });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .del("/v1/projects/:projectId/channels/telegram/allowed-users/:userId", {
+          params: { projectId: p.id, userId: "999999999" },
         });
       r.status(401);
     });
