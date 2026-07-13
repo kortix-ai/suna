@@ -32,7 +32,7 @@ function statusOf(parts: ToolPart[]): Step['status'] {
 
 /**
  * Wall-clock duration of a step. `state.time` is not on the typed interface but
- * is present at runtime — `session-actions-panel.tsx` reads it the same way.
+ * is present at runtime — `advanced/advanced-panel.tsx` reads it the same way.
  */
 function durationOf(parts: ToolPart[]): number | undefined {
   let start = Number.POSITIVE_INFINITY;
@@ -47,13 +47,18 @@ function durationOf(parts: ToolPart[]): number | undefined {
 }
 
 function finalize(family: StepFamily, parts: ToolPart[]): Step {
+  const status = statusOf(parts);
   return {
     id: parts[0].callID,
     family,
     label: narrateStep(family, parts),
     parts,
-    status: statusOf(parts),
-    durationMs: durationOf(parts),
+    status,
+    // A duration must never sit next to a live spinner — a running step may
+    // still carry stale/partial `time` data from a prior run of the same
+    // callID, and pairing that with the shimmer would visually claim the
+    // step is both finished and still going.
+    durationMs: status === 'running' ? undefined : durationOf(parts),
   };
 }
 

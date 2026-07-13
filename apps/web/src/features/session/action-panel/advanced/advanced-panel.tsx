@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { NativeSlider } from '@/components/ui/slider-native';
 import { cn } from '@/lib/utils';
 import { useClearFocusedToolCall, useFocusedToolCallId } from '@/stores/kortix-computer-store';
-import { type MessageWithParts, type ToolPart, isToolPart, shouldShowToolPart } from '@/ui';
+import type { MessageWithParts } from '@/ui';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { collectToolParts } from '../shared/collect-tool-parts';

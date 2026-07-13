@@ -61,6 +61,27 @@ describe('groupSteps', () => {
     expect(steps[0].status).toBe('error');
   });
 
+  // ─── a duration must never sit next to a live spinner — a still-running
+  // step reports its status as 'running' well before it has a real end time,
+  // so pairing a stale/partial duration with the shimmer would visually claim
+  // the step is both finished (has a duration) and still going (spinner). ──
+
+  it('never reports a duration for a running step, even if a part carries stale time data', () => {
+    const runningPart = part('bash', 'running');
+    (runningPart.state as any).time = { start: 1_000, end: 5_000 };
+    const steps = groupSteps([runningPart]);
+    expect(steps[0].status).toBe('running');
+    expect(steps[0].durationMs).toBeUndefined();
+  });
+
+  it('still reports a duration for a completed step', () => {
+    const donePart = part('bash', 'completed');
+    (donePart.state as any).time = { start: 1_000, end: 5_000 };
+    const steps = groupSteps([donePart]);
+    expect(steps[0].status).toBe('done');
+    expect(steps[0].durationMs).toBe(4_000);
+  });
+
   it('end-to-end: Easy mode collects reads that Advanced hides, and narrates them as one step', () => {
     // This is the regression the plan defect would have reintroduced: if Easy
     // mode fed its Progress card from `collectToolParts` (the Advanced/actions-
