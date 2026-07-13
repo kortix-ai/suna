@@ -97,12 +97,15 @@ export function renderFullDockerCompose(composeProject: string): string {
     // a permanent restart loop. The temporary init server can also accept a
     // successful query and then shut down underneath a just-started Auth
     // process, so require PID 1 to be the final postgres process as well as a
-    // real password-authenticated query using Auth's role. `$$` defers the
-    // environment expansion from Compose to the healthcheck container.
+    // real password-authenticated query using Auth's role over the Docker
+    // network. The network hop is important: localhost can use a more
+    // permissive pg_hba rule than Auth's container and hide a bad role
+    // password. `$$` defers environment expansion from Compose to the
+    // healthcheck container.
     database.healthcheck = {
       test: [
         'CMD-SHELL',
-        'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h 127.0.0.1 -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
+        'tr \'\\0\' \' \' </proc/1/cmdline | grep -q \'/postgres \' && PGPASSWORD="$${POSTGRES_PASSWORD}" psql -h supabase-db -U supabase_auth_admin -d "$${POSTGRES_DB}" -tAc \'select 1\' >/dev/null',
       ],
       interval: '5s',
       timeout: '5s',
