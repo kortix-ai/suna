@@ -12,6 +12,10 @@ let mockPayload: { userId: string; sandboxId: string } | null = null;
 mock.module('../shared/db', () => ({ db: {} }));
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({}),
+  isDaytonaConfigured: () => true,
+  isDaytonaDiskQuotaError: () => false,
+  listStoppedDaytonaSandboxesOldestFirst: async () => [],
+  archiveDaytonaSandboxById: async () => true,
 }));
 mock.module('../shared/preview-ownership', () => ({
   resolvePreviewUserContext: async (sandboxId: string, userId?: string) =>

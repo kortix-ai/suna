@@ -10,11 +10,10 @@ const sampleConfig: Record<string, unknown> = {
   manifest_raw: 'raw toml',
   manifest: { name: 'x' },
   env: [{ name: 'FOO' }],
+  runtime_configs: [{ runtime: 'claude', raw: '{secret-ish config}' }],
   runtime_config_raw: '{}',
   runtime_default_agent: 'bot',
   agent_source: 'native',
-  open_code_raw: '{}',
-  open_code_default_agent: 'bot',
   agent_discovery: 'declared',
   agents: [{ name: 'a' }],
   skills: [{ name: 's' }],
@@ -65,10 +64,9 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.manifest_raw).toBeNull();
     expect(out.config.manifest).toEqual({});
     expect(out.config.env).toEqual([]);
+    expect(out.config.runtime_configs).toEqual([]);
     expect(out.config.runtime_config_raw).toBeNull();
     expect(out.config.runtime_default_agent).toBeNull();
-    expect(out.config.open_code_raw).toBeNull();
-    expect(out.config.open_code_default_agent).toBeNull();
     // Structural signals survive so the workspace shell still renders.
     expect(out.config.is_kortix_repo).toBe(true);
     expect(out.config.signals).toEqual({ manifest: true });

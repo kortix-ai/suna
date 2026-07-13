@@ -25,7 +25,14 @@ export { formatCredits, formatCreditsWithSign, dollarsToCredits, creditsToDollar
 // Streaming & tool call utilities (portable from frontend)
 // streaming-utils moved to @agentpress/shared/streaming
 export * from './tool-call-utils';
-export * from './tool-data-extractor';
+export {
+  extractToolCall,
+  extractToolResult,
+  extractToolCallFromToolMessage,
+  extractToolData,
+  extractToolCallAndResult,
+  type ToolCallData,
+} from './tool-data-extractor';
 
 // Domain-specific utilities
 export * from './thread-utils';
@@ -38,4 +45,3 @@ export * from './auth-types';
 
 // i18n
 export * from './i18n';
-

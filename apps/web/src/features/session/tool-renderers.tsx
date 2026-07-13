@@ -30,7 +30,7 @@ import {
   extractReadableHtml,
   stripMarkupForToolOutput,
 } from '@/features/session/tool-renderers-sanitization';
-import { useOcFileOpen } from '@/features/session/use-oc-file-open';
+import { useRuntimeFileOpen } from '@/features/session/use-runtime-file-open';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
@@ -3151,7 +3151,7 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
   const { openPreview } = useFilePreviewStore();
-  const { toDisplayPath } = useOcFileOpen();
+  const { toDisplayPath } = useRuntimeFileOpen();
 
   const args: string[] = [];
   if (input.offset) args.push('offset=' + String(input.offset));
@@ -3479,7 +3479,7 @@ function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
+  const { openFile, openFileWithList, toDisplayPath } = useRuntimeFileOpen();
   const directory =
     getDirectory((input.path as string) || (streamingInput.path as string)) || undefined;
   const args: string[] = [];
@@ -3541,7 +3541,7 @@ function GrepTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFile, toDisplayPath } = useOcFileOpen();
+  const { openFile, toDisplayPath } = useRuntimeFileOpen();
   const directory =
     getDirectory((input.path as string) || (streamingInput.path as string)) || undefined;
   const args: string[] = [];
@@ -3603,7 +3603,7 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
+  const { openFile, openFileWithList, toDisplayPath } = useRuntimeFileOpen();
   const directory = getDirectory(input.path as string) || (input.path as string) || undefined;
 
   const filePaths = useMemo(() => parseFilePaths(output), [output]);

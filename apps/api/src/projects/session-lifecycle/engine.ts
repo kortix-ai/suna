@@ -536,6 +536,7 @@ async function executeCreateSession(
     extraEnvVars: command.extraEnvVars,
     request: command.request,
     visibility: command.visibility,
+    useGroupDefault: ['ui', 'mobile', 'cli'].includes(command.source),
   });
 
   if (result.error) {

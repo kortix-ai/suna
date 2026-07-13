@@ -286,7 +286,7 @@ function EmptyState() {
           <Server className="h-7 w-7 text-muted-foreground" />
         </div>
         <h3 className="text-lg font-semibold text-foreground mb-2">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line285JsxTextNoServicesFound')}</h3>
-        <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-md">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line287JsxTextServicesWillAppearHereWhenKortixMasterStarts')}</p>
+        <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-md">{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line287JsxTextServicesWillAppearHereWhenKortixMasterStartsManagingThem')}</p>
       </div>
     </div>
   );
@@ -562,7 +562,7 @@ export function RunningServicesPanel() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line565JsxTextRegisterAService')}</DialogTitle>
-            <DialogDescription>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line567JsxTextRegisterAProjectAppItWillAutostartAnd')}</DialogDescription>
+            <DialogDescription>{tHardcodedUi.raw('componentsTabsRunningServicesPanel.line567JsxTextRegisterAServiceItWillAutostartAnd')}</DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={handleRegister}>
             <label className="space-y-2 text-sm font-medium">

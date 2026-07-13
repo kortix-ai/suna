@@ -2,11 +2,10 @@
  * Restore a migrated session's chat into its sandbox DURING provisioning, before
  * the sandbox is marked active.
  *
- * Why before-active: the frontend, once it sees `active`, calls `ensure-opencode`
- * (opencode-mapping.ts) — the authoritative writer of opencode_session_id. It
- * lists the sandbox's opencode sessions and keeps the migrated pin only if that
- * session is already present; otherwise it re-pins to a fresh session. So the
- * legacy store must be loaded before `active`, or we lose the race and the chat.
+ * Why before-active: this compatibility-only import must place the archived
+ * OpenCode store on disk before the replacement sandbox exposes its OpenCode
+ * ACP harness. It never owns the live product session mapping; new and resumed
+ * sessions use ACP identities and the platform ACP envelope log.
  *
  * Source is the live legacy VM (durable JustAVPS host) — we pull its opencode
  * store, re-key project_id to this workspace's opencode projectID (opencode

@@ -2,14 +2,14 @@
 
 import { cn } from '@/lib/utils';
 import { Check, ChevronRight, Copy, Laptop } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * A slim strip that lives at the top of the session Terminal panel and tells the
- * user how to attach their *local* Runtime TUI to this session's sandbox with
- * the Kortix CLI. Deliberately NOT its own tab — it rides along with the live
- * terminal so "how do I get a shell into this from my machine?" is answered
- * right where a shell already lives.
+ * user how to open the same ACP conversation from their local terminal with
+ * the Kortix CLI. Deliberately not its own tab: it rides beside the live shell
+ * while remaining independent of the selected Claude/Codex/OpenCode/Pi harness.
  *
  * Collapsed, it shows just the one command that matters (`kortix sessions
  * connect <id>`) with a copy button. Expanded, it adds the one-time install
@@ -42,9 +42,8 @@ export function SessionTerminalConnectBar({ projectSessionId }: { projectSession
       {expanded && (
         <div className="space-y-2.5 px-3 pb-3 pt-0.5">
           <p className="text-xs leading-relaxed text-white/45">
-            Attach your local Runtime TUI straight to this session&apos;s sandbox. The CLI opens a
-            local proxy, injects your Kortix token, then runs{' '}
-            <span className="font-mono text-white/60">opencode attach</span>.
+            Continue this session&apos;s authenticated ACP conversation from your terminal. The CLI
+            reconnects to the same persisted transcript; no harness-specific client is required.
           </p>
           <CommandRow label="1. Install the CLI (once)" command={installCmd} />
           <CommandRow label="2. Attach to this session" command={connectCmd} />
@@ -75,14 +74,27 @@ function CommandRow({ label, command }: { label: string; command: string }) {
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 rounded p-1 text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+          className="relative inline-flex size-7 shrink-0 items-center justify-center rounded text-white/40 transition-[color,background-color,scale] after:absolute after:-inset-1.5 hover:bg-white/10 hover:text-white/80 active:scale-[0.96]"
           aria-label={copied ? 'Copied' : 'Copy command'}
         >
-          {copied ? (
-            <Check className="text-kortix-green h-3.5 w-3.5" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
+          <span className="relative inline-flex size-3.5 items-center justify-center">
+            <AnimatePresence initial={false} mode="popLayout">
+              <motion.span
+                key={copied ? 'check' : 'copy'}
+                initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                className="absolute inset-0 inline-flex items-center justify-center"
+              >
+                {copied ? (
+                  <Check className="text-kortix-green size-3.5" />
+                ) : (
+                  <Copy className="size-3.5" />
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </span>
         </button>
       </div>
     </div>

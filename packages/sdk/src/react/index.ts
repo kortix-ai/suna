@@ -13,6 +13,7 @@ export {
   type SendState,
 } from './use-session';
 export { useAcpSession, type AcpStoredSessionEnvelope } from './use-acp-session';
+export * from './use-composer-capabilities';
 
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —
@@ -25,20 +26,6 @@ export {
   formatBillingErrorForUI,
   type BillingErrorUI,
 } from '../core/http/api/errors';
-
-// The framework-free SSE event-stream primitive that the session runtime hooks
-// wrap. Re-exported here too so a host
-// already importing from `@kortix/sdk/react` can build its own binding
-// (e.g. a non-QueryClient consumer) without a second import from
-// `@kortix/sdk/event-stream`.
-export {
-  openEventStream,
-  type EventStreamClient,
-  type EventStreamHandle,
-  type EventStreamTimers,
-  type RuntimeEvent,
-  type OpenEventStreamOptions,
-} from '../core/stream/event-stream';
 
 // The kortix-master React Query layer (tasks/tickets/projects/milestones/
 // credentials/sandbox-services) relocated from apps/web's six

@@ -1,9 +1,7 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import type { Part } from '../../core/runtime/wire-types';
-import { unwrap } from './shared';
 
 // ============================================================================
 // Part Edit / Delete Hooks
@@ -27,14 +25,8 @@ export function useUpdatePart() {
       partId: string;
       part: Partial<Part>;
     }) => {
-      const client = getClient();
-      const result = await client.part.update({
-        sessionID: sessionId,
-        messageID: messageId,
-        partID: partId,
-        part: part as Part,
-      });
-      return unwrap(result) as Part;
+      void sessionId; void messageId; void partId; void part;
+      throw new Error('ACP transcripts are append-only; message-part editing is not supported.');
     },
     // SSE message.part.updated handles cache updates via sync store.
     // No onSuccess needed — eliminates unnecessary message refetch.
@@ -57,13 +49,8 @@ export function useDeletePart() {
       messageId: string;
       partId: string;
     }) => {
-      const client = getClient();
-      const result = await client.part.delete({
-        sessionID: sessionId,
-        messageID: messageId,
-        partID: partId,
-      });
-      return unwrap(result);
+      void sessionId; void messageId; void partId;
+      throw new Error('ACP transcripts are append-only; message-part deletion is not supported.');
     },
     // SSE message.part.removed handles cache updates via sync store.
     // No onSuccess needed — eliminates unnecessary message refetch.

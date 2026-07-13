@@ -449,34 +449,13 @@ describe('kortix CLI black-box behavior', () => {
     }
   });
 
-  test('apps is hidden from top-level help by default, shown behind KORTIX_APPS_EXPERIMENTAL', async () => {
-    const hidden = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: '' });
-    expect(hidden.stdout).not.toContain('apps <subcommand>');
+  test('hosted app deployment command is absent', async () => {
+    const help = await runCli(['--help']);
+    expect(help.stdout).not.toContain('apps <subcommand>');
 
-    const shown = await runCli(['--help'], tmp, { KORTIX_APPS_EXPERIMENTAL: 'true' });
-    expect(shown.stdout).toContain('apps <subcommand>');
-  });
-
-  test('kortix apps refuses to run without KORTIX_APPS_EXPERIMENTAL and points at the flag', async () => {
-    const result = await runCli(['apps', 'ls'], tmp, {
-      KORTIX_APPS_EXPERIMENTAL: '',
-      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
-    });
-
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('experimental');
-    expect(result.stderr).toContain('KORTIX_APPS_EXPERIMENTAL');
-  });
-
-  test('kortix apps proceeds past the experimental gate once KORTIX_APPS_EXPERIMENTAL is set', async () => {
-    const result = await runCli(['apps', 'ls'], tmp, {
-      KORTIX_APPS_EXPERIMENTAL: 'true',
-      KORTIX_CONFIG_FILE: join(tmp, 'missing-config.json'),
-    });
-
-    // Not logged in / no linked project in this tmp dir — the point is it
-    // gets PAST the local experimental gate rather than being blocked by it.
-    expect(result.stderr).not.toContain('experimental and hidden');
+    const result = await runCli(['apps', 'ls'], tmp);
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('unknown command `apps`');
   });
 
   test('tunnel is no longer a top-level command', async () => {

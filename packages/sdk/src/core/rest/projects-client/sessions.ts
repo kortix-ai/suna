@@ -76,6 +76,15 @@ export interface CreateProjectSessionInput {
   model?: string;
   /** Optional harness-native model id, applied when this ACP runtime launches. */
   runtime_model?: string;
+  /** Explicit harness authentication route selected for this session. */
+  connection_id?: import('./composer-capabilities').HarnessAuthKind;
+  /** Canonical harness-qualified model selection. Legacy model/runtime_model
+   * fields remain accepted during migration. */
+  model_selection?: {
+    kind: 'default' | 'preset' | 'custom';
+    model_id?: string | null;
+    connection_id?: import('./composer-capabilities').HarnessAuthKind | null;
+  };
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;

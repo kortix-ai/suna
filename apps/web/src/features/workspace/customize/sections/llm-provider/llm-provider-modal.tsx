@@ -39,7 +39,7 @@ export function ProjectProviderModal({
   canWrite = false,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { secretsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
+  const { connectionsQuery, connectedProviders, llmGatewayEnabled } = useConnectedProviders(
     projectId,
     open || asPanel,
   );
@@ -146,18 +146,19 @@ export function ProjectProviderModal({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {secretsQuery.isLoading && (
+        {connectionsQuery.isLoading && (
           <div className="flex min-h-[200px] items-center justify-center">
             <Loading className="text-muted-foreground size-4 shrink-0" />
           </div>
         )}
 
-        {!secretsQuery.isLoading && (
+        {!connectionsQuery.isLoading && (
           <>
             <TabsContent value="connected" className="mt-0">
               <ConnectedTab
                 projectId={projectId}
                 connectedProviders={connectedProviders}
+                connections={connectionsQuery.data?.connections ?? []}
                 search={search}
                 canWrite={canWrite}
                 onAddProvider={() => switchTab('catalog')}

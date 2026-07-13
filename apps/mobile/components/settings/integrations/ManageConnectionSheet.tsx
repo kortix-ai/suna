@@ -50,6 +50,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
 
   const [renameDraft, setRenameDraft] = useState('');
   const [localLabel, setLocalLabel] = useState<string | null>(null);
+  const displayName = localLabel || connection?.label || connection?.appName || connection?.app || '';
 
   // Fetch sandboxes linked to this integration
   const { data: sandboxData } = useIntegrationSandboxes(
@@ -157,7 +158,6 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
-  const displayName = localLabel || connection?.label || connection?.appName || connection?.app || '';
 
   const formatDate = (iso: string | null) => {
     if (!iso) return null;

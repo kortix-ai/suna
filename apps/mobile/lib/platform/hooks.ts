@@ -3,13 +3,20 @@
  *
  * These hooks provide:
  * 1. Sandbox initialization (ensures user has a sandbox)
- * 2. Session listing from the runtime server
+ * 2. Project-session listing through the Kortix SDK
  * 3. Session CRUD operations
  */
 
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useCreateRuntimeSession,
+  useDeleteRuntimeSession,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useUpdateRuntimeSession,
+} from '@kortix/sdk/react';
 import { log } from '@/lib/logger';
-import { getAuthToken } from '@/api/config';
 import {
   ensureSandbox,
   getActiveSandbox,
@@ -21,7 +28,7 @@ import {
   getProviders,
   type SandboxInfo,
 } from './client';
-import type { Session, SessionStatusMap } from './types';
+import type { SessionStatusMap } from './types';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -34,28 +41,6 @@ export const platformKeys = {
   session: (id: string) => [...platformKeys.sessions(), id] as const,
   sessionStatus: () => [...platformKeys.all, 'session-status'] as const,
 };
-
-// ─── Helper: authenticated fetch to the runtime server ───────────────────────
-
-async function runtimeFetch<T>(sandboxUrl: string, path: string, options?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-
-  const res = await fetch(`${sandboxUrl}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers as Record<string, string>),
-    },
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Runtime ${path} failed: ${res.status} - ${body}`);
-  }
-
-  return res.json();
-}
 
 // ─── Sandbox Hook ────────────────────────────────────────────────────────────
 
@@ -121,142 +106,74 @@ export function useSandbox(enabled: boolean = true) {
 // ─── Session List Hook ───────────────────────────────────────────────────────
 
 /**
- * Lists all sessions from the runtime server.
- * GET {sandboxUrl}/session
+ * Lists all project sessions through the Kortix platform API.
  */
 export function useSessions(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: platformKeys.sessions(),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-
-      log.log('📋 [useSessions] Fetching sessions from:', sandboxUrl);
-      const sessions = await runtimeFetch<Session[]>(sandboxUrl, '/session');
-
-      // Sort by updated time descending (most recent first)
-      const sorted = [...sessions].sort((a, b) => b.time.updated - a.time.updated);
-      log.log('✅ [useSessions] Got', sorted.length, 'sessions');
-      return sorted;
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 10 * 1000, // Refresh every 10s
-    refetchOnWindowFocus: true,
-  });
+  return useRuntimeSessions(Boolean(sandboxUrl));
 }
 
 // ─── Session Detail Hook ─────────────────────────────────────────────────────
 
 /**
  * Get a single session by ID.
- * GET {sandboxUrl}/session/{id}
+ * Reads one project session through the Kortix platform API.
  */
 export function useSession(sandboxUrl: string | undefined, sessionId: string | undefined) {
-  return useQuery({
-    queryKey: platformKeys.session(sessionId || ''),
-    queryFn: async () => {
-      if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
-      return runtimeFetch<Session>(sandboxUrl, `/session/${sessionId}`);
-    },
-    enabled: !!sandboxUrl && !!sessionId,
-    staleTime: 5 * 1000,
-  });
+  return useRuntimeSession(sandboxUrl && sessionId ? sessionId : '');
 }
 
 // ─── Session Status Hook ─────────────────────────────────────────────────────
 
 /**
  * Get status of all sessions (idle/running/error).
- * GET {sandboxUrl}/session/status
+ * Derives idle/running/error from project-session lifecycle state.
  */
 export function useSessionStatuses(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: platformKeys.sessionStatus(),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<SessionStatusMap>(sandboxUrl, '/session/status');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 2 * 1000,
-    refetchInterval: 5000, // Poll session statuses
-  });
+  const sessions = useRuntimeSessions(Boolean(sandboxUrl));
+  const data = useMemo<SessionStatusMap | undefined>(() => {
+    if (!sessions.data) return undefined;
+    return Object.fromEntries(sessions.data.map((session) => [
+      session.id,
+      session.status === 'running' ? 'running' : session.status === 'failed' ? 'error' : 'idle',
+    ]));
+  }, [sessions.data]);
+  return { ...sessions, data };
 }
 
 // ─── Session Create Mutation ─────────────────────────────────────────────────
 
 /**
  * Create a new session.
- * POST {sandboxUrl}/session
+ * Creates a canonical Kortix project session.
  */
 export function useCreateSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (params: { title?: string; directory?: string }) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-
-      log.log('➕ [useCreateSession] Creating session:', params);
-      const session = await runtimeFetch<Session>(sandboxUrl, '/session', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...(params.title ? { title: params.title } : {}),
-          ...(params.directory ? { directory: params.directory } : {}),
-        }),
-      });
-
-      log.log('✅ [useCreateSession] Created:', session.id);
-      return session;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-    },
-  });
+  void sandboxUrl;
+  return useCreateRuntimeSession();
 }
 
 // ─── Session Delete Mutation ─────────────────────────────────────────────────
 
 /**
  * Delete a session.
- * DELETE {sandboxUrl}/session/{id}
+ * Deletes a canonical Kortix project session.
  */
 export function useDeleteSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-
-      log.log('🗑️ [useDeleteSession] Deleting session:', sessionId);
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
-        method: 'DELETE',
-      });
-    },
-    onSuccess: (_, sessionId) => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-      queryClient.removeQueries({ queryKey: platformKeys.session(sessionId) });
-    },
-  });
+  void sandboxUrl;
+  return useDeleteRuntimeSession();
 }
 
 // ─── Session Archive/Unarchive Mutation ──────────────────────────────────────
 
 /**
  * Archive a session.
- * PATCH {sandboxUrl}/session/{id} with { time: { archived: Date.now() } }
+ * Archives a canonical Kortix project session.
  */
 export function useArchiveSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
+  const update = useUpdateRuntimeSession();
+  void sandboxUrl;
 
   return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ time: { archived: Date.now() } }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-    },
+    mutationFn: (sessionId: string) => update.mutateAsync({ sessionId, archived: true }),
   });
 }
 
@@ -265,19 +182,11 @@ export function useArchiveSession(sandboxUrl: string | undefined) {
  * PATCH {sandboxUrl}/session/{id} with { time: { archived: 0 } }
  */
 export function useUnarchiveSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
+  const update = useUpdateRuntimeSession();
+  void sandboxUrl;
 
   return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ time: { archived: 0 } }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-    },
+    mutationFn: (sessionId: string) => update.mutateAsync({ sessionId, archived: false }),
   });
 }
 
@@ -292,49 +201,12 @@ export function useUnarchiveSession(sandboxUrl: string | undefined) {
  * afterwards.
  */
 export function useRenameSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
+  const update = useUpdateRuntimeSession();
+  void sandboxUrl;
 
   return useMutation({
-    mutationFn: async (params: { sessionId: string; title: string }) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      await runtimeFetch<void>(sandboxUrl, `/session/${params.sessionId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ title: params.title }),
-      });
-    },
-    onMutate: async ({ sessionId, title }) => {
-      // Surgically patch the sessions list so the rename shows up instantly
-      // even if SSE is slow.
-      await queryClient.cancelQueries({ queryKey: platformKeys.sessions() });
-      const previous = queryClient.getQueryData<Session[]>(platformKeys.sessions());
-      queryClient.setQueryData<Session[]>(platformKeys.sessions(), (old) => {
-        if (!old) return old;
-        return old.map((s) => (s.id === sessionId ? { ...s, title } : s));
-      });
-      // Also patch the single-session cache used by useSession()
-      const singleKey = platformKeys.session(sessionId);
-      const previousSingle = queryClient.getQueryData<Session>(singleKey);
-      if (previousSingle) {
-        queryClient.setQueryData<Session>(singleKey, { ...previousSingle, title });
-      }
-      return { previous, previousSingle, sessionId };
-    },
-    onError: (_err, _vars, context) => {
-      // Roll back on failure
-      if (context?.previous) {
-        queryClient.setQueryData(platformKeys.sessions(), context.previous);
-      }
-      if (context?.previousSingle && context?.sessionId) {
-        queryClient.setQueryData(
-          platformKeys.session(context.sessionId),
-          context.previousSingle,
-        );
-      }
-    },
-    onSettled: (_data, _err, vars) => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
-      queryClient.invalidateQueries({ queryKey: platformKeys.session(vars.sessionId) });
-    },
+    mutationFn: ({ sessionId, title }: { sessionId: string; title: string }) =>
+      update.mutateAsync({ sessionId, title }),
   });
 }
 
@@ -345,19 +217,11 @@ export function useRenameSession(sandboxUrl: string | undefined) {
  * POST {sandboxUrl}/session/{id}/abort
  */
 export function useAbortSession(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
+  void sandboxUrl;
 
   return useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-
-      log.log('⛔ [useAbortSession] Aborting session:', sessionId);
-      await runtimeFetch<void>(sandboxUrl, `/session/${sessionId}/abort`, {
-        method: 'POST',
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: platformKeys.sessionStatus() });
+    mutationFn: async (_sessionId: string) => {
+      throw new Error('Cancel the active turn through useSession(projectId, sessionId).acp.cancel().');
     },
   });
 }
@@ -373,11 +237,10 @@ export async function replyToQuestion(
   requestId: string,
   answers: string[][],
 ): Promise<void> {
-  log.log('💬 [replyToQuestion] Replying to:', requestId);
-  await runtimeFetch<void>(sandboxUrl, `/question/${requestId}/reply`, {
-    method: 'POST',
-    body: JSON.stringify({ answers }),
-  });
+  void sandboxUrl;
+  void requestId;
+  void answers;
+  throw new Error('Answer ACP elicitations through useSession().acp.respondQuestion().');
 }
 
 /**
@@ -388,10 +251,9 @@ export async function rejectQuestion(
   sandboxUrl: string,
   requestId: string,
 ): Promise<void> {
-  log.log('❌ [rejectQuestion] Rejecting:', requestId);
-  await runtimeFetch<void>(sandboxUrl, `/question/${requestId}/reject`, {
-    method: 'POST',
-  });
+  void sandboxUrl;
+  void requestId;
+  throw new Error('Reject ACP elicitations through useSession().acp.rejectQuestion().');
 }
 
 // ─── Instance Management Hooks ──────────────────────────────────────────────

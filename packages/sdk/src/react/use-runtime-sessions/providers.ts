@@ -1,23 +1,19 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
-import { runtimeKeys, useRuntimeReady } from './keys';
+import { runtimeKeys } from './keys';
+import { useCurrentRuntime } from '../use-current-runtime';
 import type { ProviderListResponse } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
+import { getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
   getProjectLlmCatalog,
-  listProjectSecrets,
 } from '../../core/rest/projects-client';
 import {
   filterToGatewayProviders,
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
-  LLM_PROVIDER_CREDENTIALS,
-  mergeProjectSecretConnectedProviders,
-  normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasModels,
 } from '../provider-selection';
@@ -29,8 +25,9 @@ import {
 export { GATEWAY_PROVIDER_IDS };
 
 export function useRuntimeProviders() {
-  const runtimeReady = useRuntimeReady();
-  const projectId = useKortixRouteProjectId();
+  const routeProjectId = useKortixRouteProjectId();
+  const activeProjectId = useCurrentRuntime((state) => state.projectId);
+  const projectId = routeProjectId ?? activeProjectId;
   const projectDetailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId!),
@@ -51,46 +48,9 @@ export function useRuntimeProviders() {
       ? ['project-providers', projectId, projectGatewayEnabled ? 'gateway' : 'native']
       : runtimeKeys.providers(),
     queryFn: async () => {
-      if (projectId && projectGatewayEnabled) {
-        const catalog = await getProjectLlmCatalog(projectId);
-        const providers = projectLlmCatalogToProviderList(catalog);
-        setLSCache(LS_PROVIDERS, providers, cacheScope);
-        return providers;
-      }
-      const client = getClient();
-      const result = await client.provider.list();
-      let rawProviders = normalizeProviderList(unwrap(result));
-      if (projectId) {
-        const secrets = await listProjectSecrets(projectId);
-        const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
-        const secretNames = new Set(items.map((secret: { name: string }) => secret.name));
-        rawProviders = mergeProjectSecretConnectedProviders(
-          rawProviders,
-          secretNames,
-          LLM_PROVIDER_CREDENTIALS,
-        );
-      }
-      const providers = projectId ? filterToNativeProviders(rawProviders) : rawProviders;
-
-      // During sandbox boot the Runtime server frequently answers
-      // /provider/list BEFORE its provider config is wired up, returning zero
-      // CONNECTED providers (→ zero models). With staleTime:Infinity such an
-      // empty answer would be cached for the whole session and never refetched,
-      // AND persisted to the global localStorage cache below — poisoning the
-      // first frame of every future session too. That is the "model picker
-      // never shows up" bug. Treat a model-less response as a transient boot
-      // state: throw so React Query retries it (with backoff), and never cache
-      // or persist it.
-      if (!providerListHasModels(providers)) {
-        throw new Error(
-          'opencode provider list has no connected models yet — sandbox still warming up',
-        );
-      }
-
-      // Persist under the per-project scope (never the ephemeral per-sandbox
-      // server id) so a fresh session paints the right models instantly. Only
-      // genuine, model-bearing responses reach here, so the placeholder cache
-      // is never poisoned with an empty list.
+      if (!projectId) return { all: [], connected: [], default: {} } as ProviderListResponse;
+      const catalog = await getProjectLlmCatalog(projectId);
+      const providers = projectLlmCatalogToProviderList(catalog);
       setLSCache(LS_PROVIDERS, providers, cacheScope);
       return providers;
     },
@@ -112,12 +72,11 @@ export function useRuntimeProviders() {
       }
       return cached;
     },
-    enabled: projectId ? projectModeKnown && (projectGatewayEnabled || runtimeReady) : runtimeReady,
-    staleTime: Infinity,
+    enabled: Boolean(projectId && projectModeKnown),
+    staleTime: 30_000,
     gcTime: 10 * 60 * 1000,
     // The boot race (sandbox up, providers not yet wired) self-heals: keep
     // retrying with capped exponential backoff until real models appear.
-    retry: (failureCount) => failureCount < 10,
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
+    retry: false,
   });
 }

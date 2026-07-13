@@ -49,8 +49,6 @@ import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
-// Re-export for consumers
-export { ConnectProviderContent } from '@/features/providers/connect-provider-content';
 export { Tag };
 
 // ─── Backward-compat wrappers ────────────────────────────────────────────────

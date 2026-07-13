@@ -6,7 +6,7 @@ import type {
   PermissionRequest as OpencodePermissionRequest,
   SessionStatus as OpencodeSessionStatus,
   ToolPart as OpencodeToolPart,
-} from '../runtime/client';
+} from '../runtime/wire-types';
 import {
   COST_MARKUP,
   type MessageWithPartsLike,

@@ -22,7 +22,30 @@ describe('buildNewSessionCreateInput', () => {
   it('applies a harness-native model at session launch', () => {
     expect(
       buildNewSessionCreateInput({ agent: 'codex', runtimeModel: ' openai/gpt-5.4 ' }),
-    ).toEqual({ agent_name: 'codex', runtime_model: 'openai/gpt-5.4' });
+    ).toEqual({
+      agent_name: 'codex',
+      model_selection: {
+        kind: 'custom',
+        model_id: 'openai/gpt-5.4',
+        connection_id: null,
+      },
+    });
+  });
+
+  it('carries every create-time override together', () => {
+    expect(
+      buildNewSessionCreateInput({
+        agent: 'builder',
+        sandbox_slug: 'node22',
+        base_ref: 'staging',
+      }),
+    ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22', base_ref: 'staging' });
+  });
+
+  it('carries a one-session branch override without requiring another override', () => {
+    expect(buildNewSessionCreateInput({ base_ref: 'feature/shadcn' })).toEqual({
+      base_ref: 'feature/shadcn',
+    });
   });
 
   it('binds only the sandbox slug when no agent is picked', () => {

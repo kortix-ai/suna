@@ -175,7 +175,6 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
   { name: './acp', file: 'acp/index.ts', tier: 'isomorphic-core' },
   { name: './acp/transcript', file: 'acp/transcript.ts', tier: 'isomorphic-core' },
-  { name: './runtime-client', file: 'runtime/client.ts', tier: 'isomorphic-core' },
 
   // The ./internal/* stores — apps/web's zustand machinery, outside semver.
   { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },
@@ -198,7 +197,6 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './platform-client', file: 'deprecated/platform-client.ts', tier: 'isomorphic-core' },
   { name: './server-store', file: 'deprecated/server-store.ts', tier: 'browser-only' },
   { name: './sync-store', file: 'deprecated/sync-store.ts', tier: 'browser-only' },
-  { name: './event-stream', file: 'deprecated/event-stream.ts', tier: 'isomorphic-core' },
   { name: './sandbox-connection-store', file: 'deprecated/sandbox-connection-store.ts', tier: 'browser-only' },
   { name: './runtime-pending-store', file: 'deprecated/runtime-pending-store.ts', tier: 'browser-only' },
   { name: './files', file: 'deprecated/files.ts', tier: 'isomorphic-core' },

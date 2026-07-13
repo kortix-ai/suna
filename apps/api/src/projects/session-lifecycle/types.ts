@@ -9,6 +9,7 @@ export type SessionInvocationSource =
   | 'slack'
   | 'email'
   | 'telegram'
+  | 'teams'
   | 'meet'
   | 'trigger:webhook'
   | 'trigger:cron'

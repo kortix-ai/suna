@@ -167,7 +167,7 @@ export class PlatinumProvider implements SandboxProvider {
     // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
     // the sandbox is running — before the FE connects. Expose is otherwise lazy
     // (first /v1/p request triggers it), which left a window where the FE's
-    // /agent, /session, /global/events calls hit an un-routed edge → 504s right
+    // Runtime helper and legacy event calls hit an un-routed edge → 504s right
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
     let exposedUrl = '';

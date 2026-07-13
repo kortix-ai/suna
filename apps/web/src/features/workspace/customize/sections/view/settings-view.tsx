@@ -40,6 +40,7 @@ import {
   getProject,
   inviteRepoCollaborator,
   isManagedGithubProject,
+  listProjectBranches,
   listProjectTriggers,
   setProjectTriggersActivation,
   updateExperimentalFeature,
@@ -179,6 +180,17 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
   const githubUrl = githubRepoWebUrl(repoUrl);
   const repoLabel = githubUrl?.replace('https://github.com/', '') || repoUrl || '-';
   const managed = isManagedGithubProject(project);
+  const branchesQuery = useQuery({
+    queryKey: ['project-branches', project.project_id],
+    queryFn: () => listProjectBranches(project.project_id),
+    staleTime: 60_000,
+  });
+  const branchNames = Array.from(
+    new Set([
+      project.default_branch,
+      ...(branchesQuery.data?.branches.map((branch) => branch.name) ?? []),
+    ]),
+  );
 
   const [defaultBranch, setDefaultBranch] = useState(project.default_branch);
   const [manifestPath, setManifestPath] = useState(project.manifest_path);
@@ -202,6 +214,7 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.project_id], updated);
       queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['project-branches', project.project_id] });
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update repository'),
   });
@@ -246,19 +259,28 @@ function RepositoryCard({ project, canManage }: { project: KortixProject; canMan
         <FieldGroup className="grid gap-3 sm:grid-cols-2">
           <Field>
             <div className="flex items-center justify-between gap-2">
-              <FieldLabel htmlFor="default-branch">
-                {tHardcodedUi.raw('appProjectsIdCustomizeSettingsPage.line270JsxTextDefaultBranch')}
-              </FieldLabel>
+              <FieldLabel htmlFor="default-branch">Default session branch</FieldLabel>
               {saving ? <SaveStatus /> : null}
             </div>
-            <Input
-              id="default-branch"
+            <Select
               value={defaultBranch}
-              onChange={(e) => setDefaultBranch(e.target.value)}
+              onValueChange={setDefaultBranch}
               disabled={!canManage || isPending}
-              className="font-mono text-xs"
-              variant="popover"
-            />
+            >
+              <SelectTrigger id="default-branch" className="font-mono text-xs" variant="popover">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {branchNames.map((branch) => (
+                  <SelectItem key={branch} value={branch} className="font-mono text-xs">
+                    {branch}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              New sessions fork from this branch unless a group or one-session override applies.
+            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="manifest-path">

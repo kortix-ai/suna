@@ -27,11 +27,15 @@ import {
   type AgentMailSenderPolicy,
   deleteAgentMailInstall,
   deleteSlackInstall,
+  deleteTeamsInstall,
   loadAgentMailInstall,
   loadSlackInstall,
+  loadTeamsAppIdForProject,
+  loadTeamsInstall,
   normalizeSenderPolicy,
   saveAgentMailInstall,
   saveSlackInstall,
+  saveTeamsInstall,
   updateAgentMailSenderPolicy,
 } from '../../channels/install-store';
 import { previewVoiceB64, speakInMeeting } from '../../channels/meet-tts';
@@ -44,17 +48,18 @@ import {
   setProjectBotName,
   setProjectVoice,
 } from '../../channels/meet-voices';
+import { resolveBaseUrl } from '../../channels/slack-manifest';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import {
-  type QuestionInfo,
-  postQuestion,
-  relayTurnAnswer,
-  relayTurnEnd,
-  relayTurnStep,
-} from '../../channels/slack-webhook';
+import { type QuestionInfo } from '../../channels/slack-webhook';
 import { bindChatThread, resolveWorkspaceIdForChannel } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
+import { teamsChannelEnabled } from '../../channels/teams-auth';
+import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
+import { teamsOrgConsentUrl } from '../../channels/teams-oauth';
+import { buildTeamsManifest } from '../../channels/teams-manifest';
+import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/file-proxy';
+import { relayTurnAnswer, relayTurnEnd, relayTurnQuestion, relayTurnStep } from '../../channels/turn-relay';
 import { config } from '../../config';
 import { upsertProfileCredential } from '../../executor/credentials';
 import { reconcileChannelConnectors } from '../../executor/sync';
@@ -74,25 +79,13 @@ import {
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
 import { db } from '../../shared/db';
-import { extractApps } from '../apps';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
   renewExecutionLease,
 } from '../execution-lease';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
-import {
-  APPS_DISABLED_BODY,
-  type SlackAuthTest,
-  draftToAppSpec,
-  loadAppsForResponse,
-  parseAppDraft,
-  projectAppsEnabled,
-  removeAppFromManifest,
-  specToAppBody,
-  upsertAppInManifest,
-} from '../lib/apps-helpers';
+import { AnyObject, TriggerSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import {
@@ -137,6 +130,14 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_mode',
   'sessionMode',
 ] as const;
+
+interface SlackAuthTest {
+  ok: boolean;
+  team_id?: string;
+  team?: string;
+  user_id?: string;
+  error?: string;
+}
 
 const ConnectionProfileViewSchema = ConnectionProfileSchema.openapi('ConnectionProfile');
 
@@ -864,6 +865,215 @@ projectsApp.openapi(
     // Tear down the auto-materialized Slack connector now that the install is gone.
     await reconcileChannelConnectors(projectId);
     return c.json({ status: 'disconnected' });
+  },
+);
+
+function teamsPublicBaseUrl(): string | undefined {
+  return config.KORTIX_URL?.startsWith('https://') ? config.KORTIX_URL : undefined;
+}
+
+// ─── Microsoft Teams install — shared multi-tenant app, bind a tenant ────
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const install = await loadTeamsInstall(projectId);
+    return c.json(install ?? null);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/mode',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    const install = await loadTeamsInstall(projectId).catch(() => null);
+    return c.json({
+      ...teamsMode(baseUrl, { projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, baseUrl }),
+      orgInstalled: install?.orgInstalled ?? false,
+      deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/manifest',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/manifest',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const byoAppId = await loadTeamsAppIdForProject(projectId);
+    const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
+    const mode = teamsMode(baseUrl, { projectId, byoAppId });
+    if (!mode.available || !mode.appId) {
+      return c.json({ error: 'Teams is not configured on this server' }, 409);
+    }
+    return c.json(buildTeamsManifest({ appId: mode.appId, baseUrl, appName: config.TEAMS_APP_NAME, botName: config.TEAMS_APP_NAME }));
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/connect',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 404) },
+  }),
+  async (c: any) => {
+    if (!teamsChannelEnabled()) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json({ error: 'Invalid JSON body' }, 400);
+    }
+    const tenantId = body.tenant_id?.trim();
+    const isGuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    const isDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v);
+    if (!tenantId || (!isGuid(tenantId) && !isDomain(tenantId))) {
+      return c.json({ error: 'tenant_id is required and must be an Azure AD tenant GUID or domain' }, 400);
+    }
+
+    const appId = body.app_id?.trim() || null;
+    const appPassword = body.app_password?.trim() || null;
+    if ((appId && !appPassword) || (!appId && appPassword)) {
+      return c.json({ error: 'app_id and app_password must be provided together for a bring-your-own bot' }, 400);
+    }
+    if (appId && !isGuid(appId)) {
+      return c.json({ error: 'app_id must be an Azure AD application (client) GUID' }, 400);
+    }
+
+    const summary = await saveTeamsInstall({
+      projectId,
+      tenantId,
+      teamName: body.team_name?.trim() || null,
+      appId,
+      appPassword,
+    });
+    void reconcileChannelConnectors(projectId);
+    return c.json(summary);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/teams/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/teams/installation',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await deleteTeamsInstall(projectId);
+    void reconcileChannelConnectors(projectId);
+    return c.json({ status: 'disconnected' });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/teams/file',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/teams/file (download proxy)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ url: z.string() }),
+    },
+    responses: {
+      200: { description: 'File bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const result = await downloadTeamsFile(projectId, c.req.query('url') ?? '');
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    c.header('Content-Type', result.contentType);
+    return c.body(result.body);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/teams/file/upload',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), uploadId: z.string() }).passthrough(), 'Consent card sent'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const body = await readBody(c);
+    const result = await initiateTeamsUpload(projectId, {
+      serviceUrl: String(body.service_url ?? body.serviceUrl ?? ''),
+      conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
+      botId: typeof body.bot_id === 'string' ? body.bot_id : undefined,
+      filename: String(body.filename ?? ''),
+      contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
+      description: typeof body.description === 'string' ? body.description : undefined,
+    });
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
+    return c.json({ ok: true, uploadId: result.uploadId });
   },
 );
 
@@ -2256,7 +2466,7 @@ projectsApp.openapi(
     // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
     // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
     // image (resumes opencode from them) unblocked.
-    const result = await postQuestion(sessionId, questions);
+    const result = await relayTurnQuestion(sessionId, questions);
     if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
     return c.json({ ok: true, answers: result.answers });
   },
@@ -2351,229 +2561,3 @@ projectsApp.openapi(
     );
   },
 );
-
-// ── apps CRUD + deploy ───────────────────────────────────────────────────────
-//
-// Apps are declared as `apps:` list entries inside kortix.yaml. The manifest
-// is the source of truth; the `deployments` table stores deploy attempts
-// (one row per version per app). The sweep loop in ./app-sweep.ts auto-
-// deploys on manifest drift; the routes below give the UI and CLI a
-// manual path.
-//
-// EXPERIMENTAL. The entire surface is gated PER PROJECT
-// (projects.metadata.apps_enabled, defaulting to KORTIX_APPS_EXPERIMENTAL).
-// When off for a project, every /apps route returns 404 and the sweep skips
-// it. This middleware loads the project's gate and short-circuits before any
-// of the handlers below run.
-
-projectsApp.use('/:projectId/apps/*', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
-    return c.json(APPS_DISABLED_BODY, 404);
-  }
-  await next();
-});
-
-projectsApp.use('/:projectId/apps', async (c, next) => {
-  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
-    return c.json(APPS_DISABLED_BODY, 404);
-  }
-  await next();
-});
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'GET /:projectId/apps',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-    },
-    responses: {
-      200: json(z.array(AppSchema), 'Apps'),
-      ...errors(404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
-);
-
-// POST /v1/projects/:projectId/apps — add a new app to kortix.yaml
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/apps',
-    tags: ['apps'],
-    summary: 'POST /:projectId/apps',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      201: json(AppSchema, 'The created app'),
-      ...errors(400, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    const draft = parseAppDraft(body, { existingSlug: null });
-    if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-
-    if (extractApps(manifest).specs.some((s) => s.slug === draft.slug)) {
-      return c.json(
-        {
-          error: `An app with slug "${draft.slug}" already exists. Pick a different name.`,
-        },
-        409,
-      );
-    }
-
-    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(loaded.row, next, `chore: add app ${draft.slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
-  },
-);
-
-// PATCH /v1/projects/:projectId/apps/:slug — partial update merged onto current
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'PATCH /:projectId/apps/:slug',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const body = await readBody(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    const current = extractApps(manifest).specs.find((s) => s.slug === slug);
-    if (!current) return c.json({ error: 'Not found' }, 404);
-
-    const draft = parseAppDraft(
-      { ...specToAppBody(current), ...body, slug },
-      { existingSlug: slug },
-    );
-    if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-    const next = upsertAppInManifest(manifest, draftToAppSpec(draft));
-    const result = await commitManifest(loaded.row, next, `chore: update app ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-
-    return c.json(await loadAppsForResponse(projectId, loaded.row));
-  },
-);
-
-// DELETE /v1/projects/:projectId/apps/:slug — remove from manifest. Does
-// NOT auto-stop existing deployments; call /apps/:slug/stop first if needed.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/apps/{slug}',
-    tags: ['apps'],
-    summary: 'DELETE /:projectId/apps/:slug',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-
-    if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
-      return c.json({ error: 'Invalid slug' }, 400);
-    }
-
-    let manifest: ParsedManifest;
-    try {
-      manifest = await loadManifestForEdit(loaded.row);
-    } catch (err) {
-      return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-    }
-    if (!extractApps(manifest).specs.some((s) => s.slug === slug)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    const next = removeAppFromManifest(manifest, slug);
-    const result = await commitManifest(loaded.row, next, `chore: delete app ${slug}`);
-    if ('error' in result) {
-      return c.json({ error: result.error }, result.status as 400 | 502);
-    }
-    return c.json({ ok: true });
-  },
-);
-
-// POST /v1/projects/:projectId/apps/:slug/deploy — manual deploy. Mirrors
-// what the sweep does on drift but bypasses the hash-equality skip.

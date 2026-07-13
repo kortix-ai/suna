@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   attachCompiledRuntimeIdentity,
+  discoverRuntimeProjectFiles,
   resolveConfigAgents,
 } from "../projects/git/config";
 import { compileRuntimeConfig } from "../projects/lib/compile-runtime-config";
@@ -27,7 +28,9 @@ describe("project config agent discovery", () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
 
     expect(result.agent_source).toBe("native");
-    expect(result.agent_discovery).toBe("opencode");
+    expect(result.agent_discovery).toBe("runtime");
+    expect("open_code_raw" in result).toBe(false);
+    expect("open_code_default_agent" in result).toBe(false);
     expect(result.agents).toEqual([
       { ...nativeAgents[0], source: "runtime", enabled: true },
       { ...nativeAgents[1], source: "runtime", enabled: true },
@@ -159,6 +162,62 @@ describe("project config agent discovery", () => {
       name: "reviewer",
       runtime: "code",
       harness: "codex",
+    });
+  });
+
+  test("discovers native config, agents, skills, and commands for every v3 harness", () => {
+    const compiled = compileRuntimeConfig({
+      kortix_version: 3,
+      default_agent: "claude-reviewer",
+      runtimes: {
+        claude: { harness: "claude", config_dir: ".claude" },
+        codex: { harness: "codex", config_dir: ".codex" },
+        opencode: { harness: "opencode", config_dir: ".kortix/opencode" },
+        pi: { harness: "pi", config_dir: ".pi" },
+      },
+      agents: {
+        "claude-reviewer": { runtime: "claude", agent: "reviewer" },
+        "codex-reviewer": { runtime: "codex", agent: "reviewer" },
+        open: { runtime: "opencode", agent: "kortix" },
+        pi: { runtime: "pi", agent: "writer" },
+      },
+    });
+    expect(discoverRuntimeProjectFiles(compiled, [
+      ".claude/settings.json",
+      ".claude/agents/reviewer.md",
+      ".claude/skills/pdf/SKILL.md",
+      ".claude/commands/audit.md",
+      ".codex/config.toml",
+      ".codex/reviewer.config.toml",
+      ".agents/skills/review/SKILL.md",
+      ".kortix/opencode/opencode.jsonc",
+      ".kortix/opencode/agents/kortix.md",
+      ".kortix/opencode/commands/ship.md",
+      ".pi/settings.json",
+      ".pi/prompts/writer.md",
+      ".pi/skills/research/SKILL.md",
+    ])).toMatchObject({
+      configs: [
+        { runtime: "claude", harness: "claude", path: ".claude/settings.json" },
+        { runtime: "codex", harness: "codex", path: ".codex/config.toml" },
+        { runtime: "opencode", harness: "opencode", path: ".kortix/opencode/opencode.jsonc" },
+        { runtime: "pi", harness: "pi", path: ".pi/settings.json" },
+      ],
+      agents: expect.arrayContaining([
+        expect.objectContaining({ harness: "claude", nativeName: "reviewer", path: ".claude/agents/reviewer.md" }),
+        expect.objectContaining({ harness: "codex", nativeName: "reviewer", path: ".codex/reviewer.config.toml" }),
+        expect.objectContaining({ harness: "opencode", nativeName: "kortix", path: ".kortix/opencode/agents/kortix.md" }),
+        expect.objectContaining({ harness: "pi", nativeName: "writer", path: ".pi/prompts/writer.md" }),
+      ]),
+      skills: expect.arrayContaining([
+        expect.objectContaining({ slug: "pdf", path: ".claude/skills/pdf/SKILL.md" }),
+        expect.objectContaining({ slug: "review", path: ".agents/skills/review/SKILL.md" }),
+        expect.objectContaining({ slug: "research", path: ".pi/skills/research/SKILL.md" }),
+      ]),
+      commands: expect.arrayContaining([
+        expect.objectContaining({ slug: "audit", path: ".claude/commands/audit.md" }),
+        expect.objectContaining({ slug: "ship", path: ".kortix/opencode/commands/ship.md" }),
+      ]),
     });
   });
 

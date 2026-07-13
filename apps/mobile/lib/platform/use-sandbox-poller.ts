@@ -108,13 +108,13 @@ async function waitForRuntimeHealthy(
     if (signal.aborted) return false;
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${url}/global/health`, {
+      const res = await fetch(`${url}/kortix/health`, {
         signal,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
         const data = await res.json();
-        if (data?.healthy === true) return true;
+        if (data?.runtimeReady === true) return true;
       }
     } catch {
       // Transient error — keep retrying

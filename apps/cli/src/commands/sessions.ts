@@ -33,8 +33,8 @@ Subcommands:
                                     (capture session_id to orchestrate).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
-  connect [<session-id>]            Attach local OpenCode to the running
-                                    session sandbox. Pass args after --.
+  connect [<session-id>]            Open the harness-neutral ACP chat for a
+                                    running Claude/Codex/OpenCode/Pi session.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new

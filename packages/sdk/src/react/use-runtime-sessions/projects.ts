@@ -1,10 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import type { Project, Path as PathInfo } from '../../core/runtime/wire-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap } from './shared';
+import { useCurrentRuntime } from '../use-current-runtime';
 
 // ============================================================================
 // Project Hooks
@@ -12,14 +11,12 @@ import { unwrap } from './shared';
 
 export function useRuntimeProjects() {
   const runtimeReady = useRuntimeReady();
+  const projectId = useCurrentRuntime((state) => state.projectId);
+  const project = projectId ? { id: projectId, path: '/workspace', worktree: '/workspace' } : null;
   return useQuery<Project[]>({
     queryKey: runtimeKeys.projects(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.list();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
+    queryFn: async () => project ? [project] : [],
+    enabled: runtimeReady && Boolean(projectId),
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
   });
@@ -27,14 +24,11 @@ export function useRuntimeProjects() {
 
 export function useRuntimeCurrentProject() {
   const runtimeReady = useRuntimeReady();
+  const projectId = useCurrentRuntime((state) => state.projectId);
   return useQuery<Project>({
     queryKey: runtimeKeys.currentProject(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.current();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
+    queryFn: async () => ({ id: projectId ?? undefined, path: '/workspace', worktree: '/workspace' }),
+    enabled: runtimeReady && Boolean(projectId),
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
   });
@@ -48,11 +42,7 @@ export function useRuntimePathInfo() {
   const runtimeReady = useRuntimeReady();
   return useQuery<PathInfo>({
     queryKey: runtimeKeys.pathInfo(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.path.get();
-      return unwrap(result);
-    },
+    queryFn: async () => ({ root: '/workspace', cwd: '/workspace', directory: '/workspace', worktree: '/workspace' }),
     enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,

@@ -3,7 +3,13 @@ import type { ComposerOptions } from '@/features/session/composer-chat-input';
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
   agent_name?: string;
-  runtime_model?: string;
+  connection_id?: import('@kortix/sdk').HarnessAuthKind;
+  model_selection?: {
+    kind: 'default' | 'preset' | 'custom';
+    model_id?: string | null;
+    connection_id?: import('@kortix/sdk').HarnessAuthKind | null;
+  };
+  base_ref?: string;
 }
 
 export interface NewSessionAgentConfig {
@@ -40,11 +46,28 @@ export function resolveNewSessionAgent(
  * no agent was picked), so callers can omit the create overrides entirely.
  */
 export function buildNewSessionCreateInput(
-  options: Pick<ComposerOptions, 'agent' | 'runtimeModel'> & { sandbox_slug?: string } = {},
+  options: Pick<ComposerOptions, 'agent' | 'runtimeModel' | 'connectionId' | 'modelSelection'> & {
+    sandbox_slug?: string;
+    base_ref?: string;
+  } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
   if (options.sandbox_slug) input.sandbox_slug = options.sandbox_slug;
   if (options.agent) input.agent_name = options.agent;
-  if (options.runtimeModel?.trim()) input.runtime_model = options.runtimeModel.trim();
+  if (options.connectionId) input.connection_id = options.connectionId;
+  if (options.modelSelection) {
+    input.model_selection = {
+      kind: options.modelSelection.kind,
+      model_id: options.modelSelection.modelId ?? null,
+      connection_id: options.modelSelection.connectionId ?? options.connectionId ?? null,
+    };
+  } else if (options.runtimeModel?.trim()) {
+    input.model_selection = {
+      kind: 'custom',
+      model_id: options.runtimeModel.trim(),
+      connection_id: options.connectionId ?? null,
+    };
+  }
+  if (options.base_ref) input.base_ref = options.base_ref;
   return Object.keys(input).length > 0 ? input : undefined;
 }

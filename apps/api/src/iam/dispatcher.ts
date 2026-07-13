@@ -75,7 +75,6 @@ const ACTION_VERBS: Record<string, string> = {
   'project.create': 'create projects',
   'project.write': 'change this project',
   'project.delete': 'delete projects',
-  'project.deploy': 'deploy this project',
   // Project members
   'project.members.manage': 'manage project members',
   // Account

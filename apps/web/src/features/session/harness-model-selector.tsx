@@ -20,6 +20,8 @@ export interface HarnessModelSelectorProps {
   harness: Exclude<KortixHarness, 'opencode'>;
   selectedModel: string | null;
   onSelect: (model: string | null) => void;
+  presets?: Array<{ id: string; name: string; source: string }>;
+  connectionLabel?: string | null;
   disabled?: boolean;
 }
 
@@ -34,6 +36,8 @@ export function HarnessModelSelector({
   harness,
   selectedModel,
   onSelect,
+  presets = [],
+  connectionLabel,
   disabled = false,
 }: HarnessModelSelectorProps) {
   const presentation = harnessPresentation(harness);
@@ -88,7 +92,7 @@ export function HarnessModelSelector({
         <div className="border-b px-4 py-3">
           <p className="text-balance text-sm font-medium">{presentation.label} model</p>
           <p className="text-muted-foreground mt-1 text-pretty text-xs">
-            Keep the native default, or pass a model identifier to this session only.
+            Keep the native default, choose an authoritative preset, or pass a model identifier to this session only.
           </p>
         </div>
         <CommandList className="max-h-[300px]">
@@ -111,6 +115,31 @@ export function HarnessModelSelector({
               {!selectedModel ? <Check className="text-foreground size-4 shrink-0" /> : null}
             </CommandItem>
           </CommandGroup>
+          {presets.length ? (
+            <CommandGroup heading="Available models" forceMount>
+              {presets.map((preset) => (
+                <CommandItem
+                  key={preset.id}
+                  value={`${preset.name} ${preset.id}`}
+                  data-testid="harness-model-preset"
+                  data-model={preset.id}
+                  className={selectedModel === preset.id ? 'bg-primary/[0.06]' : undefined}
+                  onSelect={() => {
+                    onSelect(preset.id);
+                    setOpen(false);
+                  }}
+                >
+                  <div className="min-w-0 flex-1 py-0.5">
+                    <p className="truncate text-sm font-medium">{preset.name}</p>
+                    <p className="text-muted-foreground mt-1 truncate text-xs">
+                      {connectionLabel ? `${connectionLabel} · ` : ''}{preset.id}
+                    </p>
+                  </div>
+                  {selectedModel === preset.id ? <Check className="text-foreground size-4 shrink-0" /> : null}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
         </CommandList>
 
         <div className="border-t px-3 py-3">

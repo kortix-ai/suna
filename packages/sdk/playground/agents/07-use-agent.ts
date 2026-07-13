@@ -25,7 +25,7 @@ run("use-agent", async () => {
   const detail = await kortix.projects.detail(projectId);
   const agents = detail.config.agents.map((a) => a.name);
   const agent =
-    process.argv[2] ?? detail.config.open_code_default_agent ?? agents[0];
+    process.argv[2] ?? detail.config.runtime_default_agent ?? agents[0];
   if (!agent) {
     console.error("project has no agents — run 05-list-agents to inspect");
     process.exit(1);

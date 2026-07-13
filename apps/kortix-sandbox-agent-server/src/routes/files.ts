@@ -19,8 +19,8 @@ import { isLikelyBinary, mimeTypeFor } from '../file-mime'
  * previews and downloads were 0-byte/corrupt. Serving reads off disk here fixes
  * that and gives one coherent contract. (Text-search/find lives in find.ts.)
  *
- * Mounted at `/file`. Only `/project/current` + `/global/health` still fall
- * through to OpenCode (server metadata, not file ops).
+ * Mounted at `/file`. Workspace identity is fixed by the ACP session cwd and
+ * health is owned by `/kortix/health`; neither depends on a harness API.
  *
  * Security: every path is resolved to an absolute path and validated against
  * ALLOWED_ROOTS before any filesystem operation (no traversal escapes).

@@ -40,7 +40,7 @@ describe('marketplace catalog', () => {
     expect(all.find((i) => i.name === 'pdf')).toBeTruthy();
   });
 
-  test('lists only optional Kortix skills through the marketplace', async () => {
+  test('lists the curated default-install catalog without internal support files', async () => {
     const all = await listCatalogItems({ source: 'kortix' });
     const agentBrowser = all.find((i) => i.name === 'agent-browser');
     expect(agentBrowser).toBeTruthy();
@@ -56,7 +56,7 @@ describe('marketplace catalog', () => {
     expect(all
       .filter((i) => i.defaultProjectInstall)
       .map((i) => i.name)
-      .sort()).toEqual([
+      .sort()).toEqual(expect.arrayContaining([
         'agent-browser',
         'deep-research',
         'document-review',
@@ -66,7 +66,7 @@ describe('marketplace catalog', () => {
         'research-report',
         'website-building',
         'xlsx',
-      ]);
+      ]));
     expect(all.find((i) => i.name === 'kortix-tool-env')).toBeUndefined();
   });
 

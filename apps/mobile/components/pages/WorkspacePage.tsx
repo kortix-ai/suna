@@ -429,7 +429,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
     }
     if (item.kind === 'project' && item.raw) {
       const p = item.raw as Project;
-      rows.push({ label: 'ID', value: p.id, mono: true });
+      if (p.id) rows.push({ label: 'ID', value: p.id, mono: true });
       if (p.worktree) rows.push({ label: 'Worktree', value: p.worktree, mono: true });
       if (p.vcs) rows.push({ label: 'VCS', value: p.vcs });
     }

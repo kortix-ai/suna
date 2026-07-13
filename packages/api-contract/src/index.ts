@@ -45,7 +45,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * updating this map fails typecheck.
  */
 export const ExperimentalFeatureMapSchema = z.object({
-  apps: z.boolean(),
   agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   agentmail_email: z.boolean(),
@@ -129,8 +128,6 @@ export const ProjectSchema = z.object({
   dashboard_url: z.string(),
   experimental: ExperimentalFeatureMapSchema,
   experimental_features: z.array(ExperimentalFeatureViewSchema),
-  /** Back-compat alias for `experimental.apps`. */
-  apps_enabled: z.boolean(),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: z.string().nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
@@ -294,6 +291,55 @@ export type UpdateConnectionProfileCredentialInput = z.infer<
   typeof UpdateConnectionProfileCredentialInputSchema
 >;
 
+export const HarnessAuthKindSchema = z.enum([
+  'managed_gateway',
+  'claude_subscription',
+  'anthropic_api_key',
+  'codex_subscription',
+  'openai_api_key',
+  'openai_compatible',
+  'anthropic_compatible',
+  'native_config',
+]);
+export type HarnessAuthKind = z.infer<typeof HarnessAuthKindSchema>;
+
+export const SessionModelSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('default'),
+    model_id: z.null().optional(),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('preset'),
+    model_id: z.string().min(1),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('custom'),
+    model_id: z.string().min(1),
+    connection_id: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+]);
+export type SessionModelSelection = z.infer<typeof SessionModelSelectionSchema>;
+
+const LegacySessionModelSelectionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('default'),
+    modelId: z.null().optional(),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('preset'),
+    modelId: z.string().min(1),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('custom'),
+    modelId: z.string().min(1),
+    connectionId: HarnessAuthKindSchema.nullable().optional(),
+  }).strict(),
+]);
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -303,6 +349,8 @@ export const SessionCreateInputSchema = z
     initial_prompt: z.string().optional(),
     model: z.string().min(1).optional(),
     runtime_model: z.string().min(1).optional(),
+    connection_id: HarnessAuthKindSchema.optional(),
+    model_selection: SessionModelSelectionSchema.optional(),
     name: z.string().optional(),
     session_id: z
       .string()
@@ -322,6 +370,8 @@ export const SessionCreateInputSchema = z
     agentName: z.string().min(1).optional(),
     sandboxSlug: z.string().min(1).optional(),
     initialPrompt: z.string().optional(),
+    connectionId: HarnessAuthKindSchema.optional(),
+    modelSelection: LegacySessionModelSelectionSchema.optional(),
     sessionId: z
       .string()
       .regex(

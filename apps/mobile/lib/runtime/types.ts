@@ -16,35 +16,7 @@ export interface FileDiff {
   status: 'added' | 'modified' | 'deleted' | 'renamed';
 }
 
-export interface Session {
-  id: string;
-  slug: string;
-  projectID: string;
-  workspaceID?: string;
-  directory: string;
-  parentID?: string;
-  summary?: {
-    additions: number;
-    deletions: number;
-    files: number;
-    diffs?: FileDiff[];
-  };
-  share?: { url: string };
-  title: string;
-  version: string;
-  time: {
-    created: number;
-    updated: number;
-    compacting?: number;
-    archived?: number;
-  };
-  revert?: {
-    messageID: string;
-    partID?: string;
-    snapshot?: string;
-    diff?: string;
-  };
-}
+export type Session = import('@kortix/sdk').Session;
 
 // ---------------------------------------------------------------------------
 // Messages

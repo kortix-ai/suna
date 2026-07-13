@@ -20,6 +20,9 @@ import {
   getSandboxProvisionStatus,
   getSandboxProvisionStreamUrl,
 } from '@kortix/sdk/platform-client';
+import { fetchSandboxGlobalHealth } from './runtime-health';
+
+export { fetchSandboxGlobalHealth } from './runtime-health';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -101,48 +104,10 @@ function getSandboxUrl(sandboxId: string): string {
   return `${getPlatformUrl()}/p/${sandboxId}/8000`;
 }
 
-// ─── Shared Runtime `/global/health` probe ─────────────────────────────────
-//
-// This is Runtime's OWN liveness endpoint — NOT the sandbox daemon's
-// `/kortix/health` that `@kortix/sdk/session`'s `getSessionHealth` probes (see
-// that module's header comment). The two report different things:
-// `/kortix/health` is the daemon wrapper's always-200 liveness probe with a
-// computed `runtimeReady` (folds in repo/branch materialization state);
-// `/global/health` requires the Runtime process itself to answer and is the
-// only place an Runtime `version` comes from (see
-// packages/sdk/src/state/sandbox-connection-store.ts, which tracks both
-// versions separately). Callers here (this poller's cold-boot wait, and
-// `update-dialog`'s post-update reconnect probe) want Runtime's own signal,
-// so they deliberately do NOT route through `getSessionHealth` — but they
-// used to each hand-roll the `{healthy: data?.healthy === true}` parsing
-// independently. This helper standardizes just that contract; callers still
-// own their own auth (bearer vs cookie) and retry/timeout policy via
-// `fetchImpl`/`init`.
-export interface SandboxGlobalHealth {
-  healthy: boolean;
-  version?: string;
-}
-
-export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
-export async function fetchSandboxGlobalHealth(
-  sandboxBaseUrl: string,
-  init?: RequestInit,
-  fetchImpl: FetchLike = fetch,
-): Promise<SandboxGlobalHealth> {
-  try {
-    const res = await fetchImpl(`${sandboxBaseUrl}/global/health`, init);
-    if (!res.ok) return { healthy: false };
-    const data = await res.json().catch(() => null);
-    return {
-      healthy: data?.healthy === true,
-      version: typeof data?.version === 'string' ? data.version : undefined,
-    };
-  } catch {
-    return { healthy: false };
-  }
-}
-
+// ─── Shared ACP-daemon readiness probe ─────────────────────────────────────
+// The daemon's `/kortix/health` response is harness-neutral and folds process,
+// repository, and runtime readiness into `runtimeReady`. Both cold-start and
+// post-update reconnect use this one parser so no host probes a native harness.
 async function waitForRuntimeHealthy(
   sandboxId: string,
   signal: AbortSignal,

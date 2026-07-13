@@ -1,14 +1,13 @@
 'use client';
 
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import { createAcpClient } from '../../acp/client';
 import { platformConfig } from '../../core/http/config';
 import { getSessionRuntime } from '../../core/session/session-runtime-registry';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Command } from '../../core/runtime/wire-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_COMMANDS } from './shared';
+import { getLSCache, setLSCache, LS_COMMANDS } from './shared';
 
 // ============================================================================
 // Command Hooks
@@ -19,9 +18,9 @@ export function useRuntimeCommands() {
   return useQuery<Command[]>({
     queryKey: runtimeKeys.commands(),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.command.list();
-      const commands = unwrap(result);
+      // ACP commands are session-scoped and arrive through
+      // `available_commands_update`; there is no harness-global command API.
+      const commands: Command[] = [];
       setLSCache(LS_COMMANDS, commands);
       return commands;
     },

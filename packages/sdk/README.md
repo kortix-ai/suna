@@ -365,20 +365,19 @@ wedge a server-side handler forever — it surfaces as an `ApiError` with
 Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
 — see `package.json`'s `exports` field for the complete list (it also includes
 `./config`, `./api-client`, `./feature-flags`, `./fresh-sessions`,
-`./instance-routes`, `./runtime-errors`, `./platform-client`, `./event-stream`,
+`./instance-routes`, `./runtime-errors`, `./platform-client`,
 `./sandbox-connection-store`, `./runtime-pending-store`, `./session/url`,
 `./idb-sync-cache`):
 
 | import | provides |
 |---|---|
-| `@kortix/sdk` | `createKortix`, `configureKortix`, `files`, the error classes, `classifyPart`/`classifyTurn`, `narrowChatEvent`, `openEventStream`, domain result types |
+| `@kortix/sdk` | `createKortix`, `configureKortix`, `files`, the error classes, ACP transcript projections, `classifyPart`/`classifyTurn`, and domain result types |
 | `@kortix/sdk/server` | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend") |
 | `@kortix/sdk/react` | `useSession`, ACP/runtime hooks, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`) |
 | `@kortix/sdk/turns` | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers) |
 | `@kortix/sdk/files` | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `deleteFile`, `mkdir`, `renameFile`, … |
 | `@kortix/sdk/session` | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
 | `@kortix/sdk/acp` | ACP client helpers, protocol types, project-session endpoint helpers, and transcript projection utilities |
-| `@kortix/sdk/runtime-client` | `getRuntimeClient`, `getRuntimeClientForUrl` + the structural daemon/runtime type surface (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …) |
 | `@kortix/sdk/projects-client` | the raw REST functions (the facade wraps these) |
 | `@kortix/sdk/auth` | `authenticatedFetch`, token accessors |
 | `@kortix/sdk/api-client` | the raw `backendApi` primitive — host code should go through the facade or another subpath module instead of calling this directly |

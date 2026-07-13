@@ -282,6 +282,24 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       update: (input: Parameters<typeof P.updateProject>[1]) => P.updateProject(projectId, input),
       archive: () => P.archiveProject(projectId),
       llmCatalog: () => P.getProjectLlmCatalog(projectId),
+      /** Declared logical agents resolved through the project's single runtime compiler. */
+      agents: async () => (await P.getProjectDetail(projectId)).config.agents,
+      /** Harness authentication connections, including explicit active bindings. */
+      harnessConnections: () => P.listHarnessConnections(projectId),
+      /** Server-authoritative session preflight for one logical agent. */
+      composerCapabilities: (
+        agentName: string,
+        connectionId?: Parameters<typeof P.getComposerCapabilities>[2],
+      ) => P.getComposerCapabilities(projectId, agentName, connectionId),
+      /** Harness-qualified authoritative model catalog. */
+      modelCatalog: (input: Parameters<typeof P.getComposerModelCatalog>[1]) =>
+        P.getComposerModelCatalog(projectId, input),
+      /** Select or clear the explicit auth route for a harness. */
+      setHarnessConnection: (...a: DropFirst<Parameters<typeof P.setActiveHarnessConnection>>) =>
+        P.setActiveHarnessConnection(projectId, ...a),
+      /** Canonical session create entrypoint (alias of sessions.create). */
+      createSession: (input?: Parameters<typeof P.createProjectSession>[1]) =>
+        P.createProjectSession(projectId, input),
       sandboxHealth: () => P.getProjectSandboxHealth(projectId),
       onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
         P.setProjectOnboardingComplete(projectId, ...a),
@@ -571,22 +589,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           speak: (botId: string, text: string, voice?: string) =>
             P.speakInMeeting(projectId, botId, text, voice),
         },
-      },
-
-      /** Project apps/deployments — the `/projects/:id/apps/*` family. */
-      apps: {
-        list: () => P.listProjectApps(projectId),
-        create: (input: Parameters<typeof P.createProjectApp>[1]) =>
-          P.createProjectApp(projectId, input),
-        update: (...a: DropFirst<Parameters<typeof P.updateProjectApp>>) =>
-          P.updateProjectApp(projectId, ...a),
-        remove: (slug: string) => P.deleteProjectApp(projectId, slug),
-        deploy: (slug: string) => P.deployProjectApp(projectId, slug),
-        stop: (slug: string) => P.stopProjectApp(projectId, slug),
-        logs: (slug: string) => P.getProjectAppLogs(projectId, slug),
-        /** @deprecated Use `updateExperimentalFeature('apps', enabled)` — kept for parity with the underlying client. */
-        updateConfig: (input: Parameters<typeof P.updateAppsConfig>[1]) =>
-          P.updateAppsConfig(projectId, input),
       },
 
       /** Toggle an experimental feature (Customize → Settings → Experimental). Pass `enabled: null` to clear the override. */

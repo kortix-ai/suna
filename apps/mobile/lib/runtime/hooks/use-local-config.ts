@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Agent, FlatModel, RuntimeConfig } from './use-runtime-data';
+import { withoutAgentModel } from './local-config-state';
 
 // ─── Persistent store ────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ interface LocalConfigState {
     agentName: string,
     model: { providerID: string; modelID: string },
   ) => void;
+  clearModelForAgent: (agentName: string) => void;
   setVariant: (modelKey: string, variant: string | null) => void;
   /** Set the global default model — clears all per-agent selections so it
    *  takes effect everywhere immediately */
@@ -49,6 +51,11 @@ export const useLocalConfigStore = create<LocalConfigState>()(
       setModelForAgent: (agentName, model) =>
         set((s) => ({
           agentModels: { ...s.agentModels, [agentName]: model },
+        })),
+
+      clearModelForAgent: (agentName) =>
+        set((s) => ({
+          agentModels: withoutAgentModel(s.agentModels, agentName),
         })),
 
       setVariant: (modelKey, variant) =>

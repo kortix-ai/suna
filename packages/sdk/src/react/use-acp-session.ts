@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createAcpClient, type AcpContentBlock, type AcpEnvelope, type AcpInitializeResult, type AcpJsonRpcId, type AcpSessionConfigOption } from '../acp';
+import { createAcpClient, projectAcpTurnState, type AcpContentBlock, type AcpEnvelope, type AcpInitializeResult, type AcpJsonRpcId, type AcpSessionConfigOption } from '../acp';
 import { projectAcpEndpoint } from '../acp/project-session';
 import { clearStartStash, readStartStash } from './session-start-stash';
 
@@ -23,11 +23,13 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
   }), [projectId, sessionId]);
   const [envelopes, setEnvelopes] = useState<AcpStoredSessionEnvelope[]>([]);
   const [nativeId, setNativeId] = useState(runtimeSessionId ?? null);
-  const [busy, setBusy] = useState(false);
+  const [requestBusy, setRequestBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initializeResult, setInitializeResult] = useState<AcpInitializeResult | null>(null);
   const [configOptions, setConfigOptions] = useState<AcpSessionConfigOption[]>([]);
+  const persistedTurnState = useMemo(() => projectAcpTurnState(envelopes), [envelopes]);
+  const busy = requestBusy || persistedTurnState.busy;
   const addEnvelope = useCallback((next: AcpStoredSessionEnvelope) => setEnvelopes((current) => {
     if (next.streamEventId !== null && current.some((row) => row.streamEventId === next.streamEventId && row.direction === next.direction)) return current;
     return [...current, next].sort((a, b) => a.ordinal - b.ordinal);
@@ -69,11 +71,11 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
         const stash = replayStartStash === false ? null : readStartStash(sessionId);
         if (stash?.prompt) {
           clearStartStash(sessionId);
-          setBusy(true);
+          setRequestBusy(true);
           try {
             await client.prompt(id, [{ type: 'text', text: stash.prompt }]);
           } finally {
-            if (active) setBusy(false);
+            if (active) setRequestBusy(false);
           }
         }
       } catch (reason) {
@@ -86,11 +88,11 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
   const send = useCallback(async (prompt: AcpContentBlock[]) => {
     if (!nativeId || busy) return false;
     setError(null);
-    setBusy(true);
+    setRequestBusy(true);
     addEnvelope({ ordinal: Date.now() * 1000, direction: 'client_to_agent', streamEventId: null, envelope: { jsonrpc: '2.0', id: `local-${Date.now()}`, method: 'session/prompt', params: { sessionId: nativeId, prompt } } });
     try { await client.prompt(nativeId, prompt); return true; }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); return false; }
-    finally { setBusy(false); }
+    finally { setRequestBusy(false); }
   }, [addEnvelope, busy, client, nativeId]);
 
   const respondPermission = useCallback((id: AcpJsonRpcId, optionId?: string) => client.respond(id, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } }), [client]);

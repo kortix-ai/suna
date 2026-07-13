@@ -271,6 +271,8 @@ export function SessionSiteHeader({
               <Button
                 variant="ghost"
                 size="icon"
+                aria-label={isSidePanelOpen ? 'Close panel' : 'Open panel'}
+                data-testid="session-side-panel-toggle"
                 onClick={onToggleSidePanel}
                 className={cn(
                   'h-8 w-8 cursor-pointer transition-colors',

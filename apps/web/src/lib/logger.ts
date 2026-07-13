@@ -1,14 +1,11 @@
 /**
- * Structured logger that ships log entries to the Runtime server
- * via `client.app.log()` while also writing to the browser console
- * for local development visibility.
+ * Structured browser logger. Runtime observability is emitted by the Kortix
+ * API/ACP proxy; the web client never calls a harness-specific logging route.
  *
  * Usage:
  *   import { logger } from '@/lib/logger';
  *   logger.error('Stream disconnected', { runId, attempt: 3 });
  */
-
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 
 const SERVICE_NAME = 'frontend';
 
@@ -31,20 +28,6 @@ function send(level: LogLevel, message: string, extra?: LogExtra): void {
 
   consoleFn(`[${SERVICE_NAME}] ${message}`, ...(extra ? [extra] : []));
 
-  // Fire-and-forget: ship the log entry to the server.
-  // Wrapped in try/catch so a logging failure never breaks the caller.
-  try {
-    const client = getClient();
-    client.app.log({
-      service: SERVICE_NAME,
-      level,
-      message,
-      extra,
-    });
-  } catch {
-    // Swallow — if the SDK client isn't available yet (e.g. during SSR or
-    // before the first server URL is resolved) we just skip server logging.
-  }
 }
 
 export const logger = {

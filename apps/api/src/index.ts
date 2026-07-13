@@ -17,6 +17,8 @@ import { getRequestUrl } from './lib/request-url';
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -259,21 +261,15 @@ app.use('*', async (c, next) => {
   }, 'http');
 
   // Expected sandbox proxy noise we intentionally suppress:
-  // - long-poll/SSE event stream timing out after ~30s (504)
+  // - canonical ACP SSE streams timing out after ~30s (504)
   // - sandbox startup probes returning 502/503 before services are ready
   const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll = isSandboxProxyPath && (
-    path.includes('/global/event') ||
-    path.includes('/session/status') ||
-    /\/session\/[^/]+\/message(?:$|\?)/.test(path)
-  );
+  const isAcpLongPoll = /\/v1\/projects\/[^/]+\/sessions\/[^/]+\/acp(?:$|\?)/.test(path);
   const isProxyStartupProbe = isSandboxProxyPath && (
-    path.includes('/global/health') ||
-    path.includes('/kortix/health') ||
-    /\/sessions(?:\/|$)/.test(path)
+    path.includes('/kortix/health')
   );
   const isExpectedProxyNoise = method === 'GET' && (
-    (isProxyLongPoll && (
+    (isAcpLongPoll && (
       (status === 200 && duration > 5000) ||
       status === 504 ||
       status === 502 ||
@@ -557,6 +553,65 @@ app.openapi(
   },
 );
 
+// ─── Demo request (public lead capture) ─────────────────────────────────────
+// POST /v1/system/demo-request — public, unauthenticated. The marketing site's
+// "Book a demo" qualifier form POSTs the first-step details here (via the web
+// server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
+// submission, whether or not the lead goes on to book a Cal slot. The email uses
+// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
+// never needs the secret. IP rate-limited; a missing Mailtrap token is a
+// graceful skip, so lead capture never fails on account of email.
+const DemoRequestSchema = z
+  .object({
+    name: z.string().max(200).optional(),
+    email: z.string().email(),
+    company_name: z.string().max(200).optional(),
+    company_size: z.string().max(50).optional(),
+    goal: z.string().max(2000).optional(),
+    qualified: z.boolean().optional(),
+    source: z.string().max(100).optional(),
+  })
+  .openapi('DemoRequest');
+
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/system/demo-request',
+    tags: ['system'],
+    summary: 'Submit a public demo request (emails an internal notification)',
+    middleware: [createDemoRequestRateLimitMiddleware()] as const,
+    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
+        'Accepted',
+      ),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    const email = String(body?.email ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: 'Invalid email' }, 400);
+    }
+    const result = await sendDemoRequestNotification({
+      name: typeof body.name === 'string' ? body.name : undefined,
+      email,
+      company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+      company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+      source: typeof body.source === 'string' ? body.source : undefined,
+      user_agent: c.req.header('user-agent')?.slice(0, 500) ?? null,
+    });
+    if (!result.ok && !('skipped' in result && result.skipped)) {
+      console.error('[system/demo-request] notification not sent:', result);
+    }
+    return c.json({ ok: true, emailed: result.ok });
+  },
+);
+
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
 // These endpoints are called by the frontend but were never implemented.
 // Adding proper stubs stops 404 noise and provides correct responses.
@@ -652,10 +707,13 @@ app.route('/v1/templates', templatesApp); // /v1/templates — installable use-c
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
+app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
 app.route('/v1/webhooks/meet', meetWebhookApp); // /v1/webhooks/meet/realtime — Recall.ai live transcript/chat relay
@@ -722,11 +780,11 @@ app.onError((err, c) => {
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
 
-  // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
+  // Suppress SSE/long-poll abort noise — these are expected ACP reconnects,
   // not real errors. The client reconnects automatically.
   const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
-  const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
-  if (isAbort && isSandboxProxy) {
+  const isAcpStream = /\/projects\/[^/]+\/sessions\/[^/]+\/acp(?:$|\?)/.test(path);
+  if (isAbort && isAcpStream) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
   }
 
@@ -825,7 +883,6 @@ console.log(`
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║

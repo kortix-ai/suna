@@ -101,7 +101,7 @@ import {
   reconcileServices,
   registerService,
   systemReload,
-} from '../core/runtime/client';
+} from '../core/runtime/kortix-master';
 import type {
   CredentialItem,
   CredentialWithValue,
@@ -135,7 +135,7 @@ import type {
   RegisterSandboxServicePayload,
   SandboxServiceAction,
   SystemReloadMode,
-} from '../core/runtime/client';
+} from '../core/runtime/kortix-master';
 
 // Re-export the request/response types unchanged for hosts consuming this
 // module directly.
@@ -1270,10 +1270,7 @@ export function useRegisterSandboxService() {
   });
 }
 
-// Reload already has a home in the SDK (`systemReload` in `../opencode/client`,
-// backing `POST /kortix/services/system/reload`) — reused directly rather
-// than duplicated here. It resolves the active runtime URL itself (the same
-// zustand state `getActiveServerUrl()` above reads).
+// Reload is a Kortix daemon operation and resolves the active runtime URL.
 export function useSandboxRuntimeReload() {
   return useMutation({
     mutationFn: ({ mode }: { mode: SystemReloadMode }) => systemReload(mode),

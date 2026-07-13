@@ -73,12 +73,9 @@ test('applies a default (non-aborted) timeout signal to a non-streaming request'
 	expect(signal?.aborted).toBe(false);
 });
 
-test('does NOT impose a default timeout on the SSE event stream endpoint (/global/event)', () => {
-	expect(isStreamingRequest('http://sbx.test/global/event')).toBe(true);
-	const signal = withDefaultTimeout('http://sbx.test/global/event', undefined);
-	// No caller signal was supplied and this is the exempted streaming path —
-	// no timeout signal should be synthesized.
-	expect(signal).toBeUndefined();
+test('the removed OpenCode /global/event route is not treated as a canonical stream', () => {
+	expect(isStreamingRequest('http://sbx.test/global/event')).toBe(false);
+	expect(withDefaultTimeout('http://sbx.test/global/event', undefined)).toBeDefined();
 });
 
 test('does NOT impose a default timeout on a session-scoped ACP request', () => {
@@ -103,9 +100,9 @@ test('composes a caller-supplied signal with the default timeout on a non-stream
 	expect(signal?.aborted).toBe(true);
 });
 
-test('preserves the caller-supplied signal as-is on the streaming endpoint (never overridden)', () => {
+test('preserves the caller-supplied signal as-is on the ACP streaming endpoint', () => {
 	const controller = new AbortController();
-	const signal = withDefaultTimeout('http://sbx.test/global/event', {
+	const signal = withDefaultTimeout('http://sbx.test/acp/runtime-id?agent=codex', {
 		signal: controller.signal,
 	});
 	expect(signal).toBe(controller.signal);
@@ -113,7 +110,7 @@ test('preserves the caller-supplied signal as-is on the streaming endpoint (neve
 
 test('a Request input carries its own signal through the streaming exemption', () => {
 	const controller = new AbortController();
-	const req = new Request('http://sbx.test/global/event', { signal: controller.signal });
+	const req = new Request('http://sbx.test/acp/runtime-id?agent=codex', { signal: controller.signal });
 	const signal = withDefaultTimeout(req, undefined);
 	// A Request always carries a signal (the caller's, here) — it must pass
 	// through untouched on the exempted path.

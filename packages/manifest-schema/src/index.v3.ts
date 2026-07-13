@@ -237,12 +237,6 @@ export function validateManifestCrossRefsV3(
         message: `runtime "${ref.runtimeName}" does not match a declared runtime profile.`,
         severity: 'error',
       });
-    } else if (ref.hasNativeAgent && runtimes.harnessByName[ref.runtimeName] !== 'opencode') {
-      issues.push({
-        path: `agents.${ref.agentName}.agent`,
-        message: 'agent is only supported by the OpenCode ACP entrypoint; Claude, Codex, and Pi behavior is selected by the runtime profile native config.',
-        severity: 'error',
-      });
     }
   }
 }

@@ -59,20 +59,28 @@ export {
   acpTranscriptJsonl,
   acpTranscriptMarkdown,
   projectAcpChatItems,
+  projectAcpContext,
   projectAcpPendingPrompts,
   projectAcpTranscript,
+  projectAcpTurnState,
+  projectAcpUsage,
   projectAcpEndpoint,
   promptProjectAcpSession,
   type AcpClientOptions,
   type AcpContentBlock,
   type AcpEnvelope,
   type AcpJsonRpcId,
+  type AcpMessageAttachment,
   type AcpNotification,
   type AcpRequest,
   type AcpResponse,
   type AcpStreamEvent,
   type AcpStreamHandle,
   type AcpChatItem,
+  type AcpContextMessage,
+  type AcpContextProjection,
+  type AcpTokenUsage,
+  type AcpTurnState,
   type AcpToolCall,
   type AcpPlan,
   type AcpPendingPermission,
@@ -81,6 +89,8 @@ export {
   type AcpPendingQuestionItem,
   type AcpStoredEnvelope,
   type AcpTranscriptMessage,
+  type AcpUsageCost,
+  type AcpUsageProjection,
 } from './acp';
 
 /**
@@ -114,22 +124,6 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
  * `ensureReady()` return type without reaching into an internal module path).
  */
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
-
-/**
- * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
- * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s session hooks are thin wrappers
- * around this for the React host; any other host (worker, CLI, non-React UI)
- * can call it directly.
- */
-export {
-  openEventStream,
-  type EventStreamClient,
-  type EventStreamHandle,
-  type EventStreamTimers,
-  type RuntimeEvent,
-  type OpenEventStreamOptions,
-} from './core/stream/event-stream';
 
 /**
  * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
@@ -189,36 +183,6 @@ export {
   humanizeToolName,
   toolInfo,
 } from './core/turns';
-
-/**
- * The curated chat-event union — narrows the full `RuntimeEvent` wire union
- * down to the ~12 events a product chat UI needs (message/part updates,
- * session status/idle/error, question asked/answered, permission
- * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
- * purpose-built payloads. Also available from `@kortix/sdk/event-stream`.
- */
-export {
-  heartbeatGapEvent,
-  narrowChatEvent,
-  type KortixChatEvent,
-  type KortixChatEventConnection,
-  type KortixChatEventHeartbeatGap,
-  type KortixChatEventMessageRemoved,
-  type KortixChatEventMessageUpdated,
-  type KortixChatEventPartRemoved,
-  type KortixChatEventPartUpdated,
-  type KortixChatEventPermissionAsked,
-  type KortixChatEventPermissionReplied,
-  type KortixChatEventQuestionAnswered,
-  type KortixChatEventQuestionAsked,
-  type KortixChatEventSessionError,
-  type KortixChatEventSessionIdle,
-  type KortixChatEventSessionStatus,
-  type KortixChatEventTodoUpdated,
-  type KortixChatQuestionInfo,
-  type KortixChatQuestionOption,
-  type KortixChatToolRef,
-} from './core/stream/chat-events';
 
 /**
  * Domain result types from the REST facade (`kortix.project(id).*` /
@@ -379,9 +343,12 @@ export * from './core/http/instance-routes';
 export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
-export * from './core/runtime/client';
+export * from './core/runtime/env';
+export * from './core/runtime/pty';
+export * from './core/runtime/triggers';
+export * from './core/runtime/kortix-master';
+export type * from './core/runtime/wire-types';
 export * from './core/session';
 export * from './core/session/url';
-export * from './core/stream/event-stream';
 export * from './core/turns';
 export * from './transcript';

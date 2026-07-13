@@ -10,6 +10,7 @@ import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
 import type { LlmProviderEntry } from '@/lib/llm-providers';
 import { cn } from '@/lib/utils';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { invalidateComposerCapabilityQueries } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft, ExternalLink, Info } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -54,7 +55,7 @@ export function ApiKeyConnectForm({
     },
     onSuccess: () => {
       successToast(`${provider.label} connected`);
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      void invalidateComposerCapabilityQueries(queryClient, projectId);
       refreshProjectProviderState(queryClient, projectId, { expectProviderId: provider.id });
       onConnected();
     },

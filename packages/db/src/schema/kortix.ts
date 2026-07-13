@@ -40,22 +40,6 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'platinum',
 ]);
 
-export const deploymentStatusEnum = kortixSchema.enum('deployment_status', [
-  'pending',
-  'building',
-  'deploying',
-  'active',
-  'failed',
-  'stopped',
-]);
-
-export const deploymentSourceEnum = kortixSchema.enum('deployment_source', [
-  'git',
-  'code',
-  'files',
-  'tar',
-]);
-
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
 export const projectSessionStatusEnum = kortixSchema.enum('project_session_status', [
@@ -832,7 +816,7 @@ export const chatChannelBindings = kortixSchema.table(
     }),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
+    channelId: text('channel_id').notNull(),
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
     pickerTs: varchar('picker_ts', { length: 64 }),
@@ -872,7 +856,7 @@ export const chatThreads = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
@@ -921,7 +905,7 @@ export const chatThreadParticipants = kortixSchema.table(
     participantId: uuid('participant_id').defaultRandom().primaryKey(),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadId: text('thread_id').notNull(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
@@ -987,7 +971,7 @@ export const chatTurnStreams = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     teamId: varchar('team_id', { length: 128 }).notNull(),
-    channel: varchar('channel', { length: 128 }).notNull(),
+    channel: text('channel').notNull(),
     triggerTs: varchar('trigger_ts', { length: 64 }).notNull(),
     messageTs: varchar('message_ts', { length: 64 }),
     streaming: boolean('streaming').notNull().default(false),
@@ -995,10 +979,32 @@ export const chatTurnStreams = kortixSchema.table(
     finalized: boolean('finalized').notNull().default(false),
     steps: jsonb('steps').notNull().default([]),
     originatingEvent: jsonb('originating_event').notNull(),
+    // Platform-specific conversation reference for non-Slack channels (Teams:
+    // { platform, serviceUrl, conversationId, activityId, streamId, streamSequence }).
+    // Slack leaves this null and uses the columns above. Nullable + additive.
+    channelRef: jsonb('channel_ref'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_chat_turn_streams_expiry').on(table.expiresAt)],
+);
+
+export const teamsPendingUploads = kortixSchema.table(
+  'teams_pending_uploads',
+  {
+    uploadId: text('upload_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    serviceUrl: text('service_url').notNull(),
+    conversationId: text('conversation_id').notNull(),
+    botId: varchar('bot_id', { length: 128 }),
+    filename: text('filename').notNull(),
+    contentType: varchar('content_type', { length: 128 }),
+    contentBase64: text('content_base64').notNull(),
+    size: integer('size').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('idx_teams_pending_uploads_expiry').on(table.expiresAt)],
 );
 
 // Cross-replica dedup of inbound Slack event deliveries. Slack can deliver the
@@ -1400,56 +1406,6 @@ export const sunaAccountMigrations = kortixSchema.table(
   ],
 );
 
-export const deployments = kortixSchema.table(
-  'deployments',
-  {
-    deploymentId: uuid('deployment_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
-    // Optional link back to a Git-backed project + the [[apps]] slug inside
-    // its kortix.yaml manifest. Populated by the /v1/projects/:id/apps path; nullable
-    // for historical deployment rows and future non-project deployment sources.
-    projectId: uuid('project_id'),
-    appSlug: varchar('app_slug', { length: 128 }),
-    // Provider that produced this deployment ("freestyle" today; future:
-    // "vercel", "cloudflare", ...). Nullable for back-compat with rows
-    // written before the provider adapter shipped.
-    provider: varchar('provider', { length: 32 }),
-    freestyleId: text('freestyle_id'),
-    status: deploymentStatusEnum('status').default('pending').notNull(),
-
-    // Source
-    sourceType: deploymentSourceEnum('source_type').notNull(),
-    sourceRef: text('source_ref'),
-    framework: varchar('framework', { length: 50 }),
-
-    // Config
-    domains: jsonb('domains').default([]).$type<string[]>(),
-    liveUrl: text('live_url'),
-    envVars: jsonb('env_vars').default({}).$type<Record<string, string>>(),
-    buildConfig: jsonb('build_config').$type<Record<string, unknown>>(),
-    entrypoint: text('entrypoint'),
-
-    // Metadata
-    error: text('error'),
-    version: integer('version').default(1).notNull(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_deployments_account').on(table.accountId),
-    index('idx_deployments_sandbox').on(table.sandboxId),
-    index('idx_deployments_status').on(table.status),
-    index('idx_deployments_live_url').on(table.liveUrl),
-    index('idx_deployments_created').on(table.createdAt),
-    // Drives the project-apps list view + the auto-deploy sweep lookup
-    // ("latest deployment for this (project, slug)").
-    index('idx_deployments_project_app').on(table.projectId, table.appSlug, table.createdAt),
-  ],
-);
-
 // ─── API Keys (sandbox-scoped) ──────────────────────────────────────────────
 
 export const kortixApiKeys = kortixSchema.table(
@@ -1649,7 +1605,6 @@ export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
     fields: [sandboxes.accountId],
     references: [accounts.accountId],
   }),
-  deployments: many(deployments),
   apiKeys: many(kortixApiKeys),
   members: many(sandboxMembers),
 }));
@@ -1741,13 +1696,6 @@ export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
 export const sandboxInvitesRelations = relations(sandboxInvites, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [sandboxInvites.sandboxId],
-    references: [sandboxes.sandboxId],
-  }),
-}));
-
-export const deploymentsRelations = relations(deployments, ({ one }) => ({
-  sandbox: one(sandboxes, {
-    fields: [deployments.sandboxId],
     references: [sandboxes.sandboxId],
   }),
 }));
@@ -2790,6 +2738,10 @@ export const projectGroupGrants = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     role: projectRoleEnum('role').default('member').notNull(),
+    /** Optional session-base override for members of this attached group.
+     *  NULL inherits projects.default_branch. Conflicting defaults from
+     *  multiple memberships intentionally fall back to the project default. */
+    defaultBaseRef: text('default_base_ref'),
     grantedBy: uuid('granted_by'),
     /** Optional auto-revoke timestamp. NULL = permanent attachment.
      *  Same semantics as project_members.expires_at. */

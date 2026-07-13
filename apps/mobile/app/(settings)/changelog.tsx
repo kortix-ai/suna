@@ -298,7 +298,7 @@ function ChangeRow({ change }: { change: ChangelogChange }) {
   return (
     <View className="flex-row items-start py-1">
       <View className="mt-0.5 mr-2.5">
-        <Icon as={ChangeIcon} size={13} style={{ color }} strokeWidth={2.2} />
+        <Icon as={ChangeIcon} size={13} color={color} strokeWidth={2.2} />
       </View>
       <Text className="flex-1 font-roobert text-[13px] text-foreground/90 leading-[18px]">
         {change.text}

@@ -1,11 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { getClient } from "../../core/runtime/client";
 import type { Agent } from "../../core/runtime/wire-types";
-import { runtimeKeys, useRuntimeReady } from "./keys";
+import { runtimeKeys } from "./keys";
+import { useCurrentRuntime } from '../use-current-runtime';
 import {
-  unwrap,
   getLSCache,
   setLSCache,
   LS_AGENTS,
@@ -26,16 +25,16 @@ export { useVisibleAgents } from "../use-visible-agents";
 /**
  * Load agents. With `projectId`, the server-side project config is source of
  * truth: it returns declarative `kortix.yaml` `agents:` entries for adopted
- * projects and Runtime file discovery for legacy projects. Without `projectId`,
- * this falls back to the sandbox runtime.
+ * projects. When omitted, `projectId` is taken from the active Kortix session.
+ * Agent discovery never calls a harness-specific daemon API.
  */
 export function useRuntimeAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }) {
   const directory = options?.directory;
-  const projectId = options?.projectId ?? null;
-  const runtimeReady = useRuntimeReady();
+  const activeProjectId = useCurrentRuntime((state) => state.projectId);
+  const projectId = options?.projectId ?? activeProjectId;
   const cacheScope = projectId
     ? `project:${projectId}`
     : directory
@@ -48,32 +47,15 @@ export function useRuntimeAgents(options?: {
         ? [...runtimeKeys.agents(), "dir", directory]
         : runtimeKeys.agents(),
     queryFn: async () => {
-      if (projectId) {
-        const detail = await getProjectDetail(projectId);
-        const agents = projectConfigAgentsToRuntimeAgents(detail.config);
-        setLSCache(LS_AGENTS, agents, cacheScope);
-        return agents;
-      }
-      const client = getClient();
-      const result = await client.app.agents(
-        directory ? { directory } : undefined,
-      );
-      const data = unwrap(result);
-      const agents: Agent[] = Array.isArray(data)
-        ? data
-        : Object.values(data as Record<string, Agent>);
-      // Agents are defined in the project repo through the selected runtime, so the
-      // roster is stable across every session that shares a working directory.
-      // Cache under a directory-scoped (or global) STABLE key — not the
-      // ephemeral per-sandbox server id — so a new session's picker paints from
-      // cache instead of waiting on sandbox boot + the in-box /app/agents call.
-      // (Previously the directory case cached nothing at all → guaranteed pop-in.)
+      if (!projectId) return [];
+      const detail = await getProjectDetail(projectId);
+      const agents = projectConfigAgentsToRuntimeAgents(detail.config);
       setLSCache(LS_AGENTS, agents, cacheScope);
       return agents;
     },
     placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
-    enabled: projectId ? true : runtimeReady,
-    staleTime: projectId ? 30_000 : Infinity,
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
     gcTime: 10 * 60 * 1000,
   });
 }
@@ -87,8 +69,7 @@ export function projectConfigAgentsToRuntimeAgents(
   config: ProjectConfigSummary,
 ): Agent[] {
   const agents = config.agents.map(projectConfigAgentToRuntimeAgent);
-  const defaultName =
-    config.runtime_default_agent ?? config.open_code_default_agent;
+  const defaultName = config.runtime_default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;
@@ -112,16 +93,15 @@ function projectConfigAgentToRuntimeAgent(
 }
 
 export function useRuntimeAgent(agentName: string) {
-  const runtimeReady = useRuntimeReady();
+  const projectId = useCurrentRuntime((state) => state.projectId);
   return useQuery<Agent | undefined>({
-    queryKey: [...runtimeKeys.agents(), agentName],
+    queryKey: [...runtimeKeys.agents(), projectId, agentName],
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.app.agents();
-      const agents = unwrap(result);
-      return agents.find((a: Agent) => a.name === agentName);
+      if (!projectId) return undefined;
+      const detail = await getProjectDetail(projectId);
+      return projectConfigAgentsToRuntimeAgents(detail.config).find((agent) => agent.name === agentName);
     },
-    enabled: runtimeReady && !!agentName,
-    staleTime: Infinity,
+    enabled: Boolean(projectId && agentName),
+    staleTime: 30_000,
   });
 }

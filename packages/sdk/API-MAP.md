@@ -22,13 +22,13 @@ a given import path is:
 | Tier | Entries | Guarantee |
 |---|---|---|
 | Stable | `.`, `./react`, `./server` | semver |
-| Deprecated | the 20 legacy subpaths | works; removed on the next major |
+| Deprecated | legacy compatibility subpaths | works; removed on the next major |
 | Internal | `./internal/*` | **no guarantee**, may change in any release |
 
 `.` is the canonical entry — everything framework-free lives there. `./react`
 and `./server` exist because React is a peer dependency and `./server` statically
-imports `node:async_hooks`, respectively. The 20 legacy subpaths
-(`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
+imports `node:async_hooks`, respectively. The remaining legacy subpaths
+(`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`,
 the zustand stores, …) are `@deprecated` aliases that still resolve — import from
 the root instead. `./internal/*` backs `apps/web`'s zustand stores and is not
 reachable from `window.Kortix`; treat it as visible implementation detail, not
@@ -82,43 +82,48 @@ try/catching every call.
 | list / create / revoke (account-scoped) | `GET/POST /v1/accounts/tokens`, `DELETE /v1/accounts/tokens/:tokenId` | `projects-client/tokens.ts` ✅, facade `kortix.accounts.tokens.{list,create,revoke}` ✅ |
 | list / create / revoke (project-scoped, `KORTIX_TOKEN`) | `GET/POST /v1/projects/:id/cli-token`, `DELETE .../cli-token/:tokenId` | ✅, facade `project(id).tokens.{list,create,revoke}` ✅ |
 
-### 6. Session runtime — the agent loop (OpenCode)  ✅
-| op | v2 client / daemon |
+### 6. Session runtime — the ACP agent loop  ✅
+
+Every harness uses the same session-scoped endpoint:
+`/v1/projects/{projectId}/sessions/{sessionId}/acp`. `AcpClient`,
+`useAcpSession`, and the canonical `useSession(projectId, sessionId)` hook own
+the protocol lifecycle; hosts do not call a native harness API.
+
+| op | ACP / SDK |
 |---|---|
-| create / list / get / delete / update | `client.session.{create,list,get,delete,update}` |
-| init / summarize / abort | `client.session.summarize`, `/kortix/abort` |
-| messages | `client.session.messages` → `GET /session/:id/message` |
-| **send prompt (sync / async)** | `client.session.prompt` → `POST /session/:id/prompt[_async]` |
-| parts edit / delete | `client.part.{update,delete}` |
-| **events (SSE)** | `client.global.event()` → `/global/event` (session.*, message.*, part.*, pty.*, permission.request, question.request, lsp.*, instance.disposed) |
-| permissions reply | `client.permission.reply` |
-| questions reply / reject | `client.question.{reply,reject}` |
-| diff / todo | `client.session.{diff,todo}` |
-| status | `client.session.status` |
+| negotiate capabilities | `initialize` → `AcpClient.initialize()` |
+| create or reconnect conversation | `session/new`, `session/load` |
+| send / cancel | `session/prompt`, `session/cancel` |
+| runtime configuration | `session/set_config_option`; options come from initialize/new/load and `config_option_update` |
+| messages / thought / tools / plan | `session/update` envelopes projected by `projectAcpChatItems()` |
+| permissions / questions | agent JSON-RPC requests answered with `AcpClient.respond()`; projected by `projectAcpPendingPrompts()` |
+| live events | authenticated SSE `GET .../acp`, replayed by `Last-Event-ID` |
+| durable transcript | append-only raw ACP envelopes at `GET .../acp/transcript`; JSONL/Markdown/HTML are projections |
+| reconnect state | `session/load` plus persisted transcript/turn projection; no harness-global active session |
 
 ### 7. Models / gateway  ✅
-- runtime providers+models: `client.provider.list` → `/provider/list` (filtered to `kortix` + `opencode`)
+- harness/auth compatibility: `GET /v1/projects/:id/composer-capabilities`
+- ACP-native model/config choices: `configOptions` from the active harness
 - catalog/budget: `GET /v1/llm/models`, `GET /v1/projects/:id/llm-catalog`
-- selection + persistence: `useOpenCodeLocal`, `useModelStore` ✅
+- harness-aware selection + persistence: `useRuntimeLocal`, `useSessionPicks`, `useModelStore` ✅
 - **gateway observability** (`/v1/projects/:id/gateway/{overview,logs,keys,budgets,series,errors}`) → client fully in SDK (`projects-client/gateway.ts`) ✅; hooks still web-local 🟡
 - **gateway playground** — `project(id).gateway.playground(prompt, models)` → `POST /v1/projects/:id/gateway/playground` (run one prompt against up to 6 models side by side) ✅
 
 ### 8. Agents · commands · tools · skills · MCP
 | op | runtime | SDK |
 |---|---|---|
-| agents list/get/visible | `client.app.agents` | ✅ |
-| commands list/execute | `client.command.list`, `client.session.command` | ✅ |
-| tools ids / list | `client.tool.{ids,list}` | ✅ |
-| skills **list** | `client.app.skills` → `/skill` | ✅ |
+| agents list/get/visible | compiled `kortix.yaml` project detail | ✅ |
+| commands list | ACP `available_commands_update` | ✅ protocol projection |
+| commands execute | ACP `session/prompt` with the selected command | ✅ |
+| tool calls + updates | ACP `tool_call` / `tool_call_update` | ✅ transcript projection |
+| skills **list** | daemon workspace file discovery | ✅ |
 | skills **create/update/delete** | daemon `/file/upload`,`/file/mkdir`,`DELETE /file` + `instance.dispose` | ❌ web-local (`features/skills`) |
-| MCP status/add/connect/disconnect/oauth | `client.mcp.*` | ✅ |
+| MCP configuration | compiled into `session/new` / `session/load`; credentials remain in Kortix connectors | ✅ |
 
 ### 9. Terminal (PTY)  ✅
-Kortix-native (`opencode/pty.ts`), independent of the agent runtime — daemon
+Kortix-native (`core/runtime/pty.ts`), independent of the agent harness — daemon
 `/kortix/pty` (`list/create/update/remove`) + `WS /kortix/pty/:id/connect?token=`
-→ `getKortixPtyWebSocketUrl`. Same hook names/shapes as before (`useOpenCodePtyList`,
-`useCreatePty`, `useRemovePty`, `useUpdatePty`, `getPtyWebSocketUrl`) — only the
-transport moved off `client.pty.*`/OpenCode's own `/pty`.
+→ `getKortixPtyWebSocketUrl`; React uses the harness-neutral runtime PTY hooks.
 
 ### 10. Workspace files  ✅ (client) · 🟡 (hooks)
 Daemon-direct (bypasses v2 client), full 12-op client now in the SDK (`@kortix/sdk/files` → `files/client.ts`):
@@ -138,7 +143,7 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
-| branches | `GET /v1/projects/:id/branches` |
+| branches + effective session base ref | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
 | change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
@@ -236,8 +241,8 @@ facade as `kortix.billing.{checkout, subscription, credits}`:
 ### 16. Transcription / misc session input  🟡
 `POST /v1/transcription` (voice) client now in SDK (`projects-client/transcription.ts`) ✅; hooks still web-local (`hooks/transcription`) 🟡.
 
-### 17. Channels / apps (project-scoped)  🟡
-Slack/email inbound-outbound installs (`projects-client/channels.ts`) and the `/v1/projects/:id/apps/*` deployment family (`projects-client/apps.ts`) — clients ✅ in SDK; hooks web-local.
+### 17. Channels (project-scoped)  🟡
+Slack/email inbound-outbound installs live in `projects-client/channels.ts`; hooks remain web-local.
 Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
 `GET/POST /v1/projects/:id/channels/slack/file[/upload]`) and the Meet
@@ -271,8 +276,8 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Domain | Status |
 |---|---|
 | Auth, Projects, Secrets, Access, Session lifecycle | ✅ complete |
-| Session runtime (messages/events/permissions/diff/todo) | ✅ complete |
-| Models, Agents, Commands, Tools, MCP, PTY | ✅ complete |
+| ACP session runtime (messages/events/tools/permissions/questions/config/transcript/reconnect) | ✅ complete |
+| Harness-aware models, declared agents, ACP commands/tools, project MCP, PTY | ✅ complete |
 | **Workspace files (read/write/status/search)** | ✅ full client in SDK (`@kortix/sdk/files`); hooks web-local |
 | Token minting (account + project-scoped CLI PATs) | ✅ complete — `projects-client/tokens.ts`, facade `kortix.accounts.tokens.*` / `project(id).tokens.*` |
 | Marketplace/registry install (project-scoped) | ✅ complete — `projects-client/marketplace.ts`, facade `project(id).marketplace.*` / `.registry.*` |
@@ -285,12 +290,16 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Channels (Slack/email/Meet installs + apps deploy family) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Executor connectors runtime | 🟡 web-local |
-| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/runtime-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's a daemon/runtime surface, reached via the runtime-client subpath) |
+| Kortix daemon helper family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`core/runtime/kortix-master.ts`) + hooks in `@kortix/sdk/react`; these are structural daemon helpers, not the agent conversation protocol, which is ACP-only |
 
 ### To make the SDK the whole data layer
 1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).
 2. **Wrap the existing client fns as hooks** in the SDK: git/versions/change-requests (`useChangeRequests` ✅ done; commits/branches/diff still web-local), triggers (`useProjectTriggers` ✅ done), gateway-observability, sandbox-admin, billing/account-state.
-3. ~~Framework-free event stream~~ — **done**: `openEventStream` (`@kortix/sdk` root barrel / `@kortix/sdk/event-stream`) is a framework-free connect/reconnect/heartbeat/coalescing primitive with zero React deps, and `session.stream()` is a thin facade over it (`ensureReady()` + the session's own runtime client). `@kortix/sdk/react`'s `useOpenCodeEventStream` is now just a React wrapper around the same primitive — a non-React host (server wrapper, worker, CLI) subscribes directly via `session.stream()` or `openEventStream()`.
+3. ~~ACP event stream~~ — **done**: `AcpClient.connect()` consumes the
+   authenticated session-scoped SSE stream, supports `Last-Event-ID` replay and
+   reconnect, and `useAcpSession()` combines it with the durable envelope log.
+   Web and headless clients share the same ACP transport/projections; mobile
+   uses the same protocol state with its platform transport constraints.
 4. ~~Land + export the kortix-master daemon client~~ — **done**: the client (`opencode/kortix-master.ts`) is re-exported from `@kortix/sdk/runtime-client`, and its React Query layer lives in `@kortix/sdk/react` (`use-kortix-master.ts`, with the injectable `KortixMasterIdentity` seam); apps/web's six former hook files (`hooks/kortix/*` + `hooks/use-sandbox-services.ts`) are thin wrappers over it.
 5. **Mobile adoption** — the SDK is the shared implementation in principle, but the mobile app hasn't migrated its data layer onto it yet.
 6. Everything else (the agent loop) is already SDK — that's the verified path.

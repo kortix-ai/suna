@@ -165,13 +165,110 @@ type NativeAgentSummary = Omit<
   "source" | "enabled"
 >;
 
+type RuntimeFileDiscovery = {
+  configs: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    configDir: string;
+    path: string;
+  }>;
+  agents: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    nativeName: string;
+    path: string;
+  }>;
+  skills: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    slug: string;
+    path: string;
+  }>;
+  commands: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    slug: string;
+    path: string;
+  }>;
+};
+
+const RUNTIME_CONFIG_FILE = {
+  claude: "settings.json",
+  codex: "config.toml",
+  opencode: "opencode.jsonc",
+  pi: "settings.json",
+} as const;
+
+function normalizedConfigDir(value: string): string {
+  return value.replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+/** Pure file classifier for v3 native runtime profiles. Native formats remain
+ * independent; this only tells the neutral project summary where they live. */
+export function discoverRuntimeProjectFiles(
+  compiledRuntime: CompiledRuntimeConfig | null,
+  filePaths: string[],
+): RuntimeFileDiscovery {
+  const found: RuntimeFileDiscovery = { configs: [], agents: [], skills: [], commands: [] };
+  if (!compiledRuntime) return found;
+  const paths = [...new Set(filePaths)].sort();
+  const seenAgent = new Set<string>();
+  const seenSkill = new Set<string>();
+  const seenCommand = new Set<string>();
+
+  for (const [runtime, profile] of Object.entries(compiledRuntime.runtimes).sort(([a], [b]) => a.localeCompare(b))) {
+    const configDir = normalizedConfigDir(profile.configDir);
+    const base = `${configDir}/`;
+    found.configs.push({
+      runtime,
+      harness: profile.harness,
+      configDir: profile.configDir,
+      path: `${base}${RUNTIME_CONFIG_FILE[profile.harness]}`,
+    });
+    for (const path of paths) {
+      let nativeName: string | null = null;
+      if (profile.harness === "claude") nativeName = path.match(new RegExp(`^${escapeRegExp(base)}agents/([^/]+)\\.md$`))?.[1] ?? null;
+      else if (profile.harness === "codex") nativeName = path.match(new RegExp(`^${escapeRegExp(base)}([^/]+)\\.config\\.toml$`))?.[1] ?? null;
+      else if (profile.harness === "opencode") nativeName = path.match(new RegExp(`^${escapeRegExp(base)}agents?/([^/]+)\\.md$`))?.[1] ?? null;
+      else nativeName = path.match(new RegExp(`^${escapeRegExp(base)}prompts/([^/]+)\\.md$`))?.[1] ?? null;
+      if (nativeName) {
+        const key = `${profile.harness}:${nativeName}:${path}`;
+        if (!seenAgent.has(key)) {
+          seenAgent.add(key);
+          found.agents.push({ runtime, harness: profile.harness, nativeName, path });
+        }
+      }
+
+      const skillMatch = path.match(new RegExp(`^${escapeRegExp(base)}skills/(.+)/SKILL\\.md$`));
+      const codexGlobalSkill = profile.harness === "codex"
+        ? path.match(/^\.agents\/skills\/(.+)\/SKILL\.md$/)
+        : null;
+      const skillSlug = skillMatch?.[1] ?? codexGlobalSkill?.[1];
+      if (skillSlug && !seenSkill.has(path)) {
+        seenSkill.add(path);
+        found.skills.push({ runtime, harness: profile.harness, slug: skillSlug, path });
+      }
+
+      const supportsCommands = profile.harness === "claude" || profile.harness === "opencode";
+      const commandMatch = supportsCommands
+        ? path.match(new RegExp(`^${escapeRegExp(base)}commands?/([^/]+)\\.md$`))
+        : null;
+      if (commandMatch?.[1] && !seenCommand.has(path)) {
+        seenCommand.add(path);
+        found.commands.push({ runtime, harness: profile.harness, slug: commandMatch[1], path });
+      }
+    }
+  }
+  return found;
+}
+
 export function resolveConfigAgents(
   nativeAgents: NativeAgentSummary[],
   loadedAgents: LoadedAgents,
 ): Pick<ProjectConfigSummary, "agent_discovery" | "agent_source" | "agents"> {
   if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
     return {
-      agent_discovery: "opencode",
+      agent_discovery: "runtime",
       agent_source: "native",
       agents: nativeAgents.map((agent) => ({
         ...agent,
@@ -218,13 +315,27 @@ export function resolveConfigAgents(
 export function attachCompiledRuntimeIdentity(
   agents: ProjectConfigSummary["agents"],
   compiledRuntime: CompiledRuntimeConfig | null,
+  nativeAgents: NativeAgentSummary[] = [],
 ): ProjectConfigSummary["agents"] {
   return agents.map((agent) => {
     const launch = compiledRuntime?.agents[agent.name];
+    const native = launch?.nativeAgent
+      ? nativeAgents.find((candidate) =>
+          candidate.harness === launch.harness &&
+          candidate.native_agent === launch.nativeAgent)
+      : undefined;
     return {
       ...agent,
+      ...(native
+        ? {
+            path: native.path,
+            description: native.description ?? agent.description,
+            mode: native.mode ?? agent.mode,
+          }
+        : {}),
       runtime: launch?.runtime ?? null,
       harness: launch?.harness ?? null,
+      native_agent: launch?.nativeAgent ?? null,
     };
   });
 }
@@ -274,6 +385,26 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
+  const compiledRuntime = (() => {
+    try {
+      return parsedManifest ? compileRuntimeConfig(parsedManifest) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const runtimeFiles = discoverRuntimeProjectFiles(
+    compiledRuntime,
+    repoFiles.map((file) => file.path),
+  );
+  const runtimeConfigs = await Promise.all(
+    runtimeFiles.configs.map(async (entry) => ({
+      runtime: entry.runtime,
+      harness: entry.harness,
+      config_dir: entry.configDir,
+      path: entry.path,
+      raw: await optionalFile(project, entry.path),
+    })),
+  );
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -290,52 +421,31 @@ export async function loadProjectConfig(
   const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
   const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
 
-  const agentPaths = repoFiles
-    .map((file) => file.path)
-    .filter((path) => agentRe.test(path))
-    .sort();
   const nativeAgents = await Promise.all(
-    agentPaths.map(async (path) => {
-      const raw = await optionalFile(project, path);
+    runtimeFiles.agents.map(async (entry) => {
+      const raw = await optionalFile(project, entry.path);
       const meta = parseFrontmatter(raw);
       return {
-        name: meta.name || meta.slug || agentNameFromPath(path),
-        path,
+        name: meta.name || meta.slug || entry.nativeName,
+        path: entry.path,
         description: meta.description || null,
         mode: meta.mode || null,
+        runtime: entry.runtime,
+        harness: entry.harness,
+        native_agent: entry.nativeName,
       };
     }),
   );
   const resolvedAgents = resolveConfigAgents(nativeAgents, loadedAgents);
-  const compiledRuntime = (() => {
-    try {
-      return parsedManifest ? compileRuntimeConfig(parsedManifest) : null;
-    } catch {
-      return null;
-    }
-  })();
   const agents = attachCompiledRuntimeIdentity(
     resolvedAgents.agents,
     compiledRuntime,
+    nativeAgents,
   );
   const { agent_discovery, agent_source } = resolvedAgents;
 
-  const seenSkills = new Set<string>();
-  const skillPaths = repoFiles
-    .map((file) => file.path.match(skillRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .filter((match) => {
-      if (seenSkills.has(match[1])) return false;
-      seenSkills.add(match[1]);
-      return true;
-    })
-    .map((match) => ({
-      slug: match[1],
-      path: `${opencodeDir}/skills/${match[1]}/SKILL.md`,
-    }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
   const skills = await Promise.all(
-    skillPaths.map(async ({ slug, path }) => {
+    runtimeFiles.skills.map(async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -346,17 +456,8 @@ export async function loadProjectConfig(
     }),
   );
 
-  // OpenCode slash commands — `<opencode>/command/<slug>.md` or
-  // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
-  // include either if present). Frontmatter `description:` is what gets
-  // surfaced in the command picker.
-  const commandPaths = repoFiles
-    .map((file) => file.path.match(commandRe))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => ({ slug: match[1], path: match.input as string }))
-    .sort((a, b) => a.slug.localeCompare(b.slug));
   const commands = await Promise.all(
-    commandPaths.map(async ({ slug, path }) => {
+    runtimeFiles.commands.map(async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -369,12 +470,21 @@ export async function loadProjectConfig(
 
   const signals = {
     manifest: Boolean(manifestRaw),
-    openCodeConfig: Boolean(openCodeRaw),
-    openCodeAgent: agents.length > 0,
+    runtimeConfig: runtimeConfigs.some((entry) => Boolean(entry.raw)),
+    runtimeAgent: agents.length > 0,
   };
 
   const runtimeDefaultAgent =
-    loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, "default_agent");
+    compiledRuntime?.defaultAgent ??
+    loadedAgents.defaultAgent ??
+    parseJsonCString(openCodeRaw, "default_agent");
+  const defaultRuntime = runtimeDefaultAgent
+    ? compiledRuntime?.agents[runtimeDefaultAgent]?.runtime
+    : null;
+  const runtimeConfigRaw =
+    runtimeConfigs.find((entry) => entry.runtime === defaultRuntime)?.raw ??
+    runtimeConfigs.find((entry) => entry.raw)?.raw ??
+    null;
 
   return {
     is_kortix_repo: Object.values(signals).some(Boolean),
@@ -382,13 +492,10 @@ export async function loadProjectConfig(
     manifest_raw: manifestRaw,
     manifest,
     env: envRequirements(manifest),
-    runtime_config_raw: openCodeRaw,
+    runtime_configs: runtimeConfigs,
+    runtime_config_raw: runtimeConfigRaw,
     runtime_default_agent: runtimeDefaultAgent,
     agent_source,
-    open_code_raw: openCodeRaw,
-    // v2 makes the manifest's declared default authoritative. Legacy projects
-    // keep reading OpenCode's native default_agent for backwards compatibility.
-    open_code_default_agent: runtimeDefaultAgent,
     agent_discovery,
     agents,
     skills,

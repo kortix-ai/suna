@@ -11,14 +11,31 @@ import {
   useRuntimeAgents,
   useRuntimeProviders,
 } from '@/hooks/runtime/use-runtime-sessions';
-import { agentHarness, agentRequiresCatalogModel, useProjectConfig } from '@kortix/sdk/react';
+import {
+  agentHarness,
+  agentRequiresCatalogModel,
+  formatModelString,
+  useComposerCapabilities,
+  useProjectConfig,
+} from '@kortix/sdk/react';
+import type { HarnessAuthKind } from '@kortix/sdk';
 
 export interface ComposerOptions {
   agent?: string;
   model?: ModelKey;
   /** Harness-native model id, applied once when the ACP runtime launches. */
   runtimeModel?: string;
+  connectionId?: HarnessAuthKind;
+  modelSelection?: {
+    kind: 'default' | 'preset' | 'custom';
+    modelId?: string | null;
+    connectionId?: HarnessAuthKind | null;
+  };
   variant?: string;
+}
+
+export function boundSessionAgentName(value?: string | null): string | null {
+  return value?.trim() || null;
 }
 
 export function buildComposerOptions(input: {
@@ -27,6 +44,8 @@ export function buildComposerOptions(input: {
   model?: ModelKey;
   runtimeModel?: string | null;
   variant?: string;
+  connectionId?: HarnessAuthKind | null;
+  presets?: Array<{ id: string }>;
 }): ComposerOptions {
   const options: ComposerOptions = {};
   const agentName = input.lockedAgentName?.trim() || input.agent?.name;
@@ -34,6 +53,19 @@ export function buildComposerOptions(input: {
   if (agentRequiresCatalogModel(input.agent) && input.model) options.model = input.model;
   if (!agentRequiresCatalogModel(input.agent) && input.runtimeModel?.trim()) {
     options.runtimeModel = input.runtimeModel.trim();
+  }
+  const selectedModel = agentRequiresCatalogModel(input.agent)
+    ? input.model ? formatModelString(input.model) : null
+    : input.runtimeModel?.trim() || null;
+  if (input.connectionId) options.connectionId = input.connectionId;
+  if (input.connectionId || selectedModel) {
+    options.modelSelection = {
+      kind: selectedModel
+        ? input.presets?.some((preset) => preset.id === selectedModel) ? 'preset' : 'custom'
+        : 'default',
+      modelId: selectedModel,
+      connectionId: input.connectionId ?? null,
+    };
   }
   if (input.variant) options.variant = input.variant;
   return options;
@@ -110,24 +142,48 @@ export function ComposerChatInput({
     boundAgentName,
     defaultAgentName: projectConfig?.runtime_default_agent,
   });
-  // Session agent-lock disabled (see KORTIX_ENFORCE_SESSION_AGENT_LOCK / session-chat.tsx):
-  // the new-session picker is switchable; the chosen agent rides through on create.
-  const SESSION_AGENT_LOCK_ENABLED: boolean = false;
-  const lockedAgentName = SESSION_AGENT_LOCK_ENABLED ? boundAgentName?.trim() || null : null;
+  // Agent/harness is a launch-time session binding. New-session composers have
+  // no boundAgentName and remain switchable; an existing session exposes its
+  // bound agent read-only so a later prompt cannot pretend to change harness.
+  const lockedAgentName = boundSessionAgentName(boundAgentName);
   const catalogModelRequired = agentRequiresCatalogModel(local.agent.current);
   const activeHarness = agentHarness(local.agent.current);
   const nativeHarness = activeHarness && activeHarness !== 'opencode' ? activeHarness : null;
   const [runtimeModels, setRuntimeModels] = useState<Record<string, string | null>>({});
   const runtimeModel = nativeHarness ? (runtimeModels[nativeHarness] ?? null) : null;
+  const capability = useComposerCapabilities(
+    projectId,
+    lockedAgentName ?? local.agent.current?.name ?? null,
+  );
+  const capabilityModels = (capability.data?.model.presets ?? []).map((preset) => {
+    const slash = preset.id.indexOf('/');
+    const providerID = slash > 0 ? preset.id.slice(0, slash) : activeHarness ?? 'runtime';
+    const modelID = slash > 0 ? preset.id.slice(slash + 1) : preset.id;
+    return {
+      providerID,
+      providerName: preset.source,
+      modelID,
+      modelName: preset.name,
+      providerSource: preset.source,
+    };
+  });
+  const selectedCatalogModel = catalogModelRequired && local.model.currentKey
+    && capabilityModels.some((model) =>
+      model.providerID === local.model.currentKey?.providerID
+      && model.modelID === local.model.currentKey?.modelID)
+    ? local.model.currentKey
+    : null;
 
   // Read at send-time so the latest selections are captured.
   const options = (): ComposerOptions => {
     return buildComposerOptions({
       agent: local.agent.current,
       lockedAgentName,
-      model: local.model.currentKey,
+      model: selectedCatalogModel ?? undefined,
       runtimeModel,
       variant: local.model.variant.current,
+      connectionId: capability.data?.auth.active,
+      presets: capability.data?.model.presets,
     });
   };
 
@@ -152,8 +208,8 @@ export function ComposerChatInput({
       selectedAgent={lockedAgentName ?? local.agent.current?.name ?? null}
       onAgentChange={lockedAgentName ? undefined : (name) => local.agent.set(name ?? undefined)}
       agentSelectorLocked={!!lockedAgentName}
-      models={catalogModelRequired ? local.model.list : []}
-      selectedModel={catalogModelRequired ? (local.model.currentKey ?? null) : null}
+      models={catalogModelRequired ? capabilityModels : []}
+      selectedModel={catalogModelRequired ? selectedCatalogModel : null}
       onModelChange={
         catalogModelRequired ? (m) => local.model.set(m ?? undefined, { recent: true }) : undefined
       }
@@ -164,11 +220,18 @@ export function ComposerChatInput({
               selectedModel: runtimeModel,
               onSelect: (model) =>
                 setRuntimeModels((current) => ({ ...current, [nativeHarness]: model })),
+              presets: capability.data?.model.presets ?? [],
+              connectionLabel: capability.data?.auth.active
+                ? capability.data.auth.active.replaceAll('_', ' ')
+                : null,
             }
           : undefined
       }
-      modelRequired={catalogModelRequired}
-      modelsLoading={providersLoading}
+      modelRequired={capability.data ? !capability.data.model.default_allowed : false}
+      modelsLoading={capability.isLoading || providersLoading}
+      composerBlockingReason={capability.data?.can_start === false
+        ? capability.data.blocking_reason
+        : capability.error instanceof Error ? capability.error.message : null}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}

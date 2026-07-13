@@ -81,6 +81,13 @@ function sign(rawBody: string, secret: string) {
   return `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
 }
 
+async function waitForSandboxProvision(expected = 1) {
+  const deadline = Date.now() + 1_000;
+  while (sandboxProvisionCalls < expected && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 mockIamEngineAllowAll();
 
 mockIamMembershipSyncNoop();
@@ -143,6 +150,27 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
+}));
+
+mock.module('../projects/git/files', () => ({
+  listRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
+  grepRepoFiles: async () => [],
+  readRepoFile: async (_project: unknown, path: string) => {
+    const content = repoFiles.get(path);
+    if (content === undefined) throw new Error(`Not found: ${path}`);
+    return content;
+  },
+  readManifestFromRepo: async (_project: unknown, candidatePaths: string[]) => {
+    for (const path of candidatePaths) {
+      const content = repoFiles.get(path);
+      if (content !== undefined) return { path, content };
+    }
+    return null;
+  },
+  archiveRepoSubtree: async () => undefined,
+  getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  getFileAtRef: async () => null,
 }));
 
 mock.module("../snapshots/builder", () => ({
@@ -255,6 +283,17 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   }),
   getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
   updateCreditAccount: async () => {},
+}));
+
+mock.module('../repositories/service-accounts', () => ({
+  listServiceAccounts: async () => [],
+  getServiceAccount: async () => null,
+  createServiceAccount: async () => { throw new Error('not used'); },
+  listAgentServiceAccounts: async () => [],
+  ensureAgentServiceAccount: async () => '00000000-0000-4000-a000-000000000301',
+  disableServiceAccount: async () => false,
+  deleteServiceAccount: async () => false,
+  validateServiceAccountToken: async () => ({ isValid: false, error: 'invalid' }),
 }));
 
 // Stub secrets so webhook tests can resolve the trigger's signing secret.
@@ -550,7 +589,21 @@ function createApp() {
 // `JSON.stringify` so cron expressions (leading `*`), mustache prompts
 // (`{{ ... }}`) etc. round-trip as valid YAML scalars without special-casing.
 
-const MANIFEST_PREAMBLE = `kortix_version: 1\nproject:\n  name: Trigger Project\n`;
+const MANIFEST_PREAMBLE = `kortix_version: 3
+default_agent: default
+project:
+  name: Trigger Project
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+agents:
+  default:
+    runtime: opencode
+    agent: default
+    secrets: all
+    connectors: all
+`;
 
 function seedManifest(...triggerBlocks: string[]) {
   const body = triggerBlocks.length === 0
@@ -894,13 +947,13 @@ describe('git-backed triggers — runtime fire paths', () => {
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     });
-    expect(res.status).toBe(202);
+    expect(res.status, await res.clone().text()).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(body.session_id).toBeTruthy();
     expect(branchCreateCalls).toBe(1);
 
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toMatch(/Run at \d{4}-\d{2}-\d{2}T/);
     // Runtime row was upserted with last_fired_at.
@@ -927,9 +980,10 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(res.status).toBe(202);
     expect((await res.json()).status).toBe('fired');
 
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(lastProvisionEnv?.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
   test('manual fire without a model leaves the default resolution chain untouched', async () => {
@@ -948,9 +1002,10 @@ describe('git-backed triggers — runtime fire paths', () => {
     });
     expect(res.status).toBe(202);
 
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBeUndefined();
+    expect(lastProvisionEnv?.KORTIX_RUNTIME_MODEL).toBeUndefined();
   });
 
   test('manual fire queues durably under backpressure', async () => {
@@ -990,7 +1045,7 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
     expect(result).toMatchObject({ scanned: 1, fired: 1, failed: 0 });
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
   });
@@ -1014,7 +1069,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     provisioningSessionCount = 0;
     const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
     expect(retry).toMatchObject({ scanned: 1, fired: 1, queued: 0, failed: 0 });
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:31.000Z');
@@ -1073,7 +1128,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(res.status).toBe(202);
     const body = await res.json();
     expect(body.status).toBe('fired');
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
 
@@ -1089,7 +1144,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(duplicate.status).toBe(202);
     const duplicateBody = await duplicate.json();
     expect(duplicateBody.status).toBe('deduped');
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
   });
 
@@ -1125,7 +1180,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     provisioningSessionCount = 0;
     const drained = await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
     expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0 });
-    await new Promise((r) => setTimeout(r, 0));
+    await waitForSandboxProvision();
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
     expect(lifecycleCommandRows[0]!.status).toBe('succeeded');

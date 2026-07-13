@@ -5,7 +5,7 @@
  *
  * This replaces the old global "active server" machinery. A session binds here
  * (`useSession` sets it on open, clears it on unmount); every runtime read —
- * `getClient()`, the SSE stream, the file/terminal/git hooks — resolves through
+ * the ACP stream and the file/terminal/git helpers — resolves through
  * it; switching sessions just sets a new url. There is no servers[] registry, no
  * `serverVersion`, no reset-cascade. `version` bumps on every change so the SSE
  * stream re-subscribes to the new daemon.

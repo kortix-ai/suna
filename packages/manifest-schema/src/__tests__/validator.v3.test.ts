@@ -84,8 +84,16 @@ agents:
     expect(paths).toContain('agents.x.runtime');
   });
 
-  test('only accepts a native agent selector for the OpenCode ACP entrypoint', () => {
-    expect(errors(VALID.replace('runtime: codex\n    skills:', 'runtime: codex\n    agent: reviewer\n    skills:'))).toContain('agents.reviewer.agent');
+  test('accepts a harness-native agent or profile id for every ACP runtime', () => {
+    expect(
+      validateManifest(
+        VALID.replace(
+          'runtime: codex\n    skills:',
+          'runtime: codex\n    agent: reviewer\n    skills:',
+        ),
+        'yaml',
+      ),
+    ).toMatchObject({ valid: true });
   });
 
   test('rejects OpenCode-specific behavior and the v2 singular runtime', () => {

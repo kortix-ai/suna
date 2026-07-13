@@ -99,57 +99,41 @@ export async function installBrowserSession(
   page: Page,
   session: AuthSession,
   returnUrl: string,
-  password: string,
+  _password: string,
 ): Promise<void> {
-  await page.context().clearCookies();
+  const context = page.context();
+  await context.clearCookies();
+
+  // These tests already obtained a real Supabase password-grant session above.
+  // Install that session directly instead of sending a magic-link email and
+  // immediately racing a password sign-in against GoTrue's OTP mutation. This
+  // is the same base64url cookie representation @supabase/ssr writes.
   await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
+  const origin = new URL(page.url()).origin;
+  const url = new URL(origin);
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  const cookieName = local && url.port ? `sb-kortix-auth-token-${url.port}` : 'sb-kortix-auth-token';
+  const cookieValue = `base64-${Buffer.from(JSON.stringify(session), 'utf8').toString('base64url')}`;
+  const chunks =
+    cookieValue.length <= 3180
+      ? [{ name: cookieName, value: cookieValue }]
+      : Array.from({ length: Math.ceil(cookieValue.length / 3180) }, (_, index) => ({
+          name: `${cookieName}.${index}`,
+          value: cookieValue.slice(index * 3180, (index + 1) * 3180),
+        }));
+
+  await context.addCookies(
+    chunks.map((chunk) => ({
+      ...chunk,
+      url: origin,
+      sameSite: 'Lax' as const,
+      expires: session.expires_at,
+    })),
+  );
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (
-      let attempt = 0;
-      attempt < 3 && !(await emailInput.isVisible().catch(() => false));
-      attempt++
-    ) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  const emailInput = page.locator('input[name="email"]');
-  await expect(emailInput).toBeVisible({ timeout: 15_000 });
-  const signInTab = page.getByRole('tab', { name: /^Sign in$/i });
-  if (await signInTab.isVisible().catch(() => false)) await signInTab.click();
-  await emailInput.fill(session.user.email || '');
-
-  // Current auth is a two-step email → password flow. Older deployments expose
-  // the password mode directly behind a tab/button, so keep both paths usable.
-  const continueButton = page.getByRole('button', { name: /^Continue$/i });
-  if (await continueButton.isVisible().catch(() => false)) await continueButton.click();
-  const usePassword = page.getByText(/Use password instead/i, { exact: true });
-  if (
-    await usePassword
-      .waitFor({ state: 'visible', timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-  ) {
-    await usePassword.click();
-  }
-  const passwordInput = page.locator('input[name="password"]');
-  await expect(passwordInput).toBeVisible({ timeout: 15_000 });
-  await passwordInput.fill(password);
-  const submit = page.locator('form').getByRole('button', { name: /^(Sign in|Continue)$/i });
-  await submit.click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), {
-    timeout: 30_000,
-  });
   await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/\/auth(?:[/?#]|$)/, { timeout: 30_000 });
 }

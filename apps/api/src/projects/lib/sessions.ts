@@ -30,8 +30,13 @@ import {
 import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '../secrets';
 import { resolveCompiledRuntimeConfigForSession, type CompiledRuntimeConfig } from './compile-runtime-config';
-import { resolveProjectGitAuth } from './git';
+import {
+  resolveProjectComposerState,
+  type HarnessAuthKind,
+} from './composer-capabilities';
+import { resolveProjectGitAuth, withProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
+import { resolveEffectiveSessionBaseRef } from './session-base-ref-resolution';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
   ACTIVE_SESSION_STATUSES,
@@ -210,6 +215,9 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   runtimeModel?: string | null;
+  /** Explicit server-resolved auth route. The daemon must not infer precedence
+   * from whichever credential-looking environment variable happens to exist. */
+  runtimeAuthKind?: HarnessAuthKind | null;
   /** Resolved per-project `llm_gateway` experimental flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
    *  OFF (default) → native BYOK providers must reach opencode, so the deny
@@ -330,6 +338,7 @@ export async function buildSessionSandboxEnvVars(input: {
     ...sessionContextEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
+    ...(input.runtimeAuthKind ? { KORTIX_RUNTIME_AUTH_KIND: input.runtimeAuthKind } : {}),
     // Provider API keys reach the sandbox (the agent's own code may use them),
     // but opencode must NOT — a provider key in opencode's env makes it connect
     // a NATIVE provider and bypass the gateway. The daemon withholds exactly
@@ -428,6 +437,10 @@ export async function createProjectSession(input: {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
+  /** Human-launched UI/mobile/CLI sessions may inherit an attached group's
+   * branch default. Automation and system sessions stay on the project default
+   * unless they pass an explicit base_ref. */
+  useGroupDefault?: boolean;
   /**
    * Sessions default to private (owner-only). Automation callers (triggers,
    * Slack/Telegram channels) pass 'project' — those sessions belong to the
@@ -469,7 +482,23 @@ export async function createProjectSession(input: {
     };
   }
 
-  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  const explicitBaseRef = normalizeString(body.base_ref ?? body.baseRef);
+  const baseRefResolution = input.useGroupDefault
+    ? await resolveEffectiveSessionBaseRef({
+        userId,
+        accountId,
+        projectId,
+        projectDefaultRef: project.defaultBranch,
+        explicitRef: explicitBaseRef,
+      })
+    : {
+        ref: explicitBaseRef ?? project.defaultBranch,
+        source: explicitBaseRef ? ('explicit' as const) : ('project' as const),
+        groups: [],
+        conflict: false,
+        conflictingRefs: [],
+      };
+  const baseRef = baseRefResolution.ref;
   // Explicit request wins; otherwise fall back to the project's default agent
   // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
   // `[opencode] default_agent` — synced to project metadata, or a UI/Slack
@@ -540,6 +569,61 @@ export async function createProjectSession(input: {
     if (!governed.ok) {
       return { error: { status: 400, body: { error: governed.error, code: governed.code } } };
     }
+  }
+
+  const requestedConnection = normalizeString(body.connection_id ?? body.connectionId) as HarnessAuthKind | null;
+  const rawModelSelection = body.model_selection ?? body.modelSelection;
+  const modelSelection = rawModelSelection && typeof rawModelSelection === 'object' && !Array.isArray(rawModelSelection)
+    ? rawModelSelection as Record<string, unknown>
+    : null;
+  const selectionKind = normalizeString(modelSelection?.kind);
+  if (selectionKind && !['default', 'preset', 'custom'].includes(selectionKind)) {
+    return { error: { status: 400, body: { error: 'model_selection.kind must be default, preset, or custom', code: 'INVALID_MODEL_SELECTION' } } };
+  }
+  const selectionModel = normalizeString(modelSelection?.model_id ?? modelSelection?.modelId);
+  if ((selectionKind === 'preset' || selectionKind === 'custom') && !selectionModel) {
+    return { error: { status: 400, body: { error: `${selectionKind} model selection requires model_id`, code: 'INVALID_MODEL_SELECTION' } } };
+  }
+  const selectionConnection = normalizeString(modelSelection?.connection_id ?? modelSelection?.connectionId) as HarnessAuthKind | null;
+  if (requestedConnection && selectionConnection && requestedConnection !== selectionConnection) {
+    return { error: { status: 400, body: { error: 'connection_id conflicts with model_selection.connection_id', code: 'INVALID_MODEL_SELECTION' } } };
+  }
+  let composerCapability;
+  try {
+    const state = await resolveProjectComposerState({
+      project: await withProjectGitAuth(project),
+      userId,
+      metadata: project.metadata,
+    });
+    composerCapability = await state.capabilities(agentName, requestedConnection ?? selectionConnection);
+  } catch (error) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: error instanceof Error ? error.message : String(error),
+          code: 'INVALID_AGENT_RUNTIME',
+        },
+      },
+    };
+  }
+  if (!composerCapability.can_start) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: composerCapability.blocking_reason ?? 'The selected agent is not ready to start.',
+          code: 'COMPOSER_CAPABILITY_BLOCKED',
+          capabilities: composerCapability,
+        },
+      },
+    };
+  }
+  if (selectionKind === 'preset' && !composerCapability.model.presets.some((preset) => preset.id === selectionModel)) {
+    return { error: { status: 400, body: { error: `Model preset "${selectionModel}" is not available for the selected connection`, code: 'INVALID_MODEL_SELECTION' } } };
+  }
+  if (selectionKind === 'custom' && !composerCapability.model.custom_allowed) {
+    return { error: { status: 400, body: { error: 'Custom model ids are not supported by the selected harness', code: 'INVALID_MODEL_SELECTION' } } };
   }
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`sandbox.default` in kortix.yaml — `[sandbox] default` in a
@@ -659,7 +743,9 @@ export async function createProjectSession(input: {
   const sessionId = requestedSessionId ?? randomUUID();
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
-  const runtimeModel = normalizeString(body.model ?? body.runtime_model);
+  const runtimeModel = selectionKind === 'default'
+    ? null
+    : selectionModel ?? normalizeString(body.model ?? body.runtime_model);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
@@ -667,6 +753,13 @@ export async function createProjectSession(input: {
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
     ...(runtimeModel ? { model: runtimeModel } : {}),
+    auth_connection: composerCapability.auth.active,
+    model_selection: {
+      harness: composerCapability.agent.harness,
+      connection_id: composerCapability.auth.active,
+      kind: selectionKind ?? (runtimeModel ? 'custom' : 'default'),
+      model_id: runtimeModel,
+    },
     ...(input.metadata ?? {}),
   };
 
@@ -783,6 +876,7 @@ export async function createProjectSession(input: {
           agentName,
           initialPrompt,
           runtimeModel,
+          runtimeAuthKind: composerCapability.auth.active,
           llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
           freshSession: true,
           baseSha,

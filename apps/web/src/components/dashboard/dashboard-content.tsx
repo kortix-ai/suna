@@ -10,11 +10,9 @@ import {
   type ComposerOptions,
 } from '@/features/session/composer-chat-input';
 import type { AttachedFile } from '@/features/session/session-chat-input';
-import { formatModelString } from '@/hooks/runtime/use-runtime-local';
 import type { Command } from '@/hooks/runtime/use-runtime-sessions';
 import { useCreateRuntimeSession } from '@/hooks/runtime/use-runtime-sessions';
 import { useIsMobile } from '@/hooks/utils';
-import { getRuntimeClient as getClient } from '@kortix/sdk/runtime-client';
 import { playSound } from '@/lib/sounds';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -121,25 +119,18 @@ export function DashboardContent() {
     async (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       try {
         const session = await createSession.mutateAsync();
+        writeStartStash(session.id, {
+          prompt: `/${cmd.name}${args ? ` ${args}` : ''}`,
+          model: options.model ?? null,
+          agent: options.agent ?? null,
+          variant: options.variant ?? null,
+        });
         openTabAndNavigate({
           id: session.id,
           title: cmd.name,
           type: 'session',
           href: `/sessions/${session.id}`,
         });
-        const client = getClient();
-        void client.session
-          .command({
-            sessionID: session.id,
-            command: cmd.name,
-            arguments: args || '',
-            ...(options.agent && { agent: options.agent }),
-            ...(options.model && { model: formatModelString(options.model) }),
-            ...(options.variant && { variant: options.variant }),
-          } as any)
-          .catch(() => {
-            toast.warning('Failed to execute command');
-          });
       } catch {
         toast.warning('Failed to create session');
       }

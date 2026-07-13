@@ -189,10 +189,10 @@ export async function provisionSessionSandbox(opts: {
   sandboxSlug?: string;
   /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
-   * `active`. Used by legacy migration to restore the original opencode store
-   * into the sandbox before the frontend's `ensure-opencode` pin runs (which
-   * would otherwise re-pin to a fresh session). Best-effort: a throw is logged
-   * and provisioning still completes to `active`.
+   * `active`. Used only by legacy migration to restore an archived OpenCode
+   * store before the OpenCode ACP harness starts from the replacement sandbox.
+   * Best-effort: a throw is logged and provisioning still completes to
+   * `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
@@ -578,7 +578,7 @@ export async function provisionSessionSandbox(opts: {
       }
 
       // Pre-active hook (legacy migration chat restore). Runs while the row is
-      // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
+      // still provisioning, before the ACP runtime is exposed to clients.
       // Best-effort: never block the session opening on it.
       if (opts.beforeActive) {
         try {

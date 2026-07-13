@@ -32,6 +32,10 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { promptProjectAcpSession } from '@kortix/sdk';
+import {
+  useComposerCapabilities,
+  useRuntimeAgents as useSdkRuntimeAgents,
+} from '@kortix/sdk/react';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -59,12 +63,6 @@ import { BottomBar } from '@/components/session/BottomBar';
 import type { BottomBarRef } from '@/components/session/BottomBar';
 import { TabsOverview } from '@/components/session/TabsOverview';
 import { CommandPalette } from '@/components/session/CommandPalette';
-import {
-  useRuntimeAgents,
-  useRuntimeModels,
-  useRuntimeConfig,
-} from '@/lib/runtime/hooks/use-runtime-data';
-import { useResolvedConfig } from '@/lib/runtime/hooks/use-local-config';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
@@ -1287,15 +1285,52 @@ export default function ProjectSessionScreen() {
     return { childMap: map, rootSessions: roots };
   }, [activeSessions]);
 
-  // Agent/model/variant for dashboard input
-  const { data: agents = [] } = useRuntimeAgents(sessionSandboxUrl);
-  const {
-    data: dashVisibleModels = [],
-    allModels: dashAllModels = [],
-    defaults: dashDefaults,
-  } = useRuntimeModels(sessionSandboxUrl);
-  const { data: dashConfig } = useRuntimeConfig(sessionSandboxUrl);
-  const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
+  // Agent/auth/model state for the new-session composer comes from the project
+  // control plane, not from whichever sandbox happened to be active last.
+  const { data: projectAgents = [] } = useSdkRuntimeAgents({ projectId });
+  const [dashboardAgentName, setDashboardAgentName] = useState<string | null>(null);
+  const [dashboardModelByAgent, setDashboardModelByAgent] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    if (!projectAgents.length) return;
+    if (!dashboardAgentName || !projectAgents.some((agent) => agent.name === dashboardAgentName && !agent.hidden)) {
+      setDashboardAgentName(projectAgents.find((agent) => !agent.hidden)?.name ?? null);
+    }
+  }, [dashboardAgentName, projectAgents]);
+  const dashboardAgent = projectAgents.find((agent) => agent.name === dashboardAgentName) ?? null;
+  const dashboardCapability = useComposerCapabilities(projectId, dashboardAgent?.name ?? null);
+  const dashboardSelectedModelId = dashboardAgent
+    ? dashboardModelByAgent[dashboardAgent.name] ?? null
+    : null;
+  const dashboardModels = useMemo(() => (dashboardCapability.data?.model.presets ?? []).map((preset) => {
+    const slash = preset.id.indexOf('/');
+    return {
+      providerID: slash > 0 ? preset.id.slice(0, slash) : dashboardAgent?.harness ?? 'runtime',
+      providerName: preset.source,
+      modelID: slash > 0 ? preset.id.slice(slash + 1) : preset.id,
+      modelName: preset.name,
+      providerSource: preset.source,
+    };
+  }), [dashboardAgent?.harness, dashboardCapability.data?.model.presets]);
+  const dashboardModel = dashboardSelectedModelId
+    ? dashboardModels.find((model) => `${model.providerID}/${model.modelID}` === dashboardSelectedModelId
+      || model.modelID === dashboardSelectedModelId) ?? {
+        providerID: 'custom',
+        providerName: 'Custom',
+        modelID: dashboardSelectedModelId,
+        modelName: dashboardSelectedModelId,
+        providerSource: 'custom',
+      }
+    : null;
+  const dashboardConnectionId = dashboardCapability.data?.auth.active ?? null;
+  const dashboardModelSelection = {
+    kind: dashboardSelectedModelId
+      ? dashboardCapability.data?.model.presets.some((preset) => preset.id === dashboardSelectedModelId)
+        ? 'preset' as const
+        : 'custom' as const
+      : 'default' as const,
+    modelId: dashboardSelectedModelId,
+    connectionId: dashboardConnectionId,
+  };
 
   // Stable error message (prevents re-render loops from error object identity)
   const sandboxErrorMsg = sandboxError?.message || null;
@@ -1836,7 +1871,19 @@ export default function ProjectSessionScreen() {
       setIsDashboardSending(true);
 
       try {
-        const session = await createProjectSession.mutateAsync({ initial_prompt: finalText });
+        const selectedAgent = options.agent ?? dashboardAgent?.name;
+        const selectedConnection = options.connectionId ?? dashboardConnectionId;
+        const selectedModel = options.modelSelection ?? dashboardModelSelection;
+        const session = await createProjectSession.mutateAsync({
+          initial_prompt: finalText,
+          ...(selectedAgent ? { agent_name: selectedAgent } : {}),
+          ...(selectedConnection ? { connection_id: selectedConnection } : {}),
+          model_selection: {
+            kind: selectedModel.kind,
+            model_id: selectedModel.modelId ?? null,
+            connection_id: selectedModel.connectionId ?? selectedConnection ?? null,
+          },
+        });
         setActiveProjectSessionId(session.session_id);
         // Enter the connecting state — the effect drives provisioning and opens
         // the server-created session once ready.
@@ -1857,6 +1904,9 @@ export default function ProjectSessionScreen() {
       connectToProjectSession,
       navigateToSession,
       showUpgradeForError,
+      dashboardAgent?.name,
+      dashboardConnectionId,
+      dashboardModelSelection,
     ]
   );
 
@@ -2261,7 +2311,7 @@ export default function ProjectSessionScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <SetupWizard onComplete={handleSetupComplete} />
+        <SetupWizard projectId={projectId} onComplete={handleSetupComplete} />
       </>
     );
   }
@@ -2429,6 +2479,7 @@ export default function ProjectSessionScreen() {
                 !showTabsOverview ? (
                 <LlmProvidersPage
                   page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
                   onBack={handleBack}
                   onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
                   onOpenRightDrawer={
@@ -2977,17 +3028,42 @@ export default function ProjectSessionScreen() {
                       onSend={handleDashboardSend}
                       placeholder="Describe a task to start a session…"
                       disabled={isDashboardSending}
-                      agent={resolved.agent}
-                      agents={resolved.agents}
-                      model={resolved.model}
-                      models={dashVisibleModels}
-                      modelKey={resolved.modelKey}
-                      variant={resolved.variant}
-                      variants={resolved.variants}
-                      onAgentChange={resolved.setAgent}
-                      onModelChange={resolved.setModel}
-                      onVariantCycle={resolved.cycleVariant}
-                      onVariantSet={resolved.setVariant}
+                      agent={dashboardAgent as any}
+                      agents={projectAgents as any}
+                      model={dashboardModel as any}
+                      models={dashboardModels as any}
+                      modelKey={dashboardModel ? {
+                        providerID: dashboardModel.providerID,
+                        modelID: dashboardModel.modelID,
+                      } : null}
+                      variants={[]}
+                      onAgentChange={setDashboardAgentName}
+                      onModelChange={(providerID, modelID) => {
+                        if (!dashboardAgent) return;
+                        if (!providerID && !modelID) {
+                          setDashboardModelByAgent((current) => ({ ...current, [dashboardAgent.name]: null }));
+                          return;
+                        }
+                        const preset = dashboardCapability.data?.model.presets.find((candidate) => {
+                          const slash = candidate.id.indexOf('/');
+                          const candidateProvider = slash > 0 ? candidate.id.slice(0, slash) : dashboardAgent.harness;
+                          const candidateModel = slash > 0 ? candidate.id.slice(slash + 1) : candidate.id;
+                          return candidateProvider === providerID && candidateModel === modelID;
+                        });
+                        setDashboardModelByAgent((current) => ({
+                          ...current,
+                          [dashboardAgent.name]: preset?.id ?? `${providerID}/${modelID}`,
+                        }));
+                      }}
+                      onCustomModelChange={(modelId) => dashboardAgent && setDashboardModelByAgent((current) => ({
+                        ...current,
+                        [dashboardAgent.name]: modelId,
+                      }))}
+                      connectionId={dashboardConnectionId}
+                      modelSelection={dashboardModelSelection}
+                      blockingReason={dashboardCapability.data?.can_start === false
+                        ? dashboardCapability.data.blocking_reason
+                        : dashboardCapability.error instanceof Error ? dashboardCapability.error.message : null}
                       sessions={sessions}
                       sandboxUrl={sessionSandboxUrl}
                     />

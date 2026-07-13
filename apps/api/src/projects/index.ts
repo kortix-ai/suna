@@ -16,8 +16,7 @@
 
 // Route registrations run as import side-effects. The order here IS the route
 // registration order — preserve it. r1 registers the global `/*` auth
-// middleware first (its first statement), then routes; r4 registers the
-// `/:projectId/apps` middleware before the apps routes (both within r4).
+// middleware first (its first statement), then the remaining route groups.
 import './routes/r1';
 import './routes/r2';
 import './routes/r3';
@@ -35,6 +34,7 @@ import './routes/r11';
 import './routes/model-defaults';
 import './routes/agent-scope';
 import './routes/agent-config';
+import './routes/composer-capabilities';
 import './routes/gateway';
 import './routes/channel-bindings';
 

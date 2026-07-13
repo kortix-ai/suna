@@ -98,27 +98,6 @@ triggers:
       Slack event from {{ headers.user_agent }}.
       User said: {{ body.text }}
 
-# ─── Apps (experimental) ──────────────────────────────────────────
-# Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off,
-# entries are parsed but never acted on.
-apps:
-  - slug: marketing-site
-    name: Marketing site
-    enabled: true
-    framework: next
-    domains:
-      - marketing.example.com   # optional — omit it and Freestyle issues a free *.style.dev URL
-    source:
-      type: git
-      repo: https://github.com/me/site   # optional — falls back to project repo
-      branch: main
-      root_path: apps/site
-    build:
-      command: pnpm build
-      out_dir: dist
-    env:
-      NEXT_PUBLIC_API_URL: https://api.example.com
-
 # ─── Agents (governance only) ─────────────────────────────────────
 agents:
   kortix:
@@ -128,7 +107,7 @@ agents:
     skills: all
   release-bot:
     connectors: [github]
-    kortix_cli: [project.deploy, project.cr.open]   # may OPEN a CR, but not merge it
+    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
 ## `agents:`
@@ -158,14 +137,15 @@ must name a declared, enabled agent.
 agents:
   release-bot:
     connectors: [github]
-    kortix_cli: [project.deploy, project.cr.open]   # may OPEN a CR, but not merge it
+    kortix_cli: [project.write, project.cr.open]    # may OPEN a CR, but not merge it
 ```
 
 **Grantable `kortix_cli` actions** (project-scoped only — account-level admin
 actions can never be granted to an agent; run `kortix validate --scopes`):
-`project.read|write|delete|deploy`, `project.cr.open|merge`,
-`project.session.read|start|stop`, `project.members.read|manage`,
-`project.trigger.read|create|update|delete|fire`, `project.connector.read|write`
+`project.read|write|delete`, `project.cr.open|merge`,
+`project.session.read|start|stop|bindings.write`, `project.members.read|manage`,
+`project.trigger.read|create|update|delete|fire`,
+`project.connector.read|write|profiles.manage`
 (channels — Slack/meet/email send + connect — are gated on `project.connector.write`).
 
 **Resolution at session start:** every agent must be declared under
@@ -203,7 +183,6 @@ self-describing at a glance.
 | Sandbox builder        | `sandbox:`                                                           |
 | Sandbox runtime        | `opencode:` (where to launch opencode with its config)               |
 | Session bootstrap      | `env:` (advisory — surfaced to dashboard, not enforced)              |
-| Apps deploy sweep      | `apps:` (when `KORTIX_APPS_EXPERIMENTAL=true`)                       |
 | Session token mint     | `agents:` (per-agent connectors/secrets/skills/kortix_cli scope)     |
 | Agent/model UI         | Server-side agent registry + LLM-gateway model catalog                |
 | Dashboard UI           | All of the above + `project:` + the raw manifest                     |
@@ -430,61 +409,6 @@ not the repo.
 - A cron trigger without a `cron` expression is rejected.
 - Bad entries surface in `errors` next to the good ones — they don't
   break the whole file.
-
-## `apps:` (experimental)
-
-Gated behind `KORTIX_APPS_EXPERIMENTAL=true`. When the flag is off,
-the `/apps` routes return 404 (with a JSON error explaining the
-flag) and the deploy sweep skips every project.
-
-`apps:` declares deployable surfaces alongside the agent — think
-fly.toml-style entries inside `kortix.yaml`. The platform dispatches
-through a provider adapter (Freestyle today; pluggable) and records
-each deploy in the `deployments` table.
-
-Entries sort alphabetically by slug. Slug uniqueness is per-section
-(apps don't conflict with triggers of the same slug).
-
-| Field      | Required | Type       | Notes                                                  |
-| ---------- | -------- | ---------- | ------------------------------------------------------ |
-| `slug`     | yes      | string     | URL-safe, unique among apps.                           |
-| `name`     | no       | string     | Display name. Defaults to slug.                        |
-| `enabled`  | no       | bool       | Defaults to `true`. Disabled apps are skipped.         |
-| `domains`  | no       | `string[]` | Custom hostnames. Omit / empty → Freestyle issues a `*.style.dev` subdomain and persists it back into `deployments.live_url`. |
-| `framework`| no       | string     | Hint for the provider adapter (e.g. `"next"`).         |
-
-### `apps[].source`
-
-| Field       | Required for `git` | Required for `tar` | Notes                                                                 |
-| ----------- | ------------------ | ------------------ | --------------------------------------------------------------------- |
-| `type`      | yes                | yes                | `"git"` or `"tar"`.                                                   |
-| `repo`      | no                 | —                  | Git clone URL. Falls back to the **project's own repo URL** if omitted. |
-| `branch`    | no                 | —                  | Defaults to the project's default branch.                              |
-| `root_path` | no                 | —                  | Path inside the source to deploy from. Defaults to `"."`.              |
-| `url`       | —                  | yes                | HTTPS URL of the tarball.                                              |
-
-### `apps[].build`
-
-| Field     | Required | Notes                                                                |
-| --------- | -------- | -------------------------------------------------------------------- |
-| `command` | no       | Build command. Empty → no build step.                                |
-| `out_dir` | no       | Output directory served by the provider.                             |
-
-If both are empty, the parsed entry collapses to `null` — the
-provider treats it as "no build phase."
-
-### `apps[].env`
-
-Key/value map. Keys must match `^[A-Za-z_][A-Za-z0-9_]*$` (mixed
-case allowed, unlike `env:` secrets which are uppercase-only).
-Values must be strings — numbers and booleans are rejected.
-
-### Hash-based redeploy
-
-Apps redeploy when the manifest-derived hash of their config changes.
-The hash **excludes** `slug` and `name` — renaming an app doesn't
-trigger a redeploy. Edits to `source`, `build`, `env`, `domains`,
-`framework`, or `enabled` do.
 
 ## Secrets
 

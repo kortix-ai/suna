@@ -3,11 +3,14 @@ import test from 'node:test'
 
 import {
   isClientRequestTimeoutMessage,
+  isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
   isExtensionSource,
   isInjectedAppSource,
   isKnownBrowserNoiseMessage,
+  isOldBrowserSyntaxParseError,
   isOldWebkitRegexNoiseMessage,
+  isPaperShaderNullContextNoise,
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
@@ -873,4 +876,412 @@ test('does NOT suppress a real V8/Node regex error with different wording', () =
     }),
     false,
   )
+})
+
+// Reproduces the old-browser minified-chunk `SyntaxError` parse-failure cluster
+// (Kortix Frontend prod, application_id 2346967), all 1–2 occurrences each, 0
+// users, from `app:///_next/static/chunks/…` minified bundles on old browsers
+// / stripped-down WebViews. The browser cannot parse modern minified JS —
+// incompatible, not an app defect. Covered Better Stack fingerprints:
+//   Unexpected token '='        0015b43d…, 23ac8ed3…, 0665f05e…, 4bcd8a1a…,
+//                               bb3aef66…, 277d3a4a…
+//   Unexpected token '('        dfe7db0b…, 1aa71b82…, a75e4f55…, 7a61bbd1…,
+//                               38e4f3da…
+//   Unexpected token '{'        aff45748…, 40ed5a29…
+//   Invalid or unexpected token c8f836d4…, 572a247e…
+//   Cannot use import statement outside a module  17aeb077…
+// The message prefixes are generic (a real `new Function('…')` / `eval('…')`
+// eval bug throws the same wording), so the matcher requires BOTH the message
+// prefix AND a minified-chunk frame (`_next/static/chunks/` or `?dpl=dpl_…`).
+// Parse failures fire at raw chunk load time, before Sentry sourcemap
+// resolution, so the frame filename stays as the raw chunk path — a genuine
+// first-party eval bug de-minifies to `apps/web/src/…` and is never hidden.
+const CHUNK_FRAME = 'app:///_next/static/chunks/76904-c52ab52c4900447c.js'
+
+const OLD_BROWSER_SYNTAX_PARSE_EVENTS = [
+  // `Unexpected token '='` family (V8/SpiderMonkey).
+  "Unexpected token '='",
+  "SyntaxError: Unexpected token '='",
+  "Unhandled promise rejection: SyntaxError: Unexpected token '='",
+  // `Unexpected token '('` family.
+  "Unexpected token '('",
+  "SyntaxError: Unexpected token '('",
+  // `Unexpected token '{'` family.
+  "Unexpected token '{'",
+  "SyntaxError: Unexpected token '{'",
+  // `Invalid or unexpected token` (V8).
+  'Invalid or unexpected token',
+  'SyntaxError: Invalid or unexpected token',
+  'Unhandled promise rejection: Invalid or unexpected token',
+  // `Cannot use import statement outside a module` (V8, ES-module chunk
+  // loaded as a classic script by an old browser).
+  'Cannot use import statement outside a module',
+  'SyntaxError: Cannot use import statement outside a module',
+  'Unhandled promise rejection: SyntaxError: Cannot use import statement outside a module',
+]
+
+test('classifies every old-browser minified-chunk SyntaxError variant as noise (with a chunk frame)', () => {
+  for (const message of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      isOldBrowserSyntaxParseError({ message, frames: [{ filename: CHUNK_FRAME }] }),
+      true,
+      `expected "${message}" from a chunk frame to be classified as old-browser parse noise`,
+    )
+  }
+})
+
+test('suppresses every old-browser SyntaxError Sentry event whose frame is a minified chunk', () => {
+  for (const value of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [{ filename: CHUNK_FRAME }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" from a chunk frame to be suppressed`,
+    )
+  }
+})
+
+test('suppresses an old-browser SyntaxError from a Vercel ?dpl= deploy-hash chunk URL', () => {
+  // Old browsers loading a chunk from a Vercel deployment URL also surface the
+  // raw `?dpl=dpl_…` filename, not the de-minified source.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "SyntaxError: Unexpected token '='",
+            stacktrace: {
+              frames: [
+                { filename: 'https://kortix.com/_next/static/chunks/1234-abcd.js?dpl=dpl_abc123' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses an old-browser SyntaxError via the runtime (window.onerror) gate with a chunk filename', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "SyntaxError: Unexpected token '('",
+      filename: CHUNK_FRAME,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Cannot use import statement outside a module',
+      filename: 'https://kortix.com/_next/static/chunks/main-app.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress an old-browser SyntaxError with NO chunk frame (conservative — keep reporting)', () => {
+  // Frameless window.onerror / onunhandledrejection captures carry no chunk
+  // anchor. The message prefixes are generic, so without a chunk frame we
+  // cannot tell old-browser noise from a real eval bug — keep reporting.
+  for (const message of OLD_BROWSER_SYNTAX_PARSE_EVENTS) {
+    assert.equal(
+      isOldBrowserSyntaxParseError({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real app SyntaxError from a de-minified first-party frame', () => {
+  // A genuine `new Function('…')` / `eval('…')` eval bug in first-party app
+  // code throws the SAME wording, but Sentry's sourcemap resolution
+  // de-minifies the frame to `apps/web/src/…` — NOT a raw `_next/static/chunks/`
+  // path, and not a `?dpl=dpl_…` URL. The matcher must keep reporting it so a
+  // real eval regression is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/dynamic-eval.ts' },
+    { filename: 'apps/web/src/lib/dynamic-eval.ts' },
+    { filename: 'https://kortix.com/src/lib/dynamic-eval.ts' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///apps/web/src/features/foo.tsx' }]]) {
+    for (const message of [
+      "SyntaxError: Unexpected token '}'",
+      'Invalid or unexpected token',
+      'Cannot use import statement outside a module',
+    ]) {
+      assert.equal(
+        isOldBrowserSyntaxParseError({ message, frames }),
+        false,
+        `expected real app SyntaxError "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "SyntaxError: Unexpected token ')'",
+      filename: 'app:///apps/web/src/features/foo.tsx',
+    }),
+    false,
+  )
+})
+
+// ---------------------------------------------------------------------------
+// "No error message" + unresolved minified chunk frames (Better Stack
+// patterns a81b7cd3… / 576172fbd8… in chunk 21544-ac9e889808bbe0af.js).
+// ---------------------------------------------------------------------------
+
+const CHUNK_21544 = 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js?dpl=dpl_CTqmc8S7CG7w9gkCs2ySzURsbhxm'
+
+test('suppresses the "No error message" + unresolved chunk-21544 Sentry event', () => {
+  // Exact shape of the production noise: empty exception value, single frame
+  // in our numbered app chunk with a `?` function and no source line.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }],
+    }),
+    true,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: '', lineno: undefined }],
+    }),
+    true,
+  )
+  // Better Stack displays "No error message" because the SDK sent no value.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: undefined,
+            stacktrace: { frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a real error that has a message', () => {
+  // A non-empty message is always actionable, even if its frame is unresolved.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: 'TypeError: Cannot read properties of null (reading \'getItem\')',
+      frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }],
+    }),
+    false,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: 'Something went wrong',
+            stacktrace: { frames: [{ filename: CHUNK_21544, function: '?', lineno: 0 }] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an empty-message error whose frame resolves to a source line', () => {
+  // `throw new Error()` / `Promise.reject(new Error())` in first-party code:
+  // sourcemaps resolve the frame to a real file:line → actionable, keep it.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: CHUNK_21544, function: 'handleClick', lineno: 42 }],
+    }),
+    false,
+  )
+  // Mixed: one unresolved chunk frame + one resolved frame → keep.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [
+        { filename: CHUNK_21544, function: '?', lineno: 0 },
+        { filename: 'app:///_next/static/chunks/76904-c52ab52c4900447c.js', function: 'render', lineno: 17 },
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress an empty-message error with a non-browser-bundle frame', () => {
+  // Extension / injected / cross-origin frames must not be hidden by this
+  // guard — only our own unresolved browser-bundle chunks qualify.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [{ filename: 'chrome-extension://abc/content.js', function: '?', lineno: 0 }],
+    }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({
+      message: '',
+      frames: [
+        { filename: CHUNK_21544, function: '?', lineno: 0 },
+        { filename: 'https://evil.example/injected.js', function: '?', lineno: 0 },
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a frameless empty-message event (origin unverifiable)', () => {
+  // No frames at all → can't confirm it's our browser chunk; keep reporting.
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: '', frames: [] }),
+    false,
+  )
+  assert.equal(
+    isEmptyMessageUnresolvedBrowserChunkNoise({ message: '' }),
+    false,
+  )
+})
+
+// Reproduces the Paper Shaders (`@paper-design/shaders-react`) null-WebGL2-
+// context crash class — the `getSupportedExtensions` null-context path that
+// ESCAPES `<ShaderSafe>` (Better Stack pattern `34127fa4…`, call site `new b2`
+// in chunk `app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js`, prod, 2
+// occurrences, last 2026-07-12 15:23:38 UTC) plus its known sibling
+// `getAttribLocation`. Paper Shaders' shader-mount `useEffect`/rAF callback
+// calls a WebGL2 context method on a context that became `null` after a
+// context-loss / GPU-blacklist event; the throw is in an async callback so the
+// React error boundary can't catch it → global error → Sentry → Better Stack.
+// The matcher is the leak-path backstop; the `supportsWebGL2()` probe in
+// `shader-safe.tsx` is the primary guard.
+const PAPER_SHADER_NULL_CONTEXT_MESSAGES = [
+  "Cannot read properties of null (reading 'getSupportedExtensions')",
+  "TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Unhandled promise rejection: TypeError: Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Cannot read properties of null (reading 'getAttribLocation')",
+  "TypeError: Cannot read properties of null (reading 'getAttribLocation')",
+  "Unhandled promise rejection: Cannot read properties of null (reading 'getAttribLocation')",
+  // Old JSC form.
+  "Cannot read property 'getSupportedExtensions' of null",
+  "Cannot read property 'getAttribLocation' of null",
+]
+
+test('classifies every Paper Shaders null-context WebGL message as noise', () => {
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      isPaperShaderNullContextNoise(message),
+      true,
+      `expected "${message}" to be classified as Paper Shaders null-context noise`,
+    )
+  }
+})
+
+test('suppresses every Paper Shaders null-context message via the runtime (window.onerror) gate', () => {
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+  }
+})
+
+test('suppresses every Paper Shaders null-context message via the Sentry beforeSend gate', () => {
+  // The message is specific enough (WebGL2 API method names that first-party
+  // app code never calls) that no chunk-frame anchor is required — but the
+  // Sentry event usually still carries the chunk frame, so verify both shapes.
+  for (const message of PAPER_SHADER_NULL_CONTEXT_MESSAGES) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" with a chunk frame`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      true,
+      `expected Sentry gate to suppress "${message}" even with NO chunk frame (message is specific enough)`,
+    )
+  }
+})
+
+test('does NOT suppress a real app TypeError with a different null-property name', () => {
+  // A genuine first-party `foo.bar` null-deref regression throws the same
+  // `Cannot read properties of null (reading '<name>')` SHAPE but with an
+  // app-property name, not a WebGL2 API method — it must keep reporting so a
+  // real null-deref regression is never hidden by the Paper Shaders guard.
+  const realAppNullDerefMessages = [
+    "Cannot read properties of null (reading 'map')",
+    "Cannot read properties of null (reading 'length')",
+    "TypeError: Cannot read properties of null (reading 'id')",
+    "Cannot read property 'foo' of null",
+    // A non-null access on getSupportedExtensions (e.g. typo'd as a property
+    // of a non-null object) is a different message and must keep reporting.
+    "Cannot read properties of undefined (reading 'getSupportedExtensions')",
+  ]
+  for (const message of realAppNullDerefMessages) {
+    assert.equal(
+      isPaperShaderNullContextNoise(message),
+      false,
+      `expected real app TypeError "${message}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      false,
+      `expected runtime gate to keep reporting real app TypeError "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: message,
+              stacktrace: {
+                frames: [
+                  { filename: 'app:///_next/static/chunks/c76173f0.5ba9c330afa9d53d.js' },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
+    )
+  }
 })

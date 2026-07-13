@@ -158,7 +158,7 @@ function setCachedServiceKey(sandboxId: string, key: string | null): void {
 
 /**
  * Resolve the service key for `sandboxId` — cached, falling back to a row fetch.
- * Used by callers (e.g. opencode-mapping) that need only the key, not the row.
+ * Used by runtime inspection and ACP proxy callers that need only the key, not the row.
  */
 export async function resolveServiceKey(sandboxId: string): Promise<string | null> {
   const cached = getCachedServiceKey(sandboxId);

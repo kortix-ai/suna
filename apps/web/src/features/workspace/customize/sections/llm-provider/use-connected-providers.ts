@@ -1,66 +1,65 @@
 'use client';
 
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
-import { LLM_PROVIDERS, type LlmProviderEntry, type LlmProviderModel } from '@/lib/llm-providers';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import {
+  CHATGPT_SUBSCRIPTION_PROVIDER,
+  CLAUDE_SUBSCRIPTION_PROVIDER,
+  LLM_PROVIDER_BY_ID,
+  type LlmProviderEntry,
+  type LlmProviderModel,
+} from '@/lib/llm-providers';
+import { getProjectLlmCatalog, type HarnessAuthKind } from '@kortix/sdk/projects-client';
+import { useHarnessConnections } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-import {
-  CODEX_AUTH_JSON_SECRET_NAME,
-  LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
-  MANAGED_MODEL_ID_SET,
-} from './constants';
-import {
-  buildClaudeSubscriptionProvider,
-  buildCodexProvider,
-  buildCustomRestProvider,
-} from './utils';
+import { CUSTOM_LLM_SECRET_NAMES, MANAGED_MODEL_ID_SET } from './constants';
+
+function customRestProvider(): LlmProviderEntry {
+  return {
+    id: 'custom-rest',
+    label: 'Custom REST provider',
+    envVars: [...CUSTOM_LLM_SECRET_NAMES],
+    helpUrl: null,
+    hint: 'OpenAI- or Anthropic-compatible endpoint',
+    models: [],
+    featured: false,
+  };
+}
+
+const CONNECTION_PROVIDER: Partial<Record<HarnessAuthKind, () => LlmProviderEntry | null>> = {
+  claude_subscription: () => CLAUDE_SUBSCRIPTION_PROVIDER,
+  codex_subscription: () => CHATGPT_SUBSCRIPTION_PROVIDER,
+  anthropic_api_key: () => LLM_PROVIDER_BY_ID.get('anthropic') ?? null,
+  openai_api_key: () => LLM_PROVIDER_BY_ID.get('openai') ?? null,
+  openai_compatible: customRestProvider,
+  anthropic_compatible: customRestProvider,
+};
 
 export function useConnectedProviders(projectId: string, enabled: boolean) {
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
+  const connectionsQuery = useHarnessConnections(enabled ? projectId : null);
+  const catalogQuery = useQuery({
+    queryKey: ['project-llm-catalog', projectId],
+    queryFn: () => getProjectLlmCatalog(projectId),
     staleTime: 30_000,
     enabled,
   });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
 
-  const secretsQuery = useQuery({
-    queryKey: ['project-secrets', projectId],
-    queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
-    enabled,
-  });
-
-  const secretNames = useMemo(() => {
-    const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : (data?.items ?? []);
-    return new Set(items.map((item) => item.name));
-  }, [secretsQuery.data]);
-
-  // The managed Kortix gateway exists only for projects that explicitly opt
-  // into the LLM Gateway. Native Runtime projects should show only providers
-  // backed by project secrets, even if an old running sandbox still exposes a
-  // stale `kortix` provider.
-  const { data: ocProviders } = useRuntimeProviders();
+  const readyConnections = useMemo(
+    () => connectionsQuery.data?.connections.filter((connection) => connection.ready) ?? [],
+    [connectionsQuery.data?.connections],
+  );
+  const llmGatewayEnabled = readyConnections.some(
+    (connection) => connection.id === 'managed_gateway',
+  );
 
   const kortixProvider = useMemo<LlmProviderEntry | null>(() => {
     if (!llmGatewayEnabled) return null;
-    const connectedIds = new Set(ocProviders?.connected ?? []);
-    const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
-    if (!kortix || !connectedIds.has('kortix')) return null;
-    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {})
+    const models: LlmProviderModel[] = Object.entries(catalogQuery.data?.models ?? {})
       .filter(([id]) => MANAGED_MODEL_ID_SET.has(id))
-      .map(([id, m]) => ({
-        id,
-        name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
-        released: (m as { release_date?: string }).release_date ?? null,
-      }));
+      .map(([id, model]) => ({ id, name: model.name || id, released: null }));
     return {
       id: 'kortix',
-      label: kortix.name || 'Kortix',
+      label: 'Kortix',
       envVars: [],
       helpUrl: null,
       hint: 'Included with your plan',
@@ -68,25 +67,25 @@ export function useConnectedProviders(projectId: string, enabled: boolean) {
       featured: true,
       managed: true,
     };
-  }, [llmGatewayEnabled, ocProviders]);
+  }, [catalogQuery.data?.models, llmGatewayEnabled]);
 
   const connectedProviders = useMemo(() => {
-    const hasCodexSubscription =
-      secretNames.has(CODEX_AUTH_JSON_SECRET_NAME) ||
-      secretNames.has(LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME);
-    const byo = LLM_PROVIDERS.filter(
-      (p) =>
-        p.id !== 'kortix' && p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
-    );
-    const subscription = hasCodexSubscription ? [buildCodexProvider(ocProviders)] : [];
-    const claude = buildClaudeSubscriptionProvider(secretNames);
-    const claudeSubscription: LlmProviderEntry[] = claude ? [claude] : [];
-    const custom = buildCustomRestProvider(secretNames);
-    const customProvider: LlmProviderEntry[] = custom ? [custom] : [];
-    return kortixProvider
-      ? [kortixProvider, ...subscription, ...claudeSubscription, ...customProvider, ...byo]
-      : [...subscription, ...claudeSubscription, ...customProvider, ...byo];
-  }, [secretNames, kortixProvider, ocProviders]);
+    const providers: LlmProviderEntry[] = kortixProvider ? [kortixProvider] : [];
+    const seen = new Set(providers.map((provider) => provider.id));
+    for (const connection of readyConnections) {
+      const provider = CONNECTION_PROVIDER[connection.kind]?.() ?? null;
+      if (!provider || seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      providers.push(provider);
+    }
+    for (const configured of connectionsQuery.data?.providers ?? []) {
+      const provider = LLM_PROVIDER_BY_ID.get(configured.provider_id);
+      if (!provider || seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      providers.push(provider);
+    }
+    return providers;
+  }, [connectionsQuery.data?.providers, kortixProvider, readyConnections]);
 
-  return { secretsQuery, connectedProviders, llmGatewayEnabled };
+  return { connectionsQuery, connectedProviders, llmGatewayEnabled };
 }

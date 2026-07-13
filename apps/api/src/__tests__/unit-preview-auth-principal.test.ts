@@ -23,6 +23,10 @@ mock.module('../shared/crypto', () => ({
 }));
 
 mock.module('../repositories/api-keys', () => ({
+  createApiKey: async () => { throw new Error('not used'); },
+  listApiKeys: async () => [],
+  revokeApiKey: async () => false,
+  deleteApiKey: async () => false,
   validateSecretKey: async (t: string) => {
     if (t === 'kortix_owner') return { isValid: true, accountId: 'acct-owner' };
     if (t === 'kortix_other') return { isValid: true, accountId: 'acct-other' };
@@ -31,6 +35,11 @@ mock.module('../repositories/api-keys', () => ({
 }));
 
 mock.module('../repositories/account-tokens', () => ({
+  PatPolicyError: class PatPolicyError extends Error {},
+  createAccountToken: async () => { throw new Error('not used'); },
+  listAccountTokens: async () => [],
+  revokeAccountToken: async () => false,
+  revokeAllAccountTokensForUser: async () => 0,
   validateAccountToken: async (t: string) => {
     if (t === 'kortix_pat_owner') return { isValid: true, userId: 'pat-user-owner' };
     if (t === 'kortix_pat_other') return { isValid: true, userId: 'pat-user-other' };
@@ -39,6 +48,13 @@ mock.module('../repositories/account-tokens', () => ({
 }));
 
 mock.module('../repositories/service-accounts', () => ({
+  listServiceAccounts: async () => [],
+  getServiceAccount: async () => null,
+  createServiceAccount: async () => { throw new Error('not used'); },
+  listAgentServiceAccounts: async () => [],
+  ensureAgentServiceAccount: async () => null,
+  disableServiceAccount: async () => false,
+  deleteServiceAccount: async () => false,
   validateServiceAccountToken: async (t: string) => {
     if (t === 'kortix_sa_owner') {
       return { isValid: true, serviceAccountId: 'sa-owner', accountId: 'acct-owner' };

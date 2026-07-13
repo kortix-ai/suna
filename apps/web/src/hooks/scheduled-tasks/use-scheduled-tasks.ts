@@ -1,7 +1,7 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { stripTrailingSlashes } from '@kortix/sdk';
 import { ensureSandbox, getSandboxUrl } from '@kortix/sdk/platform-client';
-import { triggersRequest } from '@kortix/sdk/runtime-client';
+import { triggersRequest } from '@kortix/sdk';
 import { getActiveRuntimeUrl } from '@/stores/server-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

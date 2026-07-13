@@ -189,6 +189,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B5  | `**structure_version` semantics undocumented** (`1` = legacy tasks, `2` = tickets/board)                                                             | `src/opencode/kortix-master.ts`                                                                                                                                                   | OPEN                                                                               |
 | B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
 | B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
+| B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -517,3 +518,131 @@ gateway credentials were revoked and the Codex-secret mutation was restored.
 **Shippable to production: YES** — SDK public behavior is regression-locked;
 the wider gateway change still follows its normal PR, deploy-dev, and live-dev
 verification lifecycle.
+
+---
+
+### 2026-07-13 — session `session-base-branches` (claim)
+
+Claimed the user-directed additive branch-environment work: preserve the existing
+per-session `base_ref` API, expose effective project/group branch defaults through
+the typed project Git surface, and extend group-grant mutations without renaming or
+removing public SDK symbols. TDD will be RED-watched before implementation; the
+full SDK typecheck, test, and packed-install smoke gates are required before this
+claim is closed.
+
+**Status:** IN PROGRESS.
+
+### 2026-07-13 — session `acp-harness-runtime-v2`: post-main-merge verification
+
+Completed the ACP projection/route-ownership cleanup on the combined
+`acp-harness-runtime-v2` + `main` tree. Mobile now selects the SDK's durable ACP
+transcript polling transport automatically, secrets mutations are SDK-owned,
+the last dead OpenCode session-mapping implementation and diagnostic scripts
+are removed, and the web composer uses the canonical Kortix loading primitive.
+No web/mobile/CLI/whitelabel host imports `@opencode-ai/sdk`, an old OpenCode SDK
+subpath, or a `useOpenCode` client hook; OpenCode remains only a selectable ACP
+harness plus explicit legacy migration compatibility.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **952 pass / 0 fail** across 71 files
+with 4401 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed the published package.
+
+**Cross-surface gates:** API typecheck exited 0 and the isolated API runner
+reported **259 isolated suites passed**; web typecheck exited 0 and web tests
+reported **1026 pass / 0 fail** across 128 files; mobile TypeScript exited 0 and
+mobile tests reported **34 pass / 0 fail** across 13 files; CLI typecheck exited
+0 and tests reported **204 pass / 0 fail** across 24 files; manifest compiler
+reported **324 pass / 0 fail**; starter **37 pass / 0 fail**; API contract **34
+pass / 0 fail**. The sandbox daemon typecheck/build exited 0, tests reported
+**123 pass / 0 fail**, and the rebuilt Linux `dist/kortix-agent` is newer than
+its source.
+
+**Real user/runtime proof:** the local Chromium selector E2E passed and asserted
+all four harness rows plus the exact Codex custom-model session-create payload.
+Four fresh real Daytona sessions then completed ACP prompts with tool calls and
+terminal stop state through OpenCode, Claude, Codex, and Pi; the runner ended
+`[acp-all] PASS all harnesses`. A tracked-file scan found no pasted Claude setup
+token, and forbidden native OpenCode SDK/dependency/conflict-marker scans were
+empty.
+
+**Shippable to production: YES** for the SDK ACP transport/projection and its
+web/mobile consumers. The branch remains intentionally isolated in PR #4510;
+the user has explicitly forbidden merging it into `main` until they separately
+authorize that action.
+
+---
+
+### 2026-07-13 — session `session-base-branches` (completion)
+
+Completed the additive session branch-environment surface in implementation
+commit `0843d870c`: `ProjectBranchesResponse` now reports the caller's effective
+session default and group-conflict metadata, while project group grants accept
+an optional nullable `default_base_ref`. Existing names and required fields are
+unchanged; compatibility with older servers is preserved through optional
+response fields.
+
+**TDD/regression evidence:** the focused cross-package run passed **103 tests / 0
+failures** across the SDK access client, API branch resolver, DB schema, and web
+session-create input. The real isolated API then proved: attached group default
+`staging` -> persisted session `base_ref: staging`; explicit `dev` -> persisted
+`base_ref: dev`; conflicting `dev`/`staging` group defaults -> project `dev` with
+`session_default_conflict: true`; PATCH `default_base_ref: null` -> effective
+default returned to `staging`. Both sessions retained their generated UUID as
+`branch_name`.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1077 pass / 2 skip / 0 fail** across
+72 files with 4955 assertions; `pnpm --filter @kortix/sdk run smoke:install`
+packed, installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. The two skipped tests are
+the existing browser-bundle tests that only execute after `build:bundles`; this
+change does not touch bundles or runtime transport.
+
+---
+
+### 2026-07-13 — session `remove-freestyle`: B8 project-app surface removal
+
+Completed the explicitly subtractive SDK portion in implementation commit
+`ec8b44dda`: removed the project-app REST module, `project(id).apps` facade,
+associated public types, playground example, API map/docs references, and the
+corresponding runtime/type public-surface snapshot entries. No compatibility
+alias remains because the underlying platform capability itself was removed.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1079 pass / 0 fail** across 72 files
+with 4921 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed the published package successfully.
+
+**Shippable to production: YES** for the SDK subtraction. Repository delivery,
+deployment, and the separate forward database-schema removal remain tracked by
+the parent removal goal.
+
+---
+
+### 2026-07-13 — session `acp-harness-runtime-v2`: ACP context projection claim
+
+Claimed the branch-isolated ACP projection work required by the approved
+multi-harness specification: move context-message and protocol `usage_update`
+interpretation into `@kortix/sdk`, expose one harness-neutral projection to web
+and mobile, and remove host-local ACP envelope inference. The existing stale
+merge-to-main goal is not authoritative for delivery; PR #4510 remains open and
+unmerged by explicit user instruction.
+
+**Status:** IN PROGRESS. RED/GREEN evidence and the full SDK typecheck, test, and
+packed-install smoke gates will be recorded on completion.
+
+### 2026-07-13 — session `acp-harness-runtime-v2`: route ownership continuation
+
+Expanded the existing isolated-branch claim to finish the harness-neutral SDK
+cutover around ACP: classify every remaining runtime URL as ACP conversation,
+sandbox-local daemon primitive, or Kortix platform REST; remove host-local
+harness transport; and preserve public compatibility only where a live owning
+service still exists. The legacy `kortix-master` task/ticket/credential/service
+client is under explicit audit because neither the ACP daemon nor current
+`main` implements those routes; they must not be recreated as fake ACP methods.
+TDD remains mandatory for every changed SDK contract. PR #4510 stays open and
+unmerged by explicit user instruction.
+
+**Status:** IN PROGRESS.

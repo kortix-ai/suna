@@ -5,7 +5,7 @@ import { createInterface } from 'node:readline'
 
 import { logger } from '../logger'
 import { mergeProjectEnv, type ProjectEnvStore } from '../project-env'
-import { resolveAcpHarnessLaunchEnv, type AcpHarnessDescriptor, type AcpHarnessId, type AcpHarnessRegistry } from './harness-registry'
+import { applyAcpSessionDefaults, isolateHarnessAuthEnv, resolveAcpHarnessLaunchEnv, type AcpHarnessDescriptor, type AcpHarnessId, type AcpHarnessRegistry } from './harness-registry'
 
 export type JsonRpcEnvelope = Record<string, unknown> & { jsonrpc: '2.0' }
 
@@ -110,6 +110,7 @@ class AcpProcess {
   private writeQueue = Promise.resolve()
   private exited = false
   private readonly onUnexpectedExit: (process: AcpProcess) => void
+  private readonly sessionDefaultsEnv: NodeJS.ProcessEnv
 
   constructor(options: {
     serverId: string
@@ -123,8 +124,10 @@ class AcpProcess {
     this.onUnexpectedExit = options.onUnexpectedExit
     // Project secrets arrive through env sync after daemon boot. Resolve the
     // harness auth route now from that current snapshot.
-    const launchEnv = resolveAcpHarnessLaunchEnv(options.descriptor.id, options.env)
-    const childEnv = sanitizeHarnessEnv({ ...options.env, ...launchEnv })
+    const isolatedEnv = isolateHarnessAuthEnv(options.env)
+    const launchEnv = resolveAcpHarnessLaunchEnv(options.descriptor.id, isolatedEnv)
+    const childEnv = sanitizeHarnessEnv({ ...isolatedEnv, ...launchEnv })
+    this.sessionDefaultsEnv = childEnv
     ensureHarnessConfigDirs(childEnv, options.cwd)
     this.child = spawn(options.descriptor.launch.command, options.descriptor.launch.args, {
       cwd: options.cwd,
@@ -171,10 +174,11 @@ class AcpProcess {
       throw new AcpUpstreamError(`ACP harness '${this.descriptor.id}' is not running`)
     }
 
-    const isMethodCall = typeof envelope.method === 'string'
+    const outbound = applyAcpSessionDefaults(this.descriptor.id, envelope, this.sessionDefaultsEnv)
+    const isMethodCall = typeof outbound.method === 'string'
     const hasId = Object.prototype.hasOwnProperty.call(envelope, 'id')
     if (!isMethodCall || !hasId) {
-      await this.write(envelope)
+      await this.write(outbound)
       return null
     }
 
@@ -190,7 +194,7 @@ class AcpProcess {
     })
 
     try {
-      await this.write(envelope)
+      await this.write(outbound)
     } catch (error) {
       const pending = this.pending.get(key)
       if (pending) {

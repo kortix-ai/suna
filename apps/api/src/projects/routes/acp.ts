@@ -7,6 +7,8 @@ import { projectsApp } from '../lib/app';
 import { decodedResponseHeaders } from '../lib/proxy-headers';
 import { inspectSandboxRuntime, sandboxRuntimeEndpoint } from '../runtime-inspection';
 import { createPersistedSseProxy } from '../lib/acp-sse-proxy';
+import { isAcpPromptEnvelope } from '../lib/acp-envelope';
+import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 
 type Envelope = Record<string, unknown>;
 
@@ -34,6 +36,7 @@ async function resolveAcpTarget(c: any) {
     sessionId,
     runtimeId: sessionId,
     harness: health?.acpHarness ?? null,
+    externalId: sandbox.externalId,
     endpoint,
   };
 }
@@ -121,6 +124,20 @@ projectsApp.on(['GET', 'POST', 'DELETE'], '/:projectId/sessions/:sessionId/acp',
       return c.json({ error: 'request body must be JSON' }, 400);
     }
     await appendEnvelope({ ...target, direction: 'client_to_agent', envelope });
+    if (isAcpPromptEnvelope(envelope)) {
+      try {
+        await syncSandboxEnvForPrompt({
+          projectId: target.projectId,
+          sessionId: target.sessionId,
+          serviceKey: target.endpoint.serviceKey,
+          previewUrl: target.endpoint.url,
+          previewToken: target.endpoint.previewToken,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return c.json({ error: 'project env sync failed', detail: message }, 502);
+      }
+    }
     headers.set('Content-Type', 'application/json');
   }
   const lastEventId = c.req.header('last-event-id');

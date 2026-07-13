@@ -22,7 +22,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   PanResponder,
-  StyleSheet,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -36,7 +35,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {
-  Sparkles,
   Check,
   ChevronRight,
   Search,
@@ -45,7 +43,6 @@ import {
   BookOpen,
   Mic,
   ExternalLink,
-  Settings2,
   Loader2,
   Link,
   ChevronLeft,
@@ -54,31 +51,16 @@ import {
   ArrowLeft,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { useComposerModelCatalog, useProjectConfig } from '@kortix/sdk/react';
 
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import AnthropicIcon from '@/assets/images/models/Anthropic.svg';
-import OAIIcon from '@/assets/images/models/OAI.svg';
-import GeminiIcon from '@/assets/images/models/Gemini.svg';
-import GrokIcon from '@/assets/images/models/Grok.svg';
-import MoonshotIcon from '@/assets/images/models/Moonshot.svg';
-import type { SvgProps } from 'react-native-svg';
-import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useRuntimeProviders, flattenModels, filterToLatestModels, type FlatModel } from '@/lib/runtime/hooks/use-runtime-data';
 import { useLocalConfigStore } from '@/lib/runtime/hooks/use-local-config';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
 import { getAuthToken } from '@/api/config';
 import { useTabStore } from '@/stores/tab-store';
 import { log } from '@/lib/logger';
+import { ProjectProviderSetupStep } from './ProjectProviderSetupStep';
 
 // ─── Spinning loader (Loader2 doesn't animate on its own in RN) ─────────────
 
@@ -107,6 +89,7 @@ function SpinningLoader({ size, color }: { size: number; color: string }) {
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface SetupWizardProps {
+  projectId?: string | null;
   onComplete: () => void;
 }
 
@@ -132,12 +115,6 @@ const PIPEDREAM_KEYS = [
   { key: 'PIPEDREAM_PROJECT_ID', label: 'Project ID', placeholder: 'e.g. proj_x9s97z5', secret: false },
 ] as const;
 
-// LLM provider IDs that count as "connected"
-const LLM_PROVIDER_IDS = new Set([
-  'anthropic', 'openai', 'openrouter', 'google', 'groq', 'xai',
-  'deepseek', 'mistral', 'cerebras', 'togetherai', 'fireworks',
-]);
-
 // ─── Helper: authenticated fetch to sandbox ──────────────────────────────────
 
 async function sandboxFetch(sandboxUrl: string, path: string, options?: RequestInit): Promise<Response> {
@@ -150,65 +127,6 @@ async function sandboxFetch(sandboxUrl: string, path: string, options?: RequestI
       ...(options?.headers || {}),
     },
   });
-}
-
-// ─── Provider icons ──────────────────────────────────────────────────────────
-
-const PROVIDER_ICON_MAP: Record<string, React.FC<SvgProps>> = {
-  anthropic: AnthropicIcon,
-  openai: OAIIcon,
-  google: GeminiIcon,
-  xai: GrokIcon,
-  moonshotai: MoonshotIcon,
-};
-
-const PROVIDER_INITIALS: Record<string, string> = {
-  openrouter: 'OR',
-  groq: 'GQ',
-  deepseek: 'DS',
-  mistral: 'MI',
-  cerebras: 'CE',
-};
-
-function ProviderIcon({ providerId, size = 20, isDark }: { providerId: string; size?: number; isDark: boolean }) {
-  const SvgIcon = PROVIDER_ICON_MAP[providerId];
-  const iconColor = isDark ? '#F8F8F8' : '#121215';
-
-  if (SvgIcon) {
-    return <SvgIcon width={size} height={size} fill={iconColor} color={iconColor} />;
-  }
-
-  // Fallback to initials
-  const initials = PROVIDER_INITIALS[providerId] || (PROVIDER_LABELS[providerId] || providerId).slice(0, 2).toUpperCase();
-  return (
-    <Text style={{ fontSize: size * 0.5, fontFamily: 'Roobert-SemiBold', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
-      {initials}
-    </Text>
-  );
-}
-
-// ─── Provider connection helpers ──────────────────────────────────────────────
-
-const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', xai: 'xAI',
-  openrouter: 'OpenRouter', groq: 'Groq', deepseek: 'DeepSeek', mistral: 'Mistral',
-};
-
-const POPULAR_PROVIDER_ORDER = ['anthropic', 'openai', 'openrouter', 'google', 'groq', 'xai', 'deepseek', 'mistral'];
-
-async function connectProvider(sandboxUrl: string, providerId: string, apiKey: string): Promise<void> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}/auth/${encodeURIComponent(providerId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ type: 'api', key: apiKey }),
-  });
-  if (!res.ok) throw new Error(`Failed to connect: ${res.status}`);
-  // Force server reload
-  await fetch(`${sandboxUrl}/global/dispose`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  }).catch(() => {});
 }
 
 // ─── Shared colors helper ────────────────────────────────────────────────────
@@ -260,598 +178,40 @@ function StepIndicator({ currentStep, totalSteps, isDark, onStepPress }: {
   );
 }
 
-// ─── Provider Row (reusable in bottom sheet) ─────────────────────────────────
-
-function ProviderRow({ id, idx, total, isConnected, isDark, colors, onPress }: {
-  id: string; idx: number; total: number; isConnected: boolean; isDark: boolean;
-  colors: ReturnType<typeof useStepColors>; onPress: (id: string) => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => onPress(id)}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        paddingVertical: 11, paddingHorizontal: 4,
-        borderBottomWidth: idx < total - 1 ? StyleSheet.hairlineWidth : 0,
-        borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-      }}
-    >
-      <View style={{ width: 24, alignItems: 'center' }}>
-        {isConnected ? <Check size={18} color="#34d399" strokeWidth={2.5} /> : <ProviderIcon providerId={id} size={20} isDark={isDark} />}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, fontFamily: 'Roobert', color: colors.fg }}>
-          {PROVIDER_LABELS[id] || id}
-        </Text>
-        {isConnected && (
-          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: '#34d399', marginTop: 1 }}>Connected</Text>
-        )}
-      </View>
-      <ChevronRight size={16} color={isConnected ? '#34d399' : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)')} strokeWidth={2} />
-    </Pressable>
-  );
-}
-
-// ─── Step 1: Provider ────────────────────────────────────────────────────────
-
-// ─── Auth method helpers (matches web) ───────────────────────────────────────
-
-interface AuthMethod { type: string; label: string }
-
-function getMethodIcon(method: AuthMethod) {
-  const label = method.label.toLowerCase();
-  if (method.type === 'api' || label.includes('api key') || label.includes('manually')) return Settings2;
-  if (label.includes('pro') || label.includes('max') || label.includes('plus')) return Sparkles;
-  return Sparkles;
-}
-
-function getMethodDescription(method: AuthMethod) {
-  const label = method.label.toLowerCase();
-  if (label.includes('pro') && label.includes('max')) return 'Use your Claude Pro or Max subscription';
-  if (label.includes('pro') && label.includes('plus')) return 'Use your ChatGPT Pro or Plus subscription';
-  if (label.includes('create') && label.includes('api')) return 'Automatically create and connect an API key';
-  if (method.type === 'api') return 'Manually enter an existing API key';
-  if (label.includes('copilot') || label.includes('github')) return 'Login with your GitHub account';
-  return undefined;
-}
-
-function getMethodLabel(method: AuthMethod) {
-  if (method.type === 'api') return 'API key';
-  return method.label || 'OAuth';
-}
-
-async function fetchAuthMethods(sandboxUrl: string, providerId: string): Promise<AuthMethod[]> {
-  try {
-    const res = await sandboxFetch(sandboxUrl, '/provider/auth');
-    if (!res.ok) return [{ type: 'api', label: 'API Key' }];
-    const data = await res.json();
-    const methods = data?.[providerId];
-    if (methods && methods.length > 0) return methods;
-    return [{ type: 'api', label: 'API Key' }];
-  } catch {
-    return [{ type: 'api', label: 'API Key' }];
-  }
-}
-
-async function startOAuth(sandboxUrl: string, providerId: string, methodIndex: number): Promise<{ url: string; method: 'code' | 'auto'; instructions: string }> {
-  const res = await sandboxFetch(sandboxUrl, `/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
-    method: 'POST',
-    body: JSON.stringify({ method: methodIndex }),
-  });
-  if (!res.ok) throw new Error(`OAuth authorize failed: ${res.status}`);
-  return res.json();
-}
-
-async function submitOAuthCallback(sandboxUrl: string, providerId: string, methodIndex: number, code: string): Promise<void> {
-  const res = await sandboxFetch(sandboxUrl, `/provider/${encodeURIComponent(providerId)}/oauth/callback`, {
-    method: 'POST',
-    body: JSON.stringify({ method: methodIndex, code }),
-  });
-  if (!res.ok) throw new Error(`OAuth callback failed: ${res.status}`);
-  const data = await res.json();
-  if (data?.type === 'failed') throw new Error('OAuth authorization failed');
-}
-
-function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onContinue: () => void }) {
-  const { sandboxUrl } = useSandboxContext();
-  const insets = useSafeAreaInsets();
-  const sheetPadding = useSheetBottomPadding();
-  const { data: providersData, isLoading, refetch } = useRuntimeProviders(sandboxUrl);
-  const sheetRef = useRef<BottomSheetModal>(null);
-
-  // Sheet navigation: list → methods → apikey | oauth
-  type SheetView = 'list' | 'methods' | 'apikey' | 'oauth';
-  const [sheetView, setSheetView] = useState<SheetView>('list');
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-  const [authMethods, setAuthMethods] = useState<AuthMethod[]>([]);
-  const [selectedMethodIndex, setSelectedMethodIndex] = useState<number | undefined>(undefined);
-
-  // API key state
-  const [apiKey, setApiKey] = useState('');
-  const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
-
-  // OAuth state
-  const [oauthUrl, setOauthUrl] = useState('');
-  const [oauthCode, setOauthCode] = useState('');
-  const [oauthInstructions, setOauthInstructions] = useState('');
-  const [oauthLoading, setOauthLoading] = useState(false);
-
-  const colors = useStepColors(isDark);
-
-  const connectedSet = useMemo(() => new Set(providersData?.connected ?? []), [providersData]);
-  const hasLLMProvider = useMemo(() => [...connectedSet].some((id) => LLM_PROVIDER_IDS.has(id)), [connectedSet]);
-  const connectedCount = connectedSet.size;
-
-  const renderBackdrop = useCallback((props: BottomSheetBackdropProps) => (
-    <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} pressBehavior="close" />
-  ), []);
-
-  const resetSheet = useCallback(() => {
-    setSheetView('list');
-    setSelectedProvider(null);
-    setAuthMethods([]);
-    setSelectedMethodIndex(undefined);
-    setApiKey('');
-    setConnectError(null);
-    setOauthUrl('');
-    setOauthCode('');
-    setOauthInstructions('');
-    setOauthLoading(false);
-  }, []);
-
-  const handleOpenSheet = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    resetSheet();
-    sheetRef.current?.present();
-  }, [resetSheet]);
-
-  const handleSelectProvider = useCallback(async (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedProvider(id);
-    setConnectError(null);
-
-    if (!sandboxUrl) {
-      setAuthMethods([{ type: 'api', label: 'API Key' }]);
-      setSheetView('apikey');
-      return;
-    }
-
-    // Fetch available auth methods for this provider
-    const methods = await fetchAuthMethods(sandboxUrl, id);
-    setAuthMethods(methods);
-
-    if (methods.length === 1) {
-      // Single method — go directly to it
-      if (methods[0].type === 'api') {
-        setSelectedMethodIndex(0);
-        setSheetView('apikey');
-      } else {
-        await handleSelectMethod(id, methods, 0);
-      }
-    } else {
-      // Multiple methods — show selection
-      setSheetView('methods');
-    }
-  }, [sandboxUrl]);
-
-  const handleSelectMethod = useCallback(async (providerId: string, methods: AuthMethod[], index: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedMethodIndex(index);
-    setConnectError(null);
-    const method = methods[index];
-
-    if (method.type === 'api') {
-      setSheetView('apikey');
-      return;
-    }
-
-    // OAuth flow
-    if (!sandboxUrl) return;
-    setOauthLoading(true);
-    try {
-      const result = await startOAuth(sandboxUrl, providerId, index);
-      setOauthUrl(result.url);
-      setOauthInstructions(result.instructions || '');
-      setSheetView('oauth');
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to start OAuth');
-    } finally {
-      setOauthLoading(false);
-    }
-  }, [sandboxUrl]);
-
-  const handleApiKeyConnect = useCallback(async () => {
-    if (!sandboxUrl || !selectedProvider || !apiKey.trim()) return;
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      await connectProvider(sandboxUrl, selectedProvider, apiKey.trim());
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      resetSheet();
-      sheetRef.current?.dismiss();
-      refetch();
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to connect');
-    } finally {
-      setConnecting(false);
-    }
-  }, [sandboxUrl, selectedProvider, apiKey, refetch, resetSheet]);
-
-  const handleOAuthSubmit = useCallback(async () => {
-    if (!sandboxUrl || !selectedProvider || !oauthCode.trim() || selectedMethodIndex === undefined) return;
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      await submitOAuthCallback(sandboxUrl, selectedProvider, selectedMethodIndex, oauthCode.trim());
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      resetSheet();
-      sheetRef.current?.dismiss();
-      refetch();
-    } catch (e: any) {
-      setConnectError(e.message || 'OAuth failed');
-    } finally {
-      setConnecting(false);
-    }
-  }, [sandboxUrl, selectedProvider, oauthCode, selectedMethodIndex, refetch, resetSheet]);
-
-  const handleContinue = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    refetch();
-    onContinue();
-  }, [onContinue, refetch]);
-
-  const sheetBg = getSheetBg(isDark);
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-        <ActivityIndicator size="small" color={isDark ? '#71717a' : '#a1a1aa'} />
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)' }}>
-          Checking providers…
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ width: '100%', flex: 1, justifyContent: 'center' }}>
-      <View style={{ gap: 24 }}>
-        <View style={{ alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: hasLLMProvider ? 'rgba(52,211,153,0.1)' : (isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)'), marginBottom: 8 }}>
-            {hasLLMProvider ? <Check size={22} color="#34d399" /> : <Sparkles size={22} color={isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)'} />}
-          </View>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215', textAlign: 'center' }}>
-            {hasLLMProvider ? 'Provider connected' : 'LLM Providers'}
-          </Text>
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)', textAlign: 'center', lineHeight: 18, paddingHorizontal: 8, maxWidth: 300 }}>
-            {hasLLMProvider
-              ? `${connectedCount} provider${connectedCount > 1 ? 's' : ''} ready. You can add more anytime from settings.`
-              : 'Configure which AI models to use with your Kortix agent. Connect OpenAI, Anthropic, Google, or any supported provider.'}
-          </Text>
-        </View>
-
-        <View style={{ gap: 8 }}>
-          <Pressable onPress={handleOpenSheet} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: 14, backgroundColor: hasLLMProvider ? 'transparent' : themeColors.primary, borderWidth: hasLLMProvider ? 1 : 0, borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.1)' }}>
-            <Settings2 size={16} color={hasLLMProvider ? (isDark ? '#F8F8F8' : '#121215') : themeColors.primaryForeground} />
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: hasLLMProvider ? (isDark ? '#F8F8F8' : '#121215') : themeColors.primaryForeground }}>
-              {hasLLMProvider ? 'Manage Providers' : 'Connect Provider'}
-            </Text>
-          </Pressable>
-
-          <Pressable onPress={handleContinue} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 14, backgroundColor: hasLLMProvider ? themeColors.primary : 'transparent' }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: hasLLMProvider ? themeColors.primaryForeground : (isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)') }}>
-              {hasLLMProvider ? 'Continue' : 'Skip for now'}
-            </Text>
-            {hasLLMProvider && <ChevronRight size={16} color={themeColors.primaryForeground} />}
-          </Pressable>
-        </View>
-      </View>
-
-      {/* ── Provider connection bottom sheet ── */}
-      <BottomSheetModal
-        ref={sheetRef}
-        enableDynamicSizing
-        enablePanDownToClose
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3, marginTop: 8 }}
-      >
-        {sheetView === 'list' && (
-          /* ── Provider list ── */
-          <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: sheetPadding }}>
-            <Text style={{ fontSize: 17, fontFamily: 'Roobert-SemiBold', color: colors.fg, textAlign: 'center', marginTop: 4, marginBottom: 2 }}>
-              Choose a provider
-            </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted, textAlign: 'center', marginBottom: 20 }}>
-              Select one to connect
-            </Text>
-
-            {/* Popular section */}
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
-              Popular
-            </Text>
-            <View style={{ marginBottom: 16 }}>
-              {POPULAR_PROVIDER_ORDER.slice(0, 4).map((id, idx) => (
-                <ProviderRow key={id} id={id} idx={idx} total={4} isConnected={connectedSet.has(id)} isDark={isDark} colors={colors} onPress={handleSelectProvider} />
-              ))}
-            </View>
-
-            {/* More section */}
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8, paddingLeft: 4 }}>
-              More
-            </Text>
-            <View>
-              {POPULAR_PROVIDER_ORDER.slice(4).map((id, idx) => (
-                <ProviderRow key={id} id={id} idx={idx} total={POPULAR_PROVIDER_ORDER.length - 4} isConnected={connectedSet.has(id)} isDark={isDark} colors={colors} onPress={handleSelectProvider} />
-              ))}
-            </View>
-          </BottomSheetScrollView>
-        )}
-
-        {sheetView === 'methods' && selectedProvider && (
-          /* ── Auth method selection ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
-            <Pressable onPress={() => { setSheetView('list'); setSelectedProvider(null); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
-              <ChevronLeft size={16} color={colors.muted} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.muted }}>Back</Text>
-            </Pressable>
-
-            <View style={{ alignItems: 'center', gap: 6, marginBottom: 20 }}>
-              <ProviderIcon providerId={selectedProvider} size={28} isDark={isDark} />
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: colors.fg }}>
-                Connect {PROVIDER_LABELS[selectedProvider] || selectedProvider}
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted }}>
-                Select login method
-              </Text>
-            </View>
-
-            {oauthLoading && (
-              <View style={{ alignItems: 'center', paddingVertical: 24 }}>
-                <SpinningLoader size={20} color={colors.muted} />
-              </View>
-            )}
-
-            {!oauthLoading && authMethods.map((method, idx) => {
-              const MethodIcon = getMethodIcon(method);
-              const desc = getMethodDescription(method);
-              return (
-                <Pressable
-                  key={idx}
-                  onPress={() => handleSelectMethod(selectedProvider, authMethods, idx)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 12,
-                    paddingVertical: 12, paddingHorizontal: 4,
-                    borderBottomWidth: idx < authMethods.length - 1 ? StyleSheet.hairlineWidth : 0,
-                    borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-                  }}
-                >
-                  <View style={{ width: 24, alignItems: 'center' }}>
-                    <MethodIcon size={18} color={isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)'} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: colors.fg }}>
-                      {getMethodLabel(method)}
-                    </Text>
-                    {desc && (
-                      <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: colors.muted, marginTop: 1 }}>
-                        {desc}
-                      </Text>
-                    )}
-                  </View>
-                  <ChevronRight size={16} color={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'} />
-                </Pressable>
-              );
-            })}
-
-            {connectError && (
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? '#f87171' : '#dc2626', marginTop: 8, textAlign: 'center' }}>
-                {connectError}
-              </Text>
-            )}
-          </BottomSheetView>
-        )}
-
-        {sheetView === 'apikey' && selectedProvider && (
-          /* ── API key input ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
-            <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 24 }}>
-              <Pressable onPress={() => authMethods.length > 1 ? setSheetView('methods') : (setSheetView('list'), setSelectedProvider(null))} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
-                <ChevronLeft size={16} color={colors.muted} />
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.muted }}>Back</Text>
-              </Pressable>
-
-              <View style={{ alignItems: 'center', gap: 6, marginBottom: 20 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
-                  <ProviderIcon providerId={selectedProvider} size={20} isDark={isDark} />
-                </View>
-                <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: colors.fg }}>
-                  {PROVIDER_LABELS[selectedProvider] || selectedProvider}
-                </Text>
-                <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted }}>
-                  Paste your API key below
-                </Text>
-              </View>
-
-              <BottomSheetTextInput
-                placeholder="sk-..."
-                placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
-                value={apiKey}
-                onChangeText={(t: string) => { setApiKey(t); setConnectError(null); }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoFocus
-                secureTextEntry
-                style={{
-                  height: 44, borderRadius: 12, paddingHorizontal: 14,
-                  fontSize: 14, fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-                  color: colors.fg, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                  borderWidth: 1, borderColor: connectError ? (isDark ? 'rgba(239,68,68,0.4)' : 'rgba(220,38,38,0.3)') : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
-                }}
-              />
-
-              {connectError && (
-                <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? '#f87171' : '#dc2626', marginTop: 8, textAlign: 'center' }}>
-                  {connectError}
-                </Text>
-              )}
-
-              <Pressable
-                onPress={handleApiKeyConnect}
-                disabled={connecting || !apiKey.trim()}
-                style={{
-                  height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 6, marginTop: 14,
-                  backgroundColor: themeColors.primary, opacity: apiKey.trim() ? 1 : 0.5,
-                }}
-              >
-                {connecting ? (
-                  <><SpinningLoader size={14} color={themeColors.primaryForeground} /><Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>Connecting…</Text></>
-                ) : (
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>Connect</Text>
-                )}
-              </Pressable>
-            </View>
-          </BottomSheetView>
-        )}
-
-        {sheetView === 'oauth' && selectedProvider && (
-          /* ── OAuth flow — open browser + paste redirect URL ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
-            {/* Back button */}
-            <Pressable onPress={() => setSheetView('methods')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 24 }}>
-              <ChevronLeft size={16} color={colors.muted} />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.muted }}>Back</Text>
-            </Pressable>
-
-            {/* Header */}
-            <View style={{ alignItems: 'center', gap: 6, marginBottom: 28 }}>
-              <ProviderIcon providerId={selectedProvider} size={28} isDark={isDark} />
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: colors.fg, marginTop: 4 }}>
-                Connect {PROVIDER_LABELS[selectedProvider] || selectedProvider}
-              </Text>
-            </View>
-
-            {/* Steps */}
-            <View style={{ gap: 12, marginBottom: 28 }}>
-              {[
-                'Open the link below to sign in',
-                'Authorize access to your account',
-                'Copy the redirect URL from your browser',
-                'Paste it below and tap Connect',
-              ].map((step, i) => (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: themeColors.primary }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>{i + 1}</Text>
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 13, fontFamily: 'Roobert', color: colors.fg, lineHeight: 18, paddingTop: 2 }}>{step}</Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Open browser button */}
-            <Pressable
-              onPress={() => { if (oauthUrl) Linking.openURL(oauthUrl); }}
-              style={{
-                height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                flexDirection: 'row', gap: 8, marginBottom: 20,
-                backgroundColor: themeColors.primary,
-              }}
-            >
-              <ExternalLink size={16} color={themeColors.primaryForeground} />
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>
-                Open Authorization Page
-              </Text>
-            </Pressable>
-
-            {/* Bottom section: input + connect */}
-            <View style={{ gap: 10 }}>
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: colors.muted, paddingLeft: 2 }}>
-                Paste the redirect URL here
-              </Text>
-              <BottomSheetTextInput
-                placeholder="http://localhost..."
-                placeholderTextColor={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}
-                value={oauthCode}
-                onChangeText={(t: string) => { setOauthCode(t); setConnectError(null); }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={{
-                  height: 44, borderRadius: 12, paddingHorizontal: 14,
-                  fontSize: 13, fontFamily: 'Roobert',
-                  color: colors.fg, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
-                  borderWidth: 1, borderColor: connectError ? (isDark ? 'rgba(239,68,68,0.4)' : 'rgba(220,38,38,0.3)') : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'),
-                }}
-              />
-
-              {connectError && (
-                <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? '#f87171' : '#dc2626', textAlign: 'center' }}>
-                  {connectError}
-                </Text>
-              )}
-
-              <Pressable
-                onPress={handleOAuthSubmit}
-                disabled={connecting || !oauthCode.trim()}
-                style={{
-                  height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-                  flexDirection: 'row', gap: 6,
-                  backgroundColor: oauthCode.trim() ? themeColors.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                  opacity: oauthCode.trim() ? 1 : 0.5,
-                }}
-              >
-                {connecting ? (
-                  <><SpinningLoader size={14} color={themeColors.primaryForeground} /><Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>Connecting…</Text></>
-                ) : (
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: oauthCode.trim() ? themeColors.primaryForeground : colors.muted }}>Connect</Text>
-                )}
-              </Pressable>
-            </View>
-          </BottomSheetView>
-        )}
-      </BottomSheetModal>
-    </View>
-  );
-}
-
-// ─── Step 2: Default Model Selection ─────────────────────────────────────────
-
-function DefaultModelStep({ onContinue, onBack, isDark, themeColors }: StepProps & { onContinue: () => void; onBack: () => void }) {
-  const { sandboxUrl } = useSandboxContext();
-  const { data: providersData, isLoading } = useRuntimeProviders(sandboxUrl);
-  const allModels = useMemo(() => (providersData ? flattenModels(providersData) : []), [providersData]);
-  const visibleModels = useMemo(() => filterToLatestModels(allModels), [allModels]);
+function DefaultModelStep({ projectId, onContinue, onBack, isDark, themeColors }: StepProps & { projectId?: string | null; onContinue: () => void; onBack: () => void }) {
+  const projectConfig = useProjectConfig(projectId);
+  const agent = projectConfig?.agents.find((entry) => entry.name === projectConfig.runtime_default_agent)
+    ?? projectConfig?.agents.find((entry) => entry.enabled !== false)
+    ?? null;
+  const agentName = agent?.name ?? null;
+  const catalog = useComposerModelCatalog(projectId, agentName);
   const store = useLocalConfigStore();
   const colors = useStepColors(isDark);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [customModel, setCustomModel] = useState('');
+  const models = catalog.data?.models ?? [];
+  const defaultAllowed = catalog.data?.default_allowed === true;
+  const customAllowed = catalog.data?.custom_allowed !== false;
+  const harness = agent?.harness ?? 'runtime';
 
-  const [selected, setSelected] = useState<{ providerID: string; modelID: string } | null>(
-    store.globalDefault ?? null,
-  );
-
-  // Group visible models by provider
-  const grouped = useMemo(() => {
-    const groups = new Map<string, FlatModel[]>();
-    for (const m of visibleModels) {
-      const list = groups.get(m.providerID) || [];
-      list.push(m);
-      groups.set(m.providerID, list);
-    }
-    return Array.from(groups.entries()).sort((a, b) => {
-      const la = PROVIDER_LABELS[a[0]] || a[0];
-      const lb = PROVIDER_LABELS[b[0]] || b[0];
-      return la.localeCompare(lb);
-    });
-  }, [visibleModels]);
-
-  const handleSelect = useCallback((model: FlatModel) => {
-    const key = { providerID: model.providerID, modelID: model.modelID };
-    setSelected(key);
-    store.setGlobalDefault(key);
+  const persistSelection = useCallback((modelId: string) => {
+    if (!agentName) return;
+    const slash = modelId.indexOf('/');
+    const providerID = slash > 0 ? modelId.slice(0, slash) : harness;
+    const modelID = slash > 0 ? modelId.slice(slash + 1) : modelId;
+    store.setModelForAgent(agentName, { providerID, modelID });
+    setSelected(modelId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [store]);
+  }, [agentName, harness, store]);
 
-  if (isLoading) {
+  const clearSelection = useCallback(() => {
+    if (!agentName) return;
+    store.clearModelForAgent(agentName);
+    setSelected(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [agentName, store]);
+
+  if (catalog.isLoading || !projectConfig) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 }}>
         <ActivityIndicator size="small" color={themeColors.primary} />
@@ -860,8 +220,6 @@ function DefaultModelStep({ onContinue, onBack, isDark, themeColors }: StepProps
     );
   }
 
-  const hasModels = grouped.length > 0;
-
   return (
     <View style={{ flex: 1 }}>
       {/* Header — fixed above scrollable list */}
@@ -869,57 +227,42 @@ function DefaultModelStep({ onContinue, onBack, isDark, themeColors }: StepProps
         <View style={{ width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)', marginBottom: 16 }}>
           <Bot size={22} color={colors.muted} strokeWidth={1.8} />
         </View>
-        <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: colors.fg, marginBottom: 6 }}>Default Model</Text>
+        <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: colors.fg, marginBottom: 6 }}>Model for {agentName ?? 'agent'}</Text>
         <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: colors.muted, textAlign: 'center', lineHeight: 18, maxWidth: 280 }}>
-          {hasModels
-            ? 'Choose which model your agent uses by default. You can switch models anytime in chat.'
-            : 'Connect a provider first to see available models.'}
+          {agent ? `${agent.harness ?? 'ACP'} controls the authoritative model choices for this agent.` : 'Declare a default agent in kortix.yaml to choose a model.'}
         </Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }} style={{ flex: 1 }}>
-        {/* Model list grouped by provider */}
-        {hasModels && grouped.map(([providerID, models]) => (
-          <View key={providerID} style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: colors.muted, letterSpacing: 1, textTransform: 'uppercase', paddingLeft: 4, marginBottom: 8 }}>
-              {PROVIDER_LABELS[providerID] || providerID}
-            </Text>
-            {models.map((model) => {
-              const isSelected = selected?.providerID === model.providerID && selected?.modelID === model.modelID;
-              return (
-                <Pressable
-                  key={`${model.providerID}:${model.modelID}`}
-                  onPress={() => handleSelect(model)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: isSelected
-                      ? (isDark ? 'rgba(248,248,248,0.2)' : 'rgba(18,18,21,0.2)')
-                      : colors.cardBorder,
-                    backgroundColor: isSelected
-                      ? (isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.02)')
-                      : colors.cardBg,
-                    marginBottom: 6,
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)' }} numberOfLines={1}>
-                      {model.modelName}
-                    </Text>
-                    <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)', marginTop: 1 }} numberOfLines={1}>
-                      {model.modelID}
-                    </Text>
-                  </View>
-                  {isSelected && <Check size={16} color="#34D399" strokeWidth={2.5} />}
-                </Pressable>
-              );
-            })}
-          </View>
+        {defaultAllowed ? (
+          <Pressable onPress={clearSelection} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: selected === null ? (isDark ? 'rgba(248,248,248,0.2)' : 'rgba(18,18,21,0.2)') : colors.cardBorder, backgroundColor: colors.cardBg, marginBottom: 6 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.fg }}>Harness default</Text>
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: colors.muted, marginTop: 1 }}>Let {agent?.harness ?? 'the ACP harness'} choose its native default.</Text>
+            </View>
+            {selected === null ? <Check size={16} color="#34D399" strokeWidth={2.5} /> : null}
+          </Pressable>
+        ) : null}
+        {models.map((model) => (
+          <Pressable key={model.id} onPress={() => persistSelection(model.id)} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: selected === model.id ? (isDark ? 'rgba(248,248,248,0.2)' : 'rgba(18,18,21,0.2)') : colors.cardBorder, backgroundColor: colors.cardBg, marginBottom: 6 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.fg }} numberOfLines={1}>{model.name}</Text>
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: colors.muted, marginTop: 1 }} numberOfLines={1}>{model.id} · {model.source}</Text>
+            </View>
+            {selected === model.id ? <Check size={16} color="#34D399" strokeWidth={2.5} /> : null}
+          </Pressable>
         ))}
+        {customAllowed ? (
+          <View style={{ marginTop: 10 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: colors.muted, marginBottom: 6 }}>CUSTOM MODEL ID</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput value={customModel} onChangeText={setCustomModel} placeholder="provider/model or model-id" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: colors.fg, fontFamily: 'Menlo', fontSize: 12 }} />
+              <Pressable onPress={() => customModel.trim() && persistSelection(customModel.trim())} disabled={!customModel.trim()} style={{ minWidth: 68, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: themeColors.primary, opacity: customModel.trim() ? 1 : 0.45 }}>
+                <Text style={{ color: themeColors.primaryForeground, fontFamily: 'Roobert-SemiBold', fontSize: 12 }}>Use</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
 
       {/* Bottom buttons — sits below scroll area */}
@@ -937,7 +280,7 @@ function DefaultModelStep({ onContinue, onBack, isDark, themeColors }: StepProps
           }}
         >
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: themeColors.primaryForeground }}>
-            {selected ? 'Continue' : 'Skip for now'}
+            Continue
           </Text>
           <ChevronRight size={16} color={themeColors.primaryForeground} strokeWidth={2} />
         </Pressable>
@@ -1230,7 +573,7 @@ function GetStartedStep({ onComplete, completing, isDark, themeColors }: StepPro
 
 // ─── Main SetupWizard ────────────────────────────────────────────────────────
 
-export function SetupWizard({ onComplete }: SetupWizardProps) {
+export function SetupWizard({ projectId, onComplete }: SetupWizardProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1340,8 +683,8 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
         {/* ── Step content ── */}
         <View style={{ flex: 1, width: '100%', maxWidth: 380, alignSelf: 'center' }}>
-          {step === 1 && <ProviderStep onContinue={() => setStep(2)} isDark={isDark} themeColors={themeColors} />}
-          {step === 2 && <DefaultModelStep onContinue={() => setStep(3)} onBack={() => setStep(1)} isDark={isDark} themeColors={themeColors} />}
+          {step === 1 && <ProjectProviderSetupStep projectId={projectId} onContinue={() => setStep(2)} isDark={isDark} themeColors={themeColors} />}
+          {step === 2 && <DefaultModelStep projectId={projectId} onContinue={() => setStep(3)} onBack={() => setStep(1)} isDark={isDark} themeColors={themeColors} />}
           {step === 3 && <ToolSecretsStep onContinue={() => setStep(4)} isDark={isDark} themeColors={themeColors} />}
           {step === 4 && <PipedreamStep onComplete={() => setStep(5)} completing={false} isDark={isDark} themeColors={themeColors} />}
           {step === 5 && <GetStartedStep onComplete={markSetupComplete} completing={completing} isDark={isDark} themeColors={themeColors} />}

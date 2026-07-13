@@ -574,7 +574,7 @@ const AndroidMarkdownText = CrossPlatformMarkdownText;
  * Uses BottomSheetModal for consistent styling with rest of app
  */
 interface TextSelectionModalProps {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   text: string;
   isDark: boolean;
   onDismiss: () => void;

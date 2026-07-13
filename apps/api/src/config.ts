@@ -82,11 +82,6 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  // EXPERIMENTAL: turns on the `apps:` section in kortix.yaml — manifest
-  // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
-  // by default until the wire is hardened.
-  KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
-
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
@@ -107,10 +102,6 @@ const envSchema = z.object({
   REPLICATE_API_TOKEN:         optStr,
   CONTEXT7_API_URL:            optUrl('https://context7.com'),
   CONTEXT7_API_KEY:            optStr,
-
-  // ── Freestyle / Deployments (optional) ───────────────────────────────────
-  FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
-  FREESTYLE_API_KEY:           optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
@@ -220,6 +211,23 @@ const envSchema = z.object({
   // ElevenLabs TTS — gives the meeting bot a voice (the agent speaks in-call).
   ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
   ELEVENLABS_API_KEY:          optStr,
+
+  // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
+  // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
+  // serve every tenant; the per-conversation tenant id arrives on each inbound
+  // activity. Outbound auth is a short-lived AAD token minted per scope at call
+  // time (channels/teams-auth.ts) — there is no static bot token to store.
+  MICROSOFT_APP_ID:            optStr,
+  MICROSOFT_APP_PASSWORD:      optStr,
+  // The bot's home tenant. Multi-tenant bots authenticate against the shared
+  // `botframework.com` tenant; single-tenant deployments set their own.
+  MICROSOFT_APP_TENANT:        optStrDefault('botframework.com'),
+  // OpenID metadata used to validate the signed JWT on every inbound activity
+  // (the Teams analog of Slack signature verification).
+  MICROSOFT_BOT_OPENID_METADATA: optUrl('https://login.botframework.com/v1/.well-known/openidconfiguration'),
+  TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
+  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  TEAMS_APP_NAME: optStrDefault('Kortix'),
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
@@ -379,6 +387,7 @@ const envSchema = z.object({
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN:       optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
@@ -394,6 +403,8 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN:          optStr,
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
+  // Where public demo-request / "book a demo" lead notifications are sent.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN:   optStr,  // Logtail source token for structured logs
@@ -561,7 +572,6 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
-  KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
 
   // ─── Database ──────────────────────────────────────────────────────────────
@@ -596,10 +606,6 @@ export const config = {
   REPLICATE_API_TOKEN: env.REPLICATE_API_TOKEN,
   CONTEXT7_API_URL: env.CONTEXT7_API_URL,
   CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
-
-  // ─── Freestyle (Deployments) ──────────────────────────────────────────────
-  FREESTYLE_API_URL: env.FREESTYLE_API_URL,
-  FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
 
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
@@ -640,6 +646,15 @@ export const config = {
   RECALL_API_KEY: env.RECALL_API_KEY,
   ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
   ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
+
+  // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
+  MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
+  MICROSOFT_APP_PASSWORD: env.MICROSOFT_APP_PASSWORD,
+  MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
+  MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
+  TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
+  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
+  TEAMS_APP_NAME: env.TEAMS_APP_NAME,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
@@ -762,6 +777,8 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
@@ -778,6 +795,7 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
+  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
@@ -908,11 +926,6 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_context7: {
     baseCost: 0.001,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_freestyle_deploy: {
-    baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

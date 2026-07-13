@@ -111,24 +111,13 @@ Plus `parseLocalhostUrl`, `hasLocalhostUrls`, `isProxiableLocalhostUrl`,
 rendering agent output that mentions `localhost`, or building a preview iframe
 without going through the session handle.
 
-## `@kortix/sdk/runtime-client`
+## ACP session runtime
 
-`getRuntimeClient()` returns the structural daemon/runtime client for the **active**
-runtime, with auth injected. Conversation traffic is ACP-first; this module is the
-lower-level escape hatch for daemon helpers that are not yet covered by the session
-facade.
-
-```ts
-import { getRuntimeClient, type RuntimeClient, type Session, type Part } from '@kortix/sdk/runtime-client';
-
-const client = getRuntimeClient();
-const { data } = await client.session.list({ limit: 100 });
-```
-
-Also `getRuntimeClientForUrl(url)` (a client pinned to a specific runtime),
-`dropRuntimeClientForUrl(url)`, and `resetRuntimeClient()` (used on a runtime
-switch). **When to use:** a daemon/runtime call the facade doesn't yet wrap.
-Prefer `kortix.session(pid, sid).runtime`, the same client scoped to a session.
+Harness conversation state is exposed only through the session-scoped ACP
+surface (`kortix.session(projectId, sessionId)` and `useSession`). The removed
+`runtime-client` subpath and its OpenCode-shaped global/session/provider client
+do not have a compatibility replacement. Use typed platform clients for
+control-plane data and ACP transcript projections for live turns.
 
 ## `@kortix/sdk/auth`
 

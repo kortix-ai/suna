@@ -224,7 +224,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 className="flex-row items-center justify-center self-start rounded-full px-5 py-2.5 active:opacity-90"
                 style={{ backgroundColor: themeColors.primary }}
               >
-                <Icon as={Key} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                <Icon as={Key} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
                 <Text className="ml-2 font-roobert-semibold text-sm" style={{ color: themeColors.primaryForeground }}>
                   Generate SSH Keys
                 </Text>
@@ -436,7 +436,7 @@ function CodeSection({
         <Text className="font-roobert-semibold text-[15px] text-foreground flex-1">{title}</Text>
         {!!badge && (
           <View className="flex-row items-center rounded-md mr-2 px-1.5 py-0.5" style={{ backgroundColor: 'rgba(245,158,11,0.1)' }}>
-            <Icon as={ShieldAlert} size={10} style={{ color: '#f59e0b' }} strokeWidth={2.2} />
+            <Icon as={ShieldAlert} size={10} color="#f59e0b" strokeWidth={2.2} />
             <Text className="ml-1 font-roobert-medium text-[10px]" style={{ color: '#f59e0b' }}>{badge}</Text>
           </View>
         )}

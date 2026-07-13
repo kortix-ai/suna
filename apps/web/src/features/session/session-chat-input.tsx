@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import Loading from '@/components/ui/loading';
 import { ProgressRing } from '@/components/ui/progress-ring';
 import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -21,6 +22,7 @@ import type {
 import { LLM_PROVIDER_BY_ID } from '@/lib/llm-providers';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import type { AcpUsageProjection } from '@kortix/sdk';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
   agentHarness,
@@ -37,7 +39,6 @@ import {
   Clock,
   Folder,
   ListTodo,
-  Loader2,
   MessageSquare,
   Paperclip,
   Reply,
@@ -358,7 +359,7 @@ export function AgentSelector({
                         <div className="flex min-w-0 items-center gap-1.5">
                           <div
                             className={cn(
-                              'truncate text-sm capitalize leading-tight',
+                              'truncate text-sm leading-tight capitalize',
                               isSelected
                                 ? 'text-foreground font-semibold'
                                 : 'text-foreground/90 font-medium',
@@ -457,6 +458,7 @@ function VariantSelector({
 
 interface TokenProgressProps {
   messages: MessageWithParts[] | undefined;
+  acpUsage?: AcpUsageProjection | null;
   models?: FlatModel[];
   selectedModel?: { providerID: string; modelID: string } | null;
   onContextClick?: () => void;
@@ -493,13 +495,21 @@ function getContextLimit(
   return 200000;
 }
 
-function TokenProgress({ messages, models, selectedModel, onContextClick }: TokenProgressProps) {
+function TokenProgress({
+  messages,
+  acpUsage,
+  models,
+  selectedModel,
+  onContextClick,
+}: TokenProgressProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const contextTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
-  const contextLimit = useMemo(
+  const inferredTokens = useMemo(() => getLastAssistantTokenTotal(messages), [messages]);
+  const inferredLimit = useMemo(
     () => getContextLimit(models, selectedModel),
     [models, selectedModel],
   );
+  const contextTokens = acpUsage?.used ?? acpUsage?.tokens?.total ?? inferredTokens;
+  const contextLimit = acpUsage?.size ?? inferredLimit;
   const ratio = contextTokens > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
 
   if (contextTokens === 0 && !onContextClick) return null;
@@ -518,6 +528,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
           <span className="relative inline-flex">
             <button
               type="button"
+              aria-label="Open session context"
+              data-testid="session-context-indicator"
               className="flex size-6 cursor-pointer items-center justify-center"
               onPointerDown={(e) => {
                 e.stopPropagation();
@@ -705,10 +717,10 @@ function AttachmentThumbnail({ af, name }: { af: AttachedFile; name: string }) {
   if (textPreview) {
     return (
       <div className="absolute inset-0 overflow-hidden p-1">
-        <pre className="text-muted-foreground/70 pointer-events-none m-0 select-none overflow-hidden whitespace-pre p-0 font-mono text-xs leading-[1.4]">
+        <pre className="text-muted-foreground/70 pointer-events-none m-0 overflow-hidden p-0 font-mono text-xs leading-[1.4] whitespace-pre select-none">
           {textPreview}
         </pre>
-        <div className="from-muted/20 absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t to-transparent" />
+        <div className="from-muted/20 absolute right-0 bottom-0 left-0 h-6 bg-gradient-to-t to-transparent" />
       </div>
     );
   }
@@ -746,7 +758,7 @@ function AttachmentPreview({
                 <AttachmentThumbnail af={af} name={name} />
                 {/* Extension badge */}
                 {ext && !af.isImage && (
-                  <span className="text-muted-foreground/50 bg-background/80 absolute bottom-1 right-1 z-[5] rounded px-1 py-0.5 text-xs font-medium uppercase tracking-wider">
+                  <span className="text-muted-foreground/50 bg-background/80 absolute right-1 bottom-1 z-[5] rounded px-1 py-0.5 text-xs font-medium tracking-wider uppercase">
                     {ext.toUpperCase()}
                   </span>
                 )}
@@ -762,7 +774,7 @@ function AttachmentPreview({
             {/* Remove button */}
             <button
               onClick={() => onRemove(i)}
-              className="border-card absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
+              className="border-card absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border-2 bg-black text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white dark:text-black"
             >
               <X className="h-3 w-3" />
             </button>
@@ -918,7 +930,7 @@ function MentionPopover({
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
         {agents.length > 0 && (
           <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
               Agents
             </div>
             {agents.map((item) => {
@@ -952,7 +964,7 @@ function MentionPopover({
         )}
         {sessions.length > 0 && (
           <>
-            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+            <div className="text-muted-foreground/50 px-3 py-1 text-xs font-semibold tracking-wider uppercase">
               Sessions
             </div>
             {sessions.map((item) => {
@@ -984,7 +996,7 @@ function MentionPopover({
         )}
         {files.length > 0 && (
           <>
-            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase tracking-wider">
+            <div className="text-muted-foreground px-3 py-1 text-xs font-semibold tracking-wider uppercase">
               Files
             </div>
             {files.map((item) => {
@@ -1025,7 +1037,7 @@ function MentionPopover({
         {/* Loading indicator while searching for files */}
         {loading && files.length === 0 && (
           <div className="text-muted-foreground/50 flex items-center gap-2 px-3 py-2">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loading className="size-3.5 shrink-0" />
             <span className="text-xs">
               {tHardcodedUi.raw('componentsSessionSessionChatInput.line1113JsxTextSearching')}
             </span>
@@ -1183,13 +1195,18 @@ export interface SessionChatInputProps {
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
-  harnessModel?: Pick<HarnessModelSelectorProps, 'harness' | 'selectedModel' | 'onSelect'>;
+  harnessModel?: Pick<
+    HarnessModelSelectorProps,
+    'harness' | 'selectedModel' | 'onSelect' | 'presets' | 'connectionLabel'
+  >;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
   messages?: MessageWithParts[];
+  /** Protocol-native context and token usage projected by @kortix/sdk. */
+  acpUsage?: AcpUsageProjection | null;
   /** Session ID — used for message queue, todo chip, and mention filtering */
   sessionId?: string;
   /** If true, disables the input (e.g. during session creation redirect) */
@@ -1210,6 +1227,8 @@ export interface SessionChatInputProps {
    *  the full-block "connect a model" gate so it doesn't flash for accounts
    *  that do have models but are mid-load (e.g. sandbox still warming up). */
   modelsLoading?: boolean;
+  /** Server-authoritative auth/model preflight blocker for the selected agent. */
+  composerBlockingReason?: string | null;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1296,11 +1315,13 @@ export function SessionChatInput({
   selectedVariant = null,
   onVariantChange,
   messages,
+  acpUsage,
   sessionId,
   disabled = false,
   clearOnSend = true,
   modelRequired = false,
   modelsLoading = false,
+  composerBlockingReason = null,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1775,9 +1796,14 @@ export function SessionChatInput({
     !entitlementsPending &&
     (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
-  const submitDisabled = disabled || modelUnavailable || lockForApproval;
+  const capabilityBlocked = !modelsLoading && Boolean(composerBlockingReason);
+  const submitDisabled = disabled || modelUnavailable || capabilityBlocked || lockForApproval;
 
   const handleSubmit = useCallback(async () => {
+    if (capabilityBlocked) {
+      toast.error(composerBlockingReason || 'This agent is not ready to start.');
+      return;
+    }
     if (modelUnavailable) {
       toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
         description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
@@ -1883,6 +1909,8 @@ export function SessionChatInput({
     text,
     submitDisabled,
     modelUnavailable,
+    capabilityBlocked,
+    composerBlockingReason,
     clearOnSend,
     onSend,
     isBusy,
@@ -2233,10 +2261,10 @@ export function SessionChatInput({
 
           {/* Staged command badge */}
           {stagedCommand && (
-            <div className="flex min-w-0 items-center gap-2 px-4 pb-0 pt-3">
+            <div className="flex min-w-0 items-center gap-2 px-4 pt-3 pb-0">
               <div className="bg-muted/60 border-border/50 flex max-w-full shrink-0 items-center gap-1.5 rounded-2xl border px-2.5 py-1">
                 <Terminal className="text-muted-foreground size-3" />
-                <span className="text-foreground max-w-[220px] truncate whitespace-nowrap font-mono text-xs font-medium sm:max-w-[320px]">
+                <span className="text-foreground max-w-[220px] truncate font-mono text-xs font-medium whitespace-nowrap sm:max-w-[320px]">
                   /{stagedCommand.name}
                 </span>
                 <button
@@ -2269,7 +2297,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && !stagedCommand && (
                 <div
                   aria-hidden
-                  className="text-muted-foreground pointer-events-none absolute left-0.5 top-4 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
+                  className="text-muted-foreground pointer-events-none absolute top-4 left-0.5 h-6 w-[calc(100%-0.5rem)] overflow-hidden text-base sm:text-sm"
                 >
                   {lockForApproval ? (
                     <div className="absolute inset-0 text-amber-600 dark:text-amber-400">
@@ -2305,7 +2333,7 @@ export function SessionChatInput({
               {text.trim().length === 0 && stagedCommand && (
                 <div
                   aria-hidden
-                  className="text-muted-foreground/50 pointer-events-none absolute left-0.5 top-4 text-base sm:text-sm"
+                  className="text-muted-foreground/50 pointer-events-none absolute top-4 left-0.5 text-base sm:text-sm"
                 >
                   {tHardcodedUi.raw(
                     'componentsSessionSessionChatInput.line2185JsxTextEnterDetailsAndPressEnterOrPressEsc',
@@ -2317,7 +2345,7 @@ export function SessionChatInput({
                 <div
                   ref={highlightRef}
                   aria-hidden
-                  className="text-foreground pointer-events-none absolute inset-0 whitespace-pre-wrap break-words px-0.5 pb-6 pt-4 text-base leading-normal sm:text-sm"
+                  className="text-foreground pointer-events-none absolute inset-0 px-0.5 pt-4 pb-6 text-base leading-normal break-words whitespace-pre-wrap sm:text-sm"
                 >
                   {highlightSegments.map((seg, i) => (
                     <span
@@ -2347,7 +2375,7 @@ export function SessionChatInput({
                 rows={1}
                 disabled={disabled || lockForApproval}
                 className={cn(
-                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pb-6 pt-4 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
+                  'placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto rounded-[24px] border-none bg-transparent px-0.5 pt-4 pb-6 text-base shadow-none outline-none focus-visible:ring-0 disabled:opacity-50 sm:text-sm',
                   highlightSegments && 'caret-foreground text-transparent',
                 )}
                 autoFocus={shouldAutoFocus}
@@ -2356,7 +2384,7 @@ export function SessionChatInput({
           </div>
 
           {/* Bottom toolbar */}
-          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pl-2 pr-1.5">
+          <div className="mb-1.5 flex items-center justify-between gap-1 overflow-visible pr-1.5 pl-2">
             {/* LEFT: Attach + Agent + Model + Variant */}
             <div className="flex min-w-0 items-center gap-0 overflow-visible">
               <input
@@ -2373,6 +2401,8 @@ export function SessionChatInput({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
+                    aria-label="Attach files"
+                    data-testid="session-attach-files"
                     onClick={() => fileInputRef.current?.click()}
                     className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition-colors"
                   >
@@ -2419,6 +2449,7 @@ export function SessionChatInput({
             <div className="flex shrink-0 items-center gap-0">
               <TokenProgress
                 messages={messages}
+                acpUsage={acpUsage}
                 models={models}
                 selectedModel={selectedModel}
                 onContextClick={onContextClick}
@@ -2433,15 +2464,15 @@ export function SessionChatInput({
 
               {isSending && !lockForQuestion && (
                 <Button size="sm" disabled className="h-8 w-8 flex-shrink-0 rounded-full p-0">
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loading className="size-4 shrink-0" />
                 </Button>
               )}
               {!isSending && isBusy && (onStop || stopDisabled) && !lockForQuestion && (
                 <div className="relative flex items-center">
                   {/* ESC hint — matches Kortix tooltip styling (bg-primary rounded-2xl) */}
                   {escCount > 0 && (
-                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute bottom-full right-1/2 mb-2 translate-x-1/2 duration-150">
-                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 whitespace-nowrap rounded-2xl px-3 py-1.5 text-xs">
+                    <div className="animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 pointer-events-none absolute right-1/2 bottom-full mb-2 translate-x-1/2 duration-150">
+                      <div className="bg-primary text-primary-foreground flex items-center gap-1.5 rounded-2xl px-3 py-1.5 text-xs whitespace-nowrap">
                         <kbd className="bg-background/20 text-primary-foreground inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 font-sans text-xs font-medium">
                           ESC
                         </kbd>
@@ -2505,7 +2536,7 @@ export function SessionChatInput({
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >
                             {disabled ? (
-                              <div className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                              <Loading className="size-3.5 shrink-0" />
                             ) : (
                               <ArrowUp className="size-4" />
                             )}
@@ -2525,7 +2556,10 @@ export function SessionChatInput({
           </div>
         </div>
       </div>
-      <ModelConnectionBar show={noModelsConnected} />
+      <ModelConnectionBar
+        show={noModelsConnected || capabilityBlocked}
+        reason={capabilityBlocked ? composerBlockingReason : null}
+      />
     </div>
   );
 }

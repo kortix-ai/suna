@@ -27,7 +27,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
-import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewMessageEvent, WebViewProps } from 'react-native-webview';
 import * as Haptics from 'expo-haptics';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -1088,7 +1088,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   const insets = useSafeAreaInsets();
   const { sandboxUrl } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebView<Record<string, unknown>>>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [webViewReady, setWebViewReady] = useState(false);
   const [terminalHtml, setTerminalHtml] = useState<string | null>(null);
@@ -1329,7 +1329,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
         </View>
       ) : (
         <View style={{ flex: 1 }}>
-          <WebView
+          <WebView<Record<string, unknown>>
             key={webViewKey}
             ref={webViewRef}
             source={{ html: terminalHtml }}
@@ -1349,7 +1349,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             allowsInlineMediaPlayback
             mixedContentMode="always"
             allowUniversalAccessFromFileURLs
-            onError={(syntheticEvent) => {
+            onError={(syntheticEvent: Parameters<NonNullable<WebViewProps['onError']>>[0]) => {
               log.error('[TerminalPage] WebView error:', syntheticEvent.nativeEvent.description);
               setError('WebView failed to load');
             }}

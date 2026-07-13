@@ -6,6 +6,7 @@ import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
 import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
 import { deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { invalidateComposerCapabilityQueries } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -78,7 +79,7 @@ export function CustomProviderForm({
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      void invalidateComposerCapabilityQueries(queryClient, projectId);
       refreshProjectProviderState(queryClient, projectId);
       successToast('Custom provider connected');
       onDone();

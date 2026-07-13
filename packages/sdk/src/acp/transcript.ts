@@ -22,8 +22,13 @@ export type AcpToolCall = {
 
 export type AcpPlan = { entries: unknown[]; data: Record<string, unknown> };
 
+export type AcpMessageAttachment =
+  | { kind: 'image'; name: string | null; uri: string | null; mimeType: string | null; data: string | null }
+  | { kind: 'audio'; name: string | null; uri: string | null; mimeType: string | null; data: string | null }
+  | { kind: 'resource'; name: string | null; uri: string | null; mimeType: string | null };
+
 export type AcpChatItem =
-  | { kind: 'message'; id: string; role: 'user' | 'assistant' | 'thought'; text: string }
+  | { kind: 'message'; id: string; role: 'user' | 'assistant' | 'thought'; text: string; attachments?: AcpMessageAttachment[] }
   | ({ kind: 'tool' } & AcpToolCall)
   | ({ kind: 'plan' } & AcpPlan)
   | { kind: 'permission'; id: string | number; method: string; params: Record<string, unknown> }
@@ -71,25 +76,85 @@ export type AcpPendingPrompts = {
   questions: AcpPendingQuestion[];
 };
 
+export type AcpContextMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'thought';
+  text: string;
+};
+
+export type AcpUsageCost = {
+  amount: number;
+  currency: string;
+};
+
+export type AcpTokenUsage = {
+  total: number;
+  input: number;
+  output: number;
+  thought: number | null;
+  cachedRead: number | null;
+  cachedWrite: number | null;
+};
+
+export type AcpUsageProjection = {
+  /** Current context tokens reported by ACP `usage_update`. */
+  used: number | null;
+  /** Context-window size reported by ACP `usage_update`. */
+  size: number | null;
+  /** Current context utilization, from 0 through 100. */
+  percent: number | null;
+  /** Cumulative session cost when supplied by the active ACP agent. */
+  cost: AcpUsageCost | null;
+  /** Optional unstable end-turn cumulative token totals. */
+  tokens: AcpTokenUsage | null;
+  source: 'usage_update' | 'prompt_response';
+};
+
+export type AcpContextProjection = {
+  messages: AcpContextMessage[];
+  usage: AcpUsageProjection | null;
+};
+
+export type AcpTurnState = {
+  busy: boolean;
+  pendingPromptIds: AcpJsonRpcId[];
+};
+
 export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChatItem[] {
   const items: AcpChatItem[] = [];
   for (const row of rows) {
     const envelope = row.envelope as Record<string, any>;
     if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
       const text = contentText(envelope.params?.prompt);
-      if (text) items.push({ kind: 'message', id: `prompt-${row.ordinal}`, role: 'user', text });
+      const attachments = contentAttachments(envelope.params?.prompt);
+      if (text || attachments.length) items.push({
+        kind: 'message',
+        id: `prompt-${row.ordinal}`,
+        role: 'user',
+        text,
+        ...(attachments.length ? { attachments } : {}),
+      });
       continue;
     }
     if (row.direction !== 'agent_to_client' || typeof envelope.method !== 'string') continue;
     if (envelope.method === 'session/update') {
       const update = envelope.params?.update ?? {};
       const kind = update.sessionUpdate ?? update.type;
-      const text = update.content?.type === 'text' ? update.content.text : '';
-      if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && text) {
+      const text = textFromContent(update.content).join('');
+      const attachments = contentAttachments(update.content);
+      if ((kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') && (text || attachments.length)) {
         const role = kind === 'agent_thought_chunk' ? 'thought' : 'assistant';
         const previous = items.at(-1);
-        if (previous?.kind === 'message' && previous.role === role) previous.text += text;
-        else items.push({ kind: 'message', id: `${role}-${row.ordinal}`, role, text });
+        if (previous?.kind === 'message' && previous.role === role) {
+          previous.text += text;
+          if (attachments.length) previous.attachments = [...(previous.attachments ?? []), ...attachments];
+        } else items.push({
+          kind: 'message',
+          id: `${role}-${row.ordinal}`,
+          role,
+          text,
+          ...(attachments.length ? { attachments } : {}),
+        });
       } else if (kind === 'tool_call' || kind === 'tool_call_update') {
         const id = String(update.toolCallId ?? update.id ?? `tool-${row.ordinal}`);
         const existing = items.find((item): item is Extract<AcpChatItem, { kind: 'tool' }> => item.kind === 'tool' && item.id === id);
@@ -113,6 +178,105 @@ export function projectAcpChatItems(rows: readonly AcpStoredEnvelope[]): AcpChat
     } else items.push({ kind: 'raw', method: envelope.method, data: envelope.params });
   }
   return items;
+}
+
+/**
+ * Project the latest protocol-native context/cost report. ACP's stable
+ * `usage_update` is authoritative for the live context window; the optional
+ * prompt-response `usage` object is retained as a token-total fallback without
+ * inventing a context limit.
+ */
+export function projectAcpUsage(rows: readonly AcpStoredEnvelope[]): AcpUsageProjection | null {
+  let context: Omit<AcpUsageProjection, 'tokens'> | null = null;
+  let tokens: AcpTokenUsage | null = null;
+
+  for (const row of rows) {
+    if (row.direction !== 'agent_to_client') continue;
+    const envelope = row.envelope as Record<string, unknown>;
+    const params = isRecord(envelope.params) ? envelope.params : null;
+    const update = params && isRecord(params.update) ? params.update : null;
+    const updateKind = update ? firstString(update.sessionUpdate, update.type) : null;
+    if (update && updateKind === 'usage_update') {
+      const used = nonNegativeNumber(update.used);
+      const size = nonNegativeNumber(update.size);
+      if (used !== null && size !== null) {
+        const rawCost = isRecord(update.cost) ? update.cost : null;
+        const amount = rawCost ? nonNegativeNumber(rawCost.amount) : null;
+        const currency = rawCost ? firstString(rawCost.currency) : null;
+        context = {
+          used,
+          size,
+          percent: size > 0 ? Math.min(100, (used / size) * 100) : null,
+          cost: amount !== null && currency ? { amount, currency } : null,
+          source: 'usage_update',
+        };
+      }
+    }
+
+    const result = isRecord(envelope.result) ? envelope.result : null;
+    const rawUsage = result && isRecord(result.usage) ? result.usage : null;
+    if (!rawUsage) continue;
+    const total = nonNegativeNumber(rawUsage.totalTokens ?? rawUsage.total_tokens);
+    const input = nonNegativeNumber(rawUsage.inputTokens ?? rawUsage.input_tokens);
+    const output = nonNegativeNumber(rawUsage.outputTokens ?? rawUsage.output_tokens);
+    if (total === null || input === null || output === null) continue;
+    tokens = {
+      total,
+      input,
+      output,
+      thought: nonNegativeNumber(rawUsage.thoughtTokens ?? rawUsage.thought_tokens),
+      cachedRead: nonNegativeNumber(rawUsage.cachedReadTokens ?? rawUsage.cached_read_tokens),
+      cachedWrite: nonNegativeNumber(rawUsage.cachedWriteTokens ?? rawUsage.cached_write_tokens),
+    };
+  }
+
+  if (context) return { ...context, tokens };
+  if (!tokens) return null;
+  return {
+    used: null,
+    size: null,
+    percent: null,
+    cost: null,
+    tokens,
+    source: 'prompt_response',
+  };
+}
+
+/** One harness-neutral context projection shared by web, mobile, and headless clients. */
+export function projectAcpContext(rows: readonly AcpStoredEnvelope[]): AcpContextProjection {
+  const messages = projectAcpChatItems(rows).flatMap<AcpContextMessage>((item) =>
+    item.kind === 'message'
+      ? [{ id: item.id, role: item.role, text: item.text }]
+      : [],
+  );
+  return { messages, usage: projectAcpUsage(rows) };
+}
+
+/** Recover whether a persisted ACP prompt is still in flight after reconnect/reload. */
+export function projectAcpTurnState(rows: readonly AcpStoredEnvelope[]): AcpTurnState {
+  const answered = new Set<string>();
+  for (const row of rows) {
+    if (row.direction !== 'agent_to_client') continue;
+    const envelope = row.envelope as Record<string, unknown>;
+    if (!('id' in envelope) || 'method' in envelope) continue;
+    if (!('result' in envelope) && !('error' in envelope)) continue;
+    answered.add(rpcIdKey(envelope.id));
+  }
+  const pendingPromptIds: AcpJsonRpcId[] = [];
+  for (const row of rows) {
+    if (row.direction !== 'client_to_agent') continue;
+    const envelope = row.envelope as Record<string, unknown>;
+    if (envelope.method !== 'session/prompt') continue;
+    const id = envelope.id;
+    if (typeof id !== 'string' && typeof id !== 'number') continue;
+    if (typeof id === 'string' && id.startsWith('local-')) continue;
+    if (!answered.has(rpcIdKey(id))) pendingPromptIds.push(id);
+  }
+  return { busy: pendingPromptIds.length > 0, pendingPromptIds };
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function projectToolCall(id: string, update: Record<string, unknown>): AcpToolCall {
@@ -344,6 +508,40 @@ function contentText(value: unknown): string {
   return value.flatMap((item) => textFromContent(item)).join('\n');
 }
 
+function contentAttachments(value: unknown): AcpMessageAttachment[] {
+  const blocks = Array.isArray(value) ? value : [value];
+  return blocks.flatMap<AcpMessageAttachment>((raw) => {
+    if (!isRecord(raw)) return [];
+    const type = firstString(raw.type);
+    if (type === 'image' || type === 'audio') {
+      return [{
+        kind: type,
+        name: firstString(raw.name) ?? null,
+        uri: firstString(raw.uri) ?? null,
+        mimeType: firstString(raw.mimeType, raw.mime_type) ?? null,
+        data: firstString(raw.data) ?? null,
+      }];
+    }
+    if (type === 'resource_link') {
+      return [{
+        kind: 'resource',
+        name: firstString(raw.name) ?? null,
+        uri: firstString(raw.uri) ?? null,
+        mimeType: firstString(raw.mimeType, raw.mime_type) ?? null,
+      }];
+    }
+    if (type === 'resource' && isRecord(raw.resource)) {
+      return [{
+        kind: 'resource',
+        name: firstString(raw.resource.name) ?? null,
+        uri: firstString(raw.resource.uri) ?? null,
+        mimeType: firstString(raw.resource.mimeType, raw.resource.mime_type) ?? null,
+      }];
+    }
+    return [];
+  });
+}
+
 /** Canonical, provider-neutral projection for persisted ACP envelopes. */
 export function projectAcpTranscript(
   rows: readonly AcpStoredEnvelope[],
@@ -357,7 +555,12 @@ export function projectAcpTranscript(
     if (row.direction === 'client_to_agent' && envelope.method === 'session/prompt') {
       const params = envelope.params as Record<string, unknown> | undefined;
       const text = contentText(params?.prompt).trim();
-      if (text) messages.push(acpMessage('user', text, row.createdAt, maxChars));
+      const files = transcriptFiles(params?.prompt);
+      if (text || files.length) {
+        const message = acpMessage('user', text, row.createdAt, maxChars);
+        message.files = files;
+        messages.push(message);
+      }
       continue;
     }
     if (row.direction !== 'agent_to_client' || envelope.method !== 'session/update') continue;
@@ -367,10 +570,17 @@ export function projectAcpTranscript(
     const kind = String(update.sessionUpdate ?? update.type ?? '');
     if (kind === 'agent_message_chunk') {
       const text = textFromContent(update.content).join('\n');
-      if (!text) continue;
+      const files = transcriptFiles(update.content);
+      if (!text && !files.length) continue;
       const previous = messages.at(-1);
-      if (previous?.role === 'assistant') previous.text = truncate(previous.text + text, maxChars);
-      else messages.push(acpMessage('assistant', text, row.createdAt, maxChars));
+      if (previous?.role === 'assistant') {
+        previous.text = truncate(previous.text + text, maxChars);
+        previous.files.push(...files);
+      } else {
+        const message = acpMessage('assistant', text, row.createdAt, maxChars);
+        message.files = files;
+        messages.push(message);
+      }
     } else if (kind === 'agent_thought_chunk') {
       const previous = messages.at(-1);
       if (previous?.role === 'assistant') previous.reasoning_omitted = true;
@@ -385,6 +595,13 @@ export function projectAcpTranscript(
     }
   }
   return messages.slice(-(options.limit ?? 200));
+}
+
+function transcriptFiles(value: unknown): AcpTranscriptMessage['files'] {
+  return contentAttachments(value).map((attachment) => ({
+    filename: attachment.name,
+    mime: attachment.mimeType,
+  }));
 }
 
 function acpMessage(role: 'user' | 'assistant', text: string, createdAt: string | undefined, maxChars: number): AcpTranscriptMessage {

@@ -34,7 +34,7 @@ import type {
   TextPart,
   ToolPart,
   ToolState,
-} from '../runtime/client';
+} from '../runtime/wire-types';
 import type { MessageWithParts } from '../../transcript';
 import { unwrapError } from './errors';
 import { toolInfo } from './tool-registry';

@@ -92,11 +92,16 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  * `iam/engine-v2.ts`'s `computeTokenScope`).
  */
 export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
-  { group: 'Project', actions: ['project.read', 'project.write', 'project.deploy', 'project.delete'] },
+  { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
   { group: 'Change requests', actions: ['project.cr.open', 'project.cr.merge'] },
   {
     group: 'Sessions',
-    actions: ['project.session.read', 'project.session.start', 'project.session.stop'],
+    actions: [
+      'project.session.read',
+      'project.session.start',
+      'project.session.stop',
+      'project.session.bindings.write',
+    ],
   },
   { group: 'Members', actions: ['project.members.read', 'project.members.manage'] },
   {
@@ -138,7 +143,14 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
     actions: ['project.gitops.read', 'project.gitops.push', 'project.gitops.merge'],
   },
   { group: 'Secrets', actions: ['project.secret.read', 'project.secret.write'] },
-  { group: 'Connectors', actions: ['project.connector.read', 'project.connector.write'] },
+  {
+    group: 'Connectors',
+    actions: [
+      'project.connector.read',
+      'project.connector.write',
+      'project.connector.profiles.manage',
+    ],
+  },
   {
     group: 'Review',
     actions: ['project.review.read', 'project.review.submit', 'project.review.act'],

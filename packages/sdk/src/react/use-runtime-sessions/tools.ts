@@ -1,10 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
+import { findFiles } from '../../core/files/client';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import type { Skill, ToolListItem } from './keys';
-import { unwrap } from './shared';
 
 // ============================================================================
 // Tool Hooks
@@ -15,9 +14,7 @@ export function useRuntimeToolIds() {
   return useQuery<string[]>({
     queryKey: runtimeKeys.toolIds(),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.tool.ids();
-      return unwrap(result);
+      return [];
     },
     enabled: runtimeReady,
     staleTime: Infinity,
@@ -30,9 +27,7 @@ export function useRuntimeTools(providerID: string, modelID: string) {
   return useQuery<ToolListItem[]>({
     queryKey: runtimeKeys.tools(providerID, modelID),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.tool.list({ provider: providerID, model: modelID });
-      return unwrap(result) as ToolListItem[];
+      return [];
     },
     enabled: runtimeReady && !!providerID && !!modelID,
     staleTime: Infinity,
@@ -49,9 +44,13 @@ export function useRuntimeSkills() {
   return useQuery<Skill[]>({
     queryKey: runtimeKeys.skills(),
     queryFn: async () => {
-      const client = getClient();
-      const result = await client.app.skills();
-      return unwrap(result) as Skill[];
+      const paths = await findFiles('SKILL.md', { type: 'file', limit: 500 });
+      return paths
+        .filter((location) => /(?:^|\/)skills\/[^/]+\/SKILL\.md$/.test(location))
+        .map((location) => ({
+          name: location.split('/').at(-2) ?? location,
+          location,
+        } as Skill));
     },
     enabled: runtimeReady,
     staleTime: Infinity,

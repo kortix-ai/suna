@@ -21,15 +21,18 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   manifest: Record<string, unknown>;
   env: { required: string[]; optional: string[] };
+  runtime_configs: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    config_dir: string;
+    path: string;
+    raw: string | null;
+  }>;
   runtime_config_raw: string | null;
   runtime_default_agent: string | null;
   agent_source: "native" | "declarative";
-  /** @deprecated Use runtime_config_raw. */
-  open_code_raw: string | null;
-  /** @deprecated Use runtime_default_agent. */
-  open_code_default_agent: string | null;
   /** @deprecated Use agent_source. */
-  agent_discovery: "opencode" | "declarative";
+  agent_discovery: "runtime" | "declarative";
   agents: Array<{
     name: string;
     path: string;
@@ -39,6 +42,7 @@ export interface ProjectConfigSummary {
     enabled?: boolean;
     runtime?: string | null;
     harness?: "claude" | "codex" | "opencode" | "pi" | null;
+    native_agent?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
      *  `agents:` map, or legacy v1 `[[agents]]`; declarative agents only).
      *  Read-only mirror of the allowlists the parser resolved — `'all'`

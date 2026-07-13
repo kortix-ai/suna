@@ -19,8 +19,6 @@ const CONFIG = {
   runtime_config_raw: null,
   runtime_default_agent: null,
   agent_source: 'native',
-  open_code_raw: null,
-  open_code_default_agent: null,
   agent_discovery: 'opencode',
   agents: [
     { name: 'release-bot', path: '.opencode/agent/release-bot.md', description: null, mode: null, source: 'runtime' },

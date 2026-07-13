@@ -7,6 +7,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
 import { upsertProjectSecret } from '@kortix/sdk/projects-client';
+import { invalidateComposerCapabilityQueries } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, KeyRound } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
@@ -30,7 +31,7 @@ export function ClaudeSubscriptionConnect({
       }),
     onSuccess: async () => {
       successToast('Claude subscription connected');
-      await queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      await invalidateComposerCapabilityQueries(queryClient, projectId);
       onConnected();
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to connect Claude subscription'),

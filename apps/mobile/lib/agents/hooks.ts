@@ -194,7 +194,6 @@ export function useCreateNewAgent(
   return useMutation({
     mutationFn: async (agentData: AgentCreateRequest) => {
       const defaultAgentData: AgentCreateRequest = {
-        name: 'New Worker',
         description: 'A newly created worker, open for configuration',
         configured_mcps: [],
         agentpress_tools: {},
@@ -209,7 +208,6 @@ export function useCreateNewAgent(
     ...options,
   });
 }
-
 
 
 

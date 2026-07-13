@@ -1,7 +1,7 @@
 {
   "name": "@kortix/sandbox-agent-server",
   "version": "0.1.0",
-  "description": "Consolidated sandbox-side daemon: OpenCode supervisor + Kortix API surface.",
+  "description": "Sandbox-side ACP harness supervisor and Kortix runtime API surface.",
   "type": "module",
   "main": "src/main.ts",
   "bin": {

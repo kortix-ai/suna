@@ -91,7 +91,6 @@ const EXEMPT_FRAGMENTS = [
                               // GitHub-scan-heavy and legitimately long
   '/registry/update',         // registry item update — same git-bound path,
                               // plus its GET .../updates drift-listing route
-  '/deployments',             // app deploys (build + upload)
   '/snapshots',               // sandbox template builds
   '/suna-migration',          // OG Suna → opencode migration runs
   '/legacy-migration',        // legacy VM → project migration runs

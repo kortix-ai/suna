@@ -459,7 +459,7 @@ function TaskDetailSheet({
   onRunNow,
   onOpenSession,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   trigger: Trigger | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -1184,7 +1184,7 @@ function CreateTaskSheet({
   theme,
   renderBackdrop,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;

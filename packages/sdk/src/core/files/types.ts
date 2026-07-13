@@ -55,7 +55,7 @@ export interface FindMatch {
   submatches: Array<{ start: number; end: number }>;
 }
 
-/** `GET /project/current` response. */
+/** Harness-neutral projection of the active Kortix session workspace. */
 export interface RuntimeProjectInfo {
   id: string;
   worktree: string;
@@ -66,7 +66,7 @@ export interface RuntimeProjectInfo {
   sandboxes: string[];
 }
 
-/** `GET /global/health` response. */
+/** Projection of the Kortix daemon's `GET /kortix/health` response. */
 export interface ServerHealth {
   healthy: boolean;
   version: string;

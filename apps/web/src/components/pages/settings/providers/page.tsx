@@ -1,75 +1,31 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
+import Link from 'next/link';
+import { ArrowRight, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { ProviderList } from '@/features/providers/provider-list';
-import { GlobalProviderModal } from '@/features/providers/provider-modal';
-import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { Plus } from 'lucide-react';
-import { useMemo } from 'react';
+import { useRuntimeCurrentProject } from '@kortix/sdk/react';
 
+/** Provider credentials are project-scoped and harness-qualified. */
 export default function ProvidersPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const { data: providersData, isLoading, refetch } = useRuntimeProviders();
-
-  const connectedProviders = useMemo(() => {
-    if (!providersData) return [];
-    const connectedIds = new Set(providersData.connected ?? []);
-    return (providersData.all ?? []).filter((p) => connectedIds.has(p.id));
-  }, [providersData]);
+  const projectId = useRuntimeCurrentProject().data?.id;
+  const href = projectId ? `/projects/${projectId}?customize=llm-providers` : '/projects';
 
   return (
-    <div className="container mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-8">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold sm:text-xl">
-              {tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line27JsxTextLlmProviders')}
-            </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {tHardcodedUi.raw(
-                'componentsPagesSettingsProvidersPage.line29JsxTextConnectModelProvidersThatPowerYourAgent',
-              )}
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => openProviderModal('providers')}>
-            <Plus className="h-4 w-4" />
-            {tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line38JsxTextAddProvider')}
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <KortixLoader size="small" />
-          </div>
-        ) : connectedProviders.length > 0 ? (
-          <ProviderList
-            connectedProviders={connectedProviders}
-            onDisconnected={() => refetch()}
-            showConnectButton={false}
-          />
-        ) : (
-          <div className="border-border/60 flex flex-col items-center gap-4 rounded-2xl border border-dashed py-16">
-            <p className="text-muted-foreground/60 text-sm">
-              {tHardcodedUi.raw(
-                'componentsPagesSettingsProvidersPage.line54JsxTextNoProvidersConnectedYet',
-              )}
-            </p>
-            <Button variant="outline" size="sm" onClick={() => openProviderModal('providers')}>
-              <Plus className="h-4 w-4" />
-              {tHardcodedUi.raw(
-                'componentsPagesSettingsProvidersPage.line61JsxTextConnectYourFirstProvider',
-              )}
-            </Button>
-          </div>
-        )}
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <KeyRound className="text-muted-foreground mx-auto size-6" />
+        <h1 className="mt-4 text-lg font-semibold">Model connections are project-scoped</h1>
+        <p className="text-muted-foreground mt-2 text-sm text-pretty">
+          Configure Claude subscriptions, Anthropic keys, Codex subscriptions, OpenAI keys,
+          compatible endpoints, and managed routing in the project’s Customize panel.
+        </p>
+        <Button asChild className="mt-5" size="sm">
+          <Link href={href}>
+            {projectId ? 'Manage project connections' : 'Choose a project'}
+            <ArrowRight className="size-4" />
+          </Link>
+        </Button>
       </div>
-
-      <GlobalProviderModal />
     </div>
   );
 }

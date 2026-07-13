@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
+import { configureKortix } from '../core/http/config';
 
 // This file must be hermetic against process-wide `mock.module` registrations
 // made by OTHER test files (per the `../opencode/kortix-master.test.ts`
@@ -31,27 +32,6 @@ let calls: Call[] = [];
 let nextResponse: () => Response = () =>
   new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } });
 
-mock.module('../core/http/auth', () => ({
-  getAuthToken: async () => 'test-token',
-  getAuthTokenWithRetry: async () => 'test-token',
-  authenticatedFetch: async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    calls.push({
-      url: String(input),
-      method: init?.method ?? 'GET',
-      body: typeof init?.body === 'string' ? init.body : undefined,
-    });
-    return nextResponse();
-  },
-  invalidateTokenCache: () => {},
-  setCachedAuthToken: () => {},
-  setBootstrapAuthToken: () => {},
-  getSupabaseAccessToken: async () => 'test-token',
-  getSupabaseAccessTokenWithRetry: async () => 'test-token',
-}));
-
 const FAKE_SERVER_URL = 'https://sbx.test';
 mock.module('../browser/stores/server-store', () => ({
   useServerStore: Object.assign(
@@ -82,6 +62,15 @@ const last = () => calls[calls.length - 1];
 beforeEach(() => {
   calls = [];
   invalidated = [];
+  configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'test-token' });
+  globalThis.fetch = mock(async (input: unknown, init: RequestInit = {}) => {
+    calls.push({
+      url: String(input),
+      method: init.method ?? 'GET',
+      body: typeof init.body === 'string' ? init.body : undefined,
+    });
+    return nextResponse();
+  }) as unknown as typeof fetch;
   nextResponse = () => jsonResponse([]);
 });
 

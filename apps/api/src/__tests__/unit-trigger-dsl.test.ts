@@ -51,8 +51,8 @@ describe('kortix manifest — schema versioning', () => {
     expect(parsed.schemaVersion).toBe(2);
   });
 
-  test('a version above the v2 ceiling is still rejected', () => {
-    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 3/);
+  test('a version above the v3 ceiling is still rejected', () => {
+    expect(() => parseManifestString(`kortix_version = 4\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 4/);
   });
 
   test('serialize always emits kortix_version as the first key', () => {

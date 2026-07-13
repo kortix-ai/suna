@@ -117,6 +117,10 @@ async function main() {
         `starter agent ${AGENT} does not route to ${HARNESS}: ${agentConfig.text}`,
       );
     const projectDetail = await api("GET", `/projects/${projectId}/detail`);
+    if (
+      Object.prototype.hasOwnProperty.call(projectDetail.json?.config ?? {}, "open_code_raw") ||
+      Object.prototype.hasOwnProperty.call(projectDetail.json?.config ?? {}, "open_code_default_agent")
+    ) throw new Error(`project detail leaked removed OpenCode compatibility fields: ${projectDetail.text}`);
     const agentSummary = projectDetail.json?.config?.agents?.find(
       (agent: any) => agent.name === AGENT,
     );
@@ -125,6 +129,44 @@ async function main() {
         `project agent summary lost runtime identity for ${AGENT}: ${projectDetail.text}`,
       );
     console.log(`[acp-smoke] starter agent=${AGENT} harness=${HARNESS}`);
+
+    const connections = await api("GET", `/projects/${projectId}/harness-connections`);
+    const managed = connections.json?.connections?.find((connection: any) => connection.id === "managed_gateway");
+    if (!connections.response.ok || !managed?.ready)
+      throw new Error(`managed ACP connection unavailable: ${connections.text}`);
+    const boundConnection = await api(
+      "PUT",
+      `/projects/${projectId}/harness-connections/${HARNESS}/active`,
+      { connection_id: "managed_gateway" },
+    );
+    if (!boundConnection.response.ok || !boundConnection.json?.connections?.find(
+      (connection: any) => connection.id === "managed_gateway" && connection.active_for?.includes(HARNESS),
+    )) throw new Error(`failed to persist ${HARNESS} auth route: ${boundConnection.text}`);
+    const capabilities = await api(
+      "GET",
+      `/projects/${projectId}/composer-capabilities?agent_name=${encodeURIComponent(AGENT)}`,
+    );
+    if (
+      !capabilities.response.ok ||
+      capabilities.json?.agent?.harness !== HARNESS ||
+      capabilities.json?.auth?.active !== "managed_gateway" ||
+      capabilities.json?.can_start !== true
+    ) throw new Error(`composer capabilities invalid: ${capabilities.text}`);
+    const catalog = await api(
+      "GET",
+      `/projects/${projectId}/model-catalog?agent_name=${encodeURIComponent(AGENT)}`,
+    );
+    if (!catalog.response.ok || catalog.json?.connection_id !== "managed_gateway")
+      throw new Error(`harness model catalog invalid: ${catalog.text}`);
+
+    const incompatibleConnection = HARNESS === "claude" ? "openai_api_key" : "claude_subscription";
+    const rejectedConnection = await api(
+      "PUT",
+      `/projects/${projectId}/harness-connections/${HARNESS}/active`,
+      { connection_id: incompatibleConnection },
+    );
+    if (rejectedConnection.response.status < 400 || rejectedConnection.response.status >= 500)
+      throw new Error(`incompatible auth route returned ${rejectedConnection.response.status}: ${rejectedConnection.text}`);
 
     const rejectedSession = await api(
       "POST",
@@ -151,7 +193,12 @@ async function main() {
         name: `ACP ${HARNESS} smoke`,
         provider: PROVIDER,
         agent_name: AGENT,
-        ...(RUNTIME_MODEL ? { runtime_model: RUNTIME_MODEL } : {}),
+        connection_id: "managed_gateway",
+        model_selection: {
+          kind: RUNTIME_MODEL ? "custom" : "default",
+          model_id: RUNTIME_MODEL,
+          connection_id: "managed_gateway",
+        },
       },
     );
     const sessionId =
@@ -166,6 +213,10 @@ async function main() {
       throw new Error(
         `session did not persist runtime model ${RUNTIME_MODEL}: ${createdSession.text}`,
       );
+    if (
+      createdSession.json?.metadata?.auth_connection !== "managed_gateway" ||
+      createdSession.json?.metadata?.model_selection?.harness !== HARNESS
+    ) throw new Error(`session lost canonical auth/model selection: ${createdSession.text}`);
     console.log(`[acp-smoke] session=${sessionId} provider=${PROVIDER}`);
 
     const listedSessions = await api("GET", `/projects/${projectId}/sessions`);

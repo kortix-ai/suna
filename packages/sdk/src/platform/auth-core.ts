@@ -63,7 +63,7 @@ export const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
  */
 export function isStreamingRequest(input: RequestInfo | URL): boolean {
 	const url = input instanceof Request ? input.url : String(input);
-	return url.includes('/global/event') || /\/acp(?:[/?#]|$)/.test(url);
+	return /\/acp(?:[/?#]|$)/.test(url);
 }
 
 /**

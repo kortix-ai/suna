@@ -150,6 +150,9 @@ importers:
       hono:
         specifier: 4.12.25
         version: 4.12.25
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       postgres:
         specifier: ^3.4.8
         version: 3.4.9
@@ -557,6 +560,9 @@ importers:
       react-native-syntax-highlighter:
         specifier: ^2.1.0
         version: 2.1.0(react-syntax-highlighter@16.1.1)
+      react-native-uitextview:
+        specifier: 2.2.0
+        version: 2.2.0(react-native@0.81.5)(react@19.1.0)
       react-native-url-polyfill:
         specifier: ^3.0.0
         version: 3.0.0(react-native@0.81.5)
@@ -18068,6 +18074,10 @@ packages:
     hasBin: true
     dev: true
 
+  /jose@5.10.0:
+    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
+    dev: false
+
   /joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
@@ -22193,6 +22203,16 @@ packages:
       react-syntax-highlighter: ^6.0.4
     dependencies:
       react-syntax-highlighter: 16.1.1(react@19.1.0)
+    dev: false
+
+  /react-native-uitextview@2.2.0(react-native@0.81.5)(react@19.1.0):
+    resolution: {integrity: sha512-Vbv3cTAuyfkYrfsR2YKFsOd9OYgfys+IX5yvvYY7Wd6TrOd6FSGrX93xtQHjeLXV1ds6fDJcFJsuLi3S4Ypr8A==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
+    dependencies:
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
     dev: false
 
   /react-native-url-polyfill@3.0.0(react-native@0.81.5):

@@ -18,7 +18,12 @@ export type SandboxRuntimeHealth = {
 export async function sandboxRuntimeEndpoint(
   externalId: string,
   userId: string | undefined,
-): Promise<{ url: string; headers: Record<string, string> } | null> {
+): Promise<{
+  url: string;
+  headers: Record<string, string>;
+  serviceKey: string;
+  previewToken: string | null;
+} | null> {
   const serviceKey = await resolveServiceKey(externalId);
   if (!serviceKey) return null;
   const { url, token } = await resolvePreviewLink(externalId, DAEMON_PORT);
@@ -31,7 +36,12 @@ export async function sandboxRuntimeEndpoint(
   if (token) headers['X-Daytona-Preview-Token'] = token;
   const payload = await resolvePreviewUserContext(externalId, userId);
   if (payload) headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
-  return { url: url.replace(/\/$/, ''), headers };
+  return {
+    url: url.replace(/\/$/, ''),
+    headers,
+    serviceKey,
+    previewToken: token,
+  };
 }
 
 export async function inspectSandboxRuntime(

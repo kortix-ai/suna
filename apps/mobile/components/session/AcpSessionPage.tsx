@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useAcpSession } from '@kortix/sdk/react';
-import { projectAcpChatItems, projectAcpPendingPrompts, type AcpPendingQuestionItem } from '@kortix/sdk';
+import { projectAcpChatItems, projectAcpContext, projectAcpPendingPrompts, type AcpMessageAttachment, type AcpPendingQuestionItem } from '@kortix/sdk';
 
 export function AcpSessionPage({ projectId, sessionId, runtimeSessionId, onBack }: {
   projectId: string;
@@ -13,6 +13,7 @@ export function AcpSessionPage({ projectId, sessionId, runtimeSessionId, onBack 
   const [draft, setDraft] = useState('');
   const session = useAcpSession({ projectId, sessionId, runtimeSessionId });
   const items = useMemo(() => projectAcpChatItems(session.envelopes), [session.envelopes]);
+  const context = useMemo(() => projectAcpContext(session.envelopes), [session.envelopes]);
   const pending = useMemo(() => projectAcpPendingPrompts(session.envelopes), [session.envelopes]);
   const pendingPermissions = useMemo(() => new Set(pending.permissions.map((request) => JSON.stringify(request.id))), [pending.permissions]);
   const pendingQuestions = useMemo(() => new Set(pending.questions.map((request) => JSON.stringify(request.id))), [pending.questions]);
@@ -28,7 +29,16 @@ export function AcpSessionPage({ projectId, sessionId, runtimeSessionId, onBack 
       <View className="flex-row items-center gap-3 border-b border-border px-4 pb-3 pt-4">
         <Pressable onPress={onBack} accessibilityRole="button"><Text className="text-sm">Back</Text></Pressable>
         <Text className="font-medium">Agent session</Text>
-        <Text className="ml-auto text-xs text-muted-foreground">ACP</Text>
+        <View className="ml-auto items-end">
+          <Text className="text-xs text-muted-foreground">ACP</Text>
+          {context.usage?.used != null && context.usage.size != null ? (
+            <Text className="text-xs text-muted-foreground">
+              {Math.round(context.usage.percent ?? 0)}% context
+            </Text>
+          ) : context.usage?.tokens ? (
+            <Text className="text-xs text-muted-foreground">{context.usage.tokens.total.toLocaleString()} tokens</Text>
+          ) : null}
+        </View>
       </View>
       {session.configOptions.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="max-h-14 border-b border-border" contentContainerClassName="items-center gap-2 px-3 py-2">
@@ -54,6 +64,7 @@ export function AcpSessionPage({ projectId, sessionId, runtimeSessionId, onBack 
             <View className="rounded-md border border-border bg-card p-3">
               <Text className="mb-2 text-xs font-medium capitalize">{item.role}</Text>
               <Text className="text-sm">{item.text}</Text>
+              {item.attachments?.length ? <MobileAttachments attachments={item.attachments} /> : null}
             </View>
           );
           if (item.kind === 'tool') return (
@@ -111,6 +122,8 @@ export function AcpSessionPage({ projectId, sessionId, runtimeSessionId, onBack 
 
 function MobileQuestions({ questions, onAnswer, onReject }: { questions: AcpPendingQuestionItem[]; onAnswer(answers: Record<string, unknown>): void; onReject(): void }) {
   const [text, setText] = useState<Record<string, string>>({});
+  const keys = questions.map((question, index) => question.key ?? `answer_${index + 1}`);
+  const complete = keys.every((key) => Boolean(text[key]?.trim()));
   return (
     <View className="rounded-md border border-border bg-card p-3">
       <Text className="mb-3 text-sm font-medium">Input requested</Text>
@@ -119,12 +132,16 @@ function MobileQuestions({ questions, onAnswer, onReject }: { questions: AcpPend
         return <View key={key} className="mb-3 gap-2">
           <Text className="text-sm">{question.question}</Text>
           {question.options.length ? <View className="flex-row flex-wrap gap-2">{question.options.map((option) => {
-            const value = option.value ?? option.optionId ?? option.id ?? option.label;
-            return <Pressable key={String(value)} className="rounded-md bg-foreground px-3 py-2" onPress={() => onAnswer({ [key]: value })}><Text className="text-xs text-background">{option.label}</Text></Pressable>;
-          })}</View> : <View className="flex-row gap-2"><TextInput className="min-h-10 flex-1 rounded-md border border-border px-3 text-foreground" value={text[key] ?? ''} onChangeText={(value) => setText((current) => ({ ...current, [key]: value }))} placeholder="Type your answer" placeholderTextColor="#71717a" /><Pressable className="rounded-md bg-foreground px-3 py-2" onPress={() => text[key]?.trim() && onAnswer({ [key]: text[key].trim() })}><Text className="text-xs text-background">Submit</Text></Pressable></View>}
+            const value = String(option.value ?? option.optionId ?? option.id ?? option.label);
+            const selected = text[key] === value;
+            return <Pressable key={value} className={selected ? 'rounded-md bg-foreground px-3 py-2' : 'rounded-md border border-border px-3 py-2'} onPress={() => setText((current) => ({ ...current, [key]: value }))}><Text className={selected ? 'text-xs text-background' : 'text-xs'}>{option.label}</Text></Pressable>;
+          })}</View> : <TextInput className="min-h-10 rounded-md border border-border px-3 text-foreground" value={text[key] ?? ''} onChangeText={(value) => setText((current) => ({ ...current, [key]: value }))} placeholder="Type your answer" placeholderTextColor="#71717a" />}
         </View>;
       })}
-      <Pressable className="self-start rounded-md border border-border px-3 py-2" onPress={onReject}><Text className="text-xs">Dismiss</Text></Pressable>
+      <View className="flex-row gap-2">
+        <Pressable disabled={!complete} className="rounded-md bg-foreground px-3 py-2 disabled:opacity-40" onPress={() => complete && onAnswer(Object.fromEntries(keys.map((key) => [key, text[key]!.trim()]))) }><Text className="text-xs text-background">Submit</Text></Pressable>
+        <Pressable className="rounded-md border border-border px-3 py-2" onPress={onReject}><Text className="text-xs">Dismiss</Text></Pressable>
+      </View>
     </View>
   );
 }
@@ -132,4 +149,18 @@ function MobileQuestions({ questions, onAnswer, onReject }: { questions: AcpPend
 function formatValue(value: unknown): string {
   if (typeof value === 'string') return value;
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function MobileAttachments({ attachments }: { attachments: AcpMessageAttachment[] }) {
+  return (
+    <View className="mt-3 flex-row flex-wrap gap-2">
+      {attachments.map((attachment, index) => (
+        <View key={`${attachment.name ?? attachment.kind}-${index}`} className="max-w-56 rounded-md border border-border bg-background px-2 py-1.5">
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+            {attachment.kind === 'image' ? 'Image' : attachment.kind === 'audio' ? 'Audio' : 'File'} · {attachment.name ?? attachment.uri ?? 'attachment'}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
 }

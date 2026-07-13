@@ -350,7 +350,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </Button>
             )}
 
-            <Button variant="ghost" className="hidden sm:inline-flex" onClick={openDemo}>
+            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
               {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Button>
             {user ? (

@@ -305,7 +305,7 @@ connectors:
   slug: x
 `);
     expect(specs).toEqual([]);
-    expect(errors[0]!.error).toContain('array of tables');
+    expect(errors[0]!.error).toContain('must be a list');
   });
 
   test('missing slug', () => {

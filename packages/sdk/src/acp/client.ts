@@ -19,6 +19,13 @@ export type AcpClientOptions = {
   baseUrl?: string;
   serverId?: string;
   fetch?: typeof fetch;
+  /**
+   * `auto` uses SSE where streaming response bodies exist and durable
+   * transcript polling on React Native. `poll` is also useful for constrained
+   * fetch implementations and deterministic tests.
+   */
+  streamTransport?: 'auto' | 'sse' | 'poll';
+  transcriptPollIntervalMs?: number;
 };
 
 function isResponse(value: AcpEnvelope): value is AcpResponse {
@@ -124,6 +131,16 @@ export class AcpClient {
     );
 
     const run = async () => {
+      if (this.shouldPollTranscript()) {
+        await this.pollTranscript({
+          controller,
+          isClosed: () => closed,
+          getLastEventId: () => lastEventId,
+          setLastEventId: (id) => { lastEventId = id; },
+          options,
+        });
+        return;
+      }
       let retryMs = 250;
       while (!closed && !controller.signal.aborted) {
         try {
@@ -134,7 +151,20 @@ export class AcpClient {
             },
             signal: controller.signal,
           });
-          if (!response.ok || !response.body) throw new Error(`ACP stream failed with HTTP ${response.status}`);
+          if (!response.ok) throw new Error(`ACP stream failed with HTTP ${response.status}`);
+          if (!response.body) {
+            if ((this.options.streamTransport ?? 'auto') === 'auto') {
+              await this.pollTranscript({
+                controller,
+                isClosed: () => closed,
+                getLastEventId: () => lastEventId,
+                setLastEventId: (id) => { lastEventId = id; },
+                options,
+              });
+              return;
+            }
+            throw new Error('ACP stream response has no readable body');
+          }
           retryMs = 250;
           await consumeSse(response.body, (event) => {
             if (event.id <= lastEventId) return;
@@ -163,6 +193,48 @@ export class AcpClient {
     };
   }
 
+  private shouldPollTranscript(): boolean {
+    const transport = this.options.streamTransport ?? 'auto';
+    if (transport === 'poll') return true;
+    if (transport === 'sse') return false;
+    return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+  }
+
+  private async pollTranscript(input: {
+    controller: AbortController;
+    isClosed(): boolean;
+    getLastEventId(): number;
+    setLastEventId(id: number): void;
+    options: {
+      onEvent(event: AcpStreamEvent): void;
+      onError?(error: unknown): void;
+      reconnect?: boolean;
+    };
+  }): Promise<void> {
+    let afterOrdinal = 0;
+    const intervalMs = Math.max(50, this.options.transcriptPollIntervalMs ?? 500);
+    while (!input.isClosed() && !input.controller.signal.aborted) {
+      try {
+        const history = await this.transcript(afterOrdinal || undefined);
+        for (const row of history.envelopes) {
+          afterOrdinal = Math.max(afterOrdinal, row.ordinal);
+          if (row.direction !== 'agent_to_client') continue;
+          const eventId = row.streamEventId;
+          if (eventId === null || !Number.isSafeInteger(eventId) || eventId <= input.getLastEventId()) continue;
+          input.setLastEventId(eventId);
+          input.options.onEvent({ id: eventId, envelope: row.envelope });
+          if (input.isClosed() || input.controller.signal.aborted) return;
+        }
+        if (input.options.reconnect === false) return;
+      } catch (error) {
+        if (input.isClosed() || input.controller.signal.aborted) return;
+        input.options.onError?.(error);
+        if (input.options.reconnect === false) return;
+      }
+      await abortableDelay(intervalMs, input.controller.signal);
+    }
+  }
+
   private async post(envelope: AcpEnvelope): Promise<AcpEnvelope | null> {
     const response = await this.fetcher(this.endpoint, {
       method: 'POST',
@@ -173,6 +245,17 @@ export class AcpClient {
     if (!response.ok) throw new Error(`ACP request failed with HTTP ${response.status}: ${await response.text()}`);
     return (await response.json()) as AcpEnvelope;
   }
+}
+
+async function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
 }
 
 async function consumeSse(

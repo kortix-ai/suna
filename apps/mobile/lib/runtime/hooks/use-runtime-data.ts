@@ -1,377 +1,134 @@
 /**
- * Runtime data hooks for fetching agents, providers, and models from the
- * session runtime endpoint.
+ * Mobile compatibility shims over the ACP-first @kortix/sdk React surface.
+ *
+ * The sandbox URL parameter is intentionally ignored: hosts never address a
+ * harness HTTP API. The SDK resolves the active project/session and owns all
+ * Kortix REST + ACP transport.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAuthToken } from '@/api/config';
-import { log } from '@/lib/logger';
+import { useMutation } from '@tanstack/react-query';
+import {
+  flattenModels as flattenSdkModels,
+  useRuntimeAgents as useSdkRuntimeAgents,
+  useRuntimeCommands as useSdkRuntimeCommands,
+  useRuntimeConfig as useSdkRuntimeConfig,
+  useRuntimeMcpStatus as useSdkRuntimeMcpStatus,
+  useRuntimeProjects as useSdkRuntimeProjects,
+  useRuntimeProviders as useSdkRuntimeProviders,
+  useRuntimeSkills as useSdkRuntimeSkills,
+  useRuntimeToolIds as useSdkRuntimeToolIds,
+  useUpdateRuntimeConfig as useSdkUpdateRuntimeConfig,
+  type Agent,
+  type Command,
+  type Config as RuntimeConfig,
+  type FlatModel as SdkFlatModel,
+  type McpStatus,
+  type Project,
+  type ProviderListResponse as SdkProviderListResponse,
+  type Skill,
+} from '@kortix/sdk/react';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+export type {
+  Agent,
+  Command,
+  RuntimeConfig,
+  McpStatus,
+  Project,
+  Skill,
+};
 
-export interface Agent {
-  name: string;
-  description?: string;
-  mode: 'subagent' | 'primary' | 'all';
-  native?: boolean;
-  hidden?: boolean;
-  model?: { modelID: string; providerID: string };
-  variant?: string;
-  prompt?: string;
-  color?: string;
-  steps?: number;
-  options: Record<string, unknown>;
-}
-
-export interface ModelInfo {
-  id: string;
-  name: string;
-  family?: string;
-  release_date?: string;
-  attachment: boolean;
+export type ProviderListResponse = SdkProviderListResponse;
+export type ModelInfo = NonNullable<ProviderListResponse['all']>[number]['models'][string];
+export type ProviderInfo = NonNullable<ProviderListResponse['all']>[number];
+export interface FlatModel extends SdkFlatModel {
   reasoning: boolean;
-  temperature: boolean;
-  tool_call: boolean;
-  cost?: { input: number; output: number; cache_read?: number; cache_write?: number };
-  limit: { context: number; input?: number; output: number };
-  variants?: Record<string, Record<string, unknown>>;
-  experimental?: boolean;
-  status?: 'alpha' | 'beta' | 'deprecated';
-}
-
-export interface ProviderInfo {
-  id: string;
-  name: string;
-  models: Record<string, ModelInfo>;
-}
-
-export interface ProviderListResponse {
-  all: ProviderInfo[];
-  default: Record<string, string>;
-  connected: string[];
-}
-
-export interface FlatModel {
-  providerID: string;
-  providerName: string;
-  modelID: string;
-  modelName: string;
-  variants?: Record<string, Record<string, unknown>>;
-  reasoning: boolean;
-  contextWindow?: number;
-  family?: string;
-  releaseDate?: string;
-  cost?: { input: number; output: number };
-}
-
-export interface RuntimeConfig {
-  model?: string; // "provider/modelId"
-  agent?: string;
-  [key: string]: unknown;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-export async function runtimeFetch<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Runtime ${path}: ${res.status} ${body}`);
-  }
-  return res.json();
-}
-
-export function flattenModels(providers: ProviderListResponse): FlatModel[] {
-  const models: FlatModel[] = [];
-  const connectedSet = new Set(providers.connected);
-
-  for (const provider of providers.all) {
-    if (!connectedSet.has(provider.id)) continue;
-    for (const [modelId, model] of Object.entries(provider.models)) {
-      models.push({
-        providerID: provider.id,
-        providerName: provider.name,
-        modelID: modelId,
-        modelName: model.name,
-        variants: model.variants,
-        reasoning: model.reasoning,
-        contextWindow: model.limit?.context,
-        family: model.family,
-        releaseDate: model.release_date,
-        cost: model.cost ? { input: model.cost.input, output: model.cost.output } : undefined,
-      });
-    }
-  }
-
-  return models;
-}
-
-/**
- * Compute the "latest" set — only the newest model per family per provider
- * released within the last 6 months. Matches the frontend's computeLatestSet.
- */
-function computeLatestSet(models: FlatModel[]): Set<string> {
-  const SIX_MONTHS_MS = 6 * 30 * 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  const latest = new Set<string>();
-
-  // Filter to models with a recent release date
-  const recent = models.filter((m) => {
-    if (!m.releaseDate) return false;
-    try {
-      const d = new Date(m.releaseDate).getTime();
-      if (isNaN(d)) return false;
-      return now - d < SIX_MONTHS_MS;
-    } catch {
-      return false;
-    }
-  });
-
-  // Group by provider → family
-  const grouped: Record<string, FlatModel[]> = {};
-  for (const m of recent) {
-    const key = `${m.providerID}:${m.family || m.modelID}`;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(m);
-  }
-
-  // Pick newest per family
-  for (const group of Object.values(grouped)) {
-    group.sort((a, b) => {
-      const da = new Date(a.releaseDate!).getTime();
-      const db = new Date(b.releaseDate!).getTime();
-      return db - da; // newest first
-    });
-    const newest = group[0];
-    latest.add(`${newest.providerID}:${newest.modelID}`);
-  }
-
-  return latest;
-}
-
-/**
- * Filter models to only show "latest" ones (matching frontend behavior).
- * Models without a release date are always shown.
- * The newest model per family per provider (within 6 months) is shown.
- * Everything else is hidden by default.
- */
-export function filterToLatestModels(models: FlatModel[]): FlatModel[] {
-  const latestSet = computeLatestSet(models);
-
-  return models.filter((m) => {
-    const key = `${m.providerID}:${m.modelID}`;
-
-    // In the latest set → show
-    if (latestSet.has(key)) return true;
-
-    // No release date or unparseable → show (benefit of the doubt)
-    if (!m.releaseDate) return true;
-    try {
-      const d = new Date(m.releaseDate);
-      if (isNaN(d.getTime())) return true;
-    } catch {
-      return true;
-    }
-
-    // Has valid release date but not in latest → hide
-    return false;
-  });
-}
-
-// ─── Query Keys ──────────────────────────────────────────────────────────────
-
-export interface Command {
-  name: string;
-  description?: string;
-  agent?: string;
-  model?: string;
-  source?: 'command' | 'mcp' | 'skill';
-  template: string;
-  subtask?: boolean;
-  hints: string[];
-}
-
-export interface Skill {
-  name: string;
-  description?: string;
-  location: string;
-  content?: string;
-  hidden?: boolean;
-}
-
-export interface Project {
-  id: string;
-  name?: string;
-  worktree: string;
-  vcs?: string;
-  time?: { created?: number; updated?: number };
-}
-
-export interface McpStatus {
-  status: 'connected' | 'failed' | 'needs_auth' | 'needs_client_registration' | 'disconnected' | 'disabled' | 'pending';
-  tools?: string[];
-  error?: string;
 }
 
 export const runtimeKeys = {
-  agents: (url: string) => ['runtime', 'agents', url] as const,
-  providers: (url: string) => ['runtime', 'providers', url] as const,
-  config: (url: string) => ['runtime', 'config', url] as const,
-  commands: (url: string) => ['runtime', 'commands', url] as const,
-  skills: (url: string) => ['runtime', 'skills', url] as const,
-  projects: (url: string) => ['runtime', 'projects', url] as const,
-  toolIds: (url: string) => ['runtime', 'toolIds', url] as const,
-  mcpStatus: (url: string) => ['runtime', 'mcpStatus', url] as const,
+  agents: (_url = '') => ['runtime', 'agents'] as const,
+  providers: (_url = '') => ['runtime', 'providers'] as const,
+  config: (_url = '') => ['runtime', 'config'] as const,
+  commands: (_url = '') => ['runtime', 'commands'] as const,
+  skills: (_url = '') => ['runtime', 'skills'] as const,
+  projects: (_url = '') => ['runtime', 'projects'] as const,
+  toolIds: (_url = '') => ['runtime', 'tool-ids'] as const,
+  mcpStatus: (_url = '') => ['runtime', 'mcp-status'] as const,
 };
 
-// ─── Hooks ───────────────────────────────────────────────────────────────────
+export function flattenModels(providers: ProviderListResponse): FlatModel[] {
+  return flattenSdkModels(providers).map((model) => ({
+    ...model,
+    reasoning: model.capabilities?.reasoning ?? false,
+  }));
+}
 
-export function useRuntimeAgents(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.agents(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      const agents = await runtimeFetch<Agent[]>(sandboxUrl, '/agent');
-      return agents.filter((a) => !a.hidden);
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
+/** Keep mobile's compact newest-model view as a presentation projection. */
+export function filterToLatestModels(models: FlatModel[]): FlatModel[] {
+  const sixMonths = 6 * 30 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const newest = new Map<string, FlatModel>();
+  for (const model of models) {
+    if (!model.releaseDate) continue;
+    const released = Date.parse(model.releaseDate);
+    if (!Number.isFinite(released) || now - released >= sixMonths) continue;
+    const key = `${model.providerID}:${model.family || model.modelID}`;
+    const previous = newest.get(key);
+    if (!previous || Date.parse(previous.releaseDate || '') < released) newest.set(key, model);
+  }
+  const newestIds = new Set([...newest.values()].map((model) => `${model.providerID}:${model.modelID}`));
+  return models.filter((model) => {
+    if (!model.releaseDate || !Number.isFinite(Date.parse(model.releaseDate))) return true;
+    return newestIds.has(`${model.providerID}:${model.modelID}`);
   });
 }
 
-export function useRuntimeProviders(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.providers(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<ProviderListResponse>(sandboxUrl, '/provider');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
+export function useRuntimeAgents(_sandboxUrl?: string) {
+  return useSdkRuntimeAgents();
 }
 
-export function useRuntimeConfig(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.config(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      // Use /global/config so provider/config changes persist across
-      // sandbox dispose. Matches web aa7ed87.
-      return runtimeFetch<RuntimeConfig>(sandboxUrl, '/global/config');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
+export function useRuntimeProviders(_sandboxUrl?: string) {
+  return useSdkRuntimeProviders();
 }
 
-/**
- * Returns flattened models from connected providers, filtered to "latest" only.
- * This matches the frontend's default visibility behavior.
- *
- * `allModels` is the unfiltered list (for model resolution fallback).
- * `data` is the filtered list (for display in the selector).
- */
-export function useRuntimeCommands(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.commands(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<Command[]>(sandboxUrl, '/command');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: Infinity,
-    gcTime: 10 * 60 * 1000,
-  });
+export function useRuntimeConfig(_sandboxUrl?: string) {
+  return useSdkRuntimeConfig();
 }
 
-export function useRuntimeSkills(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.skills(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      const skills = await runtimeFetch<Skill[]>(sandboxUrl, '/skill');
-      return skills.filter((s) => !s.hidden);
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
+export function useRuntimeCommands(_sandboxUrl?: string) {
+  return useSdkRuntimeCommands();
 }
 
-export function useRuntimeProjects(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.projects(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<Project[]>(sandboxUrl, '/project');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
+export function useRuntimeSkills(_sandboxUrl?: string) {
+  return useSdkRuntimeSkills();
 }
 
-export function useRuntimeToolIds(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.toolIds(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<string[]>(sandboxUrl, '/experimental/tool/ids');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
+export function useRuntimeProjects(_sandboxUrl?: string) {
+  return useSdkRuntimeProjects();
 }
 
-export function useRuntimeMcpStatus(sandboxUrl: string | undefined) {
-  return useQuery({
-    queryKey: runtimeKeys.mcpStatus(sandboxUrl || ''),
-    queryFn: async () => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp');
-    },
-    enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
+export function useRuntimeToolIds(_sandboxUrl?: string) {
+  return useSdkRuntimeToolIds();
 }
 
-export function useRuntimeModels(sandboxUrl: string | undefined) {
+export function useRuntimeMcpStatus(_sandboxUrl?: string) {
+  return useSdkRuntimeMcpStatus();
+}
+
+export function useRuntimeModels(sandboxUrl?: string) {
   const { data: providers, ...rest } = useRuntimeProviders(sandboxUrl);
   const allModels = providers ? flattenModels(providers) : [];
-  const models = filterToLatestModels(allModels);
-  const defaults = providers?.default || {};
-  return { data: models, allModels, defaults, providers, ...rest };
+  return {
+    data: filterToLatestModels(allModels),
+    allModels,
+    defaults: providers?.default || {},
+    providers,
+    ...rest,
+  };
 }
 
-// ─── Config Mutation ────────────────────────────────────────────────────────
-
-export function useUpdateRuntimeConfig(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (config: Partial<RuntimeConfig>) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      // Write to /global/config so it survives sandbox dispose.
-      // Matches web aa7ed87.
-      return runtimeFetch<RuntimeConfig>(sandboxUrl, '/global/config', {
-        method: 'PATCH',
-        body: JSON.stringify({ config }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.config(sandboxUrl || '') });
-    },
-  });
+export function useUpdateRuntimeConfig(_sandboxUrl?: string) {
+  return useSdkUpdateRuntimeConfig();
 }
-
-// ─── MCP Mutations ──────────────────────────────────────────────────────────
 
 export interface AddMcpServerParams {
   name: string;
@@ -382,77 +139,30 @@ export interface AddMcpServerParams {
   headers?: Record<string, string>;
 }
 
-export function useAddMcpServer(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (params: AddMcpServerParams) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      const config: Record<string, unknown> = { type: params.type };
-      if (params.type === 'local') {
-        config.command = params.command;
-        if (params.env && Object.keys(params.env).length > 0) config.environment = params.env;
-      } else {
-        config.url = params.url;
-        if (params.headers && Object.keys(params.headers).length > 0) config.headers = params.headers;
-      }
-      return runtimeFetch<Record<string, McpStatus>>(sandboxUrl, '/mcp', {
-        method: 'POST',
-        body: JSON.stringify({ name: params.name, config }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
-    },
+function declarativeMcpError(): never {
+  throw new Error('MCP servers are declarative. Update the project connector/runtime configuration in Customize.');
+}
+
+export function useAddMcpServer(_sandboxUrl?: string) {
+  return useMutation({ mutationFn: async (_params: AddMcpServerParams) => declarativeMcpError() });
+}
+
+export function useConnectMcpServer(_sandboxUrl?: string) {
+  return useMutation({ mutationFn: async (_name: string) => declarativeMcpError() });
+}
+
+export function useDisconnectMcpServer(_sandboxUrl?: string) {
+  return useMutation({ mutationFn: async (_name: string) => declarativeMcpError() });
+}
+
+export function useMcpAuthStart(_sandboxUrl?: string) {
+  return useMutation<{ authorizationUrl: string }, Error, string>({
+    mutationFn: async (_name: string) => declarativeMcpError(),
   });
 }
 
-export function useConnectMcpServer(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (name: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/connect`, { method: 'POST' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
-    },
-  });
-}
-
-export function useDisconnectMcpServer(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (name: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch(sandboxUrl, `/mcp/${encodeURIComponent(name)}/disconnect`, { method: 'POST' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
-    },
-  });
-}
-
-export function useMcpAuthStart(sandboxUrl: string | undefined) {
-  return useMutation({
-    mutationFn: async (name: string) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<{ authorizationUrl: string }>(sandboxUrl, `/mcp/${encodeURIComponent(name)}/auth`, { method: 'POST' });
-    },
-  });
-}
-
-export function useMcpAuthCallback(sandboxUrl: string | undefined) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (params: { name: string; code: string }) => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      return runtimeFetch<McpStatus>(sandboxUrl, `/mcp/${encodeURIComponent(params.name)}/auth/callback`, {
-        method: 'POST',
-        body: JSON.stringify({ code: params.code }),
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: runtimeKeys.mcpStatus(sandboxUrl || '') });
-    },
+export function useMcpAuthCallback(_sandboxUrl?: string) {
+  return useMutation<McpStatus, Error, { name: string; code: string }>({
+    mutationFn: async (_params) => declarativeMcpError(),
   });
 }

@@ -22,8 +22,7 @@ export interface SelectableUITextProps extends TextProps {
  * On iOS, root blocks with both props become native UITextView with proper text selection.
  * On Android/web, this automatically falls back to React Native's Text component.
  */
-export const SelectableUIText = React.forwardRef<any, SelectableUITextProps>(
-    ({ children, ...props }, ref) => {
+export function SelectableUIText({ children, ...props }: SelectableUITextProps) {
         log.log('[SelectableUIText] Props:', {
             hasChildren: !!children,
             childrenType: typeof children,
@@ -44,11 +43,8 @@ export const SelectableUIText = React.forwardRef<any, SelectableUITextProps>(
         }
 
         return (
-            <UITextView ref={ref} {...props}>
+            <UITextView {...props}>
                 {children}
             </UITextView>
         );
-    }
-);
-
-SelectableUIText.displayName = 'SelectableUIText';
+}

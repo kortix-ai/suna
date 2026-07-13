@@ -123,7 +123,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     refreshCurrentVersion,
   } = useGlobalSandboxUpdate();
 
-  const currentChannel = detectChannel(currentVersion);
+  const currentChannel = detectChannel(currentVersion ?? undefined);
 
   // Filter state
   const [showDev, setShowDev] = useState(currentChannel === 'dev');
@@ -278,7 +278,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               className="mt-4 self-start"
               style={{ backgroundColor: themeColors.primary }}
             >
-              <Icon as={ArrowDownToLine} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+              <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
               <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>
@@ -645,4 +645,3 @@ function formatInlineMarkdown(text: string): string {
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/`(.*?)`/g, '$1');
 }
-

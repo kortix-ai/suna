@@ -21,6 +21,24 @@ const SESSION_ID = '00000000-0000-4000-a000-000000000301';
 const TEST_GITHUB_OWNER = 'kortix-org';
 const PROJECT_RUNTIME_PAT = 'kortix_pat_project_runtime';
 const PROJECT_SANDBOX_TOKEN = 'kortix_sb_project_runtime';
+const TEST_RUNTIME_MANIFEST = `kortix_version: 3
+default_agent: default
+runtimes:
+  opencode:
+    harness: opencode
+    config_dir: .kortix/opencode
+agents:
+  default:
+    runtime: opencode
+    agent: default
+    secrets: all
+    connectors: all
+  reviewer:
+    runtime: opencode
+    agent: reviewer
+    secrets: all
+    connectors: all
+`;
 const ORIGINAL_KORTIX_GITHUB_OWNER = process.env.KORTIX_GITHUB_OWNER;
 const ORIGINAL_API_KEY_SECRET = process.env.API_KEY_SECRET;
 const ORIGINAL_KORTIX_URL = process.env.KORTIX_URL;
@@ -43,7 +61,6 @@ let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavaila
 let providerRecoveryGate: Promise<void> | null = null;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
-let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let inspectedRuntime: {
   runtime: 'acp' | 'opencode-legacy';
   runtimeReady: boolean;
@@ -59,7 +76,6 @@ let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
-let freestyleCalls: Array<{ path: string; method: string; body?: unknown }>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -104,7 +120,6 @@ function resetState() {
   providerRecoveryGate = null;
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
-  opencodeEnsureReason = 'unchanged';
   inspectedRuntime = null;
   activeSessionCount = 0;
   lastProvisionInput = null;
@@ -141,7 +156,6 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
-  freestyleCalls = [];
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -186,10 +200,7 @@ mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
-  // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
-  // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
-  // exercises get no compiled agent config, matching their pre-compiler behavior.
-  readManifestFromRepo: async () => null,
+  readManifestFromRepo: async () => ({ path: 'kortix.yaml', content: TEST_RUNTIME_MANIFEST }),
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -206,6 +217,12 @@ mock.module('../projects/git', () => ({
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+}));
+
+const realGitFiles = await import('../projects/git/files');
+mock.module('../projects/git/files', () => ({
+  ...realGitFiles,
+  readManifestFromRepo: async () => ({ path: 'kortix.yaml', content: TEST_RUNTIME_MANIFEST }),
 }));
 
 mock.module('../snapshots/builder', () => ({
@@ -325,23 +342,6 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../projects/opencode-mapping', () => ({
-  pickCanonicalRoot: () => 'ses_root_existing',
-  resolveRootSessionId: () => 'ses_root_existing',
-  sandboxOpencodeEndpoint: async () => null,
-  inspectSandboxRuntime: async () => inspectedRuntime,
-  listSandboxOpencodeSessions: async () => ({
-    ok: false,
-    reason: opencodeEnsureReason === 'not_ready' ? 'not_ready' : 'unreachable',
-  }),
-  ensureOpencodeSessionPin: async (input: { currentPin: string | null }) => ({
-    pin: input.currentPin ?? 'ses_root_existing',
-    changed: false,
-    reason: opencodeEnsureReason,
-    sessions: [],
-  }),
-}));
-
 mock.module('../projects/runtime-inspection', () => ({
   sandboxRuntimeEndpoint: async () => null,
   inspectSandboxRuntime: async () => inspectedRuntime,
@@ -394,24 +394,6 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => null,
 }));
 
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (path: string, options: { method: string; body?: unknown }) => {
-    freestyleCalls.push({ path, method: options.method, body: options.body });
-    return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  },
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({}),
-    stop: async () => undefined,
-    logs: async () => ({}),
-  },
-}));
-
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
 // always exercises the rate-limit branch — the real implementation bypasses
 // the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
@@ -451,6 +433,11 @@ mock.module('../shared/db', () => ({
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
+        innerJoin: () => ({
+          innerJoin: () => ({
+            where: async () => [],
+          }),
+        }),
         where: () => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
@@ -974,7 +961,7 @@ describe('project session API contract', () => {
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/legacy-private-project';
+    projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
     secretRows = [
       {
@@ -982,7 +969,7 @@ describe('project session API contract', () => {
         projectId: PROJECT_ID,
         identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
-        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
+        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-git-token'),
         scope: 'runtime',
         ownerUserId: null,
         active: true,
@@ -1027,93 +1014,14 @@ describe('project session API contract', () => {
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/legacy-private-project',
+      repo_url: 'https://git.example.test/legacy-private-project',
       source: 'project_credential',
       auth: {
         username: 'x-access-token',
-        token: 'legacy-freestyle-token',
+        token: 'legacy-git-token',
         type: 'basic',
       },
     });
-  });
-
-  test('mints managed Freestyle credentials for legacy project git connections', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/freestyle-repo-id';
-    projectRow.metadata = {
-      git: {
-        provider: 'freestyle',
-        auth: { method: 'managed', ref: 'freestyle-identity-id' },
-        repo_id: 'freestyle-repo-id',
-      },
-    };
-    gitConnectionRows = [
-      {
-        connectionId: '00000000-0000-4000-a000-000000000502',
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'freestyle',
-        repoUrl: 'https://git.freestyle.sh/freestyle-repo-id',
-        upstreamUrl: null,
-        managed: false,
-        repoOwner: null,
-        repoName: null,
-        externalRepoId: 'freestyle-repo-id',
-        defaultBranch: 'main',
-        authMethod: 'managed',
-        installationId: null,
-        credentialRef: 'freestyle-identity-id',
-        permissions: {},
-        visibility: 'private',
-        webhookId: null,
-        status: 'connected',
-        lastValidatedAt: new Date('2026-01-02T00:00:00Z'),
-        lastErrorCode: null,
-        lastErrorMessage: null,
-        metadata: {},
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: null,
-        baseUrl: null,
-        status: 'provisioning',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    const app = createApp();
-
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
-
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/freestyle-repo-id',
-      source: 'managed',
-      auth: {
-        username: 'x-access-token',
-        token: 'freestyle-managed-token',
-        type: 'basic',
-      },
-    });
-    expect(freestyleCalls).toEqual([
-      {
-        path: '/git/v1/identity/freestyle-identity-id/tokens',
-        method: 'POST',
-        body: undefined,
-      },
-    ]);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -1446,8 +1354,6 @@ describe('project session API contract', () => {
       acpHarness: 'codex',
       bootError: null,
     };
-    opencodeEnsureReason = 'unreachable';
-
     const res = await app.request(
       `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
       { method: 'POST' },
@@ -2269,9 +2175,10 @@ describe('project session API contract', () => {
     expect(branchCreateCalls).toBe(0);
     expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
     const env = lastProvisionInput?.extraEnvVars ?? {};
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(env.KORTIX_RUNTIME_HARNESS).toBe('opencode');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+    expect(env.KORTIX_RUNTIME_MODEL).toBe('anthropic/claude-sonnet-4-6');
   });
 
   test('allows only user-owned PATCH fields', async () => {
@@ -2380,7 +2287,8 @@ describe('project session API contract', () => {
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(env.KORTIX_RUNTIME_HARNESS).toBe('opencode');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
@@ -2423,7 +2331,9 @@ describe('project session API contract', () => {
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_RUNTIME_HARNESS).toBe('opencode');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_NATIVE_AGENT).toBe('reviewer');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 

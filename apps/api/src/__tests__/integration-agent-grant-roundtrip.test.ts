@@ -57,7 +57,7 @@ describe('agent_grant — real DB round-trip + enforcement', () => {
     // Enforcement reads the validated grant and gates correctly.
     expect(agentMayPerform(v.agentGrant!, 'project.cr.open')).toBe(true);   // granted
     expect(agentMayPerform(v.agentGrant!, 'project.cr.merge')).toBe(false); // NOT granted — the destructive case
-    expect(agentMayPerform(v.agentGrant!, 'project.deploy')).toBe(false);
+    expect(agentMayPerform(v.agentGrant!, 'project.trigger.create')).toBe(false);
     expect(agentMayUseConnector(v.agentGrant!, 'github')).toBe(true);       // assigned
     expect(agentMayUseConnector(v.agentGrant!, 'salesforce')).toBe(false);  // not assigned
   });

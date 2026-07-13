@@ -316,23 +316,23 @@ function TunnelContent() {
             </View>
 
             {/* Machine info */}
-            {item.machineInfo && (
+            {!!item.machineInfo && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {item.machineInfo.hostname && (
+                {!!item.machineInfo.hostname && (
                   <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.hostname)}
                     </RNText>
                   </View>
                 )}
-                {item.machineInfo.platform && (
+                {!!item.machineInfo.platform && (
                   <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.platform)}
                     </RNText>
                   </View>
                 )}
-                {item.lastHeartbeatAt && (
+                {!!item.lastHeartbeatAt && (
                   <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {formatRelativeTime(item.lastHeartbeatAt)}
@@ -365,7 +365,7 @@ function TunnelContent() {
 
 const CreateTunnelSheet = React.forwardRef<
   BottomSheetModal,
-  { renderBackdrop: (props: any) => JSX.Element }
+  { renderBackdrop: (props: any) => React.ReactElement }
 >(function CreateTunnelSheet({ renderBackdrop }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -481,7 +481,7 @@ type DetailTab = 'permissions' | 'audit' | 'connection';
 
 interface TunnelDetailSheetProps {
   tunnel: TunnelConnection | null;
-  renderBackdrop: (props: any) => JSX.Element;
+  renderBackdrop: (props: any) => React.ReactElement;
   onDelete: (tunnel: TunnelConnection) => void;
   onDismiss: () => void;
 }

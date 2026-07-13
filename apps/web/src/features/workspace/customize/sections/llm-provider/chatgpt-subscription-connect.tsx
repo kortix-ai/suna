@@ -9,6 +9,7 @@ import {
   pollProjectProviderOAuth,
   startProjectProviderOAuth,
 } from '@kortix/sdk/projects-client';
+import { invalidateComposerCapabilityQueries } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ExternalLink } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -75,7 +76,7 @@ export function ChatGptSubscriptionConnect({
         if (res.status === 'success') {
           setPhase('done');
           successToast('ChatGPT subscription connected to this project');
-          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          await invalidateComposerCapabilityQueries(queryClient, projectId);
           refreshProjectProviderState(queryClient, projectId, { expectProviderId: 'codex' });
           onConnected();
           return;

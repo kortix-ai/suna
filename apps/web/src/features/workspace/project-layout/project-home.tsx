@@ -2,7 +2,15 @@
 
 import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarClock, Container, FileCode, Package, type LucideIcon } from 'lucide-react';
+import {
+  Bell,
+  CalendarClock,
+  Container,
+  FileCode,
+  GitBranch,
+  Package,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { IconType } from 'react-icons/lib';
@@ -33,6 +41,7 @@ import {
   listConnectors,
   listProjectAccess,
   listProjectAccessRequests,
+  listProjectBranches,
   listProjectSandboxes,
   listProjectTriggers,
   type SandboxTemplate,
@@ -44,6 +53,7 @@ const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
+  base_ref?: string;
 }
 
 export function ProjectHome({
@@ -62,6 +72,7 @@ export function ProjectHome({
   const tI18nHardcoded = useTranslations('hardcodedUi');
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [selectedBaseRef, setSelectedBaseRef] = useState<string | null>(null);
   const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
 
   const sandboxesQuery = useQuery({
@@ -74,6 +85,13 @@ export function ProjectHome({
   const activeSlug = selectedSlug ?? defaultSlug;
 
   const showSandboxPicker = sandboxItems.length >= 1;
+  const branchesQuery = useQuery({
+    queryKey: ['project-branches', projectId],
+    queryFn: () => listProjectBranches(projectId),
+    ...Q,
+  });
+  const effectiveBaseRef = branchesQuery.data?.session_default_ref ?? null;
+  const activeBaseRef = selectedBaseRef ?? effectiveBaseRef;
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const accessRequests = useQuery({
     queryKey: ['project-access-requests', projectId],
@@ -97,9 +115,12 @@ export function ProjectHome({
       onSend(text, files, {
         ...options,
         sandbox_slug: activeSlug,
+        // null means "inherit the server's current group/project default".
+        // Only a deliberate picker choice becomes a per-session override.
+        base_ref: selectedBaseRef ?? undefined,
       });
     },
-    [activeSlug, onSend],
+    [activeSlug, selectedBaseRef, onSend],
   );
 
   const handleCommand = useCallback(
@@ -171,18 +192,103 @@ export function ProjectHome({
             )}
             prefill={prefill}
             toolbarSlot={
-              showSandboxPicker ? (
-                <SandboxPicker
-                  items={sandboxItems}
-                  activeSlug={activeSlug}
-                  onSelect={setSelectedSlug}
-                />
+              showSandboxPicker || activeBaseRef ? (
+                <div className="flex items-center gap-1">
+                  {activeBaseRef ? (
+                    <BranchPicker
+                      response={branchesQuery.data}
+                      activeRef={activeBaseRef}
+                      overridden={selectedBaseRef !== null}
+                      onSelect={(ref) => setSelectedBaseRef(ref === effectiveBaseRef ? null : ref)}
+                    />
+                  ) : null}
+                  {showSandboxPicker ? (
+                    <SandboxPicker
+                      items={sandboxItems}
+                      activeSlug={activeSlug}
+                      onSelect={setSelectedSlug}
+                    />
+                  ) : null}
+                </div>
               ) : null
             }
           />
         }
       />
     </div>
+  );
+}
+
+function BranchPicker({
+  response,
+  activeRef,
+  overridden,
+  onSelect,
+}: {
+  response: Awaited<ReturnType<typeof listProjectBranches>> | undefined;
+  activeRef: string;
+  overridden: boolean;
+  onSelect: (ref: string) => void;
+}) {
+  const branchNames = Array.from(
+    new Set(
+      [
+        response?.session_default_ref,
+        response?.default_branch,
+        ...(response?.branches.map((branch) => branch.name) ?? []),
+      ].filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const defaultSource =
+    response?.session_default_source === 'group' ? 'Group default' : 'Project default';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Session branch: ${activeRef}`}
+          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 max-w-44 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200 active:scale-[0.96]"
+        >
+          <GitBranch className="size-3.5 shrink-0" />
+          <span className="truncate font-mono">{activeRef}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-80">
+        <DropdownMenuLabel>Session branch</DropdownMenuLabel>
+        <p className="text-muted-foreground px-2 pb-2 text-xs text-pretty">
+          Fork this session from an environment branch. Its work still lands on a separate session
+          branch.
+        </p>
+        {response?.session_default_conflict ? (
+          <p className="text-kortix-orange px-2 pb-2 text-xs text-pretty">
+            Your groups specify different defaults (
+            {(response.conflicting_group_refs ?? []).join(', ')}), so the project default applies.
+          </p>
+        ) : null}
+        <DropdownMenuSeparator />
+        {branchNames.map((ref) => {
+          const isSelected = ref === activeRef;
+          const isEffectiveDefault = ref === response?.session_default_ref;
+          return (
+            <DropdownMenuItem key={ref} onSelect={() => onSelect(ref)} className="gap-2">
+              <GitBranch className="text-muted-foreground size-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-mono text-sm">{ref}</div>
+                {isEffectiveDefault ? (
+                  <div className="text-muted-foreground text-xs">{defaultSource}</div>
+                ) : null}
+              </div>
+              {isSelected ? (
+                <Badge variant="outline" size="xs">
+                  {overridden ? 'this session' : 'default'}
+                </Badge>
+              ) : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

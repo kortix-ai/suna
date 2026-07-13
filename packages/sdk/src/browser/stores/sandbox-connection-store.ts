@@ -28,8 +28,8 @@ interface SandboxConnectionStore {
 	disconnectedAt: number | null;
 	/** Current sandbox version from /kortix/health (e.g. "0.5.1") */
 	sandboxVersion: string | null;
-	/** Runtime server version from /global/health (e.g. "1.2.10") */
-	openCodeVersion: string | null;
+	/** ACP daemon version from /kortix/health (e.g. "1.2.10") */
+	runtimeVersion: string | null;
 	/** Whether the Runtime server reports healthy */
 	healthy: boolean | null;
 	/** Last runtime boot/readiness error reported by /kortix/health */
@@ -113,7 +113,7 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	reconnectAttempts: 0,
 	disconnectedAt: null,
 	sandboxVersion: null,
-	openCodeVersion: null,
+	runtimeVersion: null,
 	healthy: null,
 	runtimeError: null,
 	recoveryPhase: "idle",
@@ -232,7 +232,7 @@ export function resetForServerSwitch() {
 			reconnectAttempts: 0,
 			disconnectedAt: null,
 			sandboxVersion: null,
-			openCodeVersion: null,
+			runtimeVersion: null,
 			healthy: true,
 			runtimeError: null,
 			recoveryPhase: "idle",
@@ -254,7 +254,7 @@ export function resetForServerSwitch() {
 			reconnectAttempts: 0,
 			disconnectedAt: null,
 			sandboxVersion: null,
-			openCodeVersion: null,
+			runtimeVersion: null,
 			healthy: null,
 			runtimeError: null,
 			recoveryPhase: "idle",
@@ -273,7 +273,7 @@ export function resetForServerSwitch() {
 		reconnectAttempts: 0,
 		disconnectedAt: null,
 		sandboxVersion: null,
-		openCodeVersion: null,
+		runtimeVersion: null,
 		healthy: null,
 		runtimeError: null,
 		recoveryPhase: "idle",
@@ -334,7 +334,7 @@ export function setRuntimeHealth(healthy: boolean, version?: string, runtimeErro
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
 	if (state.healthy !== healthy) updates.healthy = healthy;
-	if (version !== undefined && state.openCodeVersion !== version) updates.openCodeVersion = version;
+	if (version !== undefined && state.runtimeVersion !== version) updates.runtimeVersion = version;
 	const nextRuntimeError = healthy ? null : runtimeError;
 	if (runtimeError !== undefined && state.runtimeError !== nextRuntimeError) {
 		updates.runtimeError = nextRuntimeError;

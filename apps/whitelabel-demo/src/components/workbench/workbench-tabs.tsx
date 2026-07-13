@@ -88,7 +88,15 @@ function AcpThread({ acp }: { acp: UseSessionResult['acp'] }) {
               </div>
             </div>
           ) : (
-            <div key={index} className="rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">{item.kind === 'tool' ? item.title : item.method}</div>
+            <div key={index} className="rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              {item.kind === 'tool'
+                ? item.title
+                : item.kind === 'plan'
+                  ? 'Plan updated'
+                  : item.kind === 'question'
+                    ? 'Input requested'
+                    : item.method}
+            </div>
           ))}
           {acp.busy && <Marker><MarkerIcon><Loader2 className="animate-spin" /></MarkerIcon><MarkerContent>Agent is working…</MarkerContent></Marker>}
         </div>

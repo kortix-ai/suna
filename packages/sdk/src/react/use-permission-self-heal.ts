@@ -1,8 +1,5 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../core/runtime/client';
-import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
 
 /** A tool stuck in `running` this long with nothing pending is suspicious —
@@ -95,68 +92,7 @@ export function usePermissionSelfHeal(
   messages: MessageWithPartsLike[] | undefined,
   options: UsePermissionSelfHealOptions = {},
 ): void {
-  const { enabled = true } = options;
-  const addPermission = useRuntimePendingStore((s) => s.addPermission);
-  const pendingCount = useRuntimePendingStore(
-    (s) => Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length,
-  );
-  const active = useMemo(() => hasActiveNonQuestionTool(messages), [messages]);
-
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-  const inFlightRef = useRef(false);
-  const lastAtRef = useRef(0);
-  useEffect(() => {
-    if (!enabled || !active || pendingCount > 0) return;
-
-    let cancelled = false;
-
-    const hydrate = () => {
-      if (inFlightRef.current || cancelled) return;
-      const now = Date.now();
-      // Evaluate the blocked-candidate shapes at poll time, not render time —
-      // a part silently aging past the stale threshold produces no re-render.
-      const { pendingWithInput, staleRunning } = findPermissionBlockedCandidate(
-        messagesRef.current,
-        now,
-      );
-      if (!pendingWithInput && !staleRunning) return;
-      const minGap = pendingWithInput ? 1_500 : 15_000;
-      if (now - lastAtRef.current < minGap) return;
-
-      // Acquire the client lazily: during the sandbox-loading window
-      // getClient() throws "Server URL not ready". Skip this tick and let the
-      // interval retry once the runtime URL is pinned — never throw here.
-      let client: ReturnType<typeof getClient>;
-      try {
-        client = getClient();
-      } catch {
-        return;
-      }
-
-      inFlightRef.current = true;
-      lastAtRef.current = now;
-
-      void client.permission
-        .list()
-        .then((res) => {
-          if (!res.data || cancelled) return;
-          (res.data as Array<{ id?: string }>).forEach((p) => {
-            if (!p?.id) return;
-            addPermission(p as Parameters<typeof addPermission>[0]);
-          });
-        })
-        .finally(() => {
-          inFlightRef.current = false;
-        });
-    };
-
-    hydrate();
-    const timer = setInterval(hydrate, 2_000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [enabled, active, pendingCount, addPermission]);
+  // ACP requests are persisted in the canonical transcript and projected by
+  // `projectAcpPendingPrompts`; reconnect replay is the self-heal mechanism.
+  void sessionId; void messages; void options;
 }

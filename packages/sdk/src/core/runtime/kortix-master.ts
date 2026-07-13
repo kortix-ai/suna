@@ -16,11 +16,10 @@
  * types; this is those shapes moved down a layer, not a new design.
  *
  * The React Query layer (keys, caching, optimistic updates, `useAuth`-derived
- * actor identity) stays in `apps/web/src/hooks/**` — this module is transport
- * only. Reload (`/kortix/services/system/reload`) already has a home in
- * `./client`'s `systemReload`; it is intentionally NOT duplicated here.
+ * actor identity) stays in the React layer — this module is transport only.
  */
 import { authenticatedFetch } from '../http/auth';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Request core
@@ -888,9 +887,27 @@ export async function deleteCredential(
 // These use a 10s client-side timeout and disable the shared 401-retry (a
 // stale token shouldn't turn a 5s-polled services list into a retry storm) —
 // both carried over verbatim from the pre-migration `use-sandbox-services.ts`.
-// Reload (`/kortix/services/system/reload`) is `systemReload` in `./client` —
-// reuse that rather than adding a duplicate here.
 // ─────────────────────────────────────────────────────────────────────────────
+
+export type SystemReloadMode = 'dispose-only' | 'full';
+
+export interface SystemReloadResult {
+  success: boolean;
+  mode: SystemReloadMode;
+  steps: string[];
+  errors: string[];
+}
+
+/** Reload the active Kortix daemon's project services. Agent transport remains ACP. */
+export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
+  const baseUrl = getActiveRuntimeUrl();
+  if (!baseUrl) throw new Error('Session runtime is not ready');
+  return kortixMasterRequest<SystemReloadResult>(
+    baseUrl,
+    '/kortix/services/system/reload',
+    { method: 'POST', body: JSON.stringify({ mode }) },
+  );
+}
 
 export type SandboxServiceStatus = 'running' | 'stopped' | 'starting' | 'failed' | 'backoff';
 export type SandboxServiceAdapter = 'spawn' | 's6';

@@ -1,5 +1,19 @@
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+
+const originalGlobals = new Map(
+  ['window', 'localStorage', 'sessionStorage'].map((name) => [
+    name,
+    Object.getOwnPropertyDescriptor(globalThis, name),
+  ]),
+);
+
+afterEach(() => {
+  for (const [name, descriptor] of originalGlobals) {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else Reflect.deleteProperty(globalThis, name);
+  }
+});
 
 /**
  * A faithful-enough localStorage mock: enforces a byte budget and throws a

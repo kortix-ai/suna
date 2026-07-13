@@ -65,7 +65,6 @@ Every one of these is a real resource: spelled out in the repo, managed in an in
 - **Triggers** — cron and webhook. Fire a session every morning, or boot one the instant something happens.
 - **Sessions** — owned by whoever or whatever started them. You see yours; change the filter to see more. A real API and SDK underneath.
 - **Memory** — files for now, and a system that learns later: chew through every session and every connected source and keep a living picture of the company that sharpens by the day.
-- **Apps** — declarative, durable deployments. Define a service in config, get a real one you can reach, listed right under the project.
 
 ---
 

@@ -270,10 +270,9 @@ describe('Billing: tier-configurations', () => {
     const tierNames = body.tiers.map((t: any) => t.name);
     expect(tierNames).toContain('pro');
 
-    // Should NOT include hidden tiers ('free' is hidden from signup flows,
-    // 'none' is the internal no-access tier).
+    // Free is a real selectable tier; only the internal no-access tier stays hidden.
     expect(tierNames).not.toContain('none');
-    expect(tierNames).not.toContain('free');
+    expect(tierNames).toContain('free');
 
     // Verify tier structure
     const proTier = body.tiers.find((t: any) => t.name === 'pro');

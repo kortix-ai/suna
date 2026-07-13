@@ -10,7 +10,7 @@ import {
   createKortixPty,
   removeKortixPty,
   getKortixPtyWebSocketUrl,
-} from '@kortix/sdk/runtime-client';
+} from '@kortix/sdk';
 import { getActiveRuntimeUrl } from '@/stores/server-store';
 import type { GitCommit, FileHistoryResult, FileCommitDiff } from '@/features/file-browser/types';
 

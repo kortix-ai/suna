@@ -25,7 +25,7 @@ import { modelKeyToWire, useModelStore } from '@/hooks/runtime/use-model-store';
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { backendApi } from '@/lib/api-client';
 import { setModelDefault } from '@kortix/sdk/projects-client';
-import { setEnv } from '@kortix/sdk/runtime-client';
+import { setEnv } from '@kortix/sdk';
 import { useServerStore } from '@/stores/server-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';

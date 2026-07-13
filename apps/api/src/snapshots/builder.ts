@@ -345,7 +345,7 @@ async function runInlineBuild(
       // AND on resume — the SAME path Daytona takes, no provider divergence.
       // Stateful/warm capture used to resume opencode mid-state off a CH memory
       // snapshot, which intermittently wedged it (virtio-net RX stall after
-      // restore → /global/event + /pty hang while /kortix/health still
+      // restore → runtime event + PTY transports can hang while /kortix/health still
       // answered). A cold boot avoids that entirely.
     });
     if (buildId) await closeBuildLogReady(buildId);

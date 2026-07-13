@@ -670,7 +670,7 @@ function CreateApiKeySheet({
   sandboxUuid,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
@@ -840,7 +840,7 @@ function SecretKeySheet({
   createdKey,
   onDone,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
@@ -1042,7 +1042,7 @@ function CreatePublicLinkSheet({
   sandboxId,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;

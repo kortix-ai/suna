@@ -36,7 +36,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<WebView<Record<string, unknown>>>(null);
 
   // Restore persisted state from tab store
   const savedState = useTabStore((s) => s.tabStateById[page.id]) as { savedUrl?: string; savedDisplay?: string } | undefined;
@@ -258,7 +258,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
       />
       <PageContent>
         {currentUrl && authToken ? (
-          <WebView
+          <WebView<Record<string, unknown>>
             ref={webViewRef}
             source={{
               uri: currentUrl,

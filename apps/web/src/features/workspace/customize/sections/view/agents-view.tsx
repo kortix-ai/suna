@@ -24,7 +24,7 @@ import {
   type ManifestVersion,
   useProjectManifestVersion,
 } from '@/features/workspace/customize/migrate-to-v2/manifest-version';
-import { formatMode } from '@/features/workspace/customize/shared/utils';
+import { formatMode, toArray } from '@/features/workspace/customize/shared/utils';
 import { useModelDefaults } from '@/hooks/runtime/use-model-defaults';
 import { useRuntimeProviders } from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -124,7 +124,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
           <AgentConfigEditor
             projectId={projectId}
             agent={agent}
-            skillsOptions={config.skills.map((s) => ({ id: s.name, label: s.name }))}
+            skillsOptions={toArray(config.skills).map((s) => ({ id: s.name, label: s.name }))}
             fallback={
               <>
                 <AgentModel projectId={projectId} agentName={agent.name} />
@@ -309,7 +309,7 @@ function DefaultAgentSelector({
 }) {
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) >= 2;
-  const availableAgents = config.agents.filter((agent) => agent.enabled !== false);
+  const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
   const current = config.runtime_default_agent;
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),

@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 
-import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -152,8 +151,6 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <CustomizPanel projectId={projectId} />
-
-        <AppsOverlay projectId={projectId} />
 
         <ProjectOnboardingWizard projectId={projectId} />
 

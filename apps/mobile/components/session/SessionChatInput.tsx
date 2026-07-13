@@ -79,6 +79,12 @@ export interface PromptOptions {
   agent?: string;
   model?: { providerID: string; modelID: string };
   variant?: string;
+  connectionId?: import('@kortix/sdk').HarnessAuthKind;
+  modelSelection?: {
+    kind: 'default' | 'preset' | 'custom';
+    modelId?: string | null;
+    connectionId?: import('@kortix/sdk').HarnessAuthKind | null;
+  };
 }
 
 export type { TrackedMention } from './useMentions';
@@ -199,6 +205,10 @@ interface SessionChatInputProps {
   variants?: string[];
   onAgentChange?: (name: string) => void;
   onModelChange?: (providerID: string, modelID: string) => void;
+  onCustomModelChange?: (modelID: string) => void;
+  connectionId?: import('@kortix/sdk').HarnessAuthKind | null;
+  modelSelection?: PromptOptions['modelSelection'];
+  blockingReason?: string | null;
   onVariantCycle?: () => void;
   onVariantSet?: (variant: string | null) => void;
   /** Data for @mentions */
@@ -252,6 +262,10 @@ export function SessionChatInput({
   variants = [],
   onAgentChange,
   onModelChange,
+  onCustomModelChange,
+  connectionId,
+  modelSelection,
+  blockingReason,
   onVariantCycle,
   onVariantSet,
   sessions = [],
@@ -572,7 +586,7 @@ export function SessionChatInput({
   const showAnimatedPlaceholder = text.trim().length === 0 && !inputSlot && !stagedCommand;
   // ────────────────────────────────────────────────────────────────────────
 
-  const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
+  const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !blockingReason && !isUploading;
   const hasDraftText = text.trim().length > 0;
   const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
 
@@ -611,7 +625,7 @@ export function SessionChatInput({
     }
 
     const trimmed = text.trim();
-    if (!trimmed || disabled) return;
+    if (!trimmed || disabled || blockingReason) return;
 
     // Dismiss the keyboard on send so the user sees the new message land
     // (matches WhatsApp / iMessage behavior on phones).
@@ -642,6 +656,8 @@ export function SessionChatInput({
     if (agent?.name) options.agent = agent.name;
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
+    if (connectionId) options.connectionId = connectionId;
+    if (modelSelection) options.modelSelection = modelSelection;
 
     const trackedMentions = mention.mentions.length > 0 ? [...mention.mentions] : undefined;
     const filesToUpload = [...attachedFiles];
@@ -696,7 +712,7 @@ export function SessionChatInput({
     } else {
       onSend(trimmed, options, trackedMentions);
     }
-  }, [text, disabled, onSend, agent, modelKey, variant, mention, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
+  }, [text, disabled, blockingReason, onSend, agent, modelKey, variant, connectionId, modelSelection, mention, isBusy, onEnqueue, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, autocontinueMode, commands, attachedFiles, sandboxUrl]);
 
   // Variant display
   const variantLabel = variant
@@ -725,6 +741,12 @@ export function SessionChatInput({
             onSelect={handleMentionSelect}
           />
         )}
+
+        {blockingReason ? (
+          <View className="mx-3 mb-2 rounded-lg border border-border bg-muted px-3 py-2">
+            <Text className="text-xs text-muted-foreground">{blockingReason}</Text>
+          </View>
+        ) : null}
 
         {/* Text input area */}
         <View className="px-3 pt-1 pb-2">
@@ -1154,6 +1176,7 @@ export function SessionChatInput({
         models={models}
         selectedModel={model || null}
         onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
+        onCustomModelChange={(modelId) => onCustomModelChange?.(modelId)}
         variants={variants}
         selectedVariant={variant || null}
         onVariantSet={(v) => onVariantSet?.(v)}
@@ -1841,6 +1864,7 @@ const ConfigSheet = forwardRef<
     models: FlatModel[];
     selectedModel: FlatModel | null;
     onModelChange: (providerId: string, modelId: string) => void;
+    onCustomModelChange: (modelId: string) => void;
     variants: string[];
     selectedVariant: string | null;
     onVariantSet: (variant: string | null) => void;
@@ -1854,6 +1878,7 @@ const ConfigSheet = forwardRef<
     models,
     selectedModel,
     onModelChange,
+    onCustomModelChange,
     variants,
     selectedVariant,
     onVariantSet,
@@ -1863,6 +1888,7 @@ const ConfigSheet = forwardRef<
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
+  const [customModel, setCustomModel] = useState('');
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#a1a1aa' : '#71717a';
   const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
@@ -2052,7 +2078,29 @@ const ConfigSheet = forwardRef<
             seen.get(key)!.push(m);
           }
 
-          return groups.map((group) => (
+          return <>
+            <TouchableOpacity
+              onPress={() => onModelChange('', '')}
+              activeOpacity={0.6}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 20,
+                paddingVertical: 14,
+                backgroundColor: !selectedModel ? selectedBg : 'transparent',
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontFamily: !selectedModel ? 'Roobert-Medium' : 'Roobert', color: fgColor }}>
+                  Harness default
+                </Text>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: mutedColor, marginTop: 3 }}>
+                  Let the active ACP harness and connection choose
+                </Text>
+              </View>
+              {!selectedModel ? <Ionicons name="checkmark" size={20} color={fgColor} /> : null}
+            </TouchableOpacity>
+            {groups.map((group) => (
             <View key={group.providerID}>
               {/* Provider header */}
               <View
@@ -2129,7 +2177,31 @@ const ConfigSheet = forwardRef<
                 );
               })}
             </View>
-          ));
+            ))}
+            <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: mutedColor, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Custom model ID
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <TextInput
+                  value={customModel}
+                  onChangeText={setCustomModel}
+                  placeholder="provider/model"
+                  placeholderTextColor={mutedColor}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{ flex: 1, minHeight: 42, borderWidth: 1, borderColor: isDark ? '#3f3f46' : '#d4d4d8', borderRadius: 8, paddingHorizontal: 12, color: fgColor }}
+                />
+                <TouchableOpacity
+                  disabled={!customModel.trim()}
+                  onPress={() => { onCustomModelChange(customModel.trim()); setCustomModel(''); }}
+                  style={{ minHeight: 42, justifyContent: 'center', borderRadius: 8, paddingHorizontal: 16, backgroundColor: fgColor, opacity: customModel.trim() ? 1 : 0.4 }}
+                >
+                  <Text style={{ color: bg, fontFamily: 'Roobert-Medium', fontSize: 14 }}>Apply</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>;
         })()}
 
         {/* Thinking tab */}

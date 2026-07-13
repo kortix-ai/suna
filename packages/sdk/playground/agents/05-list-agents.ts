@@ -18,7 +18,7 @@ run("list-agents", async () => {
   const config = detail.config;
 
   console.log(`✓ agent discovery: ${config.agent_discovery}`);
-  console.log(`✓ default agent:   ${config.open_code_default_agent ?? "—"}`);
+  console.log(`✓ default agent:   ${config.runtime_default_agent ?? "—"}`);
   console.log(`✓ ${config.agents.length} agent(s):\n`);
   for (const agent of config.agents) {
     console.log(`  ${agent.name}${agent.mode ? ` (${agent.mode})` : ""}`);
@@ -28,7 +28,7 @@ run("list-agents", async () => {
     console.log("");
   }
 
-  const first = config.open_code_default_agent ?? config.agents[0]?.name;
+  const first = config.runtime_default_agent ?? config.agents[0]?.name;
   if (first) {
     const agentConfig = await getAgentConfig(projectId, first);
     console.log(`✓ getAgentConfig('${first}'):`);

@@ -143,7 +143,7 @@ export interface RuntimeProjectInfo {
   sandboxes: string[];
 }
 
-/** GET /global/health response */
+/** Harness-neutral projection of GET /kortix/health. */
 export interface ServerHealth {
   healthy: boolean;
   version: string;

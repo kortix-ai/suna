@@ -319,6 +319,9 @@ export async function allocateRuntimeOnOpen(
     }
   ).metadata?.legacy_migration?.source_sandbox_id;
   const runtimeModel = typeof session.metadata?.model === 'string' ? session.metadata.model : null;
+  const runtimeAuthKind = typeof session.metadata?.auth_connection === 'string'
+    ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
+    : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
@@ -343,6 +346,7 @@ export async function allocateRuntimeOnOpen(
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         runtimeModel,
+        runtimeAuthKind,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),

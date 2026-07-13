@@ -1,8 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -47,22 +45,6 @@ function jsonProxyError(body: Record<string, unknown>, status: number, origin?: 
     status,
     headers,
   });
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : String(error || fallback);
-}
-
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
-
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
 }
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
@@ -247,83 +229,6 @@ function sanitizeRedirectLocation(
   }
 }
 
-// === Project-env pre-sync (before a prompt reaches opencode) ===
-
-function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: string): boolean {
-  if (port !== 8000) return false;
-  if (method.toUpperCase() !== 'POST') return false;
-  return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
-}
-
-function requestedPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): string | null {
-  if (!body) return null;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return null;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
-    return typeof parsed.agent === 'string' && parsed.agent.trim() ? parsed.agent.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function agentSwitchConflictResponse(expectedAgent: string, requestedAgent: string, origin?: string): Response {
-  return jsonProxyError({
-    error: 'agent switch requires a new session',
-    code: 'AGENT_SWITCH_REQUIRES_NEW_SESSION',
-    expected_agent: expectedAgent,
-    requested_agent: requestedAgent,
-  }, 409, origin);
-}
-
-// The sentinel name a session carries when it isn't bound to a *concrete* agent.
-// `project_sessions.agent_name` defaults to this, and no agent is literally named
-// "default" — the runtime resolves it to OpenCode's configured `default_agent`
-// (conventionally `kortix`). It is therefore non-binding: a "default" session's
-// executor token carries the least-privileged grant (null = full for ungoverned
-// projects, deny for governed ones — see `grantFromLoadedAgents`), so a prompt
-// can never use it to escalate into another agent's connector / Kortix-CLI grant.
-const DEFAULT_AGENT_SENTINEL = 'default';
-
-// A prompt's explicit `agent` only constitutes a prohibited switch when it would
-// run a DIFFERENT *concrete* agent than the one this session's executor token was
-// minted for. That — and only that — is the escalation the policy prevents (see
-// docs/specs/2026-06-28-token-session-agent-identity.md). The sentinel 'default'
-// is non-binding on EITHER side: a session stored as 'default' has no privileged
-// agent-specific grant to inherit, and a prompt asking for 'default' just means
-// "this session's own default agent".
-//
-// Without this, the client's perfectly ordinary behaviour read as a bogus switch:
-// it resolves "the default" to a concrete name (e.g. `kortix`) for display and
-// echoes it back on follow-up turns — and a first-turn race can send that name
-// before the session's bound agent has even loaded. Comparing the concrete echo
-// against the stored sentinel 409'd every "start a new session, send a second
-// message" flow (the false AGENT_SWITCH_REQUIRES_NEW_SESSION reports).
-function isProhibitedAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
-  if (!requestedAgent) return false;
-  if (requestedAgent === DEFAULT_AGENT_SENTINEL) return false;
-  if (sessionAgent === DEFAULT_AGENT_SENTINEL) return false;
-  return requestedAgent !== sessionAgent;
-}
-
-// Drop the prompt's `agent` field entirely so OpenCode resolves its own
-// `default_agent`. Used for non-concrete ('default') sessions: the box must
-// always run the agent it booted with — the one the executor token was minted
-// for — regardless of which concrete name the client speculatively echoed.
-function bodyWithoutPromptAgent(body: ArrayBuffer | undefined, incomingHeaders: Headers): ArrayBuffer | undefined {
-  if (!body) return body;
-  const contentType = incomingHeaders.get('content-type') ?? '';
-  if (!contentType.toLowerCase().includes('application/json')) return body;
-  try {
-    const parsed = JSON.parse(new TextDecoder().decode(body)) as { agent?: unknown };
-    if (!('agent' in parsed)) return body;
-    delete parsed.agent;
-    return new TextEncoder().encode(JSON.stringify(parsed)).buffer;
-  } catch {
-    return body;
-  }
-}
-
 // === Core HTTP forwarder ======================================================
 //
 // Forwards one request to a sandbox port with the full upstream auth header set,
@@ -416,10 +321,8 @@ export async function forwardToSandbox(
   // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
   // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
   // request (sandbox ownership is already enforced unconditionally above). NOTE:
-  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
-  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
-  // client actually used (/4096), and env-sync-before-prompt must behave identically
-  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  // redirectPrefix/X-Forwarded-Prefix stays on the client-addressed `port` ON
+  // PURPOSE — the prefix must reflect the URL the client actually used (/4096).
   const upstreamPort = effectiveUpstreamPort(record.provider, port);
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
@@ -507,49 +410,6 @@ export async function forwardToSandbox(
       const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
-      if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
-        const requestedAgent = requestedPromptAgent(body, incomingHeaders);
-        const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-        // Agent-lock enforcement is OFF by default — in-session agent switching is
-        // allowed. The 409 only fires when KORTIX_ENFORCE_SESSION_AGENT_LOCK is
-        // explicitly enabled (a future per-agent executor-token auth model; see the
-        // config flag's TODO). Until then a prompt may freely run a different agent.
-        if (
-          config.KORTIX_ENFORCE_SESSION_AGENT_LOCK &&
-          isProhibitedAgentSwitch(requestedAgent, sessionAgent)
-        ) {
-          return agentSwitchConflictResponse(sessionAgent, requestedAgent!, origin);
-        }
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent is forwarded untouched so the user can switch agents
-        // within a session.
-        if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
-          body = bodyWithoutPromptAgent(body, incomingHeaders);
-        }
-        try {
-          await syncSandboxEnvForPrompt({
-            projectId: record.projectId,
-            sessionId: record.sessionId,
-            serviceKey,
-            previewUrl,
-            previewToken,
-          });
-        } catch (err) {
-          const message = errorMessage(err, 'project env sync failed');
-          if (isRetryableEnvSyncFailure(message)) {
-            // Treat daemon/preview-transient env-sync failures like any other
-            // sandbox-port reachability miss: retry/wake in the outer loop, then
-            // return the friendly port-unreachable response if the sandbox never
-            // recovers. Throwing HTTPException here bypassed that retry path and
-            // turned expected 502/timeouts from Daytona into Better Stack errors.
-            throw new Error(message);
-          }
-          console.warn(`[PREVIEW] Project env sync failed for ${sandboxId}:${port}: ${message}`);
-          return jsonProxyError({ error: message }, 502, origin);
-        }
-      }
-
       // Build forwarding headers: copy the client's (minus stripped), force
       // identity encoding, regenerate trace headers, then apply the sandbox
       // auth/identity headers (service key, preview token, signed user-context)
@@ -624,7 +484,7 @@ export async function forwardToSandbox(
       // headers until the body is written, so they receive the remaining outer
       // proxy budget instead of the generic 15s cutoff. The previous
       // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
-      // severed every streaming response body at ~15s: the `/global/event` SSE
+      // severed every streaming response body at ~15s: the legacy runtime SSE
       // stream (each open session tab then reconnected ~250ms later, forever —
       // a fleet-wide reconnect storm, ~240 reconnects/hour/tab), long-polls,
       // and any proxied download slower than 15s. The retry loop only ever

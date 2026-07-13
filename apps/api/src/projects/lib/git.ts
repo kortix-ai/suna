@@ -4,7 +4,6 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
-import { isLegacyFreestyleGitConfigured, mintLegacyFreestyleRepoToken } from '../git-backends/legacy-freestyle';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
@@ -444,23 +443,6 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
       };
     } catch (err) {
       console.warn(`[projects] failed to mint managed GitHub token for ${project.projectId}:`, err);
-      return { authSource: 'none' };
-    }
-  }
-
-  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.externalRepoId) {
-    if (!(await isLegacyFreestyleGitConfigured())) return { authSource: 'none' };
-    try {
-      const push = await mintLegacyFreestyleRepoToken({
-        repoId: remote.externalRepoId,
-        identityId: remote.ref,
-      });
-      return {
-        auth: { token: push.token, source: 'managed' },
-        authSource: 'managed',
-      };
-    } catch (err) {
-      console.warn(`[projects] failed to mint legacy Freestyle token for ${project.projectId}:`, err);
       return { authSource: 'none' };
     }
   }

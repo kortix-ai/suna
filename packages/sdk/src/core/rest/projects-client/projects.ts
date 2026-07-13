@@ -13,7 +13,6 @@ import {
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
 export type ExperimentalFeatureKey =
-  | "apps"
   | "agent_tunnel"
   | "marketplace"
   | "agentmail_email"
@@ -54,8 +53,6 @@ export interface KortixProject {
   /** Full experimental-feature catalog (drives Customize → Settings →
    *  Experimental). Self-describing so the UI never hard-codes the list. */
   experimental_features?: ExperimentalFeatureView[];
-  /** Back-compat alias for `experimental.apps`. */
-  apps_enabled?: boolean;
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
@@ -71,15 +68,18 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  runtime_configs: Array<{
+    runtime: string;
+    harness: "claude" | "codex" | "opencode" | "pi";
+    config_dir: string;
+    path: string;
+    raw: string | null;
+  }>;
   runtime_config_raw: string | null;
   runtime_default_agent: string | null;
   agent_source: "native" | "declarative";
-  /** @deprecated Use runtime_config_raw. */
-  open_code_raw: string | null;
-  /** @deprecated Use runtime_default_agent. */
-  open_code_default_agent: string | null;
   /** @deprecated Use agent_source. */
-  agent_discovery: "opencode" | "declarative";
+  agent_discovery: "runtime" | "declarative";
   agents: Array<{
     name: string;
     path: string;
@@ -91,6 +91,7 @@ export interface ProjectConfigSummary {
     runtime?: string | null;
     /** ACP harness resolved by the single runtime compiler entrypoint. */
     harness?: "claude" | "codex" | "opencode" | "pi" | null;
+    native_agent?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
      *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
      *  Runtime-discovered agents (not governed by `agents:`). */
@@ -353,14 +354,6 @@ export async function updateProjectSandboxProvider(
       },
     ),
   );
-}
-
-/** @deprecated Use {@link updateExperimentalFeature}('apps', …). */
-export async function updateAppsConfig(
-  projectId: string,
-  input: { enabled: boolean | null },
-) {
-  return updateExperimentalFeature(projectId, "apps", input.enabled);
 }
 
 /**

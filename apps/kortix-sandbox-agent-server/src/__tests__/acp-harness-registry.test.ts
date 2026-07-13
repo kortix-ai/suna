@@ -1,7 +1,121 @@
 import { describe, expect, test } from 'bun:test';
-import { createAcpHarnessRegistry, resolveAcpHarnessLaunchEnv } from '../acp/harness-registry';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  applyAcpSessionDefaults,
+  createAcpHarnessRegistry,
+  isolateHarnessAuthEnv,
+  resolveAcpHarnessLaunchEnv,
+} from '../acp/harness-registry';
 
 describe('ACP harness registry', () => {
+  test('passes the manifest-selected Claude agent through sanctioned ACP session metadata', () => {
+    const request = {
+      jsonrpc: '2.0' as const,
+      id: 7,
+      method: 'session/new',
+      params: {
+        cwd: '/workspace',
+        mcpServers: [],
+        _meta: {
+          trace: 'keep-me',
+          claudeCode: { options: { permissionMode: 'default' } },
+        },
+      },
+    };
+
+    expect(applyAcpSessionDefaults('claude', request, {
+      KORTIX_NATIVE_AGENT: 'reviewer',
+    })).toEqual({
+      ...request,
+      params: {
+        ...request.params,
+        _meta: {
+          trace: 'keep-me',
+          claudeCode: {
+            options: { permissionMode: 'default', agent: 'reviewer' },
+          },
+        },
+      },
+    });
+    expect(request.params._meta.claudeCode.options).toEqual({ permissionMode: 'default' });
+  });
+
+  test('does not invent native-agent ACP fields for harnesses without one', () => {
+    const request = {
+      jsonrpc: '2.0' as const,
+      id: 8,
+      method: 'session/new',
+      params: { cwd: '/workspace', mcpServers: [] },
+    };
+    for (const harness of ['codex', 'opencode', 'pi'] as const) {
+      expect(applyAcpSessionDefaults(harness, request, {
+        KORTIX_NATIVE_AGENT: 'reviewer',
+      })).toBe(request);
+    }
+  });
+
+  test('an explicit auth route removes every competing provider credential', () => {
+    expect(isolateHarnessAuthEnv({
+      KORTIX_RUNTIME_AUTH_KIND: 'claude_subscription',
+      CLAUDE_CODE_OAUTH_TOKEN: 'subscription',
+      ANTHROPIC_API_KEY: 'anthropic-key',
+      OPENAI_API_KEY: 'openai-key',
+      CUSTOM_LLM_PROTOCOL: 'anthropic',
+      CUSTOM_LLM_BASE_URL: 'https://custom.example.test',
+    })).toMatchObject({
+      KORTIX_RUNTIME_AUTH_KIND: 'claude_subscription',
+      CLAUDE_CODE_OAUTH_TOKEN: 'subscription',
+    });
+    const isolated = isolateHarnessAuthEnv({
+      KORTIX_RUNTIME_AUTH_KIND: 'claude_subscription',
+      CLAUDE_CODE_OAUTH_TOKEN: 'subscription',
+      ANTHROPIC_API_KEY: 'anthropic-key',
+      OPENAI_API_KEY: 'openai-key',
+      CUSTOM_LLM_PROTOCOL: 'anthropic',
+      CUSTOM_LLM_BASE_URL: 'https://custom.example.test',
+    });
+    expect(isolated.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(isolated.OPENAI_API_KEY).toBeUndefined();
+    expect(isolated.CUSTOM_LLM_BASE_URL).toBeUndefined();
+  });
+
+  test('native config never silently falls back to the Kortix gateway', () => {
+    const env = {
+      KORTIX_RUNTIME_AUTH_KIND: 'native_config',
+      KORTIX_API_URL: 'https://api.example.test/v1',
+      KORTIX_TOKEN: 'sandbox-token',
+      KORTIX_RUNTIME_CONFIG_DIR: '.codex',
+    };
+    expect(resolveAcpHarnessLaunchEnv('codex', env)).toEqual({ CODEX_HOME: '/workspace/.codex' });
+    expect(resolveAcpHarnessLaunchEnv('claude', env)).toEqual({ CLAUDE_CONFIG_DIR: '/workspace/.codex' });
+    expect(resolveAcpHarnessLaunchEnv('pi', env)).toEqual({ PI_CODING_AGENT_DIR: '/workspace/.codex' });
+  });
+
+  test('native config does not inherit unrelated provider credentials', () => {
+    const isolated = isolateHarnessAuthEnv({
+      KORTIX_RUNTIME_AUTH_KIND: 'native_config',
+      KORTIX_RUNTIME_CONFIG_DIR: '.claude',
+      CLAUDE_CODE_OAUTH_TOKEN: 'claude-token',
+      ANTHROPIC_API_KEY: 'anthropic-key',
+      CODEX_AUTH_JSON: '{"tokens":true}',
+      OPENAI_API_KEY: 'openai-key',
+      CUSTOM_LLM_PROTOCOL: 'anthropic',
+      CUSTOM_LLM_BASE_URL: 'https://custom.example.test',
+    });
+    expect(isolated.KORTIX_RUNTIME_CONFIG_DIR).toBe('.claude');
+    for (const name of [
+      'CLAUDE_CODE_OAUTH_TOKEN',
+      'ANTHROPIC_API_KEY',
+      'CODEX_AUTH_JSON',
+      'OPENAI_API_KEY',
+      'CUSTOM_LLM_PROTOCOL',
+      'CUSTOM_LLM_BASE_URL',
+    ]) {
+      expect(isolated[name]).toBeUndefined();
+    }
+  });
   test('uses image-stable absolute paths for installed ACP adapters', () => {
     const registry = createAcpHarnessRegistry({});
     expect(registry.get('claude')?.launch).toMatchObject({
@@ -173,6 +287,45 @@ describe('ACP harness registry', () => {
       permission: 'allow',
       default_agent: 'reviewer',
     });
+  });
+
+  test('does not interpret an OpenCode native agent as a Codex profile', () => {
+    const home = mkdtempSync(join(tmpdir(), 'kortix-opencode-profile-'));
+    try {
+      const registry = createAcpHarnessRegistry({
+        KORTIX_RUNTIME_HARNESS: 'opencode',
+        KORTIX_RUNTIME_CONFIG_DIR: home,
+        KORTIX_NATIVE_AGENT: 'kortix',
+      });
+      expect(
+        JSON.parse(registry.get('opencode')?.launch.env?.OPENCODE_CONFIG_CONTENT ?? '{}'),
+      ).toMatchObject({ default_agent: 'kortix' });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('layers a Codex native profile into the adapter config', () => {
+    const home = mkdtempSync(join(tmpdir(), 'kortix-codex-profile-'));
+    try {
+      writeFileSync(join(home, 'reviewer.config.toml'), [
+        'model = "gpt-5.4"',
+        'developer_instructions = "Review only."',
+      ].join('\n'));
+      expect(resolveAcpHarnessLaunchEnv('codex', {
+        KORTIX_RUNTIME_AUTH_KIND: 'native_config',
+        KORTIX_RUNTIME_CONFIG_DIR: home,
+        KORTIX_NATIVE_AGENT: 'reviewer',
+      })).toEqual({
+        CODEX_HOME: home,
+        CODEX_CONFIG: JSON.stringify({
+          model: 'gpt-5.4',
+          developer_instructions: 'Review only.',
+        }),
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('translates one OpenAI-compatible REST connection for Codex, OpenCode, and Pi', () => {

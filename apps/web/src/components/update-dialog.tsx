@@ -123,11 +123,8 @@ export function UpdateDialog({
     const backendUrl = (getEnv().BACKEND_URL || 'http://localhost:8008/v1').replace(/\/+$/, '');
     const sandboxBaseUrl = `${backendUrl}/p/${sandboxId}/8000`;
 
-    // Probes Runtime's own `/global/health` (not the daemon's `/kortix/health`
-    // that `@kortix/sdk/session`'s `getSessionHealth` exposes) — the daemon
-    // wrapper endpoint always returns 200 even mid-restart, so it can't tell us
-    // whether Runtime itself is back up; `healthy` can. See
-    // use-sandbox-poller.ts's `fetchSandboxGlobalHealth` header comment.
+    // Probe the harness-neutral daemon readiness signal. HTTP 200 alone is not
+    // enough: `fetchSandboxGlobalHealth` checks the body `runtimeReady` field.
     const health = await fetchSandboxGlobalHealth(
       sandboxBaseUrl,
       { method: 'GET', signal: AbortSignal.timeout(5000) },

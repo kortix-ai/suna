@@ -1,8 +1,5 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
-import { getClient } from '../core/runtime/client';
-import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
 
 /**
@@ -56,59 +53,6 @@ export function useQuestionSelfHeal(
   messages: MessageWithPartsLike[] | undefined,
   options: UseQuestionSelfHealOptions = {},
 ): void {
-  const { enabled = true, isSuppressed } = options;
-  const addQuestion = useRuntimePendingStore((s) => s.addQuestion);
-  const pendingCount = useRuntimePendingStore((s) =>
-    Object.values(s.questions).filter((q) => q.sessionID === sessionId && !isSuppressed?.(q.id))
-      .length,
-  );
-  const running = useMemo(() => hasRunningQuestionTool(messages), [messages]);
-
-  const inFlightRef = useRef(false);
-  const lastAtRef = useRef(0);
-  useEffect(() => {
-    if (!enabled || !running || pendingCount > 0) return;
-
-    let cancelled = false;
-
-    const hydrate = () => {
-      if (inFlightRef.current || cancelled) return;
-      const now = Date.now();
-      if (now - lastAtRef.current < 1500) return;
-
-      // Acquire the client lazily: during the sandbox-loading window
-      // getClient() throws "Server URL not ready". Skip this tick and let the
-      // interval retry once the runtime URL is pinned — never throw here.
-      let client: ReturnType<typeof getClient>;
-      try {
-        client = getClient();
-      } catch {
-        return;
-      }
-
-      inFlightRef.current = true;
-      lastAtRef.current = now;
-
-      void client.question
-        .list()
-        .then((res) => {
-          if (!res.data || cancelled) return;
-          (res.data as Array<{ id?: string }>).forEach((q) => {
-            if (!q?.id || isSuppressed?.(q.id)) return;
-            addQuestion(q as Parameters<typeof addQuestion>[0]);
-          });
-        })
-        .finally(() => {
-          inFlightRef.current = false;
-        });
-    };
-
-    hydrate();
-    const timer = setInterval(hydrate, 2000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [enabled, running, pendingCount, addQuestion, isSuppressed]);
+  // ACP request replay is transcript-backed; no harness-specific polling.
+  void sessionId; void messages; void options;
 }

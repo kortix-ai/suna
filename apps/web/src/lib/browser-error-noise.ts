@@ -134,6 +134,66 @@ const OLD_WEBKIT_REGEX_NOISE_PATTERNS = [
   'invalid group specifier name',
 ] as const;
 
+// Paper Shaders (`@paper-design/shaders-react`) null-WebGL-context crash class.
+// On GPUs/browsers without working WebGL2 (context loss, blacklisted driver,
+// stripped WebView, headless renderer), Paper Shaders' shader-mount
+// `useEffect`/rAF callback reaches a WebGL2 context that has become `null` and
+// calls a WebGL API method on it → `TypeError: Cannot read properties of null
+// (reading '<method>')`. The throw happens INSIDE an async callback, so it
+// ESCAPES the `<ShaderSafe>` React error boundary (which only catches
+// render-phase throws via `getDerivedStateFromError`) → global error → Sentry
+// → Better Stack. The two observed null-context method names are:
+//   - `getSupportedExtensions`  (Better Stack pattern `34127fa4…`, call site
+//                                `new b2` in chunk `c76173f0.…`, prod, 2 occ.)
+//   - `getAttribLocation`       (the known sibling already documented in
+//                                `shader-safe.tsx`'s probe rationale).
+// These are WebGL2 context method names — they are NEVER called from
+// first-party app code (only from Paper Shaders' library internals), so the
+// message wording alone is specific enough to safely classify as noise without
+// a chunk-frame anchor (unlike the generic old-browser SyntaxError class). The
+// matching is exact-substring on the canonical `Cannot read properties of null
+// (reading '<method>')` (V8) and `Cannot read property '<method>' of null`
+// (old JSC) forms, with `TypeError: ` / `Error: ` /
+// `Unhandled promise rejection: ` wrappers stripped so all capture paths
+// (window.onerror, onunhandledrejection, Sentry exception) classify
+// consistently. `shouldIgnore*` here is the leak-path backstop for the throws
+// that still escape `<ShaderSafe>` after a context-loss event; the
+// `supportsWebGL2()` probe in `shader-safe.tsx` is the primary guard that
+// degrades to the fallback BEFORE the throw.
+const PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS = [
+  "Cannot read properties of null (reading 'getSupportedExtensions')",
+  "Cannot read properties of null (reading 'getAttribLocation')",
+  "Cannot read property 'getSupportedExtensions' of null",
+  "Cannot read property 'getAttribLocation' of null",
+] as const;
+
+// Old-browser / stripped-down-WebView minified-chunk parse failures. When a
+// browser that cannot parse modern minified JS (old Safari/iOS, legacy Android
+// WebView, in-app browsers, mail-client preview WebViews) tries to evaluate a
+// Next.js `_next/static/chunks/…` bundle, it throws a parse-time `SyntaxError`
+// — `Unexpected token '='` / `'('` / `'{'` (V8/SpiderMonkey), `Invalid or
+// unexpected token` (V8), or `Cannot use import statement outside a module`
+// (V8, when an ES-module chunk is loaded as a classic script) — failing the
+// whole chunk for that visitor. These are NOT product bugs: the browser is
+// simply incompatible with the shipped syntax. They are 1–2 occurrences each,
+// 0 identified users, all from `app:///_next/static/chunks/…` frames.
+//
+// The message prefixes are GENERIC (a real `new Function('…')` / `eval('…')`
+// eval bug in first-party app code throws the same wording), so matching on
+// message alone would swallow real app SyntaxErrors. Require BOTH the message
+// prefix AND a minified-chunk source (`_next/static/chunks/` or a `?dpl=dpl_…`
+// deploy hash). Parse failures happen at raw chunk load time, BEFORE Sentry's
+// sourcemap resolution, so the frame filename stays as the raw chunk path —
+// a genuine first-party eval bug de-minifies to `apps/web/src/…` and is never
+// hidden. `SyntaxError: ` / `Error: ` / `Unhandled promise rejection: ` wrappers
+// are stripped before matching so all capture paths (window.onerror,
+// onunhandledrejection, Sentry exception) classify consistently.
+const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Unexpected token\b/,
+  /^Invalid or unexpected token$/,
+  /^Cannot use import statement outside a module$/,
+];
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -222,6 +282,70 @@ export function isKnownBrowserNoiseMessage(message: unknown): boolean {
 export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
+}
+
+// Sentry events whose exception carries NO message ("No error message" in
+// Better Stack) and whose stack frames are ALL unresolved minified chunk
+// frames (`?` function, no source line) inside our own browser bundle. These
+// are unactionable: there is no message to triage and no resolvable source
+// location to fix, so they only pollute error tracking. Better Stack surfaces
+// them as "No error message" with a `?` call site — e.g. production patterns
+// `a81b7cd3…` (count 11) and `576172fbd8…` (count 2), both in chunk
+// `21544-ac9e889808bbe0af.js`, 0 identified users, last 2026-07-12. The throw
+// is a `Promise.reject(<non-Error>)` / stripped-message / unresolved-frame
+// class — NOT the storage-disabled-WebView TypeError class de-noised by #4529
+// (those carry a non-empty `null.getItem` TypeError message that this guard
+// never touches; an empty-message exception is incompatible with #4529's
+// message-string matcher).
+//
+// A real first-party regression — `throw new Error()` /
+// `Promise.reject(new Error())` in our own code — keeps reporting: its frames
+// resolve (via uploaded sourcemaps) to a real source file:line, so the
+// "any resolved frame" negative guard preserves the event. Only events with
+// NEITHER a message NOR a single resolvable frame are dropped.
+function isFrameUnresolved(frame: {
+  filename?: unknown;
+  function?: unknown;
+  lineno?: unknown;
+}): boolean {
+  const fn = normalizeString(frame.function).trim();
+  const lineno = typeof frame.lineno === 'number' ? frame.lineno : 0;
+  return (fn === '' || fn === '?') && lineno <= 0;
+}
+
+/**
+ * Whether a Sentry event is the unactionable "No error message" + unresolved
+ * minified-chunk-frame class from our browser bundle — empty exception value
+ * AND every frame an unresolved (`?` function, no line) `_next/static/chunks`
+ * frame. Real errors (non-empty message, or any resolvable frame, or any
+ * non-browser-bundle frame) are never matched. See
+ * `isEmptyMessageUnresolvedBrowserChunkNoise` for the full rationale.
+ */
+export function isEmptyMessageUnresolvedBrowserChunkNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown; lineno?: unknown }>;
+}): boolean {
+  // Negative guard #1: a real, actionable message always reports.
+  if (normalizeString(input.message).trim() !== '') {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // No frames at all → can't confirm it's our browser chunk; keep reporting
+  // rather than blanket-dropping frameless events of unknown origin.
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard #2: any non-browser-bundle frame (extension / injected /
+  // third-party / cross-origin) → keep; don't hide non-app noise here.
+  if (!frames.every((frame) => isBrowserBundleSource(frame.filename))) {
+    return false;
+  }
+  // Negative guard #3: any resolvable frame (real source line via sourcemap,
+  // or a named function) → an actionable error; keep it.
+  if (frames.some((frame) => !isFrameUnresolved(frame))) {
+    return false;
+  }
+  return true;
 }
 
 export function isExtensionSource(filename: unknown): boolean {
@@ -332,6 +456,79 @@ export function isOldWebkitRegexNoiseMessage(message: unknown): boolean {
   );
 }
 
+/**
+ * Whether a message is the Paper Shaders (`@paper-design/shaders-react`)
+ * null-WebGL-context crash class: a `TypeError` from calling a WebGL2 context
+ * method (`getSupportedExtensions` / `getAttribLocation`) on a context that
+ * became `null` (context loss, blacklisted GPU, stripped WebView). These fire
+ * from Paper Shaders' async shader-mount callback, ESCAPE the `<ShaderSafe>`
+ * React error boundary, and reach Sentry/Better Stack as global errors. The
+ * method names are WebGL2 API — never called from first-party app code — so the
+ * message wording alone is specific enough; no chunk-frame anchor is needed.
+ * Never page Better Stack for this class. See
+ * `PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS` for the full rationale and the
+ * `supportsWebGL2()` probe in `shader-safe.tsx` for the primary guard.
+ */
+export function isPaperShaderNullContextNoise(message: unknown): boolean {
+  const stripped = stripErrorWrappers(normalizeString(message));
+  return PAPER_SHADER_NULL_CONTEXT_NOISE_PATTERNS.some((pattern) =>
+    stripped.includes(pattern),
+  );
+}
+
+// Strip the canonical `SyntaxError: ` / `Error: ` / `Unhandled promise
+// rejection: ` (and stacked) wrappers a browser/Sentry prefixes a throw with,
+// so the underlying message can be matched by an anchored pattern regardless
+// of which capture path delivered it.
+function stripErrorWrappers(message: string): string {
+  return message.trim().replace(/^(?:Unhandled promise rejection: )?(?:[A-Za-z]+Error: )?/, '');
+}
+
+// A raw Next.js minified chunk source — `_next/static/chunks/…` (the bundled
+// JS chunk) or a Vercel `?dpl=dpl_…` deploy-hash URL. Parse-time SyntaxErrors
+// in old browsers fire at chunk LOAD time, before Sentry's sourcemap
+// resolution, so the frame filename stays as this raw path. A genuine
+// first-party eval/`new Function` SyntaxError de-minifies to `apps/web/src/…`
+// and is NOT matched here — that is the negative guard.
+function isMinifiedChunkSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  if (!normalized) return false;
+  return (
+    normalized.includes('/_next/static/chunks/')
+    || /[?&]dpl=dpl_[A-Za-z0-9]+/.test(normalized)
+  );
+}
+
+/**
+ * Whether an event is the old-browser / stripped-down-WebView minified-chunk
+ * parse-failure class: a `SyntaxError` whose message is one of
+ * `Unexpected token …`, `Invalid or unexpected token`, or
+ * `Cannot use import statement outside a module`, AND whose throwing frame (or
+ * window.onerror filename) is a raw `_next/static/chunks/…` / `?dpl=dpl_…`
+ * source. Old browsers that cannot parse modern minified JS throw these at
+ * chunk load time; the browser is incompatible, not broken. Requiring a
+ * minified-chunk source means a real first-party `new Function(...)` /
+ * `eval(...)` SyntaxError (de-minified to `apps/web/src/…`) keeps reporting.
+ * Never page Better Stack for the old-browser class.
+ */
+export function isOldBrowserSyntaxParseError(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!message) return false;
+  const stripped = stripErrorWrappers(message);
+  if (!OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some((filename) => isMinifiedChunkSource(filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -386,6 +583,25 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   // Old-WebKit (< 16.4) lookbehind parse failure from bundled third-party
   // deps — WebKit-specific wording, only old Safari/iOS visitors hit it.
   if (isOldWebkitRegexNoiseMessage(message)) {
+    return true;
+  }
+
+  // Paper Shaders null-WebGL-context crash class — a WebGL2 context method
+  // (`getSupportedExtensions` / `getAttribLocation`) called on a `null`
+  // context from Paper Shaders' async shader-mount callback, which escapes
+  // the `<ShaderSafe>` error boundary. Decorative-canvas noise on
+  // incompatible GPUs; never an app defect.
+  if (isPaperShaderNullContextNoise(message)) {
+    return true;
+  }
+
+  // Old-browser / stripped-down-WebView minified-chunk parse failures
+  // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
+  // statement outside a module`) from `window.onerror`. The browser cannot
+  // parse the modern minified chunk — incompatible, not an app defect.
+  // Requires a `_next/static/chunks/` / `?dpl=dpl_…` filename so a real
+  // first-party eval/`new Function` SyntaxError keeps reporting.
+  if (isOldBrowserSyntaxParseError({ message, filename: input.filename })) {
     return true;
   }
 
@@ -472,6 +688,29 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Paper Shaders null-WebGL-context crash class — a WebGL2 context method
+  // (`getSupportedExtensions` / `getAttribLocation`) called on a `null`
+  // context from Paper Shaders' async shader-mount callback, which escapes
+  // the `<ShaderSafe>` error boundary and reaches Sentry as a global error.
+  // Decorative-canvas noise on incompatible GPUs; never an app defect.
+  if (isPaperShaderNullContextNoise(message)) {
+    return true;
+  }
+
+  // Old-browser / stripped-down-WebView minified-chunk parse failures
+  // (`Unexpected token …`, `Invalid or unexpected token`, `Cannot use import
+  // statement outside a module`) thrown when an incompatible browser tries to
+  // evaluate a modern `_next/static/chunks/…` bundle. Requires a chunk frame
+  // so a real first-party `new Function(...)` / `eval(...)` SyntaxError
+  // (de-minified to `apps/web/src/…`) keeps reporting. NOTE: deliberately NOT
+  // added to `sentry.client.config.ts`'s `ignoreErrors` list — that gate has
+  // no frame context, so a bare-string match there would swallow real app
+  // SyntaxErrors. The `beforeSend` hook (which calls this helper) is the only
+  // safe gate because it can anchor on the chunk frame.
+  if (isOldBrowserSyntaxParseError({ message, frames })) {
+    return true;
+  }
+
   if (environment === 'test' || environment.startsWith('e2e')) {
     return true;
   }
@@ -483,6 +722,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // suppress only when the throwing frame is the runtime chunk so a real app
   // `.call` TypeError keeps reporting. See `isStaleWebpackRuntimeCallNoise`.
   if (isStaleWebpackRuntimeCallNoise({ message, frames })) {
+    return true;
+  }
+
+  // "No error message" exceptions whose only frames are unresolved minified
+  // chunk frames inside our browser bundle — empty exception value + `?`
+  // call site (e.g. chunk 21544 patterns a81b7cd3…/576172fbd8…). There is no
+  // message to triage and no resolvable source location to fix, so they are
+  // unactionable noise; a real first-party regression keeps reporting because
+  // its frames resolve to a source line. Distinct from #4529's
+  // storage-disabled-WebView class (non-empty `null.getItem` TypeError). See
+  // `isEmptyMessageUnresolvedBrowserChunkNoise`.
+  if (isEmptyMessageUnresolvedBrowserChunkNoise({ message, frames })) {
     return true;
   }
 

@@ -166,7 +166,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const connectedProviders = useMemo(() => {
     if (!providersData) return [];
     const set = new Set(providersData.connected);
-    return providersData.all.filter((p) => set.has(p.id));
+    return (providersData.all ?? []).filter((p) => set.has(p.id));
   }, [providersData]);
 
   // Builtin tools (filter out MCP ones)

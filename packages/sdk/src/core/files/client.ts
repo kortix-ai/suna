@@ -4,11 +4,12 @@
  *
  * Read (list/content/status/find) and write (upload/delete/mkdir/rename) all hit
  * the in-sandbox daemon for the active server; project/health go through the
- * runtime client. DOM-bound helpers (download / zip) stay in the host UI and
+ * Kortix daemon. DOM-bound helpers (download / zip) stay in the host UI and
  * consume `readBlob`/`list` from here.
  */
-import { getClient } from '../runtime/client';
 import { getActiveRuntimeUrl } from '../session/server-store/active';
+import { getCurrentRuntimeProjectId } from '../session/current-runtime';
+import { getSessionHealth } from '../session/health';
 import { getAuthToken, authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
 import type {
@@ -24,29 +25,6 @@ import type {
 // Re-export the file types from the `@kortix/sdk/files` subpath too, so hosts can
 // import both the ops and the types from one place.
 export type * from './types';
-
-function unwrap<T>(result: { data?: T; error?: unknown }): T {
-  if (result.error) {
-    const err = result.error as {
-      data?: { message?: string };
-      message?: string;
-      error?: unknown;
-      response?: Response;
-      status?: number;
-    };
-    const message =
-      err?.data?.message ||
-      err?.message ||
-      (typeof err?.error === 'string' ? err.error : null) ||
-      'SDK request failed';
-    throw new ApiError(message, {
-      status: err?.response?.status ?? err?.status,
-      response: err?.response,
-      details: err,
-    });
-  }
-  return result.data as T;
-}
 
 async function errorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
@@ -347,13 +325,28 @@ export async function renameFile(from: string, to: string, baseUrl: string = get
   return res.json();
 }
 
-// ── project / health (via runtime client) ─────────────────────────────────────
+// ── workspace / health (Kortix daemon-owned, harness-neutral) ────────────────
 export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
-  return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
+  const now = Date.now();
+  return {
+    id: getCurrentRuntimeProjectId() ?? 'workspace',
+    worktree: '/workspace',
+    vcs: 'git',
+    name: 'workspace',
+    time: { created: now, updated: now },
+    sandboxes: [],
+  };
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {
-  return unwrap(await getClient().global.health()) as ServerHealth;
+  const result = await getSessionHealth();
+  if (!result.ok || !result.health) {
+    throw new ApiError(result.body || 'Session runtime is unreachable', { status: result.status || undefined });
+  }
+  return {
+    healthy: result.health.runtimeReady === true,
+    version: result.health.version ?? 'acp',
+  };
 }
 
 export async function isServerReachable(): Promise<boolean> {

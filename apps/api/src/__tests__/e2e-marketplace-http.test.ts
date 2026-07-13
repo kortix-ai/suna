@@ -61,8 +61,15 @@ describe('marketplace HTTP contract', () => {
     expect(body.items.find((item) => item.name === 'pty')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'web_search')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'pdf')?.managedBy).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'kortix')).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'memory-reflector')).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'kortix')).toMatchObject({
+      name: 'kortix',
+      type: 'registry:agent',
+    });
+    expect(body.items.find((item) => item.name === 'kortix')?.managedBy).toBeUndefined();
+    expect(body.items.find((item) => item.name === 'memory-reflector')).toMatchObject({
+      name: 'memory-reflector',
+      type: 'registry:agent',
+    });
   });
 
   test('GET /marketplace/items is public read-only', async () => {

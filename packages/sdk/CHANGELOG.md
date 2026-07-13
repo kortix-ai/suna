@@ -6,8 +6,22 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+
+- Project branch responses now expose the current caller's effective session
+  base ref (project or group default), and group-grant mutations can set or
+  clear an optional `default_base_ref`. Existing fields and call signatures
+  remain compatible.
 - The root entry `@kortix/sdk` is now canonical: it exports the whole
-  framework-free surface (client, session, turns, files, event stream, errors).
+  framework-free surface (platform client, ACP client/projections, session,
+  turns, files, and errors).
+- `AcpClient`, `useAcpSession`, and the canonical ACP-only `useSession()`
+  lifecycle: initialize, new/load, prompt/cancel, config options, permission and
+  question responses, session-scoped SSE, replay, and raw durable transcripts.
+- Harness-neutral ACP chat/tool/plan/context/usage/pending-prompt projections
+  shared by web, mobile, and headless consumers.
+- React Native automatically consumes live ACP state by polling the durable
+  transcript because its fetch implementation does not expose incremental SSE
+  response bodies.
 - CDN builds: a minified ESM bundle (`dist/kortix.esm.min.js`) and an IIFE
   exposing `window.Kortix` (`dist/kortix.global.js`), wired via
   `publishConfig`'s `browser`/`unpkg`/`jsdelivr` fields. Usable from a
@@ -16,16 +30,26 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `@kortix/sdk/internal/*` for the zustand stores. Not covered by semver.
 
 ### Deprecated
-- The 20 legacy subpaths (`/projects-client`, `/turns`, `/files`, `/session`,
-  `/event-stream`, the stores, …). They still work. Import from the root.
+
+- The remaining legacy subpaths (`/projects-client`, `/turns`, `/files`,
+  `/session`, the stores, …). They still work. Import from the root.
 - The daemon-project `KortixProject` alias — renamed to `KortixMasterProject`.
   The platform's `KortixProject` (from the root) is unchanged and keeps its name.
 
 ### Fixed
+
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
 
+### Removed
+
+- Kortix application/public SDK dependency on `@opencode-ai/sdk`, the OpenCode
+  HTTP runtime client, global event stream, OpenCode session mapping, and
+  OpenCode-named React hooks/stores. OpenCode remains supported only as one ACP
+  harness behind the same protocol as Claude Code, Codex, and Pi.
+
 ### Internal
+
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.
   A file's directory declares what it may import, enforced by the tripwire.
 - A bare-global tripwire (`process`/`window`/`document`/`localStorage`/
@@ -85,7 +109,7 @@ domains promoted into the facade.
     `tierConfigurations` (read-only entitlement/usage surface), plus a curated
     mutation surface: `billing.checkout.{createSession, confirmSession}`,
     `billing.subscription.{createPortalSession, cancel, reactivate,
-    scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
+scheduleDowngrade, cancelScheduledChange, prorationPreview}`,
     `billing.credits.{purchase, autoTopupSettings, configureAutoTopup}`.
   - `project(id).marketplace` / `.registry` — install/list/updates/update/
     updateAll/remove for a catalog item on a project's default branch.

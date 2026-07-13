@@ -162,6 +162,10 @@ export async function restartSession(input: {
         : typeof session.metadata?.opencode_model === 'string'
           ? (session.metadata.opencode_model as string)
           : null;
+    const runtimeAuthKind =
+      typeof session.metadata?.auth_connection === 'string'
+        ? session.metadata.auth_connection as import('../lib/composer-capabilities').HarnessAuthKind
+        : null;
 
     await db
       .update(projectSessions)
@@ -196,6 +200,7 @@ export async function restartSession(input: {
           agentName: session.agentName ?? 'default',
           initialPrompt,
           runtimeModel,
+          runtimeAuthKind,
           defaultBranch: loaded.row.defaultBranch,
           manifestPath: loaded.row.manifestPath,
           llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),

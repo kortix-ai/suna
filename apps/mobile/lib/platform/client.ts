@@ -2,7 +2,7 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the selected session runtime URL for daemon helper operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
@@ -24,7 +24,7 @@ import {
 // an export mobile itself doesn't otherwise need.
 import { stopProjectSession } from '@kortix/sdk/projects-client';
 // The SDK's kortix-master service wrappers are public via the provider-neutral
-// `@kortix/sdk/runtime-client` subpath.
+// root SDK surface.
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
@@ -36,7 +36,7 @@ import {
   listServices as sdkListServices,
   reconcileServices as sdkReconcileServices,
   serviceAction as sdkServiceAction,
-} from '@kortix/sdk/runtime-client';
+} from '@kortix/sdk';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 

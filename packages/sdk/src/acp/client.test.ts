@@ -59,4 +59,59 @@ describe('ACP client', () => {
     expect(acpTranscriptJsonl(events)).toContain('"sequence":1');
     expect(acpTranscriptMarkdown(events)).toContain('Hello');
   });
+
+  test('polls the durable ACP transcript automatically on React Native', async () => {
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { product: 'ReactNative' },
+    });
+    const calls: string[] = [];
+    const fakeFetch = async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Response.json({
+        runtime_id: 'runtime-1',
+        envelopes: [{
+          ordinal: 7,
+          direction: 'agent_to_client',
+          streamEventId: 3,
+          envelope: {
+            jsonrpc: '2.0',
+            method: 'session/update',
+            params: {
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                content: { type: 'text', text: 'Mobile hello' },
+              },
+            },
+          },
+          createdAt: '2026-07-13T00:00:00.000Z',
+        }],
+      });
+    };
+    try {
+      const client = createAcpClient({
+        endpoint: 'https://api.test/projects/p/sessions/s/acp',
+        fetch: fakeFetch as unknown as typeof fetch,
+      });
+
+      const event = await new Promise<any>((resolve) => {
+        const stream = client.connect({
+          onEvent(next) {
+            stream.close();
+            resolve(next);
+          },
+        });
+      });
+
+      expect(calls).toEqual([
+        'https://api.test/projects/p/sessions/s/acp/transcript',
+      ]);
+      expect(event.id).toBe(3);
+      expect(event.envelope.params.update.content.text).toBe('Mobile hello');
+    } finally {
+      if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
+  });
 });

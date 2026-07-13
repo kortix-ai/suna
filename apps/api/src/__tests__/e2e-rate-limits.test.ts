@@ -16,9 +16,12 @@ mock.module('../config', () => ({
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({
-      values: async (values: Record<string, unknown>) => {
-        auditRows.push(values);
-      },
+      values: (values: Record<string, unknown>) => ({
+        returning: async () => {
+          auditRows.push(values);
+          return [values];
+        },
+      }),
     }),
   },
 }));
@@ -94,18 +97,20 @@ describe('audited rate limits', () => {
   });
 
   test('limits anonymous public session-share reads by shareId, not by IP', async () => {
+    const shareOne = '00000000-0000-4000-a000-000000000101';
+    const shareTwo = '00000000-0000-4000-a000-000000000102';
     const app = new Hono();
     app.use('/v1/public/session-shares/:shareId', createPublicSessionShareRateLimitMiddleware());
     app.use('/v1/public/session-shares/:shareId/messages', createPublicSessionShareRateLimitMiddleware());
     app.get('/v1/public/session-shares/:shareId', (c) => c.json({ ok: true }));
     app.get('/v1/public/session-shares/:shareId/messages', (c) => c.json({ ok: true }));
 
-    const first = await app.request('/v1/public/session-shares/share-1', {
+    const first = await app.request(`/v1/public/session-shares/${shareOne}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(first.status).toBe(200);
 
-    const second = await app.request('/v1/public/session-shares/share-1', {
+    const second = await app.request(`/v1/public/session-shares/${shareOne}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(second.status).toBe(429);
@@ -114,14 +119,14 @@ describe('audited rate limits', () => {
     // visitor to one shared link is legitimately behind the same limiter, but
     // one caller shouldn't be able to starve every other share from the same
     // (possibly shared) IP.
-    const otherShare = await app.request('/v1/public/session-shares/share-2', {
+    const otherShare = await app.request(`/v1/public/session-shares/${shareTwo}`, {
       headers: { 'X-Forwarded-For': '203.0.113.20' },
     });
     expect(otherShare.status).toBe(200);
 
     expect(auditRows.at(-1)).toMatchObject({
       resourceType: 'public_session_share',
-      resourceId: 'share-1',
+      resourceId: shareOne,
       metadata: { limiter: 'public_session_share' },
     });
   });

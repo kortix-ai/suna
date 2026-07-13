@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -41,12 +40,15 @@ import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
+import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import {
+  type ChannelBinding,
   useChannelBindings,
   useUpdateChannelBinding,
-  type ChannelBinding,
 } from '@/hooks/channels/use-channel-bindings';
 import {
+  type EmailInstallation,
+  type SlackInstallation,
   useConnectSlack,
   useDisconnectEmail,
   useDisconnectSlack,
@@ -54,16 +56,20 @@ import {
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
-  type EmailInstallation,
-  type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { useRuntimeProviders, useVisibleAgents, type Agent } from '@/hooks/runtime/use-runtime-sessions';
+import {
+  useDisconnectTeams,
+  useTeamsInstall,
+  useTeamsMode,
+} from '@/hooks/channels/use-teams-installations';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/runtime/use-model-store';
-import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
+import { useRuntimeProviders, useVisibleAgents, type Agent } from '@/hooks/runtime/use-runtime-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
+import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -71,6 +77,12 @@ import { useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
+const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2', 'channel-loading-3'];
+const SLACK_MANIFEST_STEPS = [
+  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+  'On the next screen, click Install to Workspace and approve.',
+  'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
+];
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -88,7 +100,10 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     EMAIL_CONNECTOR_SLUG,
   );
   const loading =
-    loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
+    loadingInstall ||
+    loadingMode ||
+    projectQuery.isLoading ||
+    (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -120,8 +135,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
           </InfoBanner>
         ) : loading ? (
           <div className="space-y-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 rounded-md" />
+            {CHANNEL_LOADING_ROWS.map((key) => (
+              <Skeleton key={key} className="h-10 rounded-md" />
             ))}
           </div>
         ) : !oauthInstallUrl && !install ? (
@@ -157,7 +172,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                   <TableHead>Platform</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Workspace</TableHead>
-                  <TableHead className="w-[120px]">
+                  <TableHead className="w-[1%] whitespace-nowrap text-right">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -176,6 +191,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                     canWrite={canWrite}
                   />
                 ) : null}
+                <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
               </TableBody>
             </Table>
 
@@ -200,9 +216,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            {install ? (
-              <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
-            ) : null}
+            <div className="border-border/60 border-t pt-6">
+              <TeamsChannelPanel projectId={projectId} />
+            </div>
+
+            {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
           </>
         )}
       </div>
@@ -240,8 +258,8 @@ function ChannelBindingsSection({
     <div className="space-y-2">
       <Label>Channel bindings</Label>
       <p className="text-muted-foreground text-xs">
-        Which agent, model, and join policy each connected channel uses. A channel with
-        no override follows the project default.
+        Which agent, model, and join policy each connected channel uses. A channel with no override
+        follows the project default.
       </p>
       <Table>
         <TableHeader>
@@ -268,11 +286,12 @@ function ChannelBindingsSection({
   );
 }
 
-const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> = [
-  { value: 'project_open', label: 'Project members can join' },
-  { value: 'owner_only', label: 'Owner only' },
-  { value: 'owner_approval', label: 'Owner approval' },
-];
+const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
+  [
+    { value: 'project_open', label: 'Project members can join' },
+    { value: 'owner_only', label: 'Owner only' },
+    { value: 'owner_approval', label: 'Owner approval' },
+  ];
 
 /** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
 function agentDefaultLabel(projectDefaultAgent: string | null): string {
@@ -293,7 +312,9 @@ function stripRuntimeNamespace(model: string): string {
 function describeEffectiveModel(binding: ChannelBinding): string {
   if (binding.model) {
     const label = stripRuntimeNamespace(binding.model);
-    return binding.effectiveModel.source === 'explicit' ? label : `${label} (unavailable — using default)`;
+    return binding.effectiveModel.source === 'explicit'
+      ? label
+      : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
   return resolved ? `Project default (${stripRuntimeNamespace(resolved)})` : 'Project default';
@@ -328,7 +349,7 @@ function ChannelBindingTableRow({
   const agentSelectorAgents = useMemo<Agent[]>(() => {
     const defaultEntry = {
       name: agentDefaultLabel(projectDefaultAgent),
-      description: 'Falls back to the project\'s configured default agent.',
+      description: "Falls back to the project's configured default agent.",
       mode: 'primary',
       permission: {},
       options: {},
@@ -338,7 +359,14 @@ function ChannelBindingTableRow({
     // removed, so the picker never renders a value it can't display.
     const missingCurrent =
       binding.agentName && !names.has(binding.agentName)
-        ? [{ name: binding.agentName, mode: 'primary', permission: {}, options: {} } as unknown as Agent]
+        ? [
+            {
+              name: binding.agentName,
+              mode: 'primary',
+              permission: {},
+              options: {},
+            } as unknown as Agent,
+          ]
         : [];
     return [defaultEntry, ...visibleAgents, ...missingCurrent];
   }, [visibleAgents, projectDefaultAgent, binding.agentName]);
@@ -489,7 +517,12 @@ function SlackChannelRow({
         )}
       </TableCell>
       <TableCell className="text-muted-foreground text-sm">
-        {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
+        <span
+          className="block max-w-[240px] truncate"
+          title={connected ? (installation?.workspaceName ?? installation?.workspaceId ?? undefined) : undefined}
+        >
+          {connected ? (installation?.workspaceName ?? installation?.workspaceId ?? '—') : '—'}
+        </span>
       </TableCell>
       <TableCell>
         {!canWrite ? null : connected ? (
@@ -537,6 +570,100 @@ function SlackChannelRow({
   );
 }
 
+function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const { data: install } = useTeamsInstall(projectId);
+  const { data: mode } = useTeamsMode(projectId);
+  const disconnect = useDisconnectTeams();
+  const [confirming, setConfirming] = useState(false);
+
+  if (mode && !mode.enabled) return null;
+
+  const connected = Boolean(install);
+  const installUrl = mode?.orgConsentUrl ?? null;
+  const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
+
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell>
+        <div className="flex items-center gap-2.5">
+          <Icon.MicrosoftTeams className="size-5 shrink-0" />
+          <span className="text-sm font-medium">Microsoft Teams</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {connected ? (
+          <Badge variant="success" size="sm">
+            Connected
+          </Badge>
+        ) : (
+          <Badge variant="outline" size="sm" className="text-muted-foreground">
+            Not connected
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground text-sm">
+        <span
+          className="block max-w-[240px] truncate"
+          title={connected ? (install?.teamName ?? install?.tenantId ?? undefined) : undefined}
+        >
+          {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
+        </span>
+      </TableCell>
+      <TableCell>
+        {!canWrite ? null : connected ? (
+          confirming ? (
+            <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => setConfirming(false),
+                  })
+                }
+              >
+                {disconnect.isPending ? (
+                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-1">
+              {deepLinkUrl ? (
+                <Button size="sm" variant="secondary" asChild>
+                  <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                    Add to Teams
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setConfirming(true)}
+              >
+                <X className="size-3.5 shrink-0" />
+                Disconnect
+              </Button>
+            </div>
+          )
+        ) : installUrl ? (
+          <Button size="sm" variant="secondary" asChild>
+            <Link href={installUrl} target="_blank" rel="noopener noreferrer">
+              Install
+            </Link>
+          </Button>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function EmailChannelRow({
   projectId,
   installation,
@@ -574,7 +701,12 @@ function EmailChannelRow({
         </TableCell>
         <TableCell className="text-muted-foreground text-sm">
           {connected ? (
-            <code className="text-foreground font-mono text-xs">{installation?.email ?? '—'}</code>
+            <code
+              className="text-foreground block max-w-[240px] truncate font-mono text-xs"
+              title={installation?.email ?? undefined}
+            >
+              {installation?.email ?? '—'}
+            </code>
           ) : (
             '—'
           )}
@@ -761,12 +893,8 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
         </div>
 
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5 text-sm">
-          {[
-            'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-            'On the next screen, click Install to Workspace and approve.',
-            'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
-          ].map((line, i) => (
-            <li key={i}>{line}</li>
+          {SLACK_MANIFEST_STEPS.map((line) => (
+            <li key={line}>{line}</li>
           ))}
         </ol>
 

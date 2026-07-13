@@ -198,7 +198,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               /* Success */
               <View className="rounded-2xl border px-4 py-3 border-emerald-500/20 bg-emerald-500/5">
                 <View className="flex-row items-center">
-                  <Icon as={Check} size={16} style={{ color: '#10B981' }} strokeWidth={2.5} />
+                  <Icon as={Check} size={16} color="#10B981" strokeWidth={2.5} />
                   <Text className="ml-2 font-roobert-medium text-[14px] text-emerald-500 flex-1">Updated to v{updateResult.currentVersion}</Text>
                 </View>
               </View>

@@ -107,7 +107,12 @@ test.describe('14 — ACP harness-aware composer selectors', () => {
       const request = await createRequest;
       expect(request.postDataJSON()).toMatchObject({
         agent_name: 'codex',
-        runtime_model: 'openai/gpt-5.4',
+        connection_id: 'managed_gateway',
+        model_selection: {
+          kind: 'custom',
+          model_id: 'openai/gpt-5.4',
+          connection_id: 'managed_gateway',
+        },
       });
     } finally {
       if (projectId) {

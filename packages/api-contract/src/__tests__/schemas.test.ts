@@ -40,7 +40,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     effective_project_role: 'manager',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
-      apps: false,
       agent_tunnel: false,
       marketplace: false,
       agentmail_email: false,
@@ -48,18 +47,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
     },
-    experimental_features: [
-      {
-        key: 'apps',
-        name: 'Apps',
-        description: 'Deploy apps.',
-        stability: 'experimental',
-        available: true,
-        enabled: false,
-        overridden: false,
-      },
-    ],
-    apps_enabled: false,
+    experimental_features: [],
     default_sandbox_provider: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
@@ -348,7 +336,6 @@ describe('envelopes', () => {
 
   test('experimental keys stay in sync with the map schema', () => {
     expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
-      'apps',
       'agent_tunnel',
       'marketplace',
       'agentmail_email',
@@ -369,6 +356,12 @@ describe('SessionCreateInputSchema runtime_context', () => {
     const parsed = SessionCreateInputSchema.parse({
       session_id: '11111111-1111-4111-a111-111111111111',
       agent_name: 'veyris',
+      connection_id: 'managed_gateway',
+      model_selection: {
+        kind: 'custom',
+        model_id: 'anthropic/claude-sonnet-4-6',
+        connection_id: 'managed_gateway',
+      },
       provider: 'daytona',
       branch_already_created: true,
       runtime_context: {
@@ -380,6 +373,13 @@ describe('SessionCreateInputSchema runtime_context', () => {
       },
     });
     expect(parsed.runtime_context?.workspace_id).toBe('org_123');
+    expect(parsed.model_selection?.kind).toBe('custom');
+  });
+
+  test('rejects malformed canonical model and connection selections', () => {
+    expect(SessionCreateInputSchema.safeParse({ connection_id: 'not-a-route' }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ model_selection: { kind: 'preset' } }).success).toBe(false);
+    expect(SessionCreateInputSchema.safeParse({ model_selection: { kind: 'default', model_id: 'must-be-omitted' } }).success).toBe(false);
   });
 
   test('rejects nested values, arrays and non-finite numbers', () => {

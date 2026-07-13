@@ -44,10 +44,9 @@ export function applyDetailCapabilityFilter<C extends object, F>(
           manifest_raw: null,
           manifest: {},
           env: [],
+          runtime_configs: [],
           runtime_config_raw: null,
           runtime_default_agent: null,
-          open_code_raw: null,
-          open_code_default_agent: null,
         }),
   } as C;
   return {
