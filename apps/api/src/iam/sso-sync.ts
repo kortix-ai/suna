@@ -14,8 +14,8 @@
 // also needs access to project X for a one-off" workable without the
 // next sign-in stomping it.
 
-import { and, eq, inArray } from 'drizzle-orm';
-import { accountGroupMembers, accountMembers } from '@kortix/db';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { accountGroupMembers, accountInvitations, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
@@ -174,6 +174,66 @@ export function diffSsoGroups(args: {
  * Main entry — call once per authenticated request from the middleware.
  * Cheap when the JWT isn't a SAML token (one early `if` and we return).
  */
+// Bare UUID check — deliberately local; the full validator lives in the
+// invites router module, and lib code shouldn't import a router for it.
+const GROUP_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Apply SCIM group memberships that were parked on a pending invite for this
+ * email (see scim/groups.ts addGroupMembersOrDeferInvites). JIT auto-create
+ * bypasses the invite-acceptance flow, so without this the parked entries
+ * strand forever. Applies + strips only the `{group_id}` entries; project
+ * grants stay on the (still pending) invite for the real accept flow.
+ * Best-effort — a failure here must not block sign-in.
+ */
+async function consumeInviteGroupGrants(
+  accountId: string,
+  userId: string,
+  email: string,
+): Promise<void> {
+  try {
+    const [invite] = await db
+      .select({
+        inviteId: accountInvitations.inviteId,
+        bootstrapGrants: accountInvitations.bootstrapGrants,
+      })
+      .from(accountInvitations)
+      .where(
+        and(
+          eq(accountInvitations.accountId, accountId),
+          sql`lower(${accountInvitations.email}) = lower(${email})`,
+          isNull(accountInvitations.acceptedAt),
+        ),
+      )
+      .limit(1);
+    if (!invite) return;
+
+    const grants = invite.bootstrapGrants ?? [];
+    const groupIds = grants
+      .filter((g): g is { group_id: string } => 'group_id' in g && typeof g.group_id === 'string')
+      .map((g) => g.group_id)
+      .filter((id) => GROUP_UUID_RE.test(id));
+    if (groupIds.length === 0) return;
+
+    await db
+      .insert(accountGroupMembers)
+      .values(groupIds.map((groupId) => ({ groupId, userId })))
+      .onConflictDoNothing();
+
+    const remaining = grants.filter((g) => !('group_id' in g));
+    await db
+      .update(accountInvitations)
+      .set({ bootstrapGrants: remaining })
+      .where(eq(accountInvitations.inviteId, invite.inviteId));
+  } catch (err) {
+    console.warn('[sso-sync] failed to consume parked invite group grants', {
+      accountId,
+      userId,
+      err,
+    });
+  }
+}
+
 export async function syncSsoMembership(args: {
   userId: string;
   email: string;
@@ -215,6 +275,11 @@ export async function syncSsoMembership(args: {
       })
       .onConflictDoNothing();
     memberCreated = true;
+    // JIT bypasses invite acceptance, so SCIM group memberships parked on a
+    // pending invite for this email (scim/groups.ts) would strand forever —
+    // consume them now. Project grants on the invite stay for the real
+    // accept flow; only the {group_id} entries are applied and stripped.
+    await consumeInviteGroupGrants(provider.accountId, args.userId, args.email);
   }
 
   // 2. Sync IAM group memberships from the claim.
