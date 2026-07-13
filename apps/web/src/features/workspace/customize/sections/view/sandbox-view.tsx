@@ -24,7 +24,6 @@ import CustomizeSectionWrapper from '@/features/workspace/customize/sections/com
 import { useSandboxRecovery } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { currentFailedBuild } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
 import { cn } from '@/lib/utils';
-import { describeProviderCoverage } from './sandbox-provider-coverage';
 import {
   type ProjectSnapshotBuild,
   type ProjectSnapshotStatus,
@@ -35,12 +34,7 @@ import {
   getProject,
   listProjectSnapshots,
 } from '@kortix/sdk/projects-client';
-import {
-  AlarmClockSolid,
-  CheckCircleSolid,
-  SparklesSolid,
-  XCircleSolid,
-} from '@mynaui/icons-react';
+import { CheckCircleSolid, SparklesSolid, XCircleSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
@@ -54,8 +48,21 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useState } from 'react';
+import {
+  type SandboxProviderMode,
+  describeProviderCoverage,
+  describeProviderMode,
+  sandboxProviderLabel,
+} from './sandbox-provider-coverage';
 
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
+const TEMPLATE_SKELETON_ROWS = [
+  'sandbox-template-skeleton-1',
+  'sandbox-template-skeleton-2',
+  'sandbox-template-skeleton-3',
+  'sandbox-template-skeleton-4',
+  'sandbox-template-skeleton-5',
+] as const;
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
@@ -121,13 +128,6 @@ const TEMPLATE_STATE_LABEL: Record<
   error: { label: 'Error', tone: 'fail' },
   build_failed: { label: 'Build failed', tone: 'fail' },
   missing: { label: 'Not built yet', tone: 'idle' },
-};
-
-const TEMPLATE_TONE_BADGE = {
-  ok: { variant: 'success' as const },
-  busy: { variant: 'solid' as const, color: 'blue' as const },
-  fail: { variant: 'destructive' as const },
-  idle: { variant: 'muted' as const },
 };
 
 const TEMPLATE_TONE_ICON_TILE: Record<'ok' | 'busy' | 'fail' | 'idle', string> = {
@@ -247,8 +247,10 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
 
 function ProviderCoverage({
   coverage,
+  selectedProvider,
 }: {
   coverage: NonNullable<SandboxTemplate['provider_coverage']>;
+  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
 }) {
   const observedAt = coverage
     .map((item) => item.observed_at)
@@ -269,18 +271,27 @@ function ProviderCoverage({
               : state.tone === 'fail'
                 ? 'destructive'
                 : 'muted';
-        const provider = item.provider === 'e2b'
-          ? 'E2B'
-          : item.provider.charAt(0).toUpperCase() + item.provider.slice(1);
+        const provider = sandboxProviderLabel(item.provider);
+        const selected = item.provider === selectedProvider;
         return (
           <Badge
             key={item.provider}
             variant={variant}
             size="xs"
-            aria-label={`${provider}: ${state.label}`}
+            aria-label={`${provider}${selected ? ' selected' : ''}: ${state.label}`}
           >
             {provider}
-            <span className="opacity-50" aria-hidden="true">&bull;</span>
+            {selected ? (
+              <>
+                <span className="opacity-50" aria-hidden="true">
+                  &bull;
+                </span>
+                Selected
+              </>
+            ) : null}
+            <span className="opacity-50" aria-hidden="true">
+              &bull;
+            </span>
             {state.label}
           </Badge>
         );
@@ -400,18 +411,27 @@ function TemplateRow({
   template,
   canManage,
   onEdit,
+  providerMode,
+  selectedProvider,
 }: {
   projectId: string;
   template: SandboxTemplate;
   canManage: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
+  providerMode: SandboxProviderMode;
+  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const { version: manifestVersion } = useProjectManifestVersion(projectId);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const templateId = template.template_id ?? null;
+  const requireTemplateId = () => {
+    if (!templateId) throw new Error('Sandbox template id is missing');
+    return templateId;
+  };
   const buildMut = useMutation({
-    mutationFn: () => buildSandboxTemplate(projectId, template.template_id!),
+    mutationFn: () => buildSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Rebuild started for "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
@@ -419,7 +439,7 @@ function TemplateRow({
     onError: (err: Error) => errorToast(err.message || 'Failed to start build'),
   });
   const deleteMut = useMutation({
-    mutationFn: () => deleteSandboxTemplate(projectId, template.template_id!),
+    mutationFn: () => deleteSandboxTemplate(projectId, requireTemplateId()),
     onSuccess: () => {
       successToast(`Deleted "${template.name}"`);
       queryClient.invalidateQueries({ queryKey: SNAPSHOTS_QUERY_KEY(projectId) });
@@ -444,15 +464,7 @@ function TemplateRow({
           ? 'kortix.yaml'
           : 'kortix.toml';
   const stateInfo = describeState(template.provider_state || template.daytona_state);
-  const stateBadge = TEMPLATE_TONE_BADGE[stateInfo.tone];
-  const StateIcon =
-    stateInfo.tone === 'busy'
-      ? Loading
-      : stateInfo.tone === 'ok'
-        ? CheckCircleSolid
-        : stateInfo.tone === 'fail'
-          ? XCircleSolid
-          : AlarmClockSolid;
+  const providerModeInfo = describeProviderMode(providerMode, selectedProvider);
 
   return (
     <>
@@ -481,20 +493,21 @@ function TemplateRow({
             {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}{' '}
             &bull; {sourceTag}
           </div>
-          {template.provider_coverage?.length ? (
-            <ProviderCoverage coverage={template.provider_coverage} />
+          {providerMode === 'pinned' && template.provider_coverage?.length ? (
+            <ProviderCoverage
+              coverage={template.provider_coverage}
+              selectedProvider={selectedProvider}
+            />
           ) : null}
         </div>
-        <Badge
-          variant={stateBadge.variant}
-          color={'color' in stateBadge ? stateBadge.color : undefined}
-        >
-          <StateIcon className="size-4 shrink-0" />
-          {stateInfo.label}
-        </Badge>
+        {providerMode === 'automatic' ? (
+          <Badge variant="muted">{providerModeInfo.label}</Badge>
+        ) : !template.provider_coverage?.length ? (
+          <Badge variant="muted">{providerModeInfo.label}</Badge>
+        ) : null}
         {canManage && (
           <div className="flex items-center gap-1">
-            {template.template_id && !template.is_default && (
+            {templateId && !template.is_default && (
               <>
                 <Button
                   size="sm"
@@ -525,7 +538,7 @@ function TemplateRow({
                 </Button>
               </>
             )}
-            {template.template_id && (
+            {templateId && (
               <Button
                 size="sm"
                 variant="outline"
@@ -594,6 +607,9 @@ export function SandboxView({ projectId }: { projectId: string }) {
   const data = snapshotsQuery.data;
   const builds = Array.isArray(data?.builds) ? data.builds : [];
   const templates = Array.isArray(data?.templates) ? data.templates : [];
+  const providerMode: SandboxProviderMode =
+    data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
+  const selectedProvider = data?.selected_provider ?? null;
   const latestFailure = currentFailedBuild(builds);
   const latestReady = builds.find((b) => b.status === 'ready') ?? null;
   const canFixWithAgent = !!latestFailure && latestFailure.fixable_by_agent && !!latestReady;
@@ -634,8 +650,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
     >
       {snapshotsQuery.isLoading ? (
         <div className="space-y-1">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 rounded-md" />
+          {TEMPLATE_SKELETON_ROWS.map((row) => (
+            <Skeleton key={row} className="h-10 rounded-md" />
           ))}
         </div>
       ) : snapshotsQuery.isError ? (
@@ -718,6 +734,8 @@ export function SandboxView({ projectId }: { projectId: string }) {
                           template={t}
                           canManage={canManage}
                           onEdit={openEditForm}
+                          providerMode={providerMode}
+                          selectedProvider={selectedProvider}
                         />
                       ))}
                     </ul>

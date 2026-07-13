@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -19,6 +20,7 @@ import type { CompleteAwsVpcConfig } from './aws-vpc-settings.ts';
 interface TerraformStateIdentity {
   lineage: string;
   serial: number;
+  [key: string]: unknown;
 }
 
 export interface BackendConfig {
@@ -114,8 +116,11 @@ export function migrateAndVerifyState(
   aws: CompleteAwsVpcConfig,
   alreadyRemote: boolean,
 ) {
-  const before = terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
-  assertStateIdentity(before, 'local/source');
+  const bootstrapPath = join(stateDirectory, 'terraform.bootstrap.tfstate');
+  const before = alreadyRemote && existsSync(bootstrapPath)
+    ? readStateFile(bootstrapPath, 'preserved local bootstrap')
+    : terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
+  assertStateIdentity(before, alreadyRemote ? 'preserved local bootstrap/remote source' : 'local/source');
   const backend = terraformOutput<BackendConfig>(stateDirectory, aws, 'backend_config');
   const permissionsBoundaryArn = terraformOutput<string>(stateDirectory, aws, 'permissions_boundary_arn');
   const backendPath = join(stateDirectory, 'backend.hcl');
@@ -138,13 +143,15 @@ export function migrateAndVerifyState(
 
   const after = terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
   assertStateIdentity(after, 'remote');
-  if (before.lineage !== after.lineage || before.serial !== after.serial) {
+  const beforeDigest = stateContentDigest(before);
+  const afterDigest = stateContentDigest(after);
+  if (beforeDigest !== afterDigest) {
     throw new Error(
-      `remote state verification failed: source ${before.lineage}/${before.serial}, remote ${after.lineage}/${after.serial}; local bootstrap state was preserved`,
+      `remote state verification failed: source ${before.lineage}/${before.serial} (${beforeDigest}), remote ${after.lineage}/${after.serial} (${afterDigest}); local bootstrap state was preserved`,
     );
   }
-  if (!alreadyRemote) {
-    rmSync(join(stateDirectory, 'terraform.bootstrap.tfstate'), { force: true });
+  if (!alreadyRemote || existsSync(bootstrapPath)) {
+    rmSync(bootstrapPath, { force: true });
     rmSync(join(stateDirectory, 'terraform.bootstrap.tfstate.backup'), { force: true });
   }
   return {
@@ -152,6 +159,34 @@ export function migrateAndVerifyState(
     permissionsBoundaryArn,
     verification: { verified: true, lineage: after.lineage, serial: after.serial, already_remote: alreadyRemote },
   };
+}
+
+function readStateFile(path: string, label: string): TerraformStateIdentity {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as TerraformStateIdentity;
+  } catch (error) {
+    throw new Error(`${label} Terraform state is invalid JSON: ${(error as Error).message}`);
+  }
+}
+
+function stateContentDigest(state: TerraformStateIdentity): string {
+  const content: Record<string, unknown> = { ...state };
+  delete content.lineage;
+  delete content.serial;
+  if (Array.isArray(content.check_results)) {
+    content.check_results = [...content.check_results]
+      .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  }
+  return createHash('sha256').update(stableJson(content)).digest('hex');
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function terraformOutput<T>(directory: string, aws: CompleteAwsVpcConfig, name: string): T {

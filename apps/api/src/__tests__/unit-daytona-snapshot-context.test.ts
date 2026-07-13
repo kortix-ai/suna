@@ -2,8 +2,27 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { chmod, mkdir, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+function setTestEnv(name: string, value: string): void {
+  if (!process.env[name] || process.env[name]?.startsWith('encrypted:')) {
+    process.env[name] = value;
+  }
+}
+
+setTestEnv('DATABASE_URL', 'postgres://postgres:postgres@127.0.0.1:54322/postgres');
+setTestEnv('SUPABASE_URL', 'http://127.0.0.1:54321');
+setTestEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role');
+setTestEnv('API_KEY_SECRET', 'test-api-key-secret');
+setTestEnv('TUNNEL_SIGNING_SECRET', 'test-tunnel-signing-secret');
+setTestEnv('ALLOWED_SANDBOX_PROVIDERS', 'daytona');
+setTestEnv('DAYTONA_API_KEY', 'test-daytona-key');
+setTestEnv('DAYTONA_SERVER_URL', 'https://daytona.example.test');
+setTestEnv('DAYTONA_TARGET', 'test-target');
+setTestEnv('FRONTEND_URL', 'http://localhost:3000');
+setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
+setTestEnv('RECALL_BASE_URL', 'https://us-west-2.recall.ai/api/v1');
 
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'kortix-daytona-context-test-'));
 const agentPath = join(fixtureRoot, 'kortix-agent');
@@ -23,7 +42,10 @@ await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
 await mkdir(join(executorSdkPath, 'node_modules'), { recursive: true });
-await symlink('/definitely-not-present/typescript', join(executorSdkPath, 'node_modules', 'typescript'));
+await symlink(
+  '/definitely-not-present/typescript',
+  join(executorSdkPath, 'node_modules', 'typescript'),
+);
 await mkdir(opencodeConfigPath, { recursive: true });
 await mkdir(warmRepoPath, { recursive: true });
 execFileSync('git', ['init', '-b', 'main'], { cwd: warmRepoPath });
@@ -48,6 +70,7 @@ beforeEach(() => {
   process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH = executorSdkPath;
   process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH = opencodeConfigPath;
   getSnapshotImpl = async () => ({ state: snapshotState() });
+  deleteSnapshotImpl = async () => {};
 });
 
 let dockerfileSeen = '';
@@ -62,6 +85,7 @@ const contextPaths: string[] = [];
 let createImpl: () => Promise<void> = async () => {};
 let snapshotState: () => string = () => 'active';
 let getSnapshotImpl: () => Promise<{ state: string }> = async () => ({ state: snapshotState() });
+let deleteSnapshotImpl: (snapshot: { state: string }) => Promise<void> = async () => {};
 
 mock.module('@daytonaio/sdk', () => ({
   Image: {
@@ -96,7 +120,7 @@ mock.module('../shared/daytona', () => ({
         await createImpl();
       },
       get: async () => getSnapshotImpl(),
-      delete: async () => undefined,
+      delete: async (snapshot: { state: string }) => deleteSnapshotImpl(snapshot),
     },
   }),
   isDaytonaConfigured: () => true,
@@ -175,6 +199,70 @@ describe('Daytona snapshot state', () => {
     };
 
     expect(await daytonaProvider.getSnapshotState('kortix-new-template')).toBe('unknown');
+  });
+
+  test('keeps a timed-out Daytona probe unknown', async () => {
+    getSnapshotImpl = async () => {
+      throw new Error('Daytona snapshot.get(kortix-timeout-template) timed out');
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-timeout-template')).toBe('unknown');
+  });
+
+  test('suppresses confirmed not-found delete errors and invalidates cached active state', async () => {
+    let getCalls = 0;
+    getSnapshotImpl = async () => {
+      getCalls += 1;
+      return { state: 'active' };
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-delete-missing')).toBe('active');
+
+    deleteSnapshotImpl = async () => {
+      throw Object.assign(new Error('Snapshot with name kortix-delete-missing not found'), {
+        response: { status: 404 },
+      });
+    };
+
+    await daytonaProvider.deleteSnapshot('kortix-delete-missing');
+
+    getSnapshotImpl = async () => {
+      getCalls += 1;
+      throw Object.assign(new Error('Snapshot with name kortix-delete-missing not found'), {
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-delete-missing')).toBe('missing');
+    expect(getCalls).toBe(3);
+  });
+
+  test('propagates Daytona delete outages but still invalidates cached active state', async () => {
+    let getCalls = 0;
+    getSnapshotImpl = async () => {
+      getCalls += 1;
+      return { state: 'active' };
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-delete-outage')).toBe('active');
+
+    deleteSnapshotImpl = async () => {
+      throw Object.assign(new Error('upstream unavailable'), { statusCode: 503 });
+    };
+
+    await expect(daytonaProvider.deleteSnapshot('kortix-delete-outage')).rejects.toThrow(
+      'upstream unavailable',
+    );
+
+    getSnapshotImpl = async () => {
+      getCalls += 1;
+      throw Object.assign(new Error('Snapshot with name kortix-delete-outage not found'), {
+        statusCode: 404,
+      });
+    };
+
+    expect(await daytonaProvider.getSnapshotState('kortix-delete-outage')).toBe('missing');
+    expect(getCalls).toBe(3);
   });
 });
 
