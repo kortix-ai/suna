@@ -23,7 +23,8 @@ import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-sl
 import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
-import { MarketplaceFileBrowser } from './marketplace-file-browser';
+import { MarketplaceFileTree } from './marketplace-file-tree';
+import { MarketplaceFileView } from './marketplace-file-view';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
@@ -257,10 +258,17 @@ function ItemSidebar({
   data,
   company,
   itemTitle,
+  fileTargets,
+  selectedFile,
+  onSelectFile,
 }: {
   data: MarketplaceItemDetail;
   company?: MarketplaceSummary;
   itemTitle: string;
+  /** Install targets for the Files tree (drives the main-column file view). */
+  fileTargets: string[];
+  selectedFile: string | undefined;
+  onSelectFile: (target: string) => void;
 }) {
   const surface = useMarketplaceSurface();
   const tm = typeMeta(data.type);
@@ -312,6 +320,19 @@ function ItemSidebar({
           ) : null}
         </div>
       </div>
+
+      {fileTargets.length > 0 ? (
+        <div>
+          <SectionLabel count={fileTargets.length}>Files</SectionLabel>
+          <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
+            <MarketplaceFileTree
+              targets={fileTargets}
+              selected={selectedFile}
+              onSelect={onSelectFile}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {companyClickable ? (
         <Link
@@ -488,6 +509,19 @@ export function MarketplaceDetail({
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
 
+  // The sidebar Files tree selects which file the main column shows; it defaults
+  // to the README/SKILL.md (whose already-SSR'd body the view reuses).
+  const fileTargets = data.files.map((f) => f.target);
+  const readmeTarget =
+    fileTargets.find((t) => /README\.md$/i.test(t)) ??
+    fileTargets.find((t) => /SKILL\.md$/i.test(t)) ??
+    fileTargets[0];
+  const [selectedFile, setSelectedFile] = useState<string | undefined>(readmeTarget);
+  // Reset to the default doc when the item changes (the overlay reuses this mount).
+  useEffect(() => {
+    setSelectedFile(readmeTarget);
+  }, [readmeTarget]);
+
   const crumbs = onBack
     ? [{ label: 'Marketplace', onClick: onBack }, { label: itemTitle }]
     : [
@@ -502,14 +536,24 @@ export function MarketplaceDetail({
       <MarketplaceShell
         embedded={!!onBack}
         crumbs={crumbs}
-        sidebar={<ItemSidebar data={data} company={company} itemTitle={itemTitle} />}
+        sidebar={
+          <ItemSidebar
+            data={data}
+            company={company}
+            itemTitle={itemTitle}
+            fileTargets={fileTargets}
+            selectedFile={selectedFile}
+            onSelectFile={setSelectedFile}
+          />
+        }
       >
       <div className="space-y-8">
         <section className="space-y-3">
           {data.files.length > 0 ? (
-            <MarketplaceFileBrowser
+            <MarketplaceFileView
               itemId={data.id}
-              targets={data.files.map((f) => f.target)}
+              selected={selectedFile}
+              readmeTarget={readmeTarget}
               readme={readme || null}
             />
           ) : readme ? (

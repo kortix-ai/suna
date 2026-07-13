@@ -46,6 +46,7 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-marketplace',
   'kortix-meet',
   'kortix-memory',
+  'kortix-onboarding',
   'kortix-slack',
   'kortix-system',
 ] as const;

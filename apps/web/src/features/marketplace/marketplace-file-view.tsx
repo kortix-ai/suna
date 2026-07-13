@@ -1,12 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import Loading from '@/components/ui/loading';
 import { getMarketplaceItemFile } from '@/lib/marketplace-client';
-import { MarketplaceFileTree } from './marketplace-file-tree';
 
 function isMarkdown(path: string): boolean {
   return /\.(md|mdx|markdown)$/i.test(path);
@@ -24,48 +22,45 @@ function stripFrontmatter(md: string): string {
 }
 
 /**
- * A file browser for a marketplace item: pick a file in the tree on the left,
- * see it rendered on the right. Defaults to the README/SKILL.md (whose already-
- * loaded, SSR'd body we reuse so the primary doc stays server-rendered); other
- * files are fetched on demand — markdown is rendered, everything else shown as
- * source.
+ * The main-column file view: renders whichever file the sidebar tree has
+ * selected. The default (README/SKILL.md) reuses the already-SSR'd `readme`
+ * body — so the primary doc stays server-rendered and this column looks exactly
+ * like the old detail page; other files are fetched on demand (markdown
+ * rendered, everything else shown as source).
  */
-export function MarketplaceFileBrowser({
+export function MarketplaceFileView({
   itemId,
-  targets,
+  selected,
+  readmeTarget,
   readme,
 }: {
   itemId: string;
-  targets: string[];
+  selected: string | undefined;
+  readmeTarget: string | undefined;
+  /** The already-loaded, SSR'd README/SKILL.md body (frontmatter already stripped). */
   readme: string | null;
 }) {
-  const readmeTarget = useMemo(
-    () =>
-      targets.find((t) => /README\.md$/i.test(t)) ??
-      targets.find((t) => /SKILL\.md$/i.test(t)) ??
-      targets[0],
-    [targets],
-  );
-  const [selected, setSelected] = useState(readmeTarget);
-
-  // The default doc's body is already loaded + SSR'd (`readme`) — don't refetch it.
-  const useLoadedReadme = selected === readmeTarget && readme != null;
+  // The default doc's body is already loaded + SSR'd — don't refetch it.
+  const useLoadedReadme = selected != null && selected === readmeTarget && readme != null;
   const fileQuery = useQuery({
     queryKey: ['marketplace-file', itemId, selected],
-    queryFn: () => getMarketplaceItemFile(itemId, selected),
+    queryFn: () => getMarketplaceItemFile(itemId, selected as string),
     enabled: !!selected && !useLoadedReadme,
     staleTime: 5 * 60_000,
   });
 
   const content = useLoadedReadme ? readme : (fileQuery.data?.content ?? null);
   const asMarkdown = useLoadedReadme || (selected ? isMarkdown(selected) : false);
+  const filename = selected ? selected.split('/').pop() : undefined;
 
   return (
-    <div className="bg-popover flex min-h-[24rem] flex-col overflow-hidden rounded-md border sm:flex-row">
-      <div className="max-h-48 shrink-0 overflow-y-auto border-b sm:max-h-[32rem] sm:w-60 sm:border-r sm:border-b-0">
-        <MarketplaceFileTree targets={targets} selected={selected} onSelect={setSelected} />
-      </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:max-h-[32rem]">
+    <div className="space-y-2">
+      {/* The default README view matches the old detail page exactly (no header);
+          a picked file gets a subtle filename cue since the content changed. */}
+      {!useLoadedReadme && filename ? (
+        <div className="text-muted-foreground px-1 font-mono text-xs">{filename}</div>
+      ) : null}
+      <div className="bg-secondary rounded-md border p-4">
         {!useLoadedReadme && fileQuery.isLoading ? (
           <div className="text-muted-foreground flex h-40 items-center justify-center">
             <Loading />
@@ -80,7 +75,7 @@ export function MarketplaceFileBrowser({
             />
           </div>
         ) : (
-          <pre className="text-foreground/90 font-mono text-xs leading-relaxed whitespace-pre">
+          <pre className="text-foreground/90 overflow-x-auto font-mono text-xs leading-relaxed">
             <code>{content}</code>
           </pre>
         )}
