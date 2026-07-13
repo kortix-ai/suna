@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 
 import { Updater, type TargetFile } from 'tuf-js';
@@ -31,8 +39,7 @@ export class TrustedRepository {
     mkdirSync(options.targetDir, { recursive: true, mode: 0o700 });
     const root = await downloadPinnedRoot(new URL('metadata/1.root.json', base), options.trustedRootSha256);
     const rootPath = join(options.metadataDir, 'root.json');
-    writeFileSync(rootPath, root, { mode: 0o600 });
-    chmodSync(rootPath, 0o600);
+    writeVerifiedRoot(rootPath, root);
 
     const updater = new Updater({
       metadataDir: options.metadataDir,
@@ -84,6 +91,24 @@ export class TrustedRepository {
     const info = await this.updater.getTargetInfo(path);
     if (!info) throw new Error(`signed TUF target not found: ${path}`);
     return info;
+  }
+}
+
+function writeVerifiedRoot(path: string, bytes: Buffer): void {
+  const descriptor = openSync(
+    path,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+    0o600,
+  );
+  try {
+    let offset = 0;
+    while (offset < bytes.length) {
+      // lgtm[js/http-to-file-access] Bytes reach this sink only after exact offline-pinned SHA-256 verification; the destination is owner-only, exclusive, and no-follow.
+      offset += writeSync(descriptor, bytes, offset, bytes.length - offset, null);
+    }
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
   }
 }
 
