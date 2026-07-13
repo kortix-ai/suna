@@ -15,7 +15,7 @@
 // next sign-in stomping it.
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { accountGroupMembers, accountInvitations, accountMembers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers } from '@kortix/db';
 import { db } from '../shared/db';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import {
@@ -215,10 +215,20 @@ async function consumeInviteGroupGrants(
       .filter((id) => GROUP_UUID_RE.test(id));
     if (groupIds.length === 0) return;
 
-    await db
-      .insert(accountGroupMembers)
-      .values(groupIds.map((groupId) => ({ groupId, userId })))
-      .onConflictDoNothing();
+    // A parked group may have been deleted since parking; its id would FK-fail
+    // the WHOLE batch insert and lose the healthy grants with it. Keep only
+    // groups that still exist — scoped to this account, which also stops a
+    // grant from ever landing in another account's group.
+    const liveGroups = await db
+      .select({ groupId: accountGroups.groupId })
+      .from(accountGroups)
+      .where(and(eq(accountGroups.accountId, accountId), inArray(accountGroups.groupId, groupIds)));
+    if (liveGroups.length > 0) {
+      await db
+        .insert(accountGroupMembers)
+        .values(liveGroups.map(({ groupId }) => ({ groupId, userId })))
+        .onConflictDoNothing();
+    }
 
     const remaining = grants.filter((g) => !('group_id' in g));
     await db
