@@ -42,3 +42,64 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           minimumSeverity: "CRITICAL"
+
+      # Temporary diagnosis for the upstream action, which currently reports
+      # only severity counts even when verboseLogging is enabled. Keep the
+      # original failed step authoritative; this runs a second scan solely to
+      # print rule/resource metadata and is removed once the findings are fixed.
+      - name: Print Drata finding metadata after failure
+        if: failure()
+        env:
+          DRATA_API_TOKEN: ${{ secrets.DRATA_IAC_PIPELINE_KEY }}
+          SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+          DESTINATION_BRANCH: ${{ github.base_ref || github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://public-api.drata.com/public/workspaces/1/pipelines'
+          run_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+          archive=/tmp/drata-iac.zip
+
+          find . -type f \
+            \( -name '*.tf' -o -name '*.tfvar' -o -name '*.terraform' -o -name '*.tf.json' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
+            -not -path './.git/*' -print | zip -q "$archive" -@
+
+          upload_details="$(curl --fail --silent --show-error --get \
+            -H "Authorization: Bearer $DRATA_API_TOKEN" \
+            --data-urlencode 'repositoryName=suna' \
+            --data-urlencode 'repositoryOwner=kortix-ai' \
+            --data-urlencode "branchName=$SOURCE_BRANCH" \
+            --data-urlencode "commitHash=$GITHUB_SHA" \
+            "$api/iac-upload-details")"
+          curl --fail --silent --show-error -X PUT \
+            -H 'Content-Type: application/zip' \
+            --data-binary "@$archive" \
+            "$(jq -r '.presignedUrl' <<<"$upload_details")" >/dev/null
+
+          request="$(jq -n \
+            --arg branch "$DESTINATION_BRANCH" \
+            --arg source "$SOURCE_BRANCH" \
+            --arg sha "$GITHUB_SHA" \
+            --arg repositoryId "$GITHUB_REPOSITORY_ID" \
+            --arg runId "$run_id" \
+            --arg vendorRunId "$GITHUB_RUN_ID" \
+            --arg actor "$GITHUB_ACTOR" \
+            '{branchName:$branch,sourceBranchName:$source,destinationBranchName:$branch,commitHash:$sha,repositoryName:"suna",repositoryOwner:"kortix-ai",repositoryId:$repositoryId,runId:$runId,vendorRunId:$vendorRunId,trigger:"pull_request",minimumSeverity:"CRITICAL",runInitiatedBy:$actor}')"
+          curl --fail --silent --show-error -X POST \
+            -H "Authorization: Bearer $DRATA_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$request" "$api/iac-scan" >/dev/null
+
+          for _ in $(seq 1 120); do
+            code="$(curl --silent --show-error -o /tmp/drata-results.json -w '%{http_code}' \
+              -H "Authorization: Bearer $DRATA_API_TOKEN" \
+              "$api/results?runId=$run_id")"
+            if [ "$code" = 200 ]; then
+              jq '{designGaps, excludedFindings}' /tmp/drata-results.json
+              exit 0
+            fi
+            [ "$code" = 404 ] || { sed -n '1,80p' /tmp/drata-results.json; exit 1; }
+            sleep 5
+          done
+          echo 'Timed out waiting for diagnostic Drata result' >&2
+          exit 1
