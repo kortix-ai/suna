@@ -1,5 +1,4 @@
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { parseCustomerRepositories, verifyAndMirrorImages } from './artifacts.ts';
 import type { AwsControlPlane } from './aws.ts';

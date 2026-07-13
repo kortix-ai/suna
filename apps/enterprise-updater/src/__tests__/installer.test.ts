@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { MirroredImage } from '../artifacts.ts';
@@ -102,7 +101,8 @@ class InstallerRunner implements CommandRunner {
         resource_changes: [{ address: 'helm_release.runtime', type: 'helm_release', change: { actions: ['update'] } }],
       });
     }
-    if (command === 'curl' && args.some((arg) => arg.includes('api.vpc-demo.kortix.com'))) {
+    const requestUrl = args.at(-1);
+    if (command === 'curl' && requestUrl === 'https://api.vpc-demo.kortix.com/v1/health') {
       return JSON.stringify({ version: this.apiVersion });
     }
     return '';
@@ -217,7 +217,7 @@ function mirroredImages(): MirroredImage[] {
 }
 
 function installerFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'kortix-installer-test-'));
+  const root = mkdtempSync(join(realpathSync(process.cwd()), '.kortix-installer-test-'));
   const events: string[] = [];
   const runner = new InstallerRunner(events);
   const aws = new InstallerAws(events);
