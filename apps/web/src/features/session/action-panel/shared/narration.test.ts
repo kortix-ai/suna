@@ -275,3 +275,192 @@ describe('registry coverage', () => {
     }
   });
 });
+
+// ─── action-multiplexed tools: a single tool name dispatches on `input.action`
+// (or `input.command`) across genuinely different operations. Narration must
+// never fold a destructive or read-only action into a creation/mutation
+// sentence just because the tool name looks generative. ────────────────────
+
+describe('narrateStep - presentation_gen must resolve its own action, not always "Built a presentation"', () => {
+  it('never narrates delete_presentation as a creation', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'delete_presentation', presentation_name: 'demo' }),
+    ]);
+    expect(line.toLowerCase()).not.toContain('built');
+    expect(line.toLowerCase()).not.toContain('made');
+    expect(line.toLowerCase()).toContain('delet');
+  });
+
+  it('never narrates delete_slide as a creation', () => {
+    const line = narrateStep('create', [part('presentation_gen', { action: 'delete_slide' })]);
+    expect(line.toLowerCase()).not.toContain('built');
+    expect(line.toLowerCase()).toContain('delet');
+  });
+
+  it('never narrates list_presentations (read-only) as a mutation', () => {
+    const line = narrateStep('create', [part('presentation_gen', { action: 'list_presentations' })]);
+    expect(line.toLowerCase()).not.toContain('built');
+    expect(line.toLowerCase()).not.toContain('made');
+    expect(line.toLowerCase()).not.toContain('delet');
+  });
+
+  it('never narrates list_slides (read-only) as a mutation', () => {
+    const line = narrateStep('create', [part('presentation_gen', { action: 'list_slides' })]);
+    expect(line.toLowerCase()).not.toContain('built');
+    expect(line.toLowerCase()).not.toContain('made');
+  });
+
+  it('never narrates validate_slide (read-only check) as a mutation', () => {
+    const line = narrateStep('create', [part('presentation_gen', { action: 'validate_slide' })]);
+    expect(line.toLowerCase()).not.toContain('built');
+    expect(line.toLowerCase()).not.toContain('made');
+  });
+
+  it('never narrates export_pdf/export_pptx/preview/serve as a creation', () => {
+    for (const action of ['export_pdf', 'export_pptx', 'preview', 'serve']) {
+      const line = narrateStep('create', [part('presentation_gen', { action })]);
+      expect(line.toLowerCase()).not.toContain('built');
+      expect(line.toLowerCase()).not.toContain('made');
+    }
+  });
+
+  it('still narrates create_slide as making progress on a presentation', () => {
+    const line = narrateStep('create', [part('presentation_gen', { action: 'create_slide' })]);
+    expect(line.toLowerCase()).not.toContain('delet');
+  });
+
+  it('falls back to a vague-but-true sentence when action is missing/unrecognized', () => {
+    const line = narrateStep('create', [part('presentation_gen', {})]);
+    expect(line).not.toBe('');
+    expect(line.toLowerCase()).not.toContain('undefined');
+  });
+});
+
+describe('narrateStep - image_gen must resolve its own action, not always "Made an image"', () => {
+  it('never narrates edit as a fresh creation', () => {
+    const line = narrateStep('create', [part('image_gen', { action: 'edit' })]);
+    expect(line).not.toBe('Made an image');
+    expect(line.toLowerCase()).not.toContain('made');
+  });
+
+  it('never narrates upscale as a fresh creation', () => {
+    const line = narrateStep('create', [part('image_gen', { action: 'upscale' })]);
+    expect(line.toLowerCase()).not.toContain('made');
+  });
+
+  it('never narrates remove_bg as a fresh creation', () => {
+    const line = narrateStep('create', [part('image_gen', { action: 'remove_bg' })]);
+    expect(line.toLowerCase()).not.toContain('made');
+  });
+
+  it('still narrates generate as making an image', () => {
+    const line = narrateStep('create', [part('image_gen', { action: 'generate' })]);
+    expect(line.toLowerCase()).toContain('made');
+  });
+
+  it('does not count a delete-ish (non-creation) presentation action among "Made" in a mixed group', () => {
+    const line = narrateStep('create', [
+      part('presentation_gen', { action: 'create_slide' }),
+      part('presentation_gen', { action: 'delete_presentation' }),
+    ]);
+    expect(line).not.toMatch(/Made 2 presentations/);
+  });
+});
+
+describe('narrateStep - project_update is a real mutation, not "Opened your project"', () => {
+  it('does not say "Opened" for project_update', () => {
+    const line = narrateStep('projects', [part('project_update', { project: 'demo' })]);
+    expect(line).not.toContain('Opened');
+  });
+
+  it('says the project was updated', () => {
+    const line = narrateStep('projects', [part('project_update', { project: 'demo' })]);
+    expect(line.toLowerCase()).toContain('updat');
+  });
+});
+
+describe('narrateStep - trigger_test is a dry run, not a mutation', () => {
+  it('does not say "Adjusted" for trigger_test', () => {
+    const line = narrateStep('automations', [part('trigger_test')]);
+    expect(line.toLowerCase()).not.toContain('adjusted');
+  });
+
+  it('still says "Adjusted" for pause/resume (genuine control actions)', () => {
+    expect(narrateStep('automations', [part('trigger_pause')]).toLowerCase()).toContain('adjusted');
+    expect(narrateStep('automations', [part('trigger_resume')]).toLowerCase()).toContain('adjusted');
+  });
+});
+
+describe('narrateStep - projects/skills are count-aware, not just parts[0]', () => {
+  it('reports the count for multiple created projects instead of only naming the first', () => {
+    const line = narrateStep('projects', [
+      part('project_create', { project: 'alpha' }),
+      part('project_create', { project: 'beta' }),
+    ]);
+    expect(line).toContain('2 projects');
+  });
+
+  it('reports the count for multiple skills instead of only naming the first', () => {
+    const line = narrateStep('skills', [part('skill', { name: 'alpha' }), part('skill', { name: 'beta' })]);
+    expect(line).toContain('2 skills');
+  });
+
+  it('still names a single skill', () => {
+    const line = narrateStep('skills', [part('skill', { name: 'writing' })]);
+    expect(line).toContain('writing');
+  });
+});
+
+describe('narrateStep - the bare "memory" tool multiplexes over `command`, not always a recall', () => {
+  it('never narrates memory delete as a mere recall', () => {
+    const line = narrateStep('memory', [part('memory', { command: 'delete', path: '/mem/x.md' })]);
+    expect(line.toLowerCase()).not.toContain('recalled');
+    expect(line.toLowerCase()).toContain('delet');
+  });
+
+  it('never narrates memory create (a write) as a mere recall', () => {
+    const line = narrateStep('memory', [part('memory', { command: 'create', path: '/mem/x.md' })]);
+    expect(line.toLowerCase()).not.toContain('recalled');
+  });
+
+  it('never narrates memory str_replace/insert/rename (edits) as a mere recall', () => {
+    for (const command of ['str_replace', 'insert', 'rename']) {
+      const line = narrateStep('memory', [part('memory', { command })]);
+      expect(line.toLowerCase()).not.toContain('recalled');
+    }
+  });
+
+  it('still narrates memory view as a recall', () => {
+    const line = narrateStep('memory', [part('memory', { command: 'view' })]);
+    expect(line.toLowerCase()).toContain('recalled');
+  });
+
+  it('still narrates memory_search/mem_search/ltm_search/get_mem as a recall', () => {
+    for (const t of ['memory_search', 'mem_search', 'ltm_search', 'get_mem']) {
+      expect(narrateStep('memory', [part(t)]).toLowerCase()).toContain('recalled');
+    }
+  });
+});
+
+describe('narrateStep - task_update/agent_task_update resolve their own action field', () => {
+  it('never narrates a cancel-via-update as sending a message', () => {
+    const line = narrateStep('delegate', [part('task_update', { action: 'cancel' })]);
+    expect(line.toLowerCase()).not.toContain('sent instructions');
+    expect(line.toLowerCase()).toContain('stopped');
+  });
+
+  it('never narrates an approve-via-update as sending a message', () => {
+    const line = narrateStep('delegate', [part('agent_task_update', { action: 'approve' })]);
+    expect(line.toLowerCase()).not.toContain('sent instructions');
+  });
+
+  it('never narrates a start-via-update as sending a message', () => {
+    const line = narrateStep('delegate', [part('task_update', { action: 'start' })]);
+    expect(line.toLowerCase()).not.toContain('sent instructions');
+  });
+
+  it('falls back to a message narration when action is absent (component default)', () => {
+    const line = narrateStep('delegate', [part('task_update', {})]);
+    expect(line.toLowerCase()).toContain('instructions');
+  });
+});
