@@ -148,6 +148,7 @@ data "aws_iam_policy_document" "publisher_runtime_boundary" {
   statement {
     sid = "UseOnlyPublisherRepositoryEncryptionKey"
     actions = [
+      "kms:Decrypt",
       "kms:DescribeKey",
       "kms:Encrypt",
       "kms:GenerateDataKey",
