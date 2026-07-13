@@ -69,8 +69,6 @@ export async function resumeStoppedSandbox(row: {
     'needsReprovision',
     'runtimeWakeError',
     'runtimeWakeFailedAt',
-    'opencodeReadyWaitStartedAt',
-    'opencodeReadyWaitReason',
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
