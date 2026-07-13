@@ -49,6 +49,7 @@ export type ProviderState =
   | 'building'
   | 'build_failed'
   | 'removing'
+  | 'unknown'
   | 'missing';
 
 export { normalizeExistingProviderState } from './state';

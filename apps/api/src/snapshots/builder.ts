@@ -35,6 +35,13 @@ import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
 import type { WarmRepoContext } from './build-context';
 import { createHash } from 'node:crypto';
+import {
+  enabledTemplateBuildProviders,
+  observeTemplateProviderCoverage,
+  resolveRoutedTemplateState,
+  type SandboxTemplateProvider,
+  type SandboxTemplateProviderCoverage,
+} from './provider-coverage';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
@@ -53,6 +60,31 @@ export type SnapshotBuildSource =
   | 'manual'
   | 'background'
   | 'startup';
+
+const EXISTING_PROVIDER_BUILD_TIMEOUT_MS = 12 * 60 * 1000;
+const EXISTING_PROVIDER_BUILD_POLL_MS = 3_000;
+
+/**
+ * Cross-replica dedupe: once provider truth says a build exists, poll that same
+ * object to settlement rather than issuing a conflicting same-name build from
+ * this API replica. A timeout deliberately remains `building` so callers fail
+ * closed instead of creating a duplicate.
+ */
+export async function waitForProviderBuild(
+  provider: Pick<SandboxProviderAdapter, 'getSnapshotState'>,
+  snapshotName: string,
+  opts: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<ProviderState> {
+  const timeoutMs = opts.timeoutMs ?? EXISTING_PROVIDER_BUILD_TIMEOUT_MS;
+  const pollMs = opts.pollMs ?? EXISTING_PROVIDER_BUILD_POLL_MS;
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const state = await provider.getSnapshotState(snapshotName);
+    if (state !== 'building') return state;
+    if (Date.now() >= deadline) return 'building';
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  } while (true);
+}
 
 export interface EnsureSandboxImageResult {
   snapshotName: string;
@@ -154,7 +186,7 @@ export async function ensureSandboxImage(
 
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
   // count, and we rebuild on this provider.)
-  const state = await provider.getSnapshotState(identity.snapshotName);
+  let state = await provider.getSnapshotState(identity.snapshotName);
   if (state === 'active') {
     await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
@@ -208,6 +240,36 @@ export async function ensureSandboxImage(
     }
   }
 
+  if (state === 'building') {
+    state = await waitForProviderBuild(provider, identity.snapshotName);
+    if (state === 'active') {
+      await recordTemplateBuilt(template.templateId, {
+        snapshotName: identity.snapshotName,
+        contentHash: identity.contentHash,
+        builtFromCommit: identity.builtFromCommit,
+        provider: buildProvider,
+        swapKey: identity.swapKey,
+      });
+      return {
+        snapshotName: identity.snapshotName,
+        slug: template.slug,
+        contentHash: identity.contentHash,
+        built: false,
+        isDefault: !!template.isShared,
+      };
+    }
+    if (state === 'building') {
+      throw new SnapshotBuildError(
+        `Sandbox image ${identity.snapshotName} is still building on ${buildProvider}`,
+      );
+    }
+  }
+  if (state === 'unknown') {
+    throw new SnapshotBuildError(
+      `Cannot verify sandbox image ${identity.snapshotName} on ${buildProvider}; provider state is unknown`,
+    );
+  }
+
   // ─── Inline build (deduped across ALL sources) ───────────────────────────
   // A burst of triggers for the same snapshot identity — e.g. a project-create
   // pre-build, the first session boot, and a background rebuild all landing
@@ -215,7 +277,7 @@ export async function ensureSandboxImage(
   // ONE build-log row. `daytona.snapshot.create` calls racing under the same
   // name conflict, and duplicate rows are what left two "Building" entries
   // orphaned in the UI. We dedupe in-process by (provider, snapshot name); the
-  // cross-process case (API restart mid-build) is healed by reconcileStaleBuilds.
+  // cross-process case is deduped above by provider truth + settlement polling.
   //
   // The provider MUST be part of the key: the same identity can be requested for
   // two providers at once (e.g. a background reconcile builds on the template's
@@ -399,10 +461,10 @@ const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
  */
 export async function deleteSandboxImage(
   project: GitBackedProject,
-  opts: { slug?: string } = {},
+  opts: { slug?: string; provider?: string } = {},
 ): Promise<{ deleted: boolean; snapshotName: string; slug: string }> {
   const template = await resolveTemplateForBuildSlug(project, opts.slug);
-  const provider = getSandboxProvider(template.provider);
+  const provider = getSandboxProvider(opts.provider ?? template.provider);
   const identity = await computeTemplateIdentity(project, template);
   const before = await provider.getSnapshotState(identity.snapshotName);
   await provider.deleteSnapshot(identity.snapshotName);
@@ -445,28 +507,49 @@ export interface SandboxTemplateView {
   builtFromCommit: string | null;
   lastBuiltAt: string | null;
   lastError: string | null;
+  /** Fresh launch-readiness observations for this exact content identity. */
+  providerCoverage?: SandboxTemplateProviderCoverage[];
 }
 
 export async function listSandboxTemplates(
   project: GitBackedProject,
+  opts: {
+    /** Explicit project pin. null means Automatic routing across enabled providers. */
+    selectedProvider?: SandboxTemplateProvider | null;
+    includeProviderCoverage?: boolean;
+  } = {},
 ): Promise<SandboxTemplateView[]> {
   const items = await listTemplatesForProject(project);
-  return Promise.all(items.map((t) => toView(project, t)));
+  return Promise.all(items.map((t) => toView(project, t, opts)));
 }
 
 async function toView(
   project: GitBackedProject,
   t: ResolvedTemplate,
+  opts: {
+    selectedProvider?: SandboxTemplateProvider | null;
+    includeProviderCoverage?: boolean;
+  },
 ): Promise<SandboxTemplateView> {
   const identity = await computeTemplateIdentity(project, t);
   let state: string = t.providerState ?? 'missing';
-  try {
-    const provider = getSandboxProvider(t.provider);
-    if (provider.isConfigured()) {
-      state = await provider.getSnapshotState(identity.snapshotName);
+  let providerCoverage: SandboxTemplateProviderCoverage[] | undefined;
+  if (opts.includeProviderCoverage) {
+    providerCoverage = await observeTemplateProviderCoverage(identity.snapshotName, {
+      isProviderEnabled: (provider) => config.isProviderEnabled(provider),
+      getProvider: (provider) => getSandboxProvider(provider),
+      now: () => new Date(),
+    });
+    state = resolveRoutedTemplateState(providerCoverage, opts.selectedProvider ?? null);
+  } else {
+    try {
+      const provider = getSandboxProvider(t.provider);
+      if (provider.isConfigured()) {
+        state = await provider.getSnapshotState(identity.snapshotName);
+      }
+    } catch {
+      /* keep cached */
     }
-  } catch {
-    /* keep cached */
   }
   return {
     templateId: t.templateId,
@@ -491,6 +574,7 @@ async function toView(
     builtFromCommit: t.builtFromCommit,
     lastBuiltAt: null,
     lastError: null,
+    ...(providerCoverage ? { providerCoverage } : {}),
   };
 }
 
@@ -509,6 +593,7 @@ export interface ProjectSnapshotBuildSummary {
   error: string | null;
   errorCategory: string | null;
   source: SnapshotBuildSource | null;
+  provider: SandboxProviderName | null;
   startedAt: Date;
   finishedAt: Date | null;
 }
@@ -526,6 +611,9 @@ function rowToSummary(row: typeof projectSnapshotBuilds.$inferSelect): ProjectSn
     error: row.error,
     errorCategory: row.errorCategory,
     source: typeof meta.source === 'string' ? (meta.source as SnapshotBuildSource) : null,
+    provider: typeof meta.provider === 'string' && config.ALLOWED_SANDBOX_PROVIDERS.includes(meta.provider as SandboxProviderName)
+      ? meta.provider as SandboxProviderName
+      : null,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
   };
@@ -602,7 +690,7 @@ export async function reconcileStaleBuilds(
     if (states.some(({ state }) => state === 'active')) {
       await closeBuildLogReady(row.buildId);
       closedReady += 1;
-    } else if (states.some(({ state }) => state === 'building')) {
+    } else if (states.some(({ state }) => state === 'building' || state === 'unknown')) {
       // Provider truth still says this build is in flight. Never turn it into a
       // false failure merely because a large provider build crossed our stale
       // row cutoff; a later poll will close it when the provider settles.
@@ -836,7 +924,7 @@ async function prebakeForProvider(
  */
 export function kickPreBuild(
   project: GitBackedProject,
-  opts: { slug?: string; accountId: string; source: SnapshotBuildSource },
+  opts: { slug?: string; accountId: string; source: SnapshotBuildSource; provider?: string },
 ): void {
   void ensureSandboxImage(project, opts).catch((err) =>
     console.warn(
@@ -844,6 +932,33 @@ export function kickPreBuild(
       err instanceof Error ? err.message : err,
     ),
   );
+}
+
+/** Providers a project can route a new session to for proactive template builds. */
+export function templateBuildProviders(): SandboxTemplateProvider[] {
+  return enabledTemplateBuildProviders({
+    allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+    isEnabled: (provider) => config.isProviderEnabled(provider as SandboxProviderName),
+  });
+}
+
+/** Fire the same content-addressed build independently on every routed provider. */
+export function kickRoutedPreBuild(
+  project: GitBackedProject,
+  opts: {
+    slug?: string;
+    accountId: string;
+    source: SnapshotBuildSource;
+  },
+): void {
+  for (const provider of templateBuildProviders()) {
+    kickPreBuild(project, {
+      slug: opts.slug,
+      accountId: opts.accountId,
+      source: opts.source,
+      provider,
+    });
+  }
 }
 
 // ─── Platform default (global, project-independent) ──────────────────────────
@@ -866,51 +981,39 @@ const PLATFORM_PROJECT_SHELL: GitBackedProject = {
 };
 
 async function ensurePlatformDefaultImage(
-  opts: { source?: SnapshotBuildSource } = {},
+  opts: { source?: SnapshotBuildSource; provider: string },
 ): Promise<EnsureSandboxImageResult> {
   return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
     slug: DEFAULT_SANDBOX_SLUG,
     source: opts.source ?? 'startup',
+    provider: opts.provider,
   });
 }
 
 let startupPreBuildKicked = false;
 
 /**
- * Idempotent, fire-and-forget. Mints the platform default image once per
- * process boot so the first session anywhere lands on a cache hit. Safe to call
- * from multiple startup paths — only the first call does work.
+ * Idempotent, fire-and-forget. Mints the platform default image independently
+ * on every enabled provider once per process boot, so an Automatic or pinned
+ * session never pays a provider-specific lazy build.
  */
 export function kickStartupPreBuild(): void {
   if (startupPreBuildKicked) return;
   startupPreBuildKicked = true;
-  // Gate on the ACTUAL default provider, not daytona specifically — a Platinum-only
-  // deploy has no daytona adapter configured, which used to skip the pre-build and
-  // leave the first project after a release to pay a lazy "Not built yet" build.
-  const providerId = config.getDefaultProvider();
-  let provider: SandboxProviderAdapter;
-  try {
-    provider = getSandboxProvider(providerId);
-  } catch {
-    console.log(`[snapshots] startup pre-build skipped — no adapter for default provider '${providerId}'`);
-    return;
+  for (const providerId of templateBuildProviders()) {
+    void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
+      .then((r) =>
+        console.log(
+          `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
+        ),
+      )
+      .catch((err) =>
+        console.warn(
+          `[snapshots] startup pre-build of platform default failed (${providerId}):`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
   }
-  if (!provider.isConfigured()) {
-    console.log(`[snapshots] startup pre-build skipped — default provider '${providerId}' not configured`);
-    return;
-  }
-  void ensurePlatformDefaultImage({ source: 'startup' })
-    .then((r) =>
-      console.log(
-        `[snapshots] startup pre-build: default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-      ),
-    )
-    .catch((err) =>
-      console.warn(
-        '[snapshots] startup pre-build of platform default failed:',
-        err instanceof Error ? err.message : err,
-      ),
-    );
 }
 
 // ─── Custom (toml / UI) templates — explicit rebuilds ────────────────────────
@@ -928,6 +1031,7 @@ async function reconcileProjectTemplates(
   opts: { accountId: string; source: SnapshotBuildSource },
 ): Promise<{ checked: number; rebuilt: number }> {
   const templates = await listTemplatesForProject(project, { forceTomlSync: true });
+  const providers = templateBuildProviders();
   let rebuilt = 0;
   for (const t of templates) {
     if (t.isShared) continue; // the platform default is built globally
@@ -941,13 +1045,17 @@ async function reconcileProjectTemplates(
       );
       continue;
     }
-    const current =
-      t.providerState === 'active' &&
-      t.contentHash === identity.contentHash &&
-      t.providerSnapshotName === identity.snapshotName;
-    if (current) continue;
-    kickPreBuild(project, { slug: t.slug, accountId: opts.accountId, source: opts.source });
-    rebuilt += 1;
+    for (const providerId of providers) {
+      const provider = getSandboxProvider(providerId);
+      if ((await provider.getSnapshotState(identity.snapshotName)) === 'active') continue;
+      kickPreBuild(project, {
+        slug: t.slug,
+        accountId: opts.accountId,
+        source: opts.source,
+        provider: providerId,
+      });
+      rebuilt += 1;
+    }
   }
   return { checked: templates.length, rebuilt };
 }
@@ -1025,6 +1133,11 @@ export async function ensurePerProjectWarmImage(
   }
   if (existingState === 'build_failed') {
     await provider.deleteSnapshot(snapshotName).catch(() => {});
+  }
+  if (existingState === 'unknown') {
+    throw new SnapshotBuildError(
+      `Cannot verify warm image ${snapshotName} on ${buildProvider}; provider state is unknown`,
+    );
   }
 
   const warmRepo = await resolveWarmRepoContext(project);

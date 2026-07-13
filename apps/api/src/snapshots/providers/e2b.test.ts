@@ -124,6 +124,13 @@ describe('E2B template adapter', () => {
     expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('building');
   });
 
+  test('keeps an E2B control-plane failure unknown instead of claiming the template is absent', async () => {
+    globalThis.fetch = mock(
+      async () => new Response('upstream unavailable', { status: 503 }),
+    ) as unknown as typeof fetch;
+    expect(await e2bProvider.getSnapshotState('kortix-e2b-template')).toBe('unknown');
+  });
+
   test('lists and deletes only the matching E2B template identity', async () => {
     const requests: Array<{ url: string; method: string; apiKey: string | null }> = [];
     globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {

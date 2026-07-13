@@ -163,11 +163,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       }
       return state;
     } catch {
-      // Error *or* timeout (TimeoutError) → treat as unknown/missing. We never
+      // Error *or* timeout (TimeoutError) → unknown. We never
       // poison the positive cache here, so the next poll re-checks once Daytona
       // recovers.
       snapshotStateCache.delete(snapshotName);
-      return 'missing';
+      return 'unknown';
     }
   }
 

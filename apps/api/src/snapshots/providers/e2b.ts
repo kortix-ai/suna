@@ -27,13 +27,23 @@ function connectionOpts() {
   return { apiKey: config.E2B_API_KEY, requestTimeoutMs: 30_000 } as const;
 }
 
+let inFlightTemplateList: Promise<E2BTemplateView[]> | null = null;
+
 async function listTemplates(): Promise<E2BTemplateView[]> {
-  const response = await fetch('https://api.e2b.dev/templates', {
-    headers: { 'X-API-KEY': config.E2B_API_KEY },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) throw new Error(`E2B list templates -> ${response.status} ${(await response.text()).slice(0, 300)}`);
-  return response.json() as Promise<E2BTemplateView[]>;
+  if (inFlightTemplateList) return inFlightTemplateList;
+  inFlightTemplateList = (async () => {
+    const response = await fetch('https://api.e2b.dev/templates', {
+      headers: { 'X-API-KEY': config.E2B_API_KEY },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`E2B list templates -> ${response.status} ${(await response.text()).slice(0, 300)}`);
+    return response.json() as Promise<E2BTemplateView[]>;
+  })();
+  try {
+    return await inFlightTemplateList;
+  } finally {
+    inFlightTemplateList = null;
+  }
 }
 
 function matchesTemplate(template: E2BTemplateView, name: string): boolean {
@@ -98,7 +108,7 @@ class E2BAdapter implements SandboxProviderAdapter {
       // building so the UI keeps polling and the session path falls back cold.
       return normalizeExistingProviderState(template.buildStatus);
     } catch {
-      return 'missing';
+      return 'unknown';
     }
   }
 

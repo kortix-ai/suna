@@ -747,3 +747,23 @@ will consume that typed SDK contract instead of interpreting the legacy
 Daytona-named field as universal provider truth.
 
 **Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `sandbox-template-provider-readiness` (completion)
+
+Completed the additive provider-aware template contract. Sandbox template
+responses now type independent Daytona, Platinum, and E2B launch-readiness
+observations, routed provider mode, and exact provider attribution for new build
+rows. Reusable template builds fan out to every enabled provider independently
+of project routing pins. Existing fields and exported names remain compatible.
+
+**TDD evidence:** the initial typecheck failed because `provider_coverage` was
+absent, then passed after the additive contract was implemented. Final SDK gates:
+`pnpm --filter @kortix/sdk typecheck` exited 0; `pnpm --filter @kortix/sdk test`
+reported **1095 pass / 0 fail** across 80 files with 4990 assertions;
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Parent API/UI rollout and
+live provider verification remain part of the enclosing change.

@@ -197,7 +197,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       const template = await findTemplateByName(snapshotName);
       return template ? normalizeExistingProviderState(template.state) : 'missing';
     } catch {
-      return 'missing';
+      return 'unknown';
     }
   }
 
