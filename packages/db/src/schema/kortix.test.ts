@@ -22,6 +22,7 @@ import {
   projectMembers,
   projectGroupGrants,
   projectGitConnections,
+  projectLlmRoutingPolicies,
   sandboxes,
   sandboxMembers,
   kortixApiKeys,
@@ -240,6 +241,22 @@ describe('projects table', () => {
     const unique = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
     expect(unique).toBeDefined();
     expect(unique?.config.unique).toBe(true);
+  });
+});
+
+describe('project_llm_routing_policies table', () => {
+  test('stores one versioned routing document per project with audit fields', () => {
+    expect(getTableConfig(projectLlmRoutingPolicies).name).toBe('project_llm_routing_policies');
+    expect(primaryColumn(projectLlmRoutingPolicies)).toBe('project_id');
+    expect(columnNames(projectLlmRoutingPolicies)).toEqual(expect.arrayContaining([
+      'vision_model',
+      'default_fallback_models',
+      'default_fallback_on',
+      'rules',
+      'updated_by',
+      'created_at',
+      'updated_at',
+    ]));
   });
 });
 

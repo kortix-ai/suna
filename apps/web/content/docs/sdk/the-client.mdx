@@ -408,6 +408,13 @@ project's LLM traffic.
 | `keys()`                                                 | gateway API keys                                   |
 | `createKey(name)` · `revokeKey(keyId)`                   | mint · revoke a key                                |
 | `playground(prompt, models)`                             | run one prompt against up to 6 models side by side |
+| `routing.get()`                                         | project and effective routing policy               |
+| `routing.set(policy)` · `routing.reset()`               | replace · inherit the project policy               |
+| `routing.preview(input)`                                | resolve a finite route without invoking a model    |
+
+Routing policies contain a project default and vision model, an ordered default
+fallback chain, and exact-model overrides. Chains are bounded and each model is
+attempted at most once; `fallbackOn` is either `transient` or `any-error`.
 
 ### `p.channels` — Slack / email / Meet
 

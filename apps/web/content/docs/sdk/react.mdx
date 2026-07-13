@@ -323,6 +323,7 @@ global default from the server the first time it resolves.
 | `useQuestionSelfHeal()` / `hasRunningQuestionTool`                                        | polls for a missed `question.asked` SSE event and repairs pending-question state                                                                                                     |
 | `usePermissionSelfHeal()` / `findPermissionBlockedCandidate` / `hasActiveNonQuestionTool` | the same self-heal watchdog for missed permission requests                                                                                                                           |
 | `useGatewayCatalogSync(projectId)`                                                        | keeps the gateway model catalog cache warm                                                                                                                                           |
+| `useGatewayRoutingPolicy(projectId)`                                                      | reads routing policy and exposes set, reset, and preview mutations                                                                                                                    |
 
 ## More hooks
 
