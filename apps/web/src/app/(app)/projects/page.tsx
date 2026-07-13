@@ -9,11 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
-import {
-  InputGroupSearch,
-  InputGroupSearchIcon,
-  InputGroupSearchInput,
-} from '@/components/ui/input-group';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -26,7 +22,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { ProjectCreateModal } from '@/features/projects/modal/project-create-modal';
 import { RenameProjectDialog } from '@/features/projects/modal/rename-project-modal';
 import NewProjectControl from '@/features/projects/new-project-control';
-import { ProjectRepositoryGroups } from '@/features/projects/project-repository-groups-view';
+import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateAccountState, useAccountState } from '@/hooks/billing';
 import { useLegacyMachines } from '@/hooks/legacy/use-legacy-machine-migration';
@@ -44,7 +40,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
-} from '@kortix/sdk';
+} from '@kortix/sdk/projects-client';
 import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';
@@ -404,19 +400,17 @@ export default function ProjectsPage() {
                 </Tabs>
               )}
               <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-                <InputGroupSearch className="min-w-0 flex-1 lg:w-72 lg:flex-none">
-                  <InputGroupSearchIcon>
-                    <Search />
-                  </InputGroupSearchIcon>
-                  <InputGroupSearchInput
+                <div className="relative min-w-0 flex-1 lg:w-72 lg:flex-none">
+                  <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                  <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={tHardcodedUi.raw(
                       'appProjectsPage.line225JsxAttrPlaceholderSearchProjects',
                     )}
-                    variant="popover"
+                    className="bg-foreground/10 w-full pl-9 text-sm"
                   />
-                </InputGroupSearch>
+                </div>
                 <NewProjectControl
                   viewAll={viewAll}
                   creatableAccounts={creatableAccounts}
@@ -490,13 +484,18 @@ export default function ProjectsPage() {
               )}
 
               {filtered.length > 0 && (
-                <ProjectRepositoryGroups
-                  projects={filtered}
-                  archivingId={archivingId}
-                  onOpen={(project) => router.push(`/projects/${project.project_id}`)}
-                  onRename={setRenameTarget}
-                  onArchive={setArchiveTarget}
-                />
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {filtered.map((project) => (
+                    <ProjectCard
+                      key={project.project_id}
+                      project={project}
+                      onOpen={() => router.push(`/projects/${project.project_id}`)}
+                      onRename={() => setRenameTarget(project)}
+                      onArchive={() => setArchiveTarget(project)}
+                      archiving={archivingId === project.project_id}
+                    />
+                  ))}
+                </div>
               )}
             </>
           )}
@@ -576,16 +575,21 @@ export default function ProjectsPage() {
                       </h2>
                       <span className="text-muted-foreground text-xs">{group.projects.length}</span>
                     </div>
-                    <ProjectRepositoryGroups
-                      projects={group.projects}
-                      archivingId={archivingId}
-                      onOpen={(project) => {
-                        setSelectedAccountId(group.account.account_id);
-                        router.push(`/projects/${project.project_id}`);
-                      }}
-                      onRename={setRenameTarget}
-                      onArchive={setArchiveTarget}
-                    />
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {group.projects.map((project) => (
+                        <ProjectCard
+                          key={project.project_id}
+                          project={project}
+                          onOpen={() => {
+                            setSelectedAccountId(group.account.account_id);
+                            router.push(`/projects/${project.project_id}`);
+                          }}
+                          onRename={() => setRenameTarget(project)}
+                          onArchive={() => setArchiveTarget(project)}
+                          archiving={archivingId === project.project_id}
+                        />
+                      ))}
+                    </div>
                   </section>
                 ))}
             </div>
