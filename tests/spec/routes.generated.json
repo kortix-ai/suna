@@ -1663,6 +1663,10 @@
       "path": "/v1/projects/github/repositories"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/github/repository-branches"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/link-repository"
     },

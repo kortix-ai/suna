@@ -17,6 +17,7 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const OTHER_PROJECT_ID = '00000000-0000-4000-a000-000000000202';
 const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
+const SECOND_NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000205';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 type AccountRole = 'owner' | 'admin' | 'member';
@@ -68,11 +69,12 @@ let projectRows: ProjectRow[];
 let projectMemberRows: ProjectMemberRow[];
 let installationRow: typeof accountGithubInstallations.$inferSelect | null;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
-let nextProjectId: string;
+let nextProjectIds: string[];
 let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
 let archiveCalls: any[];
+let rejectedBranch: string | null;
 
 function setCurrentUser(userId: string, userEmail: string) {
   currentUserId = userId;
@@ -135,11 +137,12 @@ function resetState() {
     updatedAt: baseDate,
   };
   gitConnectionRows = [];
-  nextProjectId = NEW_PROJECT_ID;
+  nextProjectIds = [NEW_PROJECT_ID, SECOND_NEW_PROJECT_ID];
   commitCalls = [];
   listRepoFileCalls = [];
   readRepoFileCalls = [];
   archiveCalls = [];
+  rejectedBranch = null;
 }
 
 function collectConditionValues(condition: unknown): Record<string, unknown> {
@@ -233,14 +236,11 @@ function extractStringArray(condition: unknown): string[] | null {
   return result;
 }
 
-function upsertProject(values: any, set?: Partial<ProjectRow>) {
-  const existing = projectRows.find((row) => row.accountId === values.accountId && row.repoUrl === values.repoUrl);
-  if (existing) {
-    Object.assign(existing, set ?? values);
-    return existing;
-  }
+function insertProject(values: any) {
+  const projectId = nextProjectIds.shift();
+  if (!projectId) throw new Error('test project id pool exhausted');
   const row: ProjectRow = {
-    projectId: nextProjectId,
+    projectId,
     accountId: values.accountId,
     name: values.name,
     repoUrl: values.repoUrl,
@@ -382,6 +382,7 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveBranchAheadState: async () => ({ ahead: false, commitsAhead: 0 }),
   resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
@@ -440,10 +441,15 @@ mock.module('../projects/github', () => ({
     html_url: 'https://github.com/kortix-org/new-project',
     clone_url: 'https://github.com/kortix-org/new-project.git',
     ssh_url: 'git@github.com:kortix-org/new-project.git',
-    default_branch: 'main',
+    default_branch: 'trunk',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => {
+    if (branch === rejectedBranch) throw new Error(`GitHub branch ${branch} not found`);
+    return { name: branch, protected: false };
+  },
   listInstallationRepositories: async () => [],
+  listRepositoryBranches: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));
@@ -479,9 +485,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => {},
 }));
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const projectDbMock: any = {
     execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -498,7 +502,9 @@ mock.module('../shared/db', () => ({
       values: (values: any) => ({
         onConflictDoUpdate: ({ set }: { set?: Record<string, unknown> }) => ({
           returning: async () => {
-            if (table === projects) return [upsertProject(values, set as Partial<ProjectRow>)];
+            if (table === projects) {
+              throw new Error('project imports must insert instead of updating by repository');
+            }
             if (table === projectGitConnections) {
               const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
               const row = {
@@ -541,6 +547,14 @@ mock.module('../shared/db', () => ({
           },
           catch: () => undefined,
         }),
+        returning: async () => {
+          if (table === projects) return [insertProject(values)];
+          if (table === projectGitConnections) {
+            return projectDbMock.insert(table).values(values).onConflictDoUpdate({}).returning();
+          }
+          if (table === projectMembers) return [grantProjectRole(values)];
+          return [];
+        },
       }),
     }),
     update: (table: unknown) => ({
@@ -583,7 +597,13 @@ mock.module('../shared/db', () => ({
         }
       },
     }),
-  },
+};
+projectDbMock.transaction = async (run: (tx: typeof projectDbMock) => Promise<unknown>) =>
+  run(projectDbMock);
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: projectDbMock,
 }));
 
 const { projectsApp } = await import('../projects/index');
@@ -654,6 +674,72 @@ describe('projects API contract', () => {
       userId: OWNER_ID,
       projectRole: 'manager',
     }));
+  });
+
+  test('registers the same repository and branch as distinct isolated projects', async () => {
+    const app = createApp();
+    const payload = {
+      account_id: ACCOUNT_ID,
+      repo_url: 'https://github.com/kortix-org/new-project.git',
+      default_branch: 'main',
+    };
+
+    const first = await app.request('/v1/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, name: 'API development' }),
+    });
+    const second = await app.request('/v1/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, name: 'Web development' }),
+    });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+    expect(firstBody.project_id).toBe(NEW_PROJECT_ID);
+    expect(secondBody.project_id).toBe(SECOND_NEW_PROJECT_ID);
+    expect(secondBody.project_id).not.toBe(firstBody.project_id);
+    expect(projectRows.filter((row) => row.repoUrl === payload.repo_url)).toHaveLength(2);
+    expect(gitConnectionRows.map((row) => row.projectId)).toEqual([
+      NEW_PROJECT_ID,
+      SECOND_NEW_PROJECT_ID,
+    ]);
+  });
+
+  test('uses the repository default when the caller does not select a branch', async () => {
+    const res = await createApp().request('/v1/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        repo_url: 'https://github.com/kortix-org/new-project.git',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ default_branch: 'trunk' });
+  });
+
+  test('rejects a branch GitHub cannot resolve before inserting the project', async () => {
+    rejectedBranch = 'missing-branch';
+    const res = await createApp().request('/v1/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        repo_url: 'https://github.com/kortix-org/new-project.git',
+        default_branch: rejectedBranch,
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'Selected branch "missing-branch" does not exist in kortix-org/new-project',
+    });
+    expect(projectRows.some((row) => row.defaultBranch === rejectedBranch)).toBe(false);
   });
 
   test('lists all active projects for account managers and only explicit grants for members', async () => {

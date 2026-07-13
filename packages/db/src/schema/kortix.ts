@@ -271,7 +271,7 @@ export const projects = kortixSchema.table(
     index('idx_projects_account').on(table.accountId),
     index('idx_projects_status').on(table.status),
     index('idx_projects_updated').on(table.updatedAt),
-    uniqueIndex('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+    index('idx_projects_account_repo').on(table.accountId, table.repoUrl),
   ],
 );
 

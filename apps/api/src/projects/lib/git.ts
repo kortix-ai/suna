@@ -4,15 +4,14 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
-import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
+import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, getRepositoryBranch, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { grantProjectRole } from './access';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, clampProjectName, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
 
 // Memoized briefly (positive hits only): this runs on every project-scoped
 // request, and prod pays a cross-region roundtrip per DB statement. A revoked
@@ -121,6 +120,23 @@ export class GitHubInstallationRequiredError extends Error {
   constructor(public readonly accountId: string) {
     super('GitHub App installation required for this account');
   }
+}
+
+async function resolveImportedDefaultBranch(
+  repo: GitHubRepo,
+  requestedBranch: string | null | undefined,
+  auth: Pick<GitHubAuthContext, 'token'>,
+): Promise<string> {
+  const branch = requestedBranch ?? repo.default_branch ?? 'main';
+  if (!requestedBranch) return branch;
+
+  const [owner, repoName] = repo.full_name.split('/');
+  try {
+    await getRepositoryBranch({ owner: owner!, repo: repoName!, branch, auth });
+  } catch {
+    throw new Error(`Selected branch "${branch}" does not exist in ${repo.full_name}`);
+  }
+  return branch;
 }
 
 
@@ -680,101 +696,10 @@ export async function resolveGitHubImport(input: {
     repo,
     installation,
     auth,
-    defaultBranch: input.defaultBranch ?? repo.default_branch ?? 'main',
+    defaultBranch: await resolveImportedDefaultBranch(repo, input.defaultBranch, auth),
   };
 }
 
-
-export async function registerGitHubLinkedProject(input: {
-  accountId: string;
-  userId: string;
-  repo: GitHubRepo;
-  installation: typeof accountGithubInstallations.$inferSelect;
-  name?: string | null;
-  defaultBranch: string;
-  manifestPath: string;
-}): Promise<ProjectRow> {
-  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
-  const now = new Date();
-  const metadata = {
-    git: {
-      url: input.repo.clone_url,
-      default_branch: input.defaultBranch,
-      provider: 'github',
-      owner: input.repo.full_name.split('/')[0] ?? null,
-      name: input.repo.name,
-      external_repo_id: String(input.repo.id),
-      auth: {
-        method: 'github_app',
-        installation_id: input.installation.installationId,
-      },
-    },
-    github: {
-      repo_id: String(input.repo.id),
-      full_name: input.repo.full_name,
-      html_url: input.repo.html_url,
-      private: input.repo.private,
-      auth_source: 'app_installation',
-      installation_id: input.installation.installationId,
-    },
-  };
-
-  const [row] = await db
-    .insert(projects)
-    .values({
-      accountId: input.accountId,
-      name: projectName,
-      repoUrl: input.repo.clone_url,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath,
-      status: 'active',
-      metadata,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: {
-        name: projectName,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath,
-        status: 'active',
-        metadata,
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  await upsertProjectGitConnection({
-    accountId: input.accountId,
-    projectId: row.projectId,
-    provider: 'github',
-    repoUrl: input.repo.clone_url,
-    repoOwner: input.repo.full_name.split('/')[0] ?? null,
-    repoName: input.repo.name,
-    externalRepoId: input.repo.id,
-    defaultBranch: input.defaultBranch,
-    authMethod: 'github_app',
-    installationId: input.installation.installationId,
-    permissions: input.installation.permissions ?? {},
-    visibility: input.repo.private ? 'private' : 'public',
-    status: 'connected',
-    metadata: {
-      full_name: input.repo.full_name,
-      html_url: input.repo.html_url,
-      ssh_url: input.repo.ssh_url,
-    },
-  });
-
-  await grantProjectRole({
-    accountId: input.accountId,
-    projectId: row.projectId,
-    userId: input.userId,
-    role: 'manager',
-    grantedBy: input.userId,
-  });
-
-  return row;
-}
 
 /**
  * Validate an existing GitHub repo using a caller-supplied PAT — the
@@ -808,7 +733,14 @@ export async function resolveGitHubImportWithPat(input: {
         `grant Contents: Read and write so sessions can push branches.`,
     );
   }
-  return { repo, defaultBranch: input.defaultBranch ?? repo.default_branch ?? 'main' };
+  return {
+    repo,
+    defaultBranch: await resolveImportedDefaultBranch(
+      repo,
+      input.defaultBranch,
+      { token: input.token },
+    ),
+  };
 }
 
 /**
@@ -817,101 +749,6 @@ export async function resolveGitHubImportWithPat(input: {
  * `project_git_credentials` and the connection is `project_credential`, which
  * `resolveProjectGitAuth` already knows how to use for session clone/push.
  */
-
-export async function registerPatLinkedProject(input: {
-  accountId: string;
-  userId: string;
-  repo: GitHubRepo;
-  token: string;
-  name?: string | null;
-  defaultBranch: string;
-  manifestPath: string;
-}): Promise<ProjectRow> {
-  const projectName = clampProjectName(input.name ?? deriveProjectName(input.repo.full_name));
-  const now = new Date();
-  const metadata = {
-    git: {
-      url: input.repo.clone_url,
-      default_branch: input.defaultBranch,
-      provider: 'github',
-      owner: input.repo.full_name.split('/')[0] ?? null,
-      name: input.repo.name,
-      external_repo_id: String(input.repo.id),
-      auth: { method: 'project_credential' },
-    },
-    github: {
-      repo_id: String(input.repo.id),
-      full_name: input.repo.full_name,
-      html_url: input.repo.html_url,
-      private: input.repo.private,
-      auth_source: 'pat',
-    },
-  };
-
-  const [row] = await db
-    .insert(projects)
-    .values({
-      accountId: input.accountId,
-      name: projectName,
-      repoUrl: input.repo.clone_url,
-      defaultBranch: input.defaultBranch,
-      manifestPath: input.manifestPath,
-      status: 'active',
-      metadata,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: {
-        name: projectName,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath,
-        status: 'active',
-        metadata,
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  const credential = await upsertProjectGitCredential({
-    accountId: input.accountId,
-    projectId: row.projectId,
-    provider: 'github',
-    token: input.token,
-    createdBy: input.userId,
-  });
-
-  await upsertProjectGitConnection({
-    accountId: input.accountId,
-    projectId: row.projectId,
-    provider: 'github',
-    repoUrl: input.repo.clone_url,
-    repoOwner: input.repo.full_name.split('/')[0] ?? null,
-    repoName: input.repo.name,
-    externalRepoId: input.repo.id,
-    defaultBranch: input.defaultBranch,
-    authMethod: 'project_credential',
-    credentialRef: credential.credentialId,
-    visibility: input.repo.private ? 'private' : 'public',
-    status: 'connected',
-    metadata: {
-      full_name: input.repo.full_name,
-      html_url: input.repo.html_url,
-      ssh_url: input.repo.ssh_url,
-    },
-  });
-
-  await grantProjectRole({
-    accountId: input.accountId,
-    projectId: row.projectId,
-    userId: input.userId,
-    role: 'manager',
-    grantedBy: input.userId,
-  });
-
-  return row;
-}
-
 
 export async function loadGitProject(loaded: { row: ProjectRow }) {
   const gitAuth = await resolveProjectGitAuth(loaded.row);

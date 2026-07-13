@@ -5,18 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   Form,
   FormControl,
@@ -25,9 +14,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { InlineMeta } from '@/components/ui/inline-meta';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Item,
   ItemActions,
@@ -36,7 +24,6 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
-import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -46,35 +33,35 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
+import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { defaultProjectMarketplaceItems, listMarketplaceItems } from '@/lib/marketplace-client';
 import { isProjectLimitError } from '@/lib/onboarding/ensure-first-project';
-import {
-  defaultProjectMarketplaceItems,
-  listMarketplaceItems,
-} from '@/lib/marketplace-client';
+import { cn } from '@/lib/utils';
 import {
   linkRepository,
   listAccounts,
   listGitHubInstallations,
   listGitHubRepositories,
+  listGitHubRepositoryBranches,
   listProjectsForAccount,
   provisionProject,
-  type GitHubRepository,
-  type KortixAccount,
   type KortixProject,
-} from '@kortix/sdk/projects-client';
-import { cn } from '@/lib/utils';
+} from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircleSolid } from '@mynaui/icons-react';
-import { Boxes, ChevronsUpDown, ExternalLink, Github } from 'lucide-react';
+import { AlertTriangle, Boxes, ExternalLink, GitBranch, Github } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { CreateAccountField } from './create-account-field';
 import { resolveCreateAccountSelection } from './create-account-selection';
+import { BranchPicker, RepositoryPicker } from './github-import-pickers';
+import { resolveGitHubBranchSelection } from './github-import-selection';
+import { SetupOptionRow } from './setup-option-row';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -90,7 +77,10 @@ const managedProjectSchema = z.object({
       z
         .string()
         .min(1, 'Project name is required')
-        .max(PROJECT_NAME_MAX_LENGTH, `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`),
+        .max(
+          PROJECT_NAME_MAX_LENGTH,
+          `Project name must be ${PROJECT_NAME_MAX_LENGTH} characters or fewer`,
+        ),
     ),
   includeGeneralKnowledgeSkills: z.boolean(),
   marketplaceItems: z.array(z.string()),
@@ -99,6 +89,7 @@ const managedProjectSchema = z.object({
 const githubLinkSchema = z.object({
   installationId: z.string().min(1, 'Select a GitHub account'),
   repo: z.string().trim().min(1, 'Select a GitHub repository'),
+  branch: z.string().trim().min(1, 'Select a GitHub branch'),
   name: z.string(),
 });
 
@@ -166,12 +157,14 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     defaultValues: {
       installationId: '',
       repo: '',
+      branch: '',
       name: '',
     },
   });
 
   const selectedInstallationId = githubForm.watch('installationId');
   const selectedRepo = githubForm.watch('repo');
+  const selectedBranch = githubForm.watch('branch');
 
   function resetAndClose() {
     setMode('managed');
@@ -249,11 +242,15 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   useEffect(() => {
     if (!open || marketplaceDefaultsApplied || marketplaceItems.length === 0) return;
-    managedForm.setValue('marketplaceItems', marketplaceItems.map((item) => item.id), {
-      shouldDirty: false,
-      shouldTouch: false,
-      shouldValidate: false,
-    });
+    managedForm.setValue(
+      'marketplaceItems',
+      marketplaceItems.map((item) => item.id),
+      {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: false,
+      },
+    );
     setMarketplaceDefaultsApplied(true);
   }, [managedForm, marketplaceDefaultsApplied, marketplaceItems, open]);
 
@@ -273,6 +270,24 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     staleTime: 30_000,
   });
 
+  const githubBranchesQuery = useQuery({
+    queryKey: [
+      'github-repository-branches',
+      effectiveAccountId,
+      selectedInstallationId,
+      selectedRepo,
+    ],
+    queryFn: () =>
+      listGitHubRepositoryBranches(effectiveAccountId!, selectedInstallationId, selectedRepo),
+    enabled:
+      open &&
+      mode === 'github' &&
+      !!effectiveAccountId &&
+      !!selectedInstallationId &&
+      !!selectedRepo,
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     if (!open || mode !== 'github') return;
     if (
@@ -289,8 +304,22 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
 
   useEffect(() => {
     githubForm.setValue('repo', '');
+    githubForm.setValue('branch', '');
     githubForm.setValue('name', '');
   }, [githubForm, selectedInstallationId]);
+
+  useEffect(() => {
+    githubForm.setValue('branch', '');
+  }, [githubForm, selectedRepo]);
+
+  useEffect(() => {
+    if (!githubBranchesQuery.data) return;
+    githubForm.setValue(
+      'branch',
+      resolveGitHubBranchSelection(githubBranchesQuery.data, githubForm.getValues('branch')),
+      { shouldValidate: true },
+    );
+  }, [githubBranchesQuery.data, githubForm]);
 
   const linkMutation = useMutation({
     mutationFn: linkRepository,
@@ -334,6 +363,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
       account_id: effectiveAccountId,
       installation_id: values.installationId,
       repo_full_name: values.repo,
+      default_branch: values.branch,
       ...(trimmedName ? { name: trimmedName } : {}),
     });
   }
@@ -371,6 +401,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
   const submitting = createMutation.isPending || linkMutation.isPending;
   const installUrl = githubInstallationsQuery.data?.install_url;
   const repos = githubReposQuery.data?.repositories ?? [];
+  const branches = githubBranchesQuery.data?.branches ?? [];
   const selectedRepository = repos.find((repo) => repo.full_name === selectedRepo);
 
   return (
@@ -438,7 +469,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                       Preinstalled into your project&apos;s repo and ready in the first session.
                       Toggle off anything you don&apos;t need.
                     </p>
-                    <div className="divide-border/60 overflow-hidden rounded-2xl border divide-y">
+                    <div className="divide-border/60 divide-y overflow-hidden rounded-2xl border">
                       <SetupOptionRow
                         icon={
                           <span className="bg-primary/10 text-primary inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
@@ -508,6 +539,22 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                         'componentsProjectsProjectCreateModal.line352JsxTextLoadingGithubConnections',
                       )}
                     </div>
+                  ) : githubInstallationsQuery.isError ? (
+                    <ErrorState
+                      size="sm"
+                      title="Couldn’t load GitHub accounts"
+                      description={githubInstallationsQuery.error.message}
+                      action={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void githubInstallationsQuery.refetch()}
+                        >
+                          Retry
+                        </Button>
+                      }
+                    />
                   ) : githubInstallations.length === 0 ? (
                     <Item variant="outline" className={cn('items-start')}>
                       <ItemMedia variant="icon" className="rounded-full bg-transparent">
@@ -640,7 +687,11 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                                 }}
                                 repos={repos}
                                 loading={githubReposQuery.isLoading}
-                                disabled={githubReposQuery.isLoading || submitting}
+                                disabled={
+                                  githubReposQuery.isLoading ||
+                                  githubReposQuery.isError ||
+                                  submitting
+                                }
                               />
                             </FormControl>
                             <FormMessage />
@@ -648,7 +699,29 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                         )}
                       />
 
-                      {repos.length === 0 && !githubReposQuery.isLoading ? (
+                      {githubReposQuery.isError ? (
+                        <InfoBanner
+                          tone="destructive"
+                          icon={AlertTriangle}
+                          title="Couldn’t load repositories"
+                          action={
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => void githubReposQuery.refetch()}
+                            >
+                              Retry
+                            </Button>
+                          }
+                        >
+                          {githubReposQuery.error.message}
+                        </InfoBanner>
+                      ) : null}
+
+                      {repos.length === 0 &&
+                      !githubReposQuery.isLoading &&
+                      !githubReposQuery.isError ? (
                         <EmptyState
                           icon={Github}
                           title={tHardcodedUi.raw(
@@ -679,6 +752,65 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                             ) : undefined
                           }
                         />
+                      ) : null}
+
+                      {selectedRepo ? (
+                        <>
+                          <FormField
+                            control={githubForm.control}
+                            name="branch"
+                            render={({ field }) => (
+                              <FormItem className="space-y-1.5">
+                                <FormLabel>Branch</FormLabel>
+                                <FormControl>
+                                  <BranchPicker
+                                    value={field.value}
+                                    onValueChange={field.onChange}
+                                    branches={branches}
+                                    loading={githubBranchesQuery.isLoading}
+                                    disabled={
+                                      githubBranchesQuery.isLoading ||
+                                      githubBranchesQuery.isError ||
+                                      submitting
+                                    }
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          {githubBranchesQuery.isError ? (
+                            <InfoBanner
+                              tone="destructive"
+                              icon={AlertTriangle}
+                              title="Couldn’t load branches"
+                              action={
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void githubBranchesQuery.refetch()}
+                                >
+                                  Retry
+                                </Button>
+                              }
+                            >
+                              {githubBranchesQuery.error.message}
+                            </InfoBanner>
+                          ) : null}
+
+                          {branches.length === 0 &&
+                          !githubBranchesQuery.isLoading &&
+                          !githubBranchesQuery.isError ? (
+                            <EmptyState
+                              icon={GitBranch}
+                              title="No branches available"
+                              description="Create a branch on GitHub before importing this repository."
+                              size="sm"
+                            />
+                          ) : null}
+                        </>
                       ) : null}
 
                       <FormField
@@ -724,7 +856,11 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                 <Button
                   type="submit"
                   disabled={
-                    submitting || !effectiveAccountId || !selectedInstallationId || !selectedRepo
+                    submitting ||
+                    !effectiveAccountId ||
+                    !selectedInstallationId ||
+                    !selectedRepo ||
+                    !selectedBranch
                   }
                   className="w-full sm:w-auto"
                 >
@@ -741,263 +877,3 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
     </Modal>
   );
 };
-
-/** Shows which account the new project will be created under. Becomes a
- *  dropdown when the user can create projects in more than one account;
- *  otherwise it's a static read-only field so the target is still visible. */
-function CreateAccountField({
-  current,
-  options,
-  canSwitch,
-  disabled,
-  onSelect,
-}: {
-  current: KortixAccount;
-  options: KortixAccount[];
-  canSwitch: boolean;
-  disabled?: boolean;
-  onSelect: (accountId: string) => void;
-}) {
-  const label = current.name || 'Account';
-  const summary = (
-    <span className="flex min-w-0 items-center gap-2">
-      <EntityAvatar label={label} size="xs" />
-      <span className="text-foreground min-w-0 truncate text-sm font-medium">{label}</span>
-    </span>
-  );
-
-  return (
-    <div className="space-y-1.5 px-5" data-testid="project-create-account">
-      <Label>Account</Label>
-      {canSwitch ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="secondary-outline"
-              disabled={disabled}
-              className="w-full justify-between px-3"
-            >
-              {summary}
-              <ChevronsUpDown className="text-muted-foreground size-3.5 shrink-0" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)]"
-          >
-            <DropdownMenuLabel className="text-muted-foreground">Create in</DropdownMenuLabel>
-            <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {options.map((account) => {
-                const itemLabel = account.name || 'Account';
-                const active = account.account_id === current.account_id;
-                return (
-                  <DropdownMenuItem
-                    key={account.account_id}
-                    onSelect={() => onSelect(account.account_id)}
-                  >
-                    <EntityAvatar label={itemLabel} size="xs" />
-                    <span className="min-w-0 flex-1 truncate text-sm leading-tight font-medium">
-                      {itemLabel}
-                    </span>
-                    {active && <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />}
-                  </DropdownMenuItem>
-                );
-              })}
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <div className="border-border bg-secondary flex h-9 w-full items-center rounded-md border px-3">
-          {summary}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One selectable row in the New Project "Starter skills" surface — the whole
- *  row is a label wrapping a real checkbox, so a click anywhere toggles it and
- *  it stays keyboard-accessible. Selected rows read as "included in this
- *  project" via the tinted fill + checked box (no "Add" affordance). */
-function SetupOptionRow({
-  icon,
-  title,
-  description,
-  badge,
-  selected,
-  disabled,
-  onToggle,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  badge?: string;
-  selected: boolean;
-  disabled?: boolean;
-  onToggle: (next: boolean) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        'flex cursor-pointer items-start gap-3 px-3.5 py-3 transition-colors',
-        selected ? 'bg-primary/[0.05]' : 'hover:bg-foreground/[0.03]',
-        disabled && 'cursor-not-allowed opacity-60',
-      )}
-    >
-      {icon}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-foreground truncate text-sm font-medium">{title}</span>
-          {badge && (
-            <Badge variant="new" size="sm" className="shrink-0">
-              {badge}
-            </Badge>
-          )}
-          {selected && (
-            <Badge variant="outline" size="sm" className="shrink-0">
-              Included
-            </Badge>
-          )}
-        </div>
-        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
-          {description}
-        </p>
-      </div>
-      <Checkbox
-        checked={selected}
-        onCheckedChange={(value) => onToggle(value === true)}
-        disabled={disabled}
-        aria-label={title}
-        className="mt-0.5 shrink-0"
-      />
-    </label>
-  );
-}
-
-function RepositoryPicker({
-  value,
-  repos,
-  loading,
-  disabled,
-  onValueChange,
-}: {
-  value: string;
-  repos: GitHubRepository[];
-  loading: boolean;
-  disabled: boolean;
-  onValueChange: (value: string) => void;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const selectedRepository = repos.find((repo) => repo.full_name === value);
-  const normalizedSearch = search.trim().toLowerCase();
-  const filteredRepos = normalizedSearch
-    ? repos.filter((repo) =>
-        [repo.full_name, repo.name, repo.default_branch, repo.description ?? '']
-          .join(' ')
-          .toLowerCase()
-          .includes(normalizedSearch),
-      )
-    : repos;
-
-  useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen} modal={false}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="secondary-outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="w-full justify-between p-0 has-[>svg]:p-0"
-        >
-          <div className="flex h-full items-center">
-            <span className="px-3">
-              <Icon.Github className="size-4" />
-            </span>
-            <Separator orientation="vertical" className="mr-2" />
-            <span
-              className={cn(
-                'min-w-0 truncate text-left',
-                !selectedRepository && 'text-muted-foreground',
-              )}
-            >
-              {loading
-                ? 'Loading repositories...'
-                : (selectedRepository?.full_name ?? 'Search repositories')}
-            </span>
-          </div>
-          <span className="shrink-0 pr-4 has-[>svg]:pr-3">
-            <ChevronsUpDown className="text-muted-foreground" />
-          </span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="bottom"
-        align="start"
-        className="w-[var(--radix-popover-trigger-width)] overflow-hidden p-0"
-      >
-        <div className="border-border/60 border-b p-2">
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'componentsProjectsProjectCreateModal.line623JsxAttrPlaceholderSearchRepositories',
-            )}
-            autoCapitalize="none"
-            autoCorrect="off"
-            autoFocus
-            variant="transparent"
-            className="px-2"
-          />
-        </div>
-        {filteredRepos.length === 0 ? (
-          <div className="text-muted-foreground px-4 py-8 text-center text-sm">
-            {tHardcodedUi.raw(
-              'componentsProjectsProjectCreateModal.line631JsxTextNoRepositoriesFound',
-            )}
-          </div>
-        ) : (
-          <List className="max-h-[min(50vh,360px)] overflow-y-auto">
-            {filteredRepos.map((repo) => {
-              const selected = repo.full_name === value;
-              return (
-                <ListRow
-                  key={repo.id}
-                  onClick={() => {
-                    onValueChange(repo.full_name);
-                    setOpen(false);
-                  }}
-                  // leading={selected ? <CheckCircleSolid className='size-4' /> : <Icon.Github />}
-                  title={<span className="text-sm">{repo.full_name}</span>}
-                  badges={
-                    repo.private ? (
-                      <Badge variant="secondary" size="sm">
-                        Private
-                      </Badge>
-                    ) : null
-                  }
-                  subtitle={
-                    <InlineMeta className="font-sans">
-                      <span>{repo.default_branch}</span>
-                      {repo.description ? (
-                        <span className="truncate">{repo.description}</span>
-                      ) : null}
-                    </InlineMeta>
-                  }
-                  className={cn(selected && 'bg-muted/50')}
-                />
-              );
-            })}
-          </List>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}

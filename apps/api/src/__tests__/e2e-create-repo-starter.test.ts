@@ -72,6 +72,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
+  '.kortix/opencode/skills/kortix-teams/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
   '.kortix/opencode/tools/memory.ts',
@@ -243,6 +244,10 @@ mock.module('../projects/github', () => ({
     default_branch: input.owner === 'acme' ? 'trunk' : 'main',
     description: null,
   }),
+  getRepositoryBranch: async ({ branch }: { branch: string }) => ({
+    name: branch,
+    protected: false,
+  }),
   listInstallationRepositories: async (installationId: string) => installationId === '84'
     ? [{
         id: 84,
@@ -256,6 +261,10 @@ mock.module('../projects/github', () => ({
         description: null,
       }]
     : [],
+  listRepositoryBranches: async ({ owner, repo }: { owner: string; repo: string }) => [
+    { name: owner === 'acme' && repo === 'portal' ? 'trunk' : 'main', protected: true },
+    { name: 'dev', protected: false },
+  ],
   isOrgAccount: async () => true,
   isGithubAppConfigured: () => true,
 }));
@@ -328,9 +337,7 @@ async function selectRowsForTable(table: unknown) {
   return [];
 }
 
-mock.module('../shared/db', () => ({
-  hasDatabase: true,
-  db: {
+const starterDbMock: any = {
     select: () => ({
       from: (table: unknown) => ({
         where: () => {
@@ -433,6 +440,13 @@ mock.module('../shared/db', () => ({
           };
         },
         returning: async () => {
+          if (table === projectGitConnections) {
+            return starterDbMock.insert(table).values(values).onConflictDoUpdate({}).returning();
+          }
+          if (table === projectMembers) {
+            grantedProjectRole = values;
+            return [values];
+          }
           if (table !== projects) return [];
           insertedProject = values;
           return [{
@@ -469,7 +483,13 @@ mock.module('../shared/db', () => ({
         if (table === accountGithubInstallations) installationRows = [];
       },
     }),
-  },
+};
+starterDbMock.transaction = async (run: (tx: typeof starterDbMock) => Promise<unknown>) =>
+  run(starterDbMock);
+
+mock.module('../shared/db', () => ({
+  hasDatabase: true,
+  db: starterDbMock,
 }));
 
 const { projectsApp } = await import('../projects/index');
@@ -655,6 +675,23 @@ describe('create-repo starter scaffold contract', () => {
       repositories: [{ full_name: 'acme/portal', default_branch: 'trunk' }],
     });
 
+    const branches = await app.request(
+      `/v1/projects/github/repository-branches?account_id=${ACCOUNT_ID}` +
+        '&installation_id=84&repo_full_name=acme%2Fportal',
+    );
+    expect(branches.status).toBe(200);
+    expect(await branches.json()).toEqual({
+      account_id: ACCOUNT_ID,
+      installation_id: '84',
+      owner_login: 'acme',
+      repo_full_name: 'acme/portal',
+      default_branch: 'trunk',
+      branches: [
+        { name: 'trunk', protected: true },
+        { name: 'dev', protected: false },
+      ],
+    });
+
     const linked = await app.request('/v1/projects/link-repository', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -669,6 +706,8 @@ describe('create-repo starter scaffold contract', () => {
       project: {
         repo_url: 'https://github.com/acme/portal.git',
         default_branch: 'trunk',
+        project_role: 'manager',
+        effective_project_role: 'manager',
       },
       git_connection: {
         provider: 'github',

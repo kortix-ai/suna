@@ -53,7 +53,7 @@ try/catching every call.
 | list / get / create / update | `GET/POST /v1/projects`, `GET/PUT /v1/projects/:id` | ✅ |
 | detail (config+agents+skills+files) | `GET /v1/projects/:id/detail` | ✅ |
 | provision / link repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
-| github installs / repos / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
+| github installs / repos / repository branches / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
 | llm-catalog | `GET /v1/projects/:id/llm-catalog` | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 

@@ -30,6 +30,11 @@ export interface GitHubRepo {
   description: string | null;
 }
 
+export interface GitHubBranch {
+  name: string;
+  protected: boolean;
+}
+
 interface GitHubInstallationRepositories {
   total_count: number;
   repositories: GitHubRepo[];
@@ -302,6 +307,40 @@ export async function listInstallationRepositories(
   } while (totalCount !== null && repositories.length < totalCount);
 
   return repositories;
+}
+
+export async function listRepositoryBranches(input: {
+  owner: string;
+  repo: string;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubBranch[]> {
+  const perPage = 100;
+  const branches: GitHubBranch[] = [];
+
+  for (let page = 1; ; page += 1) {
+    const pageBranches = await ghFetch<GitHubBranch[]>(
+      `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}` +
+        `/branches?per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      input.auth,
+    );
+    branches.push(...pageBranches);
+    if (pageBranches.length < perPage) return branches;
+  }
+}
+
+export async function getRepositoryBranch(input: {
+  owner: string;
+  repo: string;
+  branch: string;
+  auth: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubBranch> {
+  return ghFetch<GitHubBranch>(
+    `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}` +
+      `/branches/${encodeURIComponent(input.branch)}`,
+    { method: 'GET' },
+    input.auth,
+  );
 }
 
 export async function getRepo(opts: {

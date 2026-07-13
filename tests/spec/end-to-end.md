@@ -567,6 +567,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
 `GH-14` `POST /projects/create-repo` → PROJECT_CREATE; missing name → 400; no install → 409/503.
 `GH-15` `POST /projects/link-repository` → PROJECT_CREATE; missing repo → 400; no install → 400/409/502; bad token → 400.
+`GH-16` `GET /projects/github/repository-branches` → PROJECT_CREATE; returns the repository default plus every existing branch; missing installation → 409; wrong installation owner → 400.
 `PLT-3` `GET /platform/sandbox/version` · `…/latest` · `…/all` · `…/changelog` → 200 (public).
 `PLT-4` `GET /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
 `PLT-5` `POST /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
