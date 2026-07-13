@@ -14,7 +14,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getClient } from '../opencode/client';
+import { getClient } from '../core/runtime/client';
 import { opencodeKeys, useOpenCodeMcpStatus } from './use-opencode-sessions';
 import type { McpStatus } from './use-opencode-sessions';
 

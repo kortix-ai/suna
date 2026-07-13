@@ -60,6 +60,32 @@ function okFetch(data: unknown): FetchImpl {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 5));
 
+function expectErrorContract(body: any, code: string): void {
+  expect(typeof body.message).toBe("string");
+  expect(body.message === "").toBe(false);
+  expect(typeof body.suggestion).toBe("string");
+  expect(body.suggestion === "").toBe(false);
+  expect(body).toMatchObject({
+    message: expect.any(String),
+    code,
+    provider: expect.any(String),
+    requested_model: expect.any(String),
+    resolved_model: expect.any(String),
+    request_id: expect.stringMatching(/^req_/),
+    suggestion: expect.any(String),
+    error: {
+      message: expect.any(String),
+      type: code,
+      code: expect.anything(),
+      provider: expect.any(String),
+      requested_model: expect.any(String),
+      resolved_model: expect.any(String),
+      request_id: expect.stringMatching(/^req_/),
+      suggestion: expect.any(String),
+    },
+  });
+}
+
 describe("gateway.chatCompletions", () => {
   test("401 without a bearer token, still traced", async () => {
     const { hooks, traces } = makeHooks();
@@ -258,6 +284,22 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x"}',
     });
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      message: "bad request",
+      code: "upstream_client_error",
+      upstream_status: 400,
+      provider: "a",
+      requested_model: "x",
+      resolved_model: "x",
+    });
+    expect(body.request_id).toMatch(/^req_/);
+    expect(body.suggestion).toContain("switch to another model");
+    expect(body.error).toMatchObject({
+      message: "bad request",
+      type: "upstream_client_error",
+      provider: "a",
+    });
     expect(bCalled).toBe(false);
   });
 
@@ -274,7 +316,37 @@ describe("gateway.chatCompletions", () => {
       rawBody: '{"model":"x"}',
     });
     expect(res.status).toBe(502);
-    expect((await res.json()).code).toBe("upstream_unreachable");
+    expect(await res.json()).toMatchObject({
+      message: "boom",
+      code: "upstream_unreachable",
+      upstream_status: 500,
+      provider: "openrouter",
+      requested_model: "x",
+      resolved_model: "x",
+      suggestion: "Retry the request. If the error continues, switch to another model.",
+    });
+  });
+
+  test("reports the last attempted descriptor when every upstream fails", async () => {
+    const candidates: UpstreamDescriptor[] = [
+      { ...managed, provider: "first", resolvedModel: "first/model" },
+      { ...managed, provider: "last", resolvedModel: "last/model" },
+    ];
+    const { hooks } = makeHooks({ resolveUpstream: async () => candidates });
+    const res = await createGateway(
+      hooks,
+      { retry: { ...fastRetry, maxAttempts: 1 } },
+      { fetchImpl: async () => new Response("boom", { status: 500 }) },
+    ).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"x"}',
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      provider: "last",
+      resolved_model: "last/model",
+    });
   });
 
   test("returns 503 once the provider circuit opens", async () => {
@@ -563,6 +635,129 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     expect(resolvedWith).toBe("claude-x");
   });
 
+  test("bounded model fallback routes a failed primary to the next model", async () => {
+    const primary = {
+      ...managed,
+      provider: "openai-codex",
+      baseUrl: "https://codex.test/v1",
+      resolvedModel: "gpt-5.6-sol",
+    };
+    const fallback = {
+      ...managed,
+      provider: "openrouter",
+      baseUrl: "https://openrouter.test/v1",
+      resolvedModel: "z-ai/glm-5.2",
+    };
+    const resolvedModels: string[] = [];
+    const upstreamModels: string[] = [];
+    const { hooks, traces } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedModels.push(model);
+        return model === "codex/gpt-5.6-sol" ? [primary] : model === "glm-5.2" ? [fallback] : [];
+      },
+    });
+    const fetchImpl: FetchImpl = async (url, init) => {
+      upstreamModels.push((JSON.parse(String(init.body)) as { model: string }).model);
+      if (String(url).includes("codex.test")) return new Response("codex down", { status: 500 });
+      return new Response(JSON.stringify({
+        model: "z-ai/glm-5.2",
+        choices: [{ message: { content: "fallback ok" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      modelFallbackRouter: (model) => model === "codex/gpt-5.6-sol"
+        ? { fallbackModels: ["glm-5.2"], fallbackOn: "any-error" }
+        : null,
+    }, { fetchImpl }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"codex/gpt-5.6-sol","messages":[{"role":"user","content":"ping"}]}',
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.content).toBe("fallback ok");
+    expect(resolvedModels).toEqual(["codex/gpt-5.6-sol", "glm-5.2"]);
+    expect(upstreamModels).toEqual(["gpt-5.6-sol", "z-ai/glm-5.2"]);
+    await flush();
+    expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
+      policy: "model-fallback",
+      models: ["codex/gpt-5.6-sol", "glm-5.2"],
+      selected: "glm-5.2",
+    });
+  });
+
+  test("any-error model policy falls back on a deterministic primary 400", async () => {
+    const calls: string[] = [];
+    const { hooks } = makeHooks({
+      resolveUpstream: async (_p, model) => [{
+        ...managed,
+        provider: model === "primary" ? "primary" : "fallback",
+        baseUrl: `https://${model}.test/v1`,
+        resolvedModel: model,
+      }],
+    });
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      modelFallbackRouter: () => ({ fallbackModels: ["fallback"], fallbackOn: "any-error" }),
+    }, {
+      fetchImpl: async (url) => {
+        calls.push(String(url));
+        return String(url).includes("primary.test")
+          ? new Response('{"error":{"message":"model unavailable"}}', { status: 400 })
+          : new Response(JSON.stringify({
+              choices: [{ message: { content: "ok" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    }).chatCompletions({ authorization: "Bearer good", rawBody: '{"model":"primary"}' });
+
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("model fallback chain is hard-capped and never loops", async () => {
+    const resolvedModels: string[] = [];
+    let calls = 0;
+    const { hooks } = makeHooks({
+      resolveUpstream: async (_p, model) => {
+        resolvedModels.push(model);
+        return [{ ...managed, provider: model, resolvedModel: model }];
+      },
+    });
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      maxFallbackModels: 1,
+      modelFallbackRouter: () => ({
+        fallbackModels: ["fallback-1", "fallback-2", "fallback-3", "primary"],
+        fallbackOn: "any-error",
+      }),
+    }, {
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response("down", { status: 500 });
+      },
+    }).chatCompletions({ authorization: "Bearer good", rawBody: '{"model":"primary"}' });
+
+    expect(res.status).toBe(502);
+    expect(resolvedModels).toEqual(["primary", "fallback-1"]);
+    expect(calls).toBe(2);
+  });
+
+  test("an unavailable primary model can resolve directly to its configured fallback", async () => {
+    const { hooks } = makeHooks({
+      resolveUpstream: async (_p, model) => model === "primary" ? [] : [managed],
+    });
+    const res = await createGateway(hooks, {
+      retry: { ...fastRetry, maxAttempts: 1 },
+      modelFallbackRouter: () => ({ fallbackModels: ["fallback"], fallbackOn: "any-error" }),
+    }, { fetchImpl: okFetch({ choices: [{ message: { content: "ok" } }] }) })
+      .chatCompletions({ authorization: "Bearer good", rawBody: '{"model":"primary"}' });
+
+    expect(res.status).toBe(200);
+  });
+
   test("authorize denies with 402 and the trace stays attributed to the principal", async () => {
     const { hooks, traces } = makeHooks({
       authorize: async () => ({
@@ -776,8 +971,19 @@ describe("gateway.chatCompletions — empty-completion failover", () => {
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.code).toBe("upstream_error");
-    expect(body.error).toBe("Overloaded");
+    expect(body.message).toBe("Overloaded");
+    expect(body.error).toMatchObject({
+      message: "Overloaded",
+      type: "upstream_error",
+      code: "overloaded_error",
+      provider: "openrouter",
+    });
     expect(body.upstream_code).toBe("overloaded_error");
+    expect(body.provider).toBe("openrouter");
+    expect(body.requested_model).toBe("x");
+    expect(body.resolved_model).toBe("x");
+    expect(body.request_id).toMatch(/^req_/);
+    expect(body.suggestion).toContain("switch to another model");
     expect(calls).toBe(1); // the error candidate is excluded at once, not retried 3×
     await flush();
     expect(usage).toHaveLength(0);
@@ -844,5 +1050,128 @@ describe("gateway.chatCompletions — request size guard", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("gateway error envelope contract", () => {
+  test("all pre-dispatch rejection classes use the complete error envelope", async () => {
+    const cases: Array<{ code: string; run: () => Promise<Response> }> = [
+      {
+        code: "missing_token",
+        run: async () => createGateway(makeHooks().hooks).chatCompletions({
+          authorization: undefined, rawBody: "{}",
+        }),
+      },
+      {
+        code: "invalid_token",
+        run: async () => createGateway(makeHooks().hooks).chatCompletions({
+          authorization: "Bearer bad", rawBody: "{}",
+        }),
+      },
+      {
+        code: "subscription_required",
+        run: async () => createGateway(makeHooks({
+          assertBillingActive: async () => { throw new Error("inactive"); },
+        }).hooks).chatCompletions({ authorization: "Bearer good", rawBody: "{}" }),
+      },
+      {
+        code: "budget_exceeded",
+        run: async () => createGateway(makeHooks({
+          authorize: async () => ({ ok: false, status: 402, errorCode: "budget_exceeded", principal }),
+        }).hooks).chatCompletions({ authorization: "Bearer good", rawBody: "{}" }),
+      },
+      {
+        code: "invalid_json",
+        run: async () => createGateway(makeHooks().hooks).chatCompletions({
+          authorization: "Bearer good", rawBody: "not-json",
+        }),
+      },
+      {
+        code: "request_too_large",
+        run: async () => createGateway(makeHooks().hooks, { maxRequestBytes: 2 }).chatCompletions({
+          authorization: "Bearer good", rawBody: "{}x",
+        }),
+      },
+      {
+        code: "model_unavailable",
+        run: async () => createGateway(makeHooks({ resolveUpstream: async () => [] }).hooks)
+          .chatCompletions({ authorization: "Bearer good", rawBody: '{"model":"missing"}' }),
+      },
+    ];
+
+    for (const entry of cases) {
+      const response = await entry.run();
+      expectErrorContract(await response.json(), entry.code);
+    }
+  });
+
+  test("model catalog authentication and failure exits use the complete error envelope", async () => {
+    const gateway = createGateway(makeHooks({
+      listModels: async () => { throw new Error("catalog database detail"); },
+    }).hooks, {}, { logger: { info: () => {}, warn: () => {}, error: () => {} } });
+    const cases = [
+      { response: await gateway.listModels(undefined), code: "missing_token" },
+      { response: await gateway.listModels("Bearer bad"), code: "invalid_token" },
+      { response: await gateway.listModels("Bearer good"), code: "models_error" },
+    ];
+    for (const entry of cases) expectErrorContract(await entry.response.json(), entry.code);
+  });
+
+  test("model catalog catches authentication infrastructure failures", async () => {
+    const gateway = createGateway(makeHooks({
+      authenticate: async () => { throw new Error("auth database unavailable"); },
+    }).hooks, {}, { logger: { info: () => {}, warn: () => {}, error: () => {} } });
+    const response = await gateway.listModels("Bearer good");
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.message).toBe("Model catalog unavailable");
+    expectErrorContract(body, "models_error");
+  });
+
+  test("a reader failure before first content preserves the actual upstream error", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull() { throw new Error("provider socket reset"); },
+    });
+    const res = await createGateway(makeHooks().hooks, { retry: fastRetry }, {
+      fetchImpl: async () => new Response(stream, { status: 200 }),
+    }).chatCompletions({
+      authorization: "Bearer good", rawBody: '{"model":"x","stream":true}',
+    });
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.message).toBe("provider socket reset");
+    expectErrorContract(body, "upstream_error");
+  });
+
+  test("a reader failure after content emits a complete SSE error envelope and settles as failed", async () => {
+    const { hooks, traces } = makeHooks();
+    let pull = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pull += 1;
+        if (pull === 1) {
+          controller.enqueue(new TextEncoder().encode(
+            'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
+          ));
+          return;
+        }
+        throw new Error("provider stream disconnected");
+      },
+    });
+    const res = await createGateway(hooks, { retry: fastRetry }, {
+      fetchImpl: async () => new Response(stream, { status: 200 }),
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+    }).chatCompletions({
+      authorization: "Bearer good", rawBody: '{"model":"x","stream":true}',
+    });
+    expect(res.status).toBe(200);
+    const output = await new Response(res.body).text();
+    const errorLine = output.split("\n").find((line) => line.startsWith("data: {") && line.includes('"error"'));
+    expect(errorLine).toBeDefined();
+    const body = JSON.parse(errorLine!.slice(6));
+    expect(body.message).toBe("provider stream disconnected");
+    expectErrorContract(body, "upstream_stream_error");
+    await flush();
+    expect(traces.at(-1)).toMatchObject({ ok: false, errorCode: "upstream_stream_error" });
   });
 });

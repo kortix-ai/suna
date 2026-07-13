@@ -10,6 +10,41 @@ import { join, dirname } from 'path';
 import type { Capability, RpcHandler } from './index';
 import { validatePath, validateWritePath } from '../security/path-validator';
 import type { TunnelConfig } from '../config';
+import type { LocalPermission } from '../security/permission-guard';
+
+function permissionFilesystemScope(params: Record<string, unknown>): {
+  paths?: string[];
+  allowedPaths?: string[];
+  blockedPaths?: string[];
+  operations?: string[];
+  maxFileSize?: number;
+} {
+  const permission = params.__permission as LocalPermission | undefined;
+  if (permission?.capability !== 'filesystem') {
+    throw new Error('Permission denied: filesystem permission required');
+  }
+  return (permission.scope ?? {}) as {
+    paths?: string[];
+    blockedPaths?: string[];
+    excludePatterns?: string[];
+    operations?: string[];
+    maxFileSize?: number;
+  };
+}
+
+function effectiveAllowedPaths(config: TunnelConfig, params: Record<string, unknown>): string[] {
+  const scope = permissionFilesystemScope(params);
+  const scoped = Array.isArray(scope.paths)
+    ? scope.paths.filter((p: unknown): p is string => typeof p === 'string' && p.trim().length > 0)
+    : [];
+  return scoped.length > 0 ? scoped : config.allowedPaths;
+}
+
+function effectiveBlockedPaths(config: TunnelConfig, params: Record<string, unknown>): string[] {
+  const scope = permissionFilesystemScope(params);
+  const scoped = Array.isArray(scope.blockedPaths) ? scope.blockedPaths.filter((p): p is string => typeof p === 'string' && p.trim().length > 0) : [];
+  return [...config.blockedPaths, ...scoped];
+}
 
 export function createFilesystemCapability(config: TunnelConfig): Capability {
   const methods = new Map<string, RpcHandler>();
@@ -18,11 +53,13 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
     const path = params.path as string;
     const encoding = (params.encoding as BufferEncoding) || 'utf-8';
 
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
     const stats = await stat(path);
-    if (stats.size > config.maxFileSize) {
-      throw new Error(`File exceeds max size (${stats.size} > ${config.maxFileSize})`);
+    const scope = permissionFilesystemScope(params);
+    const maxFileSize = Math.min(config.maxFileSize, typeof scope.maxFileSize === 'number' ? scope.maxFileSize : config.maxFileSize);
+    if (stats.size > maxFileSize) {
+      throw new Error(`File exceeds max size (${stats.size} > ${maxFileSize})`);
     }
 
     const content = await readFile(path, { encoding });
@@ -40,17 +77,19 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
     const content = params.content as string;
     const encoding = (params.encoding as BufferEncoding) || 'utf-8';
 
-    validateWritePath(path, config.allowedPaths, config.blockedPaths);
+    validateWritePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
-    if (content.length > config.maxFileSize) {
-      throw new Error(`Content exceeds max size (${content.length} > ${config.maxFileSize})`);
+    const scope = permissionFilesystemScope(params);
+    const maxFileSize = Math.min(config.maxFileSize, typeof scope.maxFileSize === 'number' ? scope.maxFileSize : config.maxFileSize);
+    if (content.length > maxFileSize) {
+      throw new Error(`Content exceeds max size (${content.length} > ${maxFileSize})`);
     }
 
     await mkdir(dirname(path), { recursive: true });
-    validateWritePath(path, config.allowedPaths, config.blockedPaths);
+    validateWritePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
     await writeFile(path, content, { encoding });
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
     const stats = await stat(path);
 
     return {
@@ -64,7 +103,7 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
     const path = params.path as string;
     const recursive = params.recursive as boolean || false;
 
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
     const entries = await readdir(path, { withFileTypes: true });
 
@@ -102,7 +141,7 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
   methods.set('fs.stat', async (params) => {
     const path = params.path as string;
 
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
     const stats = await stat(path);
 
@@ -121,7 +160,7 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
   methods.set('fs.delete', async (params) => {
     const path = params.path as string;
 
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validatePath(path, effectiveAllowedPaths(config, params), effectiveBlockedPaths(config, params));
 
     await unlink(path);
 

@@ -1,5 +1,5 @@
-import * as React from 'react';
 import { CheckIcon, ChevronsUpDown } from 'lucide-react';
+import * as React from 'react';
 import * as RPNInput from 'react-phone-number-input';
 import flags from 'react-phone-number-input/flags';
 
@@ -13,55 +13,49 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Input, type InputProps } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
-type PhoneInputProps = Omit<
-  React.ComponentProps<'input'>,
-  'onChange' | 'value' | 'ref'
-> &
+type PhoneInputProps = Omit<React.ComponentProps<'input'>, 'onChange' | 'value' | 'ref'> &
   Omit<RPNInput.Props<typeof RPNInput.default>, 'onChange'> & {
     onChange?: (value: RPNInput.Value) => void;
   };
 
-const PhoneInput: React.ForwardRefExoticComponent<PhoneInputProps> =
-  React.forwardRef<React.ElementRef<typeof RPNInput.default>, PhoneInputProps>(
-    ({ className, onChange, value, ...props }, ref) => {
-      const isInvalid =
-        props['aria-invalid'] === true || props['aria-invalid'] === 'true';
-      return (
-        <RPNInput.default
-          ref={ref}
-          className={cn(
-            'flex',
-            isInvalid && 'motion-safe:animate-shake',
-            className,
-          )}
-          flagComponent={FlagComponent}
-          countrySelectComponent={CountrySelect}
-          inputComponent={InputComponent}
-          smartCaret={false}
-          value={value || undefined}
-          /**
-           * Handles the onChange event.
-           *
-           * react-phone-number-input might trigger the onChange event as undefined
-           * when a valid phone number is not entered. To prevent this,
-           * the value is coerced to an empty string.
-           *
-           * @param {E164Number | undefined} value - The entered value
-           */
-          onChange={(value) => onChange?.(value || ('' as RPNInput.Value))}
-          {...props}
-        />
-      );
-    },
+const PhoneInput: React.ForwardRefExoticComponent<PhoneInputProps> = React.forwardRef<
+  React.ElementRef<typeof RPNInput.default>,
+  PhoneInputProps
+>(({ className, onChange, value, ...props }, ref) => {
+  const isInvalid = props['aria-invalid'] === true || props['aria-invalid'] === 'true';
+  return (
+    <RPNInput.default
+      ref={ref}
+      className={cn(
+        'flex h-10 gap-2',
+        isInvalid && 'motion-safe:animate-shake',
+
+        isInvalid && 'motion-safe:animate-shake',
+        className,
+      )}
+      flagComponent={FlagComponent}
+      countrySelectComponent={CountrySelect}
+      inputComponent={InputComponent}
+      smartCaret={false}
+      value={value || undefined}
+      /**
+       * Handles the onChange event.
+       *
+       * react-phone-number-input might trigger the onChange event as undefined
+       * when a valid phone number is not entered. To prevent this,
+       * the value is coerced to an empty string.
+       *
+       * @param {E164Number | undefined} value - The entered value
+       */
+      onChange={(value) => onChange?.(value || ('' as RPNInput.Value))}
+      {...props}
+    />
   );
+});
 
 PhoneInput.displayName = 'PhoneInput';
 
@@ -70,7 +64,9 @@ const InputComponent = React.forwardRef<HTMLInputElement, InputProps>(
     <Input
       type="text"
       // The wrapper owns the shake — a second one here would compound the translate.
-      className={cn('rounded-e-lg rounded-s-none aria-invalid:animate-none!', className)}
+      size="md"
+      // The wrapper owns the shake — a second one here would compound the translate.
+      className={cn('aria-invalid:animate-none!! aria-invalid:animate-none', className)}
       {...props}
       ref={ref}
     />
@@ -103,21 +99,13 @@ const CountrySelect = ({
         <Button
           type="button"
           variant="outline"
-          className={cn(
-            'flex items-center gap-1 rounded-e-none rounded-s-lg px-3 h-11',
-            {
-              'opacity-50 cursor-not-allowed': disabled,
-            },
-          )}
+          className={cn('border-border bg-input flex h-10 items-center gap-1 rounded-md px-3', {
+            'cursor-not-allowed opacity-50': disabled,
+          })}
           disabled={disabled}
         >
-          <FlagComponent
-            country={selectedCountry}
-            countryName={selectedCountry}
-          />
-          <ChevronsUpDown
-            className={cn('h-4 w-4 opacity-50', disabled ? 'hidden' : 'flex')}
-          />
+          <FlagComponent country={selectedCountry} countryName={selectedCountry} />
+          <ChevronsUpDown className={cn('h-4 w-4 opacity-50', disabled ? 'hidden' : 'flex')} />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0">
@@ -188,14 +176,11 @@ const CountrySelectOption = ({
     >
       <FlagComponent country={country} countryName={countryName} />
       <span className="flex-1 text-sm">{countryName}</span>
-      <span className="text-sm text-foreground/50">
+      <span className="text-foreground/50 text-sm">
         {`+${RPNInput.getCountryCallingCode(country)}`}
       </span>
       <CheckIcon
-        className={cn(
-          'ml-auto size-4',
-          country === selectedCountry ? 'opacity-100' : 'opacity-0',
-        )}
+        className={cn('ml-auto size-4', country === selectedCountry ? 'opacity-100' : 'opacity-0')}
       />
     </CommandItem>
   );
@@ -211,7 +196,7 @@ const FlagComponent = ({
   const Flag = flags[country];
 
   return (
-    <span className="flex h-4 w-6 overflow-hidden rounded-sm bg-foreground/20 [&_svg:not([class*='size-'])]:size-full">
+    <span className="bg-foreground/20 flex h-4 w-6 overflow-hidden rounded-sm [&_svg:not([class*='size-'])]:size-full">
       {Flag && <Flag title={countryName ?? ''} />}
     </span>
   );

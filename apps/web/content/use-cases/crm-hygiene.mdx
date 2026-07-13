@@ -1,0 +1,143 @@
+---
+title: "How we keep our CRM clean"
+description: A nightly agent that dedupes contacts in HubSpot, fills missing fields from enrichment data, flags stale deals, and posts a data-quality summary — with bulk updates held for approval.
+date: "2026-02-18"
+author: team
+tags:
+  - Sales
+  - Case Study
+  - RevOps
+---
+
+A CRM decays on its own. Duplicate contacts pile up from form fills and imports,
+records come in with missing fields, and deals sit untouched long after they've
+gone cold. Left alone, the pipeline reports drift away from reality and the sales
+team stops trusting the numbers.
+
+We keep our HubSpot clean with an agent that runs every night on Kortix. It
+dedupes contacts, fills missing fields from enrichment data, flags stale deals,
+and posts a short data-quality summary. Bulk field updates over a threshold wait
+for a person to approve.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="CRM">HubSpot</Fact>
+  <Fact label="Connected systems">HubSpot · Enrichment data · Slack</Fact>
+  <Fact label="Mode">Nightly cron · human-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+CRM hygiene is the work nobody schedules. Duplicate contacts split a company's
+history across two records, so the account owner sees half the story. Missing
+job titles, industries, and company sizes make segmentation unreliable. Deals
+that haven't moved in weeks still count toward the forecast.
+
+The usual fixes don't hold. A one-time cleanup helps until the next import
+undoes it. A paid dedupe add-on handles duplicates but not enrichment or stale
+deals. Asking reps to keep their own records tidy competes with selling and
+loses. The maintenance needs to run on its own, every night, without a person
+babysitting it.
+
+## What we built
+
+A cron trigger runs an agent against HubSpot every night. Each run spawns its own
+isolated session with scoped access to HubSpot and our enrichment provider. It
+finds and merges duplicate contacts, fills missing fields from enrichment,
+flags deals that have gone stale, and posts a summary of what it changed. Any
+bulk field update above a set threshold stops for a person before it writes.
+
+<Figure
+  caption="The nightly data-quality summary posted to Slack"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Run it on a nightly cron">
+
+A **cron trigger** fires the project once a night. Each firing spawns a fresh
+**session** in its own isolated sandbox with the CRM and enrichment access a
+cleanup pass needs. One run, one sandbox, torn down when it finishes.
+
+</Step>
+<Step title="Give the agent the hygiene rules">
+
+Our data model lives as **skills** and **memory** loaded into every run: which
+fields are required, how we decide two contacts are the same record, what counts
+as a stale deal, and the merge rules to follow. The rules are updated as edge
+cases come up.
+
+</Step>
+<Step title="Connect HubSpot and enrichment">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read and write HubSpot** — pull contacts and deals, merge duplicates, and
+  update fields.
+- **Query the enrichment provider** — fill missing job titles, company sizes,
+  and industries from external data.
+- **Post to Slack** — a short summary of every run in the RevOps channel.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent merges duplicates and fills individual gaps on its own, but a **bulk
+field update over a threshold** stops at a **human approval gate** before it
+writes. A sweeping change across hundreds of records is reviewed first.
+Credentials are encrypted in the secrets manager and injected at runtime, never
+shown to the model or written to logs.
+
+</Step>
+<Step title="Let each run report">
+
+A run dedupes contacts, enriches what's missing, flags the deals that have gone
+quiet, and posts what it did: duplicates merged, fields filled, deals flagged.
+When a bulk change is pending, the summary says what's waiting and why.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Run the cleanup on a **cron trigger**, give the agent scoped **connectors** into
+  HubSpot and enrichment, encode the hygiene rules as **skills** and **memory**,
+  and gate bulk changes behind a human. Each night's run then cleans and reports on
+  its own.
+</Callout>
+
+## Guardrails
+
+Giving an agent write access to the CRM is a data-integrity question. The controls
+on Kortix:
+
+- **Isolation.** Each run executes in its own microVM sandbox, and only the
+  HubSpot and enrichment changes it's explicitly allowed to make leave the
+  sandbox.
+- **Scoped secrets.** The HubSpot and enrichment credentials are encrypted in the
+  secrets manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Human approval gates.** Bulk field updates over the threshold require a person
+  to approve before they write.
+- **Everything is code.** The dedupe rules, required fields, and stale-deal
+  definition are files in the repo — versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="A bulk field update held at the approval gate before it writes"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Nightly" label="Cleanup runs without anyone scheduling it" />
+  <Stat value="3 passes" label="Dedupe, enrichment, and stale-deal flags in one run" />
+  <Stat value="Threshold-gated" label="Large bulk changes reviewed before they write" />
+</StatGrid>
+
+The pipeline reports stay closer to reality because the records behind them are
+maintained every night instead of in occasional cleanups. When a change is large
+enough to matter, a person sees it first, and the RevOps channel has a running
+record of what changed and when.

@@ -1,0 +1,147 @@
+---
+title: "How we triage a shared inbox with an AI agent"
+description: The inbox agent we run on Kortix — connected to Gmail, a help doc, and Linear. It labels every inbound email, drafts a reply, or files a task, and stops for approval before anything goes to a customer.
+date: "2026-03-04"
+author: team
+tags:
+  - Support
+  - Case Study
+  - SMB
+---
+
+A shared inbox is where a small team's requests pile up: support questions,
+sales pings, bug reports, and the occasional invoice, all landing in one place
+with no owner. Sorting them by hand is the first thing that slips when the team
+is busy, and a message sitting unread for a day is a message the sender assumes
+was ignored.
+
+We handle this by putting an agent on the inbox. Every inbound email gets read,
+labelled, and either drafted a reply or turned into a task. This writes up how we
+run that on Kortix — the connections, the steps, and the guardrails.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Connected systems">Gmail · Help doc · Linear</Fact>
+  <Fact label="Trigger">New inbound email</Fact>
+  <Fact label="Mode">Trigger-driven · human-gated</Fact>
+</KeyFacts>
+
+## The problem
+
+The messages that need a fast reply are mixed in with the ones that can wait, and
+telling them apart takes a person reading each thread. On a small team that
+person is also doing three other jobs, so triage happens in bursts — everything
+looks urgent when the inbox is opened once a day, and nothing looks urgent in
+between.
+
+Filters and rules help with the obvious cases but not the judgment calls: whether
+a message is a real support issue or a sales lead, whether it needs a reply or a
+ticket, and what a reasonable answer would be. Those are the parts that actually
+take time.
+
+## What we built
+
+Our shared inbox in **Gmail** is connected to an agent running on Kortix. Every
+inbound email spawns its own isolated session — a cloud sandbox — with scoped
+access to what triage needs: the message, our help doc, and Linear. It reads the
+email, applies a label, and then either drafts a reply in Gmail or files a task
+in Linear. Anything customer-facing waits for a person before it sends.
+
+<Figure
+  caption="The inbox agent labelling a thread and drafting a reply"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Connect Gmail as the trigger">
+
+A signed webhook from Gmail points at the project. Every new inbound message
+fires it, and each firing spawns a fresh **session** in its own sandbox, seeded
+with the email. One message, one session, one disposable machine. Sessions don't
+share state, and a busy inbox means more sessions running in parallel.
+
+</Step>
+<Step title="Give the agent our knowledge">
+
+How we handle the inbox lives as **skills** and **memory** loaded into every
+session: our help doc, the categories we sort into, the reply tone, and answers
+that worked before. The agent triages to that standard rather than inventing one,
+and the memory updates as threads are resolved.
+
+</Step>
+<Step title="Connect what triage can touch">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Read the help doc** — it looks up the answer to a common question instead of
+  guessing.
+- **Label and draft in Gmail** — it applies the right label and, where a reply
+  fits, writes a draft on the thread.
+- **File a task in Linear** — a bug report or a request that needs follow-up
+  becomes a ticket with the context attached.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent labels and drafts freely, but nothing sends on its own: every
+customer-facing reply stops at a **human approval gate** as a draft for a person
+to review and send. Credentials are encrypted in the secrets manager and injected
+at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each email run">
+
+With that in place, an inbound email triages itself: it gets a label, and either
+a draft reply waiting for approval or a Linear ticket already filed. A common
+support question becomes a drafted answer pulled from the help doc. A bug report
+becomes a ticket. A sales ping becomes a label the right person can pick up.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Connect the inbox via a **trigger** on new mail, give the agent scoped
+  **connectors** into the help doc, Gmail, and Linear, encode how we triage as
+  **skills** and **memory**, and gate every customer-facing reply behind a human.
+</Callout>
+
+## Guardrails
+
+Giving an agent access to the shared inbox is a trust question as much as a
+convenience one. The relevant controls on Kortix:
+
+- **Isolation.** Each email runs in its own microVM sandbox. The session can read
+  the thread and the help doc it needs, and only the draft or ticket it produces
+  leaves the sandbox.
+- **Scoped secrets.** The Gmail and Linear credentials are encrypted in the
+  secrets manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Human approval gate.** Nothing customer-facing sends without a person
+  reviewing the draft first — replies land as drafts, not sent mail.
+- **Everything is code.** The agent's persona, skills, and permissions are files
+  in the repo — versioned and changed through a reviewed **change request**, not a
+  dashboard setting.
+
+<Figure
+  caption="A drafted reply held at a human approval gate before it sends"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every email" label="Labelled and routed as it lands" />
+  <Stat value="Drafted" label="Common replies written and waiting for a send" />
+  <Stat value="3 systems" label="The help doc, Gmail, and Linear in one agent" />
+</StatGrid>
+
+The inbox stops being a pile to sort and becomes a list already labelled, with
+replies drafted and tickets filed. The team reviews and sends instead of reading
+every thread cold, and no message sits unread waiting for someone to notice it.
+
+The setup relies on four pieces: sandbox isolation per email, a secrets manager
+to broker the Gmail and Linear tokens, a human approval gate before anything
+reaches a customer, and memory that improves as threads are resolved.

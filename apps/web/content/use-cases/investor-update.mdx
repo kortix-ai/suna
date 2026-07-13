@@ -1,0 +1,148 @@
+---
+title: "How we draft our monthly investor update"
+description: A monthly agent we run on Kortix — connected to Postgres, Stripe, and last month's update. It pulls the core metrics, compares them to last month and to plan, and drafts the update in our format for a founder to finalize.
+date: "2026-03-04"
+author: team
+tags:
+  - Finance
+  - Case Study
+  - Startup
+---
+
+The monthly investor update is a small, recurring task that eats a founder's time.
+The numbers live in a few different places, they have to be pulled and compared to
+last month and to plan, and then the whole thing has to be written up in a
+consistent format. None of it is hard; it's just an hour or two of gathering and
+formatting that comes around every month.
+
+We run an agent on Kortix that does the gathering and the first draft. This is how
+we draft our own investor update, including the connections and guardrails
+involved.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Runs on">A monthly cron</Fact>
+  <Fact label="Connected systems">Postgres · Stripe · Last month's update</Fact>
+  <Fact label="Mode">Read-only · a founder finalizes and sends</Fact>
+</KeyFacts>
+
+## The problem
+
+Writing the update every month means pulling MRR and revenue from Stripe, active
+accounts and growth from the product database, and burn and runway from the
+finance numbers, then setting each against last month and against plan. The data
+is spread across systems, the comparisons are done by hand, and the write-up has
+to match the format investors are used to seeing.
+
+The common fixes are incomplete. A BI dashboard shows the current numbers but
+doesn't write the narrative or compare against plan. A saved template still needs
+someone to fill in every figure. Doing it by hand each month is reliable but it's
+the founder's time going into gathering and formatting rather than into the
+commentary that actually matters.
+
+## What we built
+
+On Kortix, a monthly cron triggers an agent. It spawns an isolated session (a
+cloud sandbox) with read-only access to the product database, Stripe, and last
+month's update. It pulls the core metrics — MRR, growth, burn, runway, active
+accounts — compares them to last month and to plan, and drafts the update in our
+usual format as a document. A founder edits it and sends it.
+
+<Figure
+  caption="The drafted update with each metric set against last month and plan"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Trigger the draft on a monthly cron">
+
+A **cron trigger** fires once a month and spawns a fresh **session** in its own
+sandbox. Each run pulls the current month's numbers and produces one draft. One
+run maps to one session on one disposable machine, and nothing carries over
+between months except what's read from the source systems.
+
+</Step>
+<Step title="Give the agent our format and what matters">
+
+The shape of our update lives as **skills** and **memory** that travel with the
+agent: which metrics we report, how we define each one, the format and section
+order investors expect, and the plan targets to compare against. Last month's
+update is the reference for tone and structure. When we change how we report, we
+write it down and the agent follows it next month.
+
+</Step>
+<Step title="Connect Postgres, Stripe, and last month's update">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Query Postgres** — active accounts, growth, and the product metrics we track.
+- **Read Stripe** — MRR and revenue for the month.
+- **Read last month's update** — the prior numbers to compare against and the
+  format to match.
+- **Draft into a document** — the numbers and the narrative assembled in our
+  format for a founder to edit.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent is **read-only** across every connected system: it reads the database,
+Stripe, and last month's update, and it writes nothing back to any of them. Its
+one output is a draft document. A founder finalizes and sends; the agent never
+sends anything. Credentials are encrypted in the Secrets Manager and injected at
+runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Hand a founder a finished first draft">
+
+With that in place, the start of each month produces a draft with the metrics
+pulled, the month-over-month and against-plan comparisons filled in, and the
+narrative written in our format. The founder edits the commentary, checks the
+numbers, and sends it. The gathering and formatting are done; the judgment stays
+with a person.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  A monthly **cron** spawns a session with read-only **connectors** into Postgres,
+  Stripe, and last month's update. Our format and metric definitions are encoded as
+  **skills** and **memory**. The agent drafts; a founder finalizes and sends.
+</Callout>
+
+## Guardrails
+
+The agent reads revenue and product data to draft a document, so the access is
+scoped and contained:
+
+- **Isolation.** Every run happens in its own per-task microVM sandbox. The
+  session reads only the systems it's scoped to, and only the draft document leaves
+  the sandbox.
+- **Scoped secrets.** The Postgres and Stripe credentials are encrypted in the
+  Secrets Manager and injected into the sandbox at runtime, never exposed to the
+  model or the logs.
+- **Read-only.** The agent reads every source and writes back to none of them. Its
+  only output is a draft, and it never sends. A founder owns the send.
+- **Everything is code.** The agent's configuration, skills, and per-system
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  caption="A read-only run with the source metrics traced back to Postgres and Stripe"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Every month" label="A finished first draft ready at the start of the month" />
+  <Stat value="Read-only" label="Nothing written back to any source system" />
+  <Stat value="3 systems" label="Postgres, Stripe, and last month's update in one agent" />
+</StatGrid>
+
+The monthly update now arrives as a draft with the numbers pulled, the comparisons
+done, and the narrative written in our format. The founder spends their time on the
+commentary and the send rather than on gathering and formatting, and the data is
+only ever read.

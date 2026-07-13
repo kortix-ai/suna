@@ -4,7 +4,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
-import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
 import { createSlackAccessRequest, notifyAdminsOfAccessRequest, resolveSlackActor } from './identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
@@ -284,6 +284,7 @@ async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: s
       target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
       set: { projectId, pickerTs: null },
     });
+  await backfillChannelName(teamId, channelId, projectId);
 
   const [p] = await db
     .select({ name: projects.name })

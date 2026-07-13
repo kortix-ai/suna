@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { KortixProjectScope } from '@/components/kortix-project-scope';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { featureFlags } from '@kortix/sdk/feature-flags';
@@ -378,7 +379,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 <DesktopUrlPrompt />
                 <ReactQueryProvider>
                   <Toaster />
-                  <KortixProjectScope>{children}</KortixProjectScope>
+                  {/* Global "Request a demo" qualifier modal — mounted once here
+                      so every enterprise CTA across the app (accounts settings,
+                      billing, IAM) can open it via useRequestDemo(). */}
+                  <RequestDemoProvider>
+                    <KortixProjectScope>{children}</KortixProjectScope>
+                  </RequestDemoProvider>
                   {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}
                   <Suspense fallback={null}>

@@ -12,12 +12,22 @@ import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
+import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
 // Enforce per-account session policies (max lifetime / idle timeout /
 // force-logout) on every authenticated, account-scoped request. No-op
 // on routes without an :accountId param.
-accountsRouter.use('/*', accountSessionGate());
+accountsRouter.use('/*', async (c, next) => {
+  if (!c.req.param('accountId') && !c.get('accountId') && c.get('authType') === 'supabase') {
+    const userId = c.get('userId') as string | undefined;
+    const sessionId = c.get('sessionId') as string | undefined;
+    if (userId && sessionId) {
+      c.set('accountId', await resolveAccountId(userId));
+    }
+  }
+  return accountSessionGate()(c, next);
+});
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is

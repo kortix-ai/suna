@@ -13,7 +13,7 @@ const SRC = join(TOOL_DIR, 'tool-renderers.tsx.bak');
 
 const lines = readFileSync(SRC, 'utf8').split('\n');
 
-function slice(start: number, end: number) {
+function slice(start: number, end?: number) {
   return lines.slice(start, end).join('\n');
 }
 

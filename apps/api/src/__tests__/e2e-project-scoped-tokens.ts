@@ -98,9 +98,21 @@ async function main() {
     die(`Need ≥ 2 projects on account ${m.account_id} for the cross-project test. Have ${projectRows.length}.`);
   }
   const [projA, projB] = projectRows;
+  const foreignProjects = await db.execute<ProjectRow>(sql`
+    select project_id, account_id, name
+    from kortix.projects
+    where account_id <> ${m.account_id}
+    order by created_at desc
+    limit 1
+  `);
+  const foreignProjectRows =
+    (foreignProjects as unknown as { rows?: ProjectRow[] }).rows
+    ?? (foreignProjects as unknown as ProjectRow[]);
+  const foreignProject = foreignProjectRows[0] ?? null;
   dim('user', m.user_id);
   dim('projA', `${projA.project_id} (${projA.name})`);
   dim('projB', `${projB.project_id} (${projB.name})`);
+  if (foreignProject) dim('foreign', `${foreignProject.project_id} (${foreignProject.name})`);
 
   // ── 2. Mint a project-scoped token for projA via direct DB insert ───
   const { publicKey, secretKey } = generateAccountTokenPair();
@@ -176,6 +188,31 @@ async function main() {
     die(`projA token → /executor/projects/<projB>/catalog should 403, got ${crossProjectCatalog.status}: ${JSON.stringify(crossProjectCatalog.body)}`);
   }
   ok('token cannot use Executor gateway routes for a different project → 403');
+
+  // ── 8b. Defense-in-depth: forged foreign project scope is rejected ───
+  if (foreignProject) {
+    const forged = generateAccountTokenPair();
+    const forgedHash = hashSecretKey(forged.secretKey);
+    await db.execute(sql`
+      insert into kortix.account_tokens
+        (account_id, user_id, project_id, name, public_key, secret_key_hash)
+      values
+        (${m.account_id}, ${m.user_id}, ${foreignProject.project_id}, 'e2e-forged-foreign-scope', ${forged.publicKey}, ${forgedHash})
+    `);
+    try {
+      const forgedCatalog = await callApi(forged.secretKey, `/executor/projects/${foreignProject.project_id}/catalog`);
+      if (forgedCatalog.status !== 403) {
+        die(`foreign-scoped forged token → /executor/projects/<foreign>/catalog should 403, got ${forgedCatalog.status}: ${JSON.stringify(forgedCatalog.body)}`);
+      }
+      ok('forged token row with a foreign project_id cannot use Executor gateway routes → 403');
+    } finally {
+      await db.execute(sql`
+        delete from kortix.account_tokens where secret_key_hash = ${forgedHash}
+      `);
+    }
+  } else {
+    dim('foreign', 'executor forged-scope check skipped (no second account project available)');
+  }
 
   // ── 9. Revoke + verify 401 ───────────────────────────────────────────
   await db.execute(sql`

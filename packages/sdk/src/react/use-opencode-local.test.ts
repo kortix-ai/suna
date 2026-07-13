@@ -67,16 +67,17 @@ describe('OpenCode local model selection scoping', () => {
     ).toBeUndefined();
   });
 
-  test('substitutes hidden AUTO with the explicit managed default when available', () => {
+  test('substitutes hidden AUTO with the provider-qualified gateway default when available', () => {
     expect(
       resolveHiddenAutoModel(
         { providerID: 'kortix', modelID: 'auto' },
         {
           enableAutoModel: false,
-          isModelValid: (model) => model.providerID === 'kortix' && model.modelID === 'glm-5.2',
+          isModelValid: (model) =>
+            model.providerID === 'kortix' && model.modelID === 'codex/gpt-5.6-sol',
         },
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
+    ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' });
   });
 
   test('keeps AUTO only when the feature is explicitly enabled', () => {
@@ -114,5 +115,24 @@ describe('OpenCode local model selection scoping', () => {
 
   test('dashboard composer can still seed from global last-used agent', () => {
     expect(resolveCurrentAgentName({ lastAgentName: 'reviewer' })).toBe('reviewer');
+  });
+
+  test('project composer prefers its declared default over a cross-project last-used agent', () => {
+    expect(
+      resolveCurrentAgentName({
+        defaultAgentName: 'kortix',
+        lastAgentName: 'reviewer',
+      }),
+    ).toBe('kortix');
+  });
+
+  test('an explicit picker choice can override the project default for the current composer', () => {
+    expect(
+      resolveCurrentAgentName({
+        explicitAgentName: 'reviewer',
+        defaultAgentName: 'kortix',
+        lastAgentName: 'builder',
+      }),
+    ).toBe('reviewer');
   });
 });

@@ -5,6 +5,7 @@ import {
   ProjectSchema as ContractProjectSchema,
   ProjectSessionSchema as ContractProjectSessionSchema,
   SecretSchema as ContractSecretSchema,
+  SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
   TriggerSchema as ContractTriggerSchema,
@@ -28,6 +29,8 @@ export const SessionSchema = ContractProjectSessionSchema.openapi('Session');
 export const SessionStartResultSchema = ContractSessionStartResultSchema.openapi('SessionStartResult');
 
 export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.openapi('SessionCreateAccepted');
+
+export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
 
 export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 

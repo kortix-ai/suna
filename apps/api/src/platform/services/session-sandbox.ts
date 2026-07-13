@@ -12,7 +12,7 @@
  * path in sandbox-cloud.ts.
  */
 
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
@@ -50,6 +50,7 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 import { resolveAgentGrant } from '../../projects/agents';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 
 // Fallback spec for sandboxes that don't declare `sandbox:` in kortix.yaml.
 // Mirrors the platform default sandbox size (2 vCPU / 4 GB / 20 GB).
@@ -246,8 +247,8 @@ export async function provisionSessionSandbox(opts: {
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
   const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
-  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
-    db
+  const createOrClaimSandboxRow = async () => {
+    const inserted = await db
       .insert(sessionSandboxes)
       .values({
         sandboxId,
@@ -267,7 +268,41 @@ export async function provisionSessionSandbox(opts: {
           healthStatus: 'unknown',
         },
       })
-      .returning(),
+      .onConflictDoNothing({ target: sessionSandboxes.sessionId })
+      .returning();
+    if (inserted.length > 0) return inserted;
+
+    // Provider-confirmed loss keeps the durable logical row because DB-level
+    // identity guards and child records intentionally forbid deleting it. The
+    // recovery transaction resets external_id to NULL and stamps an explicit
+    // authorization marker; only that exact placeholder may be claimed here.
+    return db
+      .update(sessionSandboxes)
+      .set({
+        provider: providerName,
+        status: 'provisioning',
+        baseUrl: null,
+        config: {},
+        // Legacy recovery placeholders may still exist while this release rolls
+        // out. Consume their authorization marker atomically so at most one
+        // allocator can claim the row and call provider.create(). New code never
+        // creates this marker because established identities are fail-closed.
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, sandboxId),
+          isNull(sessionSandboxes.externalId),
+          eq(sessionSandboxes.status, 'provisioning'),
+          sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
+        ),
+      )
+      .returning();
+  };
+
+  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
+    createOrClaimSandboxRow(),
     createApiKey({
       sandboxId,
       accountId,
@@ -295,6 +330,7 @@ export async function provisionSessionSandbox(opts: {
       : Promise.resolve(false),
   ]);
   const [sandbox] = sandboxRows;
+  if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   tl.mark('row+tokens');
 
   const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
@@ -457,13 +493,15 @@ export async function provisionSessionSandbox(opts: {
       const timeline = tl.summary();
 
       const [currentSession] = await db
-        .select({ status: projectSessions.status })
+        .select({ status: projectSessions.status, metadata: projectSessions.metadata })
         .from(projectSessions)
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .limit(1);
-      if (currentSession?.status === 'stopped') {
-        // The session was explicitly deleted while this box was still being
-        // created — deletion is the one case where we remove the provider box.
+      const currentSessionMetadata =
+        (currentSession?.metadata as Record<string, unknown> | null) ?? {};
+      if (typeof currentSessionMetadata.deletedAt === 'string') {
+        // Only an explicit deletion authorizes provider removal. A normal stop
+        // uses the same status and must never be mistaken for deletion.
         await provider.remove(result.externalId).catch((err) => {
           console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
@@ -492,6 +530,48 @@ export async function provisionSessionSandbox(opts: {
         recordProviderEvent({
           provider: providerName, kind: 'provision', outcome: 'stopped',
           totalMs: stopTl.totalMs, marks: stopTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
+        return;
+      }
+
+      if (currentSession?.status === 'stopped') {
+        // A manual stop or idle reconciliation won while provider.create was
+        // in flight. Preserve the disk/identity and power it down.
+        await provider.stop(result.externalId).catch((err) => {
+          console.warn(
+            `[session-sandbox] failed to stop concurrently-paused sandbox ${result.externalId}:`,
+            err,
+          );
+        });
+        await db
+          .update(sessionSandboxes)
+          .set({
+            externalId: result.externalId,
+            baseUrl: result.baseUrl || null,
+            status: 'stopped',
+            metadata: {
+              ...buildSandboxInitSuccessMetadata(
+                sandbox.metadata as Record<string, unknown> | null,
+                {
+                  ...result.metadata,
+                  provisionTimeline: timeline,
+                  daytonaSandboxId: result.externalId,
+                },
+                attempts,
+              ),
+              stoppedDuringProvisioning: true,
+              stoppedAt: new Date().toISOString(),
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
+        tl.mark('row-stopped-during-provision');
+        tl.log({ provider: providerName, attempts, stoppedDuringProvisioning: true });
+        const stoppedTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stoppedTl.totalMs, marks: stoppedTl.marks, attempts,
           sessionId: sandbox.sandboxId, accountId,
         });
         return;

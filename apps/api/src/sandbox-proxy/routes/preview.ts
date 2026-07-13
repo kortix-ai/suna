@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
@@ -24,9 +25,12 @@ const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>()
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
 // Accept-Encoding is forced to identity (raw byte passthrough).
+// Cookies may contain the caller's raw __preview_session credential and must
+// never reach arbitrary user-controlled apps running inside the sandbox.
 const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
+  'cookie',
   'traceparent',
   'x-request-id',
   'accept-encoding',
@@ -344,6 +348,42 @@ function principalUserId(access: PreviewProxyAccess): string {
   return access.kind === 'principal' ? access.userId : '';
 }
 
+// opencode's HTTP/SSE + PTY server binds 127.0.0.1:4096 (loopback-only). Daytona
+// (a container) reaches it directly; Platinum (a microVM) has its edge dial the
+// guest's eth0 IP, so :4096 is unreachable → 502 ("upstream-unreachable"). This
+// is what breaks `kortix sessions connect` / `opencode attach` on Platinum.
+//
+// The sandbox agent on :8000 (binds 0.0.0.0, reachable) already reverse-proxies
+// every path to opencode's localhost:4096 in-box. So for Platinum we route
+// opencode(4096) traffic through :8000 — the same bridge the /pty/ WebSocket
+// already uses. The 8000-keyed guards below (session-visibility gate, /kortix/env
+// block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
+// subject to the SAME protection as a direct :8000 request — the reroute changes
+// reachability, never the auth/control surface.
+const OPENCODE_INTERNAL_PORT = 4096;
+const SANDBOX_AGENT_PORT = 8000;
+
+/**
+ * Should the data-path proxy WAKE a stopped box instead of 503ing it? Only when a
+ * real user (principal) is actively hitting the OpenCode daemon (port 8000) — never
+ * on passive asset/preview traffic or non-user (service) access. That gate is what
+ * lets the runtime path auto-resume like `/start` WITHOUT fighting the reaper's
+ * idle-quiesce "don't resurrect on passive traffic" policy. Pure + exported so the
+ * gate is unit-tested without provisioning a sandbox.
+ */
+export function shouldAutoResumeStoppedSandbox(
+  status: string,
+  upstreamPort: number,
+  accessKind: string,
+): boolean {
+  return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
+}
+function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
+  return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
+    ? SANDBOX_AGENT_PORT
+    : addressedPort;
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -368,7 +408,7 @@ export async function forwardToSandbox(
   // 1. One row fetch — enforces the v1 session-sandbox contract, ownership, and
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);
   }
@@ -381,13 +421,23 @@ export async function forwardToSandbox(
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
   }
+  // Effective upstream port: Platinum opencode(4096) → the in-box agent on 8000.
+  // The 8000-keyed AUTH/CONTROL guards below (session-visibility gate + /kortix/env
+  // block) key on THIS, so rerouted opencode is gated exactly like a direct :8000
+  // request (sandbox ownership is already enforced unconditionally above). NOTE:
+  // redirectPrefix/X-Forwarded-Prefix and shouldSyncProjectEnvBeforeProxy stay on
+  // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
+  // client actually used (/4096), and env-sync-before-prompt must behave identically
+  // to Daytona, which likewise skips it on the direct 4096 opencode path.
+  const upstreamPort = effectiveUpstreamPort(record.provider, port);
+
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
     access.kind === 'principal' &&
-    port === 8000 &&
+    upstreamPort === 8000 &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
       projectId: record.projectId,
@@ -401,17 +451,39 @@ export async function forwardToSandbox(
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
   // never through this user-facing proxy — block it so an account member can't
   // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
-  if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+  if (upstreamPort === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
     return jsonProxyError({ error: 'not found' }, 404, origin);
   }
   if (record.status !== 'active') {
-    return portUnreachableResponse({
-      port,
-      status: 503,
-      origin,
-      incomingHeaders,
-      reason: `sandbox not ready (status: ${record.status})`,
-    });
+    // A stopped-but-resumable box hit by a REAL USER on the OpenCode data path
+    // (port 8000, principal) should wake in place — the same resume `/start` does —
+    // rather than dead-end with a manual-Restart card. This closes the stale-ready
+    // gap: /start settles 'ready', the reaper idle-stops the box, and the client's
+    // next runtime call used to 503 forever. resumeStoppedSandboxByExternalId is
+    // idempotent, clears the reaper's idle-quiesce marker, and its DB conditional
+    // lock de-dupes the concurrent session.list retries (one provider start). Gated
+    // so passive asset/preview traffic still 503s — we don't fight idle-quiesce.
+    if (shouldAutoResumeStoppedSandbox(record.status, upstreamPort, access.kind)) {
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[sandbox-proxy] auto-resume failed for ${resumeExternalId}:`, err);
+        return false;
+      });
+      // Re-read: the resume flips the row → 'active' (this call or a concurrent
+      // one). The box boots in the background; the wake/retry loop below tolerates
+      // the gap and forwards once it's up (and subsequent client retries recover).
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return portUnreachableResponse({
+        port,
+        status: 503,
+        origin,
+        incomingHeaders,
+        reason: `sandbox not ready (status: ${record.status})`,
+      });
+    }
   }
   const serviceKey = record.serviceKey;
 
@@ -441,7 +513,7 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -555,8 +627,11 @@ export async function forwardToSandbox(
       // a stream) so aborting only kills the in-flight attempt, never truncates
       // an upload mid-stream.
       //
-      // CRITICAL: the timeout bounds ONLY the connect/header phase — the timer
-      // is cleared the moment `fetch` resolves. The previous
+      // CRITICAL: for ordinary requests the timeout bounds ONLY the
+      // connect/header phase — the timer is cleared the moment `fetch` resolves.
+      // Multipart uploads are the exception: their handler cannot return
+      // headers until the body is written, so they receive the remaining outer
+      // proxy budget instead of the generic 15s cutoff. The previous
       // `AbortSignal.timeout(...)` bounded the ENTIRE fetch lifecycle, which
       // severed every streaming response body at ~15s: the `/global/event` SSE
       // stream (each open session tab then reconnected ~250ms later, forever —
@@ -569,7 +644,7 @@ export async function forwardToSandbox(
           attemptController.abort(
             new DOMException('proxy attempt connect timeout', 'TimeoutError'),
           ),
-        proxyAttemptTimeoutMs(budgetRemainingMs),
+        proxyAttemptTimeoutMs(budgetRemainingMs, { method, path: remainingPath }),
       );
       let upstream: Response;
       try {

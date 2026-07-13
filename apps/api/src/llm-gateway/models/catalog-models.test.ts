@@ -27,6 +27,16 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(managedOnly).length);
   });
 
+  test('project catalog advertises the GPT-5.6 Codex family', () => {
+    expect(full['codex/gpt-5.6-sol']).toMatchObject({
+      name: 'GPT-5.6-Sol (ChatGPT)',
+      reasoning: true,
+      tool_call: true,
+    });
+    expect(full['codex/gpt-5.6-terra']).toBeDefined();
+    expect(full['codex/gpt-5.6-luna']).toBeDefined();
+  });
+
   test('native OpenCode Zen free models are not served by the gateway catalog', () => {
     for (const id of ['deepseek-v4-flash-free', 'mimo-v2.5-free']) {
       expect(full[`opencode/${id}`], `opencode/${id}`).toBeUndefined();

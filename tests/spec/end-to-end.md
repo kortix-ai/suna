@@ -46,6 +46,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 `SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
+`SYS-7` `POST /v1/system/demo-request` → public lead capture for the marketing "book a demo" form; invalid email → 400; valid → 200 `{ok:true, emailed}` (emails `DEMO_LEAD_NOTIFY_EMAIL` via Mailtrap; `emailed:false` when Mailtrap unconfigured — graceful skip). IP rate-limited (`KORTIX_DEMO_REQUEST_REQS_PER_MIN`, 429 on flood).
 `DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ---
@@ -192,7 +193,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 
 DB `project_sessions` (`status queued|branching|provisioning|running|stopped|failed|completed`, unique `(project_id, branch_name)`). Branch name = `session_id`.
 
-`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
+`SESS-1` `POST /projects/:id/sessions {agent_name?,initial_prompt?,base_ref?,provider?,name?,session_id?,branch_already_created?,runtime_context?}` → `session` (any project member, **M_VIEWER included** — viewer is the base usable role) → 201 status `provisioning` (fire-and-forget sandbox). `runtime_context` is an optional non-secret scalar map (max 64 entries / 16 KiB UTF-8 JSON; lower-case semantic keys only; no credential-like keys); it is stored outside user-editable session metadata and restored into every replacement runtime as the single server-owned `KORTIX_SESSION_CONTEXT` JSON variable. Nested/oversize/reserved/credential-shaped input → 400 before session persistence or provisioning; raw env/MCP fields are unknown and rejected. MEMBER with no project grant / NONMEMBER → 403. (An invalid `provider` for an allowed caller → 400, proving the role gate passed before provider validation.)
 `SESS-2` concurrency cap — Nth session over tier cap → **429** + `X-RateLimit-Limit/-Remaining` headers.
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).

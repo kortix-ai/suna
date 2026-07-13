@@ -1,0 +1,140 @@
+---
+title: "How we monitor competitors"
+description: A daily agent that checks competitor sites, changelogs, and pricing pages, diffs them against the last run, and posts a short summary of what changed to Slack.
+date: "2026-05-13"
+author: team
+tags:
+  - Marketing
+  - Case Study
+  - Growth
+---
+
+Competitors ship changes quietly. A pricing tier moves, a feature lands in the
+changelog, a landing page gets rewritten — and unless someone happens to check
+that week, the team finds out late. Manually visiting a dozen sites every morning
+is the kind of task that gets done for a while and then quietly stops.
+
+We watch our market with an agent that runs every day on Kortix. It checks
+competitor sites, changelogs, and pricing pages, diffs them against the last run,
+and posts a short summary of what actually changed to a Slack channel.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Control surface">Slack</Fact>
+  <Fact label="Connected systems">The web · Slack</Fact>
+  <Fact label="Mode">Daily cron · diff against last run</Fact>
+</KeyFacts>
+
+## The problem
+
+Keeping up with competitors is a standing task with no natural owner. The
+information is public, but it's spread across pages that change on no schedule,
+and most days nothing moves — so a person checking manually spends most of their
+time confirming that nothing happened.
+
+The workarounds thin out. A page-change alerting tool fires on every edit,
+including cosmetic ones, and buries the real signal in noise. A shared doc of
+"things to check" depends on someone remembering to check it. The task needs to
+run daily, compare against what it saw last time, and only surface what's worth
+reading.
+
+## What we built
+
+A cron trigger runs an agent every day. Each run spawns an isolated session that
+fetches the competitor pages we track, compares them against the previous run's
+snapshot, and writes a short summary of what changed to Slack. Cosmetic edits are
+filtered out; pricing moves, new features, and messaging changes are called out.
+
+<Figure
+  caption="The daily competitor summary posted to Slack"
+  aspect="16/9"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Run it on a daily cron">
+
+A **cron trigger** fires the project once a day. Each firing spawns a fresh
+**session** in its own isolated sandbox with web access. One run, one sandbox,
+torn down when it's done.
+
+</Step>
+<Step title="Give the agent the watch list and what matters">
+
+The list of competitors, the specific pages to check, and what counts as a
+meaningful change live as **skills** and **memory**. Each run also reads the
+previous run's snapshot from memory so it can diff against it rather than
+re-reporting the same state. The list is updated as the market shifts.
+
+</Step>
+<Step title="Connect the web and Slack">
+
+Through scoped **connectors**, brokered server-side so no raw token reaches the
+model, the agent can:
+
+- **Fetch competitor pages** — sites, changelogs, and pricing pages on the watch
+  list.
+- **Compare against the last run** — diff today's content against the stored
+  snapshot to find what actually changed.
+- **Post to Slack** — a short summary in the growth channel, or nothing when
+  nothing moved.
+
+</Step>
+<Step title="Set the guardrails">
+
+The agent only reads public pages and writes to one Slack channel, so its scope
+is narrow by design. It has no access to internal systems and takes no action
+beyond posting. Any credentials it needs are encrypted in the secrets manager and
+injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Let each run report">
+
+A run fetches the tracked pages, diffs them against yesterday, and posts what
+changed: a pricing tier that moved, a feature that shipped, a rewritten homepage.
+On a quiet day it says so briefly. The team reads one message instead of visiting
+a dozen sites.
+
+</Step>
+</Steps>
+
+<Callout title="The pattern" tone="accent">
+  Run the check on a **cron trigger**, keep the watch list and last-run snapshot in
+  **skills** and **memory**, give the agent scoped **connectors** to the web and
+  Slack, and let each run diff and report. The team reads a summary instead of
+  browsing.
+</Callout>
+
+## Guardrails
+
+Even a read-only agent runs with the same controls as the rest of the platform:
+
+- **Isolation.** Each run executes in its own microVM sandbox, and only the Slack
+  summary it's explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** Any credential the agent uses is encrypted in the secrets
+  manager and injected into the sandbox at runtime, never exposed to the model or
+  the logs.
+- **Human approval gates.** The agent's only external action is posting a summary;
+  anything beyond that scope would require a person to approve.
+- **Everything is code.** The watch list, the pages to check, and the definition
+  of a meaningful change are files in the repo — versioned and changed through a
+  reviewed **change request** rather than a dashboard setting.
+
+<Figure
+  caption="A pricing-page change flagged in the daily diff"
+  aspect="16/9"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="Daily" label="The market is checked without anyone remembering to" />
+  <Stat value="Diff-only" label="Cosmetic edits filtered out, real changes surfaced" />
+  <Stat value="One message" label="A summary instead of a dozen tabs" />
+</StatGrid>
+
+The team learns about a competitor's pricing move or feature launch the morning
+after it happens rather than whenever someone next looks. Because each run diffs
+against the last, the channel stays quiet on quiet days and speaks up only when
+something actually changed.

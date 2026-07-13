@@ -559,6 +559,36 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls).toHaveLength(1);
   });
 
+  test('routes Platinum opencode(4096) HTTP through the in-box agent on 8000', async () => {
+    // opencode binds 127.0.0.1:4096 (loopback-only); Platinum's edge dials the
+    // guest eth0 IP, so :4096 is unreachable → 502. The proxy must resolve the
+    // agent's :8000 preview link (it bridges to localhost:4096 in-box). This is
+    // what makes `kortix sessions connect` / `opencode attach` work on Platinum.
+    // Distinct id so the module-level previewLinkCache can't collide with the
+    // PTY test above (which caches a non-preview.* URL for the same id:8000 key).
+    mockDbSandbox = { ...mockDbSandbox, provider: 'platinum' };
+    mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/platinum-oc-http/4096/session`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(200);
+    // opencode's loopback-only 4096 is unreachable from the Platinum edge, so the
+    // proxy must resolve the agent's :8000 preview link instead of :4096.
+    expect(mockResolvedPreviewPorts).toEqual([8000]);
+  });
+
+  test('keeps Daytona opencode(4096) HTTP on the direct port 4096', async () => {
+    // provider defaults to 'daytona' — reaches opencode's 4096 directly, no reroute.
+    mockFetchResponses = [{ status: 200, body: '{"sessions":[]}' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/daytona-oc-http/4096/session`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(200);
+    expect(mockResolvedPreviewPorts).toEqual([4096]);
+  });
+
   test('syncs latest project secrets before forwarding prompt_async', async () => {
     mockFetchResponses = [
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
@@ -899,6 +929,30 @@ describe('Preview proxy: forwarding', () => {
     });
     expect(mockFetchCalls[0].headers['traceparent']).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(mockFetchCalls[0].headers['x-request-id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
+  });
+
+  test('does not forward the preview session credential cookie upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: '__preview_session=eyJhbGciOiJIUzI1NiJ9.secret-token',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
+  });
+
+  test('does not forward arbitrary caller cookies upstream', async () => {
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: {
+        Cookie: 'tracking=abc; __preview_session=secret; prefs=dark',
+        Authorization: 'Bearer test',
+      },
+    });
+    expect(mockFetchCalls[0].headers['cookie']).toBeUndefined();
   });
 
   test('does NOT inject preview token when null', async () => {

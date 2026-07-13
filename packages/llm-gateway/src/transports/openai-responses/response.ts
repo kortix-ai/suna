@@ -227,11 +227,94 @@ function translateStream(upstream: Response): Response {
   });
 }
 
+async function collectStreamAsChat(upstream: Response): Promise<Response> {
+  const translated = translateStream(upstream);
+  const text = await translated.text();
+  const chunks = text
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .filter((payload) => payload && payload !== '[DONE]')
+    .flatMap((payload) => {
+      try {
+        return [JSON.parse(payload) as Json];
+      } catch {
+        return [];
+      }
+    });
+
+  let id: unknown = 'chatcmpl';
+  let model: unknown;
+  let content = '';
+  let finishReason: unknown = 'stop';
+  let usage: unknown;
+  let error: unknown;
+  const toolCalls = new Map<number, Json>();
+
+  for (const chunk of chunks) {
+    if (chunk.id) id = chunk.id;
+    if (chunk.model) model = chunk.model;
+    if (chunk.usage) usage = chunk.usage;
+    if (chunk.error) error = chunk.error;
+    const choice = asArray(chunk.choices)[0] as Json | undefined;
+    if (!choice) continue;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice.delta as Json | undefined;
+    if (typeof delta?.content === 'string') content += delta.content;
+    for (const rawTool of asArray(delta?.tool_calls)) {
+      const tool = rawTool as Json;
+      const index = Number(tool.index ?? 0);
+      const current = toolCalls.get(index) ?? {
+        id: tool.id,
+        type: 'function',
+        function: { name: undefined, arguments: '' },
+      };
+      if (tool.id) current.id = tool.id;
+      const currentFunction = current.function as Json;
+      const nextFunction = tool.function as Json | undefined;
+      if (nextFunction?.name) currentFunction.name = nextFunction.name;
+      if (typeof nextFunction?.arguments === 'string') {
+        currentFunction.arguments = `${currentFunction.arguments ?? ''}${nextFunction.arguments}`;
+      }
+      toolCalls.set(index, current);
+    }
+  }
+
+  if (error) {
+    return new Response(JSON.stringify({ error }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const message: Json = { role: 'assistant', content: content || null };
+  if (toolCalls.size) message.tool_calls = [...toolCalls.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, tool]) => tool);
+  return new Response(JSON.stringify({
+    id,
+    object: 'chat.completion',
+    created: nowSeconds(),
+    model,
+    choices: [{ index: 0, message, finish_reason: finishReason }],
+    usage,
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 export async function translateResponsesResponse(
   response: Response,
-  ctx: { streaming: boolean },
+  ctx: { streaming: boolean; descriptor?: { provider: string } },
 ): Promise<Response> {
   if (ctx.streaming) return translateStream(response);
+  if (
+    ctx.descriptor?.provider === 'openai-codex' ||
+    response.headers.get('content-type')?.includes('text/event-stream')
+  ) {
+    return collectStreamAsChat(response);
+  }
   const data = (await response.json()) as Json;
   return new Response(JSON.stringify(responsesJsonToChat(data)), {
     status: 200,

@@ -1,35 +1,26 @@
 import { expect, test } from 'bun:test';
 
-import { isRuntimeNotReadyError } from './error';
-
-test('matches the existing sandbox/opencode boot-race messages', () => {
-  expect(isRuntimeNotReadyError(new Error('Server URL not ready — sandbox is still loading'))).toBe(true);
-  expect(isRuntimeNotReadyError(new Error('opencode not ready'))).toBe(true);
+// "Sandbox still loading" is a transient INFO state, never an error. If it ever
+// reaches this global boundary it must render NOTHING — no logo, no card, no
+// message — and silently soft-reset until the runtime URL pins and the real page
+// renders in place. The only trace is a console.debug. This reverses the earlier
+// "push all handling to SandboxLoadingBoundary" stance, which proved insufficient
+// because the throw reaches this boundary from outside the session subtree.
+test('global boundary renders NOTHING for a transient runtime-not-ready state', async () => {
+  const source = await Bun.file(import.meta.dir + '/error.tsx').text();
+  expect(source).toContain('isRuntimeNotReadyError');
+  // Recognized → soft-reset via Next's reset(), and render nothing.
+  expect(source).toContain('reset()');
+  expect(source).toContain('return null;');
+  // Logged as info (console.debug), never surfaced or Sentry-reported as an error.
+  expect(source).toContain('console.debug');
+  // No visible UI whatsoever for the transient case.
+  expect(source).not.toContain('aria-label="Loading session"');
+  expect(source).not.toContain('Starting your session');
 });
 
-// Regression: the SDK's per-session runtime errors weren't recognized as
-// transient boot races, so they fell through to the hard crash screen instead
-// of the "Starting your session…" loader.
-test('matches SessionNotReadyError\'s message', () => {
-  expect(
-    isRuntimeNotReadyError(
-      new Error(
-        'Session runtime not ready — call `await session.ensureReady()` before calling `health`.',
-      ),
-    ),
-  ).toBe(true);
-});
-
-test('matches the "no auth token provider configured" message', () => {
-  expect(
-    isRuntimeNotReadyError(
-      new Error(
-        '[opencode-sdk] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
-      ),
-    ),
-  ).toBe(true);
-});
-
-test('does not match an unrelated error', () => {
-  expect(isRuntimeNotReadyError(new Error('Something else went wrong'))).toBe(false);
+test('a genuine crash still shows the recoverable error card', async () => {
+  const source = await Bun.file(import.meta.dir + '/error.tsx').text();
+  expect(source).toContain('autoAppErrorJsxTextSomethingWentWrong493afd7e');
+  expect(source).toContain('window.location.reload()');
 });

@@ -32,6 +32,14 @@ function humanize(id: string): string {
   return tail.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function codexName(id: string): string {
+  if (!id.startsWith('gpt-')) return humanize(id);
+  return id
+    .split('-')
+    .map((part, index) => index === 0 ? 'GPT' : index >= 2 ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part)
+    .join('-');
+}
+
 // Conservative context window for any model models.dev doesn't declare one for.
 // The gateway guarantees EVERY served model carries a `limit` — OpenCode does NOT
 // pull limits from models.dev for a custom provider, so this is the single source
@@ -136,7 +144,7 @@ export function gatewayCodexModels(): Record<string, GatewayModel> {
   for (const id of codexModelIds()) {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
-      name: `${model?.name ?? humanize(id)} (ChatGPT)`,
+      name: `${model?.name ?? codexName(id)} (ChatGPT)`,
       released: model?.released,
       release_date: model?.released,
       family: (model as { family?: string } | undefined)?.family,

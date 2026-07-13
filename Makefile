@@ -4,7 +4,7 @@ NPM := npm --prefix $(TESTS)
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
         lint typecheck unit integration api api-coverage contract smoke e2e visual a11y \
-        performance security security-dast pentest migration infra chaos mutation \
+        performance security security-dast pentest strix migration infra chaos mutation \
         coverage gates report portal-up portal-down clean
 
 help: ## Show this help
@@ -71,6 +71,8 @@ security-dast: ## Dynamic security scan + API fuzz (needs TARGET_URL)
 	$(NPM) run test:security:dast
 pentest: ## Enterprise black-box pentest probes (needs PENTEST_TARGET_URL)
 	$(NPM) run test:pentest
+strix: ## OSS agentic source/pentest scan (needs LLM_API_KEY)
+	bash $(TESTS)/security/strix/run.sh
 migration: ## Database migration tests (throwaway Postgres)
 	$(NPM) run test:migration
 infra: ## Infrastructure / IaC tests (tflint/checkov/kubeconform)

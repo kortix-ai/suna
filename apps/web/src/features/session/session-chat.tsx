@@ -1,10 +1,11 @@
 'use client';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { detectCommandFromText } from '@/features/session/detect-command';
 import { SandboxImage } from '@/features/session/sandbox-image';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
-import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
   AlertTriangle,
@@ -17,12 +18,10 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  GitFork,
   Globe,
   Image as ImageIcon,
   Layers,
   Loader2,
-  Pencil,
   Reply,
   Scissors,
   Search,
@@ -62,17 +61,8 @@ import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
-import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { uploadFile } from '@/features/files/api/opencode-files';
@@ -95,14 +85,13 @@ import {
   parseModelKey,
   useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
-import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import {
   ascendingId,
   rejectQuestion,
   replyToPermission,
   replyToQuestion,
   useAbortOpenCodeSession,
-  useForkSession,
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
@@ -114,20 +103,6 @@ import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useModelPricingLookup } from '@/lib/model-pricing';
 import { getClient } from '@/lib/opencode-sdk';
-import {
-  abandonOptimisticSend,
-  applyOptimisticAbort,
-  beginOptimisticSend,
-  classifySendError,
-  clearStartStash,
-  type KortixSendError,
-  readStartStash,
-  replayStartStash,
-  sendAndRecover,
-  usePermissionSelfHeal,
-  useQuestionSelfHeal,
-  writeForkDraft,
-} from '@kortix/sdk/react';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -152,9 +127,22 @@ import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import {
+  type KortixSendError,
+  abandonOptimisticSend,
+  applyOptimisticAbort,
+  beginOptimisticSend,
+  classifySendError,
+  clearStartStash,
+  readStartStash,
+  replayStartStash,
+  sendAndRecover,
+  usePermissionSelfHeal,
+  useProjectConfig,
+  useQuestionSelfHeal,
+} from '@kortix/sdk/react';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -209,30 +197,10 @@ export interface ReplyToContext {
 }
 
 // ============================================================================
-// Sub-Session / Fork Breadcrumb
+// Sub-Session Breadcrumb
 // ============================================================================
 
 // SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
-
-function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
-  const next: PromptPart[] = [];
-  const value =
-    text ??
-    parts.find((part): part is TextPart => isTextPart(part) && !part.synthetic && !part.ignored)
-      ?.text ??
-    '';
-  if (value) next.push({ type: 'text', text: value });
-  for (const part of parts) {
-    if (!isFilePart(part) || !part.url) continue;
-    next.push({
-      type: 'file',
-      mime: part.mime || 'application/octet-stream',
-      url: part.url,
-      filename: part.filename,
-    });
-  }
-  return next;
-}
 
 // ============================================================================
 // Optimistic answers cache
@@ -388,7 +356,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
   return (
     <Disclosure
       variant="outline"
-      className="overflow-hidden bg-card"
+      className="bg-card overflow-hidden"
       open={expanded}
       onOpenChange={setExpanded}
     >
@@ -396,7 +364,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <Button
           type="button"
           variant="popover"
-          className="flex h-auto w-full bg-card items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
+          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2.5 text-left"
         >
           <span className="text-foreground text-xs font-medium">Questions</span>
           <span className="text-muted-foreground text-xs tabular-nums">
@@ -805,6 +773,14 @@ interface SystemNotification {
   label: string;
   fields: [string, string][];
   body: string;
+}
+
+/** A message typed while the agent was busy, held client-side until a safe boundary. */
+interface QueuedMessage {
+  id: string;
+  text: string;
+  files?: AttachedFile[];
+  mentions?: TrackedMention[];
 }
 
 /** Parse all remaining XML blocks from text as system notifications. */
@@ -1246,293 +1222,9 @@ function NotificationTurn({ turn }: { turn: Turn }) {
 // Edit Part Dialog — inline editing for text parts
 // ============================================================================
 
-function EditPartDialog({
-  open,
-  onOpenChange,
-  initialText,
-  onSave,
-  loading,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  initialText: string;
-  onSave: (text: string) => void;
-  loading?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [text, setText] = useState(initialText);
-
-  // Reset text when dialog opens with new content
-  useEffect(() => {
-    if (open) setText(initialText);
-  }, [open, initialText]);
-
-  const handleSave = () => {
-    const trimmed = text.trim();
-    if (trimmed && trimmed !== initialText) {
-      onSave(trimmed);
-    } else {
-      onOpenChange(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 py-2">
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="h-full max-h-[50vh] min-h-[120px] resize-y text-sm"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleSave();
-              }
-            }}
-          />
-        </div>
-        <DialogFooter className="flex-shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={loading || !text.trim() || text.trim() === initialText}
-          >
-            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfirmForkDialog({
-  open,
-  onOpenChange,
-  onConfirm,
-  loading,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-  loading?: boolean;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis',
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-            Cancel
-          </Button>
-          <Button onClick={onConfirm} disabled={loading}>
-            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ============================================================================
-// Part Actions — edit & fork action for user message parts
-// ============================================================================
-
-function PartActions({
-  part,
-  isBusy,
-  onEditFork,
-  loading,
-  className,
-}: {
-  part: Part;
-  isBusy: boolean;
-  onEditFork: (newText: string) => void;
-  loading?: boolean;
-  className?: string;
-}) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [editOpen, setEditOpen] = useState(false);
-
-  // Only text parts are editable
-  const isEditable = isTextPart(part) && !!(part as TextPart).text?.trim();
-  const partText = isEditable ? (part as TextPart).text : '';
-
-  if (!isEditable) return null;
-
-  return (
-    <>
-      <div className={cn('flex items-center gap-0.5', className)}>
-        {/* Edit & fork button */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground/50"
-              onClick={() => setEditOpen(true)}
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Edit & fork dialog */}
-      <EditPartDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        initialText={partText}
-        onSave={(newText) => {
-          onEditFork(newText);
-          setEditOpen(false);
-        }}
-        loading={loading}
-      />
-    </>
-  );
-}
-
 // ============================================================================
 // User Message Row
 // ============================================================================
-
-/**
- * Detect if user message text matches a known command template.
- * Returns the command name + extracted args, or undefined if no match.
- * Works by splitting each command template at its first placeholder ($1 or $ARGUMENTS)
- * and checking if the message text starts with that prefix.
- */
-function detectCommandFromText(
-  rawText: string,
-  commands?: Command[],
-): { name: string; args?: string } | undefined {
-  if (!commands || !rawText) return undefined;
-
-  const trimmedRawText = rawText.trim();
-  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-  for (const cmd of commands) {
-    if (!cmd.template) continue;
-    const tpl = cmd.template.trim();
-
-    // For large templates (e.g. onboarding.md), skip regex entirely and do a
-    // fast exact-match: strip the trailing $ARGUMENTS placeholder and check
-    // if rawText matches the body. This handles commands whose template is the
-    // full file content (which opencode sends verbatim as the user message).
-    if (tpl.length > 2000) {
-      // Strip trailing $ARGUMENTS (with optional surrounding whitespace/newlines)
-      const tplBody = tpl.replace(/\s*\$ARGUMENTS\s*$/, '').trimEnd();
-      // Fast check: does rawText equal the template body exactly?
-      if (tplBody.length > 0 && trimmedRawText === tplBody) {
-        return { name: cmd.name, args: undefined };
-      }
-      // Also handle the case where $ARGUMENTS is at the end and the user
-      // provided some text after the template body.
-      if (tplBody.length > 0 && trimmedRawText.startsWith(tplBody)) {
-        const after = trimmedRawText.slice(tplBody.length).trim();
-        return {
-          name: cmd.name,
-          args: after.length > 0 && after.length < 200 ? after : undefined,
-        };
-      }
-      continue;
-    }
-
-    // Find the first placeholder position ($1, $2, ..., $ARGUMENTS)
-    const placeholderMatch = tpl.match(/\$(\d+|\bARGUMENTS\b)/);
-    // Use the text before the first placeholder as the prefix to match
-    const prefix = placeholderMatch
-      ? tpl.slice(0, placeholderMatch.index).trimEnd()
-      : tpl.trimEnd();
-
-    // Require a meaningful prefix (at least 20 chars) to avoid false positives
-    if (prefix.length < 20) continue;
-
-    if (trimmedRawText.startsWith(prefix)) {
-      // Extract the user's arguments: text after the template prefix (approximate)
-      // For templates ending with the placeholder, the args are what comes after the prefix
-      let args: string | undefined;
-      if (placeholderMatch) {
-        const afterPrefix = trimmedRawText.slice(prefix.length).trim();
-        // The args are at the end; try to extract the last meaningful section
-        const lastNewlineBlock = afterPrefix.split('\n\n').pop()?.trim();
-        if (lastNewlineBlock && lastNewlineBlock.length < 200) {
-          args = lastNewlineBlock;
-        }
-      }
-      return { name: cmd.name, args };
-    }
-
-    // Fallback: robust full-template match where placeholders are wildcards.
-    // This handles commands whose template begins with a placeholder.
-    const placeholderRegex = /\$(\d+|\bARGUMENTS\b)/g;
-    const placeholderOrder: string[] = [];
-    let regexSource = '^';
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = placeholderRegex.exec(tpl)) !== null) {
-      regexSource += escapeRegExp(tpl.slice(lastIndex, match.index));
-      regexSource += '([\\s\\S]*?)';
-      placeholderOrder.push(match[1]);
-      lastIndex = match.index + match[0].length;
-    }
-
-    regexSource += escapeRegExp(tpl.slice(lastIndex));
-    regexSource += '$';
-
-    let fullTemplateMatch: RegExpMatchArray | null;
-    try {
-      fullTemplateMatch = trimmedRawText.match(new RegExp(regexSource));
-    } catch {
-      // Regex too large or invalid — skip this command template
-      continue;
-    }
-    if (!fullTemplateMatch) continue;
-
-    let args: string | undefined;
-    const captures = fullTemplateMatch.slice(1).map((value) => value?.trim() ?? '');
-    const argumentsIndex = placeholderOrder.findIndex((name) => name.toUpperCase() === 'ARGUMENTS');
-    const bestCapture =
-      (argumentsIndex >= 0 ? captures[argumentsIndex] : undefined) ||
-      captures.find((value) => value.length > 0);
-    if (bestCapture && bestCapture.length < 200) {
-      args = bestCapture;
-    }
-
-    return { name: cmd.name, args };
-  }
-  return undefined;
-}
 
 function UserMessageRow({
   message,
@@ -2489,10 +2181,6 @@ interface SessionTurnProps {
   isBusy: boolean;
   /** Whether this turn contains a compaction */
   isCompaction?: boolean;
-  /** Fork the session at a user message (copies messages before this point) */
-  onFork: (userMessageId: string) => Promise<void>;
-  /** Fork the session at a user message and prefill with edited text */
-  onEditFork: (userMessageId: string, newText: string) => Promise<void>;
   /** Providers data for the Connect Provider dialog */
   providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
@@ -2516,8 +2204,6 @@ function SessionTurn({
   isFirstTurn,
   isBusy,
   isCompaction,
-  onFork,
-  onEditFork,
   providers,
   commandMessages,
   commands,
@@ -2528,7 +2214,6 @@ function SessionTurn({
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
-  const [editForkLoading, setEditForkLoading] = useState(false);
   const pricingLookup = useModelPricingLookup(providers);
 
   // Derived state from shared helpers
@@ -3066,7 +2751,7 @@ function SessionTurn({
   //   6. Response section (ONLY when NOT working) — the extracted last text part
   //   7. Error (when steps collapsed)
   //   8. Question prompt
-  //   9. Action bar (copy, fork, revert)
+  //   9. Action bar (copy)
   //
   // The response (last text part) is NEVER rendered twice:
   //   - While working: it renders INSIDE steps as a regular text part (hideResponsePart=false)
@@ -3151,43 +2836,6 @@ function SessionTurn({
                 </TooltipTrigger>
                 <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
               </Tooltip>
-              {(() => {
-                const userTextPart = turn.userMessage.parts.find(
-                  (p) =>
-                    isTextPart(p) &&
-                    !(p as TextPart).synthetic &&
-                    !(p as any).ignored &&
-                    !!stripSystemPtyText((p as TextPart).text || ''),
-                );
-                if (!userTextPart) return null;
-                return (
-                  <PartActions
-                    part={userTextPart}
-                    isBusy={isBusy}
-                    onEditFork={(newText) => onEditFork(turn.userMessage.info.id, newText)}
-                    loading={editForkLoading}
-                  />
-                );
-              })()}
-              {/* Fork button — on user messages */}
-              {!isBusy && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => onFork(turn.userMessage.info.id)}
-                    >
-                      <GitFork className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {tHardcodedUi.raw(
-                      'componentsSessionSessionChat.line3395JsxTextForkToNewSession',
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
           )}
         </div>
@@ -3384,7 +3032,7 @@ function SessionTurn({
                 // the dedicated response section to avoid duplicate output.
                 if (!hasSteps) return null;
                 return (
-                  <div key={part.id} className="text-sm">
+                  <div key={part.id} className="min-w-0 text-sm">
                     <ThrottledMarkdown content={part.text} isStreaming={working} />
                   </div>
                 );
@@ -3418,9 +3066,7 @@ function SessionTurn({
                   // so they appear exactly where the user answered them.
                   const answeredPart = answeredQuestionPartsById.get(part.id);
                   if (answeredPart) {
-                    return (
-                      <AnsweredQuestionCard key={part.id} part={answeredPart} />
-                    );
+                    return <AnsweredQuestionCard key={part.id} part={answeredPart} />;
                   }
                   // Unanswered/dismissed questions: don't render in steps;
                   // dismissed ones show via the turnError banner.
@@ -3479,7 +3125,7 @@ function SessionTurn({
       {/* Inline content: text and answered questions rendered in natural order.
 			    Works both during streaming and after completion. */}
       {working && !hasSteps && !shouldUseInlineContent && response && (
-        <div className="text-sm">
+        <div className="min-w-0 text-sm">
           <ThrottledMarkdown content={response} isStreaming />
         </div>
       )}
@@ -3501,7 +3147,7 @@ function SessionTurn({
                 const isStreaming = idx === lastTextIdx;
                 const text = isStreaming ? item.part.text! : item.part.text!.trim();
                 return (
-                  <div key={item.id} className="text-sm">
+                  <div key={item.id} className="min-w-0 text-sm">
                     {isStreaming ? (
                       <ThrottledMarkdown content={text} isStreaming />
                     ) : (
@@ -3599,7 +3245,7 @@ function SessionTurn({
 
       {/* Question prompt — now rendered inside the chat input card (questionSlot) */}
 
-      {/* ── Action bar (copy + duration/cost only — fork & revert live on user messages) ── */}
+      {/* ── Action bar (copy + duration/cost only) ── */}
       {!working && response && (
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
           {/* Duration & cost */}
@@ -3802,14 +3448,21 @@ export function SessionChat({
   );
   const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useOpenCodeCommands();
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
   const { data: config } = useOpenCodeConfig();
+  const projectConfig = useProjectConfig(projectId);
   const abortSession = useAbortOpenCodeSession();
-  const forkSession = useForkSession();
 
   // ---- Unified model/agent/variant state (1:1 port of SolidJS local.tsx) ----
-  const local = useOpenCodeLocal({ agents, providers, config, sessionId, boundAgentName });
+  const local = useOpenCodeLocal({
+    agents,
+    providers,
+    config,
+    sessionId,
+    boundAgentName,
+    defaultAgentName: projectConfig?.open_code_default_agent,
+  });
   // Session agent-lock is DISABLED (mirrors the backend KORTIX_ENFORCE_SESSION_AGENT_LOCK,
   // default off): the picker still defaults to the session's agent (seeded via
   // useOpenCodeLocal's boundAgentName) but stays switchable — sends use the current
@@ -3858,12 +3511,16 @@ export function SessionChat({
   const [pollingActive, setPollingActive] = useState(false);
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
   const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
-  const [confirmForkMessageId, setConfirmForkMessageId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<{
     name: string;
     description?: string;
   } | null>(null);
   const [commandError, setCommandError] = useState<KortixSendError | null>(null);
+  const [failedStartDraft, setFailedStartDraft] = useState<{
+    text: string;
+    files: AttachedFile[];
+    id: number;
+  } | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
@@ -3994,14 +3651,21 @@ export function SessionChat({
           },
         };
       },
-      onFailure: (_stash, _err, classified) => {
+      onFailure: (stash, _err, classified) => {
         setPendingSendInFlight(false);
         setPendingSendMessageId(null);
         setOptimisticPrompt(null);
         setPollingActive(false);
         setCommandError(classified);
         usePendingFilesStore.getState().setPendingFiles(filesToRestoreOnFailure);
-        pendingPromptHandled.current = false;
+        // replayStartStash restores durable sessionStorage itself. Rehydrate the
+        // visible composer too, so the user can retry immediately without a
+        // reload and without losing either the prompt or local File objects.
+        setFailedStartDraft({
+          text: stash.prompt,
+          files: filesToRestoreOnFailure,
+          id: Date.now(),
+        });
       },
     });
 
@@ -4215,9 +3879,34 @@ export function SessionChat({
     } as any);
   }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
-  // No client-side message queue: sends go straight to the server, which
-  // serializes concurrent prompt_async calls per-session (so sending while the
-  // agent is busy is safe). See SessionChatInput.handleSubmit → onSend.
+  // Client-side message queue — mirrors Claude Code / Codex: a message typed
+  // while the agent is mid-turn is held here instead of being sent straight
+  // through (the OpenCode server would happily accept it immediately, but
+  // interleaving it into a live turn reads badly). It's flushed one at a time
+  // at the next safe boundary: either a tool call finishing, or the turn
+  // going idle. See SessionChatInput.handleSubmit → onQueueMessage, and the
+  // drain effect below.
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
+  useEffect(() => {
+    queuedMessagesRef.current = queuedMessages;
+  }, [queuedMessages]);
+  // Local, never-sent-to-server counter — separate from `ascendingId`, whose
+  // prefix union ('msg' | 'prt') is meaningful for server-compatible message
+  // ordering and shouldn't grow a prefix for a purely client-side draft id.
+  const queuedIdCounterRef = useRef(0);
+
+  const handleQueueMessage = useCallback(
+    (text: string, files?: AttachedFile[], mentions?: TrackedMention[]) => {
+      const id = `queued-${++queuedIdCounterRef.current}`;
+      setQueuedMessages((prev) => [...prev, { id, text, files, mentions }]);
+    },
+    [],
+  );
+
+  const handleRemoveQueuedMessage = useCallback((id: string) => {
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+  }, []);
 
   // Stop polling when session goes idle (via SSE or polling fallback).
   // Grace period: if we sent a message recently (within 5s), don't stop polling
@@ -4627,53 +4316,18 @@ export function SessionChat({
   // ============================================================================
 
   // ============================================================================
-  // Fork handlers
+  // TODO(session-rewind): Bring back an in-place "edit past message + rewind"
+  // flow instead of the removed edit-fork-prompt feature. The old behaviour
+  // created a native fork of the session at a message and reopened the new
+  // session with the edited prompt restored in the composer — that UX was the
+  // wrong model. What we actually want is a proper rewind/rollback on the SAME
+  // session (edit a prior user message, roll the session back to that point,
+  // and re-run from there), which opencode supports natively. Removed here so
+  // it can be rebuilt correctly. The old surface spanned: useForkSession()
+  // (SDK), the fork-draft stash (writeForkDraft/readForkDraft/clearForkDraft),
+  // the Fork / Edit-fork buttons + Confirm/Edit dialogs on user messages, and
+  // the composer draft-restore in session-chat-input.tsx.
   // ============================================================================
-
-  const handleFork = useCallback(
-    async (userMessageId: string) => {
-      setConfirmForkMessageId(null);
-      const msg = messages?.find((item) => item.info.id === userMessageId);
-      const forkedSession = await forkSession.mutateAsync({
-        sessionId,
-        messageId: userMessageId,
-        directory: session?.directory,
-        workspace: session?.workspaceID,
-      });
-      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts));
-
-      const title = forkedSession.title || 'Forked session';
-      openTabAndNavigate({
-        id: forkedSession.id,
-        title,
-        type: 'session',
-        href: `/sessions/${forkedSession.id}`,
-      });
-    },
-    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
-  );
-
-  const handleEditFork = useCallback(
-    async (userMessageId: string, newText: string) => {
-      const msg = messages?.find((item) => item.info.id === userMessageId);
-      const forkedSession = await forkSession.mutateAsync({
-        sessionId,
-        messageId: userMessageId,
-        directory: session?.directory,
-        workspace: session?.workspaceID,
-      });
-      if (msg) writeForkDraft(forkedSession.id, buildForkPrompt(msg.parts, newText));
-
-      const title = forkedSession.title || 'Forked session';
-      openTabAndNavigate({
-        id: forkedSession.id,
-        title,
-        type: 'session',
-        href: `/sessions/${forkedSession.id}`,
-      });
-    },
-    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
-  );
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4952,6 +4606,57 @@ export function SessionChat({
     return () => unregisterSender(sessionId);
   }, [sessionId, handleSend, registerSender, unregisterSender]);
 
+  // Drain the ENTIRE queue at once at the next safe boundary — a tool call
+  // finishing (status flips to 'completed' or 'error'), or the turn going
+  // idle (covers the case where a message was queued during what turns out
+  // to be the LAST tool call, with nothing after it to hit). Everything
+  // queued goes out together as soon as one boundary is hit; it does NOT
+  // trickle out one message per subsequent boundary. Tracks tool completions
+  // it's already reacted to in a ref so re-renders don't re-fire.
+  const seenCompletedToolIdsRef = useRef<Set<string>>(new Set());
+  const wasBusyForDrainRef = useRef(isBusy);
+  useEffect(() => {
+    let hitToolBoundary = false;
+    if (messages) {
+      const seen = seenCompletedToolIdsRef.current;
+      for (const m of messages) {
+        if (m.info.role !== 'assistant') continue;
+        for (const part of m.parts) {
+          if (part.type !== 'tool') continue;
+          const status = (part as ToolPart).state?.status;
+          if ((status === 'completed' || status === 'error') && !seen.has(part.id)) {
+            seen.add(part.id);
+            hitToolBoundary = true;
+          }
+        }
+      }
+    }
+
+    const wasBusy = wasBusyForDrainRef.current;
+    wasBusyForDrainRef.current = isBusy;
+    const hitIdleBoundary = wasBusy && !isBusy;
+
+    if (!hitToolBoundary && !hitIdleBoundary) return;
+
+    const queue = queuedMessagesRef.current;
+    if (queue.length === 0) return;
+
+    setQueuedMessages([]);
+    void (async () => {
+      const failed: QueuedMessage[] = [];
+      for (const item of queue) {
+        try {
+          await handleSend(item.text, item.files, item.mentions);
+        } catch {
+          failed.push(item);
+        }
+      }
+      // Send failures are already surfaced via commandError — put any back
+      // so the user doesn't silently lose the queued draft.
+      if (failed.length > 0) setQueuedMessages((cur) => [...failed, ...cur]);
+    })();
+  }, [messages, isBusy, handleSend]);
+
   // NOTE: no client-side "auto-continue after approval" here — resuming the
   // agent when nobody was holding the gated call is the RESOLVE ENDPOINT's job
   // (server-side continueSession delivery in r7.ts), so it works with zero
@@ -5168,7 +4873,6 @@ export function SessionChat({
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
-      variant: 'thread' as const,
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
         if (projectRoute) {
@@ -5471,10 +5175,6 @@ export function SessionChat({
                           isFirstTurn={turnIndex === 0}
                           isBusy={isBusy}
                           isCompaction={hasCompaction}
-                          onFork={async (userMessageId) => {
-                            setConfirmForkMessageId(userMessageId);
-                          }}
-                          onEditFork={handleEditFork}
                           providers={providers}
                           commandMessages={commandMessagesRef.current}
                           commands={commands}
@@ -5557,8 +5257,26 @@ export function SessionChat({
         <SessionChatInput
           onSend={async (text, files, mentions) => {
             await handleSend(text, files, mentions);
+            if (failedStartDraft) {
+              clearStartStash(sessionId);
+              usePendingFilesStore.getState().consumePendingFiles();
+              setFailedStartDraft(null);
+            }
           }}
+          prefill={
+            failedStartDraft
+              ? {
+                  text: failedStartDraft.text,
+                  files: failedStartDraft.files,
+                  id: failedStartDraft.id,
+                  mode: 'merge',
+                }
+              : null
+          }
           isBusy={isBusy}
+          queuedMessages={queuedMessages}
+          onQueueMessage={handleQueueMessage}
+          onRemoveQueuedMessage={handleRemoveQueuedMessage}
           onStop={handleStop}
           escCount={escCount}
           agents={local.agent.list}
@@ -5594,6 +5312,7 @@ export function SessionChat({
           onFileSearch={handleFileSearch}
           providers={providers}
           modelRequired
+          modelsLoading={providersLoading}
           threadContext={threadContext}
           onContextClick={() => setContextModalOpen(true)}
           replyTo={replyTo}
@@ -5653,17 +5372,6 @@ export function SessionChat({
           }
         />
       )}
-      <ConfirmForkDialog
-        open={!!confirmForkMessageId}
-        onOpenChange={(open) => {
-          if (!open) setConfirmForkMessageId(null);
-        }}
-        onConfirm={() => {
-          if (!confirmForkMessageId) return;
-          void handleFork(confirmForkMessageId);
-        }}
-        loading={forkSession.isPending}
-      />
     </div>
   );
 }

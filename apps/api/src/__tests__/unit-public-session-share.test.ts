@@ -17,6 +17,11 @@ mock.module('../shared/db', () => ({
   db: {
     select: () => ({
       from: () => ({
+        leftJoin: () => ({
+          where: () => ({
+            limit: async () => shareRow ? [shareRow] : [],
+          }),
+        }),
         innerJoin: () => ({
           where: () => ({
             limit: async () => shareRow ? [shareRow] : [],
@@ -140,7 +145,7 @@ describe('public session preview shares', () => {
     expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
   });
 
-  test('proxies file share asset requests under the same public prefix', async () => {
+  test('rejects file share subpaths instead of exposing the static file server', async () => {
     shareRow = {
       ...shareRow,
       resourceType: 'file',
@@ -150,8 +155,36 @@ describe('public session preview shares', () => {
     };
 
     const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/abs/workspace/app/style.css`);
+    expect(res.status).toBe(403);
+    expect(fetchUrls.length).toBe(0);
+  });
+
+  test('does not let caller query params override the shared file path', async () => {
+    shareRow = {
+      ...shareRow,
+      resourceType: 'file',
+      label: 'index.html',
+      port: null,
+      filePath: '/workspace/app/index.html',
+    };
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file/open?path=/workspace/secret.env`);
     expect(res.status).toBe(200);
-    expect(fetchUrls.at(-1)).toBe('https://preview.test/abs/workspace/app/style.css');
+    expect(fetchUrls.at(-1)).toBe('https://preview.test/open?path=%2Fworkspace%2Fapp%2Findex.html');
+  });
+
+  test('rejects static file server port as a preview share target', async () => {
+    shareRow = {
+      ...shareRow,
+      resourceType: 'preview',
+      port: 3211,
+    };
+
+    const meta = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
+    expect(meta.status).toBe(403);
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3211/`);
+    expect(res.status).toBe(403);
   });
 
   test('keeps file shares read-only', async () => {

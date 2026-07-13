@@ -105,7 +105,7 @@ export async function runSessionsPending(argv: string[]): Promise<number> {
   const target = parseTarget(rest, PENDING_HELP);
   if (!target) return 2;
 
-  const resolved = await loadSessionForChat(target.sessionId, target.opts);
+  const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions pending');
   if (!resolved) return 1;
   const pending = await pendingFor(resolved);
   if (!pending) return 1;
@@ -172,7 +172,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
   const target = parseTarget(rest, APPROVE_HELP);
   if (!target) return 2;
 
-  const resolved = await loadSessionForChat(target.sessionId, target.opts);
+  const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions approve');
   if (!resolved) return 1;
 
   let requestId = target.requestId;
@@ -237,7 +237,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
     return 2;
   }
 
-  const resolved = await loadSessionForChat(target.sessionId, target.opts);
+  const resolved = await loadSessionForChat(target.sessionId, target.opts, 'sessions answer');
   if (!resolved) return 1;
 
   let request: OpencodeQuestionRequest | undefined;

@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -38,15 +37,18 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ModelSelector } from '@/features/session/model-selector';
-import { flattenModels } from '@/features/session/session-chat-input';
+import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
+import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import {
+  type ChannelBinding,
   useChannelBindings,
   useUpdateChannelBinding,
-  type ChannelBinding,
 } from '@/hooks/channels/use-channel-bindings';
 import {
+  type EmailInstallation,
+  type SlackInstallation,
   useConnectSlack,
   useDisconnectEmail,
   useDisconnectSlack,
@@ -54,21 +56,24 @@ import {
   useSlackInstall,
   useSlackManifest,
   useSlackMode,
-  type EmailInstallation,
-  type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import {
+  useDisconnectTeams,
+  useTeamsInstall,
+  useTeamsMode,
+} from '@/hooks/channels/use-teams-installations';
 import { modelKeyToWire, wireToModelKey } from '@/hooks/opencode/use-model-store';
 import {
-  getProject,
-  getProjectDetail,
-  listProjectAccess,
-  type ProjectConfigSummary,
-} from '@kortix/sdk/projects-client';
+  type Agent,
+  useOpenCodeProviders,
+  useVisibleAgents,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
+import { useQuery } from '@tanstack/react-query';
 import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -76,6 +81,12 @@ import { useMemo, useState } from 'react';
 
 /** Reserved slug for the built-in Email channel (see api connectors.ts). */
 const EMAIL_CONNECTOR_SLUG = 'kortix_email';
+const CHANNEL_LOADING_ROWS = ['channel-loading-1', 'channel-loading-2', 'channel-loading-3'];
+const SLACK_MANIFEST_STEPS = [
+  'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
+  'On the next screen, click Install to Workspace and approve.',
+  'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
+];
 
 export function ChannelsView({ projectId }: { projectId: string | null }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -93,7 +104,10 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
     EMAIL_CONNECTOR_SLUG,
   );
   const loading =
-    loadingInstall || loadingMode || projectQuery.isLoading || (emailChannelEnabled && loadingEmail);
+    loadingInstall ||
+    loadingMode ||
+    projectQuery.isLoading ||
+    (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE).allowed === true;
@@ -125,8 +139,8 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
           </InfoBanner>
         ) : loading ? (
           <div className="space-y-1">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 rounded-md" />
+            {CHANNEL_LOADING_ROWS.map((key) => (
+              <Skeleton key={key} className="h-10 rounded-md" />
             ))}
           </div>
         ) : !oauthInstallUrl && !install ? (
@@ -181,6 +195,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
                     canWrite={canWrite}
                   />
                 ) : null}
+                <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
               </TableBody>
             </Table>
 
@@ -205,9 +220,11 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
               <BringYourOwnPanel projectId={projectId} />
             ) : null}
 
-            {install ? (
-              <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
-            ) : null}
+            <div className="border-border/60 border-t pt-6">
+              <TeamsChannelPanel projectId={projectId} />
+            </div>
+
+            {install ? <ChannelBindingsSection projectId={projectId} canWrite={canWrite} /> : null}
           </>
         )}
       </div>
@@ -245,8 +262,8 @@ function ChannelBindingsSection({
     <div className="space-y-2">
       <Label>Channel bindings</Label>
       <p className="text-muted-foreground text-xs">
-        Which agent, model, and join policy each connected channel uses. A channel with
-        no override follows the project default.
+        Which agent, model, and join policy each connected channel uses. A channel with no override
+        follows the project default.
       </p>
       <Table>
         <TableHeader>
@@ -273,14 +290,39 @@ function ChannelBindingsSection({
   );
 }
 
-const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> = [
-  { value: 'project_open', label: 'Project members can join' },
-  { value: 'owner_only', label: 'Owner only' },
-  { value: 'owner_approval', label: 'Owner approval' },
-];
+const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
+  [
+    { value: 'project_open', label: 'Project members can join' },
+    { value: 'owner_only', label: 'Owner only' },
+    { value: 'owner_approval', label: 'Owner approval' },
+  ];
 
-/** null = "project default" — the picker's own reset option. */
-const AGENT_DEFAULT_VALUE = '__project_default__';
+/** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
+function agentDefaultLabel(projectDefaultAgent: string | null): string {
+  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
+}
+
+/** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
+function stripOpencodeNamespace(model: string): string {
+  return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
+}
+
+/**
+ * Honest one-line summary of what a channel's model binding will actually
+ * run — including the case an explicit pin silently degrades because it's no
+ * longer servable (BYOK key disconnected, managed model retired), which
+ * `effectiveModel.source` surfaces as something other than `'explicit'`.
+ */
+function describeEffectiveModel(binding: ChannelBinding): string {
+  if (binding.opencodeModel) {
+    const label = stripOpencodeNamespace(binding.opencodeModel);
+    return binding.effectiveModel.source === 'explicit'
+      ? label
+      : `${label} (unavailable — using default)`;
+  }
+  const resolved = binding.effectiveModel.model;
+  return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
+}
 
 function ChannelBindingTableRow({
   projectId,
@@ -303,23 +345,42 @@ function ChannelBindingTableRow({
   // (the PATCH route asserts project.connector.write and would 403).
   const canManage = Boolean(accessQuery.data?.can_manage) && canWrite;
 
-  const detailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId),
-    staleTime: 10_000,
-  });
-  const config: ProjectConfigSummary | undefined = detailQuery.data?.config;
-  const declaredAgents = useMemo(() => {
-    const names = (config?.agents ?? []).map((a) => a.name);
-    // Keep a currently-bound name in the list even if it was since renamed/removed,
-    // so the Select never renders a value it can't display.
-    if (binding.agentName && !names.includes(binding.agentName)) names.push(binding.agentName);
-    return names;
-  }, [config, binding.agentName]);
+  // Same agent source as the chat input / schedules pickers (spec: "use the
+  // same component everywhere"). `projectId` does a server-side fetch of the
+  // declared manifest agents — no live sandbox/session required, so it works
+  // on a settings page with nothing running.
+  const visibleAgents = useVisibleAgents({ projectId });
+  const agentSelectorAgents = useMemo<Agent[]>(() => {
+    const defaultEntry = {
+      name: agentDefaultLabel(projectDefaultAgent),
+      description: "Falls back to the project's configured default agent.",
+      mode: 'primary',
+      permission: {},
+      options: {},
+    } as unknown as Agent;
+    const names = new Set(visibleAgents.map((a) => a.name));
+    // Keep a currently-bound name in the list even if it was since renamed/
+    // removed, so the picker never renders a value it can't display.
+    const missingCurrent =
+      binding.agentName && !names.has(binding.agentName)
+        ? [
+            {
+              name: binding.agentName,
+              mode: 'primary',
+              permission: {},
+              options: {},
+            } as unknown as Agent,
+          ]
+        : [];
+    return [defaultEntry, ...visibleAgents, ...missingCurrent];
+  }, [visibleAgents, projectDefaultAgent, binding.agentName]);
+  const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
 
   const { data: providers } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = binding.opencodeModel ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel)) : null;
+  const selectedModel = binding.opencodeModel
+    ? wireToModelKey(stripOpencodeNamespace(binding.opencodeModel))
+    : null;
 
   const update = useUpdateChannelBinding();
 
@@ -332,59 +393,58 @@ function ChannelBindingTableRow({
         </div>
       </TableCell>
       <TableCell>
-        <Select
-          value={binding.agentName ?? AGENT_DEFAULT_VALUE}
-          onValueChange={(v) =>
-            update.mutate(
-              { projectId, bindingId: binding.bindingId, agentName: v === AGENT_DEFAULT_VALUE ? null : v },
-              {
-                onSuccess: () => successToast('Channel agent updated'),
-                onError: (e) => errorToastFallback(e),
-              },
-            )
-          }
-          disabled={!canManage || update.isPending}
-        >
-          <SelectTrigger className="w-44" variant="popover">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={AGENT_DEFAULT_VALUE}>
-              Project default{projectDefaultAgent ? ` (${projectDefaultAgent})` : ''}
-            </SelectItem>
-            {declaredAgents.map((name) => (
-              <SelectItem key={name} value={name}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="bg-card rounded-2xl border px-2 py-1 inline-flex">
+          <AgentSelector
+            agents={agentSelectorAgents}
+            selectedAgent={selectedAgentValue}
+            onSelect={(v) =>
+              update.mutate(
+                {
+                  projectId,
+                  bindingId: binding.bindingId,
+                  agentName: !v || v === agentDefaultLabel(projectDefaultAgent) ? null : v,
+                },
+                {
+                  onSuccess: () => successToast('Channel agent updated'),
+                  onError: (e) => errorToastFallback(e),
+                },
+              )
+            }
+            disabled={!canManage || update.isPending}
+          />
+        </div>
       </TableCell>
       <TableCell>
         {canManage ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <ModelSelector
-              models={models}
-              providers={providers}
-              selectedModel={selectedModel}
-              onSelect={(m) =>
-                update.mutate(
-                  {
-                    projectId,
-                    bindingId: binding.bindingId,
-                    opencodeModel: m ? modelKeyToWire(m) : null,
-                  },
-                  {
-                    onSuccess: () => successToast('Channel model updated'),
-                    onError: (e) => errorToastFallback(e),
-                  },
-                )
-              }
-            />
+          <div className="flex flex-col gap-1">
+            <div className="bg-card rounded-2xl border px-2 py-1 inline-flex w-fit">
+              <ModelSelector
+                models={models}
+                providers={providers}
+                selectedModel={selectedModel}
+                unsetLabel="Project default"
+                onSelect={(m) =>
+                  update.mutate(
+                    {
+                      projectId,
+                      bindingId: binding.bindingId,
+                      opencodeModel: m ? modelKeyToWire(m) : null,
+                    },
+                    {
+                      onSuccess: () => successToast('Channel model updated'),
+                      onError: (e) => errorToastFallback(e),
+                    },
+                  )
+                }
+              />
+            </div>
+            {!binding.opencodeModel ? (
+              <p className="text-muted-foreground/70 text-xs">{describeEffectiveModel(binding)}</p>
+            ) : null}
           </div>
         ) : (
           <Badge variant="outline" size="sm" className="font-mono">
-            {binding.opencodeModel ?? 'Auto'}
+            {describeEffectiveModel(binding)}
           </Badge>
         )}
       </TableCell>
@@ -420,11 +480,6 @@ function ChannelBindingTableRow({
       </TableCell>
     </TableRow>
   );
-}
-
-/** Strip opencode's `kortix/` ref namespace so the bare wire id reaches wireToModelKey. */
-function stripOpencodeNamespace(model: string): string {
-  return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
 }
 
 function errorToastFallback(error: unknown) {
@@ -507,6 +562,95 @@ function SlackChannelRow({
         ) : oauthInstallUrl ? (
           <Button size="sm" variant="secondary" asChild>
             <Link href={oauthInstallUrl} target="_blank" rel="noopener noreferrer">
+              Install
+            </Link>
+          </Button>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
+  const { data: install } = useTeamsInstall(projectId);
+  const { data: mode } = useTeamsMode(projectId);
+  const disconnect = useDisconnectTeams();
+  const [confirming, setConfirming] = useState(false);
+
+  if (mode && !mode.enabled) return null;
+
+  const connected = Boolean(install);
+  const installUrl = mode?.orgConsentUrl ?? null;
+  const deepLinkUrl = install?.orgInstalled ? (mode?.deepLinkUrl ?? null) : null;
+
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell>
+        <div className="flex items-center gap-2.5">
+          <Icon.MicrosoftTeams className="size-5 shrink-0" />
+          <span className="text-sm font-medium">Microsoft Teams</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {connected ? (
+          <Badge variant="success" size="sm">
+            Connected
+          </Badge>
+        ) : (
+          <Badge variant="outline" size="sm" className="text-muted-foreground">
+            Not connected
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-muted-foreground text-sm">
+        {connected ? (install?.teamName ?? install?.tenantId ?? '—') : '—'}
+      </TableCell>
+      <TableCell>
+        {!canWrite ? null : connected ? (
+          confirming ? (
+            <div className="flex items-center justify-end gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(projectId, {
+                    onSuccess: () => setConfirming(false),
+                  })
+                }
+              >
+                {disconnect.isPending ? (
+                  <Loading className="size-3.5 shrink-0 animate-spin" />
+                ) : null}
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-1">
+              {deepLinkUrl ? (
+                <Button size="sm" variant="secondary" asChild>
+                  <Link href={deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                    Add to Teams
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setConfirming(true)}
+              >
+                <X className="size-3.5 shrink-0" />
+                Disconnect
+              </Button>
+            </div>
+          )
+        ) : installUrl ? (
+          <Button size="sm" variant="secondary" asChild>
+            <Link href={installUrl} target="_blank" rel="noopener noreferrer">
               Install
             </Link>
           </Button>
@@ -740,12 +884,8 @@ function BringYourOwnPanel({ projectId, inline = false }: { projectId: string; i
         </div>
 
         <ol className="text-muted-foreground list-decimal space-y-1.5 pl-5 text-sm">
-          {[
-            'Click Open Slack, choose "From a manifest", paste the JSON, confirm.',
-            'On the next screen, click Install to Workspace and approve.',
-            'Copy the Bot User OAuth Token (xoxb-…) and Signing Secret.',
-          ].map((line, i) => (
-            <li key={i}>{line}</li>
+          {SLACK_MANIFEST_STEPS.map((line) => (
+            <li key={line}>{line}</li>
           ))}
         </ol>
 

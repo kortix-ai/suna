@@ -2,7 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { sessionStartKey, startProjectSession } from '../platform/projects-client';
+import { sessionStartKey, startProjectSession } from '../core/rest/projects-client';
 
 /**
  * Begin the session runtime boot DURING the route transition (before the session

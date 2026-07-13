@@ -99,7 +99,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const lastScrollY = useRef(0);
   const isMobile = useIsMobile();
 
-  const filteredNavLinks = siteConfig.nav.links;
+  // Use-cases section is WIP — hidden until NEXT_PUBLIC_USE_CASES_ENABLED is set.
+  const filteredNavLinks = siteConfig.nav.links.filter(
+    (link) =>
+      process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'true' || link.href !== '/use-cases',
+  );
   const { formattedStars, loading: starsLoading } = useGitHubStars('kortix-ai', 'kortix');
   const openDemo = useRequestDemo();
 
@@ -346,7 +350,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </Button>
             )}
 
-            <Button variant="ghost" className="hidden sm:inline-flex" onClick={openDemo}>
+            <Button variant="ghost" className="hidden sm:inline-flex" onClick={() => openDemo()}>
               {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
             </Button>
             {user ? (

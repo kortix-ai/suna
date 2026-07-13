@@ -28,9 +28,11 @@ import {
   FORWARD_REQUEST_HEADERS,
   STRIP_RESPONSE_HEADERS,
   extractToken,
+  isValidGitProxyProjectId,
   normalizeProjectId,
   scopeForService,
 } from './parse';
+import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { kickProjectWarmPrebake } from '../snapshots/builder';
@@ -71,6 +73,14 @@ function unauthorized(c: any, message: string) {
   return c.text(message, 401);
 }
 
+function validProjectIdOrResponse(c: any, raw: string): string | Response {
+  const projectId = normalizeProjectId(raw);
+  if (!isValidGitProxyProjectId(raw)) {
+    return c.text('invalid project identifier', 400);
+  }
+  return projectId;
+}
+
 async function authorize(c: any, projectId: string, scope: GitScope): Promise<GitProxyAuth> {
   const token = extractToken(c.req.header('authorization'));
   if (!token) return { ok: false, status: 401, message: 'authentication required' };
@@ -106,17 +116,32 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   Object.assign(headers, upstream.headers);
 
   const method = c.req.method;
+  // Idempotent ref discovery (GET /info/refs) → buffer + bounded retry, so a
+  // transient upstream socket-close is caught here instead of escaping Bun's
+  // fetch streamer to the global uncaught handler (Better Stack `df7a31d4…`).
+  // Pack streams (POST upload/receive-pack) stay streamed: large / non-idempotent.
+  const isIdempotentGet = method === 'GET' || method === 'HEAD';
   let res: Response;
   try {
-    res = await fetch(target, {
-      method,
-      headers,
-      body: method === 'GET' || method === 'HEAD' ? undefined : c.req.raw.body,
-      redirect: 'manual',
-      // @ts-ignore — Bun extensions: stream the request body, don't decompress.
-      duplex: 'half',
-      decompress: false,
-    });
+    if (isIdempotentGet) {
+      res = await fetchUpstreamBuffered(target, {
+        method,
+        headers,
+        redirect: 'manual',
+        // @ts-ignore — Bun extension: don't decompress the git smart-HTTP body.
+        decompress: false,
+      });
+    } else {
+      res = await fetch(target, {
+        method,
+        headers,
+        body: c.req.raw.body,
+        redirect: 'manual',
+        // @ts-ignore — Bun extensions: stream the request body, don't decompress.
+        duplex: 'half',
+        decompress: false,
+      });
+    }
   } catch (err) {
     console.warn(`[git-proxy] upstream fetch failed for ${projectId}:`, err);
     return c.text('git upstream unreachable', 502);
@@ -178,7 +203,8 @@ gitProxyApp.openapi(
     responses: gitResponses,
   }),
   async (c) => {
-    const projectId = normalizeProjectId(c.req.param('project'));
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
     const scope = scopeForService(c.req.query('service'));
     return forward(c, projectId, scope, '/info/refs');
   },
@@ -195,7 +221,8 @@ gitProxyApp.openapi(
     responses: gitResponses,
   }),
   async (c) => {
-    const projectId = normalizeProjectId(c.req.param('project'));
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
     return forward(c, projectId, 'read', '/git-upload-pack');
   },
 );
@@ -211,7 +238,8 @@ gitProxyApp.openapi(
     responses: gitResponses,
   }),
   async (c) => {
-    const projectId = normalizeProjectId(c.req.param('project'));
+    const projectId = validProjectIdOrResponse(c, c.req.param('project'));
+    if (projectId instanceof Response) return projectId;
     return forward(c, projectId, 'write', '/git-receive-pack');
   },
 );

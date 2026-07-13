@@ -1,0 +1,149 @@
+---
+title: "How we run operations from Slack"
+description: A single agent reachable from Slack, with scoped access to our database, Stripe, Linear, and GitHub. Ask in a thread and it runs the task across whatever platforms it needs.
+date: "2026-07-05"
+author: team
+tags:
+  - Operations
+  - Case Study
+  - Enterprise
+---
+
+Operations work usually spans several platforms: the database, Stripe, the
+sandbox providers, Linear, and GitHub. Onboarding a customer means provisioning,
+setting up billing, and filing a tracking issue. Shipping a fix means reviewing a
+PR, cutting a branch, and updating a ticket. No single tool covers the whole
+task, so the coordination falls to a person moving between several tabs.
+
+We run these tasks through a single agent reachable from Slack, with scoped
+access to the platforms we've connected. This is how we run our own operations on
+Kortix, and the same setup works for any team.
+
+<KeyFacts>
+  <Fact label="Team">Kortix</Fact>
+  <Fact label="Control surface">Slack</Fact>
+  <Fact label="Connected systems">Database · Stripe · Sandboxes · Linear · GitHub</Fact>
+  <Fact label="Setup per platform">Connect once, then it can act</Fact>
+</KeyFacts>
+
+## The problem
+
+The cross-platform tasks are the ones no single tool owns. "Onboard this
+enterprise account" touches the database, Stripe, and Linear. "Get this fix out"
+touches GitHub, the sandbox that reproduces the bug, and the ticket that tracks
+it. Each step is simple; stitching them together means switching between tabs,
+copying IDs, and keeping the order straight.
+
+The common workarounds each fall short. Internal scripts each do one thing and
+break when an API changes. A no-code automation tool handles the flow it was
+built for and nothing beyond it. A chatbot that integrates with Slack can answer
+questions but can't run a multi-step task, because it has no safe way to hold
+credentials and take actions across systems.
+
+## What we built
+
+Our Slack is wired to an agent with scoped access to every connected system. You
+@-mention it in a thread and describe the task in plain language. It spawns an
+isolated session, a cloud sandbox, with scoped access to the platforms we've
+connected, works out the steps, runs them, and replies in the thread as it goes.
+Adding a capability means connecting one more platform.
+
+<Figure
+  caption="Asking the agent to invite an engineer to Linear"
+  src="/usecases/slack/operation_1.JPEG"
+/>
+
+## How it works
+
+<Steps>
+<Step title="Make Slack the control surface">
+
+Slack is connected as a **channel**, so a message is the trigger. Mention the
+agent in any thread and the request spawns a fresh **session** in its own
+isolated sandbox. The agent stays in the thread and replies as it works. One
+request, one session, one disposable machine.
+
+</Step>
+<Step title="Connect a platform">
+
+To give the agent a new capability, you **connect the platform to Kortix once**.
+The database, Stripe, the sandbox providers, Linear, and GitHub are each a scoped
+**connector**, brokered server-side so no raw token reaches the model. Once a
+platform is connected, the agent can act on it. There's no integration to write
+or script to maintain.
+
+</Step>
+<Step title="Run tasks across those platforms">
+
+With the platforms connected, the agent handles cross-platform tasks:
+
+- **Invite a member to Linear**, create the project, and file the tracking
+  issues.
+- **Review an open GitHub PR**, and open its own PRs to the codebase when a
+  change is warranted.
+- **Query the database** to answer questions like how many accounts are on a
+  given plan.
+- **Look up and adjust Stripe** state: plan, invoice, subscription.
+- **Spin up a sandbox** to reproduce a bug or run a one-off job.
+
+Whatever the task spans, it runs in one thread through one agent.
+
+</Step>
+<Step title="Set the guardrails">
+
+Because the agent has access to every connected platform, its scope is kept
+tight. Access is **read-mostly by default**. Actions that touch money, production
+data, or account state (a Stripe change, a merge, a destructive query) stop at a
+**human approval gate** in the thread. Credentials are encrypted in the Secrets
+Manager and injected at runtime, never shown to the model or written to logs.
+
+</Step>
+<Step title="Run operations from a thread">
+
+With that in place, "onboard this account" is one message that provisions in the
+database, sets up billing in Stripe, and files the Linear project, with the
+irreversible steps held for approval. "Review this PR" is a code review plus, when
+needed, a follow-up PR. The work spans one thread instead of several tools.
+
+</Step>
+</Steps>
+
+<Callout title="The setup" tone="accent">
+  Connect Slack as the **channel**, connect each platform to Kortix as a scoped
+  **connector** (the only per-platform setup), and gate every sensitive action
+  behind a human. One agent then runs cross-platform tasks from a thread.
+</Callout>
+
+## Guardrails
+
+Giving one agent access to the database, Stripe, sandboxes, Linear, and GitHub is
+a security question. The controls that make it workable:
+
+- **Isolation.** Every request runs in its own microVM sandbox on its own branch.
+  A session can reach only the platforms it's scoped to, and only what it's
+  explicitly allowed to send leaves the sandbox.
+- **Scoped secrets.** Each platform credential is encrypted in the Secrets
+  Manager and injected into the sandbox at runtime, never exposed to the model or
+  the logs.
+- **Human approval gates.** Irreversible actions (money, production data, merges)
+  require a person to approve in the thread.
+- **Everything is code.** The agent's persona, skills, and per-platform
+  permissions are files in the repo, versioned and changed through a reviewed
+  **change request** rather than a dashboard setting.
+
+<Figure
+  src="/usecases/slack/operation_2.JPEG"
+/>
+
+## The outcome
+
+<StatGrid>
+  <Stat value="One thread" label="Any cross-platform task, asked in plain language" />
+  <Stat value="Connect once" label="A new platform is a new capability, no build" />
+  <Stat value="5+ systems" label="Database, Stripe, sandboxes, Linear, GitHub — one agent" />
+</StatGrid>
+
+Cross-platform tasks such as onboarding, reviews, provisioning, and billing
+changes now run in the Slack thread where they're already discussed, with the
+risky steps held for approval. Extending the system means connecting the next
+platform.
