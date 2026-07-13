@@ -1,6 +1,7 @@
 import { docsMdxComponents } from '@/components/markdown/docs-mdx-components';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/features/icon/icon';
+import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 import { source } from '@/lib/source';
 import { cn } from '@/lib/utils';
 import { getBreadcrumbItems } from 'fumadocs-core/breadcrumb';
@@ -101,9 +102,9 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
           {previous && (
             <Link
               href={previous.url}
-              className="flex flex-col gap-1 rounded-lg border p-4 transition-colors hover:bg-fd-accent"
+              className="hover:bg-fd-accent flex flex-col gap-1 rounded-lg border p-4 transition-colors"
             >
-              <span className="inline-flex items-center gap-1 text-xs text-fd-muted-foreground">
+              <span className="text-fd-muted-foreground inline-flex items-center gap-1 text-xs">
                 <ChevronLeft className="size-3.5" />
                 Previous
               </span>
@@ -113,9 +114,9 @@ export default async function Page(props: { params: Promise<{ slug?: string[] }>
           {next && (
             <Link
               href={next.url}
-              className="flex flex-col items-end gap-1 rounded-lg border p-4 text-right transition-colors hover:bg-fd-accent sm:col-start-2"
+              className="hover:bg-fd-accent flex flex-col items-end gap-1 rounded-lg border p-4 text-right transition-colors sm:col-start-2"
             >
-              <span className="inline-flex items-center gap-1 text-xs text-fd-muted-foreground">
+              <span className="text-fd-muted-foreground inline-flex items-center gap-1 text-xs">
                 Next
                 <ChevronRight className="size-3.5" />
               </span>
@@ -151,5 +152,6 @@ export async function generateMetadata(props: {
   return {
     title: { absolute: title },
     description: page.data.description ?? 'Kortix developer documentation.',
+    alternates: { canonical: `${CANONICAL_ORIGIN}${page.url}` },
   };
 }
