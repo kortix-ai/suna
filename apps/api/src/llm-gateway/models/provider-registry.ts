@@ -1,6 +1,5 @@
-import { CATALOG } from '@kortix/llm-catalog';
-import { providerKindForNpm } from './compatibility';
-import type { ProviderKind } from '../domain';
+import { providerKindForNpm, type ProviderKind } from '@kortix/llm-gateway';
+import { runtimeModelCatalog } from './runtime-catalog';
 
 const BASE_URL_FALLBACKS: Record<string, string> = {
   openai: 'https://api.openai.com/v1',
@@ -25,10 +24,11 @@ export interface CatalogUpstream {
   kind: ProviderKind;
 }
 
-const providerById = new Map(CATALOG.providers.map((provider) => [provider.id, provider]));
-
+/** Resolve provider transport metadata from the API-owned runtime catalog. */
 export function resolveCatalogUpstream(providerId: string): CatalogUpstream | null {
-  const provider = providerById.get(providerId);
+  const provider = runtimeModelCatalog
+    .snapshot()
+    .providers.find((candidate) => candidate.id === providerId);
   if (!provider) return null;
 
   const kind = providerKindForNpm(provider.npm);
@@ -36,10 +36,8 @@ export function resolveCatalogUpstream(providerId: string): CatalogUpstream | nu
 
   const baseUrl =
     kind === 'anthropic' ? ANTHROPIC_BASE_URL : provider.api || BASE_URL_FALLBACKS[providerId];
-  if (!baseUrl) return null;
-
   const envVar = provider.env?.[0];
-  if (!envVar) return null;
+  if (!baseUrl || !envVar) return null;
 
   return { baseUrl, envVar, kind };
 }

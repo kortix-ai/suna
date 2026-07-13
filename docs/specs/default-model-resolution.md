@@ -16,8 +16,8 @@ places, none authoritative:
 1. `localStorage.globalDefault` (per-browser, not per-account, not cross-device).
 2. A per-**sandbox** `opencode.jsonc` value read/written via
    `GET/PUT /kortix/preferences/model` (served by the opencode binary, not our API).
-3. The hardcoded `AUTO_DEFAULT_MODEL_ID = "glm-5.2"` inside the gateway's
-   `pickAutoModel`.
+3. A build-time `AUTO_DEFAULT_MODEL_ID` compatibility constant used by clients,
+   rather than runtime routing configuration owned by the control plane.
 
 Resolution is 100% client-side (`use-opencode-local.ts`: per-session > per-agent >
 globalDefault > agent.model > fallback), and since AUTO is hidden the client
@@ -43,7 +43,7 @@ concrete model is chosen and **trust the gateway** to resolve it.
                                (concrete model → opencode sends it, not auto)
 3. Per-agent default           account_model_preferences (scope='agent', key=agent_name)
 4. Account default             account_model_preferences (scope='account')
-5. Platform default            AUTO_DEFAULT_MODEL_ID ("glm-5.2"), vision→claude-sonnet-4.6
+5. Platform default            LLM_GATEWAY_DEFAULT_MODEL, vision→LLM_GATEWAY_VISION_MODEL
 ```
 
 Levels 3–5 are what `auto` resolves to. Levels 1–2 never reach the resolver — a
@@ -52,19 +52,19 @@ with `metadata.opencode_model` boots opencode with that concrete model).
 
 ### Where each piece runs
 
-- **`pickAutoModel(model, body, { defaultModel })`** (pure, in `@kortix/shared`):
-  when `model` is `auto`, returns `defaultModel ?? AUTO_TARGET_MODEL`, applying the
-  vision override only when the chosen target is a managed **text-only** model and
-  the request carries an image. Pure + sync so both the in-API mount and the
-  standalone pod call it locally.
+- **`resolveGatewayRoute(principal, input)`** (API control plane): when the model
+  is `auto`, selects `principal.defaultModel ?? LLM_GATEWAY_DEFAULT_MODEL`, applies
+  the configured vision target when required, and attaches the matching
+  declarative fallback policy.
 - **`principal.defaultModel`** (new field on `AuthedPrincipal`): the resolved
   agent/account default (a concrete wire model, never `auto`). Resolved **once at
   authentication** in `withResolvedTier` (apps/api `hooks.ts`) and travels with the
   principal across the RPC boundary to the pod — exactly like `tier`/`freeModelsOnly`.
-- **autoRouter** (`wire.ts` + pod `server.ts`): `(model, body, principal) =>
-  pickAutoModel(model, body, { defaultModel: principal.defaultModel })`.
-- **`resolveCandidates`**: its defensive re-resolution of raw `auto` (line 49) also
-  passes `{ defaultModel: principal.defaultModel }`.
+- **In-process gateway** calls `resolveGatewayRoute` directly through a hook.
+- **Standalone gateway** calls `/internal/gateway/resolve-route`; it contains no
+  platform model ids or product fallback policy.
+- **`resolveCandidates`** defensively calls the same control-plane resolver for
+  stale callers that still send raw `auto`.
 
 ### Free tier (critical)
 
@@ -160,7 +160,7 @@ server-side.
   has an image, override to `AUTO_VISION_MODEL` (claude-sonnet-4.6) — unchanged
   behavior. A vision-capable default (e.g. Opus) is kept as-is.
 - **Self-host (`KORTIX_BILLING_INTERNAL_ENABLED` off)**: everyone is full-lineup
-  (`freeModelsOnly=false`); defaults resolve normally; platform default is glm-5.2.
+  (`freeModelsOnly=false`); defaults resolve using the operator's gateway config.
 - **Performance**: `withResolvedTier` resolves the default every auth; account prefs
   and the session→agent_name lookup are cached (short TTL, like the tier cache).
 

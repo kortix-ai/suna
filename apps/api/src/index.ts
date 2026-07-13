@@ -46,6 +46,7 @@ import { platformSettings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
@@ -907,6 +908,9 @@ console.log(`
 initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
 );
+runtimeModelCatalog.start().catch((err) =>
+  console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+);
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
@@ -1000,6 +1004,7 @@ async function shutdown(signal: string) {
   // node was the leader. Then stop the per-node services.
   await stopLeaderElection();
   stopModelPricing();
+  runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();

@@ -12,7 +12,6 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { AUTO_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
@@ -2200,11 +2199,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: AUTO_DEFAULT_MODEL_ID,
+      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? AUTO_DEFAULT_MODEL_ID,
+      resolvedForCaller: resolved.model ?? config.LLM_GATEWAY_DEFAULT_MODEL,
       resolvedSource: resolved.source,
       freeTier,
     });

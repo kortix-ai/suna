@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
+import {
+  DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
+  parseFallbackPolicies,
+} from './llm-gateway/routing/policy-config';
 
 /**
  * Running sandbox version.
@@ -47,6 +51,23 @@ const optBoolFalse = z
   .optional()
   .default('false')
   .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
+
+/** Declarative, operator-defined model fallback policies. */
+const optFallbackPolicies = z
+  .string()
+  .optional()
+  .default(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)
+  .transform((raw, ctx) => {
+    try {
+      return parseFallbackPolicies(raw);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return z.NEVER;
+  });
 
 // ─── Env Schema ─────────────────────────────────────────────────────────────
 //
@@ -249,6 +270,19 @@ const envSchema = z.object({
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // Runtime routing is control-plane configuration, not a model-catalog
+  // constant baked into the gateway binary. Operators can replace the default
+  // and define any number of exact-match fallback policies without code changes.
+  LLM_GATEWAY_DEFAULT_MODEL:   optStrDefault('codex/gpt-5.6-sol'),
+  LLM_GATEWAY_VISION_MODEL:    optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
+  // Optional JSON array replacing the platform managed-model overlay (transport,
+  // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
+  // defaults; managed routes are otherwise fully operator-defined.
+  LLM_GATEWAY_MANAGED_MODELS: optStr,
+  // Runtime source for provider/model metadata. The API keeps the last known
+  // snapshot if this source is temporarily unavailable.
+  LLM_GATEWAY_CATALOG_URL:     optUrl('https://models.dev/api.json'),
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
@@ -662,6 +696,11 @@ export const config = {
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
+  LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
+  LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
+  LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
+  LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
