@@ -138,7 +138,7 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
-| branches | `GET /v1/projects/:id/branches` |
+| branches + effective session base ref | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
 | change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
