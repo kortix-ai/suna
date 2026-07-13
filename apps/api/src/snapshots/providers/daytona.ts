@@ -162,11 +162,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         snapshotStateCache.delete(snapshotName);
       }
       return state;
-    } catch {
-      // Error *or* timeout (TimeoutError) → unknown. We never
-      // poison the positive cache here, so the next poll re-checks once Daytona
-      // recovers.
+    } catch (err) {
+      // Daytona represents a missing named snapshot as a 404 exception rather
+      // than `null`. That is definitive provider truth and must be `missing` so
+      // the template coordinator can create it. Transport/timeouts and all
+      // other probe failures remain `unknown` and fail closed.
       snapshotStateCache.delete(snapshotName);
+      if (isDaytonaNotFoundError(err)) return 'missing';
       return 'unknown';
     }
   }
@@ -238,6 +240,26 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     return 'unknown';
   }
+}
+
+function isDaytonaNotFoundError(err: unknown): boolean {
+  const value = err as
+    | {
+        name?: unknown;
+        message?: unknown;
+        statusCode?: unknown;
+        response?: { status?: unknown };
+      }
+    | null
+    | undefined;
+  const status = value?.statusCode ?? value?.response?.status;
+  const name = String(value?.name ?? '').toLowerCase();
+  const message = String(value?.message ?? '').toLowerCase();
+  return (
+    status === 404 ||
+    name === 'daytonanotfounderror' ||
+    (message.includes('snapshot with name') && message.includes('not found'))
+  );
 }
 
 function isTransientDaytonaError(err: unknown): boolean {
