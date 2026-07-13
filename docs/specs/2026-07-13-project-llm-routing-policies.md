@@ -128,4 +128,3 @@ controls.
   overrides, reset confirmation, preview request, and visible route.
 - Real gateway request proving a project-configured primary success and a
   forced primary failure selecting the configured fallback exactly once.
-
