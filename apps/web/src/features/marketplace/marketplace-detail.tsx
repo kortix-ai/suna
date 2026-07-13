@@ -23,7 +23,7 @@ import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-sl
 import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
-import { MarketplaceFileTree } from './marketplace-file-tree';
+import { MarketplaceFileBrowser } from './marketplace-file-browser';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
@@ -313,13 +313,6 @@ function ItemSidebar({
         </div>
       </div>
 
-      {data.files.length > 0 ? (
-        <div className="space-y-2">
-          <SectionLabel count={data.files.length}>Files</SectionLabel>
-          <MarketplaceFileTree targets={data.files.map((f) => f.target)} />
-        </div>
-      ) : null}
-
       {companyClickable ? (
         <Link
           href={marketplaceSourceHref(data.marketplaceId)}
@@ -513,13 +506,19 @@ export function MarketplaceDetail({
       >
       <div className="space-y-8">
         <section className="space-y-3">
-          {readme ? (
+          {data.files.length > 0 ? (
+            <MarketplaceFileBrowser
+              itemId={data.id}
+              targets={data.files.map((f) => f.target)}
+              readme={readme || null}
+            />
+          ) : readme ? (
             <ReadmeMarkdown content={readme} />
           ) : (
             <EmptyState
               icon={FileText}
               size="sm"
-              title="No README"
+              title="No files"
               description={emptyReadmeCopy(data.type)}
             />
           )}
