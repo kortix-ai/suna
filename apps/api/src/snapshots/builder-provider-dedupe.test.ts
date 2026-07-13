@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test';
-import { backgroundBuildKey, buildLogProviderCandidates, waitForProviderBuild } from './builder';
+import {
+  backgroundBuildKey,
+  buildLogProviderCandidates,
+  shouldReconcileProviderState,
+  waitForProviderBuild,
+} from './builder';
 
 test('background snapshot build dedup is provider-qualified', () => {
   expect(backgroundBuildKey('daytona', 'kortix-default-abc')).not.toBe(
@@ -17,11 +22,24 @@ test('new snapshot build logs reconcile only against their recorded provider', (
   )).toEqual(['e2b']);
 });
 
-test('historical build logs reconcile against every enabled provider', () => {
+test('historical and unknown build logs remain unattributed', () => {
   expect(buildLogProviderCandidates(
     { source: 'background', slug: 'default-warm' },
     ['daytona', 'platinum', 'e2b', 'e2b'],
-  )).toEqual(['daytona', 'platinum', 'e2b']);
+  )).toEqual([]);
+  expect(buildLogProviderCandidates(
+    { source: 'manual', provider: 'managed' },
+    ['daytona', 'platinum', 'e2b'],
+  )).toEqual([]);
+});
+
+test('project reconciliation never turns an observation outage into a rebuild', () => {
+  expect(shouldReconcileProviderState('unknown')).toBe(false);
+  expect(shouldReconcileProviderState('active')).toBe(false);
+  expect(shouldReconcileProviderState('building')).toBe(false);
+  expect(shouldReconcileProviderState('removing')).toBe(false);
+  expect(shouldReconcileProviderState('missing')).toBe(true);
+  expect(shouldReconcileProviderState('build_failed')).toBe(true);
 });
 
 test('a second replica waits for an existing provider build instead of starting a duplicate', async () => {

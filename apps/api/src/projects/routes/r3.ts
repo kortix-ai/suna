@@ -33,7 +33,7 @@ projectsApp.openapi(
       },
     responses: {
         202: json(z.any(), 'OK'),
-        ...errors(404),
+        ...errors(404, 503),
     },
   }),
   async (c: any) => {
@@ -53,6 +53,10 @@ projectsApp.openapi(
   }
 
   const project = await loadGitProject(loaded);
+  const providers = templateBuildProviders();
+  if (providers.length === 0) {
+    return c.json({ error: 'No sandbox template provider is enabled' }, 503);
+  }
   kickRoutedPreBuild(project, {
     slug: row.slug,
     accountId: loaded.row.accountId,
@@ -62,7 +66,7 @@ projectsApp.openapi(
     status: 'started',
     template_id: row.templateId,
     slug: row.slug,
-    providers: templateBuildProviders(),
+    providers,
   }, 202);
 },
 );

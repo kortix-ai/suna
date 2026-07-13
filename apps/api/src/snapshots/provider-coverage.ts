@@ -26,6 +26,26 @@ export interface ProviderCoverageDependencies {
   isProviderEnabled: (provider: SandboxTemplateProvider) => boolean;
   getProvider: (provider: SandboxTemplateProvider) => Pick<SandboxProviderAdapter, 'getSnapshotState'>;
   now: () => Date;
+  observationTimeoutMs?: number;
+}
+
+export const PROVIDER_COVERAGE_OBSERVATION_TIMEOUT_MS = 5_000;
+
+async function withObservationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Provider observation timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**
@@ -83,7 +103,10 @@ export async function observeTemplateProviderCoverage(
       }
 
       try {
-        const state = await dependencies.getProvider(provider).getSnapshotState(snapshotName);
+        const state = await withObservationTimeout(
+          dependencies.getProvider(provider).getSnapshotState(snapshotName),
+          dependencies.observationTimeoutMs ?? PROVIDER_COVERAGE_OBSERVATION_TIMEOUT_MS,
+        );
         return {
           provider,
           available: true,
@@ -120,8 +143,9 @@ export function resolveRoutedTemplateState(
   selectedProvider: SandboxTemplateProvider | null,
 ): ProviderState {
   if (selectedProvider) {
-    return coverage.find((item) => item.provider === selectedProvider && item.available)?.state
-      ?? 'missing';
+    const selected = coverage.find((item) => item.provider === selectedProvider);
+    if (!selected || !selected.available) return 'unknown';
+    return selected.state ?? 'unknown';
   }
 
   const states = coverage.filter((item) => item.available).map((item) => item.state);
@@ -139,13 +163,17 @@ export function resolveUsableProjectProviderPin(
   metadata: Record<string, unknown> | null | undefined,
   isProviderEnabled: (provider: SandboxProviderName) => boolean,
 ): SandboxTemplateProvider | null {
+  const provider = resolveConfiguredProjectProviderPin(metadata);
+  return provider && isProviderEnabled(provider) ? provider : null;
+}
+
+/** A valid project pin remains visible even while that provider is unavailable. */
+export function resolveConfiguredProjectProviderPin(
+  metadata: Record<string, unknown> | null | undefined,
+): SandboxTemplateProvider | null {
   const raw = metadata?.default_sandbox_provider;
-  if (
-    typeof raw !== 'string' ||
-    !SANDBOX_TEMPLATE_PROVIDERS.includes(raw as SandboxTemplateProvider)
-  ) {
-    return null;
-  }
-  const provider = raw as SandboxTemplateProvider;
-  return isProviderEnabled(provider) ? provider : null;
+  return typeof raw === 'string' &&
+    SANDBOX_TEMPLATE_PROVIDERS.includes(raw as SandboxTemplateProvider)
+    ? raw as SandboxTemplateProvider
+    : null;
 }

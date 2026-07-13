@@ -30,6 +30,7 @@ import type {
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
+import { shortLivedObservation } from '../observation-cache';
 
 const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
 const POLL_MS = 3_000;
@@ -67,9 +68,14 @@ interface PlatinumTemplate {
 }
 
 async function findTemplateByName(name: string): Promise<PlatinumTemplate | null> {
-  const list = await platinumJson<PlatinumTemplate[]>('/v1/templates');
+  const list = await observeTemplates();
   return list.find((t) => t.name === name) ?? null;
 }
+
+const observeTemplates = shortLivedObservation(
+  () => platinumJson<PlatinumTemplate[]>('/v1/templates'),
+  process.env.NODE_ENV === 'test' ? 0 : 2_000,
+);
 
 class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
@@ -85,10 +91,13 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     let lastErr: unknown;
     for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
+      observeTemplates.invalidate();
       try {
         await this.buildOnce(input, userDockerfile, tap);
+        observeTemplates.invalidate();
         return;
       } catch (err) {
+        observeTemplates.invalidate();
         lastErr = err;
         if (!isRetryablePlatinumBuildError(err) || attempt === BUILD_ATTEMPTS) throw err;
         const msg = err instanceof Error ? err.message : String(err);
@@ -165,6 +174,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
    * on Platinum — otherwise it falls back to a normal buildSnapshot.
    */
   async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<void> {
+    observeTemplates.invalidate();
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
       const { upload_url, context_s3_key } = await platinumJson<{ upload_url: string; context_s3_key: string }>(
@@ -187,6 +197,7 @@ class PlatinumAdapter implements SandboxProviderAdapter {
       });
       await this.waitForActive(newSnapshotName);
     } finally {
+      observeTemplates.invalidate();
       await cleanup();
     }
   }
@@ -203,12 +214,19 @@ class PlatinumAdapter implements SandboxProviderAdapter {
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
     if (!isPlatinumConfigured()) return;
+    observeTemplates.invalidate();
     try {
       const tpl = await findTemplateByName(snapshotName);
       if (!tpl) return;
       await platinumJson(`/v1/templates/${tpl.id}`, { method: 'DELETE' });
-    } catch {
-      // not found / transient — treat as already gone
+    } catch (err) {
+      // A lookup/delete race is equivalent to already gone. Provider outages
+      // must propagate so fan-out reports this provider as failed.
+      if (!/ -> 404(?:\s|$)/.test(err instanceof Error ? err.message : String(err))) {
+        throw err;
+      }
+    } finally {
+      observeTemplates.invalidate();
     }
   }
 

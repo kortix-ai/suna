@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { SandboxTemplate } from './sandbox';
+import type { RebuildSnapshotResponse, SandboxTemplate } from './sandbox';
 
 test('SandboxTemplate types launch readiness independently for every supported provider', () => {
   const template = {
@@ -18,4 +18,18 @@ test('SandboxTemplate types launch readiness independently for every supported p
 
   expect(template.provider_coverage[0].provider).toBe('e2b');
   expect(template.provider_coverage[0].launch_ready).toBe(false);
+});
+
+test('rebuild responses type partial provider startup failures', () => {
+  const response = {
+    status: 'started',
+    slug: 'default',
+    deleted_existing: true,
+    snapshot_name: 'kortix-default-current',
+    providers: ['daytona', 'e2b'],
+    failed_providers: ['platinum'],
+  } satisfies RebuildSnapshotResponse;
+
+  expect(response.providers).toEqual(['daytona', 'e2b']);
+  expect(response.failed_providers).toEqual(['platinum']);
 });

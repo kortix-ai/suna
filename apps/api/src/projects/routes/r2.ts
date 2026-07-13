@@ -1,6 +1,6 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
+import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
@@ -17,12 +17,12 @@ import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, req
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { config } from '../../config';
-import { resolveUsableProjectProviderPin } from '../../snapshots/provider-coverage';
+import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
+import { runProviderActions } from '../../snapshots/provider-actions';
 
 function templateProviderObservation(metadata: unknown) {
-  const selectedProvider = resolveUsableProjectProviderPin(
+  const selectedProvider = resolveConfiguredProjectProviderPin(
     metadata && typeof metadata === 'object' ? metadata as Record<string, unknown> : null,
-    (provider) => config.isProviderEnabled(provider),
   );
   return {
     selectedProvider,
@@ -578,7 +578,7 @@ projectsApp.openapi(
       },
     responses: {
         202: json(z.any(), 'OK'),
-        ...errors(404, 502),
+        ...errors(404, 502, 503),
     },
   }),
   async (c: any) => {
@@ -602,25 +602,42 @@ projectsApp.openapi(
   const slug = slugRaw ? String(slugRaw).trim() : undefined;
 
   const project = await loadGitProject(loaded);
+  const providers = templateBuildProviders();
+  if (providers.length === 0) {
+    return c.json({ error: 'No sandbox template provider is enabled' }, 503);
+  }
   try {
-    const providers = templateBuildProviders();
-    if (providers.length === 0) throw new Error('No sandbox template provider is enabled');
-    const deleted = await Promise.all(
-      providers.map((provider) => deleteSandboxImage(project, { slug, provider })),
+    const attempts = await runProviderActions(
+      providers,
+      async (provider) => {
+        const deleted = await deleteSandboxImage(project, { slug, provider });
+        kickPreBuild(project, {
+          slug: deleted.slug,
+          accountId: loaded.row.accountId,
+          source: 'manual',
+          provider,
+        });
+        return deleted;
+      },
     );
-    const target = deleted[0]!;
-    kickRoutedPreBuild(project, {
-      slug: target.slug,
-      accountId: loaded.row.accountId,
-      source: 'manual',
-    });
+    const notFound = attempts.failed.find(
+      (failure) => failure.error instanceof TemplateNotFoundError,
+    );
+    if (notFound?.error instanceof TemplateNotFoundError) {
+      return c.json({ error: notFound.error.message, code: 'TEMPLATE_NOT_FOUND' }, 404);
+    }
+    if (attempts.started.length === 0) {
+      return c.json({ error: 'Could not start a rebuild on any sandbox provider' }, 503);
+    }
+    const target = attempts.started[0]!.result;
     return c.json(
       {
         status: 'started',
         slug: target.slug,
-        deleted_existing: deleted.some((item) => item.deleted),
+        deleted_existing: attempts.started.some((item) => item.result.deleted),
         snapshot_name: target.snapshotName,
-        providers,
+        providers: attempts.started.map((item) => item.provider),
+        failed_providers: attempts.failed.map((item) => item.provider),
       },
       202,
     );
@@ -803,7 +820,7 @@ projectsApp.openapi(
       },
     responses: {
         201: json(SandboxTemplateSchema, 'The created sandbox template'),
-        ...errors(400, 404, 409),
+        ...errors(400, 404, 409, 503),
     },
   }),
   async (c: any) => {
@@ -840,6 +857,9 @@ projectsApp.openapi(
   const cpu = typeof body.cpu === 'number' ? body.cpu : undefined;
   const memoryGb = typeof body.memory_gb === 'number' ? body.memory_gb : undefined;
   const diskGb = typeof body.disk_gb === 'number' ? body.disk_gb : undefined;
+  if (templateBuildProviders().length === 0) {
+    return c.json({ error: 'No sandbox template provider is enabled' }, 503);
+  }
 
   try {
     const row = await createTemplate({

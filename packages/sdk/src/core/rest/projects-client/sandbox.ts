@@ -130,6 +130,7 @@ export interface RebuildSnapshotResponse {
   deleted_existing: boolean;
   snapshot_name: string;
   providers?: Array<'daytona' | 'platinum' | 'e2b'>;
+  failed_providers?: Array<'daytona' | 'platinum' | 'e2b'>;
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   enabledTemplateBuildProviders,
   observeTemplateProviderCoverage,
+  resolveConfiguredProjectProviderPin,
   resolveRoutedTemplateState,
   resolveUsableProjectProviderPin,
 } from './provider-coverage';
@@ -83,6 +84,21 @@ describe('sandbox template provider coverage', () => {
     expect(result.every((item) => item.state === null)).toBe(true);
   });
 
+  test('bounds a hung provider observation and reports unknown', async () => {
+    const result = await observeTemplateProviderCoverage('snapshot', {
+      isProviderEnabled: (provider) => provider === 'daytona',
+      getProvider: () => ({ getSnapshotState: () => new Promise(() => {}) }),
+      now: () => new Date('2026-07-13T12:00:00.000Z'),
+      observationTimeoutMs: 5,
+    });
+
+    expect(result.find((item) => item.provider === 'daytona')).toMatchObject({
+      status: 'unknown',
+      state: null,
+      launch_ready: false,
+    });
+  });
+
   test('only treats a usable explicit project pin as pinned', () => {
     const enabled = (provider: string) => provider !== 'e2b';
     expect(resolveUsableProjectProviderPin({}, enabled)).toBeNull();
@@ -92,5 +108,15 @@ describe('sandbox template provider coverage', () => {
       .toBeNull();
     expect(resolveUsableProjectProviderPin({ default_sandbox_provider: 'bogus' }, enabled))
       .toBeNull();
+  });
+
+  test('retains a valid configured pin for presentation while unavailable', () => {
+    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'e2b' }))
+      .toBe('e2b');
+    expect(resolveConfiguredProjectProviderPin({ default_sandbox_provider: 'managed' }))
+      .toBeNull();
+    expect(resolveRoutedTemplateState([
+      { provider: 'e2b', available: false, state: null },
+    ], 'e2b')).toBe('unknown');
   });
 });
