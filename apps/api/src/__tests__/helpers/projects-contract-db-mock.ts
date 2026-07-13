@@ -53,7 +53,6 @@ export interface ProjectsContractDbState {
   installationRow: typeof accountGithubInstallations.$inferSelect | null;
   gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
   nextProjectIds: string[];
-  repoUniquenessEnforced: boolean;
 }
 
 export const baseDate = new Date('2026-01-01T00:00:00Z');
@@ -190,17 +189,7 @@ export function createProjectsContractDbMock(
     insert: (table: unknown) => ({
       values: (values: any) => ({
         onConflictDoNothing: () => ({
-          returning: async () => {
-            if (table !== projects) return [];
-            const conflicts =
-              state.repoUniquenessEnforced &&
-              state.projectRows.some(
-                (row) =>
-                  row.accountId === values.accountId &&
-                  row.repoUrl === values.repoUrl,
-              );
-            return conflicts ? [] : [insertProject(state, values)];
-          },
+          returning: async () => [],
         }),
         onConflictDoUpdate: ({ set }: { set?: Record<string, unknown> }) => ({
           returning: async () => {
