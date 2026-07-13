@@ -7,6 +7,7 @@ variable "expected_account_id" { type = string }
 variable "vpc_cidr" { type = string }
 variable "api_domain" { type = string }
 variable "frontend_domain" { type = string }
+variable "route53_zone_id" { type = string }
 variable "release_repository_url" { type = string }
 variable "tuf_root_sha256" {
   type      = string
@@ -34,6 +35,9 @@ variable "operator_external_id" {
 variable "permissions_boundary_arn" {
   type = string
 }
+variable "terraform_state_bucket" { type = string }
+variable "terraform_state_lock_table" { type = string }
+variable "terraform_state_kms_key_arn" { type = string }
 variable "tags" {
   type    = map(string)
   default = {}

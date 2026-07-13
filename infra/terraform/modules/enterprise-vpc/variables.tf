@@ -81,6 +81,16 @@ variable "frontend_domain" {
   type        = string
 }
 
+variable "route53_zone_id" {
+  description = "Customer-owned public Route 53 hosted zone containing both application domains."
+  type        = string
+
+  validation {
+    condition     = can(regex("^Z[A-Z0-9]{5,31}$", var.route53_zone_id))
+    error_message = "route53_zone_id must be a Route 53 hosted zone ID."
+  }
+}
+
 variable "supabase_instance_type" {
   description = "Private EC2 instance type for the single-tenant Supabase Docker stack."
   type        = string
@@ -177,13 +187,13 @@ variable "release_channel" {
 }
 
 variable "image_repositories" {
-  description = "Customer-owned ECR repositories populated by the signed updater. The release-bundle repository stores signed OCI bundles as well as rollback metadata."
+  description = "Customer-owned ECR repositories populated by the signed updater. Release bundles remain authenticated TUF targets and are not duplicated as OCI images."
   type        = set(string)
-  default     = ["api", "frontend", "gateway", "migrate", "release-bundle"]
+  default     = ["api", "frontend", "gateway"]
 
   validation {
-    condition     = length(setsubtract(toset(["api", "frontend", "gateway", "migrate", "release-bundle"]), var.image_repositories)) == 0
-    error_message = "image_repositories must include api, frontend, gateway, migrate, and release-bundle."
+    condition     = length(setsubtract(toset(["api", "frontend", "gateway"]), var.image_repositories)) == 0
+    error_message = "image_repositories must include api, frontend, and gateway."
   }
 }
 
@@ -219,6 +229,21 @@ variable "permissions_boundary_arn" {
     condition     = can(regex("^arn:[^:]+:iam::${var.expected_account_id}:policy/.+$", var.permissions_boundary_arn))
     error_message = "permissions_boundary_arn must be a managed-policy ARN owned by expected_account_id."
   }
+}
+
+variable "terraform_state_bucket" {
+  description = "Customer-owned remote-state bucket used by the private platform stage."
+  type        = string
+}
+
+variable "terraform_state_lock_table" {
+  description = "Customer-owned DynamoDB lock table used by the private platform stage."
+  type        = string
+}
+
+variable "terraform_state_kms_key_arn" {
+  description = "Customer-owned KMS key protecting remote Terraform state."
+  type        = string
 }
 
 variable "backup_retention_days" {

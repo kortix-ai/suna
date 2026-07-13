@@ -16,6 +16,14 @@ resource "aws_security_group" "supabase" {
   }
 
   ingress {
+    description = "Supabase Kong from the customer ALB nodes"
+    protocol    = "tcp"
+    from_port   = 8000
+    to_port     = 8000
+    cidr_blocks = [for index in range(3) : cidrsubnet(var.vpc_cidr, 4, index)]
+  }
+
+  ingress {
     description     = "Postgres migrations and runtime access from EKS"
     protocol        = "tcp"
     from_port       = 5432
@@ -109,6 +117,12 @@ data "aws_iam_policy_document" "supabase" {
       aws_s3_bucket.backups.arn,
       "${aws_s3_bucket.backups.arn}/*",
     ]
+  }
+
+  statement {
+    sid       = "RecordBackupFreshness"
+    actions   = ["dynamodb:UpdateItem"]
+    resources = [aws_dynamodb_table.release_state.arn]
   }
 
   statement {
@@ -213,6 +227,8 @@ resource "aws_instance" "supabase" {
     instance_name      = var.name
     runtime_secret_arn = aws_secretsmanager_secret.runtime.arn
     backup_bucket      = aws_s3_bucket.backups.id
+    backup_kms_key_arn = aws_kms_key.data.arn
+    state_table        = aws_dynamodb_table.release_state.name
     log_group          = aws_cloudwatch_log_group.supabase.name
   })
 

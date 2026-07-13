@@ -59,6 +59,17 @@ case "$*" in
   *"ec2 describe-instances"*)
     printf '%s\n' '{"Reservations":[{"Instances":[{"InstanceId":"i-0123456789","State":{"Name":"running"},"PrivateIpAddress":"10.60.16.10"}]}]}'
     ;;
+  *"secretsmanager get-secret-value"*)
+    if [ "\${FAKE_RUNTIME_MISSING:-}" = "1" ]; then
+      printf '%s\n' 'ResourceNotFoundException: Secrets Manager can not find the specified secret value' >&2
+      exit 254
+    fi
+    printf '%s\n' '{"SecretString":"{\\\"SMTP_ADMIN_EMAIL\\\":\\\"admin@example.com\\\",\\\"SMTP_HOST\\\":\\\"smtp.example.com\\\",\\\"SMTP_PORT\\\":\\\"587\\\",\\\"SMTP_USER\\\":\\\"smtp-user\\\",\\\"SMTP_PASS\\\":\\\"smtp-pass\\\",\\\"SMTP_SENDER_NAME\\\":\\\"Kortix\\\",\\\"DAYTONA_API_KEY\\\":\\\"daytona-key\\\",\\\"OPENROUTER_API_KEY\\\":\\\"openrouter-key\\\"}"}'
+    ;;
+  *"secretsmanager put-secret-value"*)
+    cat >/dev/null
+    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
+    ;;
   *"logs tail"*) printf '%s\n' '2026-07-13T11:05:00Z updater healthy' ;;
   *"--version"*) printf '%s\n' 'aws-cli/2.31.0' ;;
   *) printf '%s\n' "unexpected aws args: $*" >&2; exit 64 ;;
@@ -86,7 +97,7 @@ case "$*" in
     printf '%s\n' '"arn:aws:iam::935064898258:policy/kortix-vpc-demo-workload-boundary"'
     ;;
   *"output -json instance"*)
-    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","state_machine_arn":"arn:aws:states:us-west-2:935064898258:stateMachine:kortix-vpc-demo-reconcile","release_state_table":"kortix-vpc-demo-release-state","supabase_instance_id":"i-0123456789"}'
+    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","state_machine_arn":"arn:aws:states:us-west-2:935064898258:stateMachine:kortix-vpc-demo-reconcile","release_state_table":"kortix-vpc-demo-release-state","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test"}'
     ;;
   *"state pull"*)
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
@@ -162,6 +173,7 @@ esac
       '--vpc-cidr', '10.60.0.0/16',
       '--api-domain', 'api.vpc-demo.kortix.com',
       '--frontend-domain', 'vpc-demo.kortix.com',
+      '--route53-zone-id', 'Z0123456789EXAMPLE',
       '--release-repository-url', 'https://releases.kortix.com/enterprise',
       '--tuf-root-sha256', TRUSTED_ROOT,
       '--updater-bootstrap-url', 'https://releases.kortix.com/enterprise/bootstrap/updater-linux-amd64',
@@ -174,7 +186,7 @@ esac
 
   async function initConfigured(instance = 'kortix-vpc-demo') {
     const result = await run(configuredInitArgs(instance));
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     return result;
   }
 
@@ -192,6 +204,7 @@ esac
         vpc_cidr: '10.60.0.0/16',
         api_domain: 'api.vpc-demo.kortix.com',
         frontend_domain: 'vpc-demo.kortix.com',
+        route53_zone_id: 'Z0123456789EXAMPLE',
         tuf_root_sha256: TRUSTED_ROOT,
       },
     });
@@ -207,6 +220,8 @@ esac
       .toContain('aws_instance" "supabase');
     expect(readFileSync(join(instanceDir, 'terraform/modules/eks/platform/main.tf'), 'utf8'))
       .toContain('helm_release" "argo_cd');
+    expect(readFileSync(join(instanceDir, 'terraform/modules/enterprise-platform/main.tf'), 'utf8'))
+      .toContain('argo_cd_enabled             = false');
   });
 
   test('enforces Terraform-compatible lowercase DNS slugs for AWS instances', async () => {
@@ -273,7 +288,7 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json']);
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       instance: 'kortix-vpc-demo',
       state_migration: { verified: true, lineage: 'lineage-123', serial: 7 },
@@ -290,9 +305,34 @@ esac
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
     expect(readFileSync(awsLog, 'utf8')).toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).toContain('secretsmanager put-secret-value');
+    expect(readFileSync(awsLog, 'utf8')).toContain('file://');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('openrouter-key');
 
     await run(['configure', '--instance', 'kortix-vpc-demo', '--maintenance-window', 'Sat:03:00-04:00', '--yes']);
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
+  });
+
+  test('bootstraps internal credentials but waits for operator runtime values before first reconcile', async () => {
+    await initConfigured();
+    writeFileSync(terraformLog, '');
+    writeFileSync(awsLog, '');
+
+    const result = await run(
+      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      { FAKE_RUNTIME_MISSING: '1' },
+    );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      runtime_secret: {
+        bootstrapped: true,
+        missing: expect.arrayContaining(['SMTP_HOST', 'DAYTONA_API_KEY', 'OPENROUTER_API_KEY']),
+      },
+      reconciliation: { status: 'WAITING_FOR_RUNTIME_CONFIG', execution_arn: null },
+    });
+    const calls = readFileSync(awsLog, 'utf8');
+    expect(calls).toContain('secretsmanager put-secret-value');
+    expect(calls).not.toContain('states start-execution');
   });
 
   test('preserves local bootstrap state and restores the local backend when migration fails', async () => {
@@ -317,7 +357,7 @@ esac
     writeFileSync(awsLog, '');
 
     const reconcile = await run(['reconcile', '--instance', 'kortix-vpc-demo', '--json']);
-    expect(reconcile.code).toBe(0);
+    expect(reconcile.code, reconcile.stderr).toBe(0);
     const update = await run([
       'update', '--instance', 'kortix-vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
     ]);
@@ -334,6 +374,30 @@ esac
     expect(calls).toContain('"force":true');
     expect(calls).toContain('"trigger":"cli-rollback"');
     expect(calls).toContain('"rollback_to":"0.9.84-e1"');
+  });
+
+  test('manages AWS runtime environment only in customer Secrets Manager', async () => {
+    await initConfigured();
+    writeFileSync(awsLog, '');
+
+    const list = await run(['env', 'ls', '--instance', 'kortix-vpc-demo', '--json']);
+    expect(list.code, list.stderr).toBe(0);
+    expect(JSON.parse(list.stdout)).toMatchObject({
+      instance: 'kortix-vpc-demo',
+      missing_required: [],
+    });
+    expect(list.stdout).not.toContain('smtp-pass');
+
+    const set = await run([
+      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'kortix-vpc-demo', '--json',
+    ]);
+    expect(set.code).toBe(0);
+    expect(JSON.parse(set.stdout)).toMatchObject({ updated: ['SMTP_PASS'] });
+    const calls = readFileSync(awsLog, 'utf8');
+    expect(calls).toContain('secretsmanager put-secret-value');
+    expect(calls).toContain('file://');
+    expect(calls).not.toContain('rotated-secret');
+    expect(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
   });
 
   test('reports live AWS status/version and tails customer-owned updater logs', async () => {
@@ -380,6 +444,7 @@ esac
     expect(result.stdout).toContain('--target <target>');
     expect(result.stdout).toContain('--aws-profile <name>');
     expect(result.stdout).toContain('--vpc-cidr <cidr>');
+    expect(result.stdout).toContain('--route53-zone-id <id>');
     expect(result.stdout).toContain('--tuf-root-sha256 <digest>');
   });
 });

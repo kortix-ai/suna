@@ -6,6 +6,7 @@ export interface CompleteAwsVpcConfig extends AwsVpcCoordinates {
   vpc_cidr: string;
   api_domain: string;
   frontend_domain: string;
+  route53_zone_id: string;
   release_repository_url: string;
   tuf_root_sha256: string;
   updater_bootstrap_url: string;
@@ -18,6 +19,7 @@ const CONFIG_FIELDS: Array<keyof CompleteAwsVpcConfig> = [
   'vpc_cidr',
   'api_domain',
   'frontend_domain',
+  'route53_zone_id',
   'release_repository_url',
   'tuf_root_sha256',
   'updater_bootstrap_url',
@@ -54,6 +56,7 @@ export function mergeAwsConfiguration(
     ...(flags.vpcCidr ? { vpc_cidr: flags.vpcCidr } : {}),
     ...(flags.apiDomain ? { api_domain: flags.apiDomain } : {}),
     ...(flags.frontendDomain ? { frontend_domain: flags.frontendDomain } : {}),
+    ...(flags.route53ZoneId ? { route53_zone_id: flags.route53ZoneId } : {}),
     ...(flags.releaseRepositoryUrl ? { release_repository_url: flags.releaseRepositoryUrl } : {}),
     ...(flags.tufRootSha256 ? { tuf_root_sha256: flags.tufRootSha256 } : {}),
     ...(flags.updaterBootstrapUrl ? { updater_bootstrap_url: flags.updaterBootstrapUrl } : {}),
@@ -83,6 +86,7 @@ export async function promptForConfiguration(current: AwsVpcCoordinates): Promis
     vpc_cidr: 'Dedicated VPC /16 CIDR',
     api_domain: 'API DNS name',
     frontend_domain: 'Dashboard DNS name',
+    route53_zone_id: 'Customer Route 53 public hosted zone ID',
     release_repository_url: 'Enterprise TUF repository URL',
     tuf_root_sha256: 'Trusted TUF root SHA-256',
     updater_bootstrap_url: 'Updater bootstrap URL',
@@ -102,6 +106,7 @@ export function hasConfigurationFlags(flags: SelfHostCommandFlags): boolean {
     flags.vpcCidr
     || flags.apiDomain
     || flags.frontendDomain
+    || flags.route53ZoneId
     || flags.releaseRepositoryUrl
     || flags.tufRootSha256
     || flags.updaterBootstrapUrl

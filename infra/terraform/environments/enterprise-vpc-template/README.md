@@ -9,10 +9,13 @@ secrets or customer-specific tfvars.
    boundary. Its small bootstrap state starts locally, then the CLI migrates it
    into the new bucket and verifies lineage/serial before local cleanup.
 2. `cluster/` creates the private AWS runtime plane. The AWS account is pinned
-   in both the CLI config and Terraform precondition.
+   in both the CLI config and Terraform precondition. The configured public
+   Route 53 hosted zone must already be delegated; Terraform creates and waits
+   for ACM validation records in that customer zone.
 3. `platform/` runs only inside the customer VPC (CodeBuild) after private EKS
-   exists. It installs the shared EKS platform module, Argo CD, External
-   Secrets, and the application namespace.
+   exists. It installs the shared EKS controllers, External Secrets, Route 53
+   external-dns, and the application namespace. The customer updater is the
+   only Helm reconciler; enterprise environments do not install Argo CD.
 
 Never run these roots manually against an unverified profile. The CLI prints
 the STS identity and refuses an account mismatch before `plan` or `apply`.

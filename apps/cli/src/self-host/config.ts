@@ -11,6 +11,7 @@ export interface AwsVpcCoordinates {
   vpc_cidr?: string;
   api_domain?: string;
   frontend_domain?: string;
+  route53_zone_id?: string;
   release_repository_url?: string;
   tuf_root_sha256?: string;
   updater_bootstrap_url?: string;
@@ -38,6 +39,7 @@ const AWS_FIELDS = new Set([
   'vpc_cidr',
   'api_domain',
   'frontend_domain',
+  'route53_zone_id',
   'release_repository_url',
   'tuf_root_sha256',
   'updater_bootstrap_url',
@@ -144,6 +146,7 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
     const vpcCidr = optionalString(value.aws.vpc_cidr, 'aws.vpc_cidr');
     const apiDomain = optionalString(value.aws.api_domain, 'aws.api_domain');
     const frontendDomain = optionalString(value.aws.frontend_domain, 'aws.frontend_domain');
+    const route53ZoneId = optionalString(value.aws.route53_zone_id, 'aws.route53_zone_id');
     const releaseRepositoryUrl = optionalString(value.aws.release_repository_url, 'aws.release_repository_url');
     const tufRootSha256 = optionalString(value.aws.tuf_root_sha256, 'aws.tuf_root_sha256');
     const updaterBootstrapUrl = optionalString(value.aws.updater_bootstrap_url, 'aws.updater_bootstrap_url');
@@ -156,6 +159,9 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
     if (vpcCidr && !isValidVpcCidr(vpcCidr)) throw new Error('aws.vpc_cidr must be a canonical RFC1918 /16 CIDR');
     if (apiDomain && !isValidDomain(apiDomain)) throw new Error('aws.api_domain must be a valid DNS name');
     if (frontendDomain && !isValidDomain(frontendDomain)) throw new Error('aws.frontend_domain must be a valid DNS name');
+    if (route53ZoneId && !/^Z[A-Z0-9]{5,31}$/.test(route53ZoneId)) {
+      throw new Error('aws.route53_zone_id must be a Route 53 hosted zone ID');
+    }
     if (releaseRepositoryUrl && !isHttpsUrl(releaseRepositoryUrl)) {
       throw new Error('aws.release_repository_url must be an HTTPS URL');
     }
@@ -181,6 +187,7 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
       ...(vpcCidr ? { vpc_cidr: vpcCidr } : {}),
       ...(apiDomain ? { api_domain: apiDomain } : {}),
       ...(frontendDomain ? { frontend_domain: frontendDomain } : {}),
+      ...(route53ZoneId ? { route53_zone_id: route53ZoneId } : {}),
       ...(releaseRepositoryUrl ? { release_repository_url: releaseRepositoryUrl } : {}),
       ...(tufRootSha256 ? { tuf_root_sha256: tufRootSha256 } : {}),
       ...(updaterBootstrapUrl ? { updater_bootstrap_url: updaterBootstrapUrl } : {}),
