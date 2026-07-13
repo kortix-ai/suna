@@ -137,10 +137,16 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
 
       togglePanelMode: () => {
         const current = get().preferences;
+        // Legacy users' persisted preferences predate this key entirely, so
+        // `current.panelMode` can be `undefined` at runtime even though the
+        // type says it can't — treat that exactly like 'easy' (every read
+        // site in the app already does via `?? 'easy'`), or the toggle
+        // silently writes 'easy' back and the Advanced affordance does nothing.
+        const effective = current.panelMode ?? 'easy';
         set({
           preferences: {
             ...current,
-            panelMode: current.panelMode === 'easy' ? 'advanced' : 'easy',
+            panelMode: effective === 'easy' ? 'advanced' : 'easy',
           },
         });
       },
