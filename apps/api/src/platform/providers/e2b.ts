@@ -22,6 +22,7 @@ import type {
 // backstop and must not make sandbox creation plan-dependent.
 const E2B_RUNTIME_BACKSTOP_MS = 60 * 60 * 1000;
 const KORTIX_ENTRYPOINT = '/usr/local/bin/kortix-entrypoint';
+const RUNTIME_ENV_PATH = '/etc/kortix/runtime-env.json';
 const KORTIX_HEALTH_WAIT =
   'for attempt in $(seq 1 180); do ' +
   'if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/kortix/health >/dev/null; then exit 0; fi; ' +
@@ -46,6 +47,51 @@ function isMissingSandboxError(error: unknown): boolean {
  * after API restarts recovers a fresh token and explicitly resumes a paused box.
  */
 const connectedSandboxes = new Map<string, E2BSandbox>();
+
+function validateRuntimeEnv(value: unknown, externalId: string): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`[e2b] sandbox ${externalId} has an invalid persisted runtime environment`);
+  }
+  const envs: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item !== 'string') {
+      throw new Error(`[e2b] sandbox ${externalId} has a non-string persisted runtime environment value`);
+    }
+    envs[key] = item;
+  }
+  if (!envs.KORTIX_SANDBOX_TOKEN) {
+    throw new Error(`[e2b] sandbox ${externalId} persisted runtime environment has no KORTIX_SANDBOX_TOKEN`);
+  }
+  return envs;
+}
+
+async function persistRuntimeEnv(
+  sandbox: E2BSandbox,
+  envs: Record<string, string>,
+): Promise<void> {
+  await sandbox.files.write(RUNTIME_ENV_PATH, JSON.stringify(envs), {
+    user: 'root',
+    requestTimeoutMs: 10_000,
+  });
+  await sandbox.commands.run(`chmod 600 ${RUNTIME_ENV_PATH}`, {
+    user: 'root',
+    timeoutMs: 10_000,
+  });
+}
+
+async function loadRuntimeEnv(sandbox: E2BSandbox): Promise<Record<string, string>> {
+  try {
+    const raw = await sandbox.files.read(RUNTIME_ENV_PATH, {
+      user: 'root',
+      requestTimeoutMs: 10_000,
+    });
+    return validateRuntimeEnv(JSON.parse(raw), sandbox.sandboxId);
+  } catch (error) {
+    throw new Error(
+      `[e2b] cannot restore runtime environment for sandbox ${sandbox.sandboxId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
 
 function requirePrivateTrafficToken(sandbox: E2BSandbox): string {
   if (!sandbox.trafficAccessToken) {
@@ -143,6 +189,12 @@ export class E2BProvider implements SandboxProvider {
 
     connectedSandboxes.set(sandbox.sandboxId, sandbox);
     try {
+      // E2B preserves the filesystem but not Sandbox.create(...envs) across a
+      // keepMemory:false pause. Persist the complete per-session environment on
+      // the private rootfs so a cold resume (including after an API restart)
+      // can relaunch the authenticated daemon. Never put these secrets in E2B
+      // metadata or Kortix DB metadata.
+      await persistRuntimeEnv(sandbox, envVars);
       await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(sandbox.sandboxId);
@@ -174,7 +226,8 @@ export class E2BProvider implements SandboxProvider {
       // A filesystem-only pause cold-boots on connect. E2B normally runs the
       // template start command during that boot; this explicit check makes the
       // Kortix runtime invariant independent of provider startup behavior.
-      await ensureKortixEntrypoint(sandbox);
+      const envVars = await loadRuntimeEnv(sandbox);
+      await ensureKortixEntrypoint(sandbox, envVars);
     } catch (error) {
       connectedSandboxes.delete(externalId);
       throw error;

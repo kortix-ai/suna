@@ -29,11 +29,29 @@ class FakeSandboxNotFoundError extends Error {}
 function fakeSandbox(sandboxId: string, trafficAccessToken = `traffic-${sandboxId}`) {
   const pauses: Array<Record<string, unknown>> = [];
   const runs: Array<{ command: string; opts: Record<string, unknown> }> = [];
+  const fileWrites: Array<{ path: string; data: string; opts: Record<string, unknown> }> = [];
+  const files = new Map<string, string>([
+    ['/etc/kortix/runtime-env.json', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 'persisted-token' })],
+  ]);
   const sandbox = {
     sandboxId,
     trafficAccessToken,
     pauses,
     runs,
+    fileWrites,
+    persistedFiles: files,
+    files: {
+      write: async (path: string, data: string, opts: Record<string, unknown>) => {
+        fileWrites.push({ path, data, opts });
+        files.set(path, data);
+        return { path };
+      },
+      read: async (path: string) => {
+        const value = files.get(path);
+        if (value === undefined) throw new Error(`missing file: ${path}`);
+        return value;
+      },
+    },
     commands: {
       list: async () => [],
       run: async (command: string, opts: Record<string, unknown>) => {
@@ -165,9 +183,22 @@ describe('E2B provider lifecycle', () => {
         kortix_created_by: 'usr-1',
       },
     });
-    expect(sandbox.runs).toHaveLength(2);
-    expect(sandbox.runs[0].command).toBe('/usr/local/bin/kortix-entrypoint');
-    expect(sandbox.runs[1].command).toContain('http://127.0.0.1:8000/kortix/health');
+    expect(sandbox.fileWrites).toHaveLength(1);
+    expect(sandbox.fileWrites[0]).toMatchObject({
+      path: '/etc/kortix/runtime-env.json',
+      opts: { user: 'root' },
+    });
+    expect(JSON.parse(sandbox.fileWrites[0].data)).toMatchObject({
+      KORTIX_SANDBOX_TOKEN: 'sandbox-token',
+      KORTIX_API_URL: 'https://api.example.com/v1',
+    });
+    expect(sandbox.runs).toHaveLength(3);
+    expect(sandbox.runs[0].command).toBe('chmod 600 /etc/kortix/runtime-env.json');
+    expect(sandbox.runs[1]).toMatchObject({
+      command: '/usr/local/bin/kortix-entrypoint',
+      opts: { envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'sandbox-token' }) },
+    });
+    expect(sandbox.runs[2].command).toContain('http://127.0.0.1:8000/kortix/health');
     expect(result).toMatchObject({
       externalId: 'sb-secure',
       metadata: { lifecycle: 'pause-filesystem-explicit-resume' },
@@ -217,12 +248,36 @@ describe('E2B provider lifecycle', () => {
 
     expect(connected.map((call) => call.sandboxId)).toEqual(['sb-cold-resume']);
     expect(resumed.runs).toEqual([
-      expect.objectContaining({ command: '/usr/local/bin/kortix-entrypoint' }),
+      expect.objectContaining({
+        command: '/usr/local/bin/kortix-entrypoint',
+        opts: expect.objectContaining({
+          envs: expect.objectContaining({ KORTIX_SANDBOX_TOKEN: 'persisted-token' }),
+        }),
+      }),
       expect.objectContaining({
         command: expect.stringContaining('http://127.0.0.1:8000/kortix/health'),
       }),
     ]);
   });
+
+  test.each([
+    ['missing', undefined, 'missing file'],
+    ['malformed', '{not-json', 'JSON'],
+    ['non-string', JSON.stringify({ KORTIX_SANDBOX_TOKEN: 42 }), 'non-string'],
+    ['tokenless', JSON.stringify({ KORTIX_API_URL: 'https://api.example.com/v1' }), 'no KORTIX_SANDBOX_TOKEN'],
+  ] as const)(
+    'cold resume fails closed for a %s persisted runtime environment',
+    async (_case, persisted, expectedMessage) => {
+      const resumed = fakeSandbox(`sb-cold-${_case}`);
+      if (persisted === undefined) resumed.persistedFiles.delete('/etc/kortix/runtime-env.json');
+      else resumed.persistedFiles.set('/etc/kortix/runtime-env.json', persisted);
+      connectFactory = () => resumed;
+      const provider = new E2BProvider();
+
+      await expect(provider.start(resumed.sandboxId)).rejects.toThrow(expectedMessage);
+      expect(resumed.runs).toHaveLength(0);
+    },
+  );
 
   test('a process restart can pause by ID without first resuming the sandbox', async () => {
     const provider = new E2BProvider();

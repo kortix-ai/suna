@@ -34,7 +34,7 @@ const FakeTemplate = Object.assign(
 
 mock.module('e2b', () => ({
   Template: FakeTemplate,
-  waitForURL: (url: string) => `wait-for:${url}`,
+  waitForProcess: (processName: string) => `wait-for-process:${processName}`,
 }));
 mock.module('../../config', () => ({
   config: { E2B_API_KEY: 'e2b-test-key' },
@@ -80,11 +80,15 @@ describe('E2B template adapter', () => {
     expect(builderCalls).toEqual([
       { method: 'Template', args: [{ fileContextPath: '/tmp/kortix-e2b-adapter-test' }] },
       { method: 'fromDockerfile', args: ['/tmp/kortix-e2b-adapter-test/Dockerfile'] },
+      {
+        method: 'setStartCmd',
+        args: ['sleep infinity', 'wait-for-process:sleep'],
+      },
     ]);
     expect(buildCalls).toHaveLength(1);
     expect(buildCalls[0]).toMatchObject({
       name: 'kortix-e2b-template',
-      opts: { apiKey: 'e2b-test-key', cpuCount: 4, memoryMB: 8192 },
+      opts: { apiKey: 'e2b-test-key', cpuCount: 4, memoryMB: 8192, skipCache: true },
     });
     expect(logs).toEqual(['template ready']);
   });

@@ -1,7 +1,7 @@
 /** E2B Cloud template implementation of the shared sandbox image contract. */
 
 import { rm } from 'node:fs/promises';
-import { Template } from 'e2b';
+import { Template, waitForProcess } from 'e2b';
 import { config } from '../../config';
 import {
   DEFAULT_CPU,
@@ -55,17 +55,25 @@ class E2BAdapter implements SandboxProviderAdapter {
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
     try {
-      // Do not use setStartCmd for the Kortix runtime. E2B executes it during
-      // template build and snapshots the already-running process, before the
-      // per-session Sandbox.create() environment (especially the sandbox auth
-      // token) exists. The runtime adapter starts and health-checks the process
-      // on every create and filesystem-only resume instead.
+      // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
+      // command. E2B executes that command while finalizing the template, before
+      // a per-session sandbox token exists, so leaving it intact snapshots a
+      // tokenless Kortix daemon that create() can mistake for the real runtime.
+      // Override it with an inert keeper; the runtime adapter explicitly starts
+      // and health-checks kortix-entrypoint on create and every cold resume.
       const template = Template({ fileContextPath: context.contextDir })
-        .fromDockerfile(context.composedPath);
+        .fromDockerfile(context.composedPath)
+        .setStartCmd('sleep infinity', waitForProcess('sleep'));
       await Template.build(template, input.snapshotName, {
         ...connectionOpts(),
         cpuCount: input.spec.cpu ?? DEFAULT_CPU,
         memoryMB: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
+        // E2B's remote cache can report COPY layers as restored while omitting
+        // their files from the next RUN layer (observed with kortix-agent.gz and
+        // kortix.gz on a second identical live build). A missing runtime binary
+        // is worse than the extra build time, so E2B templates fail safe with a
+        // complete rebuild until the provider cache preserves COPY outputs.
+        skipCache: true,
         onBuildLogs: (entry) => {
           const line = entry.message.trim();
           if (!line) return;
