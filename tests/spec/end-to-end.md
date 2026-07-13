@@ -416,7 +416,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `OAU-1` `GET /oauth/authorize` (public) → redirect to consent.
 `OAU-2` `GET /oauth/authorize/consent/:requestId` (auth) → consent data; `POST /oauth/authorize/consent` → submit.
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
-`OAU-4` `GET /oauth/userinfo` · `GET /oauth/claimable-machines` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware). claimable-machines queries legacy `sandboxes` (`provider:justavps`) → empty on Daytona-only deploys.
+`OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
 
 ### Tunnel (reverse tunnel to local machines)
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
@@ -619,8 +619,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.
 `PROJ-13` `POST /projects/:id/oauth/:provider/start|poll` + `GET|DELETE /projects/:id/oauth[/:provider]` → poll-based device flow saving CODEX_AUTH_JSON; start unknown provider/invalid sharing → 400, poll missing flow_id → 400, poll bogus → expired, list → 200, delete unknown → 404, NONMEMBER → 404, ANON → 401.
-`PROJ-14` `GET /projects/legacy-migration/eligibility` → 200; `status?sandbox_id` missing → 400; unknown → 404; ANON → 401.
-`PROJ-15` `POST /projects/legacy-migration/start {sandbox_id}` → missing → 400; unknown → 404; non-justavps → 400.
 `PROJ-16` `POST /projects/:id/turn-question {session_id,questions[]}` → missing → 400.
 `PROJ-17` `POST /projects/:id/turn-stream {session_id,text}` → missing → 400; `kind:end|turn_end` needs only `session_id` (`status: idle|error`) → 200 `ok:false` when no live stream.
 `PROJ-18` Project cap by plan: a FREE account may own exactly 1 project — `POST /projects/provision` for the 2nd → 403 `{code:project_limit_reached,limit}` (checked before any repo is provisioned); paid/team plans get `MAX_PROJECTS_PER_ACCOUNT`. Requires `managedGit`+`stripe` (billing enforced).

@@ -29,15 +29,9 @@ export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
 ]);
 
 export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
-  // 'daytona' is the managed cloud backend's identity — new rows write 'daytona'.
-  // 'managed' remains a valid enum value only because the ADD VALUE migration that
-  // introduced it can't be dropped in Postgres; it's a harmless defensive leftover
-  // from the reverted daytona→managed rename (read paths still accept it).
-  'managed',
   'daytona',
-  'local_docker',
-  'justavps',
   'platinum',
+  'e2b',
 ]);
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
@@ -1253,7 +1247,9 @@ export const sandboxes = kortixSchema.table(
     sandboxId: uuid('sandbox_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    // Historical /instances audit rows may carry retired providers. Current
+    // session runtimes use the strict sandbox_provider enum.
+    provider: text('provider').default('daytona').notNull(),
     externalId: text('external_id'),
     status: sandboxStatusEnum('status').default('provisioning').notNull(),
     baseUrl: text('base_url').notNull(),
@@ -2038,6 +2034,7 @@ export const sandboxComputeSessions = kortixSchema.table(
     sandboxId: uuid('sandbox_id').notNull(),
     sessionId: text('session_id'),
     actorUserId: uuid('actor_user_id'),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     cpuCores: integer('cpu_cores').notNull(),
     memoryGb: integer('memory_gb').notNull(),
     diskGb: integer('disk_gb').notNull(),
@@ -2062,6 +2059,7 @@ export const sandboxComputeSessions = kortixSchema.table(
   },
   (table) => [
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
+    index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
     index('idx_sandbox_compute_sessions_open')
       .on(table.sandboxId)
       .where(sql`${table.endedAt} IS NULL`),

@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
 import { backendApi, type ApiClientOptions } from '../../http/api-client';
+import type { SandboxProviderName } from '../platform-client/types';
 import {
   normalizeServerBackendBase,
   serverTokenGet,
@@ -53,9 +54,9 @@ export interface KortixProject {
   warm_pool_available?: boolean;
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
-  default_sandbox_provider?: string | null;
+  default_sandbox_provider?: SandboxProviderName | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
-  available_sandbox_providers?: string[];
+  available_sandbox_providers?: SandboxProviderName[];
 }
 
 export interface ProjectConfigSummary {
@@ -291,7 +292,7 @@ export async function updateExperimentalFeature(
  *  be one of the project's `available_sandbox_providers`. */
 export async function updateProjectSandboxProvider(
   projectId: string,
-  provider: string | null,
+  provider: SandboxProviderName | null,
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {

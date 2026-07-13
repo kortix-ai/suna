@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { chmod, mkdir } from 'node:fs/promises';
+import { chmod, mkdir, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -20,6 +20,8 @@ await chmod(cliPath, 0o755);
 await chmod(entrypointPath, 0o755);
 await mkdir(slackCliPath, { recursive: true });
 await mkdir(executorSdkPath, { recursive: true });
+await mkdir(join(executorSdkPath, 'node_modules'), { recursive: true });
+await symlink('/definitely-not-present/typescript', join(executorSdkPath, 'node_modules', 'typescript'));
 await mkdir(opencodeConfigPath, { recursive: true });
 
 // Set per-test (NOT at module load): build-context reads these lazily, so setting
@@ -36,6 +38,7 @@ beforeEach(() => {
 
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
+let executorNodeModulesPresentAtProviderBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -50,6 +53,9 @@ mock.module('@daytonaio/sdk', () => ({
       // Checked HERE (at the Daytona boundary, mid-build) — buildSnapshot's
       // finally cleans the context after, so this can't be asserted afterward.
       scaffoldPresentAtDaytonaBoundary = existsSync(join(path, '..', 'scaffold.git', 'HEAD'));
+      executorNodeModulesPresentAtProviderBoundary = existsSync(
+        join(path, '..', 'kortix-executor-sdk', 'node_modules'),
+      );
       contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
@@ -67,6 +73,7 @@ mock.module('../shared/daytona', () => ({
     },
   }),
   isDaytonaConfigured: () => true,
+  listDaytonaSnapshots: async () => [],
 }));
 
 const { daytonaProvider } = await import('../snapshots/providers/daytona');
@@ -90,6 +97,7 @@ describe('Daytona snapshot build context', () => {
 
     expect(dockerfileSeen).toContain('COPY scaffold.git /opt/kortix/scaffold.git');
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
+    expect(executorNodeModulesPresentAtProviderBoundary).toBe(false);
   });
 });
 

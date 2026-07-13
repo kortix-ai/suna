@@ -13,10 +13,11 @@ onto it, and runs [OpenCode](/docs/concepts/agents) inside.
 - **Status** — `provisioning → running → (stopped | failed)`. The branch is cut
   and the sandbox requested during `provisioning`; `stopped` on explicit stop or
   idle hibernation.
-- **Persistence** — the sandbox FS is disposable (re-cloned each boot, torn down
-  on stop/restart). Only what the agent **commits and pushes** survives, and only
-  a merged [change request](/docs/concepts/change-requests) lands it on the
-  default branch.
+- **Persistence** — stop/resume keeps the same provider identity and filesystem,
+  but drops running processes and memory. Permanent deletion removes that
+  provider state. Git remains the durable contract: only work the agent
+  **commits and pushes** is portable and recoverable, and only a merged
+  [change request](/docs/concepts/change-requests) lands it on the default branch.
 
 Inside the VM the `kortix-agent` daemon clones to `/workspace`, supervises
 OpenCode, and serves a control surface on port 8000 that the dashboard tunnels
@@ -25,9 +26,9 @@ status enum, injected env vars, daemon endpoints — is in
 [Session runtime](/docs/reference/session-runtime).
 
 <Callout type="info" title="Sandbox provider">
-Daytona is the platform default sandbox provider. A project can be pinned to
-an alternate provider (currently Platinum) instead, which builds and hosts
-the same layered image through a different backend — everything above
+Kortix supports Daytona, Platinum, and E2B Cloud. A project can follow the
+platform default or be pinned to any enabled provider. Every provider builds
+and hosts the same layered image through the unified runtime contract — everything above
 (branch-per-session, `/workspace`, the daemon, port 8000) behaves the same
 regardless of provider. Pin or clear a project's provider with the SDK's
 `p.sandbox.setProvider(provider)` (`null` follows the platform default); see

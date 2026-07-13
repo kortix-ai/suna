@@ -26,6 +26,7 @@ import {
   sandboxes,
   sandboxMembers,
   kortixApiKeys,
+  sandboxComputeSessions,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -68,11 +69,9 @@ describe('kortix enums', () => {
   test('sandbox_provider enum lists supported providers', () => {
     expect(sandboxProviderEnum.enumName).toBe('sandbox_provider');
     expect(sandboxProviderEnum.enumValues).toEqual([
-      'managed',
       'daytona',
-      'local_docker',
-      'justavps',
       'platinum',
+      'e2b',
     ]);
   });
 
@@ -142,6 +141,15 @@ describe('kortix enums', () => {
   test('change_request_status enum is non-empty and named', () => {
     expect(changeRequestStatusEnum.enumName).toBe('change_request_status');
     expect(changeRequestStatusEnum.enumValues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('sandbox compute provider attribution', () => {
+  test('compute windows persist the provider and index it with start time', () => {
+    expect(columnNames(sandboxComputeSessions)).toContain('provider');
+    expect(indexNames(sandboxComputeSessions)).toContain(
+      'idx_sandbox_compute_sessions_provider_time',
+    );
   });
 });
 

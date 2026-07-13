@@ -45,7 +45,8 @@ describe('sandbox init state helpers', () => {
       async remove() {},
       async getStatus() { return 'unknown' as const; },
       async resolveEndpoint() { return { url: '', headers: {} }; },
-      async resolvePreviewLink() { return { url: '', token: null }; },
+      routeIngress(request: { port: number }) { return { effectivePort: request.port }; },
+      async resolveIngress(_externalId: string, request: { port: number }) { return { url: '', headers: {}, effectivePort: request.port }; },
       async ensureRunning() {},
       async getProvisioningStatus() { return null; },
     };

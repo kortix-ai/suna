@@ -199,7 +199,7 @@ The `KORTIX_*` prefix is reserved at the Secrets Manager surface, not at parse t
 
 A list of named, bootable sandbox images; the Kortix runtime layer (opencode CLI, agent daemon, entrypoint) is layered on top of it automatically. Optional — with no entries, every session boots the always-available platform default image. Declare as many templates as you like; a session picks one by `slug`. This is also where you size the sandbox hardware.
 
-The schema mirrors the runtime provider (Daytona): an image comes either from a **Dockerfile in your repo** or a **public Docker image reference**, and the resource spec maps onto the provider's `cpu` / `memory` / `disk`.
+The schema is provider-neutral: an image comes either from a **Dockerfile in your repo** or a **public Docker image reference**, and Kortix maps the `cpu` / `memory` / `disk` resource spec onto Daytona, Platinum, or E2B.
 
 ```yaml
 sandbox:

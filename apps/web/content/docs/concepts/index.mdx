@@ -46,9 +46,11 @@ default branch only via a merged **[change request](/docs/concepts/change-reques
 5. It opens a change request; you review and merge — the only path to the
    default branch.
 
-<Callout type="info" title="Disposable by design">
-The sandbox is thrown away on stop or idle hibernation. Only committed-and-pushed
-branch work survives, and only a merged change request makes it permanent.
+<Callout type="info" title="Git is the durable boundary">
+Stop or idle hibernation preserves the same sandbox filesystem but drops memory
+and processes; permanent deletion removes provider state. Only
+committed-and-pushed branch work is provider-independent, and only a merged
+change request makes it permanent on the default branch.
 </Callout>
 
 ## Two config surfaces
