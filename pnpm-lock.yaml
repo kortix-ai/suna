@@ -238,9 +238,6 @@ importers:
 
   apps/llm-gateway:
     dependencies:
-      '@kortix/llm-catalog':
-        specifier: workspace:*
-        version: link:../../packages/llm-catalog
       '@kortix/llm-gateway':
         specifier: workspace:*
         version: link:../../packages/llm-gateway
@@ -1382,9 +1379,6 @@ importers:
 
   packages/llm-gateway:
     dependencies:
-      '@kortix/llm-catalog':
-        specifier: workspace:*
-        version: link:../llm-catalog
       '@kortix/shared':
         specifier: workspace:*
         version: link:../shared

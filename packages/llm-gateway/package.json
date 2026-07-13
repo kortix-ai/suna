@@ -13,7 +13,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@kortix/llm-catalog": "workspace:*",
     "@kortix/shared": "workspace:*"
   },
   "devDependencies": {

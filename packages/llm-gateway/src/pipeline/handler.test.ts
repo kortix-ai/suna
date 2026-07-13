@@ -579,9 +579,12 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     expect((await res.json()).code).toBe("invalid_token");
   });
 
-  test("autoRouter resolves a synthetic model before resolveUpstream; trace keeps the requested id", async () => {
+  test("control-plane route resolves a synthetic model before resolveUpstream; trace keeps the requested id", async () => {
     let resolvedWith = "";
     const { hooks, traces } = makeHooks({
+      resolveRoute: async (_principal, input) => input.requestedModel === "auto"
+        ? { policyId: "auto", primaryModel: "fusion" }
+        : null,
       resolveUpstream: async (_p, model) => {
         resolvedWith = model;
         return [managed];
@@ -596,7 +599,6 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
       hooks,
       {
         retry: fastRetry,
-        autoRouter: (model) => (model === "auto" ? "fusion" : null),
       },
       { fetchImpl },
     ).chatCompletions({
@@ -609,9 +611,12 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     expect(traces[0].requestedModel).toBe("auto"); // trace records what the client asked for
   });
 
-  test("autoRouter is a no-op for a concrete model", async () => {
+  test("control-plane route is a no-op for a concrete model", async () => {
     let resolvedWith = "";
     const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => input.requestedModel === "auto"
+        ? { policyId: "auto", primaryModel: "fusion" }
+        : null,
       resolveUpstream: async (_p, model) => {
         resolvedWith = model;
         return [managed];
@@ -625,7 +630,6 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
       hooks,
       {
         retry: fastRetry,
-        autoRouter: (model) => (model === "auto" ? "fusion" : null),
       },
       { fetchImpl },
     ).chatCompletions({
@@ -633,6 +637,41 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
       rawBody: '{"model":"claude-x"}',
     });
     expect(resolvedWith).toBe("claude-x");
+  });
+
+  test("control-plane route failure returns one bounded routing_unavailable error", async () => {
+    let routeCalls = 0;
+    let upstreamCalls = 0;
+    const { hooks, traces } = makeHooks({
+      resolveRoute: async () => {
+        routeCalls += 1;
+        throw new Error("control plane offline");
+      },
+      resolveUpstream: async () => {
+        upstreamCalls += 1;
+        return [managed];
+      },
+    });
+
+    const res = await createGateway(hooks, { retry: fastRetry }).chatCompletions({
+      authorization: "Bearer good",
+      rawBody: '{"model":"auto","messages":[{"role":"user","content":"ping"}]}',
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      code: "routing_unavailable",
+      requested_model: "auto",
+      resolved_model: "auto",
+    });
+    expect(routeCalls).toBe(1);
+    expect(upstreamCalls).toBe(0);
+    await flush();
+    expect(traces.at(-1)).toMatchObject({
+      status: 502,
+      ok: false,
+      errorCode: "routing_unavailable",
+    });
   });
 
   test("bounded model fallback routes a failed primary to the next model", async () => {
@@ -651,6 +690,12 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     const resolvedModels: string[] = [];
     const upstreamModels: string[] = [];
     const { hooks, traces } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-policy",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["glm-5.2"],
+        fallbackOn: "any-error",
+      }),
       resolveUpstream: async (_p, model) => {
         resolvedModels.push(model);
         return model === "codex/gpt-5.6-sol" ? [primary] : model === "glm-5.2" ? [fallback] : [];
@@ -668,9 +713,6 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
 
     const res = await createGateway(hooks, {
       retry: { ...fastRetry, maxAttempts: 1 },
-      modelFallbackRouter: (model) => model === "codex/gpt-5.6-sol"
-        ? { fallbackModels: ["glm-5.2"], fallbackOn: "any-error" }
-        : null,
     }, { fetchImpl }).chatCompletions({
       authorization: "Bearer good",
       rawBody: '{"model":"codex/gpt-5.6-sol","messages":[{"role":"user","content":"ping"}]}',
@@ -682,7 +724,7 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     expect(upstreamModels).toEqual(["gpt-5.6-sol", "z-ai/glm-5.2"]);
     await flush();
     expect(traces.at(-1)?.metadata.gatewayRouting).toEqual({
-      policy: "model-fallback",
+      policy: "test-policy",
       models: ["codex/gpt-5.6-sol", "glm-5.2"],
       selected: "glm-5.2",
     });
@@ -691,6 +733,12 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
   test("any-error model policy falls back on a deterministic primary 400", async () => {
     const calls: string[] = [];
     const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-any-error",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["fallback"],
+        fallbackOn: "any-error",
+      }),
       resolveUpstream: async (_p, model) => [{
         ...managed,
         provider: model === "primary" ? "primary" : "fallback",
@@ -700,7 +748,6 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     });
     const res = await createGateway(hooks, {
       retry: { ...fastRetry, maxAttempts: 1 },
-      modelFallbackRouter: () => ({ fallbackModels: ["fallback"], fallbackOn: "any-error" }),
     }, {
       fetchImpl: async (url) => {
         calls.push(String(url));
@@ -721,6 +768,12 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     const resolvedModels: string[] = [];
     let calls = 0;
     const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-bounded",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["fallback-1", "fallback-2", "fallback-3", "primary"],
+        fallbackOn: "any-error",
+      }),
       resolveUpstream: async (_p, model) => {
         resolvedModels.push(model);
         return [{ ...managed, provider: model, resolvedModel: model }];
@@ -729,10 +782,6 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
     const res = await createGateway(hooks, {
       retry: { ...fastRetry, maxAttempts: 1 },
       maxFallbackModels: 1,
-      modelFallbackRouter: () => ({
-        fallbackModels: ["fallback-1", "fallback-2", "fallback-3", "primary"],
-        fallbackOn: "any-error",
-      }),
     }, {
       fetchImpl: async () => {
         calls += 1;
@@ -747,11 +796,16 @@ describe("gateway.chatCompletions — combined authorize hook", () => {
 
   test("an unavailable primary model can resolve directly to its configured fallback", async () => {
     const { hooks } = makeHooks({
+      resolveRoute: async (_principal, input) => ({
+        policyId: "test-unavailable",
+        primaryModel: input.requestedModel,
+        fallbackModels: ["fallback"],
+        fallbackOn: "any-error",
+      }),
       resolveUpstream: async (_p, model) => model === "primary" ? [] : [managed],
     });
     const res = await createGateway(hooks, {
       retry: { ...fastRetry, maxAttempts: 1 },
-      modelFallbackRouter: () => ({ fallbackModels: ["fallback"], fallbackOn: "any-error" }),
     }, { fetchImpl: okFetch({ choices: [{ message: { content: "ok" } }] }) })
       .chatCompletions({ authorization: "Bearer good", rawBody: '{"model":"primary"}' });
 
