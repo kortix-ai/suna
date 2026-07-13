@@ -91,6 +91,8 @@ export function AppearanceTab() {
     (s) => s.preferences.disableTabSelector ?? false,
   );
   const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
+  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
+  const setPanelMode = useUserPreferencesStore((s) => s.setPanelMode);
   const [mounted, setMounted] = React.useState(false);
   const isSessionTabsEnabled = !disableTabSelector;
 
@@ -166,6 +168,37 @@ export function AppearanceTab() {
             />
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-col space-y-2">
+        <label className="text-muted-foreground text-sm font-medium">Session panel</label>
+        <div className="bg-foreground/10 shadow-custom flex w-fit items-center gap-1 rounded-sm p-0.5">
+          <button
+            type="button"
+            aria-label="Easy mode"
+            className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
+            style={{ backgroundColor: panelMode === 'easy' ? 'var(--background)' : 'transparent' }}
+            onClick={() => setPanelMode('easy')}
+          >
+            <span className="text-sm font-medium">Easy</span>
+          </button>
+          <button
+            type="button"
+            aria-label="Advanced mode"
+            className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
+            style={{
+              backgroundColor: panelMode === 'advanced' ? 'var(--background)' : 'transparent',
+            }}
+            onClick={() => setPanelMode('advanced')}
+          >
+            <span className="text-sm font-medium">Advanced</span>
+          </button>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          {panelMode === 'easy'
+            ? "Explains what's happening step by step, in plain language. Click any step for more detail."
+            : 'Shows every action the agent takes, with full detail and step-by-step navigation.'}
+        </p>
       </div>
 
       <div className="flex flex-col space-y-2">
