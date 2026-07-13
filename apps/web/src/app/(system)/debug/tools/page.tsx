@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { SessionActionsPanel } from '@/features/session/action-panel/session-actions-panel';
+import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
@@ -542,7 +542,7 @@ export default function DebugToolsPage() {
           {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
         </h2>
         <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-2xl border">
-          <SessionActionsPanel
+          <AdvancedPanel
             sessionId="debug"
             messages={[
               {

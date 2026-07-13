@@ -7,7 +7,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BrowserPanel } from '@/features/session/action-panel/browser-panel';
-import { SessionActionsPanel } from '@/features/session/action-panel/session-actions-panel';
+import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
 import { SessionAuditPanel } from '@/features/session/session-audit-panel';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
@@ -241,7 +241,7 @@ export const SessionLayout = memo(function SessionLayout({
       projectSessionId={projectSessionId}
     />
   ) : (
-    <SessionActionsPanel sessionId={sessionId} messages={messages} />
+    <AdvancedPanel sessionId={sessionId} messages={messages} />
   );
   const panelBody = (
     <div className="relative h-full w-full">
