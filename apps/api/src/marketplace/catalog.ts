@@ -111,17 +111,12 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     secrets: ["REPLICATE_API_TOKEN"],
     network: ["api.replicate.com"],
   },
-  whisper: { secrets: ["GROQ_API_KEY"], network: ["api.groq.com"] },
   "deep-research": { tools: ["web_search"] },
-  "research-assistant": { tools: ["web_search"] },
   "research-report": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
-  "customer-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },
   "draft-outreach": { tools: ["web_search"] },
   "domain-research": { network: ["rdap.org", "whois"] },
-  "agent-browser": { tools: ["agent-browser"] },
-  media: { tools: ["media"] },
 };
 
 export function capabilitiesOf(item: RegistryItem): ItemCapabilities {
