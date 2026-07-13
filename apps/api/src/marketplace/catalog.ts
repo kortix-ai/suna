@@ -856,6 +856,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
   const by = new Map<string, MarketplaceFacet>();
   for (const it of items) {
     if (!isBrowseableCatalogItem(it)) continue;
+    if (isStarterKitMember(it)) continue; // counted inside the Kortix Starter project
     const id = it.marketplaceId;
     let m = by.get(id);
     // A company/source's sourceUrl means "the repo this whole source lives in"
@@ -1545,6 +1546,15 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
+// Every first-party `kortix-starter` skill lives *inside* the synthetic "Kortix
+// Starter" project now (see `buildStarterKitProjectItem`) — the project is the
+// marketplace's top-level unit, so the individual skills are no longer their own
+// browse tiles. They stay fully resolvable by id (detail, file browser, and the
+// project's typed "what's inside"), just hidden from the top-level LIST.
+function isStarterKitMember(it: CatalogItem): boolean {
+  return it.registry === "kortix-starter";
+}
+
 function filterCatalogItems(
   items: CatalogItem[],
   opts: ItemQuery,
@@ -1554,6 +1564,7 @@ function filterCatalogItems(
   const source = opts.source?.trim();
   return items.filter((it) => {
     if (!isBrowseableCatalogItem(it)) return false;
+    if (isStarterKitMember(it)) return false; // folded inside the Kortix Starter project
     if (
       type &&
       type !== "all" &&
