@@ -13,4 +13,3 @@ CREATE TABLE "kortix"."project_llm_routing_policies" (
   CONSTRAINT "project_llm_routing_policies_rules_array_check"
     CHECK (jsonb_typeof("rules") = 'array')
 );
-
