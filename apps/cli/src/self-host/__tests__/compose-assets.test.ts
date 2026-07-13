@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse } from 'yaml';
 
 import {
   renderFullDockerCompose,
   SUPABASE_UPSTREAM_COMMIT,
   supabaseVendorAssets,
+  writeSupabaseVendorAssets,
 } from '../compose-assets.ts';
 
 describe('full self-host Docker distribution', () => {
@@ -80,6 +83,20 @@ describe('full self-host Docker distribution', () => {
     ]);
     for (const [path, content] of Object.entries(supabaseVendorAssets)) {
       expect(content.length, `${path} must not be empty`).toBeGreaterThan(10);
+    }
+  });
+
+  test('writes bind-mounted assets with container-readable modes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-supabase-assets-'));
+    try {
+      writeSupabaseVendorAssets(root);
+
+      for (const relativePath of Object.keys(supabaseVendorAssets)) {
+        const mode = statSync(join(root, relativePath)).mode & 0o777;
+        expect(mode, relativePath).toBe(relativePath.endsWith('.sh') ? 0o755 : 0o644);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

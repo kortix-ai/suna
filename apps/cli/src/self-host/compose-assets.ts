@@ -135,9 +135,17 @@ export function renderFullDockerCompose(composeProject: string): string {
 export function writeSupabaseVendorAssets(root: string): void {
   for (const [relativePath, content] of Object.entries(supabaseVendorAssets)) {
     const path = join(root, relativePath);
+    const mode = relativePath.endsWith('.sh') ? 0o755 : 0o644;
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content, { encoding: 'utf8', mode: relativePath.endsWith('.sh') ? 0o700 : 0o600 });
-    if (relativePath.endsWith('.sh')) chmodSync(path, 0o700);
+    // These files are bind-mounted into containers that intentionally run as
+    // non-root users. Docker Desktop can mask restrictive host modes, while a
+    // native Linux Docker engine preserves them and rejects a 0600 SQL/config
+    // file owned by the host user. The assets contain no secrets; runtime
+    // secrets remain in the separately protected .env file.
+    writeFileSync(path, content, { encoding: 'utf8', mode });
+    // `mode` only applies when creating a file. Reconcile an existing install
+    // too so upgrading repairs assets emitted by an older CLI.
+    chmodSync(path, mode);
   }
   mkdirSync(join(root, 'volumes', 'db', 'data'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'storage'), { recursive: true, mode: 0o700 });
