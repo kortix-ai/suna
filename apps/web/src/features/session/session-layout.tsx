@@ -23,6 +23,7 @@ import {
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk/projects-client';
@@ -88,6 +89,15 @@ export const SessionLayout = memo(function SessionLayout({
   const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const togglePanelMode = useUserPreferencesStore((s) => s.togglePanelMode);
   const isEasy = panelMode === 'easy';
+
+  // The session's own busy/retry status — the exact same signal
+  // `session-chat.tsx` reads (as `isServerBusy`) to drive its own working
+  // indicator, and the same store `tab-bar.tsx`/`session-list.tsx` read for
+  // their busy dots. EasyPanel ORs this with its part-derived running flag so
+  // an inter-tool-call gap (assistant text streaming, no tool part active)
+  // doesn't read as "finished" — see EasyPanel's `deriveIsRunning`.
+  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
+  const isSessionBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // Easy mode is only ever the card home — the other views are engineer
   // surfaces reached through the (hidden) tab strip. Force the view and skip
@@ -260,6 +270,7 @@ export const SessionLayout = memo(function SessionLayout({
       messages={messages}
       projectId={projectId}
       projectSessionId={projectSessionId}
+      isSessionBusy={isSessionBusy}
     />
   );
   const panelBody = (

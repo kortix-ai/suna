@@ -31,7 +31,7 @@ import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
 import { groupSteps } from '../shared/group-steps';
 import { ContextCard } from './context-card';
-import { shouldAutoExpandOutputs } from './easy-panel-logic';
+import { deriveIsRunning, shouldAutoExpandOutputs } from './easy-panel-logic';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { ProgressView } from './progress-view';
@@ -43,18 +43,28 @@ export const EasyPanel = memo(function EasyPanel({
   messages,
   projectId,
   projectSessionId,
+  isSessionBusy = false,
 }: {
   sessionId: string;
   messages: MessageWithParts[] | undefined;
   projectId?: string;
   projectSessionId?: string;
+  /** The session's own busy/retry status — see `deriveIsRunning`. */
+  isSessionBusy?: boolean;
 }) {
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const outputs = useMemo(() => deriveOutputs(parts), [parts]);
   const context = useMemo(() => deriveContext(parts), [parts]);
 
-  const isRunning = steps.some((s) => s.status === 'running');
+  // Part-derived alone flickers between tool calls (assistant text streams
+  // with no part running/pending) — OR it with the session's own status so
+  // Outputs only auto-expands at the real finish, and Progress's
+  // shimmer/subtitle don't flicker at every tool boundary. See `deriveIsRunning`.
+  const isRunning = deriveIsRunning(
+    steps.some((s) => s.status === 'running'),
+    isSessionBusy,
+  );
 
   const [view, setView] = useState<EasyView>({ kind: 'home' });
   const [focusStepId, setFocusStepId] = useState<string | undefined>();
@@ -87,13 +97,17 @@ export const EasyPanel = memo(function EasyPanel({
   // Clicking an output must actually open the file. Easy mode has no tab
   // strip, so flipping the shared panel's `viewBySession` (what
   // `requestFileOpen` also does, as a side effect) would point at a view
-  // nothing here renders — this drills into a `SessionFilesExplorer`
-  // mounted right here instead, and still issues the real `requestFileOpen`
-  // so that instance's file-open-request effect actually fires on mount.
-  const requestFileOpen = useSessionBrowserStore((s) => s.requestFileOpen);
+  // nothing here renders — worse, it would silently overwrite whatever view
+  // Advanced mode had last shown, breaking `session-layout.tsx`'s invariant
+  // that Easy mode leaves `viewBySession` untouched so Advanced resumes right
+  // where the user left it. This drills into a `SessionFilesExplorer` mounted
+  // right here instead, and uses `requestFileOpenSilently` — the same
+  // file-open-request nonce, without the `viewBySession` write — so that
+  // instance's file-open-request effect actually fires on mount.
+  const requestFileOpenSilently = useSessionBrowserStore((s) => s.requestFileOpenSilently);
   const handleOpenOutput = (output: OutputItem) => {
     if (!output.path) return;
-    requestFileOpen(sessionId, output.path);
+    requestFileOpenSilently(sessionId, output.path);
     setView({ kind: 'file', output });
   };
 

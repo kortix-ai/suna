@@ -39,3 +39,24 @@ export function shouldAutoExpandOutputs(
 ): boolean {
   return wasRunning && !isRunning && outputCount > 0;
 }
+
+/**
+ * Whether the run should read as "still going", combining two signals:
+ *
+ * - `stepsRunning` — derived from the tool parts themselves
+ *   (`steps.some(s => s.status === 'running')`). This alone flickers: between
+ *   one tool call completing and the next being emitted, the model streams
+ *   assistant text and no part is running/pending, so this goes false for a
+ *   beat on every tool boundary of an otherwise-uninterrupted run.
+ * - `sessionBusy` — the session's own status (the same signal the chat
+ *   transcript already uses to show its working indicator), which stays busy
+ *   for the whole turn regardless of gaps between tool calls.
+ *
+ * ORing them closes the gap: the run reads as running for its entire actual
+ * duration, so `shouldAutoExpandOutputs` only fires at the real finish (not
+ * at the first inter-tool pause), and the Progress card's shimmer/subtitle
+ * stop flickering at every tool boundary.
+ */
+export function deriveIsRunning(stepsRunning: boolean, sessionBusy: boolean): boolean {
+  return stepsRunning || sessionBusy;
+}

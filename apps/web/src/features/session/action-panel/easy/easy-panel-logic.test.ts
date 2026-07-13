@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
-import { outputKey, shouldAutoExpandOutputs } from './easy-panel-logic';
+import { deriveIsRunning, outputKey, shouldAutoExpandOutputs } from './easy-panel-logic';
 
 function output(overrides: Partial<OutputItem> = {}): OutputItem {
   return { callID: 'call-1', name: 'report.md', kind: 'file', ...overrides };
@@ -57,5 +57,32 @@ describe('shouldAutoExpandOutputs', () => {
 
   it('does not open when a run is just starting (idle -> running)', () => {
     expect(shouldAutoExpandOutputs(false, true, 3)).toBe(false);
+  });
+});
+
+describe('deriveIsRunning', () => {
+  // ─── BUG 4 — between one tool call completing and the next being emitted,
+  // the model streams assistant text and NO tool part is running/pending, so
+  // a part-only signal flips true→false→true on every tool boundary of a
+  // normal run: the Outputs card pops open at the first inter-tool gap
+  // instead of at the actual finish, and the Progress card's shimmer/subtitle
+  // flicker. The session's own status (the same signal the chat transcript
+  // already uses for its working indicator) stays busy for the whole turn,
+  // so ORing it in closes the gap without inventing a new source of truth. ──
+
+  it('is true while a step is actively running, even if the session status lags behind', () => {
+    expect(deriveIsRunning(true, false)).toBe(true);
+  });
+
+  it('is true during an inter-tool gap (no part running) as long as the session itself is busy', () => {
+    expect(deriveIsRunning(false, true)).toBe(true);
+  });
+
+  it('is true when both signals agree the run is active', () => {
+    expect(deriveIsRunning(true, true)).toBe(true);
+  });
+
+  it('is false only when neither signal says the run is active', () => {
+    expect(deriveIsRunning(false, false)).toBe(false);
   });
 });

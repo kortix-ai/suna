@@ -61,6 +61,16 @@ interface SessionBrowserState {
   requestFileOpen: (sessionId: string, path: string, line?: number) => void;
 
   /**
+   * Same file-open request as {@link requestFileOpen}, WITHOUT flipping
+   * `viewBySession`. For callers that mount their own `SessionFilesExplorer`
+   * in place (Easy mode's own file drill-in — see `easy-panel.tsx`) and must
+   * not touch the shared per-session view: `session-layout.tsx` promises
+   * Advanced mode resumes wherever the user left it, and Easy mode has no
+   * tab strip that view could even point at.
+   */
+  requestFileOpenSilently: (sessionId: string, path: string, line?: number) => void;
+
+  /**
    * The panel-store key of the session whose layout is currently visible —
    * i.e. the OpenCode `chatSessionId` the {@link SessionLayout} keys its panel
    * by. NOT the Kortix session id in the URL (those differ). Registered by the
@@ -99,6 +109,18 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
       requestFileOpen: (sessionId, path, line) =>
         set((state) => ({
           viewBySession: { ...state.viewBySession, [sessionId]: 'explorer' },
+          fileOpenBySession: {
+            ...state.fileOpenBySession,
+            [sessionId]: {
+              path,
+              line,
+              nonce: (state.fileOpenBySession[sessionId]?.nonce ?? 0) + 1,
+            },
+          },
+        })),
+
+      requestFileOpenSilently: (sessionId, path, line) =>
+        set((state) => ({
           fileOpenBySession: {
             ...state.fileOpenBySession,
             [sessionId]: {
