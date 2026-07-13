@@ -29,7 +29,13 @@ emailWebhookApp.openapi(
     } catch {
       return c.json({ error: 'Invalid JSON' }, 400);
     }
-    if (!event?.event_type || !event.message?.inbox_id) return c.json({ ok: true });
+    // Verify the signature BEFORE any ack. Returning 200 on a malformed unsigned
+    // body (the old behavior) let an unauthenticated caller poison ack/monitoring
+    // with `{}` -> 200 ok. Reject malformed unsigned bodies with 400 instead.
+    // See NEW-1 (weekly pentest run #4).
+    if (!event?.event_type || !event.message?.inbox_id) {
+      return c.json({ error: 'Missing event_type or message.inbox_id' }, 400);
+    }
 
     const projectId = event.message?.inbox_id
       ? await resolveProjectForAgentMailInbox(event.message.inbox_id)

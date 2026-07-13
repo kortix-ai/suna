@@ -159,6 +159,16 @@ describe('AgentMail webhook verification', () => {
         body: rawBody,
       });
       expect(invalidSignature.status).toBe(401);
+
+      // A malformed unsigned body (missing event_type/inbox_id) must NOT be
+      // acked with 200 — that let an unauthenticated caller poison ack/monitoring
+      // with `{}` -> 200 ok. Now rejected with 400 before any signature check.
+      const malformed = await emailWebhookApp.request('/agentmail', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      expect(malformed.status).toBe(400);
     } finally {
       (config as { AGENTMAIL_WEBHOOK_SECRET: string | undefined }).AGENTMAIL_WEBHOOK_SECRET =
         originalSecret;
