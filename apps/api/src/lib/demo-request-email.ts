@@ -1,15 +1,12 @@
-// Fire an internal notification email whenever someone submits the demo
-// qualifier form — the first-step details, before (and regardless of) whether
-// they go on to book a Cal slot. Self-contained Mailtrap transport that reads
-// its config from the runtime env (Vercel/Docker), mirroring the API-side
-// transport at apps/api/src/accounts/email.ts. If MAILTRAP_API_TOKEN is not
-// configured the send is skipped gracefully so the lead-capture flow never
-// fails on account of email.
+// Internal notification for public "book a demo" / demo-request submissions.
+// Fires on the first-step form details, before (and regardless of) whether the
+// lead goes on to book a Cal slot. Self-contained Mailtrap transport reading
+// from `config` (fed by AWS Secrets Manager in prod) — mirrors the account
+// invite transport in ../accounts/email.ts. If MAILTRAP_API_TOKEN is not set the
+// send is skipped gracefully so lead capture never fails on account of email.
+import { config } from '../config';
 
 const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
-
-// Where new-lead notifications land. Overridable via env for staging/testing.
-const DEFAULT_NOTIFY_EMAIL = 'marko@kortix.ai';
 
 export interface DemoRequestLead {
   name?: string;
@@ -21,6 +18,11 @@ export interface DemoRequestLead {
   source?: string;
   user_agent?: string | null;
 }
+
+export type DemoRequestNotifyResult =
+  | { ok: true; status: number }
+  | { ok: false; skipped: true; reason: 'missing_mailtrap_token' }
+  | { ok: false; skipped?: false; status?: number; error: string };
 
 function escapeHtml(str: string): string {
   return str
@@ -78,39 +80,32 @@ function renderHtml(lead: DemoRequestLead): string {
 </html>`.trim();
 }
 
-export type NotifyResult =
-  | { ok: true; status: number }
-  | { ok: false; skipped: true; reason: 'missing_mailtrap_token' }
-  | { ok: false; skipped?: false; status?: number; error: string };
-
 /**
  * Send the internal "new demo request" notification. Never throws — returns a
- * result the caller can log. Safe to await inside a serverless route (10s cap).
+ * result the caller can log. Recipient defaults to config.DEMO_LEAD_NOTIFY_EMAIL
+ * (marko@kortix.ai).
  */
-export async function sendDemoRequestNotification(lead: DemoRequestLead): Promise<NotifyResult> {
-  const token = process.env.MAILTRAP_API_TOKEN;
-  if (!token) {
+export async function sendDemoRequestNotification(
+  lead: DemoRequestLead,
+): Promise<DemoRequestNotifyResult> {
+  if (!config.MAILTRAP_API_TOKEN) {
     return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };
   }
 
-  const to = process.env.DEMO_LEAD_NOTIFY_EMAIL || DEFAULT_NOTIFY_EMAIL;
-  const fromEmail = process.env.MAILTRAP_FROM_EMAIL || 'noreply@kortix.com';
-  const fromName = process.env.MAILTRAP_FROM_NAME || 'Kortix';
-
+  const to = config.DEMO_LEAD_NOTIFY_EMAIL || 'marko@kortix.ai';
   const who = lead.company_name?.trim() || lead.name?.trim() || lead.email;
-  const subject = `New demo request — ${who}`;
 
   try {
     const res = await fetch(MAILTRAP_SEND_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${config.MAILTRAP_API_TOKEN}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: { email: fromEmail, name: fromName },
+        from: { email: config.MAILTRAP_FROM_EMAIL, name: config.MAILTRAP_FROM_NAME },
         to: [{ email: to }],
-        subject,
+        subject: `New demo request — ${who}`,
         html: renderHtml(lead),
         category: 'demo-request',
       }),
@@ -118,13 +113,13 @@ export async function sendDemoRequestNotification(lead: DemoRequestLead): Promis
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      console.warn(`[api/demo-request] Mailtrap ${res.status}: ${body}`);
+      console.warn(`[demo-request-email] Mailtrap ${res.status}: ${body}`);
       return { ok: false, status: res.status, error: body || res.statusText || 'send failed' };
     }
     return { ok: true, status: res.status };
   } catch (err) {
     const message = (err as Error).message;
-    console.warn('[api/demo-request] notification send failed:', message);
+    console.warn('[demo-request-email] send failed:', message);
     return { ok: false, error: message };
   }
 }

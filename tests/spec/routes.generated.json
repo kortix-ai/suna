@@ -1703,6 +1703,10 @@
       "path": "/v1/setup/status"
     },
     {
+      "method": "POST",
+      "path": "/v1/system/demo-request"
+    },
+    {
       "method": "GET",
       "path": "/v1/system/maintenance"
     },

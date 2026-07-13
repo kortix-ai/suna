@@ -17,6 +17,8 @@ import { getRequestUrl } from './lib/request-url';
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { mountOpenApiDocs, json, errors, auth } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -554,6 +556,65 @@ app.openapi(
       .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
       .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
     return c.json(maintenanceConfig);
+  },
+);
+
+// ─── Demo request (public lead capture) ─────────────────────────────────────
+// POST /v1/system/demo-request — public, unauthenticated. The marketing site's
+// "Book a demo" qualifier form POSTs the first-step details here (via the web
+// server); we email an internal notification to DEMO_LEAD_NOTIFY_EMAIL on every
+// submission, whether or not the lead goes on to book a Cal slot. The email uses
+// the API's Mailtrap credentials (AWS Secrets Manager), so the Vercel frontend
+// never needs the secret. IP rate-limited; a missing Mailtrap token is a
+// graceful skip, so lead capture never fails on account of email.
+const DemoRequestSchema = z
+  .object({
+    name: z.string().max(200).optional(),
+    email: z.string().email(),
+    company_name: z.string().max(200).optional(),
+    company_size: z.string().max(50).optional(),
+    goal: z.string().max(2000).optional(),
+    qualified: z.boolean().optional(),
+    source: z.string().max(100).optional(),
+  })
+  .openapi('DemoRequest');
+
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/system/demo-request',
+    tags: ['system'],
+    summary: 'Submit a public demo request (emails an internal notification)',
+    middleware: [createDemoRequestRateLimitMiddleware()] as const,
+    request: { body: { content: { 'application/json': { schema: DemoRequestSchema } } } },
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), emailed: z.boolean() }).openapi('DemoRequestResult'),
+        'Accepted',
+      ),
+      ...errors(400, 429),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => null);
+    const email = String(body?.email ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return c.json({ error: 'Invalid email' }, 400);
+    }
+    const result = await sendDemoRequestNotification({
+      name: typeof body.name === 'string' ? body.name : undefined,
+      email,
+      company_name: typeof body.company_name === 'string' ? body.company_name : undefined,
+      company_size: typeof body.company_size === 'string' ? body.company_size : undefined,
+      goal: typeof body.goal === 'string' ? body.goal : undefined,
+      qualified: typeof body.qualified === 'boolean' ? body.qualified : undefined,
+      source: typeof body.source === 'string' ? body.source : undefined,
+      user_agent: c.req.header('user-agent')?.slice(0, 500) ?? null,
+    });
+    if (!result.ok && !('skipped' in result && result.skipped)) {
+      console.error('[system/demo-request] notification not sent:', result);
+    }
+    return c.json({ ok: true, emailed: result.ok });
   },
 );
 

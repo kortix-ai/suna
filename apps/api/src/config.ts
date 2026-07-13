@@ -396,6 +396,7 @@ const envSchema = z.object({
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN:       optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
@@ -411,6 +412,8 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN:          optStr,
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
+  // Where public demo-request / "book a demo" lead notifications are sent.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN:   optStr,  // Logtail source token for structured logs
@@ -788,6 +791,8 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
@@ -804,6 +809,7 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
+  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
