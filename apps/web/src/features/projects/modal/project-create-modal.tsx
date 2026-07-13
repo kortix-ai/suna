@@ -75,7 +75,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { resolveCreateAccountSelection } from './create-account-selection';
-import { startTemplateSetupSession } from './template-setup-session';
+import {
+  startProjectOnboardingSession,
+  startTemplateSetupSession,
+} from './template-setup-session';
 
 const sanitizeProjectName = (value: string) => value.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
 
@@ -248,6 +251,16 @@ export const ProjectCreateModal = ({
           router.replace(`/projects/${project.project_id}/sessions/${sessionId}`);
           return;
         }
+      }
+
+      // Plain new project → the "agent creation" default: start a first session
+      // that onboards + personalizes the preloaded starter, instead of landing
+      // the user on an empty project. Falls back to the project home if it fails.
+      const onboardingSessionId = await startProjectOnboardingSession(project);
+      if (onboardingSessionId) {
+        resetAndClose();
+        router.replace(`/projects/${project.project_id}/sessions/${onboardingSessionId}`);
+        return;
       }
 
       resetAndClose();
