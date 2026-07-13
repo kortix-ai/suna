@@ -1,5 +1,6 @@
 import { loadTeamsBotCredentials } from './install-store';
 import { botConnectorToken } from './teams-auth';
+import { assertValidTeamsServiceUrl } from './teams-service-url';
 import type { TeamsConversationRef } from './teams/types';
 
 const ADAPTIVE_CARD_CONTENT_TYPE = 'application/vnd.microsoft.card.adaptive';
@@ -20,6 +21,23 @@ async function connectorFetch(
   body: unknown,
   projectId?: string,
 ): Promise<{ ok: boolean; status: number; id: string | null; error?: string }> {
+  // Defense-in-depth chokepoint: the bot connector token is attached below, so
+  // the destination URL MUST be a validated Microsoft Bot Framework endpoint.
+  // This blocks any caller (incl. a future one) from leaking the token to an
+  // attacker-controlled host. See F-7.
+  if (!assertValidTeamsServiceUrl(url)) {
+    console.warn('[teams-api] blocked outbound connector call to untrusted serviceUrl', {
+      method,
+      host: (() => {
+        try {
+          return new URL(url).hostname;
+        } catch {
+          return '<invalid>';
+        }
+      })(),
+    });
+    return { ok: false, status: 0, id: null, error: 'untrusted service url' };
+  }
   try {
     const creds = projectId ? await loadTeamsBotCredentials(projectId) : null;
     const token = await botConnectorToken(creds);
