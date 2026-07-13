@@ -145,9 +145,13 @@ export function migrateAndVerifyState(
   assertStateIdentity(after, 'remote');
   const beforeDigest = stateContentDigest(before);
   const afterDigest = stateContentDigest(after);
-  if (beforeDigest !== afterDigest) {
+  const beforeObjects = stateObjectDigest(before);
+  const afterObjects = stateObjectDigest(after);
+  const exactMatch = beforeDigest === afterDigest;
+  const refreshedRecoveryMatch = alreadyRemote && beforeObjects === afterObjects;
+  if (!exactMatch && !refreshedRecoveryMatch) {
     throw new Error(
-      `remote state verification failed: source ${before.lineage}/${before.serial} (${beforeDigest}), remote ${after.lineage}/${after.serial} (${afterDigest}); local bootstrap state was preserved`,
+      `remote state verification failed: source ${before.lineage}/${before.serial} (${beforeDigest}/${beforeObjects}), remote ${after.lineage}/${after.serial} (${afterDigest}/${afterObjects}); local bootstrap state was preserved`,
     );
   }
   if (!alreadyRemote || existsSync(bootstrapPath)) {
@@ -157,7 +161,13 @@ export function migrateAndVerifyState(
   return {
     backend,
     permissionsBoundaryArn,
-    verification: { verified: true, lineage: after.lineage, serial: after.serial, already_remote: alreadyRemote },
+    verification: {
+      verified: true,
+      lineage: after.lineage,
+      serial: after.serial,
+      already_remote: alreadyRemote,
+      verification_mode: exactMatch ? 'exact-content' : 'refreshed-object-identity',
+    },
   };
 }
 
@@ -177,7 +187,60 @@ function stateContentDigest(state: TerraformStateIdentity): string {
     content.check_results = [...content.check_results]
       .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
   }
-  return createHash('sha256').update(stableJson(content)).digest('hex');
+  return digestJson(content);
+}
+
+/**
+ * Recovery-only projection for a state that Terraform already migrated and
+ * subsequently refreshed against the provider. Refresh may fill computed
+ * attributes (for example an S3 bucket's versioning/policy) and advance the
+ * backend serial, while the tracked object graph remains the same. The state
+ * stage has just been planned, guarded, and applied before this check, so a
+ * recovery is accepted only when every resource instance identity and every
+ * output still match the preserved bootstrap state.
+ */
+function stateObjectDigest(state: TerraformStateIdentity): string {
+  const resources = Array.isArray(state.resources)
+    ? state.resources.map(projectResourceIdentity).sort((left, right) => stableJson(left).localeCompare(stableJson(right)))
+    : state.resources;
+  return digestJson({ outputs: state.outputs, resources });
+}
+
+function projectResourceIdentity(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const resource = value as Record<string, unknown>;
+  const instances = Array.isArray(resource.instances)
+    ? resource.instances.map(projectInstanceIdentity).sort((left, right) => stableJson(left).localeCompare(stableJson(right)))
+    : resource.instances;
+  return {
+    module: resource.module,
+    mode: resource.mode,
+    type: resource.type,
+    name: resource.name,
+    provider: resource.provider,
+    instances,
+  };
+}
+
+function projectInstanceIdentity(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const instance = value as Record<string, unknown>;
+  const attributes = instance.attributes && typeof instance.attributes === 'object' && !Array.isArray(instance.attributes)
+    ? instance.attributes as Record<string, unknown>
+    : {};
+  const identity: Record<string, unknown> = {};
+  for (const key of ['id', 'arn', 'name', 'bucket', 'key_id', 'alias_name', 'table_name']) {
+    if (Object.hasOwn(attributes, key)) identity[key] = attributes[key];
+  }
+  return {
+    index_key: instance.index_key,
+    schema_version: instance.schema_version,
+    identity,
+  };
+}
+
+function digestJson(value: unknown): string {
+  return createHash('sha256').update(stableJson(value)).digest('hex');
 }
 
 function stableJson(value: unknown): string {

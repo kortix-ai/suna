@@ -108,6 +108,8 @@ case "$*" in
       if grep -q 'backend "s3"' "$dir/backend.tf"; then
         if [ "\${FAKE_TERRAFORM_REMOTE_DIFFERENT:-}" = "1" ]; then
           printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":1,"lineage":"remote-lineage","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"stale","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[]}]}'
+        elif [ "\${FAKE_TERRAFORM_REMOTE_REFRESHED:-}" = "1" ]; then
+          printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":2,"lineage":"remote-lineage","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"account_guard","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[{"schema_version":0,"attributes":{"id":"guard-1","output":{"provider_filled":true}}}]}]}'
         else
           printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":1,"lineage":"remote-lineage","outputs":{},"resources":[]}'
         fi
@@ -123,7 +125,12 @@ case "$*" in
     ;;
   *"apply"*)
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
-    case "\${dir:-}" in */state) printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}' > "$dir/terraform.bootstrap.tfstate" ;; esac
+    case "\${dir:-}" in */state)
+      if ! grep -q 'backend "s3"' "$dir/backend.tf"; then
+        printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}' > "$dir/terraform.bootstrap.tfstate"
+      fi
+      ;;
+    esac
     printf '%s\n' 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.'
     ;;
   *"init -input=false -migrate-state"*)
@@ -299,7 +306,12 @@ esac
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       instance: 'kortix-vpc-demo',
-      state_migration: { verified: true, lineage: 'remote-lineage', serial: 1 },
+      state_migration: {
+        verified: true,
+        lineage: 'remote-lineage',
+        serial: 1,
+        verification_mode: 'exact-content',
+      },
       cluster: { decision: 'manual_review', applied: true },
       reconciliation: { execution_arn: expect.stringContaining('kortix-vpc-demo-reconcile') },
     });
@@ -374,6 +386,34 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
     expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+  });
+
+  test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
+    await initConfigured();
+    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    writeFileSync(join(stateRoot, 'backend.tf'), 'terraform { backend "s3" {} }\n');
+    writeFileSync(
+      join(stateRoot, 'backend.hcl'),
+      'bucket = "state"\ndynamodb_table = "locks"\nregion = "us-west-2"\nencrypt = true\nkms_key_id = "key"\n',
+    );
+    writeFileSync(
+      join(stateRoot, 'terraform.bootstrap.tfstate'),
+      '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"account_guard","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[{"schema_version":0,"attributes":{"id":"guard-1"}}]}]}\n',
+    );
+
+    const result = await run(
+      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      { FAKE_TERRAFORM_REMOTE_REFRESHED: '1' },
+    );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      state_migration: {
+        verified: true,
+        already_remote: true,
+        verification_mode: 'refreshed-object-identity',
+      },
+    });
+    expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
   });
 
   test('routes reconcile, force update, and rollback through the customer state machine', async () => {
