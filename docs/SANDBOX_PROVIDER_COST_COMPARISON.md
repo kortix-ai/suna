@@ -25,7 +25,7 @@ The comparison covers:
 
 | Option | Estimated monthly price or cost | What the number represents |
 |---|---:|---|
-| **Platinum managed retail policy** | **$5,881** | Published-policy target: exactly one-third of Daytona for the same metered workload |
+| **Platinum managed retail policy** | **$5,881** | Kortix policy target: exactly one-third of Daytona for the same metered workload; not a third-party published rate card |
 | **Platinum raw COGS, two sandbox hosts** | **$3,842** | Estimated infrastructure COGS with 35% aggregate RAM headroom; excludes engineering labor |
 | **Platinum raw COGS, three sandbox hosts** | **$5,319** | N+1-oriented infrastructure COGS; excludes engineering labor |
 | **Custom AWS Fargate, ARM64** | **$9,500-$11,500** | Container sandbox implementation, not E2B/Platinum microVM semantics |
@@ -43,7 +43,7 @@ driver. Isolation model, host type, memory guarantees, storage semantics,
 autoscaling, and the amount of platform engineering being purchased are what
 change the economics.
 
-Platinum is the lowest-price microVM option under the pricing policy in this
+Platinum is the lowest-price microVM option under the Kortix pricing policy in this
 document. Its margin is healthy with a two-host cell but thin if every cell must
 carry a third full sandbox host for N+1 capacity at this workload. Custom AWS
 containers can also be inexpensive, but they are a different product and
@@ -73,6 +73,22 @@ figure is useful for financial reporting, but not for capacity planning because
 sandbox lifetimes and requested sizes vary.
 
 ## Published managed-provider prices
+
+The managed-provider comparison below starts with the providers' public rate
+cards, not inferred machine prices or privately negotiated enterprise quotes.
+Platinum is the one explicit exception: its row is a proposed Kortix retail
+policy derived mechanically from Daytona's published rates.
+
+| Provider | Public plan price and credits | Published usage prices used here | Treatment in the monthly comparison |
+|---|---|---|---|
+| Daytona | Pay as you go; pricing page advertises $200 in free compute | $0.0504/vCPU-hour; $0.0162/GiB-hour RAM; $0.000108/GiB-hour storage after 5 GiB free | The supplied $17,644.07 invoice is authoritative; no speculative recurring credit is deducted |
+| E2B | Pro: $150/month plus usage; Hobby includes a one-time $100 usage credit | $0.0504/vCPU-hour; $0.0162/GiB-hour RAM; 20 GiB sandbox storage included on Pro | Pro fee plus CPU/RAM usage; one-time Hobby credit is not deducted |
+| Modal | Team: $250/month plus compute; $100/month free credits | Sandbox CPU: $0.00003942/physical-core-second; RAM: $0.00000667/GiB-second; Volumes: $0.09/GiB-month with 1 TiB/month free | Published Team fee and recurring credit are included; retained Volume storage is shown separately |
+| Platinum | No independent public managed-cloud rate card | Kortix policy: each Daytona resource rate divided by three | Exact supplied Daytona invoice divided by three is authoritative |
+
+Public pricing is self-serve list pricing as observed on the reference date.
+Taxes, negotiated discounts, enterprise support, excess-concurrency contracts,
+and one-time promotional credits are excluded unless explicitly shown.
 
 ### Daytona
 
@@ -107,7 +123,8 @@ Platinum's managed retail policy is:
 > Use the same metered workload basis as Daytona, priced at exactly one-third
 > of the equivalent Daytona charge.
 
-This gives the following published-policy rates:
+This gives the following Kortix policy rates derived from Daytona's public rate
+card:
 
 | Resource | Platinum policy rate | Relationship to Daytona |
 |---|---:|---:|
@@ -476,7 +493,8 @@ reserved vCPU and RAM, plus a defined failure and burst policy.
 
 ### Choose Platinum managed when
 
-- Kortix wants the lowest published microVM price and controls the fleet.
+- Kortix wants the lowest managed microVM price under its stated retail policy
+  and controls the fleet.
 - The one-third-Daytona pricing policy is strategic.
 - Capacity can be pooled across enough customers/cells to amortize N+1 hosts and
   control-plane overhead.
