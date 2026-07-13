@@ -190,6 +190,7 @@ Single, self-contained changes. Anything multi-step earns a spec instead.
 | B6  | **Tripwire regex is blind to side-effect imports.** `import 'react';` (no `from`) matches neither the graph walker's regex nor the examples tripwire — a bare framework side-effect import slips through | Task 9 probe: brief's literal `import 'react';` did NOT fail the test; `import { createElement } from 'react'` did. `src/index.isomorphic.test.ts` (`collectGraph` importRe + examples test) | **CLOSED 2026-07-12** — shared `importSpecifiers` helper now catches side-effect imports (both quote styles) in the graph walker, the examples scan, AND the inline tier scan; RED-proven, reviewed. Uncommitted fix wave, see `.superpowers/sdd/fix-wave-2-report.md` |
 | B7  | **Provider-qualified gateway defaults must remain in the `kortix` picker namespace.** Lock `codex/gpt-5.6-sol` to `{ providerID: 'kortix', modelID: 'codex/gpt-5.6-sol' }` rather than misclassifying it as a native provider. | `src/react/use-model-store.ts:42` defines every gateway wire model as a `kortix` model ID; `src/react/use-opencode-local.test.ts` now covers the Codex default. | **DONE 2026-07-12** — implementation `ee7d2cc09`; full SDK suite, typecheck, and packed-install smoke green |
 | B8  | **Retire the experimental project-app deployment SDK surface with its removed platform capability.** This is intentionally subtractive because the user explicitly requested complete removal of the underlying capability. | The former project-app client module, facade property, types, examples, and snapshot entries were removed in `ec8b44dda`. | **DONE 2026-07-13** — session `remove-freestyle`; full SDK gates green |
+| B9  | **Expose E2B as an additive sandbox-provider literal everywhere the published SDK accepts or reports a provider.** | Stale explicit unions remained in `src/core/rest/{platform-client/types,projects-client/session-sandbox,projects-client/sessions}.ts`; the server provider unification adds `e2b`. | **DONE 2026-07-13** — implementation `5763b63e4`; full SDK gates green |
 
 
 > **Paths above are as of today (pre-Task-4).** After the restructure they move:
@@ -634,3 +635,21 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** for the SDK surface. Repository merge, Deploy Dev,
 and live-dev verification remain part of the parent feature lifecycle.
+
+---
+
+### 2026-07-13 — session `e2b-provider`: B9 unified E2B provider contract
+
+Completed the provider contract in `5763b63e4`: E2B is selectable and observable
+through the published SDK alongside Daytona and Platinum. Retired standalone
+instance exports remain import-compatible as deprecated fail-closed stubs, while
+the supported sandbox-provider union is exactly `daytona | platinum | e2b`.
+
+**TDD/regression evidence:** focused E2B and retired-provider type/runtime tests
+passed before the final suite. Final SDK gates: `pnpm --filter @kortix/sdk
+typecheck` exited 0; `pnpm --filter @kortix/sdk test` reported **1083 pass / 0
+fail** across 74 files with 4985 assertions; `pnpm --filter @kortix/sdk run
+smoke:install` packed, installed, imported, and constructed `@kortix/sdk`
+successfully.
+
+**Shippable to production: YES** for the SDK surface.
