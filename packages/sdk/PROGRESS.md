@@ -646,3 +646,33 @@ TDD remains mandatory for every changed SDK contract. PR #4510 stays open and
 unmerged by explicit user instruction.
 
 **Status:** IN PROGRESS.
+
+### 2026-07-13 — session `acp-harness-runtime-v2`: ACP claims complete
+
+Closed the branch-isolated ACP context-projection and route-ownership claims
+above. The SDK now owns the harness-neutral ACP client, durable transcript and
+chat projections, prompt/permission/elicitation state, usage/context projection,
+runtime readiness, and React session/composer surfaces consumed by web and
+mobile. Hosts contain no native harness transport or OpenCode SDK dependency;
+OpenCode remains a selectable ACP harness alongside Claude, Codex, and Pi.
+
+**Final SDK gates after merging `origin/main` at `f9d9bcfc3`:**
+`pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **968 pass / 0 fail** across 79 files
+with 4470 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed the published package.
+
+**Repository and real-runtime evidence:** API **275 isolated suites passed**;
+web **1064 pass / 0 fail**; CLI **232 pass / 0 fail**; mobile **34 pass / 0
+fail**; sandbox daemon **123 pass / 0 fail**. The real Chromium selector E2E
+asserted Claude, Codex, OpenCode, and Pi plus the exact Codex custom-model
+session-create payload. Four fresh Daytona sandboxes completed ACP prompts with
+real shell tool calls for all four harnesses and ended with
+`[acp-all] PASS all harnesses`. The daemon binary remains newer than every
+source file. Native host `@opencode-ai/sdk` imports, old OpenCode client-hook
+imports, conflict markers, and tracked Claude setup-token patterns are all zero.
+
+**Status: DONE. Shippable to production: YES.** This closure supersedes both
+ACP `IN PROGRESS` entries above. Delivery remains intentionally limited to the
+open, unmerged PR #4510 by explicit user instruction; this branch must not be
+merged into `main` without separate authorization.
