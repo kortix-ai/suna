@@ -8,6 +8,15 @@ export interface SelfHostCommandFlags {
   target?: SelfHostTarget;
   awsProfile?: string;
   region?: string;
+  vpcCidr?: string;
+  apiDomain?: string;
+  frontendDomain?: string;
+  releaseRepositoryUrl?: string;
+  tufRootSha256?: string;
+  updaterBootstrapUrl?: string;
+  updaterBootstrapSha256?: string;
+  releasePublisherAccountId?: string;
+  maintenanceWindow?: string;
   yes: boolean;
   local: boolean;
   registry: boolean;

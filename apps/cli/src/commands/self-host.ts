@@ -63,6 +63,15 @@ Options:
   --channel <name>     Release channel (AWS default: stable; Docker: latest).
   --aws-profile <name> AWS CLI profile used to bootstrap/manage the target.
   --region <region>    AWS region (default: AWS config, then us-west-2).
+  --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS VPC target.
+  --api-domain <name>  Public API DNS name for the AWS target.
+  --frontend-domain <name> Public dashboard DNS name for the AWS target.
+  --release-repository-url <url> Immutable enterprise TUF repository.
+  --tuf-root-sha256 <digest> Offline-reviewed trusted TUF root digest.
+  --updater-bootstrap-url <url> Digest-pinned enterprise updater binary.
+  --updater-bootstrap-sha256 <digest> Updater binary SHA-256.
+  --release-publisher-account-id <id> Account allowed to send wake-up hints.
+  --maintenance-window <window> UTC window, for example Sun:02:00-05:00.
   --local              Use current-source local images instead of registry images.
   --registry           Force registry images even when running from a source checkout.
   --force              Run now, bypassing only the configured maintenance window.
@@ -226,6 +235,15 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const awsProfile = takeFlagValue(args, ['--aws-profile']);
   const region = takeFlagValue(args, ['--region']);
   const channel = takeFlagValue(args, ['--channel']);
+  const vpcCidr = takeFlagValue(args, ['--vpc-cidr']);
+  const apiDomain = takeFlagValue(args, ['--api-domain']);
+  const frontendDomain = takeFlagValue(args, ['--frontend-domain']);
+  const releaseRepositoryUrl = takeFlagValue(args, ['--release-repository-url']);
+  const tufRootSha256 = takeFlagValue(args, ['--tuf-root-sha256']);
+  const updaterBootstrapUrl = takeFlagValue(args, ['--updater-bootstrap-url']);
+  const updaterBootstrapSha256 = takeFlagValue(args, ['--updater-bootstrap-sha256']);
+  const releasePublisherAccountId = takeFlagValue(args, ['--release-publisher-account-id']);
+  const maintenanceWindow = takeFlagValue(args, ['--maintenance-window']);
   if (local && registry) {
     throw new Error('use either --local or --registry, not both');
   }
@@ -240,6 +258,15 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     target,
     awsProfile,
     region,
+    vpcCidr,
+    apiDomain,
+    frontendDomain,
+    releaseRepositoryUrl,
+    tufRootSha256,
+    updaterBootstrapUrl,
+    updaterBootstrapSha256,
+    releasePublisherAccountId,
+    maintenanceWindow,
     yes,
     local,
     registry,

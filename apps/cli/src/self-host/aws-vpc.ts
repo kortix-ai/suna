@@ -1,19 +1,55 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
+import { confirm } from '../prompts.ts';
 import { C, status } from '../style.ts';
 import {
+  awsIdentity,
+  awsJson,
+  awsJsonOptional,
+  firstLine,
+  reconciliationStateMachineArn,
+  releaseState,
+  spawnAws,
+  startReconciliation,
+  verifyPinnedIdentity,
+  type AwsIdentity,
+} from './aws-vpc-control-plane.ts';
+import {
+  assertEnterpriseRelease,
+  completeConfiguration,
+  hasConfigurationFlags,
+  mergeAwsConfiguration,
+  missingConfiguration,
+  parseConfigurationAssignments,
+  promptForConfiguration,
+} from './aws-vpc-settings.ts';
+import {
+  assertAwsVpcInstanceName,
   loadInstanceConfig,
   writeInstanceConfig,
-  type AwsVpcCoordinates,
   type SelfHostInstanceConfig,
 } from './config.ts';
+import {
+  enterpriseTerraformRoot,
+  writeEnterpriseTerraformAssets,
+} from './enterprise-assets.ts';
+import {
+  ensureApplicable,
+  isRemoteState,
+  migrateAndVerifyState,
+  prepareTerraform,
+  publicPlan,
+  readBackendConfig,
+  terraformApply,
+  terraformOutput,
+  terraformPlan,
+  writeClusterFiles,
+  type EnterpriseInstanceOutput,
+  type StagePlan,
+} from './enterprise-terraform.ts';
 import type { SelfHostCommandFlags } from './types.ts';
-
-interface AwsIdentity {
-  UserId: string;
-  Account: string;
-  Arn: string;
-}
 
 type AwsVpcCommand =
   | 'init'
@@ -53,38 +89,72 @@ export async function runAwsVpcCommand(
 
   const config = loadAwsConfig(flags.instance);
   if (!config) return 1;
+  if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
+    process.stderr.write(
+      `${status.err('AWS VPC targets use --release with signed enterprise versions; --tag, --local, and --registry are Docker-only.')}\n`,
+    );
+    return 2;
+  }
+  if (!['configure', 'config', 'logs'].includes(typedCommand) && args.length > 0) {
+    process.stderr.write(`${status.err(`unexpected AWS VPC arguments: ${args.join(' ')}`)}\n`);
+    return 2;
+  }
 
   switch (typedCommand) {
     case 'doctor':
       return doctorAwsVpc(config, flags);
+    case 'configure':
+    case 'config':
+      return configureAwsVpc(config, args, flags);
+    case 'plan':
+      return planAwsVpc(config, flags);
+    case 'deploy':
+      return deployAwsVpc(config, flags);
+    case 'update':
+    case 'upgrade':
+      return startManagedUpdate(config, 'cli-update', flags);
+    case 'reconcile':
+      return startManagedUpdate(config, 'cli-reconcile', flags);
+    case 'rollback':
+      return rollbackAwsVpc(config, flags);
     case 'version':
       return showAwsVpcVersion(config, flags);
     case 'status':
     case 'ps':
       return showAwsVpcStatus(config, flags);
-    case 'plan':
-    case 'deploy':
-    case 'update':
-    case 'upgrade':
-    case 'reconcile':
-    case 'rollback':
     case 'logs':
+      return showAwsVpcLogs(config, args, flags);
     case 'open':
-    case 'configure':
-    case 'config':
-      return unavailableUntilBootstrap(typedCommand, config, args, flags);
+      return openAwsVpc(config);
     default:
       process.stderr.write(`${status.err(`unknown AWS VPC self-host command "${command}"`)}\n`);
       return 2;
   }
 }
-
 async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
-  if (flags.local || flags.registry || flags.tag !== 'latest') {
+  try {
+    assertAwsVpcInstanceName(flags.instance);
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 2;
+  }
+  if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
     process.stderr.write(
       `${status.err('AWS VPC targets use signed releases; --local, --registry, and --tag are Docker-only options.')}\n`,
     );
     return 2;
+  }
+  if (flags.channel && flags.channel !== 'stable') {
+    process.stderr.write(`${status.err('AWS VPC targets may only track the stable channel.')}\n`);
+    return 2;
+  }
+  if (flags.release) {
+    try {
+      assertEnterpriseRelease(flags.release);
+    } catch (error) {
+      process.stderr.write(`${status.err((error as Error).message)}\n`);
+      return 2;
+    }
   }
 
   const profile = flags.awsProfile?.trim() || process.env.AWS_PROFILE?.trim() || 'default';
@@ -101,7 +171,17 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     return 1;
   }
 
-  const existing = loadInstanceConfig(flags.instance);
+  let existing: SelfHostInstanceConfig | null;
+  try {
+    existing = loadInstanceConfig(flags.instance);
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 2;
+  }
+  if (existing && existing.target !== 'aws-vpc') {
+    process.stderr.write(`${status.err(`instance "${flags.instance}" already targets Docker`)}\n`);
+    return 2;
+  }
   if (existing?.aws && existing.aws.account_id !== identity.Account) {
     process.stderr.write(
       `${status.err(`AWS account mismatch: instance is pinned to ${existing.aws.account_id}, profile ${profile} resolved to ${identity.Account}`)}\n`,
@@ -109,51 +189,103 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     return 1;
   }
 
+  const aws = mergeAwsConfiguration(
+    existing?.aws ?? { profile, region, account_id: identity.Account },
+    flags,
+    { profile, region, account_id: identity.Account },
+  );
   const config: SelfHostInstanceConfig = {
     schema_version: 1,
     instance: flags.instance,
     target: 'aws-vpc',
-    channel: flags.channel ?? existing?.channel ?? 'stable',
+    channel: 'stable',
     ...(flags.release || existing?.release ? { release: flags.release ?? existing?.release } : {}),
-    aws: { profile, region, account_id: identity.Account },
+    aws,
   };
-  writeInstanceConfig(config);
+  try {
+    writeInstanceConfig(config);
+    writeEnterpriseTerraformAssets(config.instance);
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 2;
+  }
 
   if (flags.json) {
     process.stdout.write(`${JSON.stringify(config, null, 2)}\n`);
     return 0;
   }
 
+  const missing = missingConfiguration(config.aws!);
   process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC${C.reset}\n\n`);
   process.stdout.write(`${status.ok(existing ? 'AWS VPC instance config verified' : 'AWS VPC instance config created')}\n`);
   process.stdout.write(`  ${C.dim}instance  ${C.reset}${config.instance}\n`);
-  process.stdout.write(`  ${C.dim}target    ${C.reset}${config.target}\n`);
   process.stdout.write(`  ${C.dim}account   ${C.reset}${identity.Account}\n`);
   process.stdout.write(`  ${C.dim}profile   ${C.reset}${profile}\n`);
   process.stdout.write(`  ${C.dim}region    ${C.reset}${region}\n`);
-  process.stdout.write(`  ${C.dim}channel   ${C.reset}${config.channel}\n\n`);
-  process.stdout.write(`  ${C.dim}Next: ${C.reset}${C.cyan}kortix self-host doctor --instance ${config.instance}${C.reset}\n`);
-  process.stdout.write(`        ${C.cyan}kortix self-host plan --instance ${config.instance}${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}channel   ${C.reset}stable\n`);
+  process.stdout.write(`  ${C.dim}terraform ${C.reset}${enterpriseTerraformRoot(config.instance)}\n\n`);
+  if (missing.length > 0) {
+    process.stdout.write(`  ${C.dim}Configure ${missing.join(', ')} before planning.${C.reset}\n`);
+    process.stdout.write(`  ${C.cyan}kortix self-host configure --instance ${config.instance}${C.reset}\n\n`);
+  } else {
+    process.stdout.write(`  ${C.dim}Next: ${C.reset}${C.cyan}kortix self-host doctor --instance ${config.instance}${C.reset}\n`);
+    process.stdout.write(`        ${C.cyan}kortix self-host plan --instance ${config.instance}${C.reset}\n\n`);
+  }
   return 0;
+}
+
+async function configureAwsVpc(
+  config: SelfHostInstanceConfig,
+  args: string[],
+  flags: SelfHostCommandFlags,
+): Promise<number> {
+  try {
+    verifyPinnedIdentity(config.aws!);
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    const fromArgs = parseConfigurationAssignments(args);
+    let aws = mergeAwsConfiguration(config.aws!, flags, fromArgs);
+    if (!flags.yes && args.length === 0 && !hasConfigurationFlags(flags)) {
+      aws = await promptForConfiguration(aws);
+    }
+    verifyPinnedIdentity(aws);
+    const updated: SelfHostInstanceConfig = { ...config, channel: 'stable', aws };
+    writeInstanceConfig(updated);
+    writeEnterpriseTerraformAssets(updated.instance);
+    const missing = missingConfiguration(aws);
+    const payload = {
+      instance: updated.instance,
+      target: updated.target,
+      configured: missing.length === 0,
+      missing,
+      aws,
+    };
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else {
+      process.stdout.write(`\n  ${C.bold}kortix self-host configure${C.reset}\n`);
+      process.stdout.write(`${status.ok('Secret-free AWS deployment settings saved')}\n`);
+      if (missing.length > 0) process.stdout.write(`  ${C.dim}Still required: ${missing.join(', ')}${C.reset}\n`);
+      else process.stdout.write(`  ${C.dim}Ready for ${C.reset}${C.cyan}kortix self-host plan --instance ${updated.instance}${C.reset}\n`);
+      process.stdout.write('\n');
+    }
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 2;
+  }
 }
 
 function doctorAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
   const coordinates = config.aws!;
   const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
   try {
-    const identity = awsIdentity(coordinates);
-    checks.push({
-      name: 'aws-identity',
-      ok: identity.Account === coordinates.account_id,
-      detail: `${identity.Account} (${identity.Arn})`,
-    });
+    const identity = verifyPinnedIdentity(coordinates);
+    checks.push({ name: 'aws-identity', ok: true, detail: `${identity.Account} (${identity.Arn})` });
   } catch (error) {
     checks.push({ name: 'aws-identity', ok: false, detail: (error as Error).message });
   }
   for (const [name, command, args] of [
+    ['aws-cli', 'aws', ['--version']],
     ['terraform', 'terraform', ['version', '-json']],
-    ['kubectl', 'kubectl', ['version', '--client=true', '--output=json']],
-    ['helm', 'helm', ['version', '--short']],
   ] as const) {
     const result = spawnSync(command, args, { encoding: 'utf8' });
     checks.push({
@@ -162,6 +294,12 @@ function doctorAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlag
       detail: result.error?.message ?? (firstLine(result.stdout || result.stderr) || `exit ${result.status ?? 1}`),
     });
   }
+  const missing = missingConfiguration(coordinates);
+  checks.push({
+    name: 'deployment-config',
+    ok: missing.length === 0,
+    detail: missing.length === 0 ? 'complete and secret-free' : `missing ${missing.join(', ')}`,
+  });
 
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
@@ -177,69 +315,357 @@ function doctorAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlag
   return ok ? 0 : 1;
 }
 
-function showAwsVpcVersion(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
-  const payload = {
-    instance: config.instance,
-    target: config.target,
-    channel: config.channel,
-    release: config.release ?? null,
-  };
-  if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-  else {
-    process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
-    process.stdout.write(`  ${C.dim}instance ${C.reset}${config.instance}\n`);
-    process.stdout.write(`  ${C.dim}channel  ${C.reset}${config.channel}\n`);
-    process.stdout.write(`  ${C.dim}release  ${C.reset}${config.release ?? 'not deployed'}\n\n`);
+function planAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
+  let plans: StagePlan[] = [];
+  try {
+    const aws = completeConfiguration(config);
+    const identity = verifyPinnedIdentity(aws);
+    if (flags.release) assertEnterpriseRelease(flags.release);
+    const roots = prepareTerraform(config.instance, aws);
+    const stateRemote = isRemoteState(config.instance);
+    const stateBackend = stateRemote ? join(roots.state, 'backend.hcl') : undefined;
+    if (stateRemote && !existsSync(stateBackend!)) {
+      throw new Error('migrated state backend is missing backend.hcl; restore it before planning');
+    }
+    plans.push(terraformPlan('state', roots.state, aws, stateBackend));
+    if (stateRemote) {
+      const boundary = terraformOutput<string>(roots.state, aws, 'permissions_boundary_arn');
+      writeClusterFiles(config.instance, aws, boundary, readBackendConfig(stateBackend!));
+      plans.push(terraformPlan('cluster', roots.cluster, aws, join(roots.cluster, 'backend.hcl')));
+    }
+    const payload = {
+      instance: config.instance,
+      account_id: identity.Account,
+      region: aws.region,
+      bootstrap: stateRemote ? 'remote-state' : 'state-bootstrap',
+      stages: plans.map(publicPlan),
+    };
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else renderPlans(payload.instance, payload.account_id, payload.region, plans);
+    return plans.some((plan) => plan.decision === 'blocked') ? 3 : 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  } finally {
+    for (const plan of plans) rmSync(plan.planPath, { force: true });
   }
-  return 0;
 }
 
-function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
-  const coordinates = config.aws!;
-  let identity: AwsIdentity;
+async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): Promise<number> {
+  const plans: StagePlan[] = [];
   try {
-    identity = awsIdentity(coordinates);
+    const aws = completeConfiguration(config);
+    const identity = verifyPinnedIdentity(aws);
+    if (flags.release) assertEnterpriseRelease(flags.release);
+    if (!flags.yes) {
+      if (!(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
+        process.stderr.write(
+          `${status.err(`AWS VPC deployment requires confirmation; rerun with --yes after reviewing plan for ${identity.Account}.`)}\n`,
+        );
+        return 2;
+      }
+      const approved = await confirm(
+        `Apply reviewed enterprise infrastructure for ${config.instance} in ${identity.Account}/${aws.region}`,
+        false,
+      );
+      if (!approved) return 2;
+    }
+
+    const roots = prepareTerraform(config.instance, aws);
+    const stateWasRemote = isRemoteState(config.instance);
+    const stateBackendPathValue = stateWasRemote ? join(roots.state, 'backend.hcl') : undefined;
+    plans.push(terraformPlan('state', roots.state, aws, stateBackendPathValue));
+    ensureApplicable(plans[0]);
+    terraformApply(roots.state, aws, plans[0].planPath);
+
+    const migration = migrateAndVerifyState(config.instance, roots.state, aws, stateWasRemote);
+    writeClusterFiles(config.instance, aws, migration.permissionsBoundaryArn, migration.backend);
+    plans.push(terraformPlan('cluster', roots.cluster, aws, join(roots.cluster, 'backend.hcl')));
+    ensureApplicable(plans[1]);
+    terraformApply(roots.cluster, aws, plans[1].planPath);
+
+    const instance = terraformOutput<EnterpriseInstanceOutput>(roots.cluster, aws, 'instance');
+    const reconciliation = startReconciliation(config, {
+      trigger: 'bootstrap',
+      force: false,
+      ...(flags.release ? { requested_release: flags.release } : {}),
+    }, instance.state_machine_arn);
+    const payload = {
+      instance: config.instance,
+      account_id: identity.Account,
+      region: aws.region,
+      state: { ...publicPlan(plans[0]), applied: true },
+      state_migration: migration.verification,
+      cluster: { ...publicPlan(plans[1]), applied: true },
+      reconciliation,
+    };
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else {
+      process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC deployed${C.reset}\n`);
+      process.stdout.write(`${status.ok(`Terraform state verified at lineage ${migration.verification.lineage}, serial ${migration.verification.serial}`)}\n`);
+      process.stdout.write(`${status.ok('Customer cluster infrastructure applied')}\n`);
+      process.stdout.write(`${status.ok(`Customer reconciler started: ${reconciliation.execution_arn}`)}\n\n`);
+    }
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  } finally {
+    for (const plan of plans) rmSync(plan.planPath, { force: true });
+  }
+}
+
+async function startManagedUpdate(
+  config: SelfHostInstanceConfig,
+  trigger: 'cli-update' | 'cli-reconcile',
+  flags: SelfHostCommandFlags,
+): Promise<number> {
+  try {
+    verifyPinnedIdentity(config.aws!);
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    if (flags.release) assertEnterpriseRelease(flags.release);
+    const result = startReconciliation(config, {
+      trigger,
+      force: flags.force,
+      channel: 'stable',
+      ...(flags.release ? { requested_release: flags.release } : {}),
+    });
+    renderExecution(config, result, flags);
+    return 0;
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
     return 1;
   }
-  if (identity.Account !== coordinates.account_id) {
-    process.stderr.write(
-      `${status.err(`AWS account mismatch: expected ${coordinates.account_id}, resolved ${identity.Account}`)}\n`,
-    );
-    return 1;
-  }
-  const payload = {
-    instance: config.instance,
-    target: config.target,
-    account_id: coordinates.account_id,
-    region: coordinates.region,
-    channel: config.channel,
-    release: config.release ?? null,
-    bootstrap: 'pending',
-  };
-  if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-  else {
-    process.stdout.write(`\n  ${C.bold}kortix self-host status${C.reset}\n`);
-    for (const [key, value] of Object.entries(payload)) {
-      process.stdout.write(`  ${C.dim}${key.padEnd(11)}${C.reset}${value ?? 'none'}\n`);
-    }
-    process.stdout.write('\n');
-  }
-  return 0;
 }
 
-function unavailableUntilBootstrap(
-  command: AwsVpcCommand,
+async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): Promise<number> {
+  try {
+    const identity = verifyPinnedIdentity(config.aws!);
+    if (!flags.release) throw new Error('rollback requires --release <verified-enterprise-version>');
+    assertEnterpriseRelease(flags.release);
+    if (!flags.yes) {
+      if (!(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
+        process.stderr.write(
+          `${status.err('rollback requires confirmation; rerun with --yes after reviewing the compatibility contract')}\n`,
+        );
+        return 2;
+      }
+      const approved = await confirm(
+        `Request rollback of ${config.instance} in ${identity.Account} to ${flags.release}`,
+        false,
+      );
+      if (!approved) return 2;
+    }
+    const result = startReconciliation(config, {
+      trigger: 'cli-rollback',
+      force: flags.force,
+      channel: 'stable',
+      rollback_to: flags.release,
+    });
+    renderExecution(config, result, flags);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function showAwsVpcVersion(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
+  try {
+    verifyPinnedIdentity(config.aws!);
+    const item = releaseState(config);
+    const payload = {
+      instance: config.instance,
+      target: config.target,
+      channel: String(item?.channel ?? config.channel),
+      release: item?.release ?? null,
+      status: item?.status ?? (item ? 'unknown' : 'not-deployed'),
+      updated_at: item?.updated_at ?? null,
+    };
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else {
+      process.stdout.write(`\n  ${C.bold}kortix self-host version${C.reset}\n`);
+      for (const [key, value] of Object.entries(payload)) {
+        process.stdout.write(`  ${C.dim}${key.padEnd(11)}${C.reset}${value ?? 'none'}\n`);
+      }
+      process.stdout.write('\n');
+    }
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
+  try {
+    const coordinates = config.aws!;
+    verifyPinnedIdentity(coordinates);
+    const cluster = awsJsonOptional<{ cluster?: Record<string, unknown> }>(coordinates, [
+      'eks', 'describe-cluster', '--name', config.instance,
+    ])?.cluster ?? null;
+    const supabaseResponse = awsJsonOptional<{
+      Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PrivateIpAddress?: string }> }>;
+    }>(coordinates, [
+      'ec2', 'describe-instances',
+      '--filters', `Name=tag:Name,Values=${config.instance}-supabase`, 'Name=instance-state-name,Values=pending,running,stopping,stopped',
+    ]);
+    const supabaseInstance = supabaseResponse?.Reservations?.flatMap((entry) => entry.Instances ?? [])[0];
+    const stateMachineArn = reconciliationStateMachineArn(config);
+    const updaterProject = awsJsonOptional<{
+      projects?: Array<{ name?: string; arn?: string }>;
+      projectsNotFound?: string[];
+    }>(coordinates, [
+      'codebuild', 'batch-get-projects', '--names', `${config.instance}-updater`,
+    ])?.projects?.[0] ?? null;
+    const execution = awsJsonOptional<{ executions?: Array<Record<string, unknown>> }>(coordinates, [
+      'states', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
+    ])?.executions?.[0] ?? null;
+    const release = releaseState(config);
+    const payload = {
+      instance: config.instance,
+      target: config.target,
+      account_id: coordinates.account_id,
+      region: coordinates.region,
+      cluster: cluster ? {
+        name: cluster.name ?? config.instance,
+        status: cluster.status ?? 'UNKNOWN',
+        version: cluster.version ?? null,
+      } : { name: config.instance, status: 'NOT_DEPLOYED', version: null },
+      supabase: supabaseInstance ? {
+        instance_id: supabaseInstance.InstanceId ?? null,
+        state: supabaseInstance.State?.Name ?? 'unknown',
+        private_ip: supabaseInstance.PrivateIpAddress ?? null,
+      } : { instance_id: null, state: 'NOT_DEPLOYED', private_ip: null },
+      updater: updaterProject ? {
+        name: updaterProject.name ?? `${config.instance}-updater`,
+        status: 'AVAILABLE',
+        arn: updaterProject.arn ?? null,
+      } : { name: `${config.instance}-updater`, status: 'NOT_DEPLOYED', arn: null },
+      reconciliation: execution ? {
+        execution_arn: execution.executionArn ?? null,
+        status: execution.status ?? 'UNKNOWN',
+        started_at: execution.startDate ?? null,
+        stopped_at: execution.stopDate ?? null,
+      } : { execution_arn: null, status: 'NEVER_RUN', started_at: null, stopped_at: null },
+      release: release ?? { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+    };
+    if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    else renderLiveStatus(payload);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function showAwsVpcLogs(config: SelfHostInstanceConfig, args: string[], _flags: SelfHostCommandFlags): number {
+  try {
+    const coordinates = config.aws!;
+    verifyPinnedIdentity(coordinates);
+    const unknown = args.filter((arg) => arg.startsWith('-') && !['--follow', '-f'].includes(arg));
+    if (unknown.length > 0) throw new Error(`unknown logs option: ${unknown.join(', ')}`);
+    const services = args.filter((arg) => !arg.startsWith('-'));
+    if (services.length > 1) throw new Error('logs accepts at most one service name');
+    const service = services[0] ?? 'updater';
+    const follow = args.includes('--follow') || args.includes('-f');
+    if (service === 'supabase') {
+      const response = awsJson<{ Reservations?: Array<{ Instances?: Array<{ InstanceId?: string }> }> }>(coordinates, [
+        'ec2', 'describe-instances',
+        '--filters', `Name=tag:Name,Values=${config.instance}-supabase`, 'Name=instance-state-name,Values=running',
+      ]);
+      const instanceId = response.Reservations?.flatMap((entry) => entry.Instances ?? [])[0]?.InstanceId;
+      if (!instanceId) throw new Error(`no running Supabase host found for ${config.instance}`);
+      const result = spawnAws(coordinates, [
+        'ssm', 'start-session', '--target', instanceId,
+        '--document-name', 'AWS-StartInteractiveCommand',
+        '--parameters', 'command=journalctl -u kortix-supabase -f -n 200',
+      ], 'inherit');
+      if (result.status !== 0) throw new Error(`SSM log session failed with exit ${result.status ?? 1}`);
+      return 0;
+    }
+    const groups: Record<string, string> = {
+      updater: `/kortix/${config.instance}/updater`,
+      api: `/kortix/${config.instance}/api`,
+      frontend: `/kortix/${config.instance}/frontend`,
+      gateway: `/kortix/${config.instance}/gateway`,
+    };
+    const group = groups[service];
+    if (!group) throw new Error('logs service must be updater, supabase, api, frontend, or gateway');
+    const result = spawnAws(coordinates, [
+      'logs', 'tail', group, '--since', '1h', ...(follow ? ['--follow'] : []), '--no-cli-pager',
+    ]);
+    if (result.status !== 0) throw new Error(firstLine(result.stderr) || `CloudWatch logs failed with exit ${result.status ?? 1}`);
+    process.stdout.write(result.stdout);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function openAwsVpc(config: SelfHostInstanceConfig): number {
+  try {
+    const aws = completeConfiguration(config);
+    verifyPinnedIdentity(aws);
+    const url = `https://${aws.frontend_domain}`;
+    const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+    const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+    const result = spawnSync(command, args, { stdio: 'ignore' });
+    if (result.error || result.status !== 0) throw new Error(`could not open ${url}`);
+    process.stdout.write(`${url}\n`);
+    return 0;
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function renderPlans(instance: string, account: string, region: string, plans: StagePlan[]): void {
+  process.stdout.write(`\n  ${C.bold}kortix self-host plan${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance ${C.reset}${instance}\n`);
+  process.stdout.write(`  ${C.dim}target   ${C.reset}${account}/${region}\n\n`);
+  for (const plan of plans) {
+    const summary = plan.summary;
+    process.stdout.write(`  ${plan.decision === 'blocked' ? status.err(plan.name) : status.ok(plan.name)} ${plan.decision}\n`);
+    process.stdout.write(`    ${C.dim}create=${summary.create} update=${summary.update} delete=${summary.delete} replace=${summary.replace}${C.reset}\n`);
+    for (const reason of plan.reasons) process.stdout.write(`    ${C.dim}${reason.severity}: ${reason.address}: ${reason.reason}${C.reset}\n`);
+  }
+  process.stdout.write('\n');
+}
+
+function renderExecution(
   config: SelfHostInstanceConfig,
-  _args: string[],
-  _flags: SelfHostCommandFlags,
-): number {
-  process.stderr.write(
-    `${status.err(`AWS VPC ${command} is not available until the enterprise bootstrap bundle is installed for ${config.instance}.`)}\n`,
-  );
-  process.stderr.write(`${C.dim}Run ${C.reset}${C.cyan}kortix self-host doctor --instance ${config.instance}${C.reset}${C.dim} first.${C.reset}\n`);
-  return 1;
+  result: ReturnType<typeof startReconciliation>,
+  flags: SelfHostCommandFlags,
+): void {
+  const payload = { instance: config.instance, channel: 'stable', ...result };
+  if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else {
+    process.stdout.write(`\n  ${C.bold}Kortix customer-owned reconciliation${C.reset}\n`);
+    process.stdout.write(`${status.ok(result.execution_arn)}\n`);
+    process.stdout.write(`  ${C.dim}The customer state machine enforces signatures, compatibility, plan guard, and health gates.${C.reset}\n\n`);
+  }
+}
+
+function renderLiveStatus(payload: {
+  instance: string;
+  account_id: string;
+  region: string;
+  cluster: { status: unknown };
+  supabase: { state: unknown };
+  reconciliation: { status: unknown };
+  updater: { status: unknown };
+  release: Record<string, unknown>;
+}): void {
+  process.stdout.write(`\n  ${C.bold}kortix self-host status${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance       ${C.reset}${payload.instance}\n`);
+  process.stdout.write(`  ${C.dim}target         ${C.reset}${payload.account_id}/${payload.region}\n`);
+  process.stdout.write(`  ${C.dim}cluster        ${C.reset}${String(payload.cluster.status)}\n`);
+  process.stdout.write(`  ${C.dim}supabase       ${C.reset}${String(payload.supabase.state)}\n`);
+  process.stdout.write(`  ${C.dim}updater        ${C.reset}${String(payload.updater.status)}\n`);
+  process.stdout.write(`  ${C.dim}reconciliation ${C.reset}${String(payload.reconciliation.status)}\n`);
+  process.stdout.write(`  ${C.dim}release        ${C.reset}${String(payload.release.release ?? 'not deployed')} (${String(payload.release.status ?? 'unknown')})\n\n`);
 }
 
 function rejectDockerLifecycleCommand(command: AwsVpcCommand, instance: string): number {
@@ -272,33 +698,4 @@ function loadAwsConfig(instance: string): SelfHostInstanceConfig | null {
     return null;
   }
   return config;
-}
-
-function awsIdentity(coordinates: AwsVpcCoordinates): AwsIdentity {
-  const result = spawnSync(
-    'aws',
-    [
-      '--profile', coordinates.profile,
-      '--region', coordinates.region,
-      'sts', 'get-caller-identity',
-      '--output', 'json',
-      '--no-cli-pager',
-    ],
-    { encoding: 'utf8' },
-  );
-  if (result.error) throw new Error(`unable to run AWS CLI: ${result.error.message}`);
-  if (result.status !== 0) {
-    throw new Error(`AWS identity check failed for profile ${coordinates.profile}: ${firstLine(result.stderr) || `exit ${result.status}`}`);
-  }
-  try {
-    const identity = JSON.parse(result.stdout) as AwsIdentity;
-    if (!/^\d{12}$/.test(identity.Account) || !identity.Arn) throw new Error('missing Account or Arn');
-    return identity;
-  } catch (error) {
-    throw new Error(`AWS identity response was invalid: ${(error as Error).message}`);
-  }
-}
-
-function firstLine(value: string): string {
-  return value.trim().split(/\r?\n/, 1)[0] ?? '';
 }

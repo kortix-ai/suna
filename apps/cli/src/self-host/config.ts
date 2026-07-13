@@ -8,6 +8,15 @@ export interface AwsVpcCoordinates {
   profile: string;
   region: string;
   account_id: string;
+  vpc_cidr?: string;
+  api_domain?: string;
+  frontend_domain?: string;
+  release_repository_url?: string;
+  tuf_root_sha256?: string;
+  updater_bootstrap_url?: string;
+  updater_bootstrap_sha256?: string;
+  release_publisher_account_id?: string;
+  maintenance_window?: string;
 }
 
 export interface SelfHostInstanceConfig {
@@ -22,7 +31,20 @@ export interface SelfHostInstanceConfig {
 const INSTANCE_PATTERN = /^[a-zA-Z][a-zA-Z0-9._-]*$/;
 const REGION_PATTERN = /^[a-z]{2}(?:-gov)?-[a-z]+-\d$/;
 const TOP_LEVEL_FIELDS = new Set(['schema_version', 'instance', 'target', 'channel', 'release', 'aws']);
-const AWS_FIELDS = new Set(['profile', 'region', 'account_id']);
+const AWS_FIELDS = new Set([
+  'profile',
+  'region',
+  'account_id',
+  'vpc_cidr',
+  'api_domain',
+  'frontend_domain',
+  'release_repository_url',
+  'tuf_root_sha256',
+  'updater_bootstrap_url',
+  'updater_bootstrap_sha256',
+  'release_publisher_account_id',
+  'maintenance_window',
+]);
 
 export function selfHostConfigRoot(): string {
   const override = process.env.KORTIX_SELF_HOST_CONFIG_DIR?.trim();
@@ -100,9 +122,13 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
   assertInstanceName(expectedInstance);
 
   const target = parseSelfHostTarget(asRequiredString(value.target, 'target'))!;
+  if (target === 'aws-vpc') assertAwsVpcInstanceName(expectedInstance);
   const channel = asRequiredString(value.channel, 'channel');
   if (!/^[a-zA-Z0-9._-]+$/.test(channel)) {
     throw new Error('channel may contain only letters, digits, dots, underscores, or dashes');
+  }
+  if (target === 'aws-vpc' && channel !== 'stable') {
+    throw new Error('AWS VPC instances may only track the stable channel');
   }
 
   const release = optionalString(value.release, 'release');
@@ -115,7 +141,53 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
     const accountId = asRequiredString(value.aws.account_id, 'aws.account_id');
     if (!REGION_PATTERN.test(region)) throw new Error(`invalid aws.region "${region}"`);
     if (!/^\d{12}$/.test(accountId)) throw new Error('aws.account_id must be a 12-digit AWS account ID');
-    aws = { profile, region, account_id: accountId };
+    const vpcCidr = optionalString(value.aws.vpc_cidr, 'aws.vpc_cidr');
+    const apiDomain = optionalString(value.aws.api_domain, 'aws.api_domain');
+    const frontendDomain = optionalString(value.aws.frontend_domain, 'aws.frontend_domain');
+    const releaseRepositoryUrl = optionalString(value.aws.release_repository_url, 'aws.release_repository_url');
+    const tufRootSha256 = optionalString(value.aws.tuf_root_sha256, 'aws.tuf_root_sha256');
+    const updaterBootstrapUrl = optionalString(value.aws.updater_bootstrap_url, 'aws.updater_bootstrap_url');
+    const updaterBootstrapSha256 = optionalString(value.aws.updater_bootstrap_sha256, 'aws.updater_bootstrap_sha256');
+    const releasePublisherAccountId = optionalString(
+      value.aws.release_publisher_account_id,
+      'aws.release_publisher_account_id',
+    );
+    const maintenanceWindow = optionalString(value.aws.maintenance_window, 'aws.maintenance_window');
+    if (vpcCidr && !isValidVpcCidr(vpcCidr)) throw new Error('aws.vpc_cidr must be a canonical RFC1918 /16 CIDR');
+    if (apiDomain && !isValidDomain(apiDomain)) throw new Error('aws.api_domain must be a valid DNS name');
+    if (frontendDomain && !isValidDomain(frontendDomain)) throw new Error('aws.frontend_domain must be a valid DNS name');
+    if (releaseRepositoryUrl && !isHttpsUrl(releaseRepositoryUrl)) {
+      throw new Error('aws.release_repository_url must be an HTTPS URL');
+    }
+    if (tufRootSha256 && !/^[a-f0-9]{64}$/.test(tufRootSha256)) {
+      throw new Error('aws.tuf_root_sha256 must be a lowercase SHA-256 digest');
+    }
+    if (updaterBootstrapUrl && !isHttpsUrl(updaterBootstrapUrl)) {
+      throw new Error('aws.updater_bootstrap_url must be an HTTPS URL');
+    }
+    if (updaterBootstrapSha256 && !/^[a-f0-9]{64}$/.test(updaterBootstrapSha256)) {
+      throw new Error('aws.updater_bootstrap_sha256 must be a lowercase SHA-256 digest');
+    }
+    if (releasePublisherAccountId && !/^\d{12}$/.test(releasePublisherAccountId)) {
+      throw new Error('aws.release_publisher_account_id must be a 12-digit AWS account ID');
+    }
+    if (maintenanceWindow && !/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun):(?:[01]\d|2[0-3]):[0-5]\d-(?:[01]\d|2[0-3]):[0-5]\d$/.test(maintenanceWindow)) {
+      throw new Error('aws.maintenance_window must use UTC Day:HH:MM-HH:MM format');
+    }
+    aws = {
+      profile,
+      region,
+      account_id: accountId,
+      ...(vpcCidr ? { vpc_cidr: vpcCidr } : {}),
+      ...(apiDomain ? { api_domain: apiDomain } : {}),
+      ...(frontendDomain ? { frontend_domain: frontendDomain } : {}),
+      ...(releaseRepositoryUrl ? { release_repository_url: releaseRepositoryUrl } : {}),
+      ...(tufRootSha256 ? { tuf_root_sha256: tufRootSha256 } : {}),
+      ...(updaterBootstrapUrl ? { updater_bootstrap_url: updaterBootstrapUrl } : {}),
+      ...(updaterBootstrapSha256 ? { updater_bootstrap_sha256: updaterBootstrapSha256 } : {}),
+      ...(releasePublisherAccountId ? { release_publisher_account_id: releasePublisherAccountId } : {}),
+      ...(maintenanceWindow ? { maintenance_window: maintenanceWindow } : {}),
+    };
   } else if (value.aws !== undefined) {
     throw new Error('Docker instance config must not contain aws coordinates');
   }
@@ -133,6 +205,12 @@ function validateInstanceConfig(value: unknown, expectedInstance: string): SelfH
 function assertInstanceName(instance: string): void {
   if (!INSTANCE_PATTERN.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
+  }
+}
+
+export function assertAwsVpcInstanceName(instance: string): void {
+  if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) {
+    throw new Error('AWS VPC instance must be a 4-32 character lowercase DNS slug');
   }
 }
 
@@ -154,4 +232,28 @@ function optionalString(value: unknown, field: string): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isValidDomain(value: string): boolean {
+  return value.length <= 253
+    && value.includes('.')
+    && value.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+}
+
+function isValidVpcCidr(value: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.0\.0\/16$/.exec(value);
+  if (!match) return false;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  return first === 10
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168);
 }
