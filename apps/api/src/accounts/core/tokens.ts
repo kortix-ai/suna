@@ -11,6 +11,7 @@ import {
   revokeAccountToken,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
   accountDisplayName,
@@ -134,6 +135,8 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
+
   const tokens = await listAccountTokens(accountId);
   return c.json(
     tokens.map((t) => ({
@@ -212,6 +215,13 @@ accountsRouter.openapi(
     typeof body.project_id === 'string' && body.project_id.trim()
       ? body.project_id.trim()
       : undefined;
+
+  if (projectId) {
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded?.row || loaded.row.accountId !== accountId) {
+      return c.json({ error: 'Project not found in account' }, 403);
+    }
+  }
 
   let created;
   try {

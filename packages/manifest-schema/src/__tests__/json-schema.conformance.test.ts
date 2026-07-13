@@ -112,11 +112,6 @@ platform = "slack"
 enabled = true
 events = ["message"]
 
-[[apps]]
-slug = "site"
-name = "Marketing site"
-[apps.source]
-type = "git"
 `,
   },
   {
@@ -166,11 +161,6 @@ channels:
   - platform: slack
     enabled: true
     events: [message]
-apps:
-  - slug: site
-    name: Marketing site
-    source:
-      type: git
 `,
   },
   {
@@ -249,16 +239,10 @@ apps:
     input: 'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\n',
   },
   {
-    name: 'v1: app missing slug',
+    name: 'v1: retired apps section is rejected',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[apps]]\nname = "site"\n',
-  },
-  {
-    name: 'v1: app with invalid source.type',
-    format: 'toml',
-    valid: false,
-    input: 'kortix_version = 1\n[[apps]]\nslug = "site"\n[apps.source]\ntype = "ftp"\n',
+    input: 'kortix_version = 1\n[[apps]]\nslug = "site"\n',
   },
   {
     name: 'v1: agent block kortix_cli non-grantable action',
@@ -397,36 +381,6 @@ apps:
     format: 'toml',
     valid: true,
     input: 'kortix_version = 1\n[sandbox]\ndefault = "default"\n',
-  },
-
-  // ─── shared sections: apps shapes ──────────────────────────────────────
-  {
-    name: 'apps: full shape (domains/source/build/env) is valid',
-    format: 'toml',
-    valid: true,
-    input: `
-kortix_version = 1
-[[apps]]
-slug = "site"
-name = "Marketing site"
-framework = "next"
-enabled = true
-domains = ["example.com", "www.example.com"]
-[apps.source]
-type = "git"
-repo = "https://github.com/acme/site"
-branch = "main"
-[apps.build]
-command = "pnpm build"
-[apps.env]
-NODE_ENV = "production"
-`,
-  },
-  {
-    name: 'apps: domains must be an array, not a bare string',
-    format: 'toml',
-    valid: false,
-    input: 'kortix_version = 1\n[[apps]]\nslug = "site"\ndomains = "example.com"\n',
   },
 
   // ─── v2 ──────────────────────────────────────────────────────────────
@@ -674,11 +628,11 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
-    name: 'v2: apps invalid source.type still rejected',
+    name: 'v2: retired apps section is rejected',
     format: 'yaml',
     valid: false,
     input:
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n    source:\n      type: ftp\n',
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  - slug: site\n',
   },
 ];
 

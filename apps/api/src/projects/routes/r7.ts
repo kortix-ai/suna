@@ -71,6 +71,7 @@ projectsApp.openapi(
     .select({
       groupId: projectGroupGrants.groupId,
       role: projectGroupGrants.role,
+      defaultBaseRef: projectGroupGrants.defaultBaseRef,
       grantedBy: projectGroupGrants.grantedBy,
       createdAt: projectGroupGrants.createdAt,
       expiresAt: projectGroupGrants.expiresAt,
@@ -132,6 +133,7 @@ projectsApp.openapi(
         group_id: r.groupId,
         group_name: r.groupName,
         role: r.role,
+        default_base_ref: r.defaultBaseRef,
         granted_by: r.grantedBy,
         created_at: r.createdAt.toISOString(),
         /** Auto-revoke timestamp. NULL = permanent attachment. */
@@ -195,6 +197,14 @@ projectsApp.openapi(
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
+  const hasDefaultBaseRef = hasOwn(body, 'default_base_ref') || hasOwn(body, 'defaultBaseRef');
+  const rawDefaultBaseRef = hasOwn(body, 'default_base_ref')
+    ? body.default_base_ref
+    : body.defaultBaseRef;
+  const defaultBaseRef = rawDefaultBaseRef === null ? null : normalizeString(rawDefaultBaseRef);
+  if (hasDefaultBaseRef && rawDefaultBaseRef !== null && !defaultBaseRef) {
+    return c.json({ error: 'default_base_ref must be a non-empty string or null' }, 400);
+  }
 
   // Confirm the group exists and belongs to this account — prevents
   // attaching a foreign-account group via a guessed UUID.
@@ -215,6 +225,7 @@ projectsApp.openapi(
       groupId,
       accountId: loaded.row.accountId,
       role,
+      defaultBaseRef: defaultBaseRef ?? null,
       grantedBy: loaded.userId,
       expiresAt: expires.value ?? null,
     })
@@ -226,11 +237,17 @@ projectsApp.openapi(
         updatedAt: now,
         // Only overwrite when caller explicitly set the field.
         ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+        ...(hasDefaultBaseRef ? { defaultBaseRef } : {}),
       },
     });
   await invalidateIamCacheForGroup(groupId);
 
-  return c.json({ project_id: projectId, group_id: groupId, role }, 201);
+  return c.json({
+    project_id: projectId,
+    group_id: groupId,
+    role,
+    default_base_ref: defaultBaseRef ?? null,
+  }, 201);
 },
 );
 
@@ -272,19 +289,32 @@ projectsApp.openapi(
   }
 
   const body = await readBody(c);
-  const role = normalizeProjectRole(body.role);
-  if (!role) {
+  const hasRole = hasOwn(body, 'role');
+  const role = hasRole ? normalizeProjectRole(body.role) : null;
+  if (hasRole && !role) {
     return c.json({ error: 'role must be manager, editor, or member' }, 400);
   }
   const expires = parseExpiresAtBody(body.expires_at);
   if (!expires.ok) return c.json({ error: expires.error }, 400);
+  const hasDefaultBaseRef = hasOwn(body, 'default_base_ref') || hasOwn(body, 'defaultBaseRef');
+  const rawDefaultBaseRef = hasOwn(body, 'default_base_ref')
+    ? body.default_base_ref
+    : body.defaultBaseRef;
+  const defaultBaseRef = rawDefaultBaseRef === null ? null : normalizeString(rawDefaultBaseRef);
+  if (hasDefaultBaseRef && rawDefaultBaseRef !== null && !defaultBaseRef) {
+    return c.json({ error: 'default_base_ref must be a non-empty string or null' }, 400);
+  }
+  if (!hasRole && expires.value === undefined && !hasDefaultBaseRef) {
+    return c.json({ error: 'role, expires_at, or default_base_ref is required' }, 400);
+  }
 
   const result = await db
     .update(projectGroupGrants)
     .set({
-      role,
+      ...(role ? { role } : {}),
       updatedAt: new Date(),
       ...(expires.value !== undefined ? { expiresAt: expires.value } : {}),
+      ...(hasDefaultBaseRef ? { defaultBaseRef } : {}),
     })
     .where(
       and(
@@ -292,11 +322,20 @@ projectsApp.openapi(
         eq(projectGroupGrants.groupId, groupId),
       ),
     )
-    .returning({ groupId: projectGroupGrants.groupId });
+    .returning({
+      groupId: projectGroupGrants.groupId,
+      role: projectGroupGrants.role,
+      defaultBaseRef: projectGroupGrants.defaultBaseRef,
+    });
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
   await invalidateIamCacheForGroup(groupId);
-  return c.json({ project_id: projectId, group_id: groupId, role: body.role });
+  return c.json({
+    project_id: projectId,
+    group_id: groupId,
+    role: result[0]!.role,
+    default_base_ref: result[0]!.defaultBaseRef,
+  });
 },
 );
 

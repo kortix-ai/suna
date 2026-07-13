@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { kortix } from '@/lib/kortix';
 import { invalidateSessions, qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
-import { isRuntimeReady } from '@kortix/sdk/session';
+import { isRuntimeReady } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreVertical, Pencil, RotateCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';

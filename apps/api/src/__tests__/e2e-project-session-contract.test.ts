@@ -37,6 +37,12 @@ let providerStatusAfterStart: string | null = null;
 let providerStartError: Error | null = null;
 let providerStartGate: Promise<void> | null = null;
 let releaseProviderStart: (() => void) | null = null;
+let providerRecoveryCalls = 0;
+let providerRecoveryEnabled = false;
+let providerRecoveryStatus: 'running' | 'recovering' | 'unavailable' = 'unavailable';
+let providerRecoveryGate: Promise<void> | null = null;
+let releaseProviderRecovery: (() => void) | null = null;
+let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
@@ -46,7 +52,6 @@ let runtimeContextRows: Array<typeof projectSessionRuntimeContexts.$inferSelect>
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
-let freestyleCalls: Array<{ path: string; method: string; body?: unknown }>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -85,6 +90,12 @@ function resetState() {
   providerStartError = null;
   providerStartGate = null;
   releaseProviderStart = null;
+  providerRecoveryCalls = 0;
+  providerRecoveryEnabled = false;
+  providerRecoveryStatus = 'unavailable';
+  providerRecoveryGate = null;
+  releaseProviderRecovery = null;
+  computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
   activeSessionCount = 0;
   lastProvisionInput = null;
@@ -121,7 +132,6 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
-  freestyleCalls = [];
 }
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -293,6 +303,15 @@ mock.module('../platform/providers', () => ({
     },
     stop: async () => undefined,
     remove: async () => undefined,
+    ...(providerRecoveryEnabled
+      ? {
+          recoverInPlace: async () => {
+            providerRecoveryCalls += 1;
+            if (providerRecoveryGate) await providerRecoveryGate;
+            return providerRecoveryStatus;
+          },
+        }
+      : {}),
   }),
 }));
 
@@ -313,7 +332,9 @@ mock.module('../projects/opencode-mapping', () => ({
 }));
 
 mock.module('../billing/services/compute-metering', () => ({
-  reopenComputeForSandbox: async () => undefined,
+  reopenComputeForSandbox: async () => {
+    computeReopenCalls += 1;
+  },
   endComputeSession: async () => undefined,
   pauseComputeSession: async () => undefined,
   startComputeSession: async () => undefined,
@@ -357,31 +378,17 @@ mock.module('../repositories/account-tokens', () => ({
   validateAccountToken: async () => null,
 }));
 
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (path: string, options: { method: string; body?: unknown }) => {
-    freestyleCalls.push({ path, method: options.method, body: options.body });
-    return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  },
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({}),
-    stop: async () => undefined,
-    logs: async () => ({}),
-  },
-}));
-
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
 // always exercises the rate-limit branch — the real implementation bypasses
 // the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
-  resolveAccountSessionLimit: async () => ({ tier: 'free', limit: 1, source: 'tier' }),
+  resolveAccountSessionLimit: async () => ({
+    tier: 'free',
+    limit: 1,
+    source: 'tier',
+  }),
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
   maxProjectsForAccount: async () => 100,
   accountEntitledToLlmGateway: async () => true,
@@ -664,6 +671,12 @@ mock.module('../shared/db', () => ({
           returning: async () => {
             if (table === projectSessions) {
               if (!sessionRow) return [];
+              if (
+                typeof (sessionRow.metadata as Record<string, unknown> | null)?.deletedAt ===
+                  'string' &&
+                !('metadata' in updates)
+              )
+                return [];
               sessionRow = {
                 ...sessionRow,
                 ...updates,
@@ -927,7 +940,7 @@ describe('project session API contract', () => {
   });
 
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/legacy-private-project';
+    projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
     secretRows = [
       {
@@ -935,7 +948,7 @@ describe('project session API contract', () => {
         projectId: PROJECT_ID,
         identifier: 'KORTIX_GIT_AUTH_TOKEN',
         name: 'KORTIX_GIT_AUTH_TOKEN',
-        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
+        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-git-token'),
         scope: 'runtime',
         ownerUserId: null,
         active: true,
@@ -980,93 +993,14 @@ describe('project session API contract', () => {
     });
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/legacy-private-project',
+      repo_url: 'https://git.example.test/legacy-private-project',
       source: 'project_credential',
       auth: {
         username: 'x-access-token',
-        token: 'legacy-freestyle-token',
+        token: 'legacy-git-token',
         type: 'basic',
       },
     });
-  });
-
-  test('mints managed Freestyle credentials for legacy project git connections', async () => {
-    projectRow.repoUrl = 'https://git.freestyle.sh/freestyle-repo-id';
-    projectRow.metadata = {
-      git: {
-        provider: 'freestyle',
-        auth: { method: 'managed', ref: 'freestyle-identity-id' },
-        repo_id: 'freestyle-repo-id',
-      },
-    };
-    gitConnectionRows = [
-      {
-        connectionId: '00000000-0000-4000-a000-000000000502',
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'freestyle',
-        repoUrl: 'https://git.freestyle.sh/freestyle-repo-id',
-        upstreamUrl: null,
-        managed: false,
-        repoOwner: null,
-        repoName: null,
-        externalRepoId: 'freestyle-repo-id',
-        defaultBranch: 'main',
-        authMethod: 'managed',
-        installationId: null,
-        credentialRef: 'freestyle-identity-id',
-        permissions: {},
-        visibility: 'private',
-        webhookId: null,
-        status: 'connected',
-        lastValidatedAt: new Date('2026-01-02T00:00:00Z'),
-        lastErrorCode: null,
-        lastErrorMessage: null,
-        metadata: {},
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    sessionSandboxRows = [
-      {
-        sandboxId: SESSION_ID,
-        sessionId: SESSION_ID,
-        accountId: ACCOUNT_ID,
-        projectId: PROJECT_ID,
-        provider: 'daytona',
-        externalId: null,
-        baseUrl: null,
-        status: 'provisioning',
-        config: {},
-        metadata: {},
-        lastUsedAt: null,
-        createdAt: new Date('2026-01-02T00:00:00Z'),
-        updatedAt: new Date('2026-01-02T00:00:00Z'),
-      },
-    ];
-    const app = createApp();
-
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
-
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.freestyle.sh/freestyle-repo-id',
-      source: 'managed',
-      auth: {
-        username: 'x-access-token',
-        token: 'freestyle-managed-token',
-        type: 'basic',
-      },
-    });
-    expect(freestyleCalls).toEqual([
-      {
-        path: '/git/v1/identity/freestyle-identity-id/tokens',
-        method: 'POST',
-        body: undefined,
-      },
-    ]);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -1605,11 +1539,11 @@ describe('project session API contract', () => {
     releaseProviderStart?.();
   });
 
-  test('dashboard start retires a provider-confirmed missing sandbox and reallocates once', async () => {
+  test('dashboard start never replaces a provider-removed established sandbox', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       opencodeSessionId: 'ses_root_existing',
       metadata: {
@@ -1624,7 +1558,7 @@ describe('project session API contract', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
@@ -1636,32 +1570,211 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'removed';
+    providerRecoveryEnabled = true;
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
       method: 'POST',
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      stage: 'provisioning',
+      stage: 'failed',
       agent_name: 'default',
-      retriable: true,
-      reason: 'runtime_recovery_provisioning',
-      sandbox: null,
+      retriable: false,
+      reason: 'runtime_identity_unavailable',
+      sandbox: { external_id: 'box-deleted', status: 'stopped' },
     });
 
     expect(providerStartCalls).toBe(0);
-    await flushUntil(() => sandboxProvisionCalls === 1);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionSandboxRows).toHaveLength(0);
-    expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionRow?.opencodeSessionId).toBeNull();
-    expect(sessionRow?.metadata).toMatchObject({
-      lastRuntimeRecovery: {
-        externalId: 'box-deleted',
-        reason: 'runtime_removed',
-        opencodeSessionId: 'ses_root_existing',
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-deleted',
+      status: 'stopped',
+      metadata: {
+        preservedExternalId: 'box-deleted',
+        runtimeIdentityState: 'unavailable',
       },
     });
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
+  });
+
+  test('dashboard start restores a provider-removed sandbox in place without provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restorable',
+        status: 'stopped',
+        baseUrl: 'https://box-restorable.test',
+        config: {},
+        metadata: { providerStatusObservedAt: '2026-01-01T00:00:00.000Z' },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_restoring_in_place',
+      sandbox: { external_id: 'box-restorable' },
+      opencode_session_id: 'ses_root_existing',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.externalId).toBe('box-restorable');
+    expect(sessionSandboxRows[0]?.status).toBe('provisioning');
+    expect(computeReopenCalls).toBe(0);
+
+    providerStatus = 'running';
+    const ready = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toMatchObject({
+      stage: 'ready',
+      sandbox: { external_id: 'box-restorable', status: 'active' },
+      opencode_session_id: 'ses_root_existing',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
+    expect(sessionRow?.status).toBe('running');
+    expect(computeReopenCalls).toBe(1);
+  });
+
+  test('concurrent dashboard starts issue exactly one same-id provider recovery', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-single-flight',
+        status: 'active',
+        baseUrl: 'https://box-single-flight.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+    providerRecoveryGate = new Promise<void>((resolve) => {
+      releaseProviderRecovery = resolve;
+    });
+
+    const first = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    await flushUntil(() => providerRecoveryCalls === 1);
+    const second = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(second.status).toBe(200);
+    expect(await second.json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_recovery_in_progress',
+      sandbox: { external_id: 'box-single-flight' },
+    });
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+
+    releaseProviderRecovery?.();
+    expect(await (await first).json()).toMatchObject({
+      stage: 'starting',
+      reason: 'runtime_restoring_in_place',
+    });
+    expect(providerRecoveryCalls).toBe(1);
+  });
+
+  test('explicit deletion winning during recovery prevents status and billing resurrection', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+        opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-delete-race',
+        status: 'active',
+        baseUrl: 'https://box-delete-race.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'running';
+    providerRecoveryGate = new Promise<void>((resolve) => {
+      releaseProviderRecovery = resolve;
+    });
+
+    const request = app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    await flushUntil(() => providerRecoveryCalls === 1);
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      metadata: {
+        ...(sessionRow?.metadata ?? {}),
+        deletedAt: new Date().toISOString(),
+      },
+    };
+    sessionSandboxRows[0] = { ...sessionSandboxRows[0]!, status: 'archived' };
+    releaseProviderRecovery?.();
+
+    const res = await request;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'stopped',
+      retriable: false,
+      reason: 'runtime_recovery_cancelled',
+    });
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionSandboxRows[0]?.status).toBe('archived');
+    expect(computeReopenCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('dashboard start preserves a running sandbox whose OpenCode runtime never becomes reachable', async () => {
@@ -1714,11 +1827,11 @@ describe('project session API contract', () => {
     expect(sessionSandboxRows[0]?.externalId).toBe('box-opencode-dead');
   });
 
-  test('restart of a provider-removed sandbox provisions a replacement', async () => {
+  test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
-      sandboxProvider: 'daytona',
+      sandboxProvider: 'platinum',
       status: 'running',
       opencodeSessionId: 'ses_root_existing',
     };
@@ -1728,7 +1841,7 @@ describe('project session API contract', () => {
         sessionId: SESSION_ID,
         accountId: ACCOUNT_ID,
         projectId: PROJECT_ID,
-        provider: 'daytona',
+        provider: 'platinum',
         externalId: 'box-deleted',
         baseUrl: null,
         status: 'active',
@@ -1740,27 +1853,87 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'removed';
+    providerRecoveryEnabled = true;
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
+      session_id: SESSION_ID,
+      external_id: 'box-deleted',
+      reason: 'runtime_identity_unavailable',
+    });
+
+    expect(providerStartCalls).toBe(0);
+    expect(providerRecoveryCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionRow?.status).toBe('stopped');
+    expect(sessionSandboxRows).toHaveLength(1);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-deleted',
+      status: 'stopped',
+      metadata: {
+        preservedExternalId: 'box-deleted',
+        runtimeIdentityState: 'unavailable',
+      },
+    });
+  });
+
+  test('restart restores a provider-removed sandbox in place without provisioning', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      status: 'stopped',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-restart-restorable',
+        status: 'stopped',
+        baseUrl: 'https://box-restart-restorable.test',
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+    providerRecoveryEnabled = true;
+    providerRecoveryStatus = 'recovering';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
+
     expect(res.status).toBe(202);
     expect(await res.json()).toMatchObject({
       ok: true,
       session_id: SESSION_ID,
       status: 'provisioning',
-      reason: 'runtime_recovery_provisioning',
+      reason: 'runtime_restoring_in_place',
     });
-
+    expect(providerRecoveryCalls).toBe(1);
     expect(providerStartCalls).toBe(0);
-    await flushUntil(() => sandboxProvisionCalls === 1);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionSandboxRows).toHaveLength(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
+      externalId: 'box-restart-restorable',
+      status: 'provisioning',
+    });
+    expect(sessionRow).toMatchObject({
+      status: 'provisioning',
+      opencodeSessionId: 'ses_root_existing',
+    });
   });
 
-  test('restart self-heals when provider status is uncertain but start returns not-found', async () => {
+  test('restart preserves identity when provider status is uncertain and start returns not-found', async () => {
     const app = createApp();
     sessionRow = {
       ...sessionRow!,
@@ -1785,28 +1958,31 @@ describe('project session API contract', () => {
       },
     ];
     providerStatus = 'unknown';
-    providerStartError = Object.assign(new Error('sandbox not found'), { status: 404 });
+    providerStartError = Object.assign(new Error('sandbox not found'), {
+      status: 404,
+    });
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(202);
-    await flushUntil(() => sandboxProvisionCalls === 1);
+    await flushUntil(() => sessionRow?.status === 'stopped');
     expect(providerStartCalls).toBe(1);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionRow?.metadata).toMatchObject({
-      lastRuntimeRecovery: {
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
         externalId: 'box-missing-on-start',
-        reason: 'restart_missing_runtime',
-      },
+      status: 'stopped',
+      metadata: { preservedExternalId: 'box-missing-on-start' },
     });
   });
 
-  test('restart self-heals when provider accepts start but then reports removed', async () => {
+  test('restart preserves identity when provider accepts start but then reports removed', async () => {
     const app = createApp();
-    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -1827,20 +2003,17 @@ describe('project session API contract', () => {
     providerStatus = 'unknown';
     providerStatusAfterStart = 'removed';
 
-    const res = await app.request(
-      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
-      { method: 'POST' },
-    );
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {
+      method: 'POST',
+    });
     expect(res.status).toBe(202);
-    await flushUntil(() => sandboxProvisionCalls === 1);
+    await flushUntil(() => sessionRow?.status === 'stopped');
     expect(providerStartCalls).toBe(1);
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(sessionRow?.status).toBe('provisioning');
-    expect(sessionRow?.metadata).toMatchObject({
-      lastRuntimeRecovery: {
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(sessionSandboxRows[0]).toMatchObject({
         externalId: 'box-accepted-start-then-removed',
-        reason: 'restart_post_start_removed',
-      },
+      status: 'stopped',
+      metadata: { preservedExternalId: 'box-accepted-start-then-removed' },
     });
   });
 
@@ -2108,7 +2281,11 @@ describe('project session API contract', () => {
       updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
-    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_existing',
+    };
     sessionSandboxRows = [];
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
@@ -2131,7 +2308,11 @@ describe('project session API contract', () => {
       updatedAt: new Date('2026-01-02T00:00:00Z'),
       },
     ];
-    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_existing' };
+    sessionRow = {
+      ...sessionRow!,
+      status: 'running',
+      opencodeSessionId: 'ses_existing',
+    };
     sessionSandboxRows = [];
 
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`, {

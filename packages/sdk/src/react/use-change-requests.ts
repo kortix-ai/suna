@@ -9,7 +9,7 @@ import {
   requestChangesOnChangeRequest,
   type ChangeRequest,
   type ChangeRequestStatus,
-} from '../platform/projects-client';
+} from '../core/rest/projects-client';
 
 /** Stable query-key factory — reuse to read/invalidate the same cache entry
  *  `useChangeRequests` populates. */

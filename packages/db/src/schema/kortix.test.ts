@@ -4,8 +4,6 @@ import {
   kortixSchema,
   sandboxStatusEnum,
   sandboxProviderEnum,
-  deploymentStatusEnum,
-  deploymentSourceEnum,
   projectStatusEnum,
   projectSessionStatusEnum,
   sessionLifecycleCommandStatusEnum,
@@ -22,10 +20,10 @@ import {
   accountMembers,
   projects,
   projectMembers,
+  projectGroupGrants,
   projectGitConnections,
   sandboxes,
   sandboxMembers,
-  deployments,
   kortixApiKeys,
 } from './kortix';
 
@@ -47,7 +45,7 @@ describe('kortix pgSchema', () => {
   });
 
   test('all sampled tables live in the kortix schema', () => {
-    const tables = [accounts, projects, sandboxes, deployments, kortixApiKeys];
+    const tables = [accounts, projects, sandboxes, kortixApiKeys];
     for (const t of tables) {
       expect(getTableConfig(t).schema).toBe('kortix');
     }
@@ -75,22 +73,6 @@ describe('kortix enums', () => {
       'justavps',
       'platinum',
     ]);
-  });
-
-  test('deployment_status enum has the expected values', () => {
-    expect(deploymentStatusEnum.enumName).toBe('deployment_status');
-    expect(deploymentStatusEnum.enumValues).toEqual([
-      'pending',
-      'building',
-      'deploying',
-      'active',
-      'failed',
-      'stopped',
-    ]);
-  });
-
-  test('deployment_source enum has the expected values', () => {
-    expect(deploymentSourceEnum.enumValues).toEqual(['git', 'code', 'files', 'tar']);
   });
 
   test('project_status enum is active or archived', () => {
@@ -278,6 +260,16 @@ describe('project_members table', () => {
   });
 });
 
+describe('project_group_grants table', () => {
+  test('stores an optional default base ref for sessions started by group members', () => {
+    const col = getTableConfig(projectGroupGrants).columns.find(
+      (column) => column.name === 'default_base_ref',
+    );
+    expect(col).toBeDefined();
+    expect(col?.notNull).toBe(false);
+  });
+});
+
 describe('project_git_connections table', () => {
   test('maps to the project_git_connections table name', () => {
     expect(getTableConfig(projectGitConnections).name).toBe('project_git_connections');
@@ -341,27 +333,6 @@ describe('sandbox_members table', () => {
       (c) => c.name === 'current_period_cents',
     );
     expect(col?.default).toBe(0);
-  });
-});
-
-describe('deployments table', () => {
-  test('uses deployment_id as its primary key', () => {
-    expect(primaryColumn(deployments)).toBe('deployment_id');
-  });
-
-  test('status defaults to pending', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'status');
-    expect(col?.default).toBe('pending');
-  });
-
-  test('version defaults to 1', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'version');
-    expect(col?.default).toBe(1);
-  });
-
-  test('source_type is not null', () => {
-    const col = getTableConfig(deployments).columns.find((c) => c.name === 'source_type');
-    expect(col?.notNull).toBe(true);
   });
 });
 

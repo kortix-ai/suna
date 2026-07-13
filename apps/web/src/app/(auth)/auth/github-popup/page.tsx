@@ -2,11 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
-import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { KortixHyperLogo } from '@/components/ui/marketing/kortix-hyper-logo';
+
 import { Button } from '@/components/ui/button';
+import { KortixLogo } from '@/components/ui/kortix-logo';
+import Loading from '@/components/ui/loading';
+import { ErrorStrip } from '@/features/auth/auth-primitives';
+import { createClient } from '@/lib/supabase/client';
 
 interface AuthMessage {
   type: 'github-auth-success' | 'github-auth-error';
@@ -16,9 +18,7 @@ interface AuthMessage {
 
 export default function GitHubOAuthPopup() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [status, setStatus] = useState<'loading' | 'processing' | 'error'>(
-    'loading',
-  );
+  const [status, setStatus] = useState<'loading' | 'processing' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
@@ -28,8 +28,7 @@ export default function GitHubOAuthPopup() {
     let cancelled = false;
 
     // Get return URL from sessionStorage (set by parent component)
-    const returnUrl =
-      sessionStorage.getItem('github-returnUrl') || '/projects';
+    const returnUrl = sessionStorage.getItem('github-returnUrl') || '/projects';
 
     const postMessage = (message: AuthMessage) => {
       try {
@@ -171,47 +170,37 @@ export default function GitHubOAuthPopup() {
     };
   }, []);
 
-  const getStatusMessage = () => {
-    switch (status) {
-      case 'loading':
-        return 'Starting GitHub authentication...';
-      case 'processing':
-        return 'Completing sign-in...';
-      case 'error':
-        return errorMessage || 'Authentication failed';
-      default:
-        return 'Processing...';
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (status) {
-      case 'error':
-        return 'text-destructive';
-      case 'processing':
-        return 'text-emerald-600 dark:text-emerald-400';
-      default:
-        return 'text-muted-foreground';
-    }
-  };
-
   return (
-    <main className="flex flex-col items-center justify-center h-screen bg-background p-8">
-      <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-        {status !== 'error' && (
-          <KortixHyperLogo size={64} startOnView={false} loop className="text-foreground" />
-        )}
+    <main className="bg-background flex min-h-svh flex-col items-center justify-center px-6">
+      <div className="w-full max-w-[320px]">
+        <KortixLogo variant="icon" size={22} className="text-foreground" />
+        <h1 className="text-foreground mt-6 text-2xl font-medium tracking-tight">
+          {tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}
+        </h1>
 
-        <div className="space-y-2">
-          <h1 className="text-lg font-medium">{tHardcodedUi.raw('appAuthGithubPopupPage.line194JsxTextGithubSignIn')}</h1>
-          <p className={cn('text-sm', getStatusColor())}>{getStatusMessage()}</p>
+        <div className="mt-6">
+          {status === 'error' ? (
+            <>
+              <ErrorStrip message={errorMessage || 'Authentication failed'} />
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                onClick={() => window.close()}
+              >
+                Close
+              </Button>
+            </>
+          ) : (
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Loading className="text-muted-foreground size-4 shrink-0" />
+              <span>
+                {status === 'processing' ? 'Completing sign-in…' : 'Redirecting to GitHub…'}
+              </span>
+            </div>
+          )}
         </div>
-
-        {status === 'error' && (
-          <Button onClick={() => window.close()} className="mt-4">
-            Close
-          </Button>
-        )}
       </div>
     </main>
   );

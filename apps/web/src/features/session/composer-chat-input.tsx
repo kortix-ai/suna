@@ -5,13 +5,13 @@ import type { ReactNode } from 'react';
 import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { type ModelKey, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
-import { useProjectConfig } from '@kortix/sdk/react';
 import {
   type Command,
   useOpenCodeAgents,
   useOpenCodeCommands,
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
+import { useProjectConfig } from '@kortix/sdk/react';
 
 export interface ComposerOptions {
   agent?: string;
@@ -61,7 +61,12 @@ export function ComposerChatInput({
   clearOnSend?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
-  prefill?: { text: string; id: number } | null;
+  prefill?: {
+    text: string;
+    id: number;
+    files?: AttachedFile[];
+    mode?: 'replace' | 'merge';
+  } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
   /** Extra classes for the input card (e.g. the project-home radius override). */
@@ -70,7 +75,7 @@ export function ComposerChatInput({
   boundAgentName?: string | null;
 }) {
   const { data: agents } = useOpenCodeAgents({ projectId });
-  const { data: providers } = useOpenCodeProviders();
+  const { data: providers, isLoading: providersLoading } = useOpenCodeProviders();
   const { data: commands } = useOpenCodeCommands();
   const { data: config } = useOpenCodeConfig();
   const projectConfig = useProjectConfig(projectId);
@@ -122,6 +127,7 @@ export function ComposerChatInput({
       selectedModel={local.model.currentKey ?? null}
       onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
       modelRequired
+      modelsLoading={providersLoading}
       variants={local.model.variant.list}
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}

@@ -109,8 +109,8 @@ export function MaintenanceCountdownBanner({
       icon={Wrench}
       dismissKey={`maintenance-${startTime}-${updatedAt || endTime}`}
       countdown={
-        <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-          <Clock className="h-3 w-3" />
+        <div className="text-kortix-orange flex items-center gap-1.5 text-xs font-medium tabular-nums">
+          <Clock className="size-3 shrink-0" />
           <span>{countdown}</span>
         </div>
       }

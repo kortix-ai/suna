@@ -45,7 +45,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * updating this map fails typecheck.
  */
 export const ExperimentalFeatureMapSchema = z.object({
-  apps: z.boolean(),
   agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   agentmail_email: z.boolean(),
@@ -129,8 +128,6 @@ export const ProjectSchema = z.object({
   dashboard_url: z.string(),
   experimental: ExperimentalFeatureMapSchema,
   experimental_features: z.array(ExperimentalFeatureViewSchema),
-  /** Back-compat alias for `experimental.apps`. */
-  apps_enabled: z.boolean(),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: z.string().nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),

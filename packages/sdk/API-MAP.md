@@ -13,6 +13,29 @@ Legend: **✅ in SDK** · **🟡 partial** (client fn in SDK, hook not) · **❌
 
 ---
 
+## Stability
+
+Package-shape guarantees — orthogonal to the domain-coverage legend above,
+which tracks how much of the REST + runtime surface is wrapped, not how stable
+a given import path is:
+
+| Tier | Entries | Guarantee |
+|---|---|---|
+| Stable | `.`, `./react`, `./server` | semver |
+| Deprecated | the 20 legacy subpaths | works; removed on the next major |
+| Internal | `./internal/*` | **no guarantee**, may change in any release |
+
+`.` is the canonical entry — everything framework-free lives there. `./react`
+and `./server` exist because React is a peer dependency and `./server` statically
+imports `node:async_hooks`, respectively. The 20 legacy subpaths
+(`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
+the zustand stores, …) are `@deprecated` aliases that still resolve — import from
+the root instead. `./internal/*` backs `apps/web`'s zustand stores and is not
+reachable from `window.Kortix`; treat it as visible implementation detail, not
+designed API.
+
+---
+
 ## IN SCOPE — the agent product (what the SDK needs)
 
 ### 1. Auth / session token  ✅
@@ -115,7 +138,7 @@ Client fns in SDK (`git-history.ts`, `change-requests.ts`), **hooks partial** (`
 | op | REST |
 |---|---|
 | commits / commit / diff | `GET /v1/projects/:id/commits[/:sha][/diff]` |
-| branches | `GET /v1/projects/:id/branches` |
+| branches + effective session base ref | `GET /v1/projects/:id/branches` |
 | file history / version-diff | `GET /v1/projects/:id/files/history`, `/version-diff` |
 | change-requests CRUD | `GET/POST/PUT /v1/projects/:id/change-requests[/:cr]` |
 | merge / merge-preview / close / reopen | `POST .../change-requests/:cr/{merge,close,reopen}`, `GET .../merge-preview` |
@@ -213,8 +236,8 @@ facade as `kortix.billing.{checkout, subscription, credits}`:
 ### 16. Transcription / misc session input  🟡
 `POST /v1/transcription` (voice) client now in SDK (`projects-client/transcription.ts`) ✅; hooks still web-local (`hooks/transcription`) 🟡.
 
-### 17. Channels / apps (project-scoped)  🟡
-Slack/email inbound-outbound installs (`projects-client/channels.ts`) and the `/v1/projects/:id/apps/*` deployment family (`projects-client/apps.ts`) — clients ✅ in SDK; hooks web-local.
+### 17. Channels (project-scoped)  🟡
+Slack/email inbound-outbound installs live in `projects-client/channels.ts`; hooks remain web-local.
 Also now wrapped: Slack file download/upload proxies
 (`project(id).channels.slack.{getFile, uploadFile}` →
 `GET/POST /v1/projects/:id/channels/slack/file[/upload]`) and the Meet

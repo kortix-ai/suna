@@ -398,6 +398,7 @@
                   "type": "string",
                   "enum": [
                     "slack",
+                    "teams",
                     "email",
                     "meet"
                   ]
@@ -456,6 +457,22 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_slack"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "const": "channel"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_teams"
                       }
                     }
                   },
@@ -620,82 +637,7 @@
               ]
             }
           },
-          "apps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "slug"
-              ],
-              "properties": {
-                "slug": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "framework": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "oneOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
-                    }
-                  ]
-                },
-                "domains": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "source": {
-                  "type": "object",
-                  "required": [
-                    "type"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "git",
-                        "tar"
-                      ]
-                    },
-                    "repo": {
-                      "type": "string"
-                    },
-                    "branch": {
-                      "type": "string"
-                    },
-                    "root_path": {
-                      "type": "string"
-                    },
-                    "url": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": true
-                },
-                "build": {
-                  "type": "object"
-                },
-                "env": {
-                  "type": "object"
-                }
-              },
-              "additionalProperties": true
-            }
-          },
+          "apps": false,
           "agents": {
             "type": "array",
             "items": {
@@ -737,13 +679,13 @@
                         "enum": [
                           "project.read",
                           "project.write",
-                          "project.deploy",
                           "project.delete",
                           "project.cr.open",
                           "project.cr.merge",
                           "project.session.read",
                           "project.session.start",
                           "project.session.stop",
+                          "project.session.bindings.write",
                           "project.members.read",
                           "project.members.manage",
                           "project.trigger.read",
@@ -771,6 +713,7 @@
                           "project.secret.read",
                           "project.secret.write",
                           "project.connector.read",
+                          "project.connector.profiles.manage",
                           "project.connector.write",
                           "project.review.read",
                           "project.review.submit",
@@ -969,13 +912,13 @@
                         "enum": [
                           "project.read",
                           "project.write",
-                          "project.deploy",
                           "project.delete",
                           "project.cr.open",
                           "project.cr.merge",
                           "project.session.read",
                           "project.session.start",
                           "project.session.stop",
+                          "project.session.bindings.write",
                           "project.members.read",
                           "project.members.manage",
                           "project.trigger.read",
@@ -1003,6 +946,7 @@
                           "project.secret.read",
                           "project.secret.write",
                           "project.connector.read",
+                          "project.connector.profiles.manage",
                           "project.connector.write",
                           "project.review.read",
                           "project.review.submit",
@@ -1396,6 +1340,7 @@
                   "type": "string",
                   "enum": [
                     "slack",
+                    "teams",
                     "email",
                     "meet"
                   ]
@@ -1456,6 +1401,22 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_slack"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "provider": {
+                        "const": "channel"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "slug": {
+                        "const": "kortix_teams"
                       }
                     }
                   },
@@ -1620,82 +1581,7 @@
               ]
             }
           },
-          "apps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "slug"
-              ],
-              "properties": {
-                "slug": {
-                  "type": "string",
-                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "framework": {
-                  "type": "string"
-                },
-                "enabled": {
-                  "oneOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "pattern": "^(?:[tT][rR][uU][eE]|[fF][aA][lL][sS][eE]|1|0|[yY][eE][sS]|[nN][oO]|[oO][nN]|[oO][fF][fF])$"
-                    }
-                  ]
-                },
-                "domains": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                },
-                "source": {
-                  "type": "object",
-                  "required": [
-                    "type"
-                  ],
-                  "properties": {
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "git",
-                        "tar"
-                      ]
-                    },
-                    "repo": {
-                      "type": "string"
-                    },
-                    "branch": {
-                      "type": "string"
-                    },
-                    "root_path": {
-                      "type": "string"
-                    },
-                    "url": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": true
-                },
-                "build": {
-                  "type": "object"
-                },
-                "env": {
-                  "type": "object"
-                }
-              },
-              "additionalProperties": true
-            }
-          },
+          "apps": false,
           "channels": false
         },
         "additionalProperties": true,

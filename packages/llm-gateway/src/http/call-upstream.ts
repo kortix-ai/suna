@@ -44,5 +44,5 @@ export async function callUpstream(
     opts.binding,
   );
 
-  return transport.translateResponse(raw, { streaming });
+  return transport.translateResponse(raw, { streaming, descriptor });
 }

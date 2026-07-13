@@ -7,7 +7,7 @@ import type {
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { useEffect, useRef } from "react";
-import { getClient } from "../opencode/client";
+import { getClient } from "../core/runtime/client";
 // Inlined verbatim from web's `@/ui/types` — FileDiff is a derived type, NOT
 // exported by @opencode-ai/sdk/v2/client. SDK-port: keep type shape identical.
 type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
@@ -18,9 +18,9 @@ type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'pat
 import {
 	type MessageWithParts,
 	useSyncStore,
-} from "../state/sync-store";
-import { useSandboxConnectionStore } from "../state/sandbox-connection-store";
-import { loadSessionFromIDB, saveSessionToIDB } from "../state/idb-sync-cache";
+} from "../browser/stores/sync-store";
+import { useSandboxConnectionStore } from "../browser/stores/sandbox-connection-store";
+import { loadSessionFromIDB, saveSessionToIDB } from "../browser/cache/idb-sync-cache";
 import { canQueryOpenCodeSession } from "./use-opencode-sessions";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];

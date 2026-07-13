@@ -20,7 +20,7 @@ import type {
   ProjectAccessMember,
   ProjectAccessRequest,
   ProjectGroupGrant,
-} from '@kortix/sdk/projects-client';
+} from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Mail, Send, Trash2, Users, X } from 'lucide-react';
 import { useState } from 'react';

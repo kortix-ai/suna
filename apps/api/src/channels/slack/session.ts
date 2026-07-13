@@ -7,6 +7,8 @@ import {
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
+import { normalizeString } from '../../projects/lib/serializers';
+import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './commands';
 import { currentChannelSelection } from './selection';
@@ -129,7 +131,22 @@ export async function createOrJoinThreadSession(input: {
   // Slack either — mirrors the dashboard POST /:projectId/sessions gate so the
   // channel-agent picker can't be used to bypass department scoping. No-op when
   // the agent is unscoped (returns it) or the user is an owner/admin/SA.
-  const launchAgent = selection?.agentName ?? 'default';
+  //
+  // Resolve via the SAME shared precedence function the settings page uses to
+  // compute the "Project default (agentX)" label (chooseEffectiveAgent), instead
+  // of always passing the literal 'default' sentinel downstream. Previously this
+  // always sent 'default', so `body.agent_name ?? projectDefaultAgent` in
+  // sessions.ts never fell through to the project's configured default agent —
+  // Slack sessions silently ignored project.metadata.default_agent and launched
+  // whatever OpenCode's own internal default happened to be, diverging from what
+  // the settings page showed as the effective default.
+  const projectDefaultAgent = normalizeString(
+    (project.metadata as Record<string, unknown> | null | undefined)?.default_agent,
+  );
+  const launchAgent = chooseEffectiveAgent({
+    explicit: selection?.agentName ?? null,
+    projectDefault: projectDefaultAgent,
+  }).agent;
   const allowedAgents = await filterAccessibleProjectResources(
     userId,
     project.accountId,
@@ -152,7 +169,7 @@ export async function createOrJoinThreadSession(input: {
     userId,
     body: {
       base_ref: project.defaultBranch,
-      agent_name: selection?.agentName ?? 'default',
+      agent_name: launchAgent,
       ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },

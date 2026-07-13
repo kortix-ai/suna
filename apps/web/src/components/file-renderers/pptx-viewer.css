@@ -69,14 +69,18 @@
   display: none !important;
 }
 
-/* Trim the control strip to viewer-only affordances. Editing, collaboration and
-   the export/save menu are dropped (the app's own file download saves the deck).
-   Left in place: Toggle slides panel, Present, Read-only. */
+/* Trim the control strip to viewer-only affordances. Editing, collaboration,
+   the library's own fullscreen "Present" mode, and the export/save menu are
+   all dropped (the app's own file download saves the deck). Left in place:
+   Toggle slides panel, Read-only. */
+[data-pptx-minimal] [title='Present (fullscreen)'],
+[data-pptx-minimal] [aria-label='Presentation options'],
 [data-pptx-minimal] [aria-label='Comments'],
 [data-pptx-minimal] [aria-label='Share'],
 [data-pptx-minimal] [aria-label='Settings'],
 [data-pptx-minimal] [aria-label='More actions'],
-[data-pptx-minimal] [aria-label='Toggle inspector panel'] {
+[data-pptx-minimal] [aria-label='Toggle inspector panel'],
+[data-pptx-minimal] [aria-label='Toggle notes'] {
   display: none !important;
 }
 
@@ -88,6 +92,17 @@
 /* Fixed layout — no drag-to-resize handles for the panels. */
 [data-pptx-minimal] [data-pptx-viewer] [role='separator'] {
   display: none !important;
+}
+
+/* Dead-center the slide canvas in its scroll area. The library's own layout
+   is top-anchored — at less than 100% zoom, or in a canvas area taller than
+   the slide, everything below the slide reads as dead space. `safe` keeps it
+   reachable by scroll instead of clipping toward the container's start if a
+   zoomed-in slide ever overflows. */
+[data-pptx-minimal] main > div {
+  display: flex;
+  align-items: safe center;
+  justify-content: safe center;
 }
 
 /* Status bar: keep the slide counter and zoom controls; drop the view-mode
@@ -104,49 +119,18 @@
   color: var(--muted-foreground) !important;
 }
 
-/* ── Mobile layout ─────────────────────────────────────────────────────────
- * On phones the library swaps to a different chrome the desktop rules above
- * don't touch: a compact top toolbar (aria-label="Toolbar", distinct from the
- * desktop "Presentation toolbar") and a bottom "Editor actions" tab bar. Give
- * them the same read-only treatment — keep viewing (Present, Slides, Notes),
- * drop everything that edits or collaborates.
- *
- * Top toolbar: keep Present; drop the hamburger Menu (opens the editing
- * drawer), Undo, Redo, Save, Share. */
-[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Menu'],
-[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Undo'],
-[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Redo'],
-[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Save'],
-[data-pptx-minimal] [role='toolbar'][aria-label='Toolbar'] [aria-label='Share'] {
+/* The library's phone layout (bottom tab bar, full-screen slide/notes sheets)
+ * never renders: pptx-renderer.tsx keeps the viewer's measured container
+ * width at or above its 1024px breakpoint at all times (scaling the whole
+ * stage down visually to fit narrower panels instead of letting it reflow),
+ * so it always uses the desktop chrome — a persistent, open-by-default
+ * slides sidebar — everywhere.
+ */
+
+/* Speaker notes aren't needed in a pure viewer; drop the strip under the
+   slide canvas (its toggle button + expandable content share this parent). */
+[data-pptx-minimal] div:has(> button[aria-controls='slide-notes-content']) {
   display: none !important;
-}
-
-/* Bottom "Editor actions" bar renders, in order: Slides, Insert, Format,
-   Comments, Notes. Keep Slides (navigate) and Notes (view); drop the three
-   editing/collab tabs in the middle. */
-[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(2),
-[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(3),
-[data-pptx-minimal] nav[aria-label='Editor actions'] > *:nth-child(4) {
-  display: none !important;
-}
-
-/* The mobile "Slides"/"Notes" sheets are `position: fixed` full-viewport modals.
-   That's right on a real phone, but here the viewer often lives in a narrow
-   desktop panel — a fixed modal would cover the whole app. The sheet is rendered
-   inside our wrapper (made a positioning context via `relative` above), so
-   anchoring it there with `absolute` turns it into a bottom sheet bounded by the
-   viewer panel. Present mode is a fixed, non-modal layer and is unaffected. */
-[data-pptx-minimal] [role='dialog'][aria-modal='true'] {
-  position: absolute !important;
-}
-
-/* That sheet reuses the desktop slides <aside>; stretched to the full sheet
-   width its fixed-size thumbnails leave dead space. Cap + center the list so it
-   reads as an intentional column of slides. */
-[data-pptx-minimal] [role='dialog'][aria-modal='true'] aside {
-  max-width: 320px;
-  margin-inline: auto;
-  border-inline: 0 !important;
 }
 
 /* ── Drive-grid thumbnail ──────────────────────────────────────────────────

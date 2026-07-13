@@ -135,7 +135,6 @@ run_grep "access ls"       "$(whoami >/dev/null; echo '@')" -- "${RUN[@]}" acces
 run            "access pending"               -- "${RUN[@]}" access pending
 
 section "apps (experimental — may be gated)"
-"${RUN[@]}" apps ls >/dev/null 2>&1 && echo "  ✓ apps ls (enabled)" || echo "  ⊘ apps gated (expected unless KORTIX_APPS_EXPERIMENTAL=true)"
 
 section "sessions + chat (provisions a real sandbox)"
 SID="$("${RUN[@]}" sessions new 2>/dev/null | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)"

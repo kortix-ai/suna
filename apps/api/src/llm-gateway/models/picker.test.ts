@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { CATALOG, MANAGED_MODELS } from '@kortix/llm-catalog';
+import { CATALOG } from '@kortix/llm-catalog';
+import { RUNTIME_MANAGED_MODELS } from './managed-models';
 import {
   connectedByokPickerModels,
   flagshipRefForEnvVar,
@@ -27,7 +28,7 @@ describe('providerFlagship', () => {
 
 describe('labelForModelRef', () => {
   test('managed ref (kortix/<id>) → the managed display name', () => {
-    const sonnet = MANAGED_MODELS.find((m) => m.id === 'claude-sonnet-4.6');
+    const sonnet = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'claude-sonnet-4.6');
     expect(labelForModelRef('kortix/claude-sonnet-4.6')).toBe(sonnet!.name);
     // bare managed id resolves too
     expect(labelForModelRef('claude-sonnet-4.6')).toBe(sonnet!.name);
@@ -41,7 +42,7 @@ describe('labelForModelRef', () => {
 describe('managedPickerModels', () => {
   test('every managed model is offered as a kortix/<id> opencode ref', () => {
     const models = managedPickerModels();
-    expect(models.length).toBe(MANAGED_MODELS.length);
+    expect(models.length).toBe(RUNTIME_MANAGED_MODELS.length);
     for (const m of models) {
       expect(m.id.startsWith('kortix/')).toBe(true);
       expect(m.managed).toBe(true);

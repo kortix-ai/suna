@@ -40,6 +40,9 @@ mock.module('./sandbox-busy-probe', () => ({
 
 mock.module('../shared/db', () => ({
   db: {
+    transaction: async function <T>(fn: (tx: any) => Promise<T>): Promise<T> {
+      return fn(this);
+    },
     select: () => ({
       from: (table: unknown) => ({
         where: () =>
@@ -96,6 +99,7 @@ mock.module('../sandbox-proxy', () => ({
 }));
 
 mock.module('../billing/services/compute-metering', () => ({
+  reopenComputeForSandbox: async () => undefined,
   pauseComputeSession: async (sandboxId: string) => {
     pausedCompute.push(sandboxId);
   },

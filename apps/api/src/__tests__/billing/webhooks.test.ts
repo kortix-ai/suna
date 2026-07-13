@@ -221,6 +221,30 @@ describe('checkout.session.completed', () => {
     expect(diffDays).toBeGreaterThan(25);
     expect(diffDays).toBeLessThan(35);
   });
+
+  test('subscription.created then checkout.completed share one activation idempotency key', async () => {
+    mockRegistry.getCreditAccount = async () => null;
+
+    const subscription = createMockStripeSubscription({ id: 'sub_race_123' });
+    mockRegistry.stripeClient.subscriptions.retrieve = async () => subscription;
+
+    const subscriptionEvent = createMockStripeEvent('customer.subscription.created', subscription);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => subscriptionEvent;
+    await processStripeWebhook(JSON.stringify(subscriptionEvent), 'sig');
+
+    const checkout = createMockStripeCheckoutSession({
+      id: 'cs_race_123',
+      subscription: 'sub_race_123',
+    });
+    const checkoutEvent = createMockStripeEvent('checkout.session.completed', checkout);
+    mockRegistry.stripeClient.webhooks.constructEvent = () => checkoutEvent;
+    await processStripeWebhook(JSON.stringify(checkoutEvent), 'sig');
+
+    expect(resetExpiringCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(resetExpiringCreditsCalls[0][3]).toBe('subscription_activation:sub_race_123');
+    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_race_123');
+  });
 });
 
 describe('subscription changes', () => {

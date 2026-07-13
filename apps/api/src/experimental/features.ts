@@ -59,16 +59,6 @@ interface ExperimentalFeatureDef {
  */
 const FEATURES: readonly ExperimentalFeatureDef[] = [
   {
-    key: 'apps',
-    name: 'Apps',
-    description:
-      "Deploy this project's repo as live apps. Adds the Apps shortcut and auto-deploys apps declared in kortix.yaml.",
-    stability: 'experimental',
-    available: () => true,
-    // Operator-wide default; flip KORTIX_APPS_EXPERIMENTAL to default the fleet on.
-    platformDefault: () => config.KORTIX_APPS_EXPERIMENTAL,
-  },
-  {
     key: 'marketplace',
     name: 'Marketplace',
     description:
@@ -158,20 +148,10 @@ function overridesOf(metadata: unknown): Record<string, unknown> {
   return exp && typeof exp === 'object' ? (exp as Record<string, unknown>) : {};
 }
 
-/**
- * Read a single project's explicit override for a feature, honoring legacy
- * storage. Returns `undefined` when the project hasn't chosen.
- *
- * Back-compat: `apps` used to live at the top level as `metadata.apps_enabled`
- * before the registry existed. Honor it so existing opt-ins survive.
- */
+/** Read a single project's explicit override for a feature. */
 function explicitOverride(metadata: unknown, key: ExperimentalFeatureKey): boolean | undefined {
   const fromMap = overridesOf(metadata)[key];
   if (typeof fromMap === 'boolean') return fromMap;
-  if (key === 'apps') {
-    const legacy = (metadata as Record<string, unknown> | null | undefined)?.apps_enabled;
-    if (typeof legacy === 'boolean') return legacy;
-  }
   return undefined;
 }
 
@@ -231,8 +211,7 @@ export function buildExperimentalCatalog(metadata: unknown): ExperimentalFeature
 /**
  * Apply a per-project override to a metadata object, returning the next
  * metadata. `enabled: null` clears the override (falls back to the operator
- * default). Writes into `metadata.experimental[key]`; also clears the legacy
- * top-level `apps_enabled` so the two never disagree.
+ * default). Writes into `metadata.experimental[key]`.
  */
 export function applyExperimentalOverride(
   metadata: unknown,
@@ -246,16 +225,9 @@ export function applyExperimentalOverride(
   if (enabled !== null) {
     exp[key] = enabled;
   }
-  const base =
-    key === 'apps'
-      ? (() => {
-          const { apps_enabled: _appsEnabled, ...rest } = meta;
-          return rest;
-        })()
-      : meta;
   if (Object.keys(exp).length > 0) {
-    return { ...base, experimental: exp };
+    return { ...meta, experimental: exp };
   }
-  const { experimental: _experimental, ...rest } = base;
+  const { experimental: _experimental, ...rest } = meta;
   return rest;
 }

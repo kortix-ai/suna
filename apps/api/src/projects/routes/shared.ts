@@ -10,19 +10,15 @@ import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
-import {
-  ProjectRow,
-  serializeSessionSandboxConfig,
-} from '../lib/serializers';
+import { ProjectRow, serializeSessionSandboxConfig } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import {
-  buildSessionSandboxEnvVars,
-  sandboxCallbackUnreachableReason,
-} from '../lib/sessions';
+import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import {
+  claimInPlaceRuntimeRecovery,
+  finalizeRecoveredRuntimeIfRunning,
+  markInPlaceRuntimeRecoveryAccepted,
   preserveEstablishedRuntime,
-  retireConfirmedMissingRuntime,
   retireUnmaterializedRuntime,
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
@@ -54,12 +50,7 @@ export async function resumeStoppedSandbox(row: {
   metadata?: Record<string, unknown> | null;
 }): Promise<boolean> {
   if (!row.externalId) return false;
-  if (
-    !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-      row.provider,
-    )
-  )
-    return false;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
 
   const externalId = row.externalId;
   const now = new Date();
@@ -76,7 +67,8 @@ export async function resumeStoppedSandbox(row: {
     'needsReprovision',
     'runtimeWakeError',
     'runtimeWakeFailedAt',
-  ]) delete wakeMetadata[key];
+  ])
+    delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
     lastTurnAt: now.toISOString(),
     runtimeWakeStartedAt: now.toISOString(),
@@ -97,10 +89,7 @@ export async function resumeStoppedSandbox(row: {
       metadata: wakeMetadata,
     })
     .where(
-      and(
-        eq(sessionSandboxes.sandboxId, row.sandboxId),
-        eq(sessionSandboxes.status, 'stopped'),
-      ),
+      and(eq(sessionSandboxes.sandboxId, row.sandboxId), eq(sessionSandboxes.status, 'stopped')),
     )
     .returning();
   if (!won) return false;
@@ -116,16 +105,14 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(
-    row.sandboxId,
-    row.accountId,
-    row.sessionId,
-  ).catch((err) =>
+  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId).catch((err) =>
     console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
   );
 
   const provider = getProvider(row.provider as SandboxProviderName);
-  void provider.start(externalId).then(async () => {
+  void provider
+    .start(externalId)
+    .then(async () => {
     await db
       .update(sessionSandboxes)
       .set({
@@ -140,12 +127,10 @@ export async function resumeStoppedSandbox(row: {
         ),
       )
       .catch((err) =>
-        console.warn(
-          `[runtime-identity] failed to clear wake fence for ${row.sessionId}:`,
-          err,
-        ),
+          console.warn(`[runtime-identity] failed to clear wake fence for ${row.sessionId}:`, err),
       );
-  }).catch(async (err) => {
+    })
+    .catch(async (err) => {
     console.warn(
       `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
       err,
@@ -177,6 +162,41 @@ export async function resumeStoppedSandbox(row: {
   return true;
 }
 
+/**
+ * Resume a stopped box addressed by its provider `external_id` (the id in proxy
+ * URLs, `/v1/p/<externalId>/<port>`). Fetches the full row — crucially including
+ * `metadata`, which {@link resumeStoppedSandbox} rewrites — so the sandbox-proxy
+ * data path can wake a hibernated box the SAME way `/start` does when a real user
+ * actively hits the OpenCode runtime. Idempotent: the conditional stopped→active
+ * lock inside `resumeStoppedSandbox` de-dupes the concurrent session.list retries,
+ * so at most one provider start is kicked. Returns true when THIS call won the
+ * resume (false if it wasn't stopped, isn't resumable, or a concurrent call won).
+ */
+export async function resumeStoppedSandboxByExternalId(externalId: string): Promise<boolean> {
+  const [row] = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, externalId))
+    .limit(1);
+  if (!row || row.status !== 'stopped' || !row.externalId) return false;
+  return resumeStoppedSandbox({
+    sandboxId: row.sandboxId,
+    sessionId: row.sessionId,
+    accountId: row.accountId,
+    provider: row.provider,
+    externalId: row.externalId,
+    metadata: row.metadata,
+  });
+}
+
 // ── Pre-resume on presence ───────────────────────────────────────────────────
 // Throttle pre-resume per project so portal activity doesn't re-kick on every
 // request. The resume itself is idempotent (resumeStoppedSandbox only acts on a
@@ -205,7 +225,16 @@ export async function selectPreResumeTargets(
   projectId: string,
   userId: string,
   limit: number,
-): Promise<Array<{ sandboxId: string; sessionId: string; accountId: string; provider: string; externalId: string | null; metadata: Record<string, unknown> | null }>> {
+): Promise<
+  Array<{
+    sandboxId: string;
+    sessionId: string;
+    accountId: string;
+    provider: string;
+    externalId: string | null;
+    metadata: Record<string, unknown> | null;
+  }>
+> {
   return db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -217,12 +246,14 @@ export async function selectPreResumeTargets(
     })
     .from(sessionSandboxes)
     .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
-    .where(and(
+    .where(
+      and(
       eq(sessionSandboxes.projectId, projectId),
       eq(sessionSandboxes.status, 'stopped'),
       isNotNull(sessionSandboxes.externalId),
       eq(projectSessions.createdBy, userId),
-    ))
+      ),
+    )
     .orderBy(desc(sessionSandboxes.lastUsedAt))
     .limit(Math.max(1, limit));
 }
@@ -234,16 +265,24 @@ export function preResumeRecentStoppedSessions(projectId: string, userId?: strin
   preResumeThrottle.set(projectId, nowMs);
   void (async () => {
     try {
-      const rows = await selectPreResumeTargets(projectId, userId, config.KORTIX_PRERESUME_MAX_PER_PROJECT);
+      const rows = await selectPreResumeTargets(
+        projectId,
+        userId,
+        config.KORTIX_PRERESUME_MAX_PER_PROJECT,
+      );
       let kicked = 0;
       for (const row of rows) {
         const won = await resumeStoppedSandbox(row).catch((err) => {
-          console.warn(`[pre-resume] resume ${row.sandboxId.slice(0, 8)} failed:`, err instanceof Error ? err.message : err);
+          console.warn(
+            `[pre-resume] resume ${row.sandboxId.slice(0, 8)} failed:`,
+            err instanceof Error ? err.message : err,
+          );
           return false;
         });
         if (won) kicked++;
       }
-      if (kicked) console.log(`[pre-resume] kicked ${kicked} resume(s) for project ${projectId.slice(0, 8)}`);
+      if (kicked)
+        console.log(`[pre-resume] kicked ${kicked} resume(s) for project ${projectId.slice(0, 8)}`);
     } catch (err) {
       console.warn('[pre-resume] failed:', err instanceof Error ? err.message : err);
       preResumeThrottle.delete(projectId); // let the next presence retry
@@ -263,12 +302,7 @@ export async function allocateRuntimeOnOpen(
   sessionId: string,
 ): Promise<void> {
   const providerName = session.sandboxProvider as SandboxProviderName;
-  if (
-    !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-      providerName,
-    )
-  )
-    return;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
   await db
     .update(projectSessions)
@@ -282,9 +316,7 @@ export async function allocateRuntimeOnOpen(
     }
   ).metadata?.legacy_migration?.source_sandbox_id;
   const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string'
-      ? session.metadata.opencode_model
-      : null;
+    typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
@@ -313,8 +345,7 @@ export async function allocateRuntimeOnOpen(
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
-    resolveGitAuthToken: async () =>
-      (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
+    resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
     beforeActive:
       typeof legacySandboxId === 'string'
         ? (externalId) =>
@@ -331,7 +362,10 @@ export async function allocateRuntimeOnOpen(
 // The stage/result wire types live in @kortix/api-contract (the shared wire
 // contract); re-exported here for the existing import sites.
 
-export type { SessionStartResult, SessionStartStage } from '@kortix/api-contract';
+export type {
+  SessionStartResult,
+  SessionStartStage,
+} from '@kortix/api-contract';
 
 /**
  * The relative proxy path a client uses for all OpenCode (port 8000) traffic for
@@ -375,8 +409,7 @@ function staleProvisioningReason(
   }
 
   if (initStatus === 'provisioning' || initStatus === 'retrying') {
-    const initUpdatedAtMs =
-      parseTimestampMs(metadata.initUpdatedAt) ?? rowUpdatedAtMs;
+    const initUpdatedAtMs = parseTimestampMs(metadata.initUpdatedAt) ?? rowUpdatedAtMs;
     return nowMs - initUpdatedAtMs > STALE_STARTED_PROVISIONING_MS
       ? 'stale_provisioning_lost'
       : null;
@@ -385,9 +418,7 @@ function staleProvisioningReason(
   return null;
 }
 
-function sandboxMetadata(
-  row: typeof sessionSandboxes.$inferSelect,
-): Record<string, unknown> {
+function sandboxMetadata(row: typeof sessionSandboxes.$inferSelect): Record<string, unknown> {
   return row.metadata && typeof row.metadata === 'object'
     ? (row.metadata as Record<string, unknown>)
     : {};
@@ -403,9 +434,7 @@ function staleRuntimeWakeReason(
   const metadata = sandboxMetadata(row);
   const wakeStartedAtMs = parseTimestampMs(metadata.runtimeWakeStartedAt);
   if (wakeStartedAtMs && nowMs - wakeStartedAtMs > STALE_RUNTIME_WAKE_MS) {
-    return providerStatus === 'stopped'
-      ? 'runtime_wake_timeout'
-      : 'runtime_status_unknown_timeout';
+    return providerStatus === 'stopped' ? 'runtime_wake_timeout' : 'runtime_status_unknown_timeout';
   }
 
   // Existing bad rows predate runtimeWakeStartedAt. If the provider status is
@@ -430,16 +459,9 @@ function staleOpencodeReadyReason(
 ): string | null {
   if (reason !== 'not_ready' && reason !== 'unreachable') return null;
   const metadata = sandboxMetadata(row);
-  const readyWaitStartedAtMs = parseTimestampMs(
-    metadata.opencodeReadyWaitStartedAt,
-  );
-  if (
-    readyWaitStartedAtMs &&
-    nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS
-  ) {
-    return reason === 'not_ready'
-      ? 'runtime_not_ready_timeout'
-      : 'runtime_unreachable_timeout';
+  const readyWaitStartedAtMs = parseTimestampMs(metadata.opencodeReadyWaitStartedAt);
+  if (readyWaitStartedAtMs && nowMs - readyWaitStartedAtMs > STALE_OPENCODE_READY_MS) {
+    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
   }
 
   const initSucceededAtMs = parseTimestampMs(metadata.initSucceededAt);
@@ -448,9 +470,7 @@ function staleOpencodeReadyReason(
     initSucceededAtMs &&
     nowMs - initSucceededAtMs > STALE_OPENCODE_READY_MS
   ) {
-    return reason === 'not_ready'
-      ? 'runtime_not_ready_timeout'
-      : 'runtime_unreachable_timeout';
+    return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
   }
   return null;
 }
@@ -461,12 +481,8 @@ function removedRuntimeStillInGrace(
 ): boolean {
   const metadata = sandboxMetadata(row);
   const graceStartedAtMs =
-    parseTimestampMs(metadata.runtimeWakeStartedAt) ??
-    parseTimestampMs(metadata.initSucceededAt);
-  return (
-    graceStartedAtMs != null &&
-    nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS
-  );
+    parseTimestampMs(metadata.runtimeWakeStartedAt) ?? parseTimestampMs(metadata.initSucceededAt);
+  return graceStartedAtMs != null && nowMs - graceStartedAtMs <= STALE_RUNTIME_WAKE_MS;
 }
 
 async function markRuntimeWakeStarted(
@@ -488,10 +504,7 @@ async function markRuntimeWakeStarted(
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
-    console.warn(
-      `[start] failed to mark runtime wake for ${row.sandboxId}:`,
-      err,
-    );
+    console.warn(`[start] failed to mark runtime wake for ${row.sandboxId}:`, err);
   }
 }
 
@@ -514,10 +527,7 @@ async function markOpencodeReadyWaitStarted(
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
   } catch (err) {
-    console.warn(
-      `[start] failed to mark OpenCode wait for ${row.sandboxId}:`,
-      err,
-    );
+    console.warn(`[start] failed to mark OpenCode wait for ${row.sandboxId}:`, err);
   }
 }
 
@@ -607,33 +617,6 @@ async function preserveEstablishedRuntimeOnOpen(
   };
 }
 
-async function recoverConfirmedMissingRuntimeOnOpen(
-  loaded: { row: ProjectRow; userId: string },
-  visible: {
-    row: {
-      sandboxProvider: string;
-      baseRef: string | null;
-      agentName: string | null;
-      metadata?: Record<string, unknown> | null;
-    };
-  },
-  projectId: string,
-  sessionId: string,
-  row: typeof sessionSandboxes.$inferSelect,
-  reason: string,
-): Promise<SessionStartResult> {
-  const retired = await retireConfirmedMissingRuntime(row, reason);
-  if (retired) await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
-  return {
-    stage: 'provisioning',
-    agent_name: visible.row.agentName ?? 'default',
-    retriable: true,
-    sandbox: null,
-    opencode_session_id: null,
-    reason: retired ? 'runtime_recovery_provisioning' : 'runtime_recovery_in_progress',
-  };
-}
-
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
@@ -671,15 +654,21 @@ export async function openSession(args: {
     )
     .limit(1);
 
-  // Resume a hibernated box in place (keeps its disk/workspace).
+  // Resume a hibernated box in place (keeps its disk/workspace). Check provider
+  // truth first: a terminal Platinum VM may need backup restoration, and sending
+  // a normal start before that restore creates a second provider-side race.
+  let stoppedProviderStatus: SandboxStatus | null = null;
   if (
     row &&
     row.status === 'stopped' &&
     row.externalId &&
-    (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-      row.provider,
-    )
+    (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)
   ) {
+    const provider = getProvider(row.provider as SandboxProviderName);
+    stoppedProviderStatus = await provider
+      .getStatus(row.externalId)
+      .catch(() => 'unknown' as const);
+    if (stoppedProviderStatus !== 'removed' || !provider.recoverInPlace) {
     await resumeStoppedSandbox({
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
@@ -695,10 +684,14 @@ export async function openSession(args: {
       .limit(1);
     if (resumed) row = resumed;
   }
+  }
 
   // No usable box → provision on open (or report a terminal state).
   const usable =
-    row && (row.status === 'provisioning' || row.status === 'active');
+    row &&
+    (row.status === 'provisioning' ||
+      row.status === 'active' ||
+      (row.status === 'stopped' && row.externalId && stoppedProviderStatus === 'removed'));
   if (!usable) {
     if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
       return {
@@ -744,8 +737,29 @@ export async function openSession(args: {
     );
   }
 
+  // A same-id restore already owns the provider operation. Concurrent polls
+  // must observe that lease without issuing another restore request.
+  if (
+    row.status === 'provisioning' &&
+    row.externalId &&
+    sandboxMetadata(row).runtimeIdentityState === 'recovery_claimed'
+  ) {
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: visible.row.opencodeSessionId,
+      runtime_url: sessionRuntimeUrlPath(row.externalId),
+      reason: 'runtime_recovery_in_progress',
+    };
+  }
+
   // Still provisioning, or active but external_id not yet written.
-  if (row.status === 'provisioning' || !row.externalId) {
+  if (
+    (row.status === 'provisioning' && sandboxMetadata(row).runtimeIdentityState !== 'recovering') ||
+    !row.externalId
+  ) {
     return {
       stage: 'provisioning',
       agent_name: visible.row.agentName ?? 'default',
@@ -765,7 +779,7 @@ export async function openSession(args: {
   const provider = getProvider(row.provider as SandboxProviderName);
   let providerStatus: SandboxStatus;
   try {
-    providerStatus = await provider.getStatus(row.externalId);
+    providerStatus = stoppedProviderStatus ?? (await provider.getStatus(row.externalId));
   } catch {
     providerStatus = 'unknown';
   }
@@ -783,17 +797,67 @@ export async function openSession(args: {
         reason: 'runtime_removed_checking',
       };
     }
-    return recoverConfirmedMissingRuntimeOnOpen(
+    const claim = await claimInPlaceRuntimeRecovery(row);
+    if (!claim) {
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(row.externalId),
+        reason: 'runtime_recovery_in_progress',
+      };
+    }
+    const recovery = await provider.recoverInPlace?.(row.externalId).catch((err) => {
+      console.warn(`[start] in-place recovery failed for ${row.externalId}:`, err);
+      return 'unavailable' as const;
+    });
+    if (recovery === 'running' || recovery === 'recovering') {
+      const recoveringRow = await markInPlaceRuntimeRecoveryAccepted(claim, recovery);
+      if (!recoveringRow) {
+        return {
+          stage: 'stopped',
+          agent_name: visible.row.agentName ?? 'default',
+          retriable: false,
+          sandbox: null,
+          opencode_session_id: null,
+          reason: 'runtime_recovery_cancelled',
+        };
+      }
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(recoveringRow),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(row.externalId),
+        reason:
+          recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
+      };
+    }
+    return preserveEstablishedRuntimeOnOpen(
       loaded,
       visible,
       projectId,
       sessionId,
-      row,
+      claim.row,
       'runtime_removed',
     );
   }
 
   if (providerStatus !== 'running') {
+    if (sandboxMetadata(row).runtimeIdentityState === 'recovering') {
+      return {
+        stage: 'starting',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: true,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: visible.row.opencodeSessionId,
+        runtime_url: sessionRuntimeUrlPath(row.externalId),
+        reason: 'runtime_restoring_in_place',
+      };
+    }
     const staleWake = staleRuntimeWakeReason(row, providerStatus);
     if (staleWake) {
       return preserveEstablishedRuntimeOnOpen(
@@ -808,10 +872,7 @@ export async function openSession(args: {
     await markRuntimeWakeStarted(row, providerStatus);
     // Idle auto-stop: kick the start in the background; the client keeps polling.
     void provider.start(row.externalId).catch(async (err) => {
-      console.warn(
-        `[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`,
-        err,
-      );
+      console.warn(`[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`, err);
       if (isMissingRuntimeError(err)) {
         await preserveEstablishedRuntime(row, 'wake_missing_runtime').catch(() => {});
       }
@@ -823,11 +884,27 @@ export async function openSession(args: {
       sandbox: null,
       opencode_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
-      reason:
-        providerStatus === 'stopped'
-          ? 'runtime_waking'
-          : 'runtime_status_unknown',
+      reason: providerStatus === 'stopped' ? 'runtime_waking' : 'runtime_status_unknown',
     };
+  }
+
+  if (sandboxMetadata(row).runtimeIdentityState === 'recovering') {
+    const finalized = await finalizeRecoveredRuntimeIfRunning(row);
+    if (!finalized) {
+      return {
+        stage: 'stopped',
+        agent_name: visible.row.agentName ?? 'default',
+        retriable: false,
+        sandbox: null,
+        opencode_session_id: null,
+        reason: 'runtime_recovery_cancelled',
+    };
+  }
+    row = finalized;
+  }
+  const runningExternalId = row.externalId;
+  if (!runningExternalId) {
+    throw new Error(`Provider-running sandbox ${row.sandboxId} has no external_id`);
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin
@@ -839,12 +916,11 @@ export async function openSession(args: {
     projectId,
     sessionId,
     accountId,
-    externalId: row.externalId,
+    externalId: runningExternalId,
     userId: loaded.userId,
     currentPin: visible.row.opencodeSessionId ?? null,
   });
-  const booting =
-    ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
+  const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   if (booting) {
     const staleBoot = staleOpencodeReadyReason(row, ensured.reason);
     if (staleBoot) {
@@ -865,7 +941,7 @@ export async function openSession(args: {
     retriable: booting,
     sandbox: serializeSandboxRow(row),
     opencode_session_id: ensured.pin,
-    runtime_url: sessionRuntimeUrlPath(row.externalId),
+    runtime_url: sessionRuntimeUrlPath(runningExternalId),
     reason: ensured.reason,
   };
 }

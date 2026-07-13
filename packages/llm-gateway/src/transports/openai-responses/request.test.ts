@@ -16,6 +16,14 @@ const descriptor = {
 type AnyJson = any;
 
 describe('chatToResponses — vision', () => {
+  test('forces the Codex Responses backend to stream even for a non-streaming client', () => {
+    const payload = chatToResponses(
+      { model: 'codex/gpt-5.6-sol', messages: [{ role: 'user', content: 'hello' }], stream: false },
+      { ...descriptor, resolvedModel: 'gpt-5.6-sol' },
+    );
+    expect(payload.stream).toBe(true);
+  });
+
   test('preserves image_url parts as Responses input_image', () => {
     const payload = chatToResponses(
       {

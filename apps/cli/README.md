@@ -65,9 +65,18 @@ or run `kortix ship` to create the cloud project and push in one step.
 
 ## Self-host
 
+One command surface manages two deployment targets. Docker is the backward-
+compatible default for local and smaller installations; `aws-vpc` is the
+enterprise target and records only AWS coordinates and release policy locally.
+Secrets for AWS deployments are written directly to the customer account.
+
+### Docker
+
 ```sh
 pnpm install
 ./bin/kortix --help
+./bin/kortix self-host init --target docker
+./bin/kortix self-host plan
 ./bin/kortix self-host start
 ./bin/kortix self-host configure
 ./bin/kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
@@ -77,5 +86,35 @@ pnpm install
 ```
 
 `self-host start` creates the config when needed and only asks for product
-integrations: Freestyle, GitHub, and Pipedream. Run `self-host configure` later
+integrations: GitHub and Pipedream. Run `self-host configure` later
 to change those credentials.
+
+The generated Docker distribution embeds a pinned copy of the official full
+Supabase stack: PostgreSQL 17, Auth, REST, Realtime, Storage, imgproxy, Meta,
+Edge Runtime, Kong, Studio, Supavisor, Logflare, and Vector. Published ports
+bind to loopback by default, and all generated secret material is stored in the
+owner-only instance `.env`.
+
+### Enterprise AWS VPC
+
+```sh
+export AWS_PROFILE=customer
+
+./bin/kortix self-host init \
+  --target aws-vpc \
+  --instance customer \
+  --region us-west-2 \
+  --channel stable \
+  --yes
+
+./bin/kortix self-host doctor --instance customer
+./bin/kortix self-host plan --instance customer
+./bin/kortix self-host deploy --instance customer
+./bin/kortix self-host status --instance customer
+./bin/kortix self-host reconcile --instance customer --channel stable
+```
+
+For AWS, the CLI is the bootstrap and operator remote control. The customer-
+owned updater, scheduler, EKS controllers, and recovery automation continue
+operating after the CLI exits. `start`, `stop`, and direct environment-file
+editing are intentionally Docker-only.

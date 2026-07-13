@@ -24,7 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { kortix } from '@/lib/kortix';
 import { relativeTime } from '@/lib/utils';
-import type { ProjectBranch, ProjectCommit } from '@kortix/sdk/projects-client';
+import type { ProjectBranch, ProjectCommit } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, GitBranch, GitCommitHorizontal, Loader2, Scale } from 'lucide-react';
 import { useState } from 'react';

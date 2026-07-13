@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 464,
+  "count": 469,
   "routes": [
     {
       "method": "GET",
@@ -976,38 +976,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps-config"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/apps/:slug"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/apps/:slug"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:slug/deploy"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:slug/logs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:slug/stop"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/branches"
     },
     {
@@ -1703,6 +1671,10 @@
       "path": "/v1/setup/status"
     },
     {
+      "method": "POST",
+      "path": "/v1/system/demo-request"
+    },
+    {
       "method": "GET",
       "path": "/v1/system/maintenance"
     },
@@ -1857,6 +1829,54 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/telegram/:projectId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/channels/teams/identity/bind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/channels/teams/identity/login/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/connect"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/file"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/file/upload"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/manifest"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/teams/mode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/teams/:projectId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/teams/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/teams/oauth/callback"
     }
   ]
 }

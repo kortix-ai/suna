@@ -30,7 +30,6 @@ import {
 import { Icon } from '@/features/icon/icon';
 import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import {
@@ -38,6 +37,7 @@ import {
   ProjectFilesNavItem,
   useCustomizeKeyboardShortcut,
 } from '@/features/workspace/project-sidebar/footer/project-customize-nav';
+import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/workspace/project-sidebar/project-switcher';
@@ -280,7 +280,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <SidebarMenu>
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
-              <ProjectAppsNavItem projectId={projectId} />
+              {/* Sits directly above Files/Customize so a still-on-v1 manifest
+                  is impossible to miss — one click starts the migration session
+                  end-to-end. Self-hides once the project is on v2. */}
+              <ProjectManifestUpgradeAlert projectId={projectId} />
               {/* Files used to live on the collapsed icon rail; with the rail
                   gone (offcanvas + hover flyout) it needs a docked entry. Above
                   Customize — files aren't gated behind customize access. */}

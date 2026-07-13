@@ -12,7 +12,7 @@
  * path in sandbox-cloud.ts.
  */
 
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
@@ -247,8 +247,8 @@ export async function provisionSessionSandbox(opts: {
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
   const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
-  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
-    db
+  const createOrClaimSandboxRow = async () => {
+    const inserted = await db
       .insert(sessionSandboxes)
       .values({
         sandboxId,
@@ -269,7 +269,40 @@ export async function provisionSessionSandbox(opts: {
         },
       })
       .onConflictDoNothing({ target: sessionSandboxes.sessionId })
-      .returning(),
+      .returning();
+    if (inserted.length > 0) return inserted;
+
+    // Provider-confirmed loss keeps the durable logical row because DB-level
+    // identity guards and child records intentionally forbid deleting it. The
+    // recovery transaction resets external_id to NULL and stamps an explicit
+    // authorization marker; only that exact placeholder may be claimed here.
+    return db
+      .update(sessionSandboxes)
+      .set({
+        provider: providerName,
+        status: 'provisioning',
+        baseUrl: null,
+        config: {},
+        // Legacy recovery placeholders may still exist while this release rolls
+        // out. Consume their authorization marker atomically so at most one
+        // allocator can claim the row and call provider.create(). New code never
+        // creates this marker because established identities are fail-closed.
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, sandboxId),
+          isNull(sessionSandboxes.externalId),
+          eq(sessionSandboxes.status, 'provisioning'),
+          sql`coalesce(${sessionSandboxes.metadata}->>'identityRecoveryAuthorizedAt', '') <> ''`,
+        ),
+      )
+      .returning();
+  };
+
+  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
+    createOrClaimSandboxRow(),
     createApiKey({
       sandboxId,
       accountId,

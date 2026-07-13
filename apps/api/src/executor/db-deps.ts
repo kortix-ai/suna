@@ -28,6 +28,9 @@ import {
   loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
+  loadTeamsBotCredentials,
+  loadTeamsInstall,
+  loadTeamsTenantForProject,
 } from '../channels/install-store';
 import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
@@ -66,6 +69,7 @@ import {
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
+import { graphToken } from '../channels/teams-auth';
 import {
   browsePipedreamApps,
   finalizePipedreamConnection,
@@ -307,6 +311,12 @@ async function channelToken(
   slug?: string | null,
 ): Promise<string | null> {
   if (platform === 'slack') return loadSlackTokenForProject(projectId);
+  if (platform === 'teams') {
+    const tenant = await loadTeamsTenantForProject(projectId);
+    if (!tenant) return null;
+    const creds = await loadTeamsBotCredentials(projectId);
+    return graphToken(tenant, creds).catch(() => null);
+  }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
   if (platform === 'meet') return loadMeetTokenForProject(projectId);
@@ -320,6 +330,7 @@ async function channelInstalled(
   slug?: string | null,
 ): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
+  if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;
@@ -626,8 +637,18 @@ async function resolveProjectPrincipal(
 
   if (tokenProjectId) {
     // Project-scoped (session) token: enforceTokenProjectScope already guaranteed
-    // tokenProjectId === the URL project at the auth layer. Re-check defensively.
+    // tokenProjectId === the URL project at the auth layer. Re-check defensively,
+    // then bind the token account to the actual project account. This prevents a
+    // PAT row from one account from being labeled with another account's project
+    // id and then used on the project-explicit Executor gateway.
     if (tokenProjectId !== projectId) return null;
+    const [project] = await db
+      .select({ accountId: projects.accountId })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project || !accountId || project.accountId !== accountId) return null;
+    accountId = project.accountId;
   } else {
     // User token (PAT/JWT, no pinned project): verify project access. Throws 403
     // if the user isn't a member — treat that as an unauthorized principal.

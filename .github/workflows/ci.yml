@@ -89,6 +89,7 @@ jobs:
               - 'apps/api/src/config.ts'
               - 'packages/db/**'
               - 'apps/cli/src/commands/self-host.ts'
+              - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
 
   api-typecheck:
