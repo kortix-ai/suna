@@ -1,9 +1,8 @@
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds } from '../../snapshots/builder';
+import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickProjectTemplatePrebuilds, kickRoutedPreBuild, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds, templateBuildProviders } from '../../snapshots/builder';
 import { currentFailedSnapshotBuild } from '../../snapshots/build-state';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
-import { getSandboxProvider } from '../../snapshots/providers';
 import { withTimeout } from '../../shared/with-timeout';
 import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
@@ -17,6 +16,20 @@ import { registerGitHubLinkedProject, registerPatLinkedProject } from '../lib/pr
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
+import { config } from '../../config';
+import { resolveUsableProjectProviderPin } from '../../snapshots/provider-coverage';
+
+function templateProviderObservation(metadata: unknown) {
+  const selectedProvider = resolveUsableProjectProviderPin(
+    metadata && typeof metadata === 'object' ? metadata as Record<string, unknown> : null,
+    (provider) => config.isProviderEnabled(provider),
+  );
+  return {
+    selectedProvider,
+    providerMode: selectedProvider ? 'pinned' as const : 'automatic' as const,
+    listOptions: { selectedProvider, includeProviderCoverage: true } as const,
+  };
+}
 
 projectsApp.openapi(
   createRoute({
@@ -343,7 +356,8 @@ projectsApp.openapi(
 // ─── Sandbox templates ─────────────────────────────────────────────────────
 // One platform-default image, optionally extended by `sandbox: templates:` entries
 // in kortix.yaml. Session boot is stateless: it computes the expected snapshot
-// name from the resolved template, asks Daytona if it exists, builds if not.
+// name from the resolved template, asks the selected provider if it is launch
+// ready, and builds it there if not.
 // The append-only `project_snapshot_builds` log feeds the UI but is never
 // consulted by the boot path.
 
@@ -369,11 +383,14 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const project = await loadGitProject(loaded);
+  const observation = templateProviderObservation(loaded.row.metadata);
   try {
-    const templates = await listSandboxTemplates(project);
+    const templates = await listSandboxTemplates(project, observation.listOptions);
     return c.json({
       items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+      provider_mode: observation.providerMode,
+      selected_provider: observation.selectedProvider,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -406,10 +423,11 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const project = await loadGitProject(loaded);
+  const observation = templateProviderObservation(loaded.row.metadata);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   let templatesError: string | null = null;
   try {
-    templates = await listSandboxTemplates(project);
+    templates = await listSandboxTemplates(project, observation.listOptions);
   } catch (err) {
     templatesError = err instanceof Error ? err.message : String(err);
   }
@@ -421,6 +439,8 @@ projectsApp.openapi(
     templates: templates.map((t) => serializeTemplate(t)),
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
+    provider_mode: observation.providerMode,
+    selected_provider: observation.selectedProvider,
   });
 },
 );
@@ -432,7 +452,7 @@ projectsApp.openapi(
 // Whole-handler wall-clock budget, kept comfortably under the frontend's 30s
 // request timeout (apps/web/src/lib/api-client.ts → "Request timed out after
 // 30s"). EVERY dependency this poll touches — git-auth resolution, the
-// (Daytona-bound) templates lookup, AND the build-log DB query — can degrade
+// provider template lookups, AND the build-log DB query — can degrade
 // independently, so bounding only the templates fetch still let a slow DB or
 // git-auth call hang the request to the client's 30s abort. A single budget
 // over the whole body guarantees the poll always answers fast: a degraded
@@ -447,6 +467,8 @@ interface SandboxHealthPayload {
   building: boolean;
   latest_build: ReturnType<typeof serializeBuildSummary> | null;
   latest_failure: ReturnType<typeof serializeBuildSummary> | null;
+  provider_mode: 'automatic' | 'pinned';
+  selected_provider: 'daytona' | 'platinum' | 'e2b' | null;
 }
 
 // Safe degraded payload: same shape as the happy path, surfaced when any
@@ -459,6 +481,8 @@ const SANDBOX_HEALTH_DEGRADED: SandboxHealthPayload = {
   building: false,
   latest_build: null,
   latest_failure: null,
+  provider_mode: 'automatic',
+  selected_provider: null,
 };
 
 async function buildSandboxHealth(
@@ -466,12 +490,13 @@ async function buildSandboxHealth(
   projectId: string,
 ): Promise<SandboxHealthPayload> {
   const project = await loadGitProject(loaded);
+  const observation = templateProviderObservation(loaded.row.metadata);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   try {
-    // Repo unreachable / manifest broken / Daytona slow — render as "no
-    // templates" rather than failing the whole poll. (Each Daytona state
-    // lookup is also individually bounded in the provider.)
-    templates = await listSandboxTemplates(project);
+    // Repo unreachable / manifest broken / provider slow — render as "no
+    // templates" rather than failing the whole poll. Each adapter owns its
+    // provider-call timeout.
+    templates = await listSandboxTemplates(project, observation.listOptions);
   } catch {
     /* no templates */
   }
@@ -481,7 +506,7 @@ async function buildSandboxHealth(
   const latestFailure = currentFailedSnapshotBuild(builds);
   const isBuilding =
     (latest && latest.status === 'building') ||
-    (primary ? ['pulling', 'building'].includes(primary.daytonaState.toLowerCase()) : false);
+    primary?.providerState === 'building';
 
   return {
     primary_slug: primary?.slug ?? null,
@@ -490,6 +515,8 @@ async function buildSandboxHealth(
     building: isBuilding,
     latest_build: latest ? serializeBuildSummary(latest) : null,
     latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
+    provider_mode: observation.providerMode,
+    selected_provider: observation.selectedProvider,
   };
 }
 
@@ -535,8 +562,8 @@ projectsApp.openapi(
 
 // POST /v1/projects/:projectId/snapshots/rebuild
 // Force-rebuild the image for a given template slug (defaults to the platform
-// default). Deletes the existing Daytona snapshot (if any) so the next
-// ensureSandboxImage rebuilds from scratch. Returns 202.
+// default). Deletes the existing image on every enabled provider so the routed
+// rebuilds all start from the same current definition. Returns 202.
 
 projectsApp.openapi(
   createRoute({
@@ -576,18 +603,24 @@ projectsApp.openapi(
 
   const project = await loadGitProject(loaded);
   try {
-    const deleted = await deleteSandboxImage(project, { slug });
-    kickPreBuild(project, {
-      slug: deleted.slug,
+    const providers = templateBuildProviders();
+    if (providers.length === 0) throw new Error('No sandbox template provider is enabled');
+    const deleted = await Promise.all(
+      providers.map((provider) => deleteSandboxImage(project, { slug, provider })),
+    );
+    const target = deleted[0]!;
+    kickRoutedPreBuild(project, {
+      slug: target.slug,
       accountId: loaded.row.accountId,
       source: 'manual',
     });
     return c.json(
       {
         status: 'started',
-        slug: deleted.slug,
-        deleted_existing: deleted.deleted,
-        snapshot_name: deleted.snapshotName,
+        slug: target.slug,
+        deleted_existing: deleted.some((item) => item.deleted),
+        snapshot_name: target.snapshotName,
+        providers,
       },
       202,
     );
@@ -739,11 +772,14 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const project = await loadGitProject(loaded);
+  const observation = templateProviderObservation(loaded.row.metadata);
   try {
-    const templates = await listSandboxTemplates(project);
+    const templates = await listSandboxTemplates(project, observation.listOptions);
     return c.json({
       items: templates.map((t) => serializeTemplate(t)),
       default_slug: templates.find((t) => t.isDefault)?.slug ?? templates[0]?.slug ?? null,
+      provider_mode: observation.providerMode,
+      selected_provider: observation.selectedProvider,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -821,7 +857,11 @@ projectsApp.openapi(
     });
     // Kick a build in the background so the template is ready for the next session.
     const project = await loadGitProject(loaded);
-    kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
+    kickRoutedPreBuild(project, {
+      slug: row.slug,
+      accountId: loaded.row.accountId,
+      source: 'manual',
+    });
     return c.json({ template_id: row.templateId, slug: row.slug }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -932,12 +972,13 @@ projectsApp.openapi(
   if (row.isShared) return c.json({ error: 'Shared platform templates cannot be deleted.' }, 409);
 
   try {
-    // Best-effort: clear the provider snapshot too.
-    if (row.providerSnapshotName) {
-      await getSandboxProvider(row.provider)
-        .deleteSnapshot(row.providerSnapshotName)
-        .catch(() => {});
-    }
+    // Best-effort: clear this content identity from every enabled provider.
+    const project = await loadGitProject(loaded);
+    await Promise.all(
+      templateBuildProviders().map((provider) =>
+        deleteSandboxImage(project, { slug: row.slug, provider }).catch(() => null),
+      ),
+    );
     await deleteTemplate(templateId);
     return c.body(null, 204);
   } catch (err) {

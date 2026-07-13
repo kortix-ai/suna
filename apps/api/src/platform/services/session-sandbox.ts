@@ -712,12 +712,12 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Daytona dropped the image between resolve and create. Force a rebuild
+      // The selected provider dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
+        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,

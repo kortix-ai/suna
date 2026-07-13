@@ -19,6 +19,7 @@ import {
   DEFAULT_DISK_GB,
   KORTIX_ENTRYPOINT,
 } from '../build-context';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -149,10 +150,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         SNAPSHOT_STATE_TIMEOUT_MS,
         `Daytona snapshot.get(${snapshotName})`,
       );
-      const state = (snap
-        ? String((snap as { state?: string }).state ?? 'missing')
-        : 'missing'
-      ).toLowerCase() as ProviderState;
+      const state = snap
+        ? normalizeExistingProviderState((snap as { state?: string }).state)
+        : 'missing';
       if (state === 'active') {
         snapshotStateCache.set(snapshotName, {
           state,
@@ -163,11 +163,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       }
       return state;
     } catch {
-      // Error *or* timeout (TimeoutError) → treat as unknown/missing. We never
+      // Error *or* timeout (TimeoutError) → unknown. We never
       // poison the positive cache here, so the next poll re-checks once Daytona
       // recovers.
       snapshotStateCache.delete(snapshotName);
-      return 'missing';
+      return 'unknown';
     }
   }
 
