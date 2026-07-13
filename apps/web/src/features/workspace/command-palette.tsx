@@ -393,6 +393,7 @@ export function CommandPalette() {
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
+  const panelMode = useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy');
   const billingEnabled = isBillingEnabled();
 
   const { data: agents } = useOpenCodeAgents();
@@ -998,6 +999,11 @@ export function CommandPalette() {
     close();
   }, [sidebarCtx, close]);
 
+  const handleTogglePanelMode = useCallback(() => {
+    close();
+    useUserPreferencesStore.getState().togglePanelMode();
+  }, [close]);
+
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {
       close();
@@ -1110,6 +1116,7 @@ export function CommandPalette() {
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
       toggleSidebar: handleToggleSidebar,
+      togglePanelMode: handleTogglePanelMode,
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
@@ -1124,6 +1131,7 @@ export function CommandPalette() {
       handleViewChanges,
       handleInviteMembers,
       handleToggleSidebar,
+      handleTogglePanelMode,
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
@@ -1494,6 +1502,7 @@ export function CommandPalette() {
                         {filteredNavItems.map((item) => {
                           const Icon = item.icon;
                           const isToggleSidebar = item.id === 'toggle-sidebar';
+                          const isTogglePanelMode = item.id === 'toggle-panel-mode';
                           const SidebarIcon = isToggleSidebar
                             ? sidebarOpen
                               ? PanelLeftClose
@@ -1503,7 +1512,11 @@ export function CommandPalette() {
                             ? sidebarOpen
                               ? 'Collapse Sidebar'
                               : 'Expand Sidebar'
-                            : item.label;
+                            : isTogglePanelMode
+                              ? panelMode === 'easy'
+                                ? 'Switch to Advanced View'
+                                : 'Switch to Easy View'
+                              : item.label;
                           const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;

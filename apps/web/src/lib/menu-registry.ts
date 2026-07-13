@@ -907,6 +907,17 @@ export const menuRegistry: MenuItemDef[] = [
     shortcut: 'Ctrl+B',
   },
   {
+    id: 'toggle-panel-mode',
+    label: 'Switch to Advanced View', // swapped dynamically at render time based on current mode
+    icon: SlidersHorizontal,
+    group: 'view',
+    showIn: ['commandPalette'],
+    kind: 'action',
+    actionId: 'togglePanelMode',
+    keywords: 'easy advanced simple panel session detail mode view',
+    requiresSession: true,
+  },
+  {
     id: 'logout',
     label: 'Log Out',
     icon: LogOut,

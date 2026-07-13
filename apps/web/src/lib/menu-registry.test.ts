@@ -56,3 +56,30 @@ describe('wallpaper command palette items', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('toggle-panel-mode command palette item', () => {
+  const panelModeItem = paletteItems.find((item) => item.id === 'toggle-panel-mode');
+
+  test('is registered for the command palette with the right action wiring', () => {
+    expect(panelModeItem).toBeDefined();
+    expect(panelModeItem!.kind).toBe('action');
+    expect(panelModeItem!.actionId).toBe('togglePanelMode');
+    expect(panelModeItem!.requiresSession).toBe(true);
+  });
+
+  test('typing "easy" surfaces the item', () => {
+    expect(panelModeItem).toBeDefined();
+    expect(matchesPaletteQuery(panelModeItem!, 'easy')).toBe(true);
+  });
+
+  test('typing "advanced" surfaces the item', () => {
+    expect(panelModeItem).toBeDefined();
+    expect(matchesPaletteQuery(panelModeItem!, 'advanced')).toBe(true);
+  });
+
+  test('typing "panel" or "session" surfaces the item', () => {
+    expect(panelModeItem).toBeDefined();
+    expect(matchesPaletteQuery(panelModeItem!, 'panel')).toBe(true);
+    expect(matchesPaletteQuery(panelModeItem!, 'session')).toBe(true);
+  });
+});
