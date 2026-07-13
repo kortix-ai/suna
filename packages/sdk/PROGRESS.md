@@ -699,3 +699,16 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** — the public addition is typed, additive,
 snapshot-locked, and verified from the packed package.
+
+---
+
+### 2026-07-13 — session `gateway-routing-ux` (claim)
+
+Claimed the user-directed LLM Gateway routing UX simplification. The SDK scope is
+an additive compact project model-picker REST surface so chat and settings model
+selectors no longer download the full 5,262-model runtime catalog. The existing
+`llm-catalog`, model-default, and routing-policy APIs remain backward compatible.
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
