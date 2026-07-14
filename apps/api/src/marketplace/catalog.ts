@@ -225,7 +225,14 @@ function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
 }
 
 function readmeOf(item: RegistryItem): string | null {
-  const file = item.files?.find((f) => /(?:^|\/)(?:SKILL|README)\.md$/i.test(f.target ?? f.path));
+  const files = item.files ?? [];
+  const pathOf = (f: (typeof files)[number]) => f.target ?? f.path;
+  // Prefer a ROOT-level README/SKILL (a project's own readme) over a nested one
+  // — otherwise a bundle/project would surface a random inner skill's SKILL.md
+  // (which sorts before `README.md`) instead of the project's real readme.
+  const root = files.find((f) => /^(?:README|SKILL)\.md$/i.test(pathOf(f)));
+  const any = files.find((f) => /(?:^|\/)(?:SKILL|README)\.md$/i.test(pathOf(f)));
+  const file = root ?? any;
   return typeof file?.content === "string" ? file.content : null;
 }
 
@@ -347,6 +354,31 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
 // starter skills live *inside* it rather than as their own top-level tiles.
 export const STARTER_KIT_ITEM_NAME = "starter";
 
+const STARTER_KIT_README = `# Kortix Starter
+
+The default Kortix project — a general knowledge worker that's ready to do real
+work from the very first message.
+
+It comes preloaded with the full Kortix skill kit: research and the web,
+documents (PDF, DOCX, XLSX) and slides, coding and web apps, browser automation,
+and a set of editable persona starters (recruiting, marketing, accounting,
+support, product, legal) you can shape into your own operations.
+
+Everything here is **yours** — plain files in your project's git repo that you
+and your agents can read, edit, extend, and land through change requests. Nothing
+is pinned to an upstream, so make it your own.
+
+## What's inside
+
+Skills, agents, and tools — browse them below. Each one is a real file in the
+project you can open, adapt, and build on.
+
+## Getting started
+
+Create a project from this starter and your first session onboards you: it learns
+what you do, tailors the kit to your work, and gets you one real result fast.
+`;
+
 function buildStarterKitProjectItem(): RegistryItem {
   const registry = buildStarterRegistry();
   const skillNames = (registry.items ?? [])
@@ -359,6 +391,12 @@ function buildStarterKitProjectItem(): RegistryItem {
     projectName: "Kortix Starter",
     template: "general-knowledge-worker",
   }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
+  // Give the project a proper, curated marketplace README (the base template's
+  // README is a generic scaffold note) — replace it in place, or add one.
+  const readmeIdx = files.findIndex((f) => f.path === "README.md");
+  const readmeFile = { path: "README.md", type: "registry:file" as const, content: STARTER_KIT_README };
+  if (readmeIdx >= 0) files[readmeIdx] = readmeFile;
+  else files.unshift(readmeFile);
   return {
     name: STARTER_KIT_ITEM_NAME,
     type: "registry:project",

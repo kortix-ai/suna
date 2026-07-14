@@ -2,7 +2,7 @@
 
 import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
@@ -19,13 +19,14 @@ import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-sl
 import { AddToProjectModal } from './add-to-project-modal';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
+import { MarketplaceExploreCard } from './marketplace-explore-card';
 import { MarketplaceFileTree } from './marketplace-file-tree';
 import { MarketplaceFileView } from './marketplace-file-view';
+import { groupMarketplaceItemsByType } from './marketplace-grid';
 import { MarketplaceItemAvatar } from './marketplace-item-avatar';
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
-  groupBundleMembersByType,
   groupCapabilities,
   resolveBundleMembers,
   totalCapabilityCount,
@@ -293,7 +294,9 @@ function ItemSidebar({
         </div>
       </div>
 
-      {fileTargets.length > 0 ? (
+      {/* Projects present their contents as cards in the main column, not a raw
+          file tree — so the sidebar file browser is for non-project items only. */}
+      {!isProject && fileTargets.length > 0 ? (
         <div>
           <SectionLabel count={fileTargets.length}>Files</SectionLabel>
           <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
@@ -477,9 +480,36 @@ export function MarketplaceDetail({
         hrefForId: (id) => id,
       })
     : [];
-  // A project renders its contents TYPED (Skills, Agents, Tools, …) with the
-  // file browser demoted to a secondary "Files" view; a plain bundle stays flat.
-  const memberGroups = isProject ? groupBundleMembersByType(bundleMembers) : [];
+  // A project shows its README first, then its contents rendered as the SAME
+  // marketplace cards, in the SAME typed grid, as the main gallery — so a skill
+  // inside the project looks exactly like a skill listed on the marketplace.
+  // Each content item is a full catalog id, so we synthesize a MarketplaceItem
+  // from the resolved dependency metadata + the project's own source identity.
+  const memberItemGroups = useMemo(() => {
+    if (!isProject) return [];
+    const byName = new Map(data.dependencyItems.map((d) => [d.name, d]));
+    const items: MarketplaceItem[] = data.dependencies
+      .map((name) => byName.get(name))
+      .filter((d): d is MarketplaceItemDetail['dependencyItems'][number] => Boolean(d))
+      .map((d) => ({
+        id: d.id,
+        registry: data.registry,
+        name: d.name,
+        type: d.type,
+        title: d.title,
+        description: d.description,
+        categories: [],
+        capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+        dependencies: [],
+        fileCount: 0,
+        external: data.external,
+        marketplaceId: data.marketplaceId,
+        marketplaceLabel: data.marketplaceLabel,
+        owner: data.owner,
+        sourceUrl: data.sourceUrl,
+      }));
+    return groupMarketplaceItemsByType(items);
+  }, [isProject, data]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -531,43 +561,24 @@ export function MarketplaceDetail({
       </section>
     );
 
+  // Non-project bundles keep the flat "What's inside" row list; a project renders
+  // its contents as marketplace cards (memberItemGroups) below its README.
   const membersSection =
-    isBundle && bundleMembers.length > 0 ? (
-      isProject ? (
-        <section className="space-y-6">
-          {memberGroups.map((g) => (
-            <div key={g.type}>
-              <SectionLabel count={g.members.length}>{g.label}</SectionLabel>
-              <RowPanel>
-                {g.members.map((m) => (
-                  <BundleMemberRow
-                    key={m.key}
-                    id={m.key}
-                    title={m.title}
-                    type={m.type}
-                    description={m.description}
-                  />
-                ))}
-              </RowPanel>
-            </div>
+    !isProject && isBundle && bundleMembers.length > 0 ? (
+      <section>
+        <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
+        <RowPanel>
+          {bundleMembers.map((member) => (
+            <BundleMemberRow
+              key={member.key}
+              id={member.key}
+              title={member.title}
+              type={member.type}
+              description={member.description}
+            />
           ))}
-        </section>
-      ) : (
-        <section>
-          <SectionLabel count={bundleMembers.length}>What&rsquo;s inside</SectionLabel>
-          <RowPanel>
-            {bundleMembers.map((member) => (
-              <BundleMemberRow
-                key={member.key}
-                id={member.key}
-                title={member.title}
-                type={member.type}
-                description={member.description}
-              />
-            ))}
-          </RowPanel>
-        </section>
-      )
+        </RowPanel>
+      </section>
     ) : null;
 
   return (
@@ -590,8 +601,23 @@ export function MarketplaceDetail({
       <div className="space-y-8">
         {isProject ? (
           <>
-            {membersSection}
-            {filesSection}
+            {/* README first — the project's own overview. */}
+            {readme ? (
+              <section className="space-y-3">
+                <ReadmeMarkdown content={readme} />
+              </section>
+            ) : null}
+            {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
+            {memberItemGroups.map((g) => (
+              <section key={g.label}>
+                <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {g.items.map((it) => (
+                    <MarketplaceExploreCard key={it.id} item={it} showSource={false} />
+                  ))}
+                </div>
+              </section>
+            ))}
           </>
         ) : (
           <>
