@@ -529,7 +529,7 @@ aws s3 cp s3://${input.bucket}/${input.key} "$archive"
 echo '${input.sha256}  '"$archive" | sha256sum --check --strict
 entries=$(tar -tzf "$archive")
 test -n "$entries"
-printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\\//) exit 1; count=split($0, segments, "/"); for (index=1; index<=count; index++) if (segments[index] == "..") exit 1 }'
+printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\\//) exit 1; count=split($0, segments, "/"); for (part=1; part<=count; part++) if (segments[part] == "..") exit 1 }'
 tar -tvzf "$archive" | awk '{ type=substr($0, 1, 1); if (type != "-" && type != "d") exit 1 }'
 rm -rf "$staging"
 install -d -m 0700 "$staging"

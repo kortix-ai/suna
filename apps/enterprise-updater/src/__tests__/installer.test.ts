@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -39,6 +40,18 @@ describe('Supabase host installer command', () => {
     expect(script).toContain('update-transactions');
     expect(script).toContain('"$transaction.previous"');
     expect(script).toContain('restored the previous release');
+  });
+
+  test('renders a portable executable archive path guard', () => {
+    const script = supabaseInstallScript(input);
+    const line = script.split('\n').find((candidate) => candidate.includes('"$entries" | awk '));
+    const program = line?.match(/\| awk '(.+)'$/)?.[1];
+    expect(program).toBeDefined();
+
+    const run = (entries: string) => spawnSync('awk', [program!], { input: entries, encoding: 'utf8' });
+    expect(run('bundle.json\nvolumes/db/data\n').status).toBe(0);
+    expect(run('/etc/passwd\n').status).toBe(1);
+    expect(run('volumes/../etc/passwd\n').status).toBe(1);
   });
 
   test('emits bounded commit and rollback commands for the exact activation transaction', () => {
