@@ -4,6 +4,7 @@ import {
   inlineKeyboardMarkup,
   isValidTelegramBotToken,
   redactToken,
+  setMessageReactionPayload,
   telegramApiBase,
   telegramBotIdFromToken,
 } from './telegram-api';
@@ -128,5 +129,23 @@ describe('inlineKeyboardMarkup', () => {
       { text: 'Pick', callback_data: 'kxq:0:0' },
       { text: 'Docs', url: 'https://d.x' },
     ]);
+  });
+});
+
+describe('setMessageReactionPayload', () => {
+  test('sets a single emoji reaction', () => {
+    expect(setMessageReactionPayload(42, 7, '👀')).toEqual({
+      chat_id: 42,
+      message_id: 7,
+      reaction: [{ type: 'emoji', emoji: '👀' }],
+    });
+  });
+
+  test('null clears the reaction (empty set)', () => {
+    expect(setMessageReactionPayload(42, 7, null)).toEqual({
+      chat_id: 42,
+      message_id: 7,
+      reaction: [],
+    });
   });
 });

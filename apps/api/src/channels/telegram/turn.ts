@@ -27,6 +27,7 @@ import {
   telegramEditMessageText,
   telegramSendChatAction,
   telegramSendMessage,
+  telegramSetMessageReaction,
 } from '../telegram-api';
 import {
   TELEGRAM_MAX_MESSAGE,
@@ -42,6 +43,10 @@ const TURN_TTL_MS = 30 * 60 * 1000;
 /** Min interval between status-message edits — stays inside Telegram's edit
  *  budget (~1/sec per chat) with margin. */
 const EDIT_THROTTLE_MS = 1200;
+/** Reaction cues on the user's message — both in Telegram's standard reaction
+ *  set so setMessageReaction never 400s on them. */
+const REACTION_WORKING = '👀';
+const REACTION_DONE = '👍';
 
 export interface LiveTelegramTurn {
   /** Null until createSession succeeds — the row persists only with an id. */
@@ -143,6 +148,9 @@ export async function startTelegramTurn(
   const token = await loadTelegramTokenForProject(projectId);
   if (!token) return null;
   await telegramSendChatAction(token, message.chat.id);
+  // 👀 on the user's message — a lightweight "I've got this" ack alongside the
+  // status placeholder (finalize swaps it to 👍). Best-effort.
+  await telegramSetMessageReaction(token, message.chat.id, message.message_id, REACTION_WORKING);
   const statusMessageId = await telegramSendMessage(
     token,
     message.chat.id,
@@ -251,6 +259,8 @@ export async function relayTelegramTurnAnswer(sessionId: string, text: string): 
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return false;
 
+  // 👀 → 👍 on the user's message: the answer landed.
+  await telegramSetMessageReaction(token, handle.chatId, handle.triggerMessageId, REACTION_DONE);
   const buttons = openInKortixButtons(handle.projectId, sessionId);
   const html = telegramHtml(text);
 
@@ -335,6 +345,13 @@ export async function relayTelegramTurnEnd(
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return false;
 
+  // 👍 on clean finish; drop the 👀 entirely on error (no misleading thumbs-up).
+  await telegramSetMessageReaction(
+    token,
+    handle.chatId,
+    handle.triggerMessageId,
+    status === 'error' ? null : REACTION_DONE,
+  );
   const buttons = openInKortixButtons(handle.projectId, sessionId);
   // Build the HTML and the plain-text fallback SEPARATELY from the same parts —
   // never regex-strip tags out of the HTML (incomplete against nested tags).

@@ -321,3 +321,34 @@ export async function telegramSendChatAction(
 ): Promise<void> {
   await telegramApiCall(token, 'sendChatAction', { chat_id: chatId, action }).catch(() => {});
 }
+
+/** Body for setMessageReaction: `emoji` sets a single reaction (replacing any
+ *  previous — Telegram reactions are a SET, so 👀→👍 needs no explicit clear);
+ *  `null` clears the reaction. Only the standard reaction emoji are accepted by
+ *  Telegram (👀 and 👍 both are). */
+export function setMessageReactionPayload(
+  chatId: number | string,
+  messageId: number,
+  emoji: string | null,
+): Record<string, unknown> {
+  return {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: emoji ? [{ type: 'emoji', emoji }] : [],
+  };
+}
+
+/** React to a message (the user's, as a liveness cue). Best-effort — a rejected
+ *  reaction (unsupported emoji, message too old, no rights) is swallowed. */
+export async function telegramSetMessageReaction(
+  token: string,
+  chatId: number | string,
+  messageId: number,
+  emoji: string | null,
+): Promise<void> {
+  await telegramApiCall(
+    token,
+    'setMessageReaction',
+    setMessageReactionPayload(chatId, messageId, emoji),
+  ).catch(() => {});
+}
