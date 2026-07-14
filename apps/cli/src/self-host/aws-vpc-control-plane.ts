@@ -19,94 +19,114 @@ export interface ReleaseRecord {
   [key: string]: unknown;
 }
 
-/** The ECS deploy naming contract; everything is discovered from <instance>. */
-export function deployClusterName(instance: string): string {
-  return `kortix-${instance}`;
+export interface UpdaterIntent {
+  release?: string;
+  rollback?: string;
+  force?: boolean;
 }
 
-export function deployServiceName(instance: string, role: DeployServiceRole): string {
-  return `${deployClusterName(instance)}-${role}`;
+export interface UpdaterRunResult {
+  command_id: string;
+  status: string;
+  instance_id: string;
 }
 
-export function deployerTaskFamily(instance: string): string {
-  return `${deployClusterName(instance)}-deployer`;
+export interface DockerServiceStatus {
+  service: string;
+  state: string;
+  health: string | null;
 }
 
+/** The one appliance host runs the whole product as Docker; discovered by tag. */
+export function applianceInstanceName(instance: string): string {
+  return `${instance}-appliance`;
+}
+
+/** SecureString SSM breadcrumb the on-box updater writes (source of truth for status). */
 export function releaseParamName(instance: string): string {
   return `/kortix/${instance}/release`;
 }
 
-/**
- * Run the customer-owned deployer task (the slim updater binary) as a one-off ECS
- * task and wait for it. It runs the SAME ecs-deploy library the daily EventBridge
- * schedule runs — account-pinned TUF verify, digest mirror, migrate, service roll,
- * circuit-breaker rollback — inside the customer VPC on its own task role. The CLI
- * only passes the deploy intent as env overrides; the container command + release
- * repository pinning live in the Terraform-owned task definition.
- */
-export function runDeployerTask(
-  config: SelfHostInstanceConfig,
-  intent: { release?: string; rollback?: string; force?: boolean },
-): { task_arn: string; status: string; exit_code: number | null } {
-  const coordinates = config.aws!;
-  const cluster = deployClusterName(config.instance);
-  const network = apiServiceNetworkConfiguration(config);
-  const environment: Array<{ name: string; value: string }> = [];
-  if (intent.release) environment.push({ name: 'KORTIX_DEPLOY_RELEASE', value: intent.release });
-  if (intent.rollback) environment.push({ name: 'KORTIX_DEPLOY_ROLLBACK', value: intent.rollback });
-  if (intent.force) environment.push({ name: 'KORTIX_DEPLOY_FORCE', value: '1' });
+const SSM_WAIT_ATTEMPTS = 720;
 
-  const args = [
-    'ecs', 'run-task',
-    '--cluster', cluster,
-    '--task-definition', deployerTaskFamily(config.instance),
-    '--launch-type', 'FARGATE',
-    '--count', '1',
-  ];
-  if (network) args.push('--network-configuration', network);
-  if (environment.length > 0) {
-    args.push('--overrides', JSON.stringify({ containerOverrides: [{ name: 'deployer', environment }] }));
-  }
-  const started = awsJson<{ tasks?: Array<{ taskArn?: string }>; failures?: Array<{ reason?: string }> }>(coordinates, args);
-  const taskArn = started.tasks?.[0]?.taskArn;
-  if (!taskArn) {
-    throw new Error(`deployer task did not start: ${started.failures?.[0]?.reason ?? 'unknown'}`);
-  }
-  return waitDeployerTask(coordinates, cluster, taskArn);
+export function applianceInstanceId(config: SelfHostInstanceConfig): string | null {
+  const response = awsJsonOptional<{
+    Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PrivateIpAddress?: string; PublicIpAddress?: string }> }>;
+  }>(config.aws!, [
+    'ec2', 'describe-instances',
+    '--filters', `Name=tag:Name,Values=${applianceInstanceName(config.instance)}`,
+    'Name=instance-state-name,Values=pending,running',
+  ]);
+  const instance = response?.Reservations?.flatMap((entry) => entry.Instances ?? []).find((entry) => entry.InstanceId);
+  return instance?.InstanceId ?? null;
 }
 
-function waitDeployerTask(
-  coordinates: AwsVpcCoordinates,
-  cluster: string,
-  taskArn: string,
-): { task_arn: string; status: string; exit_code: number | null } {
-  for (let attempt = 0; attempt < 720; attempt++) {
-    const response = awsJson<{
-      tasks?: Array<{ lastStatus?: string; stoppedReason?: string; containers?: Array<{ exitCode?: number }> }>;
-    }>(coordinates, ['ecs', 'describe-tasks', '--cluster', cluster, '--tasks', taskArn]);
-    const task = response.tasks?.[0];
-    if (task?.lastStatus === 'STOPPED') {
-      const exitCode = task.containers?.[0]?.exitCode ?? null;
-      if (exitCode !== 0) {
-        throw new Error(`deployer task failed (exit ${exitCode ?? 'unknown'}): ${task.stoppedReason ?? 'see kortix self-host logs deployer'}`);
-      }
-      return { task_arn: taskArn, status: 'STOPPED', exit_code: exitCode };
-    }
+/**
+ * Run the on-box updater through SSM RunCommand. The updater binary, its release
+ * pinning, and instance.env all live on the appliance host (Terraform + user-data
+ * own them); the CLI only passes the deploy intent as KORTIX_DEPLOY_* env and
+ * waits. No secret ever crosses the wire — the box reads Secrets Manager itself.
+ */
+export function runUpdaterViaSsm(config: SelfHostInstanceConfig, intent: UpdaterIntent): UpdaterRunResult {
+  const coordinates = config.aws!;
+  const instanceId = applianceInstanceId(config);
+  if (!instanceId) {
+    throw new Error(`no running appliance host found for ${config.instance}; run kortix self-host deploy first`);
+  }
+  const send = awsJson<{ Command?: { CommandId?: string } }>(coordinates, [
+    'ssm', 'send-command', '--document-name', 'AWS-RunShellScript',
+    '--instance-ids', instanceId,
+    '--comment', updaterComment(intent),
+    '--parameters', JSON.stringify({ commands: [updaterRunScript(intent)], executionTimeout: ['3600'] }),
+  ]);
+  const commandId = send.Command?.CommandId;
+  if (!commandId) throw new Error('SSM did not return a command id for the updater run');
+  const invocation = waitSsmCommand(coordinates, commandId, instanceId);
+  if (invocation.Status !== 'Success') {
+    throw new Error(
+      `updater run ${invocation.Status ?? 'failed'}: ${firstLine(invocation.StandardErrorContent ?? '') || 'see kortix self-host logs updater'}`,
+    );
+  }
+  return { command_id: commandId, status: invocation.Status ?? 'Success', instance_id: instanceId };
+}
+
+function updaterRunScript(intent: UpdaterIntent): string {
+  const exports: string[] = [];
+  if (intent.release) exports.push(`export KORTIX_DEPLOY_RELEASE=${shellQuote(intent.release)}`);
+  if (intent.rollback) exports.push(`export KORTIX_DEPLOY_ROLLBACK=${shellQuote(intent.rollback)}`);
+  if (intent.force) exports.push('export KORTIX_DEPLOY_FORCE=1');
+  return [
+    'set -euo pipefail',
+    // The box owns every credential + release coordinate in instance.env; the CLI
+    // never sees them. Source it, layer the deploy intent, run the updater.
+    'set -a; . /etc/kortix/instance.env; set +a',
+    ...exports,
+    '/opt/kortix/bin/kortix-updater run',
+  ].join('\n');
+}
+
+function updaterComment(intent: UpdaterIntent): string {
+  if (intent.rollback) return `kortix updater rollback ${intent.rollback}`;
+  if (intent.release) return `kortix updater deploy ${intent.release}`;
+  return 'kortix updater reconcile';
+}
+
+interface SsmInvocation {
+  Status?: string;
+  StandardOutputContent?: string;
+  StandardErrorContent?: string;
+}
+
+function waitSsmCommand(coordinates: AwsVpcCoordinates, commandId: string, instanceId: string): SsmInvocation {
+  for (let attempt = 0; attempt < SSM_WAIT_ATTEMPTS; attempt++) {
+    const invocation = awsJsonOptional<SsmInvocation>(coordinates, [
+      'ssm', 'get-command-invocation', '--command-id', commandId, '--instance-id', instanceId,
+    ]);
+    const status = invocation?.Status;
+    if (status && !['Pending', 'InProgress', 'Delayed', 'Cancelling'].includes(status)) return invocation!;
     spawnSync('sleep', ['5']);
   }
-  throw new Error(`deployer task ${taskArn} did not stop in time; check kortix self-host status`);
-}
-
-function apiServiceNetworkConfiguration(config: SelfHostInstanceConfig): string | null {
-  // The deployer runs in the same awsvpc network as the api service; reuse it so
-  // no extra Terraform output/tag contract is needed for a one-off task.
-  const response = awsJsonOptional<{ services?: Array<{ networkConfiguration?: unknown }> }>(config.aws!, [
-    'ecs', 'describe-services',
-    '--cluster', deployClusterName(config.instance),
-    '--services', deployServiceName(config.instance, 'api'),
-  ]);
-  const network = response?.services?.[0]?.networkConfiguration;
-  return network ? JSON.stringify(network) : null;
+  throw new Error(`SSM command ${commandId} did not reach a terminal state in time; check kortix self-host status`);
 }
 
 export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord | null {
@@ -114,7 +134,7 @@ export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord
     'ssm', 'get-parameters', '--names', releaseParamName(config.instance), '--with-decryption',
   ]);
   const value = response.Parameters?.[0]?.Value;
-  if (!value) return null;
+  if (!value || value === 'unset') return null;
   try {
     return JSON.parse(value) as ReleaseRecord;
   } catch {
@@ -122,41 +142,51 @@ export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord
   }
 }
 
-export interface DeployServiceStatus {
-  role: DeployServiceRole;
-  status: string;
-  running: number;
-  desired: number;
-  rollout: string | null;
+/** Live container status via `docker compose ps` through SSM RunCommand. */
+export function dockerPsViaSsm(config: SelfHostInstanceConfig): DockerServiceStatus[] {
+  const coordinates = config.aws!;
+  const instanceId = applianceInstanceId(config);
+  if (!instanceId) return [];
+  const send = awsJsonOptional<{ Command?: { CommandId?: string } }>(coordinates, [
+    'ssm', 'send-command', '--document-name', 'AWS-RunShellScript',
+    '--instance-ids', instanceId,
+    '--comment', 'kortix docker ps',
+    '--parameters', JSON.stringify({
+      commands: ['docker compose --project-name kortix-app ps --format json 2>/dev/null || true'],
+      executionTimeout: ['60'],
+    }),
+  ]);
+  const commandId = send?.Command?.CommandId;
+  if (!commandId) return [];
+  const invocation = waitSsmCommand(coordinates, commandId, instanceId);
+  return parseComposePs(invocation.StandardOutputContent ?? '');
 }
 
-export function describeDeployServices(config: SelfHostInstanceConfig): DeployServiceStatus[] {
-  const coordinates = config.aws!;
-  const services = DEPLOY_SERVICE_ROLES.map((role) => deployServiceName(config.instance, role));
-  const response = awsJsonOptional<{
-    services?: Array<{
-      serviceName?: string;
-      status?: string;
-      runningCount?: number;
-      desiredCount?: number;
-      deployments?: Array<{ status?: string; rolloutState?: string }>;
-    }>;
-  }>(coordinates, [
-    'ecs', 'describe-services', '--cluster', deployClusterName(config.instance), '--services', ...services,
-  ]);
-  const found = response?.services ?? [];
-  return DEPLOY_SERVICE_ROLES.map((role) => {
-    const name = deployServiceName(config.instance, role);
-    const service = found.find((entry) => entry.serviceName === name);
-    const primary = service?.deployments?.find((entry) => entry.status === 'PRIMARY') ?? service?.deployments?.[0];
-    return {
-      role,
-      status: service?.status ?? 'NOT_DEPLOYED',
-      running: service?.runningCount ?? 0,
-      desired: service?.desiredCount ?? 0,
-      rollout: primary?.rolloutState ?? null,
-    };
-  });
+function parseComposePs(output: string): DockerServiceStatus[] {
+  const trimmed = output.trim();
+  if (!trimmed) return [];
+  const rows: unknown[] = [];
+  // Compose emits either a JSON array or newline-delimited JSON depending on version.
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) rows.push(...parsed);
+    else rows.push(parsed);
+  } catch {
+    for (const line of trimmed.split(/\r?\n/)) {
+      try { rows.push(JSON.parse(line)); } catch { /* skip non-JSON noise */ }
+    }
+  }
+  return rows
+    .filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null)
+    .map((row) => ({
+      service: String(row.Service ?? row.Name ?? 'unknown'),
+      state: String(row.State ?? row.Status ?? 'unknown'),
+      health: typeof row.Health === 'string' && row.Health ? row.Health : null,
+    }));
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 export function awsJson<T>(coordinates: AwsVpcCoordinates, args: string[]): T {
