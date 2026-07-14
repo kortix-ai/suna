@@ -103,12 +103,12 @@ export async function runAwsVpcCommand(
   if (!config) return 1;
   if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
     process.stderr.write(
-      `${status.err('AWS VPC targets use --release with signed enterprise versions; --tag, --local, and --registry are Docker-only.')}\n`,
+      `${status.err('AWS EC2 targets use --release with signed enterprise versions; --tag, --local, and --registry are Docker-only.')}\n`,
     );
     return 2;
   }
   if (!['configure', 'config', 'logs', 'env'].includes(typedCommand) && args.length > 0) {
-    process.stderr.write(`${status.err(`unexpected AWS VPC arguments: ${args.join(' ')}`)}\n`);
+    process.stderr.write(`${status.err(`unexpected AWS EC2 arguments: ${args.join(' ')}`)}\n`);
     return 2;
   }
 
@@ -141,7 +141,7 @@ export async function runAwsVpcCommand(
     case 'env':
       return manageAwsVpcEnv(config, args, flags);
     default:
-      process.stderr.write(`${status.err(`unknown AWS VPC self-host command "${command}"`)}\n`);
+      process.stderr.write(`${status.err(`unknown AWS EC2 self-host command "${command}"`)}\n`);
       return 2;
   }
 }
@@ -154,12 +154,12 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   }
   if (flags.local || flags.registry || (flags.tag !== 'latest' && !flags.release)) {
     process.stderr.write(
-      `${status.err('AWS VPC targets use signed releases; --local, --registry, and --tag are Docker-only options.')}\n`,
+      `${status.err('AWS EC2 targets use signed releases; --local, --registry, and --tag are Docker-only options.')}\n`,
     );
     return 2;
   }
   if (flags.channel && flags.channel !== 'stable') {
-    process.stderr.write(`${status.err('AWS VPC targets may only track the stable channel.')}\n`);
+    process.stderr.write(`${status.err('AWS EC2 targets may only track the stable channel.')}\n`);
     return 2;
   }
   if (flags.release) {
@@ -192,7 +192,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
     return 2;
   }
-  if (existing && existing.target !== 'aws-vpc') {
+  if (existing && existing.target !== 'aws-ec2') {
     process.stderr.write(`${status.err(`instance "${flags.instance}" already targets Docker`)}\n`);
     return 2;
   }
@@ -211,7 +211,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   const config: SelfHostInstanceConfig = {
     schema_version: 1,
     instance: flags.instance,
-    target: 'aws-vpc',
+    target: 'aws-ec2',
     channel: 'stable',
     ...(flags.release || existing?.release ? { release: flags.release ?? existing?.release } : {}),
     aws,
@@ -230,8 +230,8 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
   }
 
   const missing = missingConfiguration(config.aws!);
-  process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC${C.reset}\n\n`);
-  process.stdout.write(`${status.ok(existing ? 'AWS VPC instance config verified' : 'AWS VPC instance config created')}\n`);
+  process.stdout.write(`\n  ${C.bold}Kortix Enterprise EC2${C.reset}\n\n`);
+  process.stdout.write(`${status.ok(existing ? 'AWS EC2 instance config verified' : 'AWS EC2 instance config created')}\n`);
   process.stdout.write(`  ${C.dim}instance  ${C.reset}${config.instance}\n`);
   process.stdout.write(`  ${C.dim}account   ${C.reset}${identity.Account}\n`);
   process.stdout.write(`  ${C.dim}profile   ${C.reset}${profile}\n`);
@@ -245,6 +245,7 @@ async function initAwsVpc(flags: SelfHostCommandFlags): Promise<number> {
     process.stdout.write(`  ${C.dim}Next: ${C.reset}${C.cyan}kortix self-host doctor --instance ${config.instance}${C.reset}\n`);
     process.stdout.write(`        ${C.cyan}kortix self-host plan --instance ${config.instance}${C.reset}\n\n`);
   }
+  process.stdout.write(`  ${C.dim}Full AWS EC2 walkthrough: docs/runbooks/enterprise-vpc-deployment.md${C.reset}\n\n`);
   return 0;
 }
 
@@ -255,7 +256,7 @@ async function configureAwsVpc(
 ): Promise<number> {
   try {
     verifyPinnedIdentity(config.aws!);
-    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS EC2 targets may only track the stable channel');
     const fromArgs = parseConfigurationAssignments(args);
     let aws = mergeAwsConfiguration(config.aws!, flags, fromArgs);
     if (!flags.yes && args.length === 0 && !hasConfigurationFlags(flags)) {
@@ -374,7 +375,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
     if (!flags.yes) {
       if (!(process.stdin.isTTY === true && process.stdout.isTTY === true)) {
         process.stderr.write(
-          `${status.err(`AWS VPC deployment requires confirmation; rerun with --yes after reviewing plan for ${identity.Account}.`)}\n`,
+          `${status.err(`AWS EC2 deployment requires confirmation; rerun with --yes after reviewing plan for ${identity.Account}.`)}\n`,
         );
         return 2;
       }
@@ -410,7 +411,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       region: aws.region,
     });
     const deployment = runtime.missingOperatorKeys.length === 0
-      ? { ...runUpdaterViaSsm(config, { ...(flags.release ? { release: flags.release } : {}) }), status: 'DEPLOYED' }
+      ? { ...runUpdaterViaSsm(config, { ...(flags.release ? { release: flags.release } : {}), ...(flags.allowDowntime ? { allowDowntime: true } : {}) }), status: 'DEPLOYED' }
       : {
           status: 'WAITING_FOR_RUNTIME_CONFIG',
           command_id: null,
@@ -433,7 +434,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
-      process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC deployed${C.reset}\n`);
+      process.stdout.write(`\n  ${C.bold}Kortix Enterprise EC2 deployed${C.reset}\n`);
       process.stdout.write(`${status.ok(`Terraform state verified at lineage ${migration.verification.lineage}, serial ${migration.verification.serial}`)}\n`);
       process.stdout.write(`${status.ok('Customer cluster infrastructure applied')}\n`);
       process.stdout.write(`${status.ok('Generated core runtime credentials directly into customer Secrets Manager')}\n`);
@@ -461,12 +462,13 @@ async function startManagedUpdate(
 ): Promise<number> {
   try {
     verifyPinnedIdentity(config.aws!);
-    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
+    if (flags.channel && flags.channel !== 'stable') throw new Error('AWS EC2 targets may only track the stable channel');
     if (flags.release) assertEnterpriseRelease(flags.release);
     assertRuntimeReady(config);
     const result = runUpdaterViaSsm(config, {
       force: flags.force,
       ...(flags.release ? { release: flags.release } : {}),
+      ...(flags.allowDowntime ? { allowDowntime: true } : {}),
     });
     renderUpdaterRun(config, result, flags);
     return 0;
@@ -564,6 +566,7 @@ async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCom
     const result = runUpdaterViaSsm(config, {
       force: flags.force,
       rollback: flags.release,
+      ...(flags.allowDowntime ? { allowDowntime: true } : {}),
     });
     renderUpdaterRun(config, result, flags);
     return 0;
@@ -756,7 +759,7 @@ function rejectDockerLifecycleCommand(command: AwsVpcCommand, instance: string):
   process.stderr.write(`${status.err(`${canonical} is only available for Docker targets.`)}\n`);
   if (canonical === 'start') {
     process.stderr.write(
-      `${C.dim}AWS VPC environments are continuously reconciled; bootstrap with ${C.reset}${C.cyan}kortix self-host deploy --instance ${instance}${C.reset}${C.dim}.${C.reset}\n`,
+      `${C.dim}AWS EC2 environments are continuously reconciled; bootstrap with ${C.reset}${C.cyan}kortix self-host deploy --instance ${instance}${C.reset}${C.dim}.${C.reset}\n`,
     );
   }
   return 2;
@@ -772,12 +775,12 @@ function loadAwsConfig(instance: string): SelfHostInstanceConfig | null {
   }
   if (!config) {
     process.stderr.write(
-      `${status.err(`Self-host instance "${instance}" is not initialized. Run \`kortix self-host init --target aws-vpc --instance ${instance}\` first.`)}\n`,
+      `${status.err(`Self-host instance "${instance}" is not initialized. Run \`kortix self-host init --target aws-ec2 --instance ${instance}\` first.`)}\n`,
     );
     return null;
   }
-  if (config.target !== 'aws-vpc' || !config.aws) {
-    process.stderr.write(`${status.err(`Self-host instance "${instance}" is not an AWS VPC target.`)}\n`);
+  if (config.target !== 'aws-ec2' || !config.aws) {
+    process.stderr.write(`${status.err(`Self-host instance "${instance}" is not an AWS EC2 target.`)}\n`);
     return null;
   }
   return config;

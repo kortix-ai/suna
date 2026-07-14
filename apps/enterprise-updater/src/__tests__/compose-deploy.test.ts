@@ -24,7 +24,20 @@ const SUPABASE_SHA = 'd'.repeat(64);
 const SECRET_ARN = 'arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-AbCdEf';
 const RUNTIME_ENV_FILE = '/tmp/kortix-runtime-env/runtime.json';
 
-function manifestJson(overrides: { version?: string; rollbackFrom?: string[]; supabaseSha?: string } = {}) {
+interface ManifestMigration {
+  id: string;
+  sha256: string;
+  reversible: boolean;
+  backward_compatible: boolean;
+}
+
+function migration(backwardCompatible: boolean, id = 'm1'): ManifestMigration {
+  return { id, sha256: '9'.repeat(64), reversible: true, backward_compatible: backwardCompatible };
+}
+
+function manifestJson(
+  overrides: { version?: string; rollbackFrom?: string[]; supabaseSha?: string; migrations?: ManifestMigration[] } = {},
+) {
   const version = overrides.version ?? '0.9.84-e1';
   return {
     schema_version: 1,
@@ -45,8 +58,18 @@ function manifestJson(overrides: { version?: string; rollbackFrom?: string[]; su
       cosign_public_key: { target: 'cosign.pub', sha256: '2'.repeat(64), length: 10 },
       updater_binary: { target: 'updater', sha256: '3'.repeat(64), length: 10 },
     },
-    migrations: [],
+    migrations: overrides.migrations ?? [],
     health: { api_path: '/v1/health', frontend_path: '/', expected_version: '0.9.84' },
+  };
+}
+
+/** A prior deployed release so a deploy is treated as an UPDATE (not first install). */
+function priorCrumb(): DeployBreadcrumb {
+  return {
+    version: '0.9.83-e1',
+    digests: { api: OLD, gateway: OLD, frontend: OLD },
+    supabase_bundle_sha: SUPABASE_SHA,
+    deployed_at: '2026-07-13T00:00:00Z',
   };
 }
 
@@ -75,6 +98,10 @@ class FakeHost implements HostRuntime {
   rolloutService(role: AppRole): void {
     if (this.scenario.failRole === role) throw new Error(`new ${role} containers never became healthy`);
     this.rolled.push(role);
+  }
+  stopped = 0;
+  stopAppServices(): void {
+    this.stopped += 1;
   }
   edges = 0;
   startEdge(): void {
@@ -259,5 +286,50 @@ describe('ComposeDeployer', () => {
       verifyIdentity: () => { throw new Error('AWS account mismatch: expected 935064898258, received 327903111249'); },
     });
     await expect(deployer.deploy()).rejects.toThrow('AWS account mismatch');
+  });
+
+  test('an update whose migrations are all backward-compatible takes the zero-downtime start-first roll', async () => {
+    const manifest = manifestJson({ migrations: [migration(true, 'm1'), migration(true, 'm2')] });
+    const { deployer, host } = makeDeployer({ breadcrumb: priorCrumb() }, { manifest });
+    const outcome = await deployer.deploy();
+    expect(outcome).toEqual({ action: 'deploy', release: '0.9.84-e1' });
+    // Zero-downtime path: no drain, start-first roll of all three services.
+    expect(host.stopped).toBe(0);
+    expect(host.migrated).toBe(1);
+    expect(host.rolled).toEqual(['api', 'gateway', 'frontend']);
+    expect(host.written).not.toBeNull();
+  });
+
+  test('an update with a non-backward-compatible migration and no opt-in aborts before touching anything', async () => {
+    const manifest = manifestJson({ migrations: [migration(true, 'm1'), migration(false, 'm2')] });
+    const { deployer, host, images } = makeDeployer({ breadcrumb: priorCrumb() }, { manifest });
+    await expect(deployer.deploy()).rejects.toThrow('non-backward-compatible migration');
+    // Untouched: no image prep, no drain, no migrate, no roll, no breadcrumb.
+    expect(images.prepared).toBe(0);
+    expect(host.stopped).toBe(0);
+    expect(host.migrated).toBe(0);
+    expect(host.rolled).toEqual([]);
+    expect(host.written).toBeNull();
+  });
+
+  test('a non-backward-compatible migration with allowDowntime drains the app, migrates, then starts new', async () => {
+    const manifest = manifestJson({ migrations: [migration(false, 'm1')] });
+    const { deployer, host } = makeDeployer({ breadcrumb: priorCrumb() }, { manifest });
+    const outcome = await deployer.deploy({ allowDowntime: true });
+    expect(outcome).toEqual({ action: 'deploy', release: '0.9.84-e1' });
+    // Downtime path: drain first, THEN migrate, THEN start each service.
+    expect(host.stopped).toBe(1);
+    expect(host.migrated).toBe(1);
+    expect(host.rolled).toEqual(['api', 'gateway', 'frontend']);
+    expect(host.written).not.toBeNull();
+  });
+
+  test('a first install with a non-backward-compatible migration proceeds without opt-in (no old containers)', async () => {
+    const manifest = manifestJson({ migrations: [migration(false, 'm1')] });
+    const { deployer, host } = makeDeployer({ breadcrumb: null }, { manifest });
+    const outcome = await deployer.deploy();
+    expect(outcome).toEqual({ action: 'deploy', release: '0.9.84-e1' });
+    expect(host.stopped).toBe(0);
+    expect(host.rolled).toEqual(['api', 'gateway', 'frontend']);
   });
 });

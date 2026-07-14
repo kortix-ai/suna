@@ -62,9 +62,13 @@ async function main(): Promise<number> {
   const requestedRelease = flags.get('release') ?? process.env.KORTIX_DEPLOY_RELEASE;
   const rollbackTo = flags.get('rollback') ?? process.env.KORTIX_DEPLOY_ROLLBACK;
   if (requestedRelease && rollbackTo) throw new Error('--release and --rollback are mutually exclusive');
+  // Opt-in to a brief downtime for a non-backward-compatible migration. The CLI
+  // threads --allow-downtime here as KORTIX_ALLOW_DOWNTIME via SSM RunCommand.
+  const allowDowntime = process.env.KORTIX_ALLOW_DOWNTIME === '1' || process.env.KORTIX_ALLOW_DOWNTIME === 'true';
   const request: DeployRequest = {
     ...(requestedRelease ? { requestedRelease } : {}),
     ...(rollbackTo ? { rollbackTo } : {}),
+    ...(allowDowntime ? { allowDowntime: true } : {}),
   };
 
   const workDir = process.env.KORTIX_UPDATER_WORK_DIR ?? `/tmp/kortix-enterprise-updater/${instance}`;

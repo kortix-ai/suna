@@ -14,6 +14,13 @@ export interface DeployRequest {
   requestedRelease?: string;
   /** Roll back to an already-published, predecessor-listed version. */
   rollbackTo?: string;
+  /**
+   * Opt in to a brief, honest downtime window for a release whose migration is
+   * NOT backward-compatible. Without it such a release is refused (an update
+   * against old containers can only stay zero-downtime if the schema change is
+   * backward-compatible). First installs never need it (no old containers).
+   */
+  allowDowntime?: boolean;
 }
 
 export interface DeployOutcome {
@@ -109,6 +116,23 @@ export class ComposeDeployer {
       return { action: 'noop', release: manifest.version, reason: 'up to date' };
     }
 
+    // Zero-downtime safety gate. The start-first roll briefly runs OLD app
+    // containers against the NEW schema, so it is safe only when every migration
+    // in this release is backward-compatible. A first install (no prior release)
+    // has no old containers and is always safe. Otherwise a non-backward-compatible
+    // migration needs an explicit --allow-downtime / KORTIX_ALLOW_DOWNTIME opt-in;
+    // without it we abort BEFORE touching anything (no image pull, no migrate).
+    const firstInstall = current === null;
+    const backwardCompatible = manifest.migrations.every((migration) => migration.backward_compatible);
+    const needsDowntime = !firstInstall && !backwardCompatible;
+    if (needsDowntime && !request.allowDowntime) {
+      throw new Error(
+        `release ${manifest.version} contains a non-backward-compatible migration; ` +
+          'it cannot be applied with zero downtime. Re-run with --allow-downtime ' +
+          '(KORTIX_ALLOW_DOWNTIME=1) during a maintenance window to accept a brief downtime.',
+      );
+    }
+
     this.log(`Preparing ${manifest.version} images (verify + pull by digest)`);
     const cosignKey = await repository.downloadArtifact(manifest.artifacts.cosign_public_key);
     const images = this.deps.images.prepare(manifest, cosignKey);
@@ -137,16 +161,30 @@ export class ComposeDeployer {
     const appBundle = await repository.downloadArtifact(manifest.artifacts.platform_bundle);
     this.deps.app.install({ manifest, bundleTar: appBundle, images, runtimeEnvFile: this.deps.runtimeEnvFile() });
 
-    // Migrate to completion BEFORE any service moves; a nonzero exit throws here
-    // and aborts the deploy with every running container untouched.
-    this.log('Running database migrations (docker compose run --rm migrate)');
-    this.deps.host.runMigrate();
+    if (needsDowntime) {
+      // Honest, brief downtime: the non-backward-compatible schema change means the
+      // old app must NOT run against the new schema. Drain the app tier, migrate,
+      // then start the new containers. Supabase/Caddy stay up throughout.
+      this.log('Non-backward-compatible migration: draining app for a brief downtime window');
+      this.deps.host.stopAppServices();
+      this.log('Running database migrations (docker compose run --rm migrate)');
+      this.deps.host.runMigrate();
+      for (const role of APP_ROLES) {
+        this.log(`Starting ${role}${isRollback ? ' (rollback)' : ''} on the new release`);
+        this.deps.host.rolloutService(role);
+      }
+    } else {
+      // Migrate to completion BEFORE any service moves; a nonzero exit throws here
+      // and aborts the deploy with every running container untouched.
+      this.log('Running database migrations (docker compose run --rm migrate)');
+      this.deps.host.runMigrate();
 
-    // Start-first rolling swap, one service at a time. A failed health gate throws
-    // and leaves the previous version serving; later services are never touched.
-    for (const role of APP_ROLES) {
-      this.log(`Rolling ${role}${isRollback ? ' (rollback)' : ''} start-first`);
-      this.deps.host.rolloutService(role);
+      // Start-first rolling swap, one service at a time. A failed health gate throws
+      // and leaves the previous version serving; later services are never touched.
+      for (const role of APP_ROLES) {
+        this.log(`Rolling ${role}${isRollback ? ' (rollback)' : ''} start-first`);
+        this.deps.host.rolloutService(role);
+      }
     }
 
     // Bring up / reconcile the Caddy edge, then verify public health through it.
