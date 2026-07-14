@@ -1,9 +1,10 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { useClaimPerSeat } from '@/hooks/billing/use-account-state';
 import type { AccountState } from '@/lib/api/billing';
-import { ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {
@@ -17,11 +18,10 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
   if (!accountState || !accountState.can_claim_per_seat) return null;
 
   return (
-    <div className="border-primary/20 bg-primary/5 space-y-3 rounded-2xl border p-4">
-      <div className="flex items-start gap-2.5">
-        <Sparkles className="text-primary mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium">
+    <div className="bg-popover rounded-md border px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
             {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextSwitchTo0413ce4a')}
           </p>
           <p className="text-muted-foreground text-xs">
@@ -32,27 +32,27 @@ export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState
             .
           </p>
         </div>
+        <Button
+          size="sm"
+          onClick={() => claim.mutate()}
+          disabled={claim.isPending}
+          className="shrink-0 gap-1.5"
+        >
+          {claim.isPending ? (
+            <>
+              <Loading className="size-3.5 shrink-0" />
+              {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421')}
+            </>
+          ) : (
+            <>
+              {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9')}
+              <ArrowRight className="size-3.5 shrink-0" />
+            </>
+          )}
+        </Button>
       </div>
-      <Button
-        size="sm"
-        onClick={() => claim.mutate()}
-        disabled={claim.isPending}
-        className="w-full sm:w-auto"
-      >
-        {claim.isPending ? (
-          <>
-            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextSwitchingf28a1421')}
-          </>
-        ) : (
-          <>
-            {tI18nHardcoded.raw('autoFeaturesBillingClaimPerSeatCardJsxTextClaimSeat0d87cca9')}
-            <ArrowRight className="ml-1.5 size-3.5" />
-          </>
-        )}
-      </Button>
       {claim.isError && (
-        <p className="text-destructive text-xs break-words">
+        <p className="text-destructive mt-2 text-xs break-words">
           {(claim.error as Error)?.message ?? 'Could not switch. Try again or contact support.'}
         </p>
       )}
