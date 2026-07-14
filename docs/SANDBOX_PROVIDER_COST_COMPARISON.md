@@ -9,11 +9,15 @@
 This is a normalized pricing reference. It does not contain Kortix account
 usage, invoice totals, sandbox counts, or other customer-specific numbers.
 
+> **Pricing policy decision (2026-07-14):** Platinum managed retail is modeled
+> and positioned at exactly **50% of Daytona's equivalent price**. This
+> supersedes the earlier one-third-Daytona assumption.
+
 ## The short list
 
 | Provider or architecture | Equivalent monthly price or cost | Versus Daytona | Notes |
 |---|---:|---:|---|
-| **Platinum managed retail** | **$3,333** | **67% cheaper** | Kortix policy: exactly Daytona divided by three |
+| **Platinum managed retail** | **$5,000** | **50% cheaper** | Kortix policy: exactly half of Daytona |
 | **Custom AWS Fargate ARM64** | **$5,100-$5,900** | **41-49% cheaper** | Containers, not user-controlled microVMs |
 | **Custom AWS ECS on Graviton** | **$5,900-$7,600** | **24-41% cheaper** | Containers on EC2; range covers shared platform services |
 | **Custom AWS Fargate x86** | **$6,300-$7,100** | **29-37% cheaper** | Containers; 20 GB ephemeral storage included per task |
@@ -71,16 +75,16 @@ deducted from the recurring benchmark.
 
 Source: [Daytona pricing](https://www.daytona.io/pricing).
 
-### Platinum managed retail: $3,333
+### Platinum managed retail: $5,000
 
-Kortix's Platinum pricing policy is exactly three times cheaper than Daytona:
+Kortix's Platinum pricing policy is exactly 50% cheaper than Daytona:
 
 | Resource | Platinum policy price |
 |---|---:|
-| CPU | $0.0168/vCPU-hour |
-| Memory | $0.0054/GiB-hour |
-| Storage | $0.000036/GiB-hour |
-| **Normalized monthly price** | **$10,000 ÷ 3 = $3,333.33** |
+| CPU | $0.0252/vCPU-hour |
+| Memory | $0.0081/GiB-hour |
+| Storage | $0.000054/GiB-hour |
+| **Normalized monthly price** | **$10,000 × 50% = $5,000.00** |
 
 This is a Kortix retail policy, not a separately published third-party Platinum
 managed-cloud rate card.
@@ -147,32 +151,42 @@ host has 384 GiB RAM, 48 physical cores, 96 threads, and local NVMe storage.
 Platinum's current capacity model uses 5× CPU overcommit, a 1× hard RAM
 guarantee, and sparse/reflink storage.
 
-The public infrastructure inputs are expressed only in USD:
+The host offers used by the Platinum deployment are substantially cheaper than
+equivalent hyperscaler instances. The source offers were converted once at the
+reference-date exchange rate; only USD values are presented here:
 
-| Infrastructure | USD monthly cost |
-|---|---:|
-| One large sandbox host | approximately $1,285 |
-| Two control-plane nodes | approximately $368 |
-| Load balancer and database | approximately $48 |
-| Object storage for the normalized active footprint | approximately $30 |
-| Miscellaneous infrastructure contingency | 15% |
+| Host | Resources | USD monthly cost |
+|---|---|---:|
+| EM-I520E-NVMe | 48 cores / 96 threads, 384 GB RAM, 2 × 3.84 TB NVMe | approximately **$651** |
+| EM-I620E-NVMe | 64 cores / 128 threads, 576 GB RAM, 2 × 3.84 TB NVMe | approximately **$777** |
+| Shared control plane, database, load balancing, object storage and contingency | Cell-wide estimate | approximately **$250-$600** |
 
 At 83.1 concurrent 4-GiB sandboxes, one host would carry only about 16% memory
 headroom and no host redundancy. The commercially safer reference is two
 sandbox hosts:
 
-| Platinum economics | One-host minimum | Two-host safer cell |
+| Platinum economics for the $10,000 Daytona benchmark | One I520 host | Two-I520 safer cell |
 |---|---:|---:|
-| Estimated infrastructure COGS | approximately $1,990 | approximately $3,467 |
-| Retail revenue | $3,333 | $3,333 |
-| Gross profit | approximately $1,343 | approximately **-$134** |
-| Infrastructure gross margin | approximately 40% | approximately **-4%** |
+| Estimated infrastructure COGS | approximately $901-$1,251 | approximately **$1,552-$1,902** |
+| Retail revenue | $5,000 | $5,000 |
+| Gross profit | approximately $3,749-$4,099 | approximately **$3,098-$3,448** |
+| Infrastructure gross margin | approximately 75-82% | approximately **62-69%** |
 
-This is an important pricing result: at the normalized $10,000 Daytona workload,
-the one-third retail policy is profitable only if Kortix accepts a tightly
-packed single host or amortizes the control plane and redundancy across a larger
-multi-cell fleet. A dedicated two-host cell at this scale is approximately
-break-even before labor.
+One I520 host can fit the normalized 83.1-sandbox average but provides almost no
+safe RAM headroom and no host redundancy. Two hosts are therefore the credible
+managed-service comparison. Even with that redundancy, the half-Daytona policy
+retains a strong infrastructure margin.
+
+At approximately 90% safe RAM utilization, the host economics improve further:
+
+| Cell | Approximate revenue at half-Daytona pricing | Estimated COGS | Infrastructure margin |
+|---|---:|---:|---:|
+| Two I520 hosts | $10,200-$10,400/month | $1,552-$1,902/month | approximately **81-85%** |
+| Two I620 hosts | approximately $15,300-$15,600/month | $1,804-$2,154/month | approximately **85-88%** |
+
+The I620 costs only about 19% more per month while providing 50% more RAM and
+33% more physical cores. It is the stronger density choice once demand can fill
+the larger cell. These are infrastructure gross margins, not net margins.
 
 COGS excludes engineering salaries, on-call support, taxes, payment processing,
 corporate overhead, and customer acquisition. It should not be described as net
@@ -180,9 +194,7 @@ profit.
 
 Sources: [Platinum](https://github.com/kortix-ai/platinum),
 [Platinum operations](https://github.com/kortix-ai/platinum/blob/main/OPS.md),
-and [Scaleway public product catalog](https://api.scaleway.com/product-catalog/v2alpha1/public-catalog/products).
-The catalog host rate was converted to its USD equivalent at the reference-date
-exchange rate; no non-USD values are presented in this document.
+and [Scaleway Elastic Metal pricing](https://www.scaleway.com/en/pricing/?tags=available,compute,elastic-metal).
 
 ## Self-hosted E2B on AWS
 
@@ -287,7 +299,7 @@ replacements for an agent sandbox microVM platform.
 
 For every **$10,000 of Daytona spend** under this normalized sandbox mix:
 
-1. Platinum retail policy charges approximately **$3,333**.
+1. Platinum retail policy charges exactly **$5,000**.
 2. Custom AWS containers cost approximately **$5,100-$7,600**, with weaker or
    separately engineered sandbox semantics.
 3. Self-hosted E2B on AWS costs approximately **$8,200-$10,800**, depending on
@@ -297,8 +309,8 @@ For every **$10,000 of Daytona spend** under this normalized sandbox mix:
 5. Modal Sandboxes Team costs approximately **$14,380** before workload-specific
    persistent storage.
 
-Platinum's three-times-cheaper retail policy is aggressive. It creates healthy
-infrastructure margin on a tightly utilized host, but a dedicated redundant
-two-host cell is around break-even at this normalized scale. Fleet-wide
-amortization and measured physical resource density are therefore essential to
-the policy's profitability.
+Platinum's half-Daytona retail policy leaves substantial room for redundancy and
+operations. A dedicated two-I520 cell still produces approximately 62-69%
+infrastructure gross margin on the normalized workload, rising above 80% when a
+cell is densely utilized. Fleet-wide amortization and measured physical resource
+density remain essential before treating infrastructure margin as net profit.
