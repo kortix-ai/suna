@@ -99,6 +99,7 @@ describe('embedded enterprise Terraform graph', () => {
 
     expect(sharedPlatform).toContain('count            = var.argo_cd_enabled ? 1 : 0');
     expect(enterprisePlatform).toContain('argo_cd_enabled             = false');
+    expect(enterprisePlatform).not.toContain('resource "kubernetes_manifest"');
   });
 
   test('allows only the customer updater security group into the private EKS API', () => {

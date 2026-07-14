@@ -211,6 +211,47 @@ export class ReleaseInstaller {
       '--kubeconfig', kubeconfig,
     ], { env: applyEnv });
     const kubeEnv = { ...applyEnv, KUBECONFIG: kubeconfig };
+    const runtimeExternalSecrets = join(this.config.workDir, 'runtime-external-secrets.json');
+    writeFileSync(runtimeExternalSecrets, `${JSON.stringify({
+      apiVersion: 'v1',
+      kind: 'List',
+      items: [{
+        apiVersion: 'external-secrets.io/v1beta1',
+        kind: 'SecretStore',
+        metadata: { name: 'kortix-runtime', namespace: descriptor.namespace },
+        spec: {
+          provider: {
+            aws: {
+              service: 'SecretsManager',
+              region: this.config.region,
+              auth: {
+                jwt: {
+                  serviceAccountRef: { name: this.config.appServiceAccount },
+                },
+              },
+            },
+          },
+        },
+      }, {
+        apiVersion: 'external-secrets.io/v1beta1',
+        kind: 'ExternalSecret',
+        metadata: { name: 'kortix-runtime', namespace: descriptor.namespace },
+        spec: {
+          refreshInterval: '5m',
+          secretStoreRef: { kind: 'SecretStore', name: 'kortix-runtime' },
+          target: { name: 'kortix-runtime', creationPolicy: 'Owner' },
+          dataFrom: [{ extract: { key: this.config.runtimeSecretArn } }],
+        },
+      }],
+    }, null, 2)}\n`, { mode: 0o600 });
+    this.runner.run('kubectl', ['apply', '--filename', runtimeExternalSecrets], { env: kubeEnv });
+    this.runner.run('kubectl', [
+      '--namespace', descriptor.namespace, 'wait', '--for=condition=Ready',
+      'externalsecret/kortix-runtime', '--timeout=5m',
+    ], { env: kubeEnv });
+    this.runner.run('kubectl', [
+      '--namespace', descriptor.namespace, 'get', 'secret', 'kortix-runtime', '--output=name',
+    ], { env: kubeEnv });
     const activation: PlatformActivation = {
       namespace: descriptor.namespace,
       env: kubeEnv,
