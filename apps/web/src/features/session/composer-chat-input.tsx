@@ -343,6 +343,7 @@ export function ComposerChatInput({
             presets: capability.data?.model.presets ?? [],
             connectionLabel,
             connectionKind,
+            customAllowed: capability.data?.model.custom_allowed ?? true,
           }
         : undefined)}
       modelRequired={live ? false : (capability.data ? !capability.data.model.default_allowed : false)}

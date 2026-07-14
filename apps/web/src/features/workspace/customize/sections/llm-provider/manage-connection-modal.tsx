@@ -15,6 +15,7 @@ import {
   type HarnessAuthKind,
 } from '@kortix/sdk/projects-client';
 import {
+  connectionExplainer,
   harnessLabel,
   invalidateComposerCapabilityQueries,
   type ModelsPageConnection,
@@ -162,7 +163,9 @@ export function ManageConnectionModal({
               <div className="min-w-0 flex-1">
                 <div className="text-foreground text-sm font-medium">{connection.name}</div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
-                  {connection.statusReason ?? (connection.status === 'ready' ? 'Connected' : 'Checking…')}
+                  {connectionExplainer(connection.kind) ??
+                    connection.statusReason ??
+                    (connection.status === 'ready' ? 'Connected' : 'Checking…')}
                 </p>
               </div>
               <Badge variant={connection.status === 'ready' ? 'success' : 'destructive'} size="sm">

@@ -111,7 +111,9 @@ export async function runGit(
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
-      timeout: 30_000,
+      // Below the API's 25s request deadline: a dead/unreachable remote must
+      // surface as a git error the caller can report, not a blanket 503.
+      timeout: 20_000,
     });
     return {
       stdout: result.stdout.toString(),
@@ -143,7 +145,7 @@ export async function runGitCapture(
       cwd,
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
-      timeout: 30_000,
+      timeout: 20_000,
     });
     return { stdout: result.stdout.toString(), stderr: result.stderr.toString(), exitCode: 0 };
   } catch (error) {

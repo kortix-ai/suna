@@ -28,8 +28,8 @@ export interface ProjectProviderConnectionDefinition {
 export const PROJECT_PROVIDER_CONNECTIONS: ProjectProviderConnectionDefinition[] = [
   {
     id: 'managed_gateway',
-    label: 'Kortix managed gateway',
-    description: 'Included models routed by Kortix for every harness.',
+    label: 'Kortix',
+    description: 'Included — no setup needed. Routed by Kortix for every harness.',
     providerId: 'kortix',
     mode: 'managed',
     secretNames: [],

@@ -1167,6 +1167,7 @@
     "computeUnread",
     "configKeys",
     "connectionDisplayName",
+    "connectionExplainer",
     "credentialKeys",
     "findPermissionBlockedCandidate",
     "findRuntimeFiles",

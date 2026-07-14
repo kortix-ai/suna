@@ -20,6 +20,7 @@ import {
 import Hint from '@/components/ui/hint';
 import { Icon } from '@/features/icon/icon';
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
+import { COMPOSER_PILL_TRIGGER_CLASS } from '@/features/session/composer-pill';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { Command } from '@/hooks/runtime/use-runtime-sessions';
@@ -244,7 +245,7 @@ function BranchPicker({
         <button
           type="button"
           aria-label={`Session branch: ${activeRef}`}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 max-w-44 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200 active:scale-[0.96]"
+          className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'max-w-44')}
         >
           <GitBranch className="size-3.5 shrink-0" />
           <span className="truncate font-mono">{activeRef}</span>
@@ -401,7 +402,7 @@ function SandboxPicker({
           aria-label={tI18nHardcoded.raw(
             'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxAttrAria4acf4ecd',
           )}
-          className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200"
+          className={COMPOSER_PILL_TRIGGER_CLASS}
         >
           <ActiveIcon className="size-3.5 shrink-0" />
           <span className="max-w-[7rem] truncate">{active.name}</span>

@@ -60,6 +60,41 @@ const DEFAULT_CONFIG_DIR: Record<HarnessV3, string> = {
 
 export class CompileRuntimeConfigError extends Error {}
 
+/**
+ * Legacy/OpenCode compatibility plan: projects with no manifest, a v1
+ * manifest, or a v2 manifest that never declared `agents:` still run — as one
+ * fully-granted OpenCode runtime whose native config owns all behavior
+ * (exactly the pre-ACP contract). `nativeAgent` stays null so OpenCode
+ * resolves its own configured default agent.
+ */
+export function syntheticLegacyRuntimeConfig(
+  configDir: string = DEFAULT_CONFIG_DIR.opencode,
+): CompiledRuntimeConfig {
+  const runtimeName = "opencode";
+  return {
+    kind: "acp",
+    version: 2,
+    defaultAgent: "kortix",
+    runtimes: {
+      [runtimeName]: { name: runtimeName, harness: "opencode", configDir },
+    },
+    agents: {
+      kortix: {
+        name: "kortix",
+        runtime: runtimeName,
+        harness: "opencode",
+        nativeAgent: null,
+        enabled: true,
+        connectors: "all",
+        secrets: "all",
+        skills: "all",
+        kortixCli: "all",
+        workspace: "runtime",
+      },
+    },
+  };
+}
+
 function schemaVersion(manifest: Record<string, unknown>): number | null {
   const value = manifest.kortix_version;
   return typeof value === "number" && Number.isInteger(value) ? value : null;
@@ -142,13 +177,24 @@ export function compileRuntimeConfig(
           (block.workspace as WorkspaceModeV2 | undefined) ?? "runtime",
       };
     }
-    const defaultAgent =
+    // A v2 project that never adopted the `agents:` map keeps the legacy
+    // contract: one fully-granted OpenCode runtime, native config in charge.
+    if (Object.keys(agents).length === 0) {
+      return syntheticLegacyRuntimeConfig(configDir);
+    }
+    const declaredDefault =
       typeof manifest.default_agent === "string"
         ? manifest.default_agent
         : "kortix";
-    if (!agents[defaultAgent] || !agents[defaultAgent].enabled) {
+    // No usable default_agent: fall back to the first enabled agent instead of
+    // refusing to compile (mirrors resolveGovernedAgentGrant's sentinel rule).
+    const defaultAgent =
+      agents[declaredDefault]?.enabled
+        ? declaredDefault
+        : Object.keys(agents).find((name) => agents[name].enabled);
+    if (!defaultAgent) {
       throw new CompileRuntimeConfigError(
-        `Default agent "${defaultAgent}" is not declared and enabled.`,
+        `Default agent "${declaredDefault}" is not declared and enabled.`,
       );
     }
     return { kind: "acp", version: 2, defaultAgent, runtimes, agents };
@@ -198,14 +244,16 @@ export async function resolveCompiledRuntimeConfigForSession(
       candidates,
       project.defaultBranch,
     );
-    if (!found) return null;
+    // No manifest or a pre-v2 one: legacy OpenCode project — synthesize the
+    // compatibility plan so it still boots instead of failing "not declared".
+    if (!found) return syntheticLegacyRuntimeConfig();
 
     const raw = parseManifestText(
       found.content,
       manifestFormatForPath(found.path),
     );
     const version = schemaVersion(raw);
-    if (version !== 2 && version !== 3) return null;
+    if (version !== 2 && version !== 3) return syntheticLegacyRuntimeConfig();
 
     return compileRuntimeConfig(raw);
   } catch (error) {

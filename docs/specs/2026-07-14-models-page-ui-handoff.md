@@ -39,7 +39,7 @@ Use these labels consistently:
 | --------------------------- | ------------------------------------------- |
 | provider/auth route         | connection                                  |
 | harness                     | agent runtime, or the concrete product name |
-| managed gateway             | Kortix managed                              |
+| managed gateway             | Kortix — subtitle "Included — no setup needed" (row metadata: "Included with Kortix · N models") |
 | `claude_subscription`       | Claude subscription                         |
 | `codex_subscription`        | ChatGPT subscription                        |
 | harness-owned model default | Harness default                             |
@@ -48,7 +48,9 @@ Use these labels consistently:
 | active route                | Uses                                        |
 
 Do not show `managed_gateway`, `native_config`, `harness_auth_routes`, protocol
-IDs, secret names, or connection-kind IDs in normal UI.
+IDs, secret names, or connection-kind IDs in normal UI. Also never render the
+strings "Kortix managed" or "managed gateway" — the connection is just
+"Kortix" (2026-07-14 UX pass, see `2026-07-14-ux-ui-completion-plan.md`).
 
 ## 3. Page anatomy
 
@@ -69,7 +71,7 @@ Agent runtimes
 └──────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────┐
 │ OpenCode                                   Connected             │
-│ Kortix managed · Automatic                           [Change ▾] │
+│ Kortix · Automatic                                   [Change ▾] │
 └──────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────┐
 │ Pi                                         Needs connection      │
@@ -86,8 +88,8 @@ Connections
 │ Used by Codex · Models managed by Codex                         │
 └──────────────────────────────────────────────────────────────────┘
 ┌──────────────────────────────────────────────────────────────────┐
-│ Kortix managed                              Connected  [Manage] │
-│ Used by OpenCode · 12 models available                         │
+│ Kortix                                      Connected  [Manage] │
+│ Included with Kortix · 12 models available                     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -119,7 +121,7 @@ Each row contains:
 ```text
 Claude subscription · Harness default
 ChatGPT subscription · Harness default
-Kortix managed · Automatic
+Kortix · Automatic
 Anthropic production · claude-sonnet-4-6
 Local vLLM · qwen3-coder
 ```
@@ -143,7 +145,7 @@ only ready connections compatible with that harness:
 ```text
 ✓ Claude subscription            Harness default
   Anthropic production           8 models
-  Kortix managed                 Automatic
+  Kortix                         Automatic
 ──────────────────────────────────────────────
   Connect another service
 ```
@@ -468,7 +470,7 @@ moved into host-local data hooks.
 - connect Claude subscription, select it for Claude Code, start a session with
   Harness default and no catalog;
 - connect ChatGPT subscription, select it for Codex, start with Harness default;
-- enable Kortix managed for OpenCode/Pi and start with Automatic;
+- enable Kortix for OpenCode/Pi and start with Automatic;
 - add API key and custom endpoint connections, select each compatible route,
   choose default or explicit model, and start successfully.
 

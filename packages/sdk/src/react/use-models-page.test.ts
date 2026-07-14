@@ -3,7 +3,7 @@ import { CATALOG } from '@kortix/llm-catalog';
 
 import type { ConfiguredModelProvider, HarnessConnection } from '../core/rest/projects-client';
 import type { Agent } from '../core/runtime/wire-types';
-import { connectionDisplayName, harnessLabel, projectModelsPageState } from './use-models-page';
+import { connectionDisplayName, connectionExplainer, harnessLabel, projectModelsPageState } from './use-models-page';
 
 function agent(name: string, harness: string, hidden = false): Agent {
   return { name, harness, hidden } as Agent;
@@ -115,7 +115,7 @@ describe('projectModelsPageState', () => {
     });
   });
 
-  test('managed-only: Kortix managed auto-resolves without an explicit route and counts only managed models', () => {
+  test('managed-only: Kortix auto-resolves without an explicit route and counts only managed models', () => {
     const managed = connection({
       id: 'managed_gateway',
       kind: 'managed_gateway',
@@ -140,11 +140,11 @@ describe('projectModelsPageState', () => {
       harness: 'opencode',
       status: 'ready',
       selectedConnectionId: 'managed_gateway',
-      modelSummary: 'Kortix managed · Automatic',
+      modelSummary: 'Kortix · Automatic',
     });
     expect(state.connections[0]).toMatchObject({
       id: 'managed_gateway',
-      name: 'Kortix managed',
+      name: 'Kortix',
       catalogState: 'available',
       modelCount: 2,
       usedBy: ['opencode'],
@@ -291,10 +291,21 @@ describe('presentation helpers', () => {
     expect(harnessLabel('codex')).toBe('Codex');
     expect(harnessLabel('opencode')).toBe('OpenCode');
     expect(harnessLabel('pi')).toBe('Pi');
-    expect(connectionDisplayName('managed_gateway')).toBe('Kortix managed');
+    expect(connectionDisplayName('managed_gateway')).toBe('Kortix');
     expect(connectionDisplayName('claude_subscription')).toBe('Claude subscription');
     expect(connectionDisplayName('codex_subscription')).toBe('ChatGPT subscription');
     expect(connectionDisplayName('anthropic_api_key')).toBe('Anthropic');
     expect(connectionDisplayName('openai_api_key')).toBe('OpenAI');
+  });
+
+  test('connectionExplainer: only the managed gateway ("Kortix") carries a subtitle', () => {
+    expect(connectionExplainer('managed_gateway')).toBe('Included — no setup needed');
+    expect(connectionExplainer('claude_subscription')).toBeNull();
+    expect(connectionExplainer('codex_subscription')).toBeNull();
+    expect(connectionExplainer('anthropic_api_key')).toBeNull();
+    expect(connectionExplainer('openai_api_key')).toBeNull();
+    expect(connectionExplainer('openai_compatible')).toBeNull();
+    expect(connectionExplainer('anthropic_compatible')).toBeNull();
+    expect(connectionExplainer('native_config')).toBeNull();
   });
 });

@@ -23,8 +23,9 @@ Consequences accepted for now (each becomes richer when the backend lands, witho
 2. No live "Test connection" — status = configured/ready from the API. The Manage modal omits Test.
 3. Custom endpoint keeps the `CUSTOM_LLM_*` singleton but gets the new form UX (name, protocol,
    base URL, key, model ID) and the new row presentation.
-4. All handoff language rules (§2 of the handoff) apply verbatim: connection, Kortix managed,
-   Claude subscription, ChatGPT subscription, Harness default, Automatic, Custom endpoint, Uses.
+4. All handoff language rules (§2 of the handoff) apply verbatim: connection, Kortix (never
+   "Kortix managed"), Claude subscription, ChatGPT subscription, Harness default, Automatic,
+   Custom endpoint, Uses.
 
 Multiple subscriptions/keys per project, team sharing, routing between several credentials, and
 "any API key with the Claude Code/Codex harnesses" are **product decisions + backend work** —
@@ -99,7 +100,7 @@ and component rules) **backed by today's endpoints**:
 - `ModelsPageState.runtimes` ⇦ derive from project agents (`config.agents` → harness set) joined
   with `useHarnessConnections` (`active_for`, `ready`) and `useComposerCapabilities` summaries.
 - `ModelsPageState.connections` ⇦ `useHarnessConnections().connections` filtered to
-  `configured || ready`, plus Kortix managed; names from the locked language table; `usedBy` from
+  `configured || ready`, plus Kortix; names from the locked language table; `usedBy` from
   `active_for`; catalog counts from `model-catalog`/`llm-catalog`; subscriptions always
   "Models managed by Claude Code/Codex", never a count.
 - Change selector ⇦ `setActiveHarnessConnection` with optimistic revert on failure +

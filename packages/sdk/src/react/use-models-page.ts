@@ -37,9 +37,11 @@ const HARNESS_LABEL: Record<HarnessId, string> = {
 };
 
 /** Locked product language (handoff §2) — never surface backend kind ids,
- *  `managed_gateway`, `native_config`, or protocol names in the UI. */
+ *  `managed_gateway`, `native_config`, or protocol names in the UI. The
+ *  managed gateway is named plainly "Kortix" (never "Kortix managed" or
+ *  "managed gateway") — see {@link connectionExplainer} for its subtitle. */
 const CONNECTION_NAME: Record<HarnessAuthKind, string> = {
-  managed_gateway: 'Kortix managed',
+  managed_gateway: 'Kortix',
   claude_subscription: 'Claude subscription',
   codex_subscription: 'ChatGPT subscription',
   anthropic_api_key: 'Anthropic',
@@ -48,6 +50,16 @@ const CONNECTION_NAME: Record<HarnessAuthKind, string> = {
   anthropic_compatible: 'Custom endpoint',
   native_config: 'Harness-native configuration',
 };
+
+/** One-line explainer shown under the "Kortix" connection name — it is
+ *  built in and requires no setup, unlike every other connection kind. */
+const KORTIX_INCLUDED_EXPLAINER = 'Included — no setup needed';
+
+/** Subtitle copy for a connection kind, or `null` when the kind has none.
+ *  Currently only the managed gateway ("Kortix") carries one. */
+export function connectionExplainer(kind: HarnessAuthKind): string | null {
+  return kind === 'managed_gateway' ? KORTIX_INCLUDED_EXPLAINER : null;
+}
 
 /** Kinds whose model list is owned by the authenticated harness itself — a
  *  subscription (or a harness's own native config) never renders "0 models". */

@@ -21,7 +21,7 @@ import {
   CreditCard,
   FolderGit2,
   KeyRound,
-  Plus,
+  Sparkles,
   SlidersHorizontal,
   Star,
 } from 'lucide-react';
@@ -41,11 +41,13 @@ import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gat
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
+import { AUTO_MODEL_ID } from '@kortix/llm-catalog';
 import { featureFlags } from '@kortix/sdk/feature-flags';
 import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
-import { AutoModelToggle } from './auto-model-toggle';
+import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
+import { shouldShowModelSearch } from './harness-model-selector-helpers';
+import { modelSelectorContextLine, pickerGroupId } from './model-selector-helpers';
 import { shouldShowFreeTag } from './model-tags';
 import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
@@ -80,26 +82,6 @@ export function ConnectProviderDialog({
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
-
-// `auto` is a synthetic managed entry (not a real upstream model): grouped under
-// Kortix and — when exposed (see featureFlags.enableAutoModel) — rendered as a
-// special "smart routing" affordance rather than a normal list item. It stays in
-// this set so it groups under Kortix and is recognised as managed even while the
-// toggle is hidden.
-const MANAGED_MODEL_IDS = new Set<string>([...DEFAULT_MANAGED_MODEL_IDS, AUTO_MODEL_ID]);
-
-// The gateway exposes its whole catalog through a single `kortix` provider, with
-// model ids namespaced as `<provider>/<model>`. For the picker we split that
-// back out: platform-managed defaults stay under the "Kortix" group, while every
-// BYOK model surfaces under its real provider ("Anthropic", "OpenAI", …) — so a
-// connected provider reads as its own section, not buried in Kortix.
-function pickerGroupId(model: FlatModel): string {
-  if (model.providerID !== 'kortix' || MANAGED_MODEL_IDS.has(model.modelID)) {
-    return model.providerID;
-  }
-  const slash = model.modelID.indexOf('/');
-  return slash === -1 ? model.providerID : model.modelID.slice(0, slash);
-}
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
@@ -146,9 +128,6 @@ export function ModelSelector({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  // When AUTO is on, the manual provider list is hidden by default. This reveals
-  // it (so the user can switch to a specific model) without turning AUTO off yet.
-  const [expandManual, setExpandManual] = useState(false);
   // Where Upgrade / Connect provider should route, given the current route
   // context — shared with the chat input's full-block gate and onboarding so
   // they all open the exact same dialogs.
@@ -187,8 +166,8 @@ export function ModelSelector({
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretNames]);
 
-  // Free tier (free/no plan AND no active subscription) hides Kortix managed
-  // paid/AUTO models. Managed free models and connected BYOK providers remain.
+  // Free tier (free/no plan AND no active subscription) hides paid/AUTO
+  // Kortix models. Managed free models and connected BYOK providers remain.
   const { data: accountState } = useAccountState();
   const freeTier = useMemo(() => computeFreeTier(accountState), [accountState]);
 
@@ -197,20 +176,37 @@ export function ModelSelector({
     freeTier: llmGatewayEnabled && freeTier,
   });
 
+  const isAutoSelected =
+    featureFlags.enableAutoModel &&
+    selectedModel?.providerID === 'kortix' &&
+    selectedModel?.modelID === AUTO_MODEL_ID;
+
   const current = baseModels.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
-  const displayName = current?.modelName || unsetLabel;
+  // Plain-words trigger label (never a raw model id) — "Automatic" wins over
+  // whatever catalog name the synthetic auto entry happens to carry.
+  const displayName = isAutoSelected ? 'Automatic' : current?.modelName || unsetLabel;
 
   // Reset transient picker state when closing.
   useEffect(() => {
     if (!open) {
       setSearch('');
-      setExpandManual(false);
     }
   }, [open]);
 
   // ── Filtered + grouped models ──
+
+  // Ignores the current search query — used only to decide whether a search
+  // field earns its place at all (handoff-style "hide the catalog until
+  // asked"; see shouldShowModelSearch).
+  const usableModelCount = useMemo(() => {
+    return baseModels.filter((m) => {
+      if (m.providerID === 'kortix' && m.modelID === AUTO_MODEL_ID) return false;
+      return modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID });
+    }).length;
+  }, [baseModels, modelStore]);
+  const showSearch = shouldShowModelSearch(usableModelCount);
 
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
@@ -263,8 +259,13 @@ export function ModelSelector({
     return entries;
   }, [visibleModels, llmGatewayEnabled]);
 
-  // AUTO lives outside the provider groups — a standalone toggle. When it's on,
-  // the manual model list is hidden unless the user expands it.
+  // One-line "what will this agent run on" context header — only meaningful
+  // once the visible list resolves to a single connection/group.
+  const contextLine = useMemo(() => modelSelectorContextLine(grouped), [grouped]);
+
+  // Automatic — the recommended-default row, pinned first with a check when
+  // active. A regular list item, never a switch that can read "off" while
+  // still selected.
   const autoModel = useMemo(
     () =>
       featureFlags.enableAutoModel && llmGatewayEnabled && !freeTier
@@ -272,24 +273,6 @@ export function ModelSelector({
         : undefined,
     [baseModels, llmGatewayEnabled, freeTier],
   );
-
-  const isAutoSelected =
-    featureFlags.enableAutoModel &&
-    selectedModel?.providerID === 'kortix' &&
-    selectedModel?.modelID === AUTO_MODEL_ID;
-  // "On" is the collapsed active view; expanding the manual list to pick a
-  // specific model reads as off and reveals the providers. So the switch is on
-  // exactly when the manual list is hidden.
-  const autoOn = isAutoSelected && !expandManual;
-  const showManual = !autoOn;
-  const toggleAuto = () => {
-    if (!autoModel) return;
-    if (autoOn) setExpandManual(true);
-    else {
-      onSelect({ providerID: autoModel.providerID, modelID: autoModel.modelID });
-      setExpandManual(false);
-    }
-  };
 
   // ── Handlers ──
 
@@ -332,8 +315,8 @@ export function ModelSelector({
                   'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
                 )}
                 className={cn(
-                  'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200',
-                  open && 'bg-muted text-foreground',
+                  COMPOSER_PILL_TRIGGER_CLASS,
+                  open && COMPOSER_PILL_ACTIVE_CLASS,
                   disabled && 'cursor-not-allowed opacity-60',
                 )}
               >
@@ -353,60 +336,58 @@ export function ModelSelector({
         </Tooltip>
 
         <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-          {/* AUTO — standalone, above every provider. An elegant on/off control. */}
-          {autoModel && <AutoModelToggle autoOn={autoOn} onToggle={toggleAuto} />}
+          {/* Context header — the resolved connection in plain words. Muted,
+              not clickable; omitted once more than one group is visible. */}
+          {contextLine ? (
+            <div className="text-muted-foreground border-b px-4 py-2 text-xs">{contextLine}</div>
+          ) : null}
 
-          {showManual && <div className="bg-border/60 h-px" />}
+          {showSearch ? (
+            <CommandInput
+              compact
+              placeholder={tHardcodedUi.raw(
+                'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
+              )}
+              value={search}
+              onValueChange={setSearch}
+            />
+          ) : null}
 
-          {showManual ? (
-            <>
-              <CommandInput
-                compact
-                placeholder={tHardcodedUi.raw(
-                  'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
-                )}
-                value={search}
-                onValueChange={setSearch}
-                rightElement={
-                  <div className="-mr-0.5 flex shrink-0 items-center gap-0.5">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Connect a model service"
-                          onClick={() => handleOpenProviderModal('providers')}
-                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                        >
-                          <Plus className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Connect a model service
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label="Manage models"
-                          onClick={() => handleOpenProviderModal('models')}
-                          className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
-                        >
-                          <SlidersHorizontal className="size-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsSessionModelSelector.line251JsxTextManageModels',
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
+          <CommandList className="max-h-[380px]">
+            {/* Automatic — the recommended default, pinned first with a check
+                when active. A regular row, never a switch. */}
+            {autoModel ? (
+              <CommandGroup forceMount>
+                <CommandItem
+                  value="model-automatic"
+                  data-testid="model-auto-option"
+                  className={isAutoSelected ? 'bg-foreground/[0.06]' : undefined}
+                  onSelect={() => handleSelect(autoModel)}
+                >
+                  <span className="bg-primary/10 text-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
+                    <Sparkles className="size-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1 py-0.5">
+                    <div
+                      className={cn(
+                        'truncate text-sm leading-tight',
+                        isAutoSelected
+                          ? 'text-foreground font-semibold'
+                          : 'text-foreground/90 font-medium',
+                      )}
+                    >
+                      Automatic
+                    </div>
+                    <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                      Kortix picks the best model
+                    </p>
                   </div>
-                }
-              />
+                  {isAutoSelected && <Check className="text-foreground shrink-0" />}
+                </CommandItem>
+              </CommandGroup>
+            ) : null}
 
-              <CommandList className="max-h-[380px]">
-                {grouped.length > 0 ? (
+            {grouped.length > 0 ? (
                   <>
                     {grouped.map((group) => (
                       <CommandGroup
@@ -480,7 +461,7 @@ export function ModelSelector({
                       </CommandGroup>
                     ))}
                   </>
-                ) : (
+            ) : !autoModel ? (
                   <div className="px-3 py-5 text-center">
                     <div className="text-foreground text-sm font-medium">No models available</div>
                     <p className="text-muted-foreground mx-auto mt-1 max-w-[220px] text-xs leading-5">
@@ -502,9 +483,9 @@ export function ModelSelector({
                       </Button>
                     </div>
                   </div>
-                )}
-              </CommandList>
-              {defaultControls && selectedModel ? (
+            ) : null}
+          </CommandList>
+          {defaultControls && selectedModel ? (
                 <div className="border-border/60 flex flex-col gap-0.5 border-t p-1.5">
                   <button
                     type="button"
@@ -543,20 +524,19 @@ export function ModelSelector({
                       Set as default for {defaultControls.agentName}
                     </button>
                   ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="p-1.5 pt-0">
-              <button
-                type="button"
-                onClick={() => setExpandManual(true)}
-                className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center justify-center rounded-lg px-2.5 py-2 text-xs font-medium transition-colors duration-200"
-              >
-                Pick a specific model
-              </button>
             </div>
-          )}
+          ) : null}
+
+          {/* Footer — the giant catalog/connections live on the Models page,
+              not in this picker. */}
+          <button
+            type="button"
+            onClick={() => handleOpenProviderModal('models')}
+            className="text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] flex w-full items-center gap-2 border-t px-4 py-2.5 text-xs font-medium transition-colors duration-200"
+          >
+            <SlidersHorizontal className="size-3.5 shrink-0" />
+            Manage models
+          </button>
         </CommandPopoverContent>
       </CommandPopover>
     </>

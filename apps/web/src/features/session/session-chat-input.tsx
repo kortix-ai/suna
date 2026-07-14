@@ -11,6 +11,7 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
+import { ProviderLogo } from '@/features/providers/provider-branding';
 import { normalizeProviderList } from '@/hooks/runtime/provider-selection';
 import type {
   Agent,
@@ -39,6 +40,7 @@ import {
   Clock,
   Folder,
   ListTodo,
+  Lock,
   MessageSquare,
   Paperclip,
   Reply,
@@ -48,12 +50,14 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { shouldGroupAgentsByHarness } from './agent-selector-helpers';
 import { extractClipboardFiles } from './clipboard-files';
 import {
   mergeFailedSubmissionFiles,
   mergeFailedSubmissionMentions,
   mergeFailedSubmissionText,
 } from './composer-draft-recovery';
+import { COMPOSER_PILL_ACTIVE_CLASS, COMPOSER_PILL_DISABLED_CLASS, COMPOSER_PILL_TRIGGER_CLASS } from './composer-pill';
 import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
@@ -191,6 +195,25 @@ export function flattenModels(providers: ProviderListResponse | undefined): Flat
 // Agent Selector
 // ============================================================================
 
+/** Small inline harness icon — a brand mark, not a status tile, so it drops
+ *  the tinted background and shrinks to fit a text-xs row/pill. */
+const HARNESS_ICON_PROVIDER_ID: Record<KortixHarness, string> = {
+  claude: 'anthropic',
+  codex: 'codex',
+  opencode: 'opencode',
+  pi: 'pi',
+};
+
+function HarnessIcon({ harness, className }: { harness: KortixHarness; className?: string }) {
+  return (
+    <ProviderLogo
+      providerID={HARNESS_ICON_PROVIDER_ID[harness]}
+      size="small"
+      className={cn('size-3.5 rounded-none bg-transparent dark:bg-transparent', className)}
+    />
+  );
+}
+
 export function AgentSelector({
   agents,
   selectedAgent,
@@ -246,7 +269,15 @@ export function AgentSelector({
     });
   }, [primaryAgents, search]);
 
+  // Group headers only earn their place once agents actually span more than
+  // one harness — the common single-harness project gets a flat list.
+  const shouldGroup = useMemo(
+    () => shouldGroupAgentsByHarness(primaryAgents.map((a) => agentHarness(a))),
+    [primaryAgents],
+  );
+
   const groupedAgents = useMemo(() => {
+    if (!shouldGroup) return [{ harness: 'flat' as const, agents: filteredPrimary }];
     const groups = new Map<KortixHarness | 'other', Agent[]>();
     for (const agent of filteredPrimary) {
       const key = agentHarness(agent) ?? 'other';
@@ -256,7 +287,7 @@ export function AgentSelector({
     return order
       .map((harness) => ({ harness, agents: groups.get(harness) ?? [] }))
       .filter((group) => group.agents.length > 0);
-  }, [filteredPrimary]);
+  }, [filteredPrimary, shouldGroup]);
 
   const currentAgent = primaryAgents.find((a) => a.name === selectedAgent) || primaryAgents[0];
   const displayName = currentAgent?.name || 'Agent';
@@ -272,7 +303,7 @@ export function AgentSelector({
         className="max-w-[260px] text-xs"
         label={
           disabled
-            ? 'This agent is fixed when the session starts. Start a new session to use another harness.'
+            ? 'Agent is fixed for this session — start a new session to switch'
             : 'Choose the agent and ACP harness for this session'
         }
       >
@@ -286,25 +317,24 @@ export function AgentSelector({
             data-testid="agent-selector"
             data-harness={currentHarness?.id ?? 'unknown'}
             className={cn(
-              'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] duration-200 active:scale-[0.96]',
-              flash && 'bg-primary/[0.08] text-foreground',
-              open && 'bg-primary/[0.06] text-foreground',
-              disabled &&
-                'hover:text-muted-foreground cursor-not-allowed opacity-70 hover:bg-transparent',
+              COMPOSER_PILL_TRIGGER_CLASS,
+              flash && COMPOSER_PILL_ACTIVE_CLASS,
+              open && COMPOSER_PILL_ACTIVE_CLASS,
+              disabled && COMPOSER_PILL_DISABLED_CLASS,
             )}
           >
             <span className="max-w-[100px] truncate capitalize">{displayName}</span>
-            {currentHarness ? (
-              <span className="text-muted-foreground/60 hidden max-w-[80px] truncate sm:inline">
-                &bull; {currentHarness.shortLabel}
-              </span>
-            ) : null}
-            <ChevronDown
-              className={cn(
-                'size-3 opacity-50 transition-transform duration-200',
-                open && 'rotate-180',
-              )}
-            />
+            {currentHarness ? <HarnessIcon harness={currentHarness.id} /> : null}
+            {disabled ? (
+              <Lock className="size-3 shrink-0 opacity-60" />
+            ) : (
+              <ChevronDown
+                className={cn(
+                  'size-3 opacity-50 transition-transform duration-200',
+                  open && 'rotate-180',
+                )}
+              />
+            )}
           </button>
         </CommandPopoverTrigger>
       </Hint>
@@ -322,17 +352,21 @@ export function AgentSelector({
         <CommandList className="max-h-[320px]">
           {groupedAgents.map((group) => {
             const groupPresentation =
-              group.harness === 'other' ? null : harnessPresentation(group.harness);
+              shouldGroup && group.harness !== 'other' && group.harness !== 'flat'
+                ? harnessPresentation(group.harness)
+                : null;
             return (
               <CommandGroup
                 key={group.harness}
                 heading={
-                  <div className="flex items-center justify-between gap-2">
-                    <span>{groupPresentation?.label ?? 'Other agents'}</span>
-                    <span className="text-muted-foreground/50 tabular-nums">
-                      {group.agents.length}
-                    </span>
-                  </div>
+                  shouldGroup ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{groupPresentation?.label ?? 'Other agents'}</span>
+                      <span className="text-muted-foreground/50 tabular-nums">
+                        {group.agents.length}
+                      </span>
+                    </div>
+                  ) : undefined
                 }
                 forceMount
               >
@@ -367,7 +401,8 @@ export function AgentSelector({
                             {agent.name}
                           </div>
                           {presentation ? (
-                            <Badge variant="outline" size="xs" className="shrink-0">
+                            <Badge variant="outline" size="xs" className="shrink-0 gap-1 pl-1">
+                              <HarnessIcon harness={presentation.id} className="size-3" />
                               {presentation.shortLabel}
                             </Badge>
                           ) : null}
@@ -434,10 +469,7 @@ function VariantSelector({
         <button
           type="button"
           onClick={cycle}
-          className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1 rounded-full px-2.5 text-xs font-medium capitalize transition-colors',
-            selectedVariant && 'text-foreground',
-          )}
+          className={cn(COMPOSER_PILL_TRIGGER_CLASS, 'capitalize', selectedVariant && 'text-foreground')}
         >
           {displayName}
         </button>
@@ -1196,7 +1228,14 @@ export interface SessionChatInputProps {
   /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
   harnessModel?: Pick<
     HarnessModelSelectorProps,
-    'harness' | 'selectedModel' | 'onSelect' | 'presets' | 'connectionLabel' | 'connectionKind' | 'disabled'
+    | 'harness'
+    | 'selectedModel'
+    | 'onSelect'
+    | 'presets'
+    | 'connectionLabel'
+    | 'connectionKind'
+    | 'customAllowed'
+    | 'disabled'
   >;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;

@@ -344,7 +344,7 @@ export function useModelStore(
   allModels: FlatModel[],
   opts?: {
     connectedProviderIds?: Set<string>;
-    // Free tier (no active paid sub): hides every Kortix managed model.
+    // Free tier (no active paid sub): hides every Kortix (managed) model.
     freeTier?: boolean;
   },
 ) {

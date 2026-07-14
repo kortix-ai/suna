@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import {
   CompileRuntimeConfigError,
   compileRuntimeConfig,
+  syntheticLegacyRuntimeConfig,
 } from './compile-runtime-config';
 
 const manifest = parseYaml(`
@@ -116,5 +117,57 @@ agents:
   test('returns null for v1 and unknown inputs', () => {
     expect(compileRuntimeConfig({ kortix_version: 1 })).toBeNull();
     expect(compileRuntimeConfig({})).toBeNull();
+  });
+
+  test('v2 with no agents map compiles to the fully-granted legacy OpenCode plan', () => {
+    const plan = compileRuntimeConfig(parseYaml(`
+kortix_version: 2
+`) as Record<string, unknown>);
+    expect(plan).toMatchObject({
+      kind: 'acp', version: 2, defaultAgent: 'kortix',
+      runtimes: { opencode: { harness: 'opencode', configDir: '.kortix/opencode' } },
+      agents: {
+        kortix: {
+          runtime: 'opencode', harness: 'opencode', nativeAgent: null, enabled: true,
+          connectors: 'all', secrets: 'all', skills: 'all', kortixCli: 'all',
+        },
+      },
+    });
+  });
+
+  test('v2 with no agents map keeps a custom opencode config_dir', () => {
+    const plan = compileRuntimeConfig(parseYaml(`
+kortix_version: 2
+opencode:
+  config_dir: tools/opencode
+`) as Record<string, unknown>);
+    expect(plan?.runtimes.opencode.configDir).toBe('tools/opencode');
+  });
+
+  test('v2 default_agent naming a missing agent falls back to the first enabled agent', () => {
+    const plan = compileRuntimeConfig(parseYaml(`
+kortix_version: 2
+default_agent: ghost
+agents:
+  disabled-one: { enabled: false }
+  support: {}
+`) as Record<string, unknown>);
+    expect(plan?.defaultAgent).toBe('support');
+  });
+
+  test('v2 with agents but none enabled still refuses to compile', () => {
+    const broken = parseYaml(`
+kortix_version: 2
+agents:
+  off: { enabled: false }
+`) as Record<string, unknown>;
+    expect(() => compileRuntimeConfig(broken)).toThrow(CompileRuntimeConfigError);
+  });
+
+  test('syntheticLegacyRuntimeConfig is the no-manifest boot contract', () => {
+    expect(syntheticLegacyRuntimeConfig()).toMatchObject({
+      kind: 'acp', version: 2, defaultAgent: 'kortix',
+      agents: { kortix: { harness: 'opencode', nativeAgent: null, secrets: 'all' } },
+    });
   });
 });

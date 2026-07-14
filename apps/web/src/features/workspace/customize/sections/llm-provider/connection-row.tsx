@@ -26,7 +26,7 @@ function joinAnd(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
-function catalogLine(connection: ModelsPageConnection): string {
+export function catalogLine(connection: ModelsPageConnection): string {
   if (connection.catalogState === 'not-exposed') {
     return NOT_EXPOSED_TEXT[connection.kind] ?? 'Model catalog not exposed';
   }
@@ -36,9 +36,15 @@ function catalogLine(connection: ModelsPageConnection): string {
   return `${count} model${count === 1 ? '' : 's'} available`;
 }
 
-function metadataLine(connection: ModelsPageConnection): string {
+export function metadataLine(connection: ModelsPageConnection): string {
   if (connection.status === 'needs-attention') {
     return `Needs attention · ${connection.statusReason ?? 'Reconnect to continue'}`;
+  }
+  // The managed gateway ("Kortix") is always available, never "unused" the
+  // way a BYOK connection can be — "Included with Kortix" replaces the
+  // used-by clause instead of reading as "Not currently used".
+  if (connection.kind === 'managed_gateway') {
+    return `Included with Kortix · ${catalogLine(connection)}`;
   }
   const usedByText =
     connection.usedBy.length === 0

@@ -338,7 +338,17 @@ export async function resolveProjectComposerState(input: {
     connections,
     providers: configuredModelProviders(secrets.env),
     async capabilities(agentName, connectionId) {
-      const launch = compiled?.agents[agentName];
+      // The 'default' sentinel resolves to the compiled default agent — legacy
+      // callers (UI without an explicit agent, triggers, channels) never name
+      // a concrete agent, and the synthetic legacy plan only declares one.
+      if (!compiled) {
+        throw new Error(
+          'The project runtime configuration could not be read — check that the project repository is reachable and kortix.yaml parses.',
+        );
+      }
+      const launch =
+        compiled.agents[agentName] ??
+        (agentName === 'default' ? compiled.agents[compiled.defaultAgent] : undefined);
       if (!launch) throw new Error(`Agent "${agentName}" is not declared in kortix.yaml.`);
       const agent = agentView(launch);
       if (!agent.enabled) throw new Error(`Agent "${agentName}" is disabled.`);
