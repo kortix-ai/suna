@@ -58,6 +58,16 @@ SECRET_NAME="kortix-${ENV}-env"
 echo "▶ env=$ENV region=$REGION cluster=$CLUSTER service=$SERVICE container=$CONTAINER"
 echo "▶ image=$IMAGE  secrets<-$SECRET_NAME"
 
+# ── skip gracefully if this env's ECS service isn't built yet ────────────────
+# Lets the ECS-roll step live in EVERY env's CI before the staging/prod ECS infra
+# exists — it no-ops until Terraform creates the cluster+service, then auto-rolls.
+STATUS="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
+  --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null || true)"
+if [ "$STATUS" != "ACTIVE" ]; then
+  echo "⏭  ECS service $CLUSTER/$SERVICE not ACTIVE (got '${STATUS:-none}') — skipping ($ENV ECS infra not built yet)."
+  exit 0
+fi
+
 # ── resolve the secrets blob ARN (no hardcoded suffix) ───────────────────────
 SECRET_ARN="$(aws secretsmanager describe-secret --region "$REGION" \
   --secret-id "$SECRET_NAME" --query 'ARN' --output text)"
@@ -98,17 +108,13 @@ NEW_TD="$(aws ecs register-task-definition --region "$REGION" \
 echo "✔ registered $NEW_TD"
 
 # ── roll the service ─────────────────────────────────────────────────────────
-DESIRED="$(aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
-  --services "$SERVICE" --query 'services[0].desiredCount' --output text)"
-SCALE_ARG=()
-if [ "${DESIRED:-0}" -lt 1 ]; then
-  echo "▶ service desired=$DESIRED → scaling to 2"
-  SCALE_ARG=(--desired-count 2)
-fi
-
+# Point the service at the new revision and force a fresh deployment. We do NOT
+# change the desired count: whether ECS runs in parallel (dev/staging) or stays a
+# scaled-to-zero standby (prod, until a deliberate flip) is owned by Terraform's
+# desired_count / a manual scale, not by this roll.
 aws ecs update-service --region "$REGION" --cluster "$CLUSTER" --service "$SERVICE" \
-  --task-definition "$NEW_TD" --force-new-deployment "${SCALE_ARG[@]}" >/dev/null
-echo "✔ update-service issued"
+  --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+echo "✔ update-service issued (desired count unchanged)"
 
 if [ "$WAIT" = "1" ]; then
   echo "⏳ waiting for services-stable …"
