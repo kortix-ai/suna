@@ -12,10 +12,11 @@
  * is live we poll the sandbox's /question, relay any NEW question to Telegram as
  * an inline keyboard, and on a tap POST the answer back to unblock the agent.
  *
- * Reuses the reaper's in-process sandbox-call pattern (sandbox-busy-probe.ts):
- * resolve ingress + service key, sign a platform-admin user-context header, fetch.
- * The service key is cached in-process at sandbox creation, so this only works
- * from INSIDE the running API (a standalone probe gets no key).
+ * Auth mirrors the reaper (sandbox-busy-probe.ts): resolve the ingress and the
+ * sandbox's service key (stored in session_sandboxes.config, keyed by the
+ * EXTERNAL id sbx_…), then sign a platform_admin X-Kortix-User-Context with it so
+ * the daemon trusts the call without an API round-trip. Both the Bearer key and a
+ * parseable context are required — a missing one is rejected 401 "malformed".
  */
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
@@ -72,32 +73,49 @@ async function loadSessionSandbox(sessionId: string): Promise<SessionSandboxInfo
   };
 }
 
-/** Signed headers + base URL for calling this session's sandbox opencode server.
- *  null when the sandbox has no resolvable service key (unreachable box). */
+/** Base URL + upstream auth headers for this session's sandbox opencode server,
+ *  built exactly like the /v1/p proxy the web uses — so it works WITHOUT a
+ *  service key (platinum dev sandboxes have none; the per-link ingress token in
+ *  providerHeaders authenticates them). null only when the ingress can't be
+ *  resolved (no sandbox row / provider error). */
 async function sandboxCall(
   info: SessionSandboxInfo,
 ): Promise<{ url: string; headers: Record<string, string> } | null> {
-  const [link, serviceKey] = await Promise.all([
-    resolveSandboxIngress(info.externalId, { port: SANDBOX_PORT, transport: 'http' }),
-    resolveServiceKey(info.sandboxId),
-  ]);
-  if (!serviceKey) return null;
-  return {
-    url: link.url,
-    headers: {
-      ...link.headers,
-      Authorization: `Bearer ${serviceKey}`,
-      [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
-        {
-          userId: 'system:telegram-question-relay',
-          sandboxId: info.sandboxId,
-          sandboxRole: 'platform_admin',
-          scopes: [],
-        },
-        serviceKey,
-      ),
-    },
-  };
+  try {
+    // NB: resolveServiceKey / loadSandbox / resolveSandboxIngress all key off the
+    // EXTERNAL id (sbx_…) — loadSandbox queries `session_sandboxes WHERE
+    // external_id = ?` and reads config.serviceKey. Passing the internal sandbox
+    // UUID here silently misses the row → null key → 401. Use externalId.
+    const [link, serviceKey] = await Promise.all([
+      resolveSandboxIngress(info.externalId, { port: SANDBOX_PORT, transport: 'http' }),
+      resolveServiceKey(info.externalId),
+    ]);
+    if (!serviceKey) return null;
+    // Sign a synthetic platform_admin context directly (the sandbox-reaper
+    // pattern) rather than resolvePreviewUserContext — a system relay has no real
+    // user, and the daemon REQUIRES a parseable user-context (missing → 401
+    // "malformed"). The context is signed with the service key so the daemon
+    // trusts it without an API round-trip.
+    return {
+      url: link.url,
+      headers: {
+        ...link.headers,
+        Authorization: `Bearer ${serviceKey}`,
+        [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
+          {
+            userId: 'system:telegram-question-relay',
+            sandboxId: info.externalId,
+            sandboxRole: 'platform_admin',
+            scopes: [],
+          },
+          serviceKey,
+        ),
+      },
+    };
+  } catch (err) {
+    console.warn('[telegram-question] sandbox ingress failed for', info.externalId, err);
+    return null;
+  }
 }
 
 /** opencode's GET /question shape isn't pinned in a type we can import here, and
@@ -138,9 +156,13 @@ async function fetchPendingQuestions(info: SessionSandboxInfo): Promise<PendingQ
       headers: ctx.headers,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn('[telegram-question] GET /question ->', res.status);
+      return [];
+    }
     return normalizePendingQuestions(await res.json());
-  } catch {
+  } catch (err) {
+    console.warn('[telegram-question] GET /question error', err);
     return [];
   }
 }
@@ -211,11 +233,7 @@ export function startTelegramQuestionWatch(sessionId: string): void {
           if (relayed.has(key)) continue;
           relayed.add(key);
           pendingReplyTarget.set(sessionId, { requestID: q.requestID, info });
-          console.log('[telegram-question] relaying question', {
-            sessionId,
-            requestID: q.requestID,
-            count: q.questions.length,
-          });
+          console.log('[telegram-question] relaying question', sessionId, q.requestID);
           await postTelegramQuestionCard(sessionId, q.questions).catch((err) =>
             console.warn('[telegram-question] postCard failed', err),
           );
