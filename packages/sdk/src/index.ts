@@ -66,6 +66,8 @@ export {
   projectAcpUsage,
   projectAcpEndpoint,
   promptProjectAcpSession,
+  resolvePermissionActionOptions,
+  defaultAllowPermissionOption,
   type AcpClientOptions,
   type AcpContentBlock,
   type AcpEnvelope,
@@ -83,14 +85,17 @@ export {
   type AcpTurnState,
   type AcpToolCall,
   type AcpPlan,
+  type AcpPendingOption,
   type AcpPendingPermission,
   type AcpPendingPrompts,
   type AcpPendingQuestion,
   type AcpPendingQuestionItem,
+  type AcpSessionConfigOption,
   type AcpStoredEnvelope,
   type AcpTranscriptMessage,
   type AcpUsageCost,
   type AcpUsageProjection,
+  type ResolvedPermissionActions,
 } from './acp';
 
 /**

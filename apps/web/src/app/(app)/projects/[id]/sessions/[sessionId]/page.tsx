@@ -328,6 +328,8 @@ export default function ProjectSessionPage() {
                   acp={session.acp!}
                   sessionId={sessionId}
                   sessionTitle={`Session ${sessionId.slice(0, 8)}`}
+                  projectId={projectId}
+                  boundAgentName={session.agentName}
                   onReady={() => setChatReady(true)}
                 />
               )}

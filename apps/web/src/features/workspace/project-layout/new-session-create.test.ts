@@ -38,6 +38,13 @@ describe('buildNewSessionCreateInput', () => {
     ).toEqual({ agent_name: 'builder', sandbox_slug: 'node22' });
   });
 
+  it('forwards the picked branch as base_ref', () => {
+    expect(buildNewSessionCreateInput({ agent: 'builder', base_ref: 'feat/api-v2' })).toEqual({
+      agent_name: 'builder',
+      base_ref: 'feat/api-v2',
+    });
+  });
+
   it('binds only the sandbox slug when no agent is picked', () => {
     expect(buildNewSessionCreateInput({ sandbox_slug: 'node22' })).toEqual({
       sandbox_slug: 'node22',

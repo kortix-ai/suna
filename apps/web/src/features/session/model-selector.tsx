@@ -33,16 +33,17 @@ import {
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import { useModelStore } from '@/hooks/runtime/use-model-store';
+import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gateway-enabled';
 import type { ProviderListResponse } from '@/hooks/runtime/use-runtime-sessions';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { AUTO_MODEL_ID, DEFAULT_MANAGED_MODEL_IDS } from '@kortix/llm-catalog';
 import { featureFlags } from '@kortix/sdk/feature-flags';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import { useQuery } from '@tanstack/react-query';
 import { AutoModelToggle } from './auto-model-toggle';
 import { shouldShowFreeTag } from './model-tags';
@@ -158,13 +159,7 @@ export function ModelSelector({
   // /milano, /berlin, etc.) we filter to native (non-gateway) models.
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const { llmGatewayEnabled } = useProjectLlmGatewayEnabled(projectId);
   const baseModels = useMemo(() => {
     return llmGatewayEnabled ? models : models.filter((m) => m.providerID !== 'kortix');
   }, [models, llmGatewayEnabled]);
@@ -195,11 +190,7 @@ export function ModelSelector({
   // Free tier (free/no plan AND no active subscription) hides Kortix managed
   // paid/AUTO models. Managed free models and connected BYOK providers remain.
   const { data: accountState } = useAccountState();
-  const freeTier = useMemo(() => {
-    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
-    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
-    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-  }, [accountState]);
+  const freeTier = useMemo(() => computeFreeTier(accountState), [accountState]);
 
   const modelStore = useModelStore(baseModels, {
     connectedProviderIds,
@@ -382,7 +373,7 @@ export function ModelSelector({
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          aria-label="Add provider"
+                          aria-label="Connect a model service"
                           onClick={() => handleOpenProviderModal('providers')}
                           className="text-muted-foreground hover:text-foreground hover:bg-muted flex size-8 cursor-pointer items-center justify-center rounded-md transition-colors"
                         >
@@ -390,9 +381,7 @@ export function ModelSelector({
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsSessionModelSelector.line239JsxTextConnectProvider',
-                        )}
+                        Connect a model service
                       </TooltipContent>
                     </Tooltip>
                     <Tooltip>
@@ -509,7 +498,7 @@ export function ModelSelector({
                         onClick={() => handleOpenProviderModal('providers')}
                       >
                         <KeyRound className="size-3.5" />
-                        Connect provider
+                        Connect a model service
                       </Button>
                     </div>
                   </div>

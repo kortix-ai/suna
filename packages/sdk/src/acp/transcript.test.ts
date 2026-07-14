@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  defaultAllowPermissionOption,
   projectAcpChatItems,
   projectAcpContext,
   projectAcpPendingPrompts,
   projectAcpTurnState,
   projectAcpTranscript,
   projectAcpUsage,
+  resolvePermissionActionOptions,
+  type AcpPendingOption,
   type AcpStoredEnvelope,
 } from './transcript';
 
@@ -304,5 +307,60 @@ describe('projectAcpChatItems', () => {
         questions: [expect.objectContaining({ key: 'environment', question: 'Environment' })],
       }),
     ]);
+  });
+});
+
+describe('resolvePermissionActionOptions', () => {
+  test('maps standard ACP kinds onto the three-tier layout', () => {
+    const once: AcpPendingOption = { optionId: 'allow_once', kind: 'allow_once', label: 'Allow once' };
+    const always: AcpPendingOption = { optionId: 'allow_always', kind: 'allow_always', label: 'Always allow' };
+    const reject: AcpPendingOption = { optionId: 'reject_once', kind: 'reject_once', label: 'Reject' };
+    const resolved = resolvePermissionActionOptions([once, always, reject]);
+    expect(resolved.allowOnce).toBe(once);
+    expect(resolved.allowSession).toBe(always);
+    expect(resolved.deny).toBe(reject);
+    expect(resolved.extra).toEqual([]);
+  });
+
+  test('falls back to optionId pattern matching when kind is missing', () => {
+    const once: AcpPendingOption = { optionId: 'allow_once', label: 'Allow once' };
+    const deny: AcpPendingOption = { optionId: 'deny', label: 'No' };
+    const resolved = resolvePermissionActionOptions([deny, once]);
+    expect(resolved.allowOnce).toBe(once);
+    expect(resolved.deny).toBe(deny);
+    expect(resolved.allowSession).toBeNull();
+  });
+
+  test('treats the first unclaimed option as the primary allow action when no option looks like "allow once"', () => {
+    const custom: AcpPendingOption = { optionId: 'proceed', label: 'Proceed' };
+    const resolved = resolvePermissionActionOptions([custom]);
+    expect(resolved.allowOnce).toBe(custom);
+    expect(resolved.deny).toBeNull();
+    expect(resolved.extra).toEqual([]);
+  });
+
+  test('collects unmapped options as extras instead of dropping them', () => {
+    const once: AcpPendingOption = { optionId: 'allow_once', kind: 'allow_once', label: 'Allow once' };
+    const weird: AcpPendingOption = { optionId: 'sandbox_only', label: 'Sandbox only' };
+    const resolved = resolvePermissionActionOptions([once, weird]);
+    expect(resolved.allowOnce).toBe(once);
+    expect(resolved.extra).toEqual([weird]);
+  });
+
+  test('returns null for every slot when there are no options', () => {
+    const resolved = resolvePermissionActionOptions([]);
+    expect(resolved).toEqual({ allowOnce: null, allowSession: null, deny: null, extra: [] });
+  });
+});
+
+describe('defaultAllowPermissionOption', () => {
+  test('matches the option resolvePermissionActionOptions would allow-once with', () => {
+    const once: AcpPendingOption = { optionId: 'allow_once', kind: 'allow_once', label: 'Allow once' };
+    const always: AcpPendingOption = { optionId: 'allow_always', kind: 'allow_always', label: 'Always allow' };
+    expect(defaultAllowPermissionOption([always, once])).toBe(once);
+  });
+
+  test('returns null when there is nothing to approve', () => {
+    expect(defaultAllowPermissionOption([])).toBeNull();
   });
 });

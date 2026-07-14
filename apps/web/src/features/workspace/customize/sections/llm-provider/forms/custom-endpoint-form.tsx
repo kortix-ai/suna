@@ -4,15 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { successToast } from '@/components/ui/toast';
-import { refreshProjectProviderState } from '@/hooks/runtime/provider-refresh';
-import { deleteProjectSecret, upsertProjectSecret } from '@kortix/sdk/projects-client';
-import { invalidateComposerCapabilityQueries } from '@kortix/sdk/react';
+import { deleteProjectSecret, upsertProjectSecret, type HarnessId } from '@kortix/sdk/projects-client';
+import {
+  invalidateComposerCapabilityQueries,
+  refreshProjectProviderState,
+  type ModelsPageRuntime,
+} from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ChevronLeft } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useMemo, useState } from 'react';
 
-import type { CustomFormState } from './types';
+import type { CustomFormState } from '../types';
+import { applyUseWithSelections, defaultUseWithHarnesses, UseWithRuntimes } from './use-with-runtimes';
 
 const CUSTOM_PROVIDER_SECRET_NAMES = {
   protocol: 'CUSTOM_LLM_PROTOCOL',
@@ -22,25 +25,35 @@ const CUSTOM_PROVIDER_SECRET_NAMES = {
   name: 'CUSTOM_LLM_NAME',
 } as const;
 
-export function CustomProviderForm({
+const COMPATIBLE_HARNESSES: Record<CustomFormState['protocol'], HarnessId[]> = {
+  openai: ['codex', 'opencode', 'pi'],
+  anthropic: ['claude'],
+};
+
+export function CustomEndpointForm({
   projectId,
+  runtimes,
+  initialProtocol = 'openai',
   onBack,
   onDone,
 }: {
   projectId: string;
+  runtimes: ModelsPageRuntime[];
+  initialProtocol?: CustomFormState['protocol'];
   onBack: () => void;
   onDone: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CustomFormState>({
-    protocol: 'openai',
+    protocol: initialProtocol,
     name: '',
     baseURL: '',
     apiKey: '',
     modelId: '',
   });
   const [error, setError] = useState<string | null>(null);
+  const compatibleHarnesses = COMPATIBLE_HARNESSES[form.protocol];
+  const [useWith, setUseWith] = useState(() => defaultUseWithHarnesses(compatibleHarnesses, runtimes));
 
   const save = useMutation({
     mutationFn: async () => {
@@ -77,11 +90,13 @@ export function CustomProviderForm({
           () => undefined,
         );
       }
+      const kind = trimmed.protocol === 'openai' ? 'openai_compatible' : 'anthropic_compatible';
+      await applyUseWithSelections(projectId, kind, useWith);
     },
-    onSuccess: () => {
-      void invalidateComposerCapabilityQueries(queryClient, projectId);
+    onSuccess: async () => {
+      await invalidateComposerCapabilityQueries(queryClient, projectId);
       refreshProjectProviderState(queryClient, projectId);
-      successToast('Custom provider connected');
+      successToast('Custom endpoint connected');
       onDone();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save'),
@@ -92,14 +107,27 @@ export function CustomProviderForm({
     if (error) setError(null);
   }
 
+  function setProtocol(protocol: CustomFormState['protocol']) {
+    setForm((current) => ({ ...current, protocol }));
+    setUseWith(defaultUseWithHarnesses(COMPATIBLE_HARNESSES[protocol], runtimes));
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     save.mutate();
   }
 
+  const protocolHint = useMemo(
+    () =>
+      form.protocol === 'openai'
+        ? 'Available to Codex, OpenCode, and Pi.'
+        : 'Available to Claude Code. The endpoint must implement the Anthropic Messages API.',
+    [form.protocol],
+  );
+
   return (
-    <div className="space-y-3 px-5 pt-3 pb-5">
+    <div className="space-y-3">
       <Button
         type="button"
         variant="ghost"
@@ -107,24 +135,19 @@ export function CustomProviderForm({
         className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}
+        <ChevronLeft className="size-3.5 shrink-0" />
+        Back
       </Button>
 
-      <div className="border-border/50 bg-muted/20 rounded-2xl border px-3.5 py-3">
-        <div className="text-foreground text-sm font-medium">
-          {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}
-        </div>
+      <div className="bg-popover rounded-md border px-4 py-3">
+        <div className="text-foreground text-sm font-medium">Custom endpoint</div>
         <p className="text-muted-foreground mt-0.5 text-xs">
           Connect a REST endpoint once. Kortix translates it into native configuration for every
           compatible ACP harness.
         </p>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4"
-      >
+      <form onSubmit={handleSubmit} className="bg-popover space-y-3 rounded-md border px-4 py-4">
         <div>
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
             API compatibility
@@ -136,29 +159,23 @@ export function CustomProviderForm({
                 type="button"
                 size="sm"
                 variant={form.protocol === protocol ? 'secondary' : 'outline'}
-                onClick={() => setField('protocol', protocol)}
+                onClick={() => setProtocol(protocol)}
               >
                 {protocol === 'openai' ? 'OpenAI-compatible' : 'Anthropic-compatible'}
               </Button>
             ))}
           </div>
-          <p className="text-muted-foreground mt-1.5 text-xs text-pretty">
-            {form.protocol === 'openai'
-              ? 'Available to Codex, OpenCode, and Pi.'
-              : 'Available to Claude Code. The endpoint must implement the Anthropic Messages API.'}
-          </p>
+          <p className="text-muted-foreground mt-1.5 text-xs text-pretty">{protocolHint}</p>
         </div>
         <div>
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1020JsxTextDisplayName')}
+            Display name
           </label>
           <Input
             type="text"
             value={form.name}
             onChange={(e) => setField('name', e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
-            )}
+            placeholder="My LLM"
             className="h-9 text-sm"
             autoFocus
           />
@@ -166,13 +183,11 @@ export function CustomProviderForm({
 
         {form.apiKey.trim() && (
           <p className="text-muted-foreground text-xs">
-            Project-wide — every member of this project can use this provider.
+            Project-wide — every member of this project can use this endpoint.
           </p>
         )}
         <div>
-          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}
-          </label>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">Base URL</label>
           <Input
             type="text"
             value={form.baseURL}
@@ -183,23 +198,18 @@ export function CustomProviderForm({
         </div>
         <div>
           <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
-            <span className="text-muted-foreground/60 font-normal">(optional)</span>
+            API key <span className="text-muted-foreground/60 font-normal">(optional)</span>
           </label>
           <Input
             type="text"
             value={form.apiKey}
             onChange={(e) => setField('apiKey', e.target.value)}
-            placeholder={tHardcodedUi.raw(
-              'componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret',
-            )}
+            placeholder="sk-… — saved as a project secret"
             className="h-9 font-mono text-xs"
           />
         </div>
         <div>
-          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
-            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}
-          </label>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">Model ID</label>
           <Input
             type="text"
             value={form.modelId}
@@ -209,22 +219,23 @@ export function CustomProviderForm({
           />
         </div>
 
+        <UseWithRuntimes
+          compatible={compatibleHarnesses}
+          runtimes={runtimes}
+          value={useWith}
+          onChange={setUseWith}
+        />
+
         {error && (
-          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-md px-3 py-2 text-xs">
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         <Button type="submit" size="sm" className="px-4" disabled={save.isPending}>
-          {save.isPending ? (
-            <>
-              <Loading className="mr-1.5 size-3.5 shrink-0" />
-              Connecting…
-            </>
-          ) : (
-            'Connect provider'
-          )}
+          {save.isPending ? <Loading className="mr-1.5 size-3.5 shrink-0" /> : null}
+          Connect endpoint
         </Button>
       </form>
     </div>

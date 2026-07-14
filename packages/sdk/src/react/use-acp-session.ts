@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createAcpClient, projectAcpTurnState, type AcpContentBlock, type AcpEnvelope, type AcpInitializeResult, type AcpJsonRpcId, type AcpSessionConfigOption } from '../acp';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createAcpClient, defaultAllowPermissionOption, projectAcpPendingPrompts, projectAcpTurnState, type AcpContentBlock, type AcpEnvelope, type AcpInitializeResult, type AcpJsonRpcId, type AcpSessionConfigOption } from '../acp';
 import { projectAcpEndpoint } from '../acp/project-session';
 import { clearStartStash, readStartStash } from './session-start-stash';
 
@@ -98,6 +98,32 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
   const respondPermission = useCallback((id: AcpJsonRpcId, optionId?: string) => client.respond(id, { outcome: optionId ? { outcome: 'selected', optionId } : { outcome: 'cancelled' } }), [client]);
   const respondQuestion = useCallback((id: AcpJsonRpcId, content: Record<string, unknown>) => client.respond(id, { action: 'accept', content }), [client]);
   const rejectQuestion = useCallback((id: AcpJsonRpcId) => client.respond(id, { action: 'decline' }), [client]);
+
+  // "Allow everything for this session" — client-side backstop that
+  // auto-approves every pending permission request (and any that arrive while
+  // the flag is on) with the same option `defaultAllowPermissionOption` would
+  // pick for the "Allow once" button. Lives here (not the UI component) so it
+  // survives the permission prompt remounting and stays in lockstep with the
+  // envelopes this hook already owns.
+  const [autoApprovePermissions, setAutoApprovePermissions] = useState(false);
+  const autoRepliedPermissionIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!autoApprovePermissions) {
+      autoRepliedPermissionIds.current.clear();
+      return;
+    }
+    const pending = projectAcpPendingPrompts(envelopes).permissions;
+    for (const permission of pending) {
+      const key = JSON.stringify(permission.id);
+      if (autoRepliedPermissionIds.current.has(key)) continue;
+      autoRepliedPermissionIds.current.add(key);
+      const allow = defaultAllowPermissionOption(permission.options);
+      const optionId = allow ? String(allow.optionId ?? allow.id ?? allow.value ?? '') : undefined;
+      void Promise.resolve(respondPermission(permission.id, optionId)).catch(() => {
+        autoRepliedPermissionIds.current.delete(key);
+      });
+    }
+  }, [autoApprovePermissions, envelopes, respondPermission]);
   const cancel = useCallback(() => nativeId ? client.cancel(nativeId) : Promise.resolve(), [client, nativeId]);
   const setConfigOption = useCallback(async (configId: string, value: unknown) => {
     if (!nativeId) return false;
@@ -117,6 +143,8 @@ export function useAcpSession({ projectId, sessionId, runtimeSessionId, enabled 
     agentInfo: initializeResult?.agentInfo ?? null,
     authMethods: initializeResult?.authMethods ?? [],
     configOptions,
+    autoApprovePermissions,
+    setAutoApprovePermissions,
     send, cancel, setConfigOption, respondPermission, respondQuestion, rejectQuestion,
   };
 }

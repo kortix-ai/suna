@@ -13,15 +13,50 @@ import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { harnessPresentation, type KortixHarness } from '@kortix/sdk/react';
+import type { HarnessAuthKind } from '@kortix/sdk';
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+/** Connection kinds whose model list is owned by the authenticated harness
+ *  itself — never an empty "Available models" group, always the "Models
+ *  managed by <Harness>" teaching copy (handoff §5.1). */
+const SUBSCRIPTION_KINDS = new Set<HarnessAuthKind>(['claude_subscription', 'codex_subscription']);
+
+/**
+ * When the resolved connection is a subscription and the harness exposes no
+ * presets (its catalog is owned by the authenticated runtime, never
+ * fabricated from models.dev), the "Available models" group is replaced by
+ * this teaching copy instead of being silently omitted. `null` otherwise —
+ * callers fall through to their normal empty state.
+ */
+export function harnessSubscriptionCopy(input: {
+  connectionKind: HarnessAuthKind | null | undefined;
+  harnessLabel: string;
+  connectionLabel?: string | null;
+}): { title: string; subtitle: string } | null {
+  if (!input.connectionKind || !SUBSCRIPTION_KINDS.has(input.connectionKind)) return null;
+  return {
+    title: `Models managed by ${input.harnessLabel}`,
+    subtitle: `via ${input.connectionLabel || input.harnessLabel}`,
+  };
+}
+
 export interface HarnessModelSelectorProps {
-  harness: Exclude<KortixHarness, 'opencode'>;
+  /**
+   * Pre-session composers exclude 'opencode' (it uses the gateway catalog via
+   * {@link ModelSelector} instead). A live ACP session renders every harness —
+   * including opencode — through this component, since a live session's model
+   * pill is driven by the ACP session's own config options, not the gateway
+   * catalog.
+   */
+  harness: KortixHarness;
   selectedModel: string | null;
   onSelect: (model: string | null) => void;
   presets?: Array<{ id: string; name: string; source: string }>;
   connectionLabel?: string | null;
+  /** Resolved auth-kind for the active connection — drives the subscription
+   *  "Models managed by …" copy when there are no presets. */
+  connectionKind?: HarnessAuthKind | null;
   disabled?: boolean;
 }
 
@@ -38,11 +73,17 @@ export function HarnessModelSelector({
   onSelect,
   presets = [],
   connectionLabel,
+  connectionKind,
   disabled = false,
 }: HarnessModelSelectorProps) {
   const presentation = harnessPresentation(harness);
   const [open, setOpen] = useState(false);
   const [customModel, setCustomModel] = useState(selectedModel ?? '');
+  const subscriptionCopy = harnessSubscriptionCopy({
+    connectionKind,
+    harnessLabel: presentation.label,
+    connectionLabel,
+  });
 
   useEffect(() => {
     if (!open) setCustomModel(selectedModel ?? '');
@@ -139,6 +180,11 @@ export function HarnessModelSelector({
                 </CommandItem>
               ))}
             </CommandGroup>
+          ) : subscriptionCopy ? (
+            <div data-testid="harness-model-subscription-note" className="px-4 py-3">
+              <p className="text-foreground text-sm font-medium">{subscriptionCopy.title}</p>
+              <p className="text-muted-foreground mt-1 text-xs">{subscriptionCopy.subtitle}</p>
+            </div>
           ) : null}
         </CommandList>
 

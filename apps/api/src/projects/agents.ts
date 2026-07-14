@@ -406,11 +406,29 @@ export function resolveGovernedAgentGrant(
     return { ok: true, grant: grantFromLoadedAgents(agentName, loaded) };
   }
 
+  // A project with no declared agents at all (and no manifest parse errors)
+  // gives enforcement nothing to bind to — treat it like a pre-governance
+  // project so v2/OpenCode-era projects still boot their runtime default
+  // agent instead of every session being rejected.
+  if (loaded.specs.length === 0 && loaded.errors.length === 0) {
+    return { ok: true, grant: grantFromLoadedAgents(agentName, loaded) };
+  }
+
   const findDeclared = (name: string) => loaded.specs.find((s) => s.name === name && s.enabled);
 
   if (agentName === DEFAULT_AGENT_SENTINEL) {
     const declaredDefault = opts.projectDefaultAgent ?? loaded.defaultAgent;
     if (!declaredDefault) {
+      // No default_agent configured anywhere: resolve the sentinel to the
+      // first enabled declared agent (the same order the composer's own
+      // resolveNewSessionAgent uses) rather than refusing to start.
+      const first = loaded.specs.find((s) => s.enabled);
+      if (first) {
+        return {
+          ok: true,
+          grant: { agent: first.name, kortixCli: first.kortixCli, connectors: first.connectors, env: first.env },
+        };
+      }
       return {
         ok: false,
         code: 'AGENT_NOT_DECLARED',

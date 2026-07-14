@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildHarnessConnections,
+  computeDefaultAllowed,
   readHarnessAuthRoutes,
   resolveActiveHarnessConnection,
   writeHarnessAuthRoute,
@@ -79,5 +80,44 @@ describe('composer capability auth resolution', () => {
     expect(readHarnessAuthRoutes(metadata)).toEqual({ codex: 'codex_subscription' });
     expect(metadata.existing).toBe(true);
     expect(readHarnessAuthRoutes(writeHarnessAuthRoute(metadata, 'codex', null))).toEqual({});
+  });
+});
+
+describe('computeDefaultAllowed', () => {
+  test('no active connection never has a usable default', () => {
+    expect(computeDefaultAllowed({ active: null, harness: 'opencode', presetsLength: 0 })).toBe(false);
+    expect(computeDefaultAllowed({ active: null, harness: 'claude', presetsLength: 0 })).toBe(false);
+  });
+
+  test('Claude/Codex/Pi always own their default natively, regardless of presets', () => {
+    for (const harness of ['claude', 'codex', 'pi'] as const) {
+      expect(
+        computeDefaultAllowed({ active: 'claude_subscription', harness, presetsLength: 0 }),
+      ).toBe(true);
+    }
+  });
+
+  test('OpenCode with a non-empty preset catalog has a usable default', () => {
+    expect(
+      computeDefaultAllowed({ active: 'anthropic_api_key', harness: 'opencode', presetsLength: 3 }),
+    ).toBe(true);
+  });
+
+  test('OpenCode on a ready native config has a usable default even with an empty catalog', () => {
+    expect(
+      computeDefaultAllowed({ active: 'native_config', harness: 'opencode', presetsLength: 0 }),
+    ).toBe(true);
+  });
+
+  test('OpenCode on a ready managed gateway has a usable default (managed-auto) even with an empty catalog', () => {
+    expect(
+      computeDefaultAllowed({ active: 'managed_gateway', harness: 'opencode', presetsLength: 0 }),
+    ).toBe(true);
+  });
+
+  test('OpenCode on a non-managed, non-native connection with no presets requires an explicit model', () => {
+    expect(
+      computeDefaultAllowed({ active: 'openai_compatible', harness: 'opencode', presetsLength: 0 }),
+    ).toBe(false);
   });
 });

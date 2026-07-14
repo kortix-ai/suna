@@ -102,12 +102,7 @@ export function InstantSessionShell({
       // apps/api/src/projects/routes/shared.ts); the session page's
       // `migrateStash` hands this canonical stash off onto the resolved pin
       // once it exists.
-      writeStartStash(sessionId, {
-        prompt: text,
-        agent: options.agent ?? null,
-        model: options.model ?? null,
-        variant: options.variant ?? null,
-      });
+      writeStartStash(sessionId, { prompt: text });
       // File objects can't survive sessionStorage — stash them in the store the
       // real chat consumes (same path the home composer uses).
       if (files?.length) {

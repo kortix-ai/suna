@@ -70,6 +70,14 @@ interface ModelStore {
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
   /**
+   * Per-agent harness-native launch model override (Claude/Codex/Pi/Pi-style
+   * runtimes — a bare model id string, not a gateway `ModelKey`). Keyed by
+   * AGENT NAME, not harness: two different logical agents on the same harness
+   * must never share a remembered model, and switching agents must never leak
+   * a stale pick into a new context (composer-chat-input.tsx).
+   */
+  runtimeModel?: Record<string, string | undefined>;
+  /**
    * User-chosen global default model (set during onboarding setup wizard).
    * Takes priority over agent.model but yields to per-session and per-agent selections.
    * This ensures the user's explicit choice during setup is respected everywhere.
@@ -172,6 +180,29 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
     selectedModel: {},
     sessionModel: {},
   });
+}
+
+/**
+ * Non-hook API for the composer's harness-native launch model (Claude/Codex/
+ * Pi — a bare model id, not a gateway `ModelKey`) — round-trips without a
+ * React render, like {@link setGlobalDefaultModel}. Keyed by AGENT NAME, not
+ * harness: two different logical agents on the same harness must never share
+ * a remembered model, and switching agents must never leak a stale pick into
+ * a new context (composer-chat-input.tsx).
+ */
+export function getRuntimeModel(agentName: string): string | undefined {
+  return getStore().runtimeModel?.[agentName];
+}
+
+export function setRuntimeModel(agentName: string, model: string | undefined): void {
+  const s = getStore();
+  const next = { ...s.runtimeModel };
+  if (model) {
+    next[agentName] = model;
+  } else {
+    delete next[agentName];
+  }
+  setStore({ ...s, runtimeModel: next });
 }
 
 // ============================================================================
@@ -511,6 +542,15 @@ export function useModelStore(
     setStore({ ...s, sessionModel: next });
   }, []);
 
+  // Per-agent harness-native model override (see `ModelStore.runtimeModel` and
+  // the standalone `getRuntimeModel`/`setRuntimeModel`). Read off the
+  // subscribed `store` snapshot so it reacts like every other field here;
+  // `setRuntimeModel` is the stable standalone function.
+  const getRuntimeModelForAgent = useCallback(
+    (agentName: string): string | undefined => store.runtimeModel?.[agentName],
+    [store.runtimeModel],
+  );
+
   // Global default model (set during onboarding setup wizard)
   const globalDefault = useMemo(() => store.globalDefault, [store.globalDefault]);
 
@@ -545,6 +585,8 @@ export function useModelStore(
     setLastAgentName,
     getSessionModel,
     setSessionModel,
+    getRuntimeModel: getRuntimeModelForAgent,
+    setRuntimeModel,
     globalDefault,
     setGlobalDefault,
     /** All user visibility preferences (for manage models dialog) */

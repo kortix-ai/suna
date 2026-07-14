@@ -323,7 +323,7 @@ export default function LegacyThreadPage({
 			// `session.id` is the canonical Runtime session id (created directly by
 			// this hook) so the SDK's start-stash reads it back under the same id —
 			// no route/pin translation involved.
-			writeStartStash(session.id, { prompt, model: null, agent: null });
+			writeStartStash(session.id, { prompt });
 
 			openTabAndNavigate({
 				id: session.id,

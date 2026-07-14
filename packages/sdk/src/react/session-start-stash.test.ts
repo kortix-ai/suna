@@ -34,20 +34,10 @@ import {
 } from './session-start-stash';
 
 describe('writeStartStash / readStartStash', () => {
-  test('round-trips the modern stash shape', () => {
-    writeStartStash('ses_1', {
-      prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: 'thinking',
-    });
+  test('round-trips the modern stash shape (prompt only)', () => {
+    writeStartStash('ses_1', { prompt: 'hello' });
 
-    expect(readStartStash('ses_1')).toEqual({
-      prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: 'thinking',
-    });
+    expect(readStartStash('ses_1')).toEqual({ prompt: 'hello' });
   });
 
   test('returns null when nothing is stashed', () => {
@@ -55,68 +45,47 @@ describe('writeStartStash / readStartStash', () => {
   });
 
   test('clearStartStash removes the modern key', () => {
-    writeStartStash('ses_1', { prompt: 'hi', model: null, agent: null });
+    writeStartStash('ses_1', { prompt: 'hi' });
     clearStartStash('ses_1');
     expect(sessionStorage.getItem(startStashKey('ses_1'))).toBeNull();
     expect(readStartStash('ses_1')).toBeNull();
+  });
+
+  // model/agent/variant used to ride along on StartStash; nothing ever read
+  // them back (the execution route is resolved once at session create time
+  // and ACP session/prompt never carries a model override). A writer that
+  // still passes them (an out-of-partition producer not yet migrated) is
+  // harmless — the extra keys round-trip through JSON but are simply unread.
+  test('tolerates a writer that still passes the retired agent/model/variant fields', () => {
+    writeStartStash('ses_legacy_fields', {
+      prompt: 'hello',
+      ...({ agent: 'build', model: { providerID: 'kortix', modelID: 'auto' }, variant: 'thinking' } as any),
+    });
+
+    expect(readStartStash('ses_legacy_fields')?.prompt).toBe('hello');
   });
 });
 
 describe('readStartStash legacy compatibility', () => {
   // Several web "new session" producers (dashboard, workspace, legacy composer)
-  // wrote the pre-SDK shape directly: a bare prompt string plus an optional
-  // JSON options blob under runtime-specific raw keys. The SDK's read path
-  // must keep understanding that shape while writing the canonical stash.
-  test('reads a legacy bare prompt with no options', () => {
+  // wrote the pre-SDK shape directly: a bare prompt string under a
+  // runtime-specific raw key. The SDK's read path must keep understanding
+  // that shape while writing the canonical stash.
+  test('reads a legacy bare prompt', () => {
     sessionStorage.setItem('opencode_pending_prompt:ses_2', 'do the thing');
-    expect(readStartStash('ses_2')).toEqual({
-      prompt: 'do the thing',
-      model: null,
-      agent: null,
-      variant: null,
-    });
-  });
-
-  test('reads legacy options (object model + agent + variant)', () => {
-    sessionStorage.setItem('opencode_pending_prompt:ses_3', 'do the thing');
-    sessionStorage.setItem(
-      'opencode_pending_options:ses_3',
-      JSON.stringify({
-        agent: 'build',
-        model: { providerID: 'kortix', modelID: 'auto' },
-        variant: 'thinking',
-      }),
-    );
-    expect(readStartStash('ses_3')).toEqual({
-      prompt: 'do the thing',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: 'thinking',
-    });
-  });
-
-  test('parses a legacy string model ("provider/model")', () => {
-    sessionStorage.setItem('opencode_pending_prompt:ses_4', 'do the thing');
-    sessionStorage.setItem(
-      'opencode_pending_options:ses_4',
-      JSON.stringify({ model: 'anthropic/claude-opus' }),
-    );
-    expect(readStartStash('ses_4')?.model).toEqual({
-      providerID: 'anthropic',
-      modelID: 'claude-opus',
-    });
+    expect(readStartStash('ses_2')).toEqual({ prompt: 'do the thing' });
   });
 
   test('the modern stash wins over a legacy one under the same id', () => {
     sessionStorage.setItem('opencode_pending_prompt:ses_5', 'legacy prompt');
-    writeStartStash('ses_5', { prompt: 'modern prompt', model: null, agent: null });
+    writeStartStash('ses_5', { prompt: 'modern prompt' });
     expect(readStartStash('ses_5')?.prompt).toBe('modern prompt');
   });
 
   test('clearStartStash removes both the modern and legacy keys', () => {
     sessionStorage.setItem('opencode_pending_prompt:ses_6', 'legacy prompt');
     sessionStorage.setItem('opencode_pending_options:ses_6', JSON.stringify({ agent: 'build' }));
-    writeStartStash('ses_6', { prompt: 'modern prompt', model: null, agent: null });
+    writeStartStash('ses_6', { prompt: 'modern prompt' });
 
     clearStartStash('ses_6');
 
@@ -127,7 +96,7 @@ describe('readStartStash legacy compatibility', () => {
 });
 
 describe('migrateLegacyStash', () => {
-  test('moves a differently-keyed prompt + options onto the canonical stash', () => {
+  test('moves a differently-keyed legacy prompt onto the canonical stash', () => {
     sessionStorage.setItem('project_pending_prompt:proj-ses-1', 'build me a widget');
     sessionStorage.setItem(
       'project_pending_options:proj-ses-1',
@@ -140,12 +109,7 @@ describe('migrateLegacyStash', () => {
       'oc_target',
     );
 
-    expect(readStartStash('oc_target')).toEqual({
-      prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: null,
-    });
+    expect(readStartStash('oc_target')).toEqual({ prompt: 'build me a widget' });
     // Source keys are always cleared.
     expect(sessionStorage.getItem('project_pending_prompt:proj-ses-1')).toBeNull();
     expect(sessionStorage.getItem('project_pending_options:proj-ses-1')).toBeNull();
@@ -157,7 +121,7 @@ describe('migrateLegacyStash', () => {
   });
 
   test('never clobbers a stash the target already has', () => {
-    writeStartStash('oc_target3', { prompt: 'already here', model: null, agent: null });
+    writeStartStash('oc_target3', { prompt: 'already here' });
     sessionStorage.setItem('project_pending_prompt:proj-ses-3', 'a different prompt');
 
     migrateLegacyStash(
@@ -176,61 +140,29 @@ describe('migrateStash', () => {
   // Producers that already write the canonical shape (writeStartStash) key it
   // by a route/project id before the real Runtime session id exists; a later
   // render resolves the real id and needs to hand the stash off. Unlike
-  // `migrateLegacyStash` (which only understands a raw bare-prompt + options
-  // pair at arbitrary keys), `migrateStash` reads the source via
-  // `readStartStash`, so it understands a canonical JSON stash as the source.
+  // `migrateLegacyStash` (which only understands a raw bare-prompt at an
+  // arbitrary key), `migrateStash` reads the source via `readStartStash`, so
+  // it understands a canonical JSON stash as the source.
   test('moves a canonical stash from one session id to another', () => {
-    writeStartStash('route_1', {
-      prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: 'thinking',
-    });
+    writeStartStash('route_1', { prompt: 'build me a widget' });
 
     migrateStash('route_1', 'oc_1');
 
-    expect(readStartStash('oc_1')).toEqual({
-      prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'auto' },
-      agent: 'build',
-      variant: 'thinking',
-    });
+    expect(readStartStash('oc_1')).toEqual({ prompt: 'build me a widget' });
     // Source is always cleared, canonical key included.
     expect(sessionStorage.getItem(startStashKey('route_1'))).toBeNull();
     expect(readStartStash('route_1')).toBeNull();
   });
 
-  test('moves a canonical stash with only some options set', () => {
-    writeStartStash('route_2', { prompt: 'do a thing', model: null, agent: 'plan' });
-
-    migrateStash('route_2', 'oc_2');
-
-    expect(readStartStash('oc_2')).toEqual({
-      prompt: 'do a thing',
-      model: null,
-      agent: 'plan',
-    });
-  });
-
   test('a legacy bare-prompt source still migrates', () => {
     sessionStorage.setItem('opencode_pending_prompt:route_3', 'legacy prompt');
-    sessionStorage.setItem(
-      'opencode_pending_options:route_3',
-      JSON.stringify({ agent: 'build', variant: 'thinking' }),
-    );
 
     migrateStash('route_3', 'oc_3');
 
-    expect(readStartStash('oc_3')).toEqual({
-      prompt: 'legacy prompt',
-      model: null,
-      agent: 'build',
-      variant: 'thinking',
-    });
+    expect(readStartStash('oc_3')).toEqual({ prompt: 'legacy prompt' });
     // Both the canonical and legacy source keys are cleared.
     expect(sessionStorage.getItem(startStashKey('route_3'))).toBeNull();
     expect(sessionStorage.getItem('opencode_pending_prompt:route_3')).toBeNull();
-    expect(sessionStorage.getItem('opencode_pending_options:route_3')).toBeNull();
   });
 
   test('source is always cleared, even when there is nothing to migrate', () => {
@@ -240,8 +172,8 @@ describe('migrateStash', () => {
   });
 
   test('never clobbers a stash the target already has', () => {
-    writeStartStash('oc_4', { prompt: 'already here', model: null, agent: null });
-    writeStartStash('route_4', { prompt: 'a different prompt', model: null, agent: null });
+    writeStartStash('oc_4', { prompt: 'already here' });
+    writeStartStash('route_4', { prompt: 'a different prompt' });
 
     migrateStash('route_4', 'oc_4');
 

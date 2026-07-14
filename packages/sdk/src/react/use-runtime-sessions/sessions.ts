@@ -16,7 +16,7 @@ import {
 import { getFileStatus } from '../../core/files/client';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { getLSCache, setLSCache, LS_SESSIONS } from './shared';
-import { buildRuntimeSessionCreateInput } from './session-create-input';
+import { buildRuntimeSessionCreateInput, type RuntimeSessionCreateInput } from './session-create-input';
 
 // ============================================================================
 // Session Hooks
@@ -88,7 +88,13 @@ export function useCreateRuntimeSession() {
   const projectId = useCurrentRuntime((s) => s.projectId);
 
   return useMutation({
-    mutationFn: async (options: { directory?: string; title?: string; initialPrompt?: string } | void) => {
+    mutationFn: async (
+      options:
+        | (Pick<RuntimeSessionCreateInput, 'title' | 'initialPrompt' | 'agentName' | 'connectionId' | 'modelSelection'> & {
+            directory?: string;
+          })
+        | void,
+    ) => {
       if (!projectId) throw new Error('Create a session from a Kortix project');
       const opts = options || {};
       return projectSessionToLegacyView(

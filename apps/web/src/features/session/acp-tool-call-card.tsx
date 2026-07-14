@@ -2,8 +2,8 @@
 
 import type { AcpPlan, AcpToolCall } from '@kortix/sdk';
 import type { ToolPart } from '@/ui';
-import { ListTodo, Terminal } from 'lucide-react';
-import { ToolPartRenderer } from './tool-renderers';
+import { ListTodo } from 'lucide-react';
+import { BasicTool, ToolPartRenderer } from './tool-renderers';
 
 export function AcpToolCallCard({ tool, sessionId, compact = false }: { tool: AcpToolCall; sessionId: string; compact?: boolean }) {
   return <ToolPartRenderer part={acpToolCallToPart(tool, sessionId)} sessionId={sessionId} defaultOpen={!compact && (tool.status === 'failed' || tool.status === 'error')} />;
@@ -34,7 +34,10 @@ export function acpToolCallToPart(tool: AcpToolCall, sessionId: string): ToolPar
   } as ToolPart;
 }
 
-function acpToolName(tool: AcpToolCall): string {
+/** Classifies an ACP tool call into the canonical tool-renderer name used to
+ *  both pick a renderer (`ToolPartRenderer`) and group same-kind runs in the
+ *  transcript (see `acp-turn-grouping.ts`). */
+export function acpToolName(tool: AcpToolCall): string {
   const hint = `${tool.toolKind ?? ''} ${tool.title}`.toLowerCase();
   if (/execute|terminal|shell|command|bash/.test(hint)) return 'bash';
   if (/apply.?patch|diff|patch/.test(hint)) return 'apply_patch';
@@ -72,12 +75,23 @@ function valueText(value: unknown): string {
 }
 
 export function AcpPlanCard({ plan }: { plan: AcpPlan }) {
+  const count = plan.entries.length;
   return (
-    <div className="bg-popover rounded-md border px-3 py-3">
-      <div className="mb-2 flex items-center gap-2 text-sm font-medium"><ListTodo className="size-4" />Plan</div>
-      {plan.entries.length ? (
-        <div className="space-y-1.5">{plan.entries.map((entry, index) => <div key={index} className="text-muted-foreground flex gap-2 text-sm"><span className="tabular-nums">{index + 1}.</span><span>{typeof entry === 'string' ? entry : JSON.stringify(entry)}</span></div>)}</div>
-      ) : <div className="text-muted-foreground flex items-center gap-2 text-sm"><Terminal className="size-4" />No plan entries</div>}
-    </div>
+    <BasicTool
+      icon={<ListTodo />}
+      trigger={{ title: 'Plan', subtitle: count ? `${count} step${count > 1 ? 's' : ''}` : 'No plan entries' }}
+      defaultOpen={count > 0}
+    >
+      {count ? (
+        <div className="space-y-1.5 px-3 py-2">
+          {plan.entries.map((entry, index) => (
+            <div key={index} className="text-muted-foreground flex gap-2 text-sm">
+              <span className="tabular-nums">{index + 1}.</span>
+              <span>{typeof entry === 'string' ? entry : JSON.stringify(entry)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </BasicTool>
   );
 }

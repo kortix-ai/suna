@@ -58,7 +58,6 @@ import { resolveComposerResetOnSend } from './composer-reset';
 import { HarnessModelSelector, type HarnessModelSelectorProps } from './harness-model-selector';
 import {
   NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-  NO_MODEL_AVAILABLE_MESSAGE,
   isModelRequiredButUnavailable,
 } from './model-availability';
 import { ModelConnectionBar } from './model-connection-gate';
@@ -1197,7 +1196,7 @@ export interface SessionChatInputProps {
   /** Harness-owned default/custom model selection for Claude, Codex, and Pi. */
   harnessModel?: Pick<
     HarnessModelSelectorProps,
-    'harness' | 'selectedModel' | 'onSelect' | 'presets' | 'connectionLabel'
+    'harness' | 'selectedModel' | 'onSelect' | 'presets' | 'connectionLabel' | 'connectionKind' | 'disabled'
   >;
   /** Optional "set as default" controls for the model picker (account/per-agent). */
   modelDefaultControls?: ModelDefaultControls;
@@ -1229,6 +1228,18 @@ export interface SessionChatInputProps {
   modelsLoading?: boolean;
   /** Server-authoritative auth/model preflight blocker for the selected agent. */
   composerBlockingReason?: string | null;
+  /** ONE direct action derived from `composerBlockingReason` (see
+   *  `deriveComposerBlockingAction`) — e.g. "Connect Claude Code" or "Choose a
+   *  model for Local vLLM". Replaces the generic "No models available"
+   *  copy for agents governed by composer-capabilities. */
+  composerBlockingActionLabel?: string | null;
+  /** True when this composer's send gate is governed by composer-capabilities
+   *  (a real project + resolved agent) — makes `composerBlockingReason` the
+   *  ONLY hard send gate and turns off the legacy catalog-entitlement gate
+   *  (`hasSelectableModels`/`NO_MODEL_AVAILABLE_ACTION_MESSAGE`). False for
+   *  hosts with no capability signal (e.g. the instance dashboard's
+   *  pure-gateway composer), which keep the legacy gate unchanged. */
+  composerCapabilityGoverned?: boolean;
   /** Auto-focus the textarea on mount (default: true on desktop) */
   autoFocus?: boolean;
   placeholder?: string;
@@ -1322,6 +1333,8 @@ export function SessionChatInput({
   modelRequired = false,
   modelsLoading = false,
   composerBlockingReason = null,
+  composerBlockingActionLabel = null,
+  composerCapabilityGoverned = false,
   autoFocus,
   placeholder = 'Ask anything...',
   prefill = null,
@@ -1770,11 +1783,16 @@ export function SessionChatInput({
     }
   }, [mentionItems.length]);
 
-  const modelUnavailable = isModelRequiredButUnavailable({
-    modelRequired,
-    selectedModel,
-    lockForQuestion,
-  });
+  // composer-capabilities (`composerBlockingReason`) is the ONLY hard send
+  // gate for agents it governs (a real project + resolved agent — see
+  // `composerCapabilityGoverned`). The legacy catalog-entitlement gate below
+  // (`hasSelectableModels`/`NO_MODEL_AVAILABLE_ACTION_MESSAGE`) only still
+  // applies to hosts with no capability signal at all (e.g. the instance
+  // dashboard's pure-gateway composer) so that path is untouched.
+  const legacyModelGateActive = !composerCapabilityGoverned;
+  const modelUnavailable =
+    legacyModelGateActive &&
+    isModelRequiredButUnavailable({ modelRequired, selectedModel, lockForQuestion });
   // Drives the "connect a model" bar under the input. Two distinct dead-end
   // states both surface it — either way the composer cannot send and needs to
   // say why:
@@ -1790,24 +1808,24 @@ export function SessionChatInput({
   // on half-loaded data and vanishing when the account state arrives.
   const { hasSelectableModels, entitlementsPending } = useModelConnectionGate(models);
   const noModelsConnected =
+    legacyModelGateActive &&
     modelRequired &&
     !lockForQuestion &&
     !modelsLoading &&
     !entitlementsPending &&
     (!selectedModel || !hasSelectableModels);
   const canSubmit = text.trim().length > 0 || attachedFiles.length > 0;
-  const capabilityBlocked = !modelsLoading && Boolean(composerBlockingReason);
+  const capabilityBlocked =
+    composerCapabilityGoverned && !modelsLoading && Boolean(composerBlockingReason);
   const submitDisabled = disabled || modelUnavailable || capabilityBlocked || lockForApproval;
 
   const handleSubmit = useCallback(async () => {
     if (capabilityBlocked) {
-      toast.error(composerBlockingReason || 'This agent is not ready to start.');
+      toast.error(composerBlockingActionLabel || composerBlockingReason || 'This agent is not ready to start.');
       return;
     }
     if (modelUnavailable) {
-      toast.error(NO_MODEL_AVAILABLE_MESSAGE, {
-        description: NO_MODEL_AVAILABLE_ACTION_MESSAGE,
-      });
+      toast.error(NO_MODEL_AVAILABLE_ACTION_MESSAGE);
       return;
     }
 
@@ -1911,6 +1929,7 @@ export function SessionChatInput({
     modelUnavailable,
     capabilityBlocked,
     composerBlockingReason,
+    composerBlockingActionLabel,
     clearOnSend,
     onSend,
     isBusy,
@@ -2531,7 +2550,11 @@ export function SessionChatInput({
                             }
                             onClick={handleSubmit}
                             aria-label={
-                              modelUnavailable ? NO_MODEL_AVAILABLE_ACTION_MESSAGE : 'Send message'
+                              capabilityBlocked
+                                ? composerBlockingActionLabel || composerBlockingReason || 'Blocked'
+                                : modelUnavailable
+                                  ? NO_MODEL_AVAILABLE_ACTION_MESSAGE
+                                  : 'Send message'
                             }
                             className="h-8 w-8 flex-shrink-0 rounded-full p-0"
                           >
@@ -2543,9 +2566,13 @@ export function SessionChatInput({
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      {modelUnavailable && (
+                      {(capabilityBlocked || modelUnavailable) && (
                         <TooltipContent side="top" className="max-w-[260px] text-xs">
-                          <p>{NO_MODEL_AVAILABLE_ACTION_MESSAGE}</p>
+                          <p>
+                            {capabilityBlocked
+                              ? composerBlockingActionLabel || composerBlockingReason
+                              : NO_MODEL_AVAILABLE_ACTION_MESSAGE}
+                          </p>
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -2559,6 +2586,7 @@ export function SessionChatInput({
       <ModelConnectionBar
         show={noModelsConnected || capabilityBlocked}
         reason={capabilityBlocked ? composerBlockingReason : null}
+        action={capabilityBlocked ? composerBlockingActionLabel : null}
       />
     </div>
   );

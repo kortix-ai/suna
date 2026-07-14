@@ -62,14 +62,26 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
 
 /**
  * Non-blocking variant of the gate — a slim status strip that slides out from
- * under the chat input card (the composer stays visible; sends are already
- * disabled by `modelUnavailable`). Left side says what's wrong, right side
- * offers the same two ways out as the full gate.
+ * under the chat input card (the composer stays visible; sends may already be
+ * disabled — see `capabilityBlocked` / legacy `modelUnavailable` in
+ * `session-chat-input.tsx`). Left side says what's wrong, right side offers a
+ * way out.
  *
  * `show` must only flip on settled data (see `entitlementsPending`) — the
  * animation assumes it renders once with the final answer, not per-query.
  */
-export function ModelConnectionBar({ show, reason }: { show: boolean; reason?: string | null }) {
+export function ModelConnectionBar({
+  show,
+  reason,
+  action,
+}: {
+  show: boolean;
+  reason?: string | null;
+  /** ONE direct action for a capability-governed block (e.g. "Connect Claude
+   *  Code"), see `deriveComposerBlockingAction`. Replaces the generic
+   *  Upgrade + Connect model pair with the precise next step. */
+  action?: string | null;
+}) {
   const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
   const reduceMotion = useReducedMotion();
 
@@ -108,21 +120,33 @@ export function ModelConnectionBar({ show, reason }: { show: boolean; reason?: s
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={openUpgrade}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
-                  >
-                    <CreditCard className="size-3.5" />
-                    Upgrade
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openConnectProvider('providers')}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
-                  >
-                    Connect model
-                  </button>
+                  {action ? (
+                    <button
+                      type="button"
+                      onClick={() => openConnectProvider('providers')}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
+                    >
+                      {action}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={openUpgrade}
+                        className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
+                      >
+                        <CreditCard className="size-3.5" />
+                        Upgrade
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openConnectProvider('providers')}
+                        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex h-7 cursor-pointer items-center rounded-full px-3 text-xs font-medium transition-[background-color,transform] active:scale-[0.96]"
+                      >
+                        Connect model
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </motion.div>

@@ -269,6 +269,27 @@ function modelPresets(kind: HarnessAuthKind, env: Record<string, string>, projec
   return [];
 }
 
+/**
+ * Whether a resolved connection has a usable default model with no explicit
+ * choice needed (§9 "A valid harness default does not require the user to
+ * select a model", docs/specs/2026-07-14-provider-auth-model-management.md).
+ * Claude/Codex/Pi always own their default natively. OpenCode is the one
+ * harness that consumes an explicit launch model — but a preset catalog OR a
+ * ready managed-gateway route (managed-auto) is itself a usable default; only
+ * a genuinely empty, non-managed catalog (e.g. a custom endpoint with no
+ * configured default model) requires the user to pick one. Exported (and
+ * kept pure) so this rule is unit-testable without a compiled runtime config.
+ */
+export function computeDefaultAllowed(input: {
+  active: HarnessAuthKind | null;
+  harness: HarnessId;
+  presetsLength: number;
+}): boolean {
+  if (!input.active) return false;
+  if (input.harness !== 'opencode') return true;
+  return input.presetsLength > 0 || input.active === 'native_config' || input.active === 'managed_gateway';
+}
+
 function agentView(agent: LogicalAgentLaunchPlan) {
   return {
     name: agent.name,
@@ -345,7 +366,7 @@ export async function resolveProjectComposerState(input: {
         : active === 'native_config' || active === 'claude_subscription' || active === 'codex_subscription'
           ? 'harness-catalog'
           : 'launch-override';
-      const defaultAllowed = Boolean(active) && (agent.harness !== 'opencode' || presets.length > 0 || active === 'native_config');
+      const defaultAllowed = computeDefaultAllowed({ active, harness: agent.harness, presetsLength: presets.length });
       const blockingReason = resolved.reason ?? (!defaultAllowed ? `No usable model is available for ${agent.harness}.` : null);
       return {
         agent,

@@ -11,7 +11,11 @@ import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { createProjectSession, getProjectDetail } from '@kortix/sdk/projects-client';
+import {
+  createProjectSession,
+  getProjectDetail,
+  type CreateProjectSessionInput,
+} from '@kortix/sdk/projects-client';
 import { prefetchSessionStart } from '@kortix/sdk/react';
 
 /**
@@ -52,7 +56,16 @@ export function useNewProjectSession(projectId: string | undefined) {
       // match the agent the composer sends on the first prompt — the API proxy
       // rejects any prompt whose `agent` differs from the session's bound agent
       // with 409 AGENT_SWITCH_REQUIRES_NEW_SESSION (sessions are agent-immutable).
-      create?: { sandbox_slug?: string; agent_name?: string };
+      // `connection_id`/`model_selection` mirror the same fields on
+      // `CreateProjectSessionInput` so a composer's chosen connection/model
+      // binds the session the same way `agent_name` does — previously this
+      // type only declared `sandbox_slug`/`agent_name`, silently dropping the
+      // other two even though `buildNewSessionCreateInput` already produces
+      // them.
+      create?: Pick<
+        CreateProjectSessionInput,
+        'sandbox_slug' | 'base_ref' | 'agent_name' | 'connection_id' | 'model_selection'
+      >;
     }) => {
       if (!projectId || creatingRef.current) {
         opts?.onError?.();

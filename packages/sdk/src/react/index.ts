@@ -14,6 +14,7 @@ export {
 } from './use-session';
 export { useAcpSession, type AcpStoredSessionEnvelope } from './use-acp-session';
 export * from './use-composer-capabilities';
+export * from './use-models-page';
 
 // The billing/API error classes + helpers, relocated from apps/web's
 // `lib/api/errors.ts` (byte-for-byte duplicate of `platform/api/errors.ts`) —

@@ -460,6 +460,68 @@ function normalizeOptions(value: unknown): AcpPendingOption[] {
   });
 }
 
+/** Which raw {@link AcpPendingOption} answers each slot of the three-tier
+ * permission UI (Deny / Allow once / Allow for session). ACP's standard
+ * option kinds are `allow_once` / `allow_always` / `reject_once` /
+ * `reject_always`; a harness that sends different (or no) `kind` values still
+ * gets a usable mapping via `optionId`/`id` pattern matching, falling back to
+ * "first unclaimed option is the primary allow action" so the UI never has
+ * nothing to offer. */
+export type ResolvedPermissionActions = {
+  allowOnce: AcpPendingOption | null;
+  allowSession: AcpPendingOption | null;
+  /** Null means no explicit reject option was offered — deny by responding
+   *  with no `optionId` (`{ outcome: 'cancelled' }`). */
+  deny: AcpPendingOption | null;
+  /** Options that don't fit tha three-tier layout — render as extra buttons. */
+  extra: AcpPendingOption[];
+};
+
+function optionKey(option: AcpPendingOption): string {
+  return String(option.optionId ?? option.id ?? option.value ?? '');
+}
+
+function findByKind(options: AcpPendingOption[], kinds: string[]): AcpPendingOption | null {
+  return options.find((option) => option.kind && kinds.includes(option.kind)) ?? null;
+}
+
+function findByPattern(
+  options: AcpPendingOption[],
+  pattern: RegExp,
+  exclude: Set<AcpPendingOption>,
+): AcpPendingOption | null {
+  return options.find((option) => !exclude.has(option) && pattern.test(optionKey(option))) ?? null;
+}
+
+export function resolvePermissionActionOptions(options: AcpPendingOption[]): ResolvedPermissionActions {
+  const allowOnce =
+    findByKind(options, ['allow_once']) ?? findByPattern(options, /allow.?once/i, new Set());
+  const allowSession =
+    findByKind(options, ['allow_always']) ??
+    findByPattern(options, /allow.?(always|session)/i, new Set(allowOnce ? [allowOnce] : []));
+  const deny =
+    findByKind(options, ['reject_once', 'reject_always']) ??
+    findByPattern(
+      options,
+      /reject|deny/i,
+      new Set([allowOnce, allowSession].filter((o): o is AcpPendingOption => !!o)),
+    );
+  const claimed = new Set([allowOnce, allowSession, deny].filter((o): o is AcpPendingOption => !!o));
+  // Every permission request needs a primary allow action — if no option
+  // looked like "allow once", the first still-unclaimed option becomes it.
+  const primaryAllowOnce = allowOnce ?? options.find((option) => !claimed.has(option)) ?? null;
+  if (primaryAllowOnce) claimed.add(primaryAllowOnce);
+  const extra = options.filter((option) => !claimed.has(option));
+  return { allowOnce: primaryAllowOnce, allowSession, deny, extra };
+}
+
+/** The option `resolvePermissionActionOptions` would auto-approve with —
+ *  shared by the "allow everything this session" action and the client-side
+ *  auto-approve backstop so both pick the exact same option. */
+export function defaultAllowPermissionOption(options: AcpPendingOption[]): AcpPendingOption | null {
+  return resolvePermissionActionOptions(options).allowOnce;
+}
+
 function isPermissionMethod(method: string): boolean {
   return method.includes('permission');
 }

@@ -68,25 +68,30 @@ export function DashboardContent() {
 
       try {
         // Session create + fade-out run in parallel. Handoff waits for
-        // whichever finishes last — no longer.
+        // whichever finishes last — no longer. The agent/model/connection
+        // picked in the composer are forwarded so they actually bind the
+        // session (buildRuntimeSessionCreateInput) instead of being dropped —
+        // previously only the start-stash carried them, and nothing replayed
+        // agent/connection onto the create call itself.
         const [session] = await Promise.all([
-          createSession.mutateAsync(),
+          createSession.mutateAsync({
+            agentName: options.agent,
+            connectionId: options.connectionId,
+            modelSelection: options.modelSelection,
+          }),
           new Promise<void>((r) => setTimeout(r, SEND_FADE_MS)),
         ]);
 
-        // Stash everything the session page needs BEFORE navigating — its
-        // pending-prompt effect runs on the first render after pushState,
-        // so sessionStorage must be populated first. `session.id` here IS the
-        // canonical Runtime session id (this hook creates the real runtime
-        // session directly, unlike the project-scoped flow), so the SDK's
-        // start-stash (`readStartStash`/`writeStartStash`) reads it back under
-        // the exact same id — no route/pin translation involved.
-        writeStartStash(session.id, {
-          prompt: text,
-          model: options.model ?? null,
-          agent: options.agent ?? null,
-          variant: options.variant ?? null,
-        });
+        // Stash the draft prompt the session page needs BEFORE navigating —
+        // its pending-prompt effect runs on the first render after
+        // pushState, so sessionStorage must be populated first. `session.id`
+        // here IS the canonical Runtime session id (this hook creates the
+        // real runtime session directly, unlike the project-scoped flow), so
+        // the SDK's start-stash (`readStartStash`/`writeStartStash`) reads it
+        // back under the exact same id — no route/pin translation involved.
+        // agent/model/connection already bound the session at create time
+        // above — StartStash only ever carries the prompt.
+        writeStartStash(session.id, { prompt: text });
 
         if (files?.length) {
           usePendingFilesStore.getState().setPendingFiles(files);
@@ -118,12 +123,13 @@ export function DashboardContent() {
   const handleCommand = useCallback(
     async (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       try {
-        const session = await createSession.mutateAsync();
+        const session = await createSession.mutateAsync({
+          agentName: options.agent,
+          connectionId: options.connectionId,
+          modelSelection: options.modelSelection,
+        });
         writeStartStash(session.id, {
           prompt: `/${cmd.name}${args ? ` ${args}` : ''}`,
-          model: options.model ?? null,
-          agent: options.agent ?? null,
-          variant: options.variant ?? null,
         });
         openTabAndNavigate({
           id: session.id,

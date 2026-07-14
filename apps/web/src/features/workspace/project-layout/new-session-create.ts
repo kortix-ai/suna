@@ -2,6 +2,7 @@ import type { ComposerOptions } from '@/features/session/composer-chat-input';
 
 export interface NewSessionCreateInput {
   sandbox_slug?: string;
+  base_ref?: string;
   agent_name?: string;
   connection_id?: import('@kortix/sdk').HarnessAuthKind;
   model_selection?: {
@@ -44,10 +45,12 @@ export function resolveNewSessionAgent(
 export function buildNewSessionCreateInput(
   options: Pick<ComposerOptions, 'agent' | 'runtimeModel' | 'connectionId' | 'modelSelection'> & {
     sandbox_slug?: string;
+    base_ref?: string;
   } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
   if (options.sandbox_slug) input.sandbox_slug = options.sandbox_slug;
+  if (options.base_ref) input.base_ref = options.base_ref;
   if (options.agent) input.agent_name = options.agent;
   if (options.connectionId) input.connection_id = options.connectionId;
   if (options.modelSelection) {

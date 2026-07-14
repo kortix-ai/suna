@@ -5,17 +5,18 @@ import { useParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
-import { accountStateSelectors, useAccountState } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing';
 import { connectedGatewayProviderIdsFromSecretNames } from '@/hooks/runtime/provider-selection';
+import { computeFreeTier } from '@/hooks/runtime/use-runtime-local';
 import { hasUsableModel } from '@/hooks/runtime/use-model-store';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { useProjectLlmGatewayEnabled } from '@/hooks/runtime/use-project-llm-gateway-enabled';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { getProjectDetail, listProjectSecrets } from '@kortix/sdk/projects-client';
+import { listProjectSecrets } from '@kortix/sdk/projects-client';
 import type { FlatModel } from './session-chat-input';
 
 /**
@@ -40,13 +41,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
 
-  const projectDetailQuery = useQuery({
-    queryKey: ['project-detail', projectId],
-    queryFn: () => getProjectDetail(projectId as string),
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
-  const llmGatewayEnabled = isLlmGatewayEnabled(projectDetailQuery.data?.project);
+  const { llmGatewayEnabled, query: projectDetailQuery } = useProjectLlmGatewayEnabled(projectId);
   const canWriteProviders =
     useProjectCan(projectId ?? undefined, PROJECT_ACTIONS.PROJECT_WRITE, {
       accountId: projectDetailQuery.data?.project.account_id,
@@ -78,11 +73,7 @@ export function useModelConnectionGate(models: FlatModel[] = []) {
     return connectedGatewayProviderIdsFromSecretNames(secretNames);
   }, [llmGatewayEnabled, secretsQuery.data]);
   const { data: accountState, isPending: accountStatePending } = useAccountState();
-  const freeTier = useMemo(() => {
-    const tierKey = accountStateSelectors.tierKey(accountState).toLowerCase();
-    const hasActiveSubscription = !!accountState?.subscription?.subscription_id;
-    return (tierKey === 'free' || tierKey === 'none') && !hasActiveSubscription;
-  }, [accountState]);
+  const freeTier = useMemo(() => computeFreeTier(accountState), [accountState]);
   const hasSelectableModels = useMemo(
     () =>
       hasUsableModel(baseModels, { connectedProviderIds, freeTier: llmGatewayEnabled && freeTier }),

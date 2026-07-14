@@ -126,12 +126,12 @@ enabled = false
     expect(result.ok).toBe(false);
   });
 
-  test('project with zero [[agents]] declared at all → rejected (no adopt-to-govern escape hatch)', () => {
+  test('project with zero [[agents]] declared at all → ok, null grant (v2/OpenCode compat: nothing to bind enforcement to)', () => {
     const result = resolveGovernedAgentGrant('anything', loadAgents(''), {
       subject: true,
       projectDefaultAgent: null,
     });
-    expect(result.ok).toBe(false);
+    expect(result).toEqual({ ok: true, grant: null });
   });
 });
 
@@ -153,8 +153,24 @@ connectors = ["github"]
     });
   });
 
-  test('sentinel + no default_agent configured → rejected', () => {
+  test('sentinel + no default_agent configured → resolves to the first enabled declared agent', () => {
     const result = resolveGovernedAgentGrant('default', loaded, {
+      subject: true,
+      projectDefaultAgent: null,
+    });
+    expect(result).toEqual({
+      ok: true,
+      grant: { agent: 'support', connectors: ['github'], kortixCli: [], env: 'all' },
+    });
+  });
+
+  test('sentinel + no default_agent + no ENABLED agents → rejected', () => {
+    const onlyDisabled = loadAgents(`
+[[agents]]
+name = "off"
+enabled = false
+`);
+    const result = resolveGovernedAgentGrant('default', onlyDisabled, {
       subject: true,
       projectDefaultAgent: null,
     });

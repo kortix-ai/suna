@@ -115,6 +115,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     runtimeProtocol: 'acp' as const,
+    /** The immutable agent this project session is bound to (from `/start`), if
+     *  known yet — used to lock the composer's agent/harness selectors. */
+    agentName: startData?.agent_name ?? null,
     runtimeId: startData?.runtime_id ?? null,
     runtimeSessionId: acp.runtimeSessionId ?? startData?.runtime_session_id ?? null,
     acp,
