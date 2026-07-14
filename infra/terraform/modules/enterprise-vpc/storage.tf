@@ -262,7 +262,10 @@ resource "aws_cloudtrail" "operations" {
     include_management_events = true
   }
 
-  depends_on = [aws_s3_bucket_policy.audit]
+  # CloudTrail validates both the S3 bucket policy and the SNS topic policy at
+  # trail-creation time, so both must exist first or CreateTrail fails with
+  # InsufficientSnsTopicPolicyException.
+  depends_on = [aws_s3_bucket_policy.audit, aws_sns_topic_policy.cloudtrail]
 }
 
 resource "aws_cloudwatch_log_group" "cloudtrail" {
