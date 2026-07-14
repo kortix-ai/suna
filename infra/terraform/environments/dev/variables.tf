@@ -48,6 +48,12 @@ variable "gateway_environment" {
   default     = {}
 }
 
+variable "gateway_certificate_arn" {
+  description = "ACM cert for the gateway ALB. Must cover the gateway origin hostname (gateway-<env>-ecs-fargate) for Cloudflare Full(strict). Default: the us-west-2 *.kortix.com wildcard."
+  type        = string
+  default     = "arn:aws:acm:us-west-2:935064898258:certificate/d70f1f49-d981-4add-abb6-971bad1f3755"
+}
+
 variable "container_port" {
   description = "Port the API container listens on."
   type        = number

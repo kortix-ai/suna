@@ -137,7 +137,11 @@ module "gateway" {
   container_port    = 8090
   health_check_path = "/health/live"
   enable_https      = var.enable_https
-  certificate_arn   = var.enable_https ? one(module.acm[*].certificate_arn) : ""
+  # The gateway origin hostname (gateway-<env>-ecs-fargate) must pass Cloudflare
+  # Full(strict) origin verification, so it needs a cert covering THAT host — the
+  # api cert (module.acm, dev-api-ecs-fargate only) does not. Use the *.kortix.com
+  # wildcard, which covers every origin alias.
+  certificate_arn = var.enable_https ? var.gateway_certificate_arn : ""
   # PORT is auto-injected by the module; the gateway also needs to call back to
   # the API, which on Fargate is the public (Cloudflare-fronted) dev-api host.
   environment = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })

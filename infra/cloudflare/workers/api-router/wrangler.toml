@@ -23,7 +23,7 @@ account_id = "9785405a992435bb0c7bd19f9b6d26d5"
 name = "api-kortix-router"
 routes = [
   { pattern = "api.kortix.com", custom_domain = true },
-  { pattern = "gateway.kortix.com", custom_domain = true },
+  { pattern = "gateway.kortix.com/*", zone_name = "kortix.com" },
 ]
 
 [env.prod.vars]
@@ -43,7 +43,7 @@ GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
 name = "staging-api-kortix-router"
 routes = [
   { pattern = "staging-api.kortix.com", custom_domain = true },
-  { pattern = "gateway-staging.kortix.com", custom_domain = true },
+  { pattern = "gateway-staging.kortix.com/*", zone_name = "kortix.com" },
 ]
 
 [env.staging.vars]
@@ -59,14 +59,16 @@ GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-staging-ecs-fargate.kortix.com"
 name = "dev-api-kortix-router"
 routes = [
   { pattern = "dev-api.kortix.com", custom_domain = true },
-  { pattern = "gateway-dev.kortix.com", custom_domain = true },
+  { pattern = "gateway-dev.kortix.com/*", zone_name = "kortix.com" },
 ]
 
 [env.dev.vars]
 ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://dev-api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"
-# Gateway starts on EKS; flip to ecs-fargate once the dev gateway origins are wired.
-GATEWAY_ACTIVE_BACKEND = "eks"
+# Dev gateway is flipped to ECS. GATEWAY_BACKEND_EKS is the rollback origin
+# (needs gateway-dev-eks on the EKS ingress + wildcard cert to serve; today rollback
+# = remove the gateway-dev route → external-dns record falls back to EKS directly).
+GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_EKS = "https://gateway-dev-eks.kortix.com"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"
