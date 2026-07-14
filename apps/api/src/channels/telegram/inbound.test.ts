@@ -1,13 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type TelegramMessage,
   describeAttachments,
   messageAttachments,
   parseTelegramCommand,
   renderTelegramAgentPrompt,
   renderTelegramFollowUpPrompt,
+  renderTelegramStatus,
   shouldRespondInChat,
   stripBotMention,
-  type TelegramMessage,
 } from './inbound';
 
 const BOT = 'KortixBot';
@@ -38,6 +39,15 @@ describe('parseTelegramCommand', () => {
     expect(parseTelegramCommand(`/new@${BOT}`, BOT)).toEqual({ command: 'new', args: '' });
     expect(parseTelegramCommand('/new@kortixbot', BOT)).toEqual({ command: 'new', args: '' }); // case-insensitive
     expect(parseTelegramCommand('/new@SomeOtherBot', BOT)).toBeNull();
+  });
+
+  test('parses the control commands and normalizes aliases', () => {
+    expect(parseTelegramCommand('/status', BOT)).toEqual({ command: 'status', args: '' });
+    expect(parseTelegramCommand('/agent', BOT)).toEqual({ command: 'agent', args: '' });
+    expect(parseTelegramCommand('/model gpt', BOT)).toEqual({ command: 'model', args: 'gpt' });
+    expect(parseTelegramCommand('/whoami', BOT)).toEqual({ command: 'status', args: '' });
+    expect(parseTelegramCommand('/settings', BOT)).toEqual({ command: 'status', args: '' });
+    expect(parseTelegramCommand('/config', BOT)).toEqual({ command: 'status', args: '' });
   });
 
   test('unknown commands and plain text flow through as messages', () => {
@@ -150,7 +160,11 @@ describe('attachments', () => {
 
   test('a caption-only file message flows into the prompt with its attachment block', () => {
     const p = renderTelegramAgentPrompt(
-      msg({ text: undefined, caption: 'please summarize', document: { file_id: 'DOC9', file_name: 'notes.txt' } }),
+      msg({
+        text: undefined,
+        caption: 'please summarize',
+        document: { file_id: 'DOC9', file_name: 'notes.txt' },
+      }),
       BOT,
     );
     expect(p).toContain('please summarize');
@@ -160,5 +174,51 @@ describe('attachments', () => {
   test('no attachments → no attachment block', () => {
     expect(describeAttachments(msg())).toBe('');
     expect(renderTelegramAgentPrompt(msg(), BOT)).not.toContain('Attached files');
+  });
+});
+
+describe('renderTelegramStatus', () => {
+  test('shows project, overrides, policy, and paired count', () => {
+    const html = renderTelegramStatus({
+      botUsername: 'KortixBot',
+      projectName: 'Acme',
+      agentName: 'reviewer',
+      model: 'anthropic/claude-sonnet-5',
+      conversationPolicy: 'project_open',
+      pairedUserCount: 3,
+    });
+    expect(html).toContain('Acme');
+    expect(html).toContain('reviewer');
+    expect(html).toContain('claude-sonnet-5'); // namespace stripped
+    expect(html).toContain('open to everyone');
+    expect(html).toContain('@KortixBot · 3 paired');
+  });
+
+  test('falls back to defaults when nothing is overridden', () => {
+    const html = renderTelegramStatus({
+      botUsername: null,
+      projectName: 'P',
+      agentName: null,
+      model: null,
+      conversationPolicy: null,
+      pairedUserCount: 0,
+    });
+    expect(html).toContain('<b>Agent:</b> default');
+    expect(html).toContain('<b>Model:</b> project default');
+    expect(html).not.toContain('paired');
+  });
+
+  test('escapes HTML in project/agent names', () => {
+    const html = renderTelegramStatus({
+      botUsername: null,
+      projectName: '<b>evil</b>',
+      agentName: 'a & b',
+      model: null,
+      conversationPolicy: null,
+      pairedUserCount: 0,
+    });
+    expect(html).not.toContain('<b>evil</b>');
+    expect(html).toContain('&lt;b&gt;evil&lt;/b&gt;');
+    expect(html).toContain('a &amp; b');
   });
 });

@@ -49,9 +49,14 @@ import {
   parseTelegramCommand,
   renderTelegramAgentPrompt,
   renderTelegramFollowUpPrompt,
+  renderTelegramStatus,
   shouldRespondInChat,
 } from './telegram/inbound';
-import { addTelegramAllowedUser, telegramPairingMatches } from './telegram/pairing';
+import {
+  addTelegramAllowedUser,
+  telegramAllowedUserIds,
+  telegramPairingMatches,
+} from './telegram/pairing';
 import { answerLabelFromKeyboard, isQuestionCallback } from './telegram/questions';
 import {
   finalizeTelegramTurnDirect,
@@ -207,6 +212,15 @@ async function handleUpdate(
       });
       return;
     }
+    if (command.command === 'status') {
+      await telegramSendMessage(
+        token,
+        message.chat.id,
+        await renderChatStatus(projectId, botId, botUsername, chatId),
+        { parseMode: 'HTML', replyToMessageId: message.message_id, disableWebPagePreview: true },
+      );
+      return;
+    }
     // /start <code> is the pairing handshake (deep links t.me/<bot>?start=<code>
     // arrive in exactly this shape) — it must work for UNPAIRED senders, which
     // is why commands are handled before the allowlist gate.
@@ -268,6 +282,33 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
     botUsername,
     chatId: String(cbMessage.chat.id),
     message: synthetic,
+  });
+}
+
+// Gather the chat's effective routing (project name + agent/model/policy
+// overrides + paired-user count) and render it for /status. All reads —
+// nothing here mutates.
+async function renderChatStatus(
+  projectId: string,
+  botId: string,
+  botUsername: string | null,
+  chatId: string,
+): Promise<string> {
+  const [selection, [project]] = await Promise.all([
+    currentChannelSelection({ platform: 'telegram', teamId: botId, channelId: chatId }),
+    db
+      .select({ name: projects.name, metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1),
+  ]);
+  return renderTelegramStatus({
+    botUsername,
+    projectName: project?.name ?? null,
+    agentName: selection?.agentName ?? null,
+    model: selection?.opencodeModel ?? null,
+    conversationPolicy: selection?.conversationPolicy ?? null,
+    pairedUserCount: telegramAllowedUserIds(project?.metadata).length,
   });
 }
 

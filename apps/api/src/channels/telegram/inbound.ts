@@ -105,12 +105,31 @@ export interface TelegramUpdate {
 
 // ─── Bot commands ────────────────────────────────────────────────────────────
 
-export type TelegramCommand = 'start' | 'help' | 'new';
+export type TelegramCommand = 'start' | 'help' | 'new' | 'status' | 'agent' | 'model';
+
+/** Aliases → canonical command, so `/whoami` and `/settings` reach `/status`. */
+const TELEGRAM_COMMAND_ALIASES: Record<string, TelegramCommand> = {
+  whoami: 'status',
+  settings: 'status',
+  config: 'status',
+};
+
+const TELEGRAM_COMMANDS: ReadonlySet<TelegramCommand> = new Set([
+  'start',
+  'help',
+  'new',
+  'status',
+  'agent',
+  'model',
+]);
 
 /** The command menu registered with Telegram at connect time (`setMyCommands`)
  *  — what users see when they type `/` in the chat. */
 export const TELEGRAM_BOT_COMMANDS: ReadonlyArray<{ command: string; description: string }> = [
   { command: 'new', description: 'Start a fresh conversation (new session)' },
+  { command: 'status', description: 'Show the agent, model & settings this chat uses' },
+  { command: 'agent', description: 'Choose which agent answers in this chat' },
+  { command: 'model', description: 'Choose which model this chat runs on' },
   { command: 'help', description: 'What this bot can do and how to use it' },
   { command: 'start', description: 'Introduction and setup status' },
 ];
@@ -132,8 +151,9 @@ export function parseTelegramCommand(
   if (addressee && botUsername && addressee.toLowerCase() !== botUsername.toLowerCase()) {
     return null; // someone else's bot
   }
-  const command = raw.toLowerCase();
-  if (command !== 'start' && command !== 'help' && command !== 'new') return null;
+  const lowered = raw.toLowerCase();
+  const command = TELEGRAM_COMMAND_ALIASES[lowered] ?? (lowered as TelegramCommand);
+  if (!TELEGRAM_COMMANDS.has(command)) return null;
   return { command, args: (args ?? '').trim() };
 }
 
@@ -185,10 +205,58 @@ export const TELEGRAM_HELP_TEXT = [
   '',
   'Commands:',
   '/new — start a fresh conversation (the next message opens a new session)',
+  '/status — show the agent, model & settings this chat uses',
+  '/agent — choose which agent answers here',
+  '/model — choose which model this chat runs on',
   '/help — this message',
   '',
   'In groups I only respond when you @mention me or reply to one of my messages.',
 ].join('\n');
+
+const TELEGRAM_POLICY_LABELS: Record<string, string> = {
+  project_open: 'open to everyone in this chat',
+  restricted: 'restricted to approved participants',
+};
+
+function escapeStatusValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export interface TelegramStatusInfo {
+  botUsername: string | null;
+  projectName: string | null;
+  /** null = the project's default agent. */
+  agentName: string | null;
+  /** null = the project's default model. */
+  model: string | null;
+  conversationPolicy: string | null;
+  pairedUserCount: number;
+}
+
+/** `/status` — the chat's effective routing at a glance (project, agent, model,
+ *  reply policy). All values escaped; rendered as Telegram HTML. */
+export function renderTelegramStatus(info: TelegramStatusInfo): string {
+  const model = info.model ? info.model.split('/').pop() || info.model : 'project default';
+  const policy = info.conversationPolicy
+    ? (TELEGRAM_POLICY_LABELS[info.conversationPolicy] ?? info.conversationPolicy)
+    : 'open to everyone in this chat';
+  const lines = [
+    '<b>This chat</b>',
+    '',
+    `<b>Project:</b> ${escapeStatusValue(info.projectName ?? '—')}`,
+    `<b>Agent:</b> ${escapeStatusValue(info.agentName ?? 'default')}`,
+    `<b>Model:</b> ${escapeStatusValue(model)}`,
+    `<b>Replies:</b> ${escapeStatusValue(policy)}`,
+  ];
+  if (info.botUsername) {
+    lines.push(
+      '',
+      `<i>@${escapeStatusValue(info.botUsername)} · ${info.pairedUserCount} paired</i>`,
+    );
+  }
+  lines.push('', 'Change with /agent or /model. /new starts a fresh conversation.');
+  return lines.join('\n');
+}
 
 export const TELEGRAM_START_TEXT = [
   "Hi! I'm your Kortix project bot.",
