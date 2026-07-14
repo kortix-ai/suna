@@ -248,6 +248,12 @@ data "aws_iam_policy_document" "updater_apply" {
   }
 
   statement {
+    sid       = "ReadClusterTerraformState"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/cluster.tfstate"]
+  }
+
+  statement {
     sid = "LockPlatformTerraformState"
     actions = [
       "dynamodb:DeleteItem",
