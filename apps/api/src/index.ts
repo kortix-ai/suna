@@ -36,6 +36,10 @@ import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { authRouter } from './auth';
 import { accountDeletionApp, billingApp } from './billing';
+// Static (NOT `await import()`): on a long-running `bun --hot` dev process a
+// dynamic import can wedge, and the startup task then never runs — which is
+// exactly what left the Telegram webhook stale after a dev tunnel rotation.
+import { resyncTelegramWebhooks } from './channels/telegram/webhook-sync';
 import { ensureSchema } from './ensure-schema';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { marketplaceApp } from './marketplace';
@@ -1037,6 +1041,13 @@ async function startReplicaServices() {
   // leak them on error paths; sweep stale ones so they don't fill node disk and
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
+  // Re-point connected Telegram bot webhooks at the current KORTIX_URL. Runs on
+  // EVERY node (not leader-gated) so it fires in dev's single API process — it's
+  // idempotent (getWebhookInfo-compare) so concurrent replicas don't thrash, and
+  // a no-op on a stable prod URL. Heals dev quick-tunnel URL rotation on restart.
+  void resyncTelegramWebhooks().catch((err) =>
+    console.error('[startup] Telegram webhook resync failed:', err),
+  );
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -1062,12 +1073,6 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
-  // Re-point connected Telegram bot webhooks at the current KORTIX_URL. One-shot,
-  // best-effort — heals a dev tunnel-URL rotation; a no-op on a stable prod URL.
-  const { resyncTelegramWebhooks } = await import('./channels/telegram/webhook-sync');
-  void resyncTelegramWebhooks().catch((err) =>
-    console.error('[startup] Telegram webhook resync failed:', err),
-  );
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
