@@ -51,6 +51,13 @@ The class every failed `backendApi`/facade call produces. `name` defaults to
 - `code: 'TIMEOUT'` — the request's own timeout budget elapsed; `url`, `endpoint`, and `timeout` (ms) are set so you know what timed out.
 - Otherwise `status` is the HTTP status code and `code` is the backend's `error_code`/`detail.error_code` (falling back to the status as a string) when the body carried one.
 
+Transient gateway failures are retried before you see them: idempotent reads
+(`GET`/`HEAD`) that return `502`, `503`, or `504` retry up to two times with a
+250ms → 500ms backoff. A single proxy/ALB blip is absorbed silently and never
+reaches `onError`; persistent failures surface as a normal `ApiError` with the
+last status. Mutations (`POST`/`PUT`/`PATCH`/`DELETE`) and deterministic `500`s
+are never retried.
+
 `message` is an **enumerable own property** (not just inherited from `Error`),
 so spreading the error or `JSON.stringify`-logging it includes the message —
 useful for error reporting.

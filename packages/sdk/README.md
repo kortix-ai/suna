@@ -322,6 +322,10 @@ long-lived SSE event stream is exempt), so a hung sandbox/daemon call can't
 wedge a server-side handler forever — it surfaces as an `ApiError` with
 `code: 'TIMEOUT'` instead.
 
+Idempotent reads (`GET`/`HEAD`) also absorb transient gateway blips: `502`,
+`503`, and `504` retry up to two times with 250ms → 500ms backoff before an
+`ApiError` is surfaced. Mutations and HTTP `500` responses are never retried.
+
 ## Subpath modules
 
 Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
