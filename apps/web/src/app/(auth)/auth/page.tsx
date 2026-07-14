@@ -10,20 +10,20 @@
  * hardcoded surface.
  */
 
-import { ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, Suspense, lazy, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { SignInHelpDisclosure } from '@/features/auth/sign-in-help-disclosure';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -32,7 +32,6 @@ import { authRedirectUrl } from '@/lib/desktop';
 import { getEnv } from '@/lib/env-config';
 import { emailDomain, isWorkEmail } from '@/lib/personal-email';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
-import { cn } from '@/lib/utils';
 import {
   signIn as signInWithMagicLink,
   signInWithPassword,
@@ -92,42 +91,6 @@ function PasswordInput({
         {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </button>
     </div>
-  );
-}
-
-function SignInHelpDisclosure() {
-  const [open, setOpen] = useState(false);
-  const contentId = useId();
-
-  return (
-    <Disclosure open={open} onOpenChange={setOpen} className="mt-3">
-      <DisclosureTrigger>
-        <Button
-          type="button"
-          variant="transparent"
-          size="sm"
-          aria-controls={contentId}
-          className="text-muted-foreground hover:text-foreground -mx-2 -my-1 h-10 justify-start gap-1.5 px-2 transition-[color,transform] active:scale-[0.96]"
-        >
-          <span>Sign-in help</span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn(
-              'size-3.5 transition-transform duration-200 ease-out',
-              open && 'rotate-180',
-            )}
-          />
-        </Button>
-      </DisclosureTrigger>
-      <DisclosureContent contentClassName="pt-1">
-        <p
-          id={contentId}
-          className="border-border bg-muted/50 text-muted-foreground rounded-md border px-3 py-2 text-sm text-pretty"
-        >
-          Use your work email; if your company uses SSO, we&apos;ll route you automatically.
-        </p>
-      </DisclosureContent>
-    </Disclosure>
   );
 }
 
