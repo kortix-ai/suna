@@ -15,6 +15,7 @@ import {
 import { logger } from './logger'
 import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
+import { ensureInjectedManagedSkills } from './injected-skills'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
@@ -145,6 +146,10 @@ async function main() {
   // first-session `bun install` doesn't re-resolve `^` ranges over the network
   // (a 1.5–6s — sometimes minutes — stall that otherwise gates runtimeReady).
   await ensureOpencodeConfigDeps(opencodeConfigDir)
+  // Overlay the always-latest managed Kortix skills (kortix-cli + the kortix-*
+  // family) so every session has current Kortix context regardless of what the
+  // project repo committed — no project ever goes stale on Kortix internals.
+  await ensureInjectedManagedSkills(opencodeConfigDir)
   bootMark('config-deps')
 
   const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)

@@ -1,6 +1,6 @@
 ---
 name: coding
-description: "Route code and repository work to isolated Kortix sessions instead of burning your main context on it. Use when asked to implement a feature, fix a bug, make failing tests pass, work a ticket/issue, refactor, navigate or change a codebase, ship a PR, or review a pull request — and when the user wants two agents or parallel reviewers on the same code. Covers the explore-vs-session routing call, deciding where the code lives (this project's repo vs cloning an external GitHub repo), finding the repo with gh, spawning sessions in parallel, dual PR reviews, and reporting results back. Triggers: 'implement', 'fix the bug', 'make the tests pass', 'work this ticket', 'refactor this', 'open a PR', 'review this PR', 'run two agents on it'."
+description: "Route code, repository, and data/SQL work to isolated Kortix sessions instead of burning your main context on it. Use when asked to implement a feature, fix a bug, make failing tests pass, work a ticket/issue, refactor, navigate or change a codebase, ship a PR, review a pull request, or run SQL/warehouse analysis against a dataset — and when the user wants two agents or parallel reviewers/investigators on the same work. Covers the explore-vs-session routing call, deciding where the code lives (this project's repo vs cloning an external GitHub repo) or where the data lives, finding the repo with gh, spawning sessions in parallel, dual PR reviews, and reporting results back. Triggers: 'implement', 'fix the bug', 'make the tests pass', 'work this ticket', 'refactor this', 'open a PR', 'review this PR', 'run two agents on it', 'query the warehouse', 'analyze this dataset'."
 defaultProjectInstall: true
 ---
 
@@ -8,7 +8,7 @@ defaultProjectInstall: true
 
 This skill is about *routing* code work, not doing it inline. When a request means navigating a repository or changing source files, the heavy lifting belongs in an isolated session sandbox — not in the context you're orchestrating from. Your job is to make the setup decisions, hand off cleanly, and report back.
 
-Reach for this skill for repo-shaped requests: implement, fix, refactor, make tests pass, work a ticket, open or review a PR. Skip it for conceptual questions that touch no repository — answer those directly. For work that blends code with SQL or dataset analysis, the `coding-and-data` skill is the better fit; keep this one pointed at code-task routing and repo workflow.
+Reach for this skill for repo-shaped requests: implement, fix, refactor, make tests pass, work a ticket, open or review a PR. It also covers data-shaped work that deserves the same treatment — SQL/warehouse analysis, dataset-backed investigations, or a mix of code and analytical output (see *Data, SQL, and Warehouse Work* below). Skip it for conceptual questions that touch no repository or dataset — answer those directly.
 
 ## Two ways to delegate, pick by weight
 
@@ -69,6 +69,16 @@ If the user didn't ask, end your reply with a single offer to post the findings 
 ## Mixed discovery-plus-coding requests
 
 Some asks bundle research with implementation ("find the open tickets and knock them out"). Split the work: *you* do the discovery — locate the repo URL, read the tickets/issues, gather requirements, check memory — and write that context to workspace files. Then spawn the session with the repo decision and pointers to those files in the prompt. Discovery here means finding the repo and the requirements, not reading source or mapping the architecture; that stays the session's job.
+
+## Data, SQL, and Warehouse Work
+
+This skill also covers work that's data-shaped rather than pure code: SQL analysis against a warehouse, dataset-backed investigations, or a mix of code and analytical output. The same routing rule applies — delegate substantial data work to a background session rather than running it in your orchestrating context, and let the child session explore the schema itself.
+
+- **If the data source is clear**, include it directly in the session prompt: connector/warehouse name, schema hints, date ranges, and the exact question to answer.
+- **If the data source is unclear**, resolve that first — ask, or check project memory/connectors — rather than delegating blindly and hoping the session finds the right table.
+- **For file-based analysis**, include file paths and the desired output (charts, CSVs, summaries) in the prompt.
+- **Parallel technical investigations** follow the same pattern as parallel coding sessions: spawn them together in one batch, each with a distinct angle, then read back and synthesize agreements, disagreements, and unique findings.
+- Trivial conceptual questions that need no query or dataset access should still be answered directly — don't spin up a session for something answerable from general knowledge.
 
 ## When a session comes back empty
 

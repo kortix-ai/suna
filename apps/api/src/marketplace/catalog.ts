@@ -8,15 +8,21 @@
  *     that just have SKILL.md files). Their items merge in; content is fetched
  *     from source at install time. Failures degrade to the base catalog.
  *
- * This module owns catalog *construction + read*. The install path (resolve a
- * catalog entry → plan → files to commit) lives in `install-service.ts`.
+ * This module owns catalog *construction + read*. There is no deterministic
+ * install engine anymore — adding an item to an existing project is an agent
+ * import (POST /:projectId/marketplace/install-session, in
+ * projects/routes/r10.ts), which resolves an entry by id via `getCatalogEntry`
+ * and hands its files to a session to read/merge/CR.
  */
 
 import {
   getMarketplaceFiles,
+  getProjectTemplateFiles,
+  getStarterCatalogSourceMap,
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
   describeRegistry,
@@ -65,6 +71,9 @@ export interface CatalogItem {
   defaultProjectInstall?: boolean;
   defaultProjectInstallOrder?: number;
   hidden?: boolean;
+  /** Set when this item also ships inside a whole `registry:project` (e.g. a
+   *  starter skill) — the UI badges it "Part of <project>" and links to it. */
+  partOfProject?: { id: string; title: string };
 }
 
 export interface DependencyItem {
@@ -75,10 +84,81 @@ export interface DependencyItem {
   description: string | null;
 }
 
+export interface ProjectAgent {
+  name: string;
+  title: string;
+  description: string | null;
+}
+
+export interface ProjectTrigger {
+  slug: string;
+  description: string | null;
+  agent: string | null;
+}
+
 export interface CatalogItemDetail extends CatalogItem {
   files: Array<{ target: string; type: string }>;
   readme: string | null;
   dependencyItems: DependencyItem[];
+  /** For a `registry:project`: its agents + triggers, parsed from kortix.yaml. */
+  projectAgents?: ProjectAgent[];
+  projectTriggers?: ProjectTrigger[];
+}
+
+/** Parse a project item's `kortix.yaml` (+ each agent's own `.md` frontmatter)
+ *  to surface its agents and triggers in the detail view, the same way its
+ *  skills are surfaced from `registryDependencies`. Best-effort: any parse
+ *  failure just yields empty lists. */
+/** Parse a markdown file's `--- … ---` YAML frontmatter with the real YAML
+ *  parser, so multi-line / folded block scalars resolve correctly. */
+function frontmatterOf(raw: string | undefined): Record<string, unknown> {
+  if (!raw?.startsWith("---")) return {};
+  const end = raw.indexOf("\n---", 3);
+  if (end === -1) return {};
+  try {
+    return (parseYaml(raw.slice(3, end)) ?? {}) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function projectAgentsAndTriggers(
+  files: Array<{ path: string; target?: string; content?: string }>,
+): { agents: ProjectAgent[]; triggers: ProjectTrigger[] } {
+  const pathOf = (f: { path: string; target?: string }) => f.target ?? f.path;
+  const manifestFile = files.find((f) => pathOf(f) === "kortix.yaml");
+  if (typeof manifestFile?.content !== "string") return { agents: [], triggers: [] };
+  let manifest: unknown;
+  try {
+    manifest = parseYaml(manifestFile.content);
+  } catch {
+    return { agents: [], triggers: [] };
+  }
+  const m = (manifest ?? {}) as { agents?: Record<string, unknown>; triggers?: unknown[] };
+
+  const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
+  const agents: ProjectAgent[] = agentNames.map((name) => {
+    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    // Parse the agent's own `.md` frontmatter with the YAML parser (not a
+    // line-based one) so folded block scalars (`description: >-`) resolve to the
+    // real text, and collapse it to a single line for the card.
+    const fm = frontmatterOf(md?.content);
+    const desc = typeof fm.description === "string" ? fm.description.replace(/\s+/g, " ").trim() : null;
+    return { name, title: name, description: desc || null };
+  });
+
+  const triggers: ProjectTrigger[] = (Array.isArray(m.triggers) ? m.triggers : [])
+    .map((t) => {
+      const tt = (t ?? {}) as { slug?: unknown; description?: unknown; agent?: unknown };
+      return {
+        slug: typeof tt.slug === "string" ? tt.slug : "",
+        description: typeof tt.description === "string" ? tt.description : null,
+        agent: typeof tt.agent === "string" ? tt.agent : null,
+      };
+    })
+    .filter((t) => t.slug.length > 0);
+
+  return { agents, triggers };
 }
 
 /** A catalog item + its provenance + precomputed capabilities (no magic fields). */
@@ -109,17 +189,12 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     secrets: ["REPLICATE_API_TOKEN"],
     network: ["api.replicate.com"],
   },
-  whisper: { secrets: ["GROQ_API_KEY"], network: ["api.groq.com"] },
   "deep-research": { tools: ["web_search"] },
-  "research-assistant": { tools: ["web_search"] },
   "research-report": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
-  "customer-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },
   "draft-outreach": { tools: ["web_search"] },
   "domain-research": { network: ["rdap.org", "whois"] },
-  "agent-browser": { tools: ["agent-browser"] },
-  media: { tools: ["media"] },
 };
 
 export function capabilitiesOf(item: RegistryItem): ItemCapabilities {
@@ -215,6 +290,12 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
     defaultProjectInstallOrder,
     hidden: e.item.meta?.hidden === true,
+    partOfProject:
+      e.item.meta?.partOfProject &&
+      typeof e.item.meta.partOfProject === "object" &&
+      typeof (e.item.meta.partOfProject as { id?: unknown }).id === "string"
+        ? (e.item.meta.partOfProject as { id: string; title: string })
+        : undefined,
   };
 }
 
@@ -225,8 +306,15 @@ function bundlesFirst(a: CatalogItem, b: CatalogItem): number {
 }
 
 function readmeOf(item: RegistryItem): string | null {
-  const skill = item.files?.find((f) => /SKILL\.md$/.test(f.target ?? f.path));
-  return typeof skill?.content === "string" ? skill.content : null;
+  const files = item.files ?? [];
+  const pathOf = (f: (typeof files)[number]) => f.target ?? f.path;
+  // Prefer a ROOT-level README/SKILL (a project's own readme) over a nested one
+  // — otherwise a bundle/project would surface a random inner skill's SKILL.md
+  // (which sorts before `README.md`) instead of the project's real readme.
+  const root = files.find((f) => /^(?:README|SKILL)\.md$/i.test(pathOf(f)));
+  const any = files.find((f) => /(?:^|\/)(?:SKILL|README)\.md$/i.test(pathOf(f)));
+  const file = root ?? any;
+  return typeof file?.content === "string" ? file.content : null;
 }
 
 // ── base catalog (sync, starter + curated bundles) ─────────────────────────
@@ -269,6 +357,14 @@ function buildStarterRegistry(): RegistryJson {
         managedBy: "kortix",
         updatePolicy: "kortix-managed",
       };
+    } else if (item.type === "registry:skill") {
+      // A browsable starter skill: it stands on its own in the catalog AND ships
+      // inside the Kortix Starter project, so tag it so the UI can badge it
+      // "Part of Kortix Starter" and link back to the whole project.
+      item.meta = {
+        ...(item.meta ?? {}),
+        partOfProject: { id: STARTER_KIT_ITEM_ID, title: "Kortix Starter" },
+      };
     }
     for (const f of item.files ?? []) {
       const content = map.get(f.path);
@@ -278,55 +374,172 @@ function buildStarterRegistry(): RegistryJson {
   return registry;
 }
 
-const CURATED_BUNDLES: RegistryItem[] = [
-  {
-    name: "research-pack",
-    type: "registry:bundle",
-    title: "Research Pack",
+interface ProjectTemplateMeta {
+  title?: string;
+  description?: string;
+  categories?: string[];
+  dependencies?: string[];
+  /** Hide the template from the marketplace entirely (browse + detail-by-id). */
+  hidden?: boolean;
+}
+
+// ── project catalog (sync, whole-project clone fixtures) ───────────────────
+// Bundled example projects, listed as `registry:project` items — cloned
+// wholesale into a brand-new project (see `buildProjectSeedFilesFromItem` in
+// apps/api/src/projects/seed-files.ts) rather than installed into an
+// existing one. Content is kept raw/uninterpolated here (unlike
+// `buildStarterRegistry`, which bakes in a fixed display name) so `{{var}}`
+// placeholders survive to clone time and get resolved against the real
+// destination project's name.
+function buildProjectTemplateRegistry(): RegistryItem[] {
+  const bySlug = new Map<string, Array<{ path: string; content: string }>>();
+  for (const file of getProjectTemplateFiles()) {
+    const slash = file.path.indexOf("/");
+    if (slash === -1) continue; // stray root file, not a project
+    const slug = file.path.slice(0, slash);
+    const relPath = file.path.slice(slash + 1);
+    const group = bySlug.get(slug) ?? [];
+    group.push({ path: relPath, content: file.content });
+    bySlug.set(slug, group);
+  }
+
+  const items: RegistryItem[] = [];
+  for (const [slug, files] of [...bySlug.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const metaFile = files.find((f) => f.path === "project.json");
+    let meta: ProjectTemplateMeta = {};
+    if (metaFile) {
+      try {
+        meta = JSON.parse(metaFile.content);
+      } catch (err) {
+        // One malformed project.json must not zero out the whole catalog
+        // (this runs deep inside getBaseCatalog(), uncaught up the chain) —
+        // skip just this template.
+        console.warn(
+          `[marketplace] skipping project template "${slug}": invalid project.json (${(err as Error).message})`,
+        );
+        continue;
+      }
+    }
+    items.push({
+      name: slug,
+      type: "registry:project",
+      title: meta.title ?? slug,
+      description: meta.description,
+      categories: meta.categories?.length ? meta.categories : ["project"],
+      registryDependencies: meta.dependencies ?? [],
+      files: files
+        .filter((f) => f.path !== "project.json")
+        .map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content })),
+      meta: { source: "kortix", visibility: "global", ...(meta.hidden ? { hidden: true } : {}) },
+    });
+  }
+  return items;
+}
+
+// The marketplace hero: one synthetic "Kortix Starter" project. Its contents
+// (`what's inside`) are every browseable starter skill — resolved typed from the
+// catalog by name — and its files are the whole starter kit (file browser +
+// clone). This is the single project we lead the marketplace with; individual
+// starter skills live *inside* it rather than as their own top-level tiles.
+export const STARTER_KIT_ITEM_NAME = "starter";
+export const STARTER_KIT_ITEM_ID = `kortix-projects:${STARTER_KIT_ITEM_NAME}`;
+
+const STARTER_KIT_README = `# Kortix Starter
+
+The default Kortix project — a general knowledge worker that's ready to do real
+work from the very first message.
+
+It comes preloaded with the full Kortix skill kit: research and the web,
+documents (PDF, DOCX, XLSX) and slides, coding and web apps, browser automation,
+and a set of editable persona starters (recruiting, marketing, accounting,
+support, product, legal) you can shape into your own operations.
+
+Everything here is **yours** — plain files in your project's git repo that you
+and your agents can read, edit, extend, and land through change requests. Nothing
+is pinned to an upstream, so make it your own.
+
+## What's inside
+
+Skills, agents, and tools — browse them below. Each one is a real file in the
+project you can open, adapt, and build on.
+
+## Getting started
+
+Create a project from this starter and your first session onboards you: it learns
+what you do, tailors the kit to your work, and gets you one real result fast.
+`;
+
+function buildStarterKitProjectItem(): RegistryItem {
+  const registry = buildStarterRegistry();
+  const skillNames = (registry.items ?? [])
+    .filter(
+      (it) => it.type === "registry:skill" && !isKortixManagedSkillName(it.name),
+    )
+    .map((it) => it.name)
+    .sort((a, b) => a.localeCompare(b));
+  const files = getStarterFiles({
+    projectName: "Kortix Starter",
+    template: "general-knowledge-worker",
+  }).map((f) => ({ path: f.path, type: "registry:file" as const, content: f.content }));
+  // Give the project a proper, curated marketplace README (the base template's
+  // README is a generic scaffold note) — replace it in place, or add one.
+  const readmeIdx = files.findIndex((f) => f.path === "README.md");
+  const readmeFile = { path: "README.md", type: "registry:file" as const, content: STARTER_KIT_README };
+  if (readmeIdx >= 0) files[readmeIdx] = readmeFile;
+  else files.unshift(readmeFile);
+  return {
+    name: STARTER_KIT_ITEM_NAME,
+    type: "registry:project",
+    title: "Kortix Starter",
     description:
-      "Everything for evidence-based research: deep research, cited reports, and academic paper search.",
-    categories: ["bundle", "research"],
-    registryDependencies: [
-      "deep-research",
-      "research-report",
-      "openalex-paper-search",
-    ],
-    meta: { source: "kortix" },
-  },
-  {
-    name: "sales-pack",
-    type: "registry:bundle",
-    title: "Sales Pack",
-    description:
-      "Outbound-ready: account research, outreach drafting, call prep, and competitive analysis.",
-    categories: ["bundle", "sales"],
-    registryDependencies: [
-      "account-research",
-      "draft-outreach",
-      "call-prep",
-      "competitive-analysis",
-    ],
-    meta: { source: "kortix" },
-  },
-  {
-    name: "documents-pack",
-    type: "registry:bundle",
-    title: "Documents Pack",
-    description:
-      "Read and write real office files: PDF, Word, Excel, and presentations.",
-    categories: ["bundle", "documents"],
-    registryDependencies: ["pdf", "docx", "xlsx", "presentations"],
-    meta: { source: "kortix" },
-  },
-];
+      "The default Kortix project — a general knowledge worker preloaded with the full skill kit (research, documents, slides, spreadsheets, the web, and more), ready to work from the first session.",
+    categories: ["project", "starter"],
+    registryDependencies: skillNames,
+    files,
+    meta: { source: "kortix", visibility: "global" },
+  };
+}
 
 let BASE: Catalog | null = null;
+
+const KORTIX_REPO = "https://github.com/kortix-ai/suna";
+
+/** Source-of-truth GitHub path for a bundled `kortix-projects` item — these
+ *  are real files in this repo, not a synthetic/external registry, so "View
+ *  source" can point straight at them. */
+function projectTemplateSourceUrl(slug: string): string {
+  return `${KORTIX_REPO}/tree/main/packages/starter/templates/marketplace-projects/${slug}`;
+}
+
+let STARTER_SOURCE_MAP: Map<string, string> | null = null;
+function starterSourceMap(): Map<string, string> {
+  if (!STARTER_SOURCE_MAP) STARTER_SOURCE_MAP = getStarterCatalogSourceMap();
+  return STARTER_SOURCE_MAP;
+}
+
+/** "View source" URL for a first-party `kortix-starter` item — resolved from
+ *  the item's own file back to its real path in this repo. Skills link to
+ *  their folder (so references/scripts are visible); single-file items link
+ *  to the file. Undefined when the file isn't a bundled one (defensive). */
+function starterItemSourceUrl(item: RegistryItem): string | undefined {
+  const primary = item.files?.[0]?.path;
+  if (!primary) return undefined;
+  const repoPath = starterSourceMap().get(primary);
+  if (!repoPath) return undefined;
+  if (item.type === "registry:skill") {
+    return `${KORTIX_REPO}/tree/main/${repoPath.replace(/\/[^/]+$/, "")}`;
+  }
+  return `${KORTIX_REPO}/blob/main/${repoPath}`;
+}
 
 function getBaseCatalog(): Catalog {
   if (BASE) return BASE;
   const registries: Array<{ name: string; items: RegistryItem[] }> = [
-    { name: "kortix", items: CURATED_BUNDLES },
     { name: "kortix-starter", items: buildStarterRegistry().items ?? [] },
+    {
+      name: "kortix-projects",
+      items: [buildStarterKitProjectItem(), ...buildProjectTemplateRegistry()],
+    },
   ];
   const items: CatalogItem[] = [];
   const byId = new Map<string, CatalogEntry>();
@@ -334,7 +547,11 @@ function getBaseCatalog(): Catalog {
     for (const item of reg.items) {
       const id = `${reg.name}:${item.name}`;
       if (byId.has(id)) continue;
-      const entry = makeEntry(item, reg.name);
+      const sourceUrl =
+        reg.name === "kortix-projects"
+          ? projectTemplateSourceUrl(item.name)
+          : starterItemSourceUrl(item);
+      const entry = makeEntry(item, reg.name, undefined, sourceUrl);
       byId.set(id, entry);
       items.push(entryToCatalogItem(entry));
     }
@@ -409,14 +626,12 @@ function envSources(): string[] {
 
 /**
  * Marketplaces that ship ENABLED by default — loaded like the Kortix base (not
- * removable), so the catalog is full on day one. Kept to a sane size + clean
- * licenses; the long tail lives in FEATURED_MARKETPLACES (one-click add). Can be
- * overridden by `KORTIX_DEFAULT_MARKETPLACES` (comma-separated).
+ * removable), so the catalog is full on day one. For now this is empty: **only
+ * Kortix is active by default**, and every other source (Anthropic, OpenAI, and
+ * the rest of FEATURED_MARKETPLACES) is one-click opt-in via "Add a source".
+ * Can be overridden by `KORTIX_DEFAULT_MARKETPLACES` (comma-separated).
  */
-export const DEFAULT_MARKETPLACES: string[] = [
-  "anthropics/skills", // official Anthropic Agent Skills (the anchor)
-  "anthropics/knowledge-work-plugins", // official Anthropic knowledge-work skills
-];
+export const DEFAULT_MARKETPLACES: string[] = [];
 
 /** The defaults actually loaded — `KORTIX_DEFAULT_MARKETPLACES` overrides (set it
  *  to "" to disable, e.g. for hermetic tests). Read at call-time, not import. */
@@ -750,7 +965,7 @@ export function catalogStatus(): {
  * its `owner/repo`. This is the id the "browse by marketplace" filter uses.
  */
 export function marketplaceIdOf(registry: string): string {
-  return registry === "kortix-starter" ? "kortix" : registry;
+  return registry === "kortix-starter" || registry === "kortix-projects" ? "kortix" : registry;
 }
 
 export interface MarketplaceFacet {
@@ -774,6 +989,12 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
     if (!isBrowseableCatalogItem(it)) continue;
     const id = it.marketplaceId;
     let m = by.get(id);
+    // A company/source's sourceUrl means "the repo this whole source lives in"
+    // — only external registries have one. Base items (kortix-starter,
+    // kortix-projects) may carry a per-ITEM sourceUrl (e.g. a project
+    // template's own path), but that must NOT become the whole "Kortix"
+    // company's source, or it leaks onto every sibling item's page.
+    const companySourceUrl = it.external ? it.sourceUrl : undefined;
     if (!m) {
       m = {
         id,
@@ -782,7 +1003,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
         count: 0,
         types: {},
         external: it.external,
-        sourceUrl: it.sourceUrl,
+        sourceUrl: companySourceUrl,
         sourceId: it.sourceId,
       };
       by.set(id, m);
@@ -790,7 +1011,7 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
     m.count += 1;
     const short = it.type.replace("registry:", "");
     m.types[short] = (m.types[short] ?? 0) + 1;
-    if (!m.sourceUrl && it.sourceUrl) m.sourceUrl = it.sourceUrl;
+    if (!m.sourceUrl && companySourceUrl) m.sourceUrl = companySourceUrl;
     if (!m.sourceId && it.sourceId) m.sourceId = it.sourceId;
   }
   // Kortix first, then external alphabetically.
@@ -819,6 +1040,13 @@ export interface FeaturedMarketplace {
  */
 export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
   // Official / first-party (off by default, one-click to enable)
+  {
+    address: "anthropics/skills",
+    label: "Anthropic Skills",
+    owner: "anthropics",
+    description: "Official Anthropic Agent Skills",
+    license: "Apache-2.0",
+  },
   {
     address: "anthropics/knowledge-work-plugins",
     label: "Anthropic Knowledge Work",
@@ -1434,16 +1662,20 @@ type ItemQuery = { query?: string; type?: string; source?: string };
 // browse/install choices on their own. Install is capability-gated per committed
 // file path (see projects/routes/r10 assertCommitCapabilities), so widening this
 // set never bypasses authz.
-const MARKETPLACE_VISIBLE_TYPES = new Set<string>([
-  "registry:skill",
-  "registry:agent",
-  "registry:command",
-  "registry:bundle",
-]);
+// Agents/commands/bundles are still installable (the install engine handles
+// any type generically) but are hidden from browse for now — just Projects
+// (clone) and Skills (add) keeps the marketplace's taxonomy simple.
+const MARKETPLACE_VISIBLE_TYPES = new Set<string>(["registry:skill", "registry:project"]);
 
 function isBrowseableCatalogItem(it: CatalogItem): boolean {
+  // Kortix-managed system skills (kortix-system/executor/memory/slack/computer/
+  // meet) are the platform floor — they ship in every project and are served
+  // live via `kortix skills get`, so they're not browse-and-install cards. They
+  // stay installable by id (getCatalogEntry, ungated).
+  if (it.managedBy === "kortix") return false;
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
+
 
 function filterCatalogItems(
   items: CatalogItem[],
@@ -1654,7 +1886,19 @@ export async function getCatalogItemDetail(
     },
   );
 
-  return { ...base, files, readme, dependencyItems };
+  const { agents: projectAgents, triggers: projectTriggers } =
+    base.type === "registry:project"
+      ? projectAgentsAndTriggers(entry.item.files ?? [])
+      : { agents: [], triggers: [] };
+
+  return {
+    ...base,
+    files,
+    readme,
+    dependencyItems,
+    ...(projectAgents.length ? { projectAgents } : {}),
+    ...(projectTriggers.length ? { projectTriggers } : {}),
+  };
 }
 
 /** Fetch one file's raw content for the detail viewer, addressed by its install

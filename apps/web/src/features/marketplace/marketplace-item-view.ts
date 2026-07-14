@@ -34,6 +34,7 @@ export interface BundleMember {
   key: string;
   title: string;
   type: string | null;
+  description: string | null;
   href: string | null;
 }
 
@@ -54,11 +55,58 @@ export function resolveBundleMembers(params: {
         key: resolved.id,
         title: resolved.title,
         type: resolved.type,
+        description: resolved.description,
         href: params.hrefForId(resolved.id),
       };
     }
-    return { key: name, title: name, type: null, href: null };
+    return { key: name, title: name, type: null, description: null, href: null };
   });
+}
+
+export interface TypedMemberGroup {
+  type: string;
+  label: string;
+  members: BundleMember[];
+}
+
+// Order + plural labels for a project's contents, so "what's inside" reads as
+// typed sections (Skills, Agents, Tools, …) instead of a flat list.
+const MEMBER_TYPE_ORDER = [
+  'registry:skill',
+  'registry:agent',
+  'registry:command',
+  'registry:tool',
+  'registry:bundle',
+  'registry:project',
+];
+const MEMBER_TYPE_LABELS: Record<string, string> = {
+  'registry:skill': 'Skills',
+  'registry:agent': 'Agents',
+  'registry:command': 'Commands',
+  'registry:tool': 'Tools',
+  'registry:bundle': 'Bundles',
+  'registry:project': 'Projects',
+};
+
+/** Bucket bundle/project members by registry type in a stable order, with an
+ *  "Other" bucket for anything unrecognized (or a null type). */
+export function groupBundleMembersByType(members: BundleMember[]): TypedMemberGroup[] {
+  const byType = new Map<string, BundleMember[]>();
+  for (const m of members) {
+    const key = m.type ?? 'other';
+    const arr = byType.get(key) ?? [];
+    arr.push(m);
+    byType.set(key, arr);
+  }
+  const groups: TypedMemberGroup[] = [];
+  for (const type of MEMBER_TYPE_ORDER) {
+    const arr = byType.get(type);
+    if (arr?.length) groups.push({ type, label: MEMBER_TYPE_LABELS[type] ?? type, members: arr });
+    byType.delete(type);
+  }
+  const rest = [...byType.values()].flat();
+  if (rest.length) groups.push({ type: 'other', label: 'Other', members: rest });
+  return groups;
 }
 
 /** One row in the grouped capability-badge display. */

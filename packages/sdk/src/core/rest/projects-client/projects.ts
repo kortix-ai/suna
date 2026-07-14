@@ -131,6 +131,10 @@ export interface ProvisionProjectInput {
   seed_starter?: boolean;
   starter_template?: 'general-knowledge-worker' | 'minimal';
   marketplace_items?: string[];
+  /** Clone a `registry:project` marketplace item instead of the blank
+   *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
+   *  seed_starter and takes precedence over starter_template. */
+  source_item_id?: string;
 }
 
 export interface RepoCollaboratorInvite {
