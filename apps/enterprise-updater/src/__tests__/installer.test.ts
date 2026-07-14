@@ -356,7 +356,7 @@ describe('release installation transaction', () => {
       const recovery = eventIndex(fixture.events, 'Verify fresh Kortix recovery point before update');
       const terraform = eventIndex(fixture.events, 'run:terraform -chdir=');
       const externalSecrets = eventIndex(fixture.events, 'run:kubectl apply --filename');
-      const runtimeSecret = eventIndex(fixture.events, 'run:kubectl --namespace kortix wait --for=condition=Ready externalsecret/kortix-runtime');
+      const runtimeSecret = eventIndex(fixture.events, 'ExternalSecret kortix-runtime did not become Ready');
       const api = eventIndex(fixture.events, 'run:helm upgrade --install kortix-api');
       const gateway = eventIndex(fixture.events, 'run:helm upgrade --install kortix-gateway');
       const edge = eventIndex(fixture.events, 'run:helm upgrade --install kortix-edge');
@@ -367,6 +367,9 @@ describe('release installation transaction', () => {
       expect(terraform).toBeLessThan(externalSecrets);
       expect(externalSecrets).toBeLessThan(runtimeSecret);
       expect(runtimeSecret).toBeLessThan(api);
+      expect(fixture.events[runtimeSecret]).toContain('SECONDS + 600');
+      expect(fixture.events[runtimeSecret]).toContain('jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}');
+      expect(fixture.events.some((event) => event.includes('kubectl --namespace kortix wait'))).toBe(false);
       expect(api).toBeLessThan(gateway);
       expect(gateway).toBeLessThan(edge);
       expect(edge).toBeLessThan(health);
