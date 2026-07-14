@@ -58,6 +58,18 @@ describe('embedded enterprise Terraform graph', () => {
     expect(acm).toContain('endswith(lower(domain), ".${local.public_zone_name}")');
   });
 
+  test('allows CloudTrail to publish through the customer KMS-encrypted alert topic', () => {
+    const kms = enterpriseTerraformAssets['modules/enterprise-vpc/kms.tf'];
+    const cloudTrail = kms.slice(
+      kms.indexOf('sid = "CloudTrailEncryption"'),
+      kms.indexOf('sid = "CloudWatchLogsEncryption"'),
+    );
+    expect(cloudTrail).toContain('"kms:Decrypt"');
+    expect(cloudTrail).toContain('"kms:GenerateDataKey*"');
+    expect(cloudTrail).toContain('identifiers = ["cloudtrail.amazonaws.com"]');
+    expect(cloudTrail).toContain('variable = "aws:SourceArn"');
+  });
+
   test('keeps the customer updater as the only enterprise Helm reconciler', () => {
     const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
     const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];

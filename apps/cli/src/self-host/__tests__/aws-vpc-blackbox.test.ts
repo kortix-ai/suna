@@ -119,11 +119,11 @@ case "$*" in
     esac
     printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}'
     ;;
-  *"plan"*)
-    for arg in "$@"; do case "$arg" in -out=*) : > "\${arg#-out=}" ;; esac; done
-    printf '%s\n' 'Plan: 1 to add, 0 to change, 0 to destroy.'
-    ;;
   *"apply"*)
+    if [ -f "\${FAKE_TERRAFORM_LOG}.fail-apply" ]; then
+      printf '%s\n' '╷' '│ Error: simulated actionable apply failure' '╵' >&2
+      exit 66
+    fi
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
     case "\${dir:-}" in */state)
       if ! grep -q 'backend "s3"' "$dir/backend.tf"; then
@@ -132,6 +132,10 @@ case "$*" in
       ;;
     esac
     printf '%s\n' 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.'
+    ;;
+  *"plan"*)
+    for arg in "$@"; do case "$arg" in -out=*) : > "\${arg#-out=}" ;; esac; done
+    printf '%s\n' 'Plan: 1 to add, 0 to change, 0 to destroy.'
     ;;
   *"init -input=false -migrate-state"*)
     if [ "\${FAKE_TERRAFORM_FAIL_MIGRATE:-}" = "1" ]; then
@@ -370,6 +374,15 @@ esac
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
     expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+  });
+
+  test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
+    await initConfigured();
+    writeFileSync(`${terraformLog}.fail-apply`, '');
+    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Terraform apply failed: Error: simulated actionable apply failure');
+    expect(result.stderr).not.toContain('Terraform apply failed: ╷');
   });
 
   test('rejects a migrated remote state whose resources differ from the preserved bootstrap state', async () => {

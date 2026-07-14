@@ -309,7 +309,7 @@ function terraform(directory: string, aws: CompleteAwsVpcConfig, args: string[])
   });
   if (result.error) throw new Error(`unable to run Terraform: ${result.error.message}`);
   if (result.status !== 0) {
-    throw new Error(`Terraform ${args[0]} failed: ${firstLine(result.stderr || result.stdout) || `exit ${result.status}`}`);
+    throw new Error(`Terraform ${args[0]} failed: ${terraformDiagnostic(result.stderr || result.stdout) || `exit ${result.status}`}`);
   }
   return result.stdout;
 }
@@ -344,6 +344,11 @@ function assertStateIdentity(state: TerraformStateIdentity, label: string): void
   }
 }
 
-function firstLine(value: string): string {
-  return value.trim().split(/\r?\n/, 1)[0] ?? '';
+function terraformDiagnostic(value: string): string {
+  const lines = value
+    .replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[│|]\s?/, '').trim())
+    .filter((line) => line !== '' && !/^[╷╵─]+$/.test(line));
+  return lines.find((line) => line.startsWith('Error:')) ?? lines[0] ?? '';
 }
