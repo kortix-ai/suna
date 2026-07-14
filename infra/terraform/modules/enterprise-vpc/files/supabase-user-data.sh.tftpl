@@ -83,7 +83,7 @@ KORTIX_API_DOMAIN=${api_domain}
 KORTIX_FRONTEND_DOMAIN=${frontend_domain}
 KORTIX_ACME_EMAIL=${acme_email}
 KORTIX_ROUTE53_ZONE_ID=${route53_zone_id}
-KORTIX_ECR_REPOSITORIES=${ecr_repositories}
+KORTIX_ECR_REPOSITORIES='${ecr_repositories}'
 ENV
 chmod 0600 /etc/kortix/instance.env
 
