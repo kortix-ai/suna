@@ -108,6 +108,22 @@ printf 'SSM command %s did not reach a terminal state within 31 minutes\n' "$com
 exit 1
 `;
 
+const EXTERNAL_SECRET_WAIT_SCRIPT = `
+set -euo pipefail
+namespace="$1"
+deadline=$((SECONDS + 600))
+while (( SECONDS < deadline )); do
+  current=$(kubectl --namespace "$namespace" get externalsecret/kortix-runtime \
+    --output='jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}' 2>/dev/null || true)
+  if [ "$current" = "True" ]; then
+    exit 0
+  fi
+  sleep 5
+done
+printf 'ExternalSecret kortix-runtime did not become Ready within 10 minutes\\n' >&2
+exit 1
+`;
+
 export interface InstallerConfig {
   workDir: string;
   region: string;
@@ -259,10 +275,7 @@ export class ReleaseInstaller {
       runtimeSecretArn: this.config.runtimeSecretArn,
     }), null, 2)}\n`, { mode: 0o600 });
     this.runner.run('kubectl', ['apply', '--filename', runtimeExternalSecrets], { env: kubeEnv });
-    this.runner.run('kubectl', [
-      '--namespace', descriptor.namespace, 'wait', '--for=condition=Ready',
-      'externalsecret/kortix-runtime', '--timeout=5m',
-    ], { env: kubeEnv });
+    this.runner.run('bash', ['-ceu', EXTERNAL_SECRET_WAIT_SCRIPT, 'bash', descriptor.namespace], { env: kubeEnv });
     this.runner.run('kubectl', [
       '--namespace', descriptor.namespace, 'get', 'secret', 'kortix-runtime', '--output=name',
     ], { env: kubeEnv });

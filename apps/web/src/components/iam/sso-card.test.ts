@@ -58,13 +58,13 @@ describe('SSO card — service provider details block', () => {
   });
 
   test('renders the block before a provider is configured, and inside the configure/edit dialog', () => {
-    expect(source).toContain('{!provider && spUrls && <SpDetails');
-    expect(source).toContain('{spUrls && (\n          <SpDetails');
+    expect(source).toMatch(/\{!provider && spUrls && \([\s\S]*?<SpDetails/);
+    expect(source).toMatch(/\{spUrls && (?:\(\s*)?<SpDetails/);
   });
 
   test('hides the block rather than render a broken URL when the origin is unavailable', () => {
     // Null-origin handling is unit-tested in lib/saml-sp.test.ts; the card
     // just guards the render on the derived value.
-    expect(source).toContain('{!provider && spUrls && <SpDetails');
+    expect(source).toMatch(/\{!provider && spUrls && \([\s\S]*?<SpDetails/);
   });
 });
