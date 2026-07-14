@@ -252,7 +252,7 @@ ${LOG_LIMITS}
       KORTIX_API_URL: http://api:8008
     expose:
       - "8090"
-${APP_HEALTHCHECK('8090', '/')}
+${APP_HEALTHCHECK('8090', '/health')}
     restart: always
 ${LOG_LIMITS}
 

@@ -152,6 +152,9 @@ describe('enterprise release bundles', () => {
       expect(installScript).toContain('if $acme_email == "" then "admin@" + $frontend_domain else $acme_email end');
       // api runs 2 replicas.
       expect(compose).toMatch(/api:[\s\S]*?replicas: 2/);
+      // The gateway healthcheck must hit /health (200), not / (404) — else the
+      // container is perpetually unhealthy and the rolling swap rejects it.
+      expect(compose).toContain("fetch('http://localhost:8090/health')");
       // Images are env-substituted; the install script enforces the digest lock.
       expect(compose).toContain('image: ${KORTIX_API_IMAGE}');
       // Caddy is a fixed appliance dependency: pinned by digest as the compose
