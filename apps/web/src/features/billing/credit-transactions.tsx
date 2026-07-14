@@ -2,10 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
   SelectContent,
@@ -25,7 +24,7 @@ import {
 import { useTransactions } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
-import { AlertCircle, Clock, Infinity, Minus, Plus, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 interface Props {
@@ -50,22 +49,10 @@ export default function CreditTransactions({ accountId }: Props) {
     });
   };
 
-  const getTransactionIcon = (type: string, amount: number) => {
-    if (amount > 0) {
-      return <Plus className="h-4 w-4 text-emerald-500" />;
-    }
-    if (type === 'usage') {
-      return <Minus className="h-4 w-4 text-orange-500" />;
-    }
-    if (type === 'expired') {
-      return <Clock className="h-4 w-4 text-red-500" />;
-    }
-    return <Minus className="h-4 w-4 text-red-500" />;
-  };
-
   const getTransactionBadge = (type: string) => {
     const badges: Record<string, { label: string; variant: any }> = {
       tier_grant: { label: 'Tier Grant', variant: 'default' },
+      free_tier_grant: { label: 'Tier Grant', variant: 'secondary' },
       purchase: { label: 'Purchase', variant: 'default' },
       auto_topup: { label: 'Auto Top-up', variant: 'default' },
       machine_bonus: { label: 'Machine Bonus', variant: 'secondary' },
@@ -84,7 +71,11 @@ export default function CreditTransactions({ accountId }: Props) {
     };
 
     const badge = badges[type] || { label: type, variant: 'outline' };
-    return <Badge variant={badge.variant as any}>{badge.label}</Badge>;
+    return (
+      <Badge variant={badge.variant as any} size="sm">
+        {badge.label}
+      </Badge>
+    );
   };
 
   const handlePrevPage = () => {
@@ -99,9 +90,9 @@ export default function CreditTransactions({ accountId }: Props) {
 
   if (isLoading && offset === 0) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-2">
         {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
+          <Skeleton key={i} className="h-12 w-full rounded-md" />
         ))}
       </div>
     );
@@ -109,11 +100,9 @@ export default function CreditTransactions({ accountId }: Props) {
 
   if (error) {
     return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Error</AlertTitle>
-        <AlertDescription>{error.message || 'Failed to load transactions'}</AlertDescription>
-      </Alert>
+      <InfoBanner tone="destructive" title="Failed to load transactions">
+        {error.message || 'Failed to load transactions'}
+      </InfoBanner>
     );
   }
 
@@ -164,117 +153,87 @@ export default function CreditTransactions({ accountId }: Props) {
             <SelectItem value="promotional">Promotional</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="icon" className="w-9" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4" />
+        <Button variant="ghost" size="icon" aria-label="Refresh" onClick={() => refetch()}>
+          <RefreshCw className="size-4" />
         </Button>
       </div>
 
-      <Card className="border-none bg-transparent p-0 px-0 shadow-none">
-        <CardContent className="px-0">
-          {transactions.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-muted-foreground">
-                {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+      {transactions.length === 0 ? (
+        <p className="text-muted-foreground px-3 py-8 text-center text-sm">
+          {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+        </p>
+      ) : (
+        <>
+          <div className="bg-popover overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[180px]">Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-center">
+                    {tHardcodedUi.raw('componentsBillingCreditTransactions.line198JsxTextCreditType')}
+                  </TableHead>
+                  <TableHead className="text-right">Credits</TableHead>
+                  <TableHead className="text-right">
+                    {tHardcodedUi.raw(
+                      'componentsBillingCreditTransactions.line200JsxTextCreditsAfter',
+                    )}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((tx) => (
+                  <TableRow key={tx.id}>
+                    <TableCell className="font-mono text-xs">{formatDate(tx.created_at)}</TableCell>
+                    <TableCell>{getTransactionBadge(tx.type)}</TableCell>
+                    <TableCell className="text-sm">{tx.description || 'No description'}</TableCell>
+                    <TableCell className="text-center">
+                      {tx.is_expiring !== undefined && (
+                        <span className="text-muted-foreground text-xs">
+                          {tx.is_expiring ? 'Expiring' : 'Permanent'}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        'text-right font-mono font-medium tabular-nums',
+                        tx.amount >= 0 ? 'text-kortix-green' : 'text-kortix-red',
+                      )}
+                    >
+                      {formatCreditsWithSign(tx.amount, { showDecimals: true })}
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {formatCredits(tx.balance_after, { showDecimals: true })}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {data?.pagination && (
+            <div className="flex items-center justify-between">
+              <p className="text-muted-foreground text-xs tabular-nums">
+                Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of{' '}
+                {data.pagination.total} transactions
               </p>
-            </div>
-          ) : (
-            <>
-              <div className="rounded-2xl border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[180px]">Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-center">
-                        {tHardcodedUi.raw(
-                          'componentsBillingCreditTransactions.line198JsxTextCreditType',
-                        )}
-                      </TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
-                      <TableHead className="text-right">
-                        {tHardcodedUi.raw(
-                          'componentsBillingCreditTransactions.line200JsxTextCreditsAfter',
-                        )}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => (
-                      <TableRow key={tx.id}>
-                        <TableCell className="font-mono text-xs">
-                          {formatDate(tx.created_at)}
-                        </TableCell>
-                        <TableCell>{getTransactionBadge(tx.type)}</TableCell>
-                        <TableCell className="text-sm">
-                          <div className="flex items-center gap-2">
-                            {getTransactionIcon(tx.type, tx.amount)}
-                            {tx.description || 'No description'}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {tx.is_expiring !== undefined && (
-                            <div className="flex items-center justify-center gap-1">
-                              {tx.is_expiring ? (
-                                <>
-                                  <Clock className="h-3 w-3 text-orange-500" />
-                                  <span className="text-muted-foreground text-xs">Expiring</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Infinity className="h-3 w-3 text-blue-500" />
-                                  <span className="text-muted-foreground text-xs">Permanent</span>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            'text-right font-mono font-semibold',
-                            tx.amount >= 0 ? 'text-emerald-600' : 'text-red-600',
-                          )}
-                        >
-                          {formatCreditsWithSign(tx.amount, { showDecimals: true })}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCredits(tx.balance_after, { showDecimals: true })}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={offset === 0}>
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={!data.pagination.has_more}
+                >
+                  Next
+                </Button>
               </div>
-              {data?.pagination && (
-                <div className="mt-4 flex items-center justify-between">
-                  <p className="text-muted-foreground text-sm">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of{' '}
-                    {data.pagination.total} transactions
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handlePrevPage}
-                      disabled={offset === 0}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleNextPage}
-                      disabled={!data.pagination.has_more}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </>
+      )}
     </div>
   );
 }

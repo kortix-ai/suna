@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // Account-wide MFA enforcement toggle on the Settings tab. Off by default.
 // When ON, every browser/JWT request whose session is not aal2 is denied
 // at the IAM engine — super-admins are exempt (so the switch can't
@@ -11,21 +10,25 @@ import { useTranslations } from 'next-intl';
 // would be locked out, and the backend refuses flips that would orphan
 // the account.
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, KeyRound, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getMfaRequired, previewMfaRequired, setMfaRequired } from '@/lib/iam-client';
 import { listAccountMembers } from '@kortix/sdk/projects-client';
@@ -36,7 +39,6 @@ interface MfaRequiredCardProps {
 }
 
 export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -73,7 +75,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
   const flipMutation = useMutation({
     mutationFn: (enabled: boolean) => setMfaRequired(accountId, enabled),
     onSuccess: (res) => {
-      toast.success(
+      successToast(
         res.enabled ? 'MFA is now required for this account' : 'MFA requirement disabled',
       );
       queryClient.invalidateQueries({ queryKey: ['iam-mfa-required', accountId] });
@@ -83,7 +85,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       queryClient.invalidateQueries({ queryKey: ['iam-permission-batch'] });
       setConfirmOpen(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update MFA requirement'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update MFA requirement'),
   });
 
   const enabled = statusQuery.data?.enabled ?? false;
@@ -102,89 +104,71 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
   }, [previewQuery.data]);
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
-      <header className="px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
-              <KeyRound className="text-muted-foreground h-4 w-4" />
-              {tHardcodedUi.raw(
-                'componentsIamMfaRequiredCard.line116JsxTextRequireMFAForAllMembers',
-              )}
-              {!statusQuery.isLoading && enabled && (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-500/40 bg-emerald-500/10 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
-                >
-                  required
-                </Badge>
-              )}
-            </h2>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {tHardcodedUi.raw(
-                'componentsIamMfaRequiredCard.line119JsxTextWhenEnabledMembersMustCompleteASecondFactor',
-              )}
-            </p>
-          </div>
-          {statusQuery.isLoading ? (
-            <Skeleton className="h-9 w-24 rounded-md" />
-          ) : (
-            <Button
-              variant={enabled ? 'destructive' : 'default'}
-              disabled={!canManage || flipMutation.isPending}
-              onClick={() => setConfirmOpen(true)}
-              className="shrink-0"
-            >
-              {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {enabled ? 'Disable' : 'Require MFA'}
-            </Button>
-          )}
+    <div className="bg-popover rounded-md border px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+            Require MFA for all members
+            {!statusQuery.isLoading && enabled && (
+              <Badge variant="success" size="sm">
+                Required
+              </Badge>
+            )}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            When enabled, members must complete a second-factor challenge before any IAM-gated
+            action. Super-admins and Personal Access Tokens are exempt.
+          </p>
         </div>
-      </header>
+        {statusQuery.isLoading ? (
+          <Skeleton className="h-8 w-24 shrink-0 rounded-md" />
+        ) : (
+          <Button
+            variant={enabled ? 'destructive' : 'secondary'}
+            size="sm"
+            disabled={!canManage || flipMutation.isPending}
+            onClick={() => setConfirmOpen(true)}
+            className="shrink-0 gap-1.5"
+          >
+            {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}
+            {enabled ? 'Disable' : 'Require MFA'}
+          </Button>
+        )}
+      </div>
 
       {/* Enable path */}
-      <Dialog
+      <Modal
         open={confirmOpen && !enabled}
         onOpenChange={(v) => {
           if (!flipMutation.isPending) setConfirmOpen(v);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {tHardcodedUi.raw(
-                'componentsIamMfaRequiredCard.line165JsxTextRequireMFAForThisAccount',
-              )}
-            </DialogTitle>
-            <DialogDescription>
-              {tHardcodedUi.raw(
-                'componentsIamMfaRequiredCard.line167JsxTextMembersWithoutAVerifiedSecondFactorWillBe',
-              )}
-            </DialogDescription>
-          </DialogHeader>
+        <ModalContent className="lg:max-w-lg">
+          <ModalHeader>
+            <ModalTitle>Require MFA for this account?</ModalTitle>
+            <ModalDescription>
+              Members without a verified second factor will be blocked from every IAM-gated
+              action until they enrol. CLI tokens (PATs) are unaffected.
+            </ModalDescription>
+          </ModalHeader>
 
-          <div className="space-y-3">
+          <ModalBody className="space-y-3">
             {previewQuery.isLoading && (
-              <div className="border-border/60 rounded-2xl border px-3 py-3">
+              <div className="rounded-md border px-3 py-3">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="mt-2 h-3 w-1/2" />
               </div>
             )}
 
             {previewQuery.data && previewQuery.data.will_lock_out_account && (
-              <div className="border-destructive/30 bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-xs">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <p>
-                  {tHardcodedUi.raw(
-                    'componentsIamMfaRequiredCard.line185JsxTextNobodyWouldRetainAccessPromoteASuperAdmin',
-                  )}
-                </p>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertTriangle}>
+                Nobody would retain access. Promote a super-admin or have at least one member
+                enrol MFA before enabling.
+              </InfoBanner>
             )}
 
             {previewQuery.data && !previewQuery.data.will_lock_out_account && (
-              <div className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
+              <InfoBanner tone="neutral">
                 <span className="text-foreground font-medium">
                   {previewQuery.data.members_with_mfa}
                 </span>{' '}
@@ -192,21 +176,16 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                 <span className="text-foreground font-medium">
                   {previewQuery.data.total_members}
                 </span>{' '}
-                {tHardcodedUi.raw(
-                  'componentsIamMfaRequiredCard.line200JsxTextMembersHaveMFAEnrolled',
-                )}
-              </div>
+                members have MFA enrolled.
+              </InfoBanner>
             )}
 
             {partitionedLosers.lockouts.length > 0 && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-xs">
-                <p className="mb-2 font-medium text-amber-700 dark:text-amber-400">
-                  {partitionedLosers.lockouts.length}{' '}
-                  {partitionedLosers.lockouts.length === 1 ? 'member' : 'members'}{' '}
-                  {tHardcodedUi.raw(
-                    'componentsIamMfaRequiredCard.line208JsxTextWillBeLockedOutUntilTheyEnrolMFA',
-                  )}
-                </p>
+              <InfoBanner
+                tone="warning"
+                icon={AlertTriangle}
+                title={`${partitionedLosers.lockouts.length} ${partitionedLosers.lockouts.length === 1 ? 'member' : 'members'} will be locked out until they enrol MFA:`}
+              >
                 <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                   {partitionedLosers.lockouts.map((l) => (
                     <li key={l.user_id} className="flex items-center gap-2">
@@ -218,21 +197,23 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                     </li>
                   ))}
                 </ul>
-              </div>
+              </InfoBanner>
             )}
 
             {partitionedLosers.exemptAdmins.length > 0 && (
-              <div className="border-border/60 bg-muted/20 rounded-2xl border px-3 py-3 text-xs">
-                <p className="text-muted-foreground mb-2 flex items-center gap-1.5">
-                  <Badge variant="outline" size="sm" className="text-[9px]">
-                    exempt
-                  </Badge>
-                  {partitionedLosers.exemptAdmins.length} super-admin
-                  {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'}{' '}
-                  {tHardcodedUi.raw(
-                    'componentsIamMfaRequiredCard.line234JsxTextWithoutMFATheyWonTBeLockedOut',
-                  )}
-                </p>
+              <InfoBanner
+                tone="neutral"
+                title={
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <Badge variant="outline" size="xs">
+                      exempt
+                    </Badge>
+                    {partitionedLosers.exemptAdmins.length} super-admin
+                    {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'} without MFA — they
+                    won&apos;t be locked out, but consider asking them to enrol:
+                  </span>
+                }
+              >
                 <ul className="max-h-32 space-y-0.5 overflow-y-auto">
                   {partitionedLosers.exemptAdmins.map((l) => (
                     <li key={l.user_id} className="text-foreground truncate">
@@ -240,68 +221,47 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                     </li>
                   ))}
                 </ul>
-              </div>
+              </InfoBanner>
             )}
-          </div>
+          </ModalBody>
 
-          <DialogFooter>
+          <ModalFooter className="sm:justify-between">
             <Button
-              variant="outline"
+              variant="outline-ghost"
+              size="sm"
               onClick={() => setConfirmOpen(false)}
               disabled={flipMutation.isPending}
             >
               Cancel
             </Button>
             <Button
+              size="sm"
               onClick={() => flipMutation.mutate(true)}
-              disabled={flipMutation.isPending || previewQuery.data?.will_lock_out_account === true}
+              disabled={
+                flipMutation.isPending || previewQuery.data?.will_lock_out_account === true
+              }
               className="gap-1.5"
             >
-              {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line266JsxTextRequireMFA')}
+              {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}
+              Require MFA
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Disable path */}
-      <Dialog
+      <ConfirmDialog
         open={confirmOpen && enabled}
         onOpenChange={(v) => {
           if (!flipMutation.isPending) setConfirmOpen(v);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line281JsxTextDisableMFARequirement')}
-            </DialogTitle>
-            <DialogDescription>
-              {tHardcodedUi.raw(
-                'componentsIamMfaRequiredCard.line283JsxTextMembersWillBeAbleToSignInWith',
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConfirmOpen(false)}
-              disabled={flipMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => flipMutation.mutate(false)}
-              disabled={flipMutation.isPending}
-              className="gap-1.5"
-            >
-              {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {tHardcodedUi.raw('componentsIamMfaRequiredCard.line303JsxTextDisableMFARequirement')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
+        title="Disable MFA requirement?"
+        description="Members will be able to sign in with a password alone. Per-policy MFA conditions you may have set on individual policies still apply — only the account-wide gate is removed."
+        confirmLabel="Disable MFA requirement"
+        confirmVariant="destructive"
+        isPending={flipMutation.isPending}
+        onConfirm={() => flipMutation.mutate(false)}
+      />
+    </div>
   );
 }
