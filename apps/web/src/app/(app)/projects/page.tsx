@@ -94,6 +94,7 @@ export default function ProjectsPage() {
   const [archiveTarget, setArchiveTarget] = useState<KortixProject | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [createAccountId, setCreateAccountId] = useState<string | null>(null);
+  const [cloneSourceItemId, setCloneSourceItemId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const [firstProjectBootstrapRequested, setFirstProjectBootstrapRequested] = useState(() => {
     return hasFirstProjectBootstrapSignal(searchParams);
@@ -108,6 +109,20 @@ export default function ProjectsPage() {
       setModalOpen(true);
       const url = new URL(window.location.href);
       url.searchParams.delete('new');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [searchParams]);
+
+  // "Clone project" from the public marketplace (?clone=<item-id>) — opens the
+  // same New Project modal pre-seeded from a `registry:project` item instead
+  // of the blank starter, same auto-open-then-strip-the-param pattern as `new`.
+  useEffect(() => {
+    const cloneId = searchParams.get('clone');
+    if (cloneId) {
+      setCloneSourceItemId(cloneId);
+      setModalOpen(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('clone');
       window.history.replaceState(null, '', url.toString());
     }
   }, [searchParams]);
@@ -611,9 +626,13 @@ export default function ProjectsPage() {
         open={modalOpen}
         onOpenChange={(o) => {
           setModalOpen(o);
-          if (!o) setCreateAccountId(null);
+          if (!o) {
+            setCreateAccountId(null);
+            setCloneSourceItemId(null);
+          }
         }}
         accountId={createAccountId ?? activeAccountId}
+        sourceItemId={cloneSourceItemId}
       />
 
       <RenameProjectDialog

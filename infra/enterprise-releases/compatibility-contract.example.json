@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "kubernetes_minor": ["1.32"],
-  "rollback_from": [],
+  "rollback_from": ["0.9.108-e11"],
   "migrations": [
     {
       "id": "baseline",

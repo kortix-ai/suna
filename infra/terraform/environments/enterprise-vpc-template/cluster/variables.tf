@@ -13,12 +13,6 @@ variable "tuf_root_sha256" {
   type      = string
   sensitive = true
 }
-variable "updater_bootstrap_url" { type = string }
-variable "updater_bootstrap_sha256" {
-  type      = string
-  sensitive = true
-}
-variable "release_publisher_account_id" { type = string }
 variable "maintenance_window" {
   type    = string
   default = "Sun:02:00-05:00"
@@ -35,9 +29,43 @@ variable "operator_external_id" {
 variable "permissions_boundary_arn" {
   type = string
 }
-variable "terraform_state_bucket" { type = string }
-variable "terraform_state_lock_table" { type = string }
-variable "terraform_state_kms_key_arn" { type = string }
+# ── ECS / ALB / Bedrock / scheduler ───────────────────────────────────────────
+variable "alb_ingress_cidrs" {
+  description = "CIDRs allowed to reach the public ALB. Enterprise customers should restrict this."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+variable "bedrock_model_allowlist" {
+  description = "Bedrock model/inference-profile ARNs the gateway task role may invoke. Empty keeps the module default (Anthropic)."
+  type        = list(string)
+  default     = null
+}
+variable "enable_scheduled_deploy" {
+  type    = bool
+  default = true
+}
+variable "scheduler_schedule_expression" {
+  type    = string
+  default = "rate(1 day)"
+}
+variable "api_image" {
+  description = "Initial API image; null seeds the placeholder and lets the deployer own revisions."
+  type        = string
+  default     = null
+}
+variable "gateway_image" {
+  type    = string
+  default = null
+}
+variable "frontend_image" {
+  type    = string
+  default = null
+}
+variable "deployer_image" {
+  type    = string
+  default = null
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

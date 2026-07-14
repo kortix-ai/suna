@@ -1,75 +1,77 @@
 # Enterprise VPC deployment and update runbook
 
+The enterprise installation is ECS Fargate, not EKS/Helm. The whole system is
+one sentence: **a signed release manifest, three ECS services and a Supabase EC2
+behind one ALB, deployed by one CLI command.** See the architecture spec
+`docs/specs/2026-07-14-enterprise-ecs-simplification.md` and the module README
+`infra/terraform/modules/enterprise-vpc/README.md`.
+
 ## Release flow
 
 `main -> staging -> prod -> customer-zero certification -> stable`
 
 `stable` is a signed release channel, not a moving source branch deployed from
-Git. An enterprise version is `<prod-version>-e<revision>`. Promotion copies the
-exact certified image and bundle digests; it never rebuilds them.
+Git. An enterprise version is `<prod-version>-e<revision>`. Promotion (the
+`Promote Enterprise Stable` workflow) copies the exact certified image and bundle
+digests and signs the manifest; it never rebuilds them. Revisions after `e1` must
+declare `rollback_from` in their compatibility contract (the workflow rejects an
+empty list and requires the immediately preceding published revision).
 
-The shared publisher is Terraform-owned in the Kortix AWS account. Its
-CloudFront hostname, us-east-1 ACM certificate, Cloudflare validation and CNAME
-records, WAF, encrypted WAF logs, immutable request-log bucket, object-locked
-TUF bucket, KMS signing keys, and GitHub OIDC roles are one deployment.
+## Release publisher (Kortix account)
+
+The shared publisher is Terraform-owned in the Kortix AWS account. Its CloudFront
+hostname, us-east-1 ACM certificate, Cloudflare validation and CNAME records,
+WAF, encrypted WAF logs, immutable request-log bucket, object-locked TUF bucket,
+KMS signing keys, and GitHub OIDC roles are one deployment.
 
 The one-time `enterprise-release-publisher-bootstrap` root creates the GitHub
-OIDC Terraform role from an authenticated Kortix administrator session. Store
-its `terraform_role_arn` output as the repository variable
+OIDC Terraform role from an authenticated Kortix administrator session. Store its
+`terraform_role_arn` output as the repository variable
 `ENTERPRISE_PUBLISHER_TERRAFORM_ROLE_ARN`; store the Kortix Cloudflare zone as
 `CLOUDFLARE_ZONE_ID`. The protected `enterprise-stable` environment then runs
 `Deploy Enterprise Release Publisher`, consuming the existing
 `CLOUDFLARE_API_TOKEN` secret without exporting it. Plan is the default; apply
 requires the pinned account confirmation and environment approval.
 
-For emergency local recovery only, supply the scoped Cloudflare credential at
-apply time:
-
-```bash
-export TF_VAR_cloudflare_api_token="$(dotenvx get CLOUDFLARE_API_TOKEN -f apps/api/.env)"
-terraform -chdir=infra/terraform/environments/enterprise-release-publisher plan
-```
-
-Never write that token into `terraform.tfvars` or state. The provider uses it
-for DNS writes but does not persist it as a managed resource attribute.
-
 ## Bootstrap order
 
 1. The CLI resolves the AWS target and prints the STS account, region, and
    planned instance name. It refuses an account mismatch. `doctor` also prints
-   the resolved caller ARN while validating target access.
-2. The `state` root plans locally. Bootstrap IAM/KMS/S3/DynamoDB changes always
+   the resolved caller ARN while validating target access. The instance slug must
+   NOT start with `kortix-` (every resource is already named `kortix-<instance>`).
+2. The `state` root plans locally. Bootstrap IAM/KMS/S3/state-lock changes always
    require explicit customer review.
 3. The state root applies, its local state migrates to the new encrypted S3
    backend, and a remote pull verifies lineage and serial before local cleanup.
 4. The `cluster` root plans against remote state. Deletes/replacements are
    blocked; the first plan is necessarily manual because it creates trust and
-   network boundaries.
+   network boundaries, the ECS cluster/services/ALB, the Supabase EC2, KMS, ECR,
+   the release-staging bucket, and the gateway Bedrock grant.
 5. After apply, the customer validates ACM DNS records and populates the
-   encrypted runtime secret without writing plaintext Terraform variables.
-6. Customer CodeBuild applies the `platform` root through the private EKS
-   endpoint and reconciles the certified release.
-7. Certification proves API, frontend, auth, sandbox execution, persistence,
-   observability, backup/WAL restore, upgrade, rollback, missed-event recovery,
-   invalid-signature rejection, node loss, and Supabase host recovery.
+   encrypted runtime secret (`kortix self-host env set ...`) without writing
+   plaintext Terraform variables.
+6. The `platform` root aliases the two application domains (A/AAAA) at the shared
+   ALB in the customer Route 53 zone. This is the whole post-cluster step — there
+   is no in-cluster platform stage.
+7. The operator runs the first `deploy`, which drives the deployer ECS task, and
+   then certifies (checklist below).
 
 The permanent customer-zero target is AWS account `935064898258`, region
-`us-west-2`, CIDR `10.60.0.0/16`. Essentia is not touched until customer-zero
-passes the complete certification matrix with the exact artifact digests that
-will be promoted.
+`us-west-2`, CIDR `10.60.0.0/16`. Essentia (account `327903111249`) is not
+touched until customer-zero passes certification with the exact artifact digests
+that will be promoted.
 
 ## CLI management plane
 
-`kortix self-host` is the one operator surface for Docker and AWS installs.
-Docker commands keep their existing behavior. An AWS target stores only
-secret-free desired settings and an account pin under the named instance; the
-compiled CLI materializes the reviewed Terraform roots and their complete
-local module graph there.
+`kortix self-host` is the one operator surface for Docker and AWS installs. An
+AWS target stores only secret-free desired settings and an account pin under the
+named instance; the compiled CLI materializes the reviewed Terraform roots and
+their complete local module graph there.
 
 ```bash
 kortix self-host init \
   --target aws-vpc \
-  --instance kortix-vpc-demo \
+  --instance vpc-demo \
   --aws-profile default \
   --region us-west-2 \
   --vpc-cidr 10.60.0.0/16 \
@@ -84,115 +86,118 @@ kortix self-host init \
   --maintenance-window Sun:02:00-05:00 \
   --yes
 
-kortix self-host doctor --instance kortix-vpc-demo
-kortix self-host plan --instance kortix-vpc-demo
-kortix self-host deploy --instance kortix-vpc-demo
+kortix self-host doctor --instance vpc-demo
+kortix self-host plan   --instance vpc-demo
+kortix self-host deploy --instance vpc-demo
 ```
 
 `init`, `configure`, `doctor`, and `plan` do not mutate AWS. `deploy` requires
 interactive confirmation or `--yes`, applies a saved classified plan, migrates
 bootstrap state into customer S3, and compares remote lineage and serial before
-removing the local state. If migration fails, the CLI restores the local
-backend declaration and preserves the bootstrap state for a safe retry.
+removing the local state. If migration fails, the CLI restores the local backend
+declaration and preserves the bootstrap state for a safe retry.
 
 After bootstrap, operational commands read or invoke customer-owned AWS
-resources rather than relying on local cached status:
+resources rather than local cached status:
 
 ```bash
-kortix self-host status --instance kortix-vpc-demo
-kortix self-host version --instance kortix-vpc-demo
-kortix self-host logs updater --instance kortix-vpc-demo --follow
-kortix self-host logs supabase --instance kortix-vpc-demo
-kortix self-host reconcile --instance kortix-vpc-demo
-kortix self-host update --instance kortix-vpc-demo --release 0.9.84-e1
-kortix self-host update --instance kortix-vpc-demo --release 0.9.84-e1 --force
-kortix self-host rollback --instance kortix-vpc-demo --release 0.9.83-e2
+kortix self-host status   --instance vpc-demo
+kortix self-host version  --instance vpc-demo
+kortix self-host logs deployer --instance vpc-demo --follow
+kortix self-host logs supabase --instance vpc-demo
+kortix self-host env ls   --instance vpc-demo
+kortix self-host reconcile --instance vpc-demo
+kortix self-host update   --instance vpc-demo --release 0.9.84-e1
+kortix self-host update   --instance vpc-demo --release 0.9.84-e1 --force
+kortix self-host rollback --instance vpc-demo --release 0.9.83-e2
 ```
 
-Update, force, reconcile, and rollback only start the customer Step Functions
-state machine. The CLI cannot bypass the updater's signature, digest,
-compatibility, account, Terraform-plan, migration, or health gates.
+Log targets are `deployer`, `supabase`, `api`, `frontend`, and `gateway`.
 
-## Point-in-time recovery
+## Deploy and update mechanics (the deployer task)
 
-Every signed Supabase bundle contains `bin/pitr-restore`. It restores an exact
-base-backup manifest plus the customer-owned WAL archive; it does not accept an
-arbitrary S3 key. Before stopping Supabase it verifies the manifest contract,
-download length, full SHA-256 checksum, tar paths, WAL filenames, target time,
-and active instance name. It then atomically acquires `recovery_in_progress` in
-the release-state table. The normal updater cannot acquire its lease while
-that flag exists.
+`deploy`, `update`, `reconcile`, and `rollback` all run the SAME signed deploy
+library, in the customer-owned `kortix-<instance>-deployer` ECS task — the CLI
+starts a one-off RunTask and streams its result; the daily EventBridge Scheduler
+rule runs the identical task and exits 0 when the running digests already match
+the stable manifest. The deployer:
 
-Select the latest complete base backup and a UTC target after that backup but
-not in the future:
+1. verifies the pinned AWS account and TUF-verifies the `stable` manifest;
+2. no-ops if the running service digests + Supabase bundle sha (recorded in the
+   SSM parameter `/kortix/<instance>/release`, a human-readable breadcrumb, never
+   a lock) already match;
+3. mirrors the immutable images into customer ECR by digest;
+4. if the Supabase bundle changed, stages the verified tarball into the
+   KMS-encrypted release-staging S3 bucket and installs it on the EC2 over SSM
+   RunCommand, then health-checks Kong;
+5. registers new task-def revisions (env + secrets rendered from the runtime
+   secret keys, the `ecs-deploy.sh` pattern), runs the migrate task
+   (`bun scripts/migrate.ts bootstrap`) to exit 0;
+6. rolls `api -> gateway -> frontend` and waits for `services-stable`; the ECS
+   deployment circuit breaker rolls back a bad task-def automatically;
+7. runs public health checks and writes the SSM release breadcrumb.
 
-```bash
-STATUS=$(kortix self-host status --instance kortix-vpc-demo --json)
-INSTANCE_ID=$(jq -r '.supabase.instance_id' <<<"$STATUS")
-BASE_KEY=$(jq -r '.release.last_base_backup_key' <<<"$STATUS")
-MANIFEST_KEY="${BASE_KEY%/base.tar.gz}/manifest.json"
-TARGET_TIME=2026-07-13T11:00:00Z
+There is no Step Functions, CodeBuild, or release-state/lease table: live ECS
+state is the release state, and ECS serializes deployments per service.
 
-COMMAND_ID=$(aws ssm send-command \
-  --profile default \
-  --region us-west-2 \
-  --instance-ids "$INSTANCE_ID" \
-  --document-name AWS-RunShellScript \
-  --parameters commands="sudo /opt/kortix/current/bin/pitr-restore --manifest-key '$MANIFEST_KEY' --target-time '$TARGET_TIME' --confirm-instance kortix-vpc-demo" \
-  --query 'Command.CommandId' \
-  --output text)
+## Rollback
 
-aws ssm get-command-invocation \
-  --profile default \
-  --region us-west-2 \
-  --command-id "$COMMAND_ID" \
-  --instance-id "$INSTANCE_ID"
-```
+`rollback --release <v>` is a deploy of an older signed revision. It is allowed
+only when the target manifest lists the current revision as a valid predecessor
+in `rollback_from`. A database rollback is safe only when the manifest declares a
+tested reverse/forward-compatible migration path; otherwise a data restore is a
+reviewed recovery operation (below). Exercise a rollback once on customer-zero.
 
-The restore first starts only PostgreSQL, waits until recovery reaches the
-requested time and promotes, and only then starts the complete Supabase stack.
-The previous data directory is retained as
-`/var/lib/kortix/postgres.pre-pitr-<timestamp>`. If PostgreSQL cannot reach the
-target, the script automatically restores that directory and restarts the
-original stack. If even that restart fails, `recovery_in_progress` remains set
-so unattended releases stay fail-closed.
+## Backup and restore (whole-volume)
 
-For a large production database, attach a fresh encrypted recovery EBS volume
-or use a replacement Supabase host so the base archive, restored cluster, WAL,
-and quarantined prior cluster have sufficient capacity. Certification is not
-complete until a real marker row is restored to the requested timestamp, the
-application reads it through the API, the old cluster remains quarantined, and
-the release-state restore coordinates match the S3 manifest.
+Durability is encrypted EBS + hourly AWS Backup recovery points (`backup.tf`,
+vault-locked). There is no custom log-shipping or point-in-time database machine
+on the host; recovery is a **whole-volume restore** of the Supabase data volume
+to the most recent recovery point, so the RPO tracks the ~60-minute snapshot
+cadence.
 
-## Normal update
+To recover:
 
-Kortix publishes signed TUF metadata and may send a cross-account EventBridge
-wake-up hint. The customer's Step Functions execution starts private CodeBuild.
-The updater verifies the pinned bootstrap digest, TUF root/metadata, Cosign
-signature, target channel, instance compatibility, migrations, and Terraform
-plan classification. It then mirrors only the immutable runtime images into
-customer ECR, downloads the authenticated TUF bundles, updates Supabase
-through SSM, reconciles EKS, runs health gates, and records the
-result in customer DynamoDB. An hourly schedule performs the same source-of-
-truth check if hints are missed.
+1. Confirm a recent recovery point exists in the `<instance>-supabase` backup
+   vault (`aws backup list-recovery-points-by-backup-vault`).
+2. Stop the Supabase stack on the host (`kortix self-host logs supabase` to
+   confirm; the stack is systemd-managed).
+3. Restore the recovery point to a new encrypted EBS volume
+   (`aws backup start-restore-job`), detach the current data volume, and attach
+   the restored volume at `/dev/sdf`.
+4. Start Supabase and verify the authenticated Kong health endpoint, then confirm
+   application reads through the API.
 
-## Force, rollback, and break glass
+Certification is not complete until a real marker row survives a restore to the
+latest recovery point, the application reads it through the API, and the restore
+procedure is recorded.
 
-- A forced execution sets `force=true` and only bypasses the maintenance
-  window. It cannot bypass signatures, digest checks, migration compatibility,
-  plan guard, account guard, or health gates.
-- Rollback selects a previously verified enterprise manifest and digest set.
-  Database rollback is allowed only when that manifest declares a tested
-  reverse/forward-compatible migration path; otherwise restore is a reviewed
-  recovery operation.
-- Operator access is optional, customer-approved, external-ID protected, and
-  expires after one hour. Use SSM, never SSH. Every action is recorded in
-  CloudTrail, CloudWatch, Step Functions, CodeBuild, and release-state history.
+## Documented v1 limitations
+
+- **Sandboxes** run on Daytona via NAT egress (`ALLOWED_SANDBOX_PROVIDERS=daytona`).
+  Single-tenant in-VPC sandboxes are a separate project.
+- **LLM upstream** is AWS Bedrock. The gateway authenticates managed Claude with
+  the `AWS_BEDROCK_API_KEY` bearer key (an operator-required runtime value); the
+  gateway task role's SigV4 `bedrock:InvokeModel[WithResponseStream]` grant is
+  provisioned but latent until the gateway supports SigV4 credentials directly.
+  Enterprise deployments do NOT depend on OpenRouter.
+
+## Certification checklist (per deployment)
+
+- [ ] `terraform apply` clean from the generated env roots (state -> cluster -> platform)
+- [ ] all 3 ECS services stable on the expected digests; migrate task exit 0
+- [ ] Supabase authenticated health through Kong
+- [ ] API `/v1/health` 200 with the expected version; frontend 200
+- [ ] sign-up/sign-in + one real project/session flow persists data
+- [ ] one agent turn completes against Bedrock (no OpenRouter)
+- [ ] an AWS Backup recovery point exists; restore procedure documented
+- [ ] the daily scheduled deployer task ran once and no-oped cleanly
+- [ ] rollback to the previous revision exercised once (customer-zero only)
 
 ## Stop conditions
 
 Do not auto-apply when the guard reports `manual_review` or `blocked`, any
-signature/digest check fails, the installed account/region differs, a release
-is not on `stable`, backup/WAL health is stale, migrations are incompatible, or
-post-update health gates fail. Do not replace a host or restore data until the
-current EBS/WAL recovery point and rollback target are recorded.
+signature/digest check fails, the installed account/region differs, a release is
+not on `stable`, migrations are incompatible, or post-deploy health gates fail.
+Do not replace a host or restore data until the current backup recovery point and
+rollback target are recorded.

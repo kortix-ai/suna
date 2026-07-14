@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-// import { MarketplaceBrowser } from '@/components/marketplace/marketplace-browser';
-// import { MarketplaceInstalledPanel } from '@/components/marketplace/marketplace-installed-panel';
-import { MarketplaceBrowser } from '@/features/marketplace/marketplace-browser';
-import { MarketplaceInstalledPanel } from '@/features/marketplace/marketplace-installed-panel';
+import { MarketplaceView } from '@/features/marketplace/marketplace-view';
 import { setBootstrapAuthToken } from '@/lib/auth-token';
 
 export default function DebugMarketplacePage() {
@@ -22,21 +19,8 @@ export default function DebugMarketplacePage() {
   if (!ready) return null;
 
   return (
-    <main className="bg-background text-foreground min-h-screen p-8">
-      <div className="mx-auto grid max-w-6xl gap-8">
-        <section data-testid="marketplace-explore">
-          <h1 className="mb-4 text-lg font-semibold">Marketplace Explore</h1>
-          <MarketplaceBrowser installedNames={new Set(['pdf'])} onAdd={() => undefined} />
-        </section>
-
-        <section data-testid="marketplace-installed">
-          <h2 className="mb-4 text-lg font-semibold">Marketplace Installed</h2>
-          <MarketplaceInstalledPanel
-            projectId="debug-marketplace-project"
-            onBrowse={() => undefined}
-          />
-        </section>
-      </div>
+    <main className="bg-background text-foreground h-screen" data-testid="marketplace-view">
+      <MarketplaceView projectId="debug-marketplace-project" />
     </main>
   );
 }

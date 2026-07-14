@@ -8,13 +8,15 @@ import {
   awsIdentity,
   awsJson,
   awsJsonOptional,
+  deployClusterName,
+  describeDeployServices,
   firstLine,
-  reconciliationStateMachineArn,
-  releaseState,
+  readReleaseRecord,
+  runDeployerTask,
   spawnAws,
-  startReconciliation,
   verifyPinnedIdentity,
   type AwsIdentity,
+  type DeployServiceStatus,
 } from './aws-vpc-control-plane.ts';
 import {
   assertEnterpriseRelease,
@@ -404,17 +406,14 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       apiDomain: aws.api_domain,
       frontendDomain: aws.frontend_domain,
       instance: config.instance,
+      region: aws.region,
     });
-    const reconciliation = runtime.missingOperatorKeys.length === 0
-      ? startReconciliation(config, {
-          trigger: 'bootstrap',
-          force: false,
-          ...(flags.release ? { requested_release: flags.release } : {}),
-        }, instance.state_machine_arn)
+    const deployment = runtime.missingOperatorKeys.length === 0
+      ? { ...runDeployerTask(config, { ...(flags.release ? { release: flags.release } : {}) }), status: 'DEPLOYED' }
       : {
-          execution_arn: null,
-          start_date: null,
           status: 'WAITING_FOR_RUNTIME_CONFIG',
+          task_arn: null,
+          exit_code: null,
           missing: runtime.missingOperatorKeys,
         };
     const payload = {
@@ -429,7 +428,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
         bootstrapped: runtime.created,
         missing: runtime.missingOperatorKeys,
       },
-      reconciliation,
+      deployment,
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
@@ -438,11 +437,11 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       process.stdout.write(`${status.ok('Customer cluster infrastructure applied')}\n`);
       process.stdout.write(`${status.ok('Generated core runtime credentials directly into customer Secrets Manager')}\n`);
       if (runtime.missingOperatorKeys.length > 0) {
-        process.stdout.write(`${status.warn(`Reconciliation is waiting for: ${runtime.missingOperatorKeys.join(', ')}`)}\n`);
+        process.stdout.write(`${status.warn(`Deployment is waiting for: ${runtime.missingOperatorKeys.join(', ')}`)}\n`);
         process.stdout.write(`  ${C.cyan}kortix self-host env set --instance ${config.instance} KEY=VALUE ...${C.reset}\n`);
-        process.stdout.write(`  ${C.cyan}kortix self-host reconcile --instance ${config.instance}${C.reset}\n\n`);
+        process.stdout.write(`  ${C.cyan}kortix self-host deploy --instance ${config.instance} --yes${C.reset}\n\n`);
       } else {
-        process.stdout.write(`${status.ok(`Customer reconciler started: ${reconciliation.execution_arn}`)}\n\n`);
+        process.stdout.write(`${status.ok(`Customer deployer task completed: ${deployment.task_arn}`)}\n\n`);
       }
     }
     return 0;
@@ -456,7 +455,7 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
 
 async function startManagedUpdate(
   config: SelfHostInstanceConfig,
-  trigger: 'cli-update' | 'cli-reconcile',
+  _trigger: 'cli-update' | 'cli-reconcile',
   flags: SelfHostCommandFlags,
 ): Promise<number> {
   try {
@@ -464,13 +463,11 @@ async function startManagedUpdate(
     if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
     if (flags.release) assertEnterpriseRelease(flags.release);
     assertRuntimeReady(config);
-    const result = startReconciliation(config, {
-      trigger,
+    const result = runDeployerTask(config, {
       force: flags.force,
-      channel: 'stable',
-      ...(flags.release ? { requested_release: flags.release } : {}),
+      ...(flags.release ? { release: flags.release } : {}),
     });
-    renderExecution(config, result, flags);
+    renderDeployerRun(config, result, flags);
     return 0;
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
@@ -563,13 +560,11 @@ async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCom
       );
       if (!approved) return 2;
     }
-    const result = startReconciliation(config, {
-      trigger: 'cli-rollback',
+    const result = runDeployerTask(config, {
       force: flags.force,
-      channel: 'stable',
-      rollback_to: flags.release,
+      rollback: flags.release,
     });
-    renderExecution(config, result, flags);
+    renderDeployerRun(config, result, flags);
     return 0;
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
@@ -580,14 +575,14 @@ async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCom
 function showAwsVpcVersion(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): number {
   try {
     verifyPinnedIdentity(config.aws!);
-    const item = releaseState(config);
+    const record = readReleaseRecord(config);
     const payload = {
       instance: config.instance,
       target: config.target,
-      channel: String(item?.channel ?? config.channel),
-      release: item?.release ?? null,
-      status: item?.status ?? (item ? 'unknown' : 'not-deployed'),
-      updated_at: item?.updated_at ?? null,
+      channel: 'stable',
+      release: record?.version ?? null,
+      status: record ? 'deployed' : 'not-deployed',
+      deployed_at: record?.deployed_at ?? null,
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else {
@@ -608,9 +603,11 @@ function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommand
   try {
     const coordinates = config.aws!;
     verifyPinnedIdentity(coordinates);
-    const cluster = awsJsonOptional<{ cluster?: Record<string, unknown> }>(coordinates, [
-      'eks', 'describe-cluster', '--name', config.instance,
-    ])?.cluster ?? null;
+    const clusterName = deployClusterName(config.instance);
+    const cluster = awsJsonOptional<{ clusters?: Array<{ status?: string; runningTasksCount?: number }> }>(coordinates, [
+      'ecs', 'describe-clusters', '--clusters', clusterName,
+    ])?.clusters?.[0] ?? null;
+    const services = describeDeployServices(config);
     const supabaseResponse = awsJsonOptional<{
       Reservations?: Array<{ Instances?: Array<{ InstanceId?: string; State?: { Name?: string }; PrivateIpAddress?: string }> }>;
     }>(coordinates, [
@@ -618,44 +615,25 @@ function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommand
       '--filters', `Name=tag:Name,Values=${config.instance}-supabase`, 'Name=instance-state-name,Values=pending,running,stopping,stopped',
     ]);
     const supabaseInstance = supabaseResponse?.Reservations?.flatMap((entry) => entry.Instances ?? [])[0];
-    const stateMachineArn = reconciliationStateMachineArn(config);
-    const updaterProject = awsJsonOptional<{
-      projects?: Array<{ name?: string; arn?: string }>;
-      projectsNotFound?: string[];
-    }>(coordinates, [
-      'codebuild', 'batch-get-projects', '--names', `${config.instance}-updater`,
-    ])?.projects?.[0] ?? null;
-    const execution = awsJsonOptional<{ executions?: Array<Record<string, unknown>> }>(coordinates, [
-      'stepfunctions', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
-    ])?.executions?.[0] ?? null;
-    const release = releaseState(config);
+    const release = readReleaseRecord(config);
     const payload = {
       instance: config.instance,
       target: config.target,
       account_id: coordinates.account_id,
       region: coordinates.region,
-      cluster: cluster ? {
-        name: cluster.name ?? config.instance,
-        status: cluster.status ?? 'UNKNOWN',
-        version: cluster.version ?? null,
-      } : { name: config.instance, status: 'NOT_DEPLOYED', version: null },
+      cluster: {
+        name: clusterName,
+        status: cluster?.status ?? 'NOT_DEPLOYED',
+      },
+      services,
       supabase: supabaseInstance ? {
         instance_id: supabaseInstance.InstanceId ?? null,
         state: supabaseInstance.State?.Name ?? 'unknown',
         private_ip: supabaseInstance.PrivateIpAddress ?? null,
       } : { instance_id: null, state: 'NOT_DEPLOYED', private_ip: null },
-      updater: updaterProject ? {
-        name: updaterProject.name ?? `${config.instance}-updater`,
-        status: 'AVAILABLE',
-        arn: updaterProject.arn ?? null,
-      } : { name: `${config.instance}-updater`, status: 'NOT_DEPLOYED', arn: null },
-      reconciliation: execution ? {
-        execution_arn: execution.executionArn ?? null,
-        status: execution.status ?? 'UNKNOWN',
-        started_at: execution.startDate ?? null,
-        stopped_at: execution.stopDate ?? null,
-      } : { execution_arn: null, status: 'NEVER_RUN', started_at: null, stopped_at: null },
-      release: release ?? { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+      release: release
+        ? { version: release.version ?? null, supabase_bundle_sha: release.supabase_bundle_sha ?? null, deployed_at: release.deployed_at ?? null }
+        : { version: null, supabase_bundle_sha: null, deployed_at: null },
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else renderLiveStatus(payload);
@@ -674,7 +652,7 @@ function showAwsVpcLogs(config: SelfHostInstanceConfig, args: string[], _flags: 
     if (unknown.length > 0) throw new Error(`unknown logs option: ${unknown.join(', ')}`);
     const services = args.filter((arg) => !arg.startsWith('-'));
     if (services.length > 1) throw new Error('logs accepts at most one service name');
-    const service = services[0] ?? 'updater';
+    const service = services[0] ?? 'deployer';
     const follow = args.includes('--follow') || args.includes('-f');
     if (service === 'supabase') {
       const response = awsJson<{ Reservations?: Array<{ Instances?: Array<{ InstanceId?: string }> }> }>(coordinates, [
@@ -692,13 +670,13 @@ function showAwsVpcLogs(config: SelfHostInstanceConfig, args: string[], _flags: 
       return 0;
     }
     const groups: Record<string, string> = {
-      updater: `/kortix/${config.instance}/updater`,
+      deployer: `/kortix/${config.instance}/deployer`,
       api: `/kortix/${config.instance}/api`,
       frontend: `/kortix/${config.instance}/frontend`,
       gateway: `/kortix/${config.instance}/gateway`,
     };
     const group = groups[service];
-    if (!group) throw new Error('logs service must be updater, supabase, api, frontend, or gateway');
+    if (!group) throw new Error('logs service must be deployer, supabase, api, frontend, or gateway');
     const result = spawnAws(coordinates, [
       'logs', 'tail', group, '--since', '1h', ...(follow ? ['--follow'] : []), '--no-cli-pager',
     ]);
@@ -741,17 +719,17 @@ function renderPlans(instance: string, account: string, region: string, plans: S
   process.stdout.write('\n');
 }
 
-function renderExecution(
+function renderDeployerRun(
   config: SelfHostInstanceConfig,
-  result: ReturnType<typeof startReconciliation>,
+  result: ReturnType<typeof runDeployerTask>,
   flags: SelfHostCommandFlags,
 ): void {
   const payload = { instance: config.instance, channel: 'stable', ...result };
   if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   else {
-    process.stdout.write(`\n  ${C.bold}Kortix customer-owned reconciliation${C.reset}\n`);
-    process.stdout.write(`${status.ok(result.execution_arn)}\n`);
-    process.stdout.write(`  ${C.dim}The customer state machine enforces signatures, compatibility, plan guard, and health gates.${C.reset}\n\n`);
+    process.stdout.write(`\n  ${C.bold}Kortix customer-owned deployer${C.reset}\n`);
+    process.stdout.write(`${status.ok(result.task_arn)}\n`);
+    process.stdout.write(`  ${C.dim}The deployer task runs the signed ECS deploy in the customer VPC (TUF verify, digest mirror, migrate, service roll, circuit-breaker rollback).${C.reset}\n\n`);
   }
 }
 
@@ -760,19 +738,19 @@ function renderLiveStatus(payload: {
   account_id: string;
   region: string;
   cluster: { status: unknown };
+  services: DeployServiceStatus[];
   supabase: { state: unknown };
-  reconciliation: { status: unknown };
-  updater: { status: unknown };
-  release: Record<string, unknown>;
+  release: { version: unknown; deployed_at: unknown };
 }): void {
   process.stdout.write(`\n  ${C.bold}kortix self-host status${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}instance       ${C.reset}${payload.instance}\n`);
-  process.stdout.write(`  ${C.dim}target         ${C.reset}${payload.account_id}/${payload.region}\n`);
-  process.stdout.write(`  ${C.dim}cluster        ${C.reset}${String(payload.cluster.status)}\n`);
-  process.stdout.write(`  ${C.dim}supabase       ${C.reset}${String(payload.supabase.state)}\n`);
-  process.stdout.write(`  ${C.dim}updater        ${C.reset}${String(payload.updater.status)}\n`);
-  process.stdout.write(`  ${C.dim}reconciliation ${C.reset}${String(payload.reconciliation.status)}\n`);
-  process.stdout.write(`  ${C.dim}release        ${C.reset}${String(payload.release.release ?? 'not deployed')} (${String(payload.release.status ?? 'unknown')})\n\n`);
+  process.stdout.write(`  ${C.dim}instance   ${C.reset}${payload.instance}\n`);
+  process.stdout.write(`  ${C.dim}target     ${C.reset}${payload.account_id}/${payload.region}\n`);
+  process.stdout.write(`  ${C.dim}cluster    ${C.reset}${String(payload.cluster.status)}\n`);
+  for (const service of payload.services) {
+    process.stdout.write(`  ${C.dim}${service.role.padEnd(11)}${C.reset}${service.status} ${service.running}/${service.desired}${service.rollout ? ` (${service.rollout})` : ''}\n`);
+  }
+  process.stdout.write(`  ${C.dim}supabase   ${C.reset}${String(payload.supabase.state)}\n`);
+  process.stdout.write(`  ${C.dim}release    ${C.reset}${String(payload.release.version ?? 'not deployed')}${payload.release.deployed_at ? ` (${String(payload.release.deployed_at)})` : ''}\n\n`);
 }
 
 function rejectDockerLifecycleCommand(command: AwsVpcCommand, instance: string): number {

@@ -6,14 +6,15 @@ describe('enterprise Terraform plan guard', () => {
   test('auto-applies additive and ordinary runtime updates', () => {
     const result = classifyEnterprisePlan({
       resource_changes: [
-        { address: 'aws_ecr_repository.runtime', type: 'aws_ecr_repository', change: { actions: ['create'] } },
-        { address: 'aws_codebuild_project.updater', type: 'aws_codebuild_project', change: { actions: ['update'] } },
+        { address: 'aws_ecr_repository.enterprise["api"]', type: 'aws_ecr_repository', change: { actions: ['create'] } },
+        { address: 'aws_ecs_service.api', type: 'aws_ecs_service', change: { actions: ['update'] } },
+        { address: 'aws_ecs_task_definition.api', type: 'aws_ecs_task_definition', change: { actions: ['update'] } },
         { address: 'aws_instance.supabase', type: 'aws_instance', change: { actions: ['no-op'] } },
       ],
     });
 
     expect(result.decision).toBe('auto_apply');
-    expect(result.summary).toEqual({ create: 1, update: 1, delete: 0, replace: 0, read: 0, noop: 1 });
+    expect(result.summary).toEqual({ create: 1, update: 2, delete: 0, replace: 0, read: 0, noop: 1 });
   });
 
   test('blocks deletions and replacements even when another change is safe', () => {
@@ -31,13 +32,13 @@ describe('enterprise Terraform plan guard', () => {
     expect(result.reasons).toHaveLength(2);
   });
 
-  test('requires review for IAM, signing roots, EKS access, network, and recovery controls', () => {
+  test('requires review for IAM, signing roots, ECS cluster, network, and recovery controls', () => {
     const result = classifyEnterprisePlan({
       resource_changes: [
-        { address: 'aws_iam_role.updater', type: 'aws_iam_role', change: { actions: ['update'] } },
+        { address: 'aws_iam_role.deployer_task', type: 'aws_iam_role', change: { actions: ['update'] } },
         { address: 'aws_kms_key.data', type: 'aws_kms_key', change: { actions: ['update'] } },
-        { address: 'aws_eks_access_entry.operator', type: 'aws_eks_access_entry', change: { actions: ['create'] } },
-        { address: 'aws_security_group.supabase', type: 'aws_security_group', change: { actions: ['update'] } },
+        { address: 'aws_ecs_cluster.this', type: 'aws_ecs_cluster', change: { actions: ['create'] } },
+        { address: 'aws_security_group.tasks', type: 'aws_security_group', change: { actions: ['update'] } },
         { address: 'aws_backup_vault.supabase', type: 'aws_backup_vault', change: { actions: ['update'] } },
         {
           address: 'aws_s3_bucket_lifecycle_configuration.backups',

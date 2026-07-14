@@ -157,15 +157,22 @@ function emptyMarketplacesPage(): MarketplacesPage {
 export async function loadMarketplaceExploreData(): Promise<{
   itemsPage: ItemsPage;
   marketplacesPage: MarketplacesPage;
+  /** Every `registry:project` item, fetched unbounded and server-rendered —
+   *  the Projects tab is the primary growth surface, so it must be in the
+   *  initial HTML for crawlers/SEO and must never depend on a client-side
+   *  fetch. Unlike the general catalog this stays small for a long time
+   *  (hand-authored), so an unbounded fetch is safe and simpler than paging. */
+  projectItems: MarketplaceItem[];
 }> {
   try {
-    const [itemsPage, marketplacesPage] = await Promise.all([
+    const [itemsPage, marketplacesPage, projectItemsPage] = await Promise.all([
       listPublicMarketplaceItems({ limit: MARKETPLACE_EXPLORE_LANDING_LIMIT }),
       listPublicMarketplaces(),
+      listPublicMarketplaceItems({ type: 'project' }),
     ]);
-    return { itemsPage, marketplacesPage };
+    return { itemsPage, marketplacesPage, projectItems: projectItemsPage.items };
   } catch {
-    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage() };
+    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage(), projectItems: [] };
   }
 }
 

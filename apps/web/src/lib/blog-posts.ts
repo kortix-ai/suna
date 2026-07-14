@@ -65,12 +65,12 @@ const introducingKortix: BlogPostEntry = {
     },
     {
       type: 'callout',
-      text: 'A company that runs on AI shouldn’t be a black box you rent. It should be a codebase you own.',
+      text: 'A company that runs on AI shouldn’t be a dashboard you rent and can’t inspect. It should be a codebase you own.',
     },
-    { type: 'h2', text: 'kortix.toml: the single source of truth' },
+    { type: 'h2', text: 'kortix.yaml: the single source of truth' },
     {
       type: 'p',
-      text: 'At the root of every project sits one file — `kortix.toml` when this was written, `kortix.yaml` today. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
+      text: 'At the root of every project sits one file: `kortix.yaml`. Any repo with a valid manifest at its root *is* a Kortix project — that file defines what the project is, what it’s allowed to do, and how it runs. Here’s a real one:',
     },
     {
       type: 'code',
@@ -151,7 +151,7 @@ connectors:
     { type: 'h2', text: 'Self-hostable, open, and yours' },
     {
       type: 'p',
-      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open and source-available**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
+      text: 'When AI becomes how your company gets work done, the system running it stops being a tool and becomes infrastructure. Infrastructure you don’t own can be changed, repriced, or switched off without your say. So Kortix is **open-source and self-hostable**, and you can run the entire stack on your own infrastructure — one command brings up a production-style Kortix on your own machines, and the same CLI switches between our cloud and yours.',
     },
     {
       type: 'p',

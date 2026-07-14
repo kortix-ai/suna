@@ -19,13 +19,17 @@ export const REQUIRED_OPERATOR_RUNTIME_KEYS = [
   'SMTP_PASS',
   'SMTP_SENDER_NAME',
   'DAYTONA_API_KEY',
-  'OPENROUTER_API_KEY',
+  // Managed Claude models resolve to AWS Bedrock via this bearer key (see the
+  // Bedrock gap note below). Enterprise deployments do NOT depend on OpenRouter;
+  // an operator may still add OPENROUTER_API_KEY for non-managed models.
+  'AWS_BEDROCK_API_KEY',
 ] as const;
 
 const UPDATER_MANAGED_RUNTIME_KEYS = new Set([
   'POSTGRES_PASSWORD', 'DATABASE_URL',
   'JWT_SECRET', 'SUPABASE_JWT_SECRET', 'ANON_KEY', 'SUPABASE_ANON_KEY',
   'SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY',
   'DASHBOARD_PASSWORD', 'SECRET_KEY_BASE', 'REALTIME_DB_ENC_KEY', 'VAULT_ENC_KEY',
   'PG_META_CRYPTO_KEY', 'LOGFLARE_PUBLIC_ACCESS_TOKEN', 'LOGFLARE_PRIVATE_ACCESS_TOKEN',
   'S3_PROTOCOL_ACCESS_KEY_ID', 'S3_PROTOCOL_ACCESS_KEY_SECRET', 'POOLER_TENANT_ID',
@@ -38,6 +42,7 @@ interface RuntimeCoordinates {
   apiDomain: string;
   frontendDomain: string;
   instance: string;
+  region: string;
 }
 
 interface SecretResponse {
@@ -120,12 +125,14 @@ export function generateRuntimeDefaults(
   const postgresPassword = current.POSTGRES_PASSWORD || token(32);
   const anonKey = current.ANON_KEY || supabaseJwt('anon', jwtSecret);
   const serviceRoleKey = current.SERVICE_ROLE_KEY || supabaseJwt('service_role', jwtSecret);
+  const publishableKey = current.SUPABASE_PUBLISHABLE_KEY || `sb_publishable_${randomBytes(24).toString('base64url')}`;
+  const secretKey = current.SUPABASE_SECRET_KEY || `sb_secret_${randomBytes(32).toString('base64url')}`;
   const supabaseInternalUrl = `http://${coordinates.supabasePrivateIp}:8000`;
   const apiUrl = `https://${coordinates.apiDomain}`;
   const frontendUrl = `https://${coordinates.frontendDomain}`;
 
   return {
-    ...generatedInternalDefaults(coordinates.instance),
+    ...generatedInternalDefaults(coordinates.instance, coordinates.region),
     ...current,
     POSTGRES_PASSWORD: postgresPassword,
     JWT_SECRET: jwtSecret,
@@ -134,15 +141,23 @@ export function generateRuntimeDefaults(
     SUPABASE_ANON_KEY: anonKey,
     SERVICE_ROLE_KEY: serviceRoleKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
-    DATABASE_URL: `postgresql://postgres:${encodeURIComponent(postgresPassword)}@${coordinates.supabasePrivateIp}:5432/postgres`,
+    SUPABASE_PUBLISHABLE_KEY: publishableKey,
+    SUPABASE_SECRET_KEY: secretKey,
+    // Port 5432 is the official Supabase Supavisor session endpoint. Supavisor
+    // selects the tenant from the username suffix before proxying to Postgres.
+    DATABASE_URL: `postgresql://postgres.${coordinates.instance}:${encodeURIComponent(postgresPassword)}@${coordinates.supabasePrivateIp}:5432/postgres`,
+    // Server-side (api/frontend tasks) reach Kong directly on the private IP.
     SUPABASE_URL: supabaseInternalUrl,
-    SUPABASE_PUBLIC_URL: apiUrl,
+    // Browser-facing Supabase base. The ALB routes the Supabase data-plane
+    // prefixes (/rest/v1, /auth/v1, /storage/v1, …) on the FRONTEND/root host,
+    // not on api.<domain>, so every public Supabase URL is the frontend origin.
+    SUPABASE_PUBLIC_URL: frontendUrl,
     PUBLIC_URL: frontendUrl,
     API_PUBLIC_URL: apiUrl,
     KORTIX_URL: apiUrl,
     KORTIX_PUBLIC_URL: frontendUrl,
     KORTIX_PUBLIC_BACKEND_URL: `${apiUrl}/v1`,
-    KORTIX_PUBLIC_SUPABASE_URL: apiUrl,
+    KORTIX_PUBLIC_SUPABASE_URL: frontendUrl,
     KORTIX_PUBLIC_SUPABASE_ANON_KEY: anonKey,
     INTERNAL_KORTIX_ENV: 'prod',
     KORTIX_BILLING_INTERNAL_ENABLED: 'false',
@@ -174,8 +189,12 @@ export function assertOperatorRuntimeAssignments(assignments: Record<string, str
   }
 }
 
-function generatedInternalDefaults(instance: string): Record<string, string> {
+function generatedInternalDefaults(instance: string, region: string): Record<string, string> {
   return {
+    // Managed Claude → Bedrock: the API/gateway select the Bedrock upstream when
+    // AWS_BEDROCK_API_KEY is present and call bedrock-runtime.<region>. Region is
+    // defaulted here; the bearer key is an operator-supplied required runtime key.
+    AWS_BEDROCK_REGION: region,
     DASHBOARD_USERNAME: 'kortix',
     DASHBOARD_PASSWORD: token(24),
     SECRET_KEY_BASE: token(48),
