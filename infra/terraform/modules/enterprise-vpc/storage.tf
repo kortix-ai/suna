@@ -2,10 +2,94 @@ locals {
   bucket_prefix = substr("${var.name}-${var.expected_account_id}-${local.region}", 0, 44)
 }
 
-# The former "backups" S3 bucket only ever held the custom WAL/base-backup PITR
-# objects and updater metadata/staging. Both subsystems are removed: durability
-# is now encrypted EBS + hourly AWS Backup recovery points (backup.tf), and the
-# deployer is operator-driven. The bucket is intentionally gone.
+# Release-staging bucket. The deployer stages the verified Supabase bundle
+# tarball here (KMS-encrypted, short-lived) so the private Supabase EC2 can pull
+# it via SSM RunCommand over the S3 gateway endpoint. Customer-data durability is
+# encrypted EBS + hourly AWS Backup recovery points (backup.tf); this bucket ever
+# holds only transient deploy artifacts, which lifecycle-expire automatically.
+resource "aws_s3_bucket" "artifacts" {
+  #checkov:skip=CKV_AWS_18:Transient release-staging bucket; contents are short-lived KMS-encrypted deploy artifacts, not audited data.
+  #checkov:skip=CKV_AWS_144:Cross-region replication is unnecessary for transient staging artifacts kept in the customer residency region.
+  #checkov:skip=CKV2_AWS_62:Event notifications are unnecessary for a transient staging bucket.
+  bucket        = "${local.bucket_prefix}-artifacts"
+  force_destroy = true
+  tags          = local.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.data.arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+data "aws_iam_policy_document" "artifacts_bucket" {
+  statement {
+    sid     = "DenyInsecureTransport"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.artifacts.arn,
+      "${aws_s3_bucket.artifacts.arn}/*",
+    ]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  policy = data.aws_iam_policy_document.artifacts_bucket.json
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+
+  rule {
+    id     = "expire-staging"
+    status = "Enabled"
+    filter {
+      prefix = "updater-staging/"
+    }
+    expiration {
+      days = 7
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}
 
 resource "aws_s3_bucket" "audit" {
   #checkov:skip=CKV_AWS_144:Audit evidence remains in the customer-selected residency region and is protected with KMS, validation, versioning, and archival lifecycle.

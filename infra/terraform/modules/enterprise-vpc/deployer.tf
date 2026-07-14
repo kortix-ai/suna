@@ -93,6 +93,12 @@ data "aws_iam_policy_document" "deployer_task" {
   }
 
   statement {
+    sid       = "StageReleaseArtifacts"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.artifacts.arn}/updater-staging/*"]
+  }
+
+  statement {
     sid     = "InstallSupabaseBundle"
     actions = ["ssm:SendCommand"]
     resources = [

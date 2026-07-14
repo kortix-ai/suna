@@ -371,6 +371,22 @@ resource "aws_ecs_task_definition" "deployer" {
       { name = "KORTIX_SUPABASE_INSTANCE_ID", value = aws_instance.supabase.id },
       { name = "KORTIX_SUPABASE_PRIVATE_IP", value = aws_instance.supabase.private_ip },
       { name = "KORTIX_ECR_REPOSITORIES", value = jsonencode({ for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url }) },
+      # Public domains for health checks + the Supabase install (the ALB serves
+      # the Supabase data-plane prefixes on the frontend/root host, the app on api).
+      { name = "KORTIX_API_DOMAIN", value = var.api_domain },
+      { name = "KORTIX_FRONTEND_DOMAIN", value = var.frontend_domain },
+      # awsvpc network config for the one-off migrate RunTask (private subnets +
+      # the shared task SG), passed verbatim to `ecs run-task --network-configuration`.
+      { name = "KORTIX_TASK_NETWORK_CONFIGURATION", value = jsonencode({
+        awsvpcConfiguration = {
+          subnets        = module.network.private_subnet_ids
+          securityGroups = [aws_security_group.tasks.id]
+          assignPublicIp = "DISABLED"
+        }
+      }) },
+      # KMS-encrypted staging bucket for the Supabase bundle tarball (storage.tf).
+      { name = "KORTIX_ARTIFACT_BUCKET", value = aws_s3_bucket.artifacts.bucket },
+      { name = "KORTIX_ARTIFACT_KMS_KEY_ARN", value = aws_kms_key.data.arn },
     ]
     logConfiguration = {
       logDriver = "awslogs"

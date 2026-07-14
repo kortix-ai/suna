@@ -1,8 +1,8 @@
 # One public ALB fronts the whole installation. Host + path rules route:
 #   api.<domain>   /v1/llm*  -> gateway TG,  /*  -> api TG
 #   <domain>       <supabase prefixes> -> supabase TG (EC2 Kong :8000),  /* -> frontend TG
-# Health-check and success-code semantics mirror the retired
-# kortix-enterprise-edge Helm chart exactly.
+# Host + path routing and success-code semantics are owned here at the ALB (the
+# single edge for the whole installation); there is no in-cluster edge tier.
 
 resource "aws_security_group" "alb" {
   name_prefix = "${var.name}-alb-"

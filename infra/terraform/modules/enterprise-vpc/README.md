@@ -27,8 +27,9 @@ by one CLI command.**
   and everything else to the api; `<domain>` routes the Supabase data-plane
   prefixes (`/rest/v1 /auth/v1 /storage/v1 /realtime/v1 /functions/v1
   /graphql/v1`) to the Supabase Kong target group (the EC2 private IP on :8000)
-  and everything else to the frontend. Health checks and success codes mirror
-  the retired `kortix-enterprise-edge` chart.
+  and everything else to the frontend. The ALB is the single edge for the whole
+  installation; host/path routing and success codes are owned here, with no
+  in-cluster edge tier.
 - One private, SSM-only EC2 host for the official Supabase Docker stack, with a
   separately attached encrypted EBS data volume and EC2 system recovery.
 - The gateway task role invokes Bedrock (`bedrock:InvokeModel[WithResponseStream]`,
@@ -37,6 +38,11 @@ by one CLI command.**
 - Customer KMS keys, Secrets Manager (`<instance>/runtime`), immutable ECR image
   repositories, ACM, CloudTrail, encrypted logs, alerting, hourly AWS Backup
   recovery points, and vault lock.
+- A KMS-encrypted, versioned, TLS-only release-staging S3 bucket
+  (`kortix-<instance>-…-artifacts`). The deployer stages the verified Supabase
+  bundle tarball under `updater-staging/` (lifecycle-expired) so the private
+  Supabase EC2 pulls it over the S3 gateway endpoint; it holds only transient
+  deploy artifacts, never customer data.
 - An EventBridge Scheduler rule runs the deployer task daily; it exits 0 when the
   running digests already match the signed stable manifest. An SSM parameter
   `/kortix/<instance>/release` is the human-readable breadcrumb (never a lock).
@@ -46,9 +52,12 @@ by one CLI command.**
 ## Durability
 
 Encrypted EBS plus hourly AWS Backup recovery points (`backup.tf`, with vault
-lock) is the v1 durability story. RPO tracks the EBS snapshot cadence (~60m),
-stated explicitly. The former custom WAL/base-backup/PITR path and its S3 bucket
-were removed (unsatisfiable on the hardened Supabase image and redundant).
+lock) is the v1 durability story. The backup plan snapshots the Supabase data
+volume hourly; recovery is a whole-volume restore to the most recent recovery
+point, so the RPO tracks the snapshot cadence (~60m) and is stated explicitly.
+No custom log-shipping or point-in-time database machinery runs on the host —
+it was unsatisfiable on the hardened Supabase image and redundant given AWS
+Backup.
 
 ## Deploy control plane
 

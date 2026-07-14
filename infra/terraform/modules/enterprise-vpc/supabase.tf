@@ -103,6 +103,12 @@ data "aws_iam_policy_document" "supabase" {
   }
 
   statement {
+    sid       = "ReadStagedReleaseArtifacts"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.artifacts.arn}/updater-staging/*"]
+  }
+
+  statement {
     sid = "WriteRuntimeLogs"
     actions = [
       "logs:CreateLogGroup",

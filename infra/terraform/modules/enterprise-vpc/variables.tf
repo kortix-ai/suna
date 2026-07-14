@@ -1,10 +1,15 @@
 variable "name" {
-  description = "Globally stable instance slug, for example kortix-vpc-demo or essentia."
+  description = "Globally stable instance slug, for example vpc-demo or essentia. Do NOT prefix with kortix-; every resource is already named kortix-<name> (a kortix- prefix here would double it to kortix-kortix-...)."
   type        = string
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{2,30}[a-z0-9]$", var.name))
     error_message = "name must be a 4-32 character lowercase DNS slug."
+  }
+
+  validation {
+    condition     = !startswith(var.name, "kortix-")
+    error_message = "name must not start with 'kortix-'; resources are already named kortix-<name>."
   }
 }
 

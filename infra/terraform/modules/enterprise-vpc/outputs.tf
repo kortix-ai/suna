@@ -73,7 +73,7 @@ output "alb_zone_id" {
 }
 
 output "backup_contract" {
-  description = "Durability contract: encrypted EBS + hourly AWS Backup recovery points. RPO tracks the EBS snapshot cadence (~60m); custom WAL/PITR was removed."
+  description = "Durability contract: encrypted EBS + hourly AWS Backup recovery points. RPO tracks the EBS snapshot cadence (~60m) and restores are whole-volume."
   value = {
     backup_vault      = aws_backup_vault.supabase.name
     snapshot_schedule = "hourly"
