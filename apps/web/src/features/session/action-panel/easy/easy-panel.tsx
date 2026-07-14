@@ -26,16 +26,18 @@ import { FileText } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
+import { derivePlan } from '../shared/derive-plan';
 import { groupSteps } from '../shared/group-steps';
 import { sortOutputs } from '../shared/output-priority';
 import { AppPreview } from './app-preview';
 import { ContextCard } from './context-card';
-import { type Detail, DetailLayer } from './detail-view';
+import { type Detail, DetailLayer, ToolParts } from './detail-view';
 import { deriveIsRunning, shouldAutoExpandOutputs } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
 import { AppsCard } from './apps-card';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
+import { StepIcon } from './step-icon';
 
 export const EasyPanel = memo(function EasyPanel({
   sessionId,
@@ -51,6 +53,16 @@ export const EasyPanel = memo(function EasyPanel({
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const outputs = useMemo(() => deriveOutputs(parts), [parts]);
   const context = useMemo(() => deriveContext(parts), [parts]);
+
+  // The agent's own checklist — what Progress shows now. Steps are still derived,
+  // but only to answer "is it running" and "how long has this taken"; they are no
+  // longer rendered. A transcript of tool calls is an audit trail, and that lives
+  // in Advanced mode.
+  const plan = useMemo(() => derivePlan(parts), [parts]);
+  const elapsedMs = useMemo(
+    () => steps.reduce((total, step) => total + (step.durationMs ?? 0), 0),
+    [steps],
+  );
 
   // A running app is not "one of" the outputs — it's the thing the user asked
   // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
@@ -79,7 +91,6 @@ export const EasyPanel = memo(function EasyPanel({
   // cards — a card can't replace its own parent. Opening a file is just
   // another detail, so Back behaves identically wherever you came from.
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [focusStepId, setFocusStepId] = useState<string | undefined>();
 
   // Auto-expand Outputs the moment a run finishes with something to show —
   // never on every render of an already-finished (or still-running) run.
@@ -92,16 +103,30 @@ export const EasyPanel = memo(function EasyPanel({
     wasRunningRef.current = isRunning;
   }, [isRunning, files.length]);
 
-  // A tool call clicked in the chat transcript opens the Progress card with
-  // that step's real tool view already expanded.
+  /**
+   * A tool call clicked in the CHAT opens that tool's real view in the panel.
+   *
+   * This is the last escape hatch to the raw truth in Easy mode, and it costs
+   * the panel nothing: the affordance lives in the chat, so there is no new
+   * thing to click here and no new way to get lost. The user asked to see one
+   * specific thing; they see that thing.
+   */
   const focusedToolCallId = useFocusedToolCallId();
   const clearFocusedToolCall = useClearFocusedToolCall();
   useEffect(() => {
     if (!focusedToolCallId) return;
     const step = steps.find((s) => s.parts.some((p) => p.callID === focusedToolCallId));
-    if (step) setFocusStepId(step.id);
+    if (step) {
+      setDetail({
+        key: `step:${step.id}`,
+        title: step.label,
+        icon: <StepIcon family={step.family} status={step.status} />,
+        padded: false,
+        body: <ToolParts parts={step.parts} sessionId={sessionId} />,
+      });
+    }
     clearFocusedToolCall();
-  }, [focusedToolCallId, steps, clearFocusedToolCall]);
+  }, [focusedToolCallId, steps, clearFocusedToolCall, sessionId]);
 
   /**
    * Opening an output shows the THING, not the machinery around it: a running
@@ -135,22 +160,12 @@ export const EasyPanel = memo(function EasyPanel({
     });
   }, []);
 
-  const goHome = useCallback(() => {
-    setDetail(null);
-    setFocusStepId(undefined);
-  }, []);
+  const goHome = useCallback(() => setDetail(null), []);
 
   return (
     <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
       <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-        <ProgressCard
-          steps={steps}
-          sessionId={sessionId}
-          isRunning={isRunning}
-          focusStepId={focusStepId}
-          onOpenDetail={setDetail}
-          onCloseDetail={goHome}
-        />
+        <ProgressCard plan={plan} isRunning={isRunning} elapsedMs={elapsedMs} />
         <OutputsCard
           outputs={files}
           defaultExpanded={outputsDefaultOpen}
