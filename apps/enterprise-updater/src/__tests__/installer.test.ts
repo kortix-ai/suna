@@ -30,6 +30,7 @@ describe('Supabase host installer command', () => {
 
     expect(script).toContain('sha256sum --check --strict');
     expect(script).toContain('tar -tzf "$archive"');
+    expect(script).toContain("awk '{ if ($0 ~ /^\\//)");
     expect(script).toContain('type != "-" && type != "d"');
     expect(script).toContain('--runtime-secret-arn');
     expect(script).toContain("--api-domain 'api.vpc-demo.kortix.com'");
