@@ -1,9 +1,8 @@
 'use client';
 
-import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Eye, FolderOpen, Users, X } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { Check, ChevronLeft, Eye, FolderOpen, Users, X } from 'lucide-react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -11,16 +10,20 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { SectionCard } from '@/components/ui/section-card';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { Label } from '@/components/ui/label';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   listMemberGroups,
@@ -29,8 +32,10 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { getAccount, listAccountMembers, type AccountRole } from '@kortix/sdk/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
+import { cn } from '@/lib/utils';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -38,9 +43,16 @@ const ROLE_LABEL: Record<string, string> = {
   member: 'Member',
 };
 
+const PANEL = 'bg-popover rounded-md border';
+
+function formatDate(iso: string | null | undefined) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function MemberDetailPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const router = useRouter();
   const params = useParams<{ id: string; userId: string }>();
   const accountId = params?.id;
   const memberUserId = params?.userId;
@@ -65,8 +77,8 @@ export default function MemberDetailPage() {
   });
 
   // Server-side derivation of this member's group memberships. Drives the
-  // "Member of these groups" section so admins can see at a glance which
-  // policies the user inherits via group attachments.
+  // "Groups" section so admins can see at a glance which policies the user
+  // inherits via group attachments.
   const memberGroupsQuery = useQuery({
     queryKey: ['member-groups', accountId, memberUserId],
     queryFn: () => listMemberGroups(accountId!, memberUserId!),
@@ -77,23 +89,23 @@ export default function MemberDetailPage() {
   const setSuperAdminMutation = useMutation({
     mutationFn: (next: boolean) => setMemberSuperAdmin(accountId!, memberUserId!, next),
     onSuccess: (res) => {
-      toast.success(res.is_super_admin ? 'Granted super-admin' : 'Revoked super-admin');
+      successToast(res.is_super_admin ? 'Granted super-admin' : 'Revoked super-admin');
       queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
       setGrantConfirmOpen(false);
       setRevokeConfirmOpen(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update'),
   });
 
   // All hooks MUST be called before any conditional return (rules of
   // hooks). useMemo + usePermission live above the auth-loading guard.
-  const members = membersQuery.data ?? [];
   const member = useMemo(
-    () => members.find((m) => m.user_id === memberUserId),
-    [members, memberUserId],
+    () => (membersQuery.data ?? []).find((m) => m.user_id === memberUserId),
+    [membersQuery.data, memberUserId],
   );
   // canPromoteSuperAdmin gates the bypass toggle below.
   const canPromoteSuperAdmin = usePermission(accountId, 'member.super_admin.grant').allowed;
+  void canPromoteSuperAdmin;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -108,103 +120,115 @@ export default function MemberDetailPage() {
   const memberLabel = member?.email ?? memberUserId ?? 'Member';
 
   return (
-    <main className="w-full flex-1 px-4 py-8">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
-        {membersQuery.isError && (
-          <InfoBanner
-            tone="destructive"
-            title={tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember',
+    <div className="mx-auto w-full max-w-6xl space-y-8 pb-10">
+      <div className="space-y-5">
+        <Link
+          href={`/accounts/${accountId}`}
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+        >
+          <ChevronLeft className="size-4" />
+          {account?.name ?? 'Account'}
+        </Link>
+
+        <div className="flex min-w-0 items-center gap-3.5">
+          {membersQuery.isLoading ? (
+            <Skeleton className="size-10 rounded-full" />
+          ) : (
+            <UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />
+          )}
+          <div className="min-w-0 space-y-0.5">
+            {membersQuery.isLoading ? (
+              <Skeleton className="h-6 w-52" />
+            ) : (
+              <h2 className="text-foreground truncate text-xl font-medium">{memberLabel}</h2>
             )}
-          >
-            {(membersQuery.error as Error).message}
-          </InfoBanner>
-        )}
-
-        {!membersQuery.isLoading && !member && memberUserId && (
-          <InfoBanner tone="neutral">
-            {tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis',
-            )}
-          </InfoBanner>
-        )}
-
-        {account && member && (
-          <MemberGroupsCard
-            accountId={account.account_id}
-            memberGroups={memberGroupsQuery.data ?? []}
-            isLoading={memberGroupsQuery.isLoading}
-          />
-        )}
-
-        {account && member && (
-          <MemberProjectAccessCard
-            accountId={account.account_id}
-            memberUserId={member.user_id}
-            accountRole={member.account_role}
-          />
-        )}
-
-        {account && member && (
-          <CapabilitiesCard accountId={account.account_id} memberUserId={member.user_id} />
-        )}
-
-        <ConfirmDialog
-          open={grantConfirmOpen}
-          onOpenChange={setGrantConfirmOpen}
-          title={tHardcodedUi.raw(
-            'appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin',
-          )}
-          description={
-            <span>
-              {tHardcodedUi.raw(
-                'appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck',
-              )}
-              <strong>{memberLabel}</strong>{' '}
-              {tHardcodedUi.raw(
-                'appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis',
-              )}
-            </span>
-          }
-          confirmLabel={tHardcodedUi.raw(
-            'appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin',
-          )}
-          isPending={setSuperAdminMutation.isPending}
-          onConfirm={() => setSuperAdminMutation.mutate(true)}
-        />
-
-        <ConfirmDialog
-          open={revokeConfirmOpen}
-          onOpenChange={setRevokeConfirmOpen}
-          title={tHardcodedUi.raw(
-            'appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin',
-          )}
-          description={
-            <span>
-              <strong>{memberLabel}</strong>{' '}
-              {tHardcodedUi.raw(
-                'appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery',
-              )}
-            </span>
-          }
-          confirmLabel={tHardcodedUi.raw(
-            'appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin',
-          )}
-          isPending={setSuperAdminMutation.isPending}
-          onConfirm={() => setSuperAdminMutation.mutate(false)}
-        />
-
-        {account && member && (
-          <ViewAsUserDialog
-            open={viewAsOpen}
-            onOpenChange={setViewAsOpen}
-            accountId={account.account_id}
-            memberUserId={member.user_id}
-            memberLabel={memberLabel}
-          />
-        )}
+            {member ? (
+              <InlineMeta className="text-sm">
+                <span>{ROLE_LABEL[member.account_role] ?? member.account_role}</span>
+                <span>Joined {formatDate(member.joined_at)}</span>
+              </InlineMeta>
+            ) : null}
+          </div>
+        </div>
       </div>
-    </main>
+
+      {membersQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load member"
+          description={(membersQuery.error as Error).message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => membersQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      ) : null}
+
+      {!membersQuery.isLoading && !member && memberUserId ? (
+        <InfoBanner tone="neutral">This user is not a member of this account.</InfoBanner>
+      ) : null}
+
+      {account && member ? (
+        <MemberGroupsCard
+          accountId={account.account_id}
+          memberGroups={memberGroupsQuery.data ?? []}
+          isLoading={memberGroupsQuery.isLoading}
+        />
+      ) : null}
+
+      {account && member ? (
+        <MemberProjectAccessCard
+          accountId={account.account_id}
+          memberUserId={member.user_id}
+          accountRole={member.account_role}
+        />
+      ) : null}
+
+      {account && member ? (
+        <CapabilitiesCard accountId={account.account_id} memberUserId={member.user_id} />
+      ) : null}
+
+      <ConfirmDialog
+        open={grantConfirmOpen}
+        onOpenChange={setGrantConfirmOpen}
+        title="Grant super-admin"
+        description={
+          <span>
+            Super-admin bypasses every permission check. <strong>{memberLabel}</strong> will be
+            able to do anything in this account.
+          </span>
+        }
+        confirmLabel="Grant super-admin"
+        isPending={setSuperAdminMutation.isPending}
+        onConfirm={() => setSuperAdminMutation.mutate(true)}
+      />
+
+      <ConfirmDialog
+        open={revokeConfirmOpen}
+        onOpenChange={setRevokeConfirmOpen}
+        title="Revoke super-admin"
+        description={
+          <span>
+            <strong>{memberLabel}</strong> will lose the bypass. Every action goes through the
+            normal permission checks again.
+          </span>
+        }
+        confirmLabel="Revoke super-admin"
+        isPending={setSuperAdminMutation.isPending}
+        onConfirm={() => setSuperAdminMutation.mutate(false)}
+      />
+
+      {account && member ? (
+        <ViewAsUserDialog
+          open={viewAsOpen}
+          onOpenChange={setViewAsOpen}
+          accountId={account.account_id}
+          memberUserId={member.user_id}
+          memberLabel={memberLabel}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -261,7 +285,6 @@ function CapabilitiesCard({
   accountId: string;
   memberUserId: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   // Stable probe list — declared at module scope so the hook's queryKey is
   // identical across renders. One HTTP roundtrip resolves all 14.
   const results = usePermissionsFor(
@@ -275,21 +298,17 @@ function CapabilitiesCard({
   const byAction = new Map(FLAT_CAPABILITIES.map((c, i) => [c.action, results[i]] as const));
 
   return (
-    <SectionCard
-      title={tHardcodedUi.raw(
-        'appAccountsIdMembersUserIdPage.line353JsxAttrTitleWhatThisMemberCanDo',
-      )}
-      description={tHardcodedUi.raw(
-        'appAccountsIdMembersUserIdPage.line354JsxAttrDescriptionComputedByTheIAMEngineSumOfExplicit',
-      )}
-      flush
-    >
-      <div className="divide-border divide-y">
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <Label>What this member can do</Label>
+        <p className="text-muted-foreground text-xs">
+          Computed from their role, groups, and policies.
+        </p>
+      </div>
+      <div className={cn(PANEL, 'divide-border divide-y')}>
         {CAPABILITY_GROUPS.map((group) => (
-          <div key={group.heading} className="px-6 py-4">
-            <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
-              {group.heading}
-            </p>
+          <div key={group.heading} className="px-4 py-4">
+            <p className="text-muted-foreground mb-2 text-xs font-medium">{group.heading}</p>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
               {group.items.map((item) => {
                 const probe = byAction.get(item.action);
@@ -307,7 +326,7 @@ function CapabilitiesCard({
           </div>
         ))}
       </div>
-    </SectionCard>
+    </section>
   );
 }
 
@@ -329,14 +348,14 @@ function CapabilityRow({
     >
       <span className="text-foreground truncate">{label}</span>
       {isLoading ? (
-        <span className="bg-muted-foreground/20 h-3.5 w-3.5 animate-pulse rounded-full" />
+        <span className="bg-muted-foreground/20 size-3.5 animate-pulse rounded-full" />
       ) : allowed ? (
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-          <Check className="h-3 w-3" />
+        <span className="bg-kortix-green/15 text-kortix-green inline-flex size-5 items-center justify-center rounded-full">
+          <Check className="size-3" />
         </span>
       ) : (
-        <span className="bg-muted text-muted-foreground inline-flex h-5 w-5 items-center justify-center rounded-full">
-          <X className="h-3 w-3" />
+        <span className="bg-muted text-muted-foreground inline-flex size-5 items-center justify-center rounded-full">
+          <X className="size-3" />
         </span>
       )}
     </div>
@@ -357,55 +376,50 @@ function MemberGroupsCard({
   memberGroups: MemberGroupSummary[];
   isLoading: boolean;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
 
   return (
-    <SectionCard
-      title={`Member of ${memberGroups.length} ${memberGroups.length === 1 ? 'group' : 'groups'}`}
-      description={tHardcodedUi.raw(
-        'appAccountsIdMembersUserIdPage.line435JsxAttrDescriptionAnyPolicyAttachedToOneOfTheseGroups',
-      )}
-      flush
-    >
-      {isLoading && (
-        <div className="px-6 py-4">
-          <Skeleton className="h-6 w-48" />
-        </div>
-      )}
-
-      {!isLoading && memberGroups.length === 0 && (
-        <div className="px-6 py-6 text-center">
-          <div className="border-border/70 bg-background text-muted-foreground mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border">
-            <Users className="h-4 w-4" />
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <Label>
+          Groups{memberGroups.length > 0 ? ` · ${memberGroups.length}` : ''}
+        </Label>
+        <p className="text-muted-foreground text-xs">
+          Any policy attached to one of these groups also applies to this member.
+        </p>
+      </div>
+      <div className={PANEL}>
+        {isLoading ? (
+          <div className="px-4 py-4">
+            <Skeleton className="h-6 w-48" />
           </div>
-          <p className="text-foreground text-sm">
-            {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line449JsxTextNotAMemberOfAnyGroups')}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line451JsxTextAddThemToAGroupToInheritIts',
-            )}
-          </p>
-        </div>
-      )}
-
-      {!isLoading && memberGroups.length > 0 && (
-        <div className="flex flex-wrap gap-2 px-6 py-4">
-          {memberGroups.map((g) => (
-            <button
-              key={g.group_id}
-              type="button"
-              onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-              className="border-border/70 bg-background text-foreground hover:border-foreground/30 hover:bg-muted/40 inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
-            >
-              <Users className="text-muted-foreground h-3 w-3" />
-              {g.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </SectionCard>
+        ) : memberGroups.length === 0 ? (
+          <div className="px-4 py-6 text-center">
+            <div className="bg-muted text-muted-foreground mx-auto mb-2 flex size-9 items-center justify-center rounded-sm">
+              <Users className="size-4" />
+            </div>
+            <p className="text-foreground text-sm">Not in any groups</p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Add them to a group to inherit its policies.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2 px-4 py-4">
+            {memberGroups.map((g) => (
+              <button
+                key={g.group_id}
+                type="button"
+                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+                className="border-border text-foreground hover:bg-accent inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+              >
+                <Users className="text-muted-foreground size-3" />
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -427,7 +441,6 @@ function MemberProjectAccessCard({
   memberUserId: string;
   accountRole: AccountRole;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const router = useRouter();
   const query = useQuery({
     queryKey: ['iam-member-project-access', accountId, memberUserId],
@@ -438,39 +451,35 @@ function MemberProjectAccessCard({
   const isAdminLike = accountRole === 'owner' || accountRole === 'admin';
 
   return (
-    <SectionCard
-      title={tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxAttrTitle1767c13f')}
-      description={
-        isAdminLike
-          ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
-          : 'Projects this member can reach via direct grants or groups they belong to.'
-      }
-      count={items.length}
-    >
-      {query.isLoading && <Skeleton className="h-10 w-full" />}
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <Label>Projects{items.length > 0 ? ` · ${items.length}` : ''}</Label>
+        <p className="text-muted-foreground text-xs">
+          {isAdminLike
+            ? `${accountRole === 'owner' ? 'Owners' : 'Admins'} are implicit Manager on every active project in the account.`
+            : 'Projects this member can reach via direct grants or groups they belong to.'}
+        </p>
+      </div>
 
-      {!query.isLoading && query.isError && (
-        <InfoBanner
-          tone="destructive"
-          title={tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxAttrTitlebf1c6d5a')}
+      {query.isLoading ? (
+        <Skeleton className="h-10 w-full rounded-md" />
+      ) : query.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load project access"
+          description={(query.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => query.refetch()}>
               Retry
             </Button>
           }
-        >
-          {(query.error as Error)?.message}
-        </InfoBanner>
-      )}
-
-      {!query.isLoading && !query.isError && items.length === 0 && (
-        <p className="text-muted-foreground text-xs">
-          {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextNo96b8be46')}
-        </p>
-      )}
-
-      {!query.isLoading && items.length > 0 && (
-        <ul className="divide-border -mx-6 divide-y">
+        />
+      ) : items.length === 0 ? (
+        <div className={cn(PANEL, 'text-muted-foreground px-4 py-4 text-xs')}>
+          No project access.
+        </div>
+      ) : (
+        <div className={cn(PANEL, 'divide-border divide-y overflow-hidden')}>
           {items
             .slice()
             .sort(
@@ -479,28 +488,27 @@ function MemberProjectAccessCard({
                 a.project_name.localeCompare(b.project_name),
             )
             .map((p) => (
-              <li key={p.project_id}>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/projects/${p.project_id}`)}
-                  className="hover:bg-muted/40 flex w-full cursor-pointer items-center gap-3 px-6 py-2.5 text-left transition-colors"
-                >
-                  <FolderOpen className="text-muted-foreground h-4 w-4 shrink-0" />
-                  <span className="text-foreground flex-1 truncate text-sm font-medium">
-                    {p.project_name}
-                  </span>
-                  <Badge variant="outline" size="sm" className="text-[10px] font-normal capitalize">
-                    {p.role}
-                  </Badge>
-                  <span className="text-muted-foreground text-[10px]">
-                    via {p.sources.map((s) => SOURCE_LABEL[s]).join(' + ')}
-                  </span>
-                </button>
-              </li>
+              <button
+                key={p.project_id}
+                type="button"
+                onClick={() => router.push(`/projects/${p.project_id}`)}
+                className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors"
+              >
+                <FolderOpen className="text-muted-foreground size-4 shrink-0" />
+                <span className="text-foreground flex-1 truncate text-sm font-medium">
+                  {p.project_name}
+                </span>
+                <Badge variant="outline" size="sm" className="font-normal capitalize">
+                  {p.role}
+                </Badge>
+                <span className="text-muted-foreground text-xs">
+                  via {p.sources.map((s) => SOURCE_LABEL[s]).join(' + ')}
+                </span>
+              </button>
             ))}
-        </ul>
+        </div>
       )}
-    </SectionCard>
+    </section>
   );
 }
 
@@ -513,7 +521,7 @@ function MemberProjectAccessCard({
 //      surfaced on the member card above, repeated here for one-screen
 //      answer + because the dialog should be self-contained).
 //   2. Capabilities — fans out usePermissionsFor against a curated set
-//      of common admin / project actions, renders ✅ allowed / ❌ denied
+//      of common admin / project actions, renders allowed / denied
 //      with the engine's reason text underneath denials.
 //
 // No backend changes — the /effective:batch endpoint already supports
@@ -557,7 +565,6 @@ function ViewAsUserDialog({
   // which is the question this dialog should answer; per-project
   // breakdown is the job of the MemberProjectAccessCard above.
 
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   const probes = useMemo(() => SIMULATOR_PROBES.map((p) => ({ action: p.action })), []);
   const results = usePermissionsFor(
     open ? accountId : undefined,
@@ -583,42 +590,39 @@ function ViewAsUserDialog({
   }, [results]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Eye className="text-muted-foreground h-4 w-4" />
-            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextViewinga4fdd7c8')}
-            {memberLabel}
-          </DialogTitle>
-          <DialogDescription>
-            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextRead52927f21')}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle className="flex items-center gap-2">
+            <Eye className="text-muted-foreground size-4" />
+            Viewing as {memberLabel}
+          </ModalTitle>
+          <ModalDescription>
+            Read-only preview of what this member can do. Nothing is changed.
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="space-y-4 py-1">
+        <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
           {(['Account', 'Projects', 'Audit'] as const).map((sectionName) => (
             <section key={sectionName} className="space-y-1.5">
-              <h3 className="text-muted-foreground/70 text-[10px] font-semibold tracking-[0.08em] uppercase">
-                {sectionName}
-              </h3>
-              <ul className="divide-border/40 border-border/60 divide-y rounded-md border">
+              <p className="text-muted-foreground text-xs font-medium">{sectionName}</p>
+              <ul className="divide-border bg-popover divide-y rounded-md border">
                 {(grouped[sectionName] ?? []).map((row) => (
                   <li key={row.label} className="flex items-start gap-3 px-3 py-2 text-sm">
                     <span className="mt-0.5 shrink-0">
                       {row.isLoading ? (
-                        <span className="bg-muted block h-3.5 w-3.5 animate-pulse rounded-full" />
+                        <span className="bg-muted block size-3.5 animate-pulse rounded-full" />
                       ) : row.allowed ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <Check className="text-kortix-green size-3.5" />
                       ) : (
-                        <X className="h-3.5 w-3.5 text-rose-500" />
+                        <X className="text-kortix-red size-3.5" />
                       )}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-foreground">{row.label}</p>
-                      {!row.allowed && row.reason && !row.isLoading && (
-                        <p className="text-muted-foreground text-[11px]">{row.reason}</p>
-                      )}
+                      {!row.allowed && row.reason && !row.isLoading ? (
+                        <p className="text-muted-foreground text-xs">{row.reason}</p>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -626,11 +630,11 @@ function ViewAsUserDialog({
             </section>
           ))}
 
-          <p className="text-muted-foreground text-[11px]">
-            {tI18nHardcoded.raw('autoAppAppAccountsIdMembersUserIdPageJsxTextProjectf7077cbd')}
+          <p className="text-muted-foreground text-xs">
+            Project-by-project access is listed in the Projects section on the member page.
           </p>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
   );
 }

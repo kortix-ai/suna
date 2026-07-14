@@ -16,8 +16,9 @@ import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
 import { startStaticWebServer } from './static-web'
-import { createAcpHarnessRegistry, parseAcpHarnessId } from './acp/harness-registry'
+import { createAcpHarnessRegistry, nativeConfigDir, parseAcpHarnessId } from './acp/harness-registry'
 import { AcpRuntime } from './acp/runtime'
+import { ensureInjectedManagedSkills } from './injected-skills'
 
 async function main() {
   const bootTime = Date.now()
@@ -61,6 +62,11 @@ async function main() {
     await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((error) =>
       logger.warn('[boot] repo credential helper setup failed', { error: error instanceof Error ? error.message : String(error) }),
     )
+    // Overlay the always-latest managed Kortix skills (kortix-cli + kortix-*)
+    // into the runtime's config dir so no project goes stale on Kortix
+    // internals, whatever the repo committed. Never throws.
+    const runtimeConfigDir = nativeConfigDir(process.env)
+    if (runtimeConfigDir) await ensureInjectedManagedSkills(runtimeConfigDir)
   }
 
   const runtime = new AcpRuntime({ registry: createAcpHarnessRegistry(), cwd: cfg.projectTarget, projectEnv })

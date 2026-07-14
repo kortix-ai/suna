@@ -44,6 +44,12 @@ export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './sessio
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
+/** "New session - <date>" was OpenCode's default title, never a real one —
+ *  historic rows froze it into metadata.name when the sandbox slept before the
+ *  summarizer ran. (Ported from the retired opencode-title-sync module.) */
+export function isPlaceholderSessionTitle(title: string | null | undefined): boolean {
+  return typeof title === 'string' && /^new session\b/i.test(title.trim());
+}
 
 export function serializeSession(
   row: ProjectSessionRow,
@@ -65,7 +71,11 @@ export function serializeSession(
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
-  const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  // Historic rows may carry OpenCode's frozen placeholder ("New session - …")
+  // in metadata.name — expose it as untitled so clients fall back to their own
+  // display chain instead of a junk title (heals old rows with no backfill).
+  const rawAutoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const autoName = isPlaceholderSessionTitle(rawAutoName) ? null : rawAutoName;
   const acpSessionId = typeof row.metadata?.acp_session_id === 'string' ? row.metadata.acp_session_id : null;
   const runtimeProtocol = row.metadata?.runtime_protocol === 'acp' ? 'acp' : null;
   return {

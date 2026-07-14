@@ -175,6 +175,11 @@ function enterpriseSupabaseOverlay(): string {
       - archive_timeout=300s
       - -c
       - archive_command=cp %p /var/lib/kortix-wal/.%f.tmp && mv /var/lib/kortix-wal/.%f.tmp /var/lib/kortix-wal/%f
+  supavisor:
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
 `;
 }
 
@@ -202,7 +207,7 @@ function supabaseHostInstallScript(): string {
     'for value in "$runtime_secret_arn" "$release" "$instance" "$api_domain" "$frontend_domain"; do',
     '  [ -n "$value" ] || { echo "missing required Supabase install option" >&2; exit 2; }',
     'done',
-    'root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)',
+    'root=$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")',
     '',
     'jq -e --arg release "$release" \'.schema_version == 1 and .kind == "kortix-enterprise-supabase" and .version == $release and (.compose_files == ["docker-compose.yml", "docker-compose.logs.yml", "docker-compose.enterprise.yml"]) and (.persistent_paths["volumes/db/data"] == "/var/lib/kortix/postgres") and (.persistent_paths["volumes/storage"] == "/var/lib/kortix/storage") and (.persistent_paths.wal_spool == "/var/lib/kortix/wal") and (.persistent_paths.recovery_wal == "/var/lib/kortix/recovery-wal") and (.backup == {archive_timeout_seconds:300,wal_upload_interval_seconds:60,base_backup_interval:"daily"}) and (.image_digests | type == "object" and length > 0 and all(to_entries[]; (.key | type == "string") and (.value | test("^sha256:[a-f0-9]{64}$"))))\' "$root/bundle.json" >/dev/null',
     '',
@@ -256,13 +261,15 @@ function supabaseStartScript(): string {
   return [
     '#!/usr/bin/env bash',
     'set -euo pipefail',
-    'root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)',
+    'root=$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")',
     'instance=$(<"$root/.instance")',
     'compose=(docker compose --project-name "kortix-$instance" --env-file "$root/.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.logs.yml" -f "$root/docker-compose.enterprise.yml")',
     '"${compose[@]}" up --detach --remove-orphans --wait --wait-timeout 900',
-    'curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8000/auth/v1/health >/dev/null',
+    'anon_key=$(docker inspect supabase-kong --format \'{{range .Config.Env}}{{println .}}{{end}}\' | sed -n \'s/^SUPABASE_ANON_KEY=//p\')',
+    '[ -n "$anon_key" ] || { echo "Supabase Kong anonymous key is unavailable" >&2; exit 1; }',
+    'curl --fail --silent --show-error --max-time 10 --header "apikey: $anon_key" http://127.0.0.1:8000/auth/v1/health >/dev/null',
+    'unset anon_key',
     'systemctl enable --now kortix-wal-archive.timer kortix-base-backup.timer',
-    'systemctl start kortix-wal-archive.service',
     '',
   ].join('\n');
 }
@@ -271,7 +278,7 @@ function supabaseStopScript(): string {
   return [
     '#!/usr/bin/env bash',
     'set -euo pipefail',
-    'root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)',
+    'root=$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")',
     'instance=$(<"$root/.instance")',
     'systemctl stop kortix-wal-archive.timer kortix-base-backup.timer || true',
     'exec docker compose --project-name "kortix-$instance" --env-file "$root/.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.logs.yml" -f "$root/docker-compose.enterprise.yml" down --timeout 120',
@@ -367,7 +374,7 @@ function pitrRestoreScript(): string {
     'target_epoch=$(date -u -d "$target_time" +%s) || { echo "invalid target time" >&2; exit 2; }',
     '[ "$target_epoch" -le "$(date -u +%s)" ] || { echo "target time cannot be in the future" >&2; exit 2; }',
     '',
-    'root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)',
+    'root=$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")',
     'bundle_instance=$(<"$root/.instance")',
     '[ "$bundle_instance" = "$KORTIX_INSTANCE" ] || { echo "active bundle instance does not match recovery instance" >&2; exit 1; }',
     'data_dir=${KORTIX_POSTGRES_DATA_DIR:-/var/lib/kortix/postgres}',

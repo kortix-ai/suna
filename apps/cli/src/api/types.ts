@@ -53,6 +53,10 @@ export interface ProjectSecret {
   created_by: string;
   created_at: string;
   updated_at: string;
+  /** Whether the shared/project value exists. Mirrors the API + SDK field. */
+  configured: boolean;
+  /** Which value is effective for the requesting user. */
+  effective_source: 'mine' | 'shared' | 'none';
 }
 
 export interface ProjectSecretsResponse {
@@ -133,14 +137,7 @@ export interface ProjectSession {
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
   agent_name: string;
-  status:
-    | 'queued'
-    | 'branching'
-    | 'provisioning'
-    | 'running'
-    | 'stopped'
-    | 'failed'
-    | 'completed';
+  status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
   runtime_sessions?: ProjectRuntimeSession[];

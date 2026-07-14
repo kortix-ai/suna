@@ -435,52 +435,6 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
   expect(last().url).toContain('/billing/tier-configurations');
 });
 
-test('project(id).marketplace covers list/install/updates/update/updateAll/remove', async () => {
-  await kortix.project('PID123').marketplace.list();
-  expect(last().url).toContain('/projects/PID123/marketplace');
-  expect(last().method).toBe('GET');
-
-  await kortix.project('PID123').marketplace.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updates();
-  expect(last().url).toContain('/projects/PID123/marketplace/updates');
-
-  await kortix.project('PID123').marketplace.update('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/update');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updateAll();
-  expect(last().url).toContain('/projects/PID123/marketplace/update-all');
-
-  await kortix.project('PID123').marketplace.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/researcher');
-  expect(last().method).toBe('DELETE');
-});
-
-test('project(id).registry is the compatibility alias of marketplace (same paths, /registry prefix)', async () => {
-  await kortix.project('PID123').registry.list();
-  expect(last().url).toContain('/projects/PID123/registry');
-
-  await kortix.project('PID123').registry.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/registry/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').registry.updates();
-  expect(last().url).toContain('/projects/PID123/registry/updates');
-
-  await kortix.project('PID123').registry.update('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/update');
-
-  await kortix.project('PID123').registry.updateAll();
-  expect(last().url).toContain('/projects/PID123/registry/update-all');
-
-  await kortix.project('PID123').registry.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/researcher');
-  expect(last().method).toBe('DELETE');
-});
-
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');

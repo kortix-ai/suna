@@ -49,10 +49,10 @@ import {
 import { useTranslations } from 'next-intl';
 import { type ReactNode, useState } from 'react';
 import {
+  type SandboxProvider,
   type SandboxProviderMode,
-  describeProviderCoverage,
-  describeProviderMode,
-  sandboxProviderLabel,
+  SandboxTemplateProviderCoverage,
+  SandboxTemplateProviderModeBadge,
 } from './sandbox-provider-coverage';
 
 const SNAPSHOTS_QUERY_KEY = (projectId: string) => ['project-snapshots', projectId];
@@ -245,66 +245,6 @@ function BuildRow({ build }: { build: ProjectSnapshotBuild }) {
   );
 }
 
-function ProviderCoverage({
-  coverage,
-  selectedProvider,
-}: {
-  coverage: NonNullable<SandboxTemplate['provider_coverage']>;
-  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
-}) {
-  const observedAt = coverage
-    .map((item) => item.observed_at)
-    .filter((value): value is string => !!value)
-    .sort()
-    .at(-1);
-
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground text-xs">Provider images</span>
-      {coverage.map((item) => {
-        const state = describeProviderCoverage(item.status);
-        const variant =
-          state.tone === 'ok'
-            ? 'success'
-            : state.tone === 'busy'
-              ? 'warning'
-              : state.tone === 'fail'
-                ? 'destructive'
-                : 'muted';
-        const provider = sandboxProviderLabel(item.provider);
-        const selected = item.provider === selectedProvider;
-        return (
-          <Badge
-            key={item.provider}
-            variant={variant}
-            size="xs"
-            aria-label={`${provider}${selected ? ' selected' : ''}: ${state.label}`}
-          >
-            {provider}
-            {selected ? (
-              <>
-                <span className="opacity-50" aria-hidden="true">
-                  &bull;
-                </span>
-                Selected
-              </>
-            ) : null}
-            <span className="opacity-50" aria-hidden="true">
-              &bull;
-            </span>
-            {state.label}
-          </Badge>
-        );
-      })}
-      {observedAt ? (
-        <span className="text-muted-foreground text-xs tabular-nums">
-          Checked {formatRelative(observedAt)}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 function InlinePanelEmpty({ message, action }: { message: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
@@ -419,7 +359,7 @@ function TemplateRow({
   canManage: boolean;
   onEdit: (tpl: SandboxTemplate) => void;
   providerMode: SandboxProviderMode;
-  selectedProvider: 'daytona' | 'platinum' | 'e2b' | null;
+  selectedProvider: SandboxProvider | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
@@ -464,7 +404,6 @@ function TemplateRow({
           ? 'kortix.yaml'
           : 'kortix.toml';
   const stateInfo = describeState(template.provider_state || template.daytona_state);
-  const providerModeInfo = describeProviderMode(providerMode, selectedProvider);
 
   return (
     <>
@@ -493,18 +432,18 @@ function TemplateRow({
             {tI18nHardcoded.raw('autoComponentsProjectsSandboxSnapshotCardJsxTextGiBDiskd395296d')}{' '}
             &bull; {sourceTag}
           </div>
-          {providerMode === 'pinned' && template.provider_coverage?.length ? (
-            <ProviderCoverage
-              coverage={template.provider_coverage}
-              selectedProvider={selectedProvider}
-            />
-          ) : null}
+          <SandboxTemplateProviderCoverage
+            providerMode={providerMode}
+            coverage={template.provider_coverage}
+            selectedProvider={selectedProvider}
+            formatObservedAt={formatRelative}
+          />
         </div>
-        {providerMode === 'automatic' ? (
-          <Badge variant="muted">{providerModeInfo.label}</Badge>
-        ) : !template.provider_coverage?.length ? (
-          <Badge variant="muted">{providerModeInfo.label}</Badge>
-        ) : null}
+        <SandboxTemplateProviderModeBadge
+          providerMode={providerMode}
+          coverage={template.provider_coverage}
+          selectedProvider={selectedProvider}
+        />
         {canManage && (
           <div className="flex items-center gap-1">
             {templateId && !template.is_default && (

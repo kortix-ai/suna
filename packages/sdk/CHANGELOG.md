@@ -47,6 +47,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
+- The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
+  `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
+  with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
+  retried.
 
 ### Removed
 

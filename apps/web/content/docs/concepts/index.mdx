@@ -12,7 +12,7 @@ default branch only via a merged **[change request](/docs/concepts/change-reques
 ## The pieces
 
 - **[Projects](/docs/concepts/projects)** — a git repo (Kortix-managed or
-  imported GitHub) plus its manifest.
+  imported GitHub, pinned to one branch) plus its manifest.
 - **[Sessions](/docs/concepts/sessions)** — isolated sandbox VMs, each on
   its own branch. Many run at once without interfering.
 - **[Agents](/docs/concepts/agents)** — OpenCode, governed by the manifest's
@@ -36,7 +36,7 @@ default branch only via a merged **[change request](/docs/concepts/change-reques
 2. It resolves a content-addressed **snapshot** — the platform's default image
    (or your own Dockerfile, if the manifest declares a
    [`sandbox.templates`](/docs/reference/manifest) entry for it) plus the
-   Kortix runtime layer, built by the sandbox provider (Daytona by default).
+    Kortix runtime layer, built by the configured sandbox provider.
    Unchanged projects reuse the cached image.
 3. The sandbox provider boots the VM. The `kortix-agent` daemon clones the repo to
    `/workspace`, fetches git credentials just-in-time, and launches OpenCode.

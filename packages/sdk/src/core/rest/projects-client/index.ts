@@ -28,7 +28,6 @@ export * from './review';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './tokens';
-export * from './marketplace';
 export * from './audit';
 export * from './setup-links';
 export * from './marketplace-catalog';

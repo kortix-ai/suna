@@ -32,7 +32,11 @@ export class ProcessRunner implements CommandRunner {
 }
 
 function firstUsefulLine(value: string): string {
-  return value.trim().split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? '';
+  const lines = value.split(/\r?\n/)
+    .map((line) => line.replace(/\u001b\[[0-9;]*m/g, '').trim())
+    .map((line) => line.replace(/^[╷│╵]\s*/, '').trim())
+    .filter((line) => line.length > 0 && !/^[╷│╵─]+$/.test(line));
+  return lines.find((line) => line.startsWith('Error:')) ?? lines[0] ?? '';
 }
 
 function redact(value: string, secrets: string[]): string {

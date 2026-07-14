@@ -29,7 +29,10 @@ In v3, `kortix.yaml` has two relevant maps:
   `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`, `enabled`.
 
 `default_agent` is required at the top level and must name a declared, enabled
-agent.
+agent. The project default agent can be set (or changed) from the dashboard,
+API, or SDK — each writes `default_agent` in `kortix.yaml` — and sessions (UI,
+triggers, channels) inherit it unless the caller passes an explicit agent for
+that session.
 
 v3 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
 `skills` key gets none of that access. Give it `all` explicitly to grant full

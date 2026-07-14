@@ -34,6 +34,46 @@ interface PlatformImages {
   frontend: { repository: string; digest: string };
 }
 
+export function runtimeExternalSecretsManifest(input: {
+  namespace: string;
+  region: string;
+  serviceAccountName: string;
+  runtimeSecretArn: string;
+}) {
+  return {
+    apiVersion: 'v1',
+    kind: 'List',
+    items: [{
+      apiVersion: 'external-secrets.io/v1beta1',
+      kind: 'SecretStore',
+      metadata: { name: 'kortix-runtime', namespace: input.namespace },
+      spec: {
+        provider: {
+          aws: {
+            service: 'SecretsManager',
+            region: input.region,
+            auth: {
+              jwt: {
+                serviceAccountRef: { name: input.serviceAccountName },
+              },
+            },
+          },
+        },
+      },
+    }, {
+      apiVersion: 'external-secrets.io/v1beta1',
+      kind: 'ExternalSecret',
+      metadata: { name: 'kortix-runtime', namespace: input.namespace },
+      spec: {
+        refreshInterval: '5m',
+        secretStoreRef: { kind: 'SecretStore', name: 'kortix-runtime' },
+        target: { name: 'kortix-runtime', creationPolicy: 'Owner' },
+        dataFrom: [{ extract: { key: input.runtimeSecretArn } }],
+      },
+    }],
+  };
+}
+
 type PlatformReleaseName = 'kortix-api' | 'kortix-gateway' | 'kortix-edge';
 
 interface PlatformActivation {
@@ -42,6 +82,47 @@ interface PlatformActivation {
   previousRevisions: Map<PlatformReleaseName, number | null>;
   changed: PlatformReleaseName[];
 }
+
+const SSM_COMMAND_WAIT_SCRIPT = `
+set -euo pipefail
+command_id="$1"
+instance_id="$2"
+region="$3"
+deadline=$((SECONDS + 1860))
+while (( SECONDS < deadline )); do
+  if current=$(aws ssm get-command-invocation \
+    --command-id "$command_id" --instance-id "$instance_id" \
+    --region "$region" --query Status --output text 2>&1); then
+    case "$current" in
+      Success|Cancelled|TimedOut|Failed) exit 0 ;;
+      Pending|InProgress|Delayed|Cancelling) ;;
+      *) printf 'Unexpected SSM command status: %s\n' "$current" >&2; exit 1 ;;
+    esac
+  elif [[ "$current" != *InvocationDoesNotExist* ]]; then
+    printf '%s\n' "$current" >&2
+    exit 1
+  fi
+  sleep 5
+done
+printf 'SSM command %s did not reach a terminal state within 31 minutes\n' "$command_id" >&2
+exit 1
+`;
+
+const EXTERNAL_SECRET_WAIT_SCRIPT = `
+set -euo pipefail
+namespace="$1"
+deadline=$((SECONDS + 600))
+while (( SECONDS < deadline )); do
+  current=$(kubectl --namespace "$namespace" get externalsecret/kortix-runtime \
+    --output='jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}' 2>/dev/null || true)
+  if [ "$current" = "True" ]; then
+    exit 0
+  fi
+  sleep 5
+done
+printf 'ExternalSecret kortix-runtime did not become Ready within 10 minutes\\n' >&2
+exit 1
+`;
 
 export interface InstallerConfig {
   workDir: string;
@@ -186,6 +267,18 @@ export class ReleaseInstaller {
       '--kubeconfig', kubeconfig,
     ], { env: applyEnv });
     const kubeEnv = { ...applyEnv, KUBECONFIG: kubeconfig };
+    const runtimeExternalSecrets = join(this.config.workDir, 'runtime-external-secrets.json');
+    writeFileSync(runtimeExternalSecrets, `${JSON.stringify(runtimeExternalSecretsManifest({
+      namespace: descriptor.namespace,
+      region: this.config.region,
+      serviceAccountName: this.config.appServiceAccount,
+      runtimeSecretArn: this.config.runtimeSecretArn,
+    }), null, 2)}\n`, { mode: 0o600 });
+    this.runner.run('kubectl', ['apply', '--filename', runtimeExternalSecrets], { env: kubeEnv });
+    this.runner.run('bash', ['-ceu', EXTERNAL_SECRET_WAIT_SCRIPT, 'bash', descriptor.namespace], { env: kubeEnv });
+    this.runner.run('kubectl', [
+      '--namespace', descriptor.namespace, 'get', 'secret', 'kortix-runtime', '--output=name',
+    ], { env: kubeEnv });
     const activation: PlatformActivation = {
       namespace: descriptor.namespace,
       env: kubeEnv,
@@ -342,9 +435,9 @@ export class ReleaseInstaller {
     ]);
     const commandId = response.Command?.CommandId;
     if (!commandId) throw new Error('SSM did not return a command id for Supabase installation');
-    this.runner.run('aws', [
-      'ssm', 'wait', 'command-executed', '--command-id', commandId,
-      '--instance-id', this.config.supabaseInstanceId, '--region', this.config.region,
+    this.runner.run('bash', [
+      '-ceu', SSM_COMMAND_WAIT_SCRIPT, 'bash', commandId,
+      this.config.supabaseInstanceId, this.config.region,
     ]);
     const result = this.aws.awsJson<{ Status?: string; StandardErrorContent?: string }>([
       'ssm', 'get-command-invocation', '--command-id', commandId, '--instance-id', this.config.supabaseInstanceId,
@@ -529,11 +622,11 @@ aws s3 cp s3://${input.bucket}/${input.key} "$archive"
 echo '${input.sha256}  '"$archive" | sha256sum --check --strict
 entries=$(tar -tzf "$archive")
 test -n "$entries"
-printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\//) exit 1; count=split($0, segments, "/"); for (index=1; index<=count; index++) if (segments[index] == "..") exit 1 }'
+printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\\//) exit 1; count=split($0, segments, "/"); for (part=1; part<=count; part++) if (segments[part] == "..") exit 1 }'
 tar -tvzf "$archive" | awk '{ type=substr($0, 1, 1); if (type != "-" && type != "d") exit 1 }'
 rm -rf "$staging"
 install -d -m 0700 "$staging"
-tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions
+(umask 022; tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions)
 test -x "$staging/bin/install"
 test -f "$staging/bundle.json"
 "$staging/bin/install" --runtime-secret-arn '${input.runtimeSecretArn}' --release '${input.version}' --instance '${input.instance}' --api-domain '${input.apiDomain}' --frontend-domain '${input.frontendDomain}'
@@ -545,7 +638,15 @@ else
   mv "$staging" "$release_dir"
 fi
 install -d -m 0700 /opt/kortix/update-transactions
-previous=$(readlink -f /opt/kortix/current 2>/dev/null || true)
+previous=
+if [ -L /opt/kortix/current ]; then
+  previous=$(readlink -f /opt/kortix/current)
+  case "$previous" in
+    /opt/kortix/releases/*) ;;
+    *) echo 'Unsafe previous Supabase release path' >&2; exit 1 ;;
+  esac
+  test -d "$previous"
+fi
 printf '%s\n' "$previous" >"$transaction.previous"
 printf '%s\n' "$release_dir" >"$transaction.expected"
 ln -sfn "$release_dir" /opt/kortix/current.new

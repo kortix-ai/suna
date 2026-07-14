@@ -20,6 +20,10 @@ data "aws_route53_zone" "public" {
   private_zone = false
 }
 
+locals {
+  public_zone_name = lower(trimsuffix(data.aws_route53_zone.public.name, "."))
+}
+
 resource "terraform_data" "public_dns_guard" {
   input = {
     zone     = data.aws_route53_zone.public.name
@@ -29,9 +33,8 @@ resource "terraform_data" "public_dns_guard" {
 
   lifecycle {
     precondition {
-      condition = alltrue([
-        endswith("${var.api_domain}.", data.aws_route53_zone.public.name),
-        endswith("${var.frontend_domain}.", data.aws_route53_zone.public.name),
+      condition = alltrue([for domain in [var.api_domain, var.frontend_domain] :
+        lower(domain) == local.public_zone_name || endswith(lower(domain), ".${local.public_zone_name}")
       ])
       error_message = "api_domain and frontend_domain must both belong to route53_zone_id."
     }

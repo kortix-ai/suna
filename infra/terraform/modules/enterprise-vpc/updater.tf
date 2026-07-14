@@ -162,16 +162,24 @@ data "aws_iam_policy_document" "codebuild" {
   }
 
   statement {
-    sid = "OperateSupabaseThroughSsm"
-    actions = [
-      "ssm:GetCommandInvocation",
-      "ssm:ListCommandInvocations",
-      "ssm:SendCommand",
-    ]
+    sid     = "SendSupabaseCommand"
+    actions = ["ssm:SendCommand"]
     resources = [
       aws_instance.supabase.arn,
       "arn:${local.partition}:ssm:${local.region}::document/AWS-RunShellScript",
     ]
+  }
+
+  # GetCommandInvocation and ListCommandInvocations do not support resource
+  # scoping. Keep command submission pinned to the host/document above, while
+  # allowing the runner to wait for that submitted command to finish.
+  statement {
+    sid = "ObserveSupabaseCommand"
+    actions = [
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+    ]
+    resources = ["*"]
   }
 
   statement {
@@ -237,6 +245,12 @@ data "aws_iam_policy_document" "updater_apply" {
       "arn:${local.partition}:s3:::${var.terraform_state_bucket}",
       "arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/platform.tfstate",
     ]
+  }
+
+  statement {
+    sid       = "ReadClusterTerraformState"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/cluster.tfstate"]
   }
 
   statement {

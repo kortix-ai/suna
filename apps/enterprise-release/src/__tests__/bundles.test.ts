@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -55,6 +55,7 @@ describe('enterprise release bundles', () => {
       expect(overlay).toContain('archive_timeout=300s');
       expect(overlay).toContain('/var/lib/kortix/wal:/var/lib/kortix-wal:Z');
       expect(overlay).toContain('/var/lib/kortix/recovery-wal:/var/lib/kortix-recovery-wal:ro,Z');
+      expect(overlay).toContain('supavisor:\n    ulimits:\n      nofile:\n        soft: 100000\n        hard: 100000');
 
       for (const script of ['install', 'supabase-start', 'supabase-stop', 'wal-archive', 'base-backup', 'pitr-restore']) {
         const path = join(root, 'bin', script);
@@ -72,6 +73,22 @@ describe('enterprise release bundles', () => {
       expect(readFileSync(join(root, 'bin', 'wal-archive'), 'utf8')).toContain('s3api head-object');
       expect(readFileSync(join(root, 'bin', 'base-backup'), 'utf8')).toContain('pg_basebackup');
       expect(installer).not.toContain('kortix-api');
+
+      const start = readFileSync(join(root, 'bin', 'supabase-start'), 'utf8');
+      expect(start).toContain('docker inspect supabase-kong');
+      expect(start).toContain('--header "apikey: $anon_key"');
+      expect(start).toContain('systemctl enable --now kortix-wal-archive.timer kortix-base-backup.timer');
+      expect(start).not.toContain('systemctl start kortix-wal-archive.service');
+      const walUnit = readFileSync(join(root, 'systemd', 'kortix-wal-archive.service'), 'utf8');
+      expect(walUnit).toContain('After=network-online.target kortix-supabase.service');
+      const physicalRoot = start.split('\n').find((line) => line.startsWith('root=$(readlink -f '));
+      expect(physicalRoot).toBeDefined();
+      symlinkSync('.', join(root, 'current'));
+      const probe = join(root, 'bin', 'root-probe');
+      writeFileSync(probe, `#!/usr/bin/env bash\nset -euo pipefail\n${physicalRoot}\nprintf '%s\\n' "$root"\n`, { mode: 0o755 });
+      const resolved = spawnSync(join(root, 'current', 'bin', 'root-probe'), [], { encoding: 'utf8' });
+      expect({ status: resolved.status, stderr: resolved.stderr, root: resolved.stdout.trim() })
+        .toEqual({ status: 0, stderr: '', root: realpathSync(root) });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

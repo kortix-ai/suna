@@ -41,13 +41,14 @@ case "$*" in
     case "$*" in *"--profile wrong-account"*) account="327903111249" ;; esac
     printf '{"UserId":"fake","Account":"%s","Arn":"arn:aws:iam::%s:user/fake"}\n' "$account" "$account"
     ;;
-  *"states start-execution"*)
+  *"stepfunctions start-execution"*)
     printf '%s\n' '{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:cli-1","startDate":"2026-07-13T12:00:00Z"}'
     ;;
-  *"states list-executions"*)
+  *"stepfunctions list-executions"*)
     printf '%s\n' '{"executions":[{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:hourly-1","name":"hourly-1","status":"SUCCEEDED","startDate":"2026-07-13T11:00:00Z","stopDate":"2026-07-13T11:05:00Z"}]}'
     ;;
   *"dynamodb get-item"*)
+    if [ "\${FAKE_DYNAMO_EMPTY:-}" = "1" ]; then exit 0; fi
     printf '%s\n' '{"Item":{"instance":{"S":"kortix-vpc-demo"},"release":{"S":"0.9.84-e1"},"channel":{"S":"stable"},"status":{"S":"healthy"},"updated_at":{"S":"2026-07-13T11:05:00Z"}}}'
     ;;
   *"eks describe-cluster"*)
@@ -119,11 +120,11 @@ case "$*" in
     esac
     printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}'
     ;;
-  *"plan"*)
-    for arg in "$@"; do case "$arg" in -out=*) : > "\${arg#-out=}" ;; esac; done
-    printf '%s\n' 'Plan: 1 to add, 0 to change, 0 to destroy.'
-    ;;
   *"apply"*)
+    if [ -f "\${FAKE_TERRAFORM_LOG}.fail-apply" ]; then
+      printf '%s\n' '╷' '│ Error: simulated actionable apply failure' '╵' >&2
+      exit 66
+    fi
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
     case "\${dir:-}" in */state)
       if ! grep -q 'backend "s3"' "$dir/backend.tf"; then
@@ -132,6 +133,10 @@ case "$*" in
       ;;
     esac
     printf '%s\n' 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.'
+    ;;
+  *"plan"*)
+    for arg in "$@"; do case "$arg" in -out=*) : > "\${arg#-out=}" ;; esac; done
+    printf '%s\n' 'Plan: 1 to add, 0 to change, 0 to destroy.'
     ;;
   *"init -input=false -migrate-state"*)
     if [ "\${FAKE_TERRAFORM_FAIL_MIGRATE:-}" = "1" ]; then
@@ -324,7 +329,7 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
-    expect(readFileSync(awsLog, 'utf8')).toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).toContain('stepfunctions start-execution');
     expect(readFileSync(awsLog, 'utf8')).toContain('secretsmanager put-secret-value');
     expect(readFileSync(awsLog, 'utf8')).toContain('file://');
     expect(readFileSync(awsLog, 'utf8')).not.toContain('openrouter-key');
@@ -352,7 +357,7 @@ esac
     });
     const calls = readFileSync(awsLog, 'utf8');
     expect(calls).toContain('secretsmanager put-secret-value');
-    expect(calls).not.toContain('states start-execution');
+    expect(calls).not.toContain('stepfunctions start-execution');
   });
 
   test('preserves local bootstrap state and restores the local backend when migration fails', async () => {
@@ -369,7 +374,16 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
+  });
+
+  test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
+    await initConfigured();
+    writeFileSync(`${terraformLog}.fail-apply`, '');
+    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Terraform apply failed: Error: simulated actionable apply failure');
+    expect(result.stderr).not.toContain('Terraform apply failed: ╷');
   });
 
   test('rejects a migrated remote state whose resources differ from the preserved bootstrap state', async () => {
@@ -385,7 +399,7 @@ esac
     expect(result.stderr).toContain('remote state verification failed');
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
   });
 
   test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
@@ -432,7 +446,7 @@ esac
     expect(rollback.code).toBe(0);
 
     const calls = readFileSync(awsLog, 'utf8');
-    expect(calls.match(/states start-execution/g)).toHaveLength(3);
+    expect(calls.match(/stepfunctions start-execution/g)).toHaveLength(3);
     expect(calls).toContain('"trigger":"cli-reconcile"');
     expect(calls).toContain('"requested_release":"0.9.85-e1"');
     expect(calls).toContain('"force":true');
@@ -487,6 +501,20 @@ esac
     expect(logs.code).toBe(0);
     expect(logs.stdout).toContain('updater healthy');
     expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/kortix-vpc-demo/updater');
+  });
+
+  test('reports not-deployed release state when DynamoDB returns an empty successful response', async () => {
+    await initConfigured();
+
+    const result = await run(
+      ['status', '--instance', 'kortix-vpc-demo', '--json'],
+      { FAKE_DYNAMO_EMPTY: '1' },
+    );
+
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      release: { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+    });
   });
 
   test('does not reinterpret Docker lifecycle commands for AWS', async () => {

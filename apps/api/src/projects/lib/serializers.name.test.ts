@@ -1,5 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { PROJECT_NAME_MAX_LENGTH, clampProjectName } from './serializers';
+import { PROJECT_NAME_MAX_LENGTH, clampProjectName, isPlaceholderSessionTitle } from './serializers';
+
+describe('isPlaceholderSessionTitle', () => {
+  test('flags OpenCode default titles, any casing/date suffix', () => {
+    expect(isPlaceholderSessionTitle('New session - 2026-07-14')).toBe(true);
+    expect(isPlaceholderSessionTitle('new session')).toBe(true);
+    expect(isPlaceholderSessionTitle('  New Session - Jul 14  ')).toBe(true);
+  });
+
+  test('keeps real titles and empty values untouched', () => {
+    expect(isPlaceholderSessionTitle('Fix the login redirect')).toBe(false);
+    expect(isPlaceholderSessionTitle('New sessions dashboard design')).toBe(false);
+    expect(isPlaceholderSessionTitle(null)).toBe(false);
+    expect(isPlaceholderSessionTitle(undefined)).toBe(false);
+  });
+});
 
 describe('clampProjectName', () => {
   test('returns short names unchanged', () => {

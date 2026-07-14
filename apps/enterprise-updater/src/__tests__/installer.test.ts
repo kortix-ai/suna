@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { MirroredImage } from '../artifacts.ts';
 import type { AwsControlPlane } from '../aws.ts';
 import {
   ReleaseInstaller,
+  runtimeExternalSecretsManifest,
   supabaseFinalizeScript,
   supabaseInstallScript,
   supabaseRollbackScript,
@@ -30,6 +32,7 @@ describe('Supabase host installer command', () => {
 
     expect(script).toContain('sha256sum --check --strict');
     expect(script).toContain('tar -tzf "$archive"');
+    expect(script).toContain("awk '{ if ($0 ~ /^\\//)");
     expect(script).toContain('type != "-" && type != "d"');
     expect(script).toContain('--runtime-secret-arn');
     expect(script).toContain("--api-domain 'api.vpc-demo.kortix.com'");
@@ -38,6 +41,67 @@ describe('Supabase host installer command', () => {
     expect(script).toContain('update-transactions');
     expect(script).toContain('"$transaction.previous"');
     expect(script).toContain('restored the previous release');
+  });
+
+  test('renders a portable executable archive path guard', () => {
+    const script = supabaseInstallScript(input);
+    const line = script.split('\n').find((candidate) => candidate.includes('"$entries" | awk '));
+    const program = line?.match(/\| awk '(.+)'$/)?.[1];
+    expect(program).toBeDefined();
+
+    const run = (entries: string) => spawnSync('awk', [program!], { input: entries, encoding: 'utf8' });
+    expect(run('bundle.json\nvolumes/db/data\n').status).toBe(0);
+    expect(run('/etc/passwd\n').status).toBe(1);
+    expect(run('volumes/../etc/passwd\n').status).toBe(1);
+  });
+
+  test('extracts public bundle assets with container-readable modes under the secure installer umask', () => {
+    const root = mkdtempSync(join('/tmp', 'kortix-supabase-modes-'));
+    try {
+      const source = join(root, 'source');
+      const staging = join(root, 'staging');
+      const archive = join(root, 'bundle.tar.gz');
+      mkdirSync(join(source, 'bin'), { recursive: true });
+      mkdirSync(join(source, 'volumes', 'db'), { recursive: true });
+      writeFileSync(join(source, 'volumes', 'db', 'webhooks.sql'), 'select 1;\n', { mode: 0o644 });
+      writeFileSync(join(source, 'bin', 'install'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+      chmodSync(join(source, 'bin', 'install'), 0o755);
+      expect(spawnSync('tar', ['-czf', archive, '-C', source, '.']).status).toBe(0);
+      mkdirSync(staging);
+
+      const extraction = supabaseInstallScript(input).split('\n')
+        .find((candidate) => candidate.startsWith('(umask 022; tar -xzf '));
+      expect(extraction).toBeDefined();
+      const result = spawnSync('bash', [
+        '-ceu',
+        `umask 077\narchive="$1"\nstaging="$2"\n${extraction}`,
+        'bash', archive, staging,
+      ], { encoding: 'utf8' });
+      expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
+      expect(statSync(join(staging, 'volumes', 'db', 'webhooks.sql')).mode & 0o777).toBe(0o644);
+      expect(statSync(join(staging, 'bin', 'install')).mode & 0o777).toBe(0o755);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('does not treat a missing current symlink as a previous release', () => {
+    const root = mkdtempSync(join('/tmp', 'kortix-supabase-previous-'));
+    try {
+      const script = supabaseInstallScript(input).replaceAll('/opt/kortix', root);
+      const lines = script.split('\n');
+      const start = lines.indexOf('previous=');
+      const end = lines.findIndex((line) => line.includes('"$transaction.previous"'));
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      const fragment = lines.slice(start, end + 1).join('\n');
+      const transaction = join(root, 'transaction');
+      const result = spawnSync('bash', ['-ceu', `transaction="$1"\n${fragment}\ncat "$transaction.previous"`, 'bash', transaction], { encoding: 'utf8' });
+      expect({ status: result.status, stdout: result.stdout, stderr: result.stderr })
+        .toEqual({ status: 0, stdout: '\n', stderr: '' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('emits bounded commit and rollback commands for the exact activation transaction', () => {
@@ -252,6 +316,37 @@ function eventIndex(events: string[], contains: string): number {
 }
 
 describe('release installation transaction', () => {
+  test('renders the customer runtime External Secrets without secret values', () => {
+    const manifest = runtimeExternalSecretsManifest({
+      namespace: 'kortix',
+      region: 'us-west-2',
+      serviceAccountName: 'kortix-runtime',
+      runtimeSecretArn: input.runtimeSecretArn,
+    });
+
+    expect(manifest.items.map((item) => item.kind)).toEqual(['SecretStore', 'ExternalSecret']);
+    expect(JSON.stringify(manifest)).toContain(input.runtimeSecretArn);
+    expect(JSON.stringify(manifest)).not.toContain('cloudflare-token');
+  });
+
+  test('polls long-running SSM installs through their 30-minute command timeout', () => {
+    const fixture = installerFixture();
+    try {
+      const runSupabaseCommand = Reflect.get(fixture.installer, 'runSupabaseCommand') as (
+        comment: string,
+        script: string,
+      ) => void;
+      runSupabaseCommand.call(fixture.installer, 'Test long-running SSM command', 'true');
+
+      const wait = fixture.events.find((event) => event.startsWith('run:bash -ceu'));
+      expect(wait).toContain('SECONDS + 1860');
+      expect(wait).toContain('Success|Cancelled|TimedOut|Failed');
+      expect(fixture.events.some((event) => event.startsWith('run:aws ssm wait command-executed'))).toBe(false);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   test('starts Supabase before API migrations and commits only after platform health succeeds', () => {
     const fixture = installerFixture();
     try {
@@ -259,13 +354,22 @@ describe('release installation transaction', () => {
 
       const supabase = eventIndex(fixture.events, 'Install verified Kortix enterprise release');
       const recovery = eventIndex(fixture.events, 'Verify fresh Kortix recovery point before update');
+      const terraform = eventIndex(fixture.events, 'run:terraform -chdir=');
+      const externalSecrets = eventIndex(fixture.events, 'run:kubectl apply --filename');
+      const runtimeSecret = eventIndex(fixture.events, 'ExternalSecret kortix-runtime did not become Ready');
       const api = eventIndex(fixture.events, 'run:helm upgrade --install kortix-api');
       const gateway = eventIndex(fixture.events, 'run:helm upgrade --install kortix-gateway');
       const edge = eventIndex(fixture.events, 'run:helm upgrade --install kortix-edge');
       const health = eventIndex(fixture.events, 'api.vpc-demo.kortix.com/v1/health');
       const commit = eventIndex(fixture.events, 'Commit Kortix enterprise release');
       expect(recovery).toBeLessThan(supabase);
-      expect(supabase).toBeLessThan(api);
+      expect(supabase).toBeLessThan(terraform);
+      expect(terraform).toBeLessThan(externalSecrets);
+      expect(externalSecrets).toBeLessThan(runtimeSecret);
+      expect(runtimeSecret).toBeLessThan(api);
+      expect(fixture.events[runtimeSecret]).toContain('SECONDS + 600');
+      expect(fixture.events[runtimeSecret]).toContain('jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}');
+      expect(fixture.events.some((event) => event.includes('kubectl --namespace kortix wait'))).toBe(false);
       expect(api).toBeLessThan(gateway);
       expect(gateway).toBeLessThan(edge);
       expect(edge).toBeLessThan(health);

@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // SCIM provisioning card on the Settings tab. Two things:
 //   1. Surface the per-account SCIM base URL the IdP needs to configure.
 //   2. Manage long-lived SCIM bearer tokens (create / list / revoke).
@@ -11,26 +10,29 @@ import { useTranslations } from 'next-intl';
 
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Loader2, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   createScimToken,
   listScimTokens,
@@ -62,14 +64,13 @@ function formatRelative(iso: string | null): string {
 async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success(successMsg);
+    successToast(successMsg);
   } catch {
-    toast.warning('Copy failed — select and copy manually');
+    errorToast('Copy failed — select and copy manually');
   }
 }
 
 export function ScimCard({ accountId, canManage }: ScimCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ScimToken | null>(null);
   const queryClient = useQueryClient();
@@ -83,11 +84,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   const revokeMutation = useMutation({
     mutationFn: (tokenId: string) => revokeScimToken(accountId, tokenId),
     onSuccess: () => {
-      toast.success('SCIM token revoked');
+      successToast('SCIM token revoked');
       queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
       setRevokeTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to revoke token'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to revoke token'),
   });
 
   const tokens = tokensQuery.data ?? [];
@@ -99,154 +100,157 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   const scimBaseIsAbsolute = isAbsoluteHttpUrl(scimBaseUrl);
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-              <RefreshCw className="text-muted-foreground h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamScimCard.line97JsxTextSCIMProvisioning')}
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamScimCard.line99JsxTextConnectOktaAzureADOrAnySCIM2')}</p>
-          </div>
-          {canManage && (
-            // Step-by-step Directory Sync setup per IdP (mirrors the SSO
-            // wizard) — mints the token and hands over the Tenant URL inline.
-            <Button asChild variant="outline" size="sm" className="shrink-0">
-              <Link href={`/accounts/${accountId}/scim-setup`}>Guided setup</Link>
-            </Button>
-          )}
-        </div>
-      </header>
-
-      <div className="space-y-4 px-6 py-5">
-        {/* Endpoint URL */}
-        <div className="space-y-1.5">
-          <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line107JsxTextSCIMBaseURL')}</Label>
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
-              {scimBaseUrl}
-            </code>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={tHardcodedUi.raw('componentsIamScimCard.line115JsxAttrAriaLabelCopySCIMBaseURL')}
-              onClick={() => copyToClipboard(scimBaseUrl, 'SCIM URL copied')}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            {scimBaseIsAbsolute ? (
-              <>
-                Your IdP appends <code>/Users</code> and <code>/Groups</code>.
-              </>
-            ) : (
-              <>
-                {tHardcodedUi.raw('componentsIamScimCard.line122JsxTextPrependYourAPIOriginEG')}<code>https://api.kortix.com</code>{tHardcodedUi.raw('componentsIamScimCard.line122JsxTextTheIdPAppends')}<code>/Users</code> and <code>/Groups</code>.
-              </>
-            )}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">SCIM provisioning</p>
+          <p className="text-muted-foreground text-xs">
+            Connect Okta, Azure AD, or any SCIM 2.0 provider to sync users and groups into this
+            account.
           </p>
         </div>
-
-        {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
-            don't have to guess the identifier + auth from docs. */}
-        <div className="border-border/60 bg-muted/20 space-y-1.5 rounded-lg border px-3 py-2.5 text-[11px] text-muted-foreground">
-          <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
-          <div className="flex gap-2">
-            <span className="w-24 shrink-0">Identifier</span>
-            <span className="text-foreground">
-              <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> — the user's
-              email
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-24 shrink-0">Auth</span>
-            <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="w-24 shrink-0">Actions</span>
-            <span className="text-foreground">Push users &amp; groups; deactivation deprovisions</span>
-          </div>
-        </div>
-
-        {/* Tokens header */}
-        <div className="flex items-center justify-between border-t border-border/60 pt-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsIamScimCard.line130JsxTextBearerTokens')}</h3>
-            <p className="text-[11px] text-muted-foreground">
-              {tHardcodedUi.raw('componentsIamScimCard.line132JsxTextEachTokenAuthenticatesASingleIdPIntegrationRotate')}</p>
-          </div>
-          {canManage && (
-            <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamScimCard.line139JsxTextNewSCIMToken')}</Button>
-          )}
-        </div>
-
-        {tokensQuery.isLoading && (
-          <div className="space-y-2">
-            <Skeleton className="h-12 rounded-md" />
-            <Skeleton className="h-12 rounded-md" />
-          </div>
+        {canManage && (
+          // Step-by-step Directory Sync setup per IdP (mirrors the SSO
+          // wizard) — mints the token and hands over the Tenant URL inline.
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href={`/accounts/${accountId}/scim-setup`}>Guided setup</Link>
+          </Button>
         )}
+      </div>
 
-        {!tokensQuery.isLoading && tokens.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
-            {tHardcodedUi.raw('componentsIamScimCard.line153JsxTextNoSCIMTokensYetCreateOneToConnect')}</p>
-        )}
-
-        {!tokensQuery.isLoading && tokens.length > 0 && (
-          <ul className="space-y-2">
-            {tokens.map((t) => (
-              <li
-                key={t.token_id}
-                className="flex items-center gap-3 rounded-2xl border border-border/60 px-3 py-2.5"
+      <div className="bg-popover rounded-md border">
+        <div className="space-y-4 px-4 py-5">
+          {/* Endpoint URL */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">SCIM base URL</Label>
+            <div className="flex items-center gap-2">
+              <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
+                {scimBaseUrl}
+              </code>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Copy SCIM base URL"
+                onClick={() => copyToClipboard(scimBaseUrl, 'SCIM URL copied')}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {t.name}
-                    </span>
-                    {t.status === 'active' ? (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-300">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        Active
-                      </span>
-                    ) : (
-                      <Badge
-                        variant="destructive"
-                        className="h-4 rounded-md px-1 text-[9px] font-normal capitalize"
+                <Copy className="size-3.5 shrink-0" />
+              </Button>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {scimBaseIsAbsolute ? (
+                <>
+                  Your IdP appends <code>/Users</code> and <code>/Groups</code>.
+                </>
+              ) : (
+                <>
+                  Prepend your API origin (e.g. <code>https://api.kortix.com</code>). The IdP
+                  appends <code>/Users</code> and <code>/Groups</code>.
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
+              don't have to guess the identifier + auth from docs. */}
+          <div className="bg-muted/20 text-muted-foreground space-y-1.5 rounded-md border px-3 py-2.5 text-xs">
+            <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
+            <div className="flex gap-2">
+              <span className="w-24 shrink-0">Identifier</span>
+              <span className="text-foreground">
+                <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> — the
+                user's email
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-24 shrink-0">Auth</span>
+              <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-24 shrink-0">Actions</span>
+              <span className="text-foreground">
+                Push users &amp; groups; deactivation deprovisions
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-border border-t">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div>
+              <p className="text-foreground text-sm font-medium">Bearer tokens</p>
+              <p className="text-muted-foreground text-xs">
+                Each token authenticates a single IdP integration. Rotate by minting a new one
+                and revoking the old.
+              </p>
+            </div>
+            {canManage && (
+              <Button
+                onClick={() => setCreateOpen(true)}
+                size="sm"
+                variant="secondary"
+                className="shrink-0 gap-1.5"
+              >
+                <Plus className="size-4 shrink-0" />
+                New SCIM token
+              </Button>
+            )}
+          </div>
+
+          <div className="border-border border-t">
+            {tokensQuery.isLoading && (
+              <div className="space-y-2 px-4 py-4">
+                <Skeleton className="h-12 rounded-md" />
+                <Skeleton className="h-12 rounded-md" />
+              </div>
+            )}
+
+            {!tokensQuery.isLoading && tokens.length === 0 && (
+              <div className="px-4 py-4">
+                <EmptyState
+                  icon={KeyRound}
+                  size="sm"
+                  title="No SCIM tokens yet"
+                  description="Create one to connect your IdP."
+                />
+              </div>
+            )}
+
+            {!tokensQuery.isLoading && tokens.length > 0 && (
+              <div className="divide-border divide-y">
+                {tokens.map((t) => (
+                  <div key={t.token_id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{t.name}</span>
+                        <Badge variant={t.status === 'active' ? 'success' : 'muted'} size="sm">
+                          {t.status}
+                        </Badge>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5 flex items-center gap-3 text-xs">
+                        <code className="font-mono">{t.public_prefix}</code>
+                        <span>·</span>
+                        <span>Last used {formatRelative(t.last_used_at)}</span>
+                        <span>·</span>
+                        <span>Created {formatRelative(t.created_at)}</span>
+                      </div>
+                    </div>
+                    {canManage && t.status === 'active' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Revoke ${t.name}`}
+                        onClick={() => setRevokeTarget(t)}
+                        className="text-muted-foreground hover:text-destructive"
                       >
-                        {t.status}
-                      </Badge>
+                        <Trash2 className="size-3.5 shrink-0" />
+                      </Button>
                     )}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-3 text-[11px] text-muted-foreground">
-                    <code className="font-mono">{t.public_prefix}</code>
-                    <span>·</span>
-                    <span>{tHardcodedUi.raw('componentsIamScimCard.line179JsxTextLastUsed')}{' '}{formatRelative(t.last_used_at)}</span>
-                    <span>·</span>
-                    <span>Created {formatRelative(t.created_at)}</span>
-                  </div>
-                </div>
-                {canManage && t.status === 'active' && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Revoke ${t.name}`}
-                    title={tHardcodedUi.raw('componentsIamScimCard.line189JsxAttrTitleRevokeThisToken')}
-                    onClick={() => setRevokeTarget(t)}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <CreateScimTokenDialog
@@ -260,19 +264,20 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamScimCard.line213JsxAttrTitleRevokeSCIMToken')}
+        title="Revoke SCIM token"
         description={
           revokeTarget
             ? `Any IdP using "${revokeTarget.name}" will lose access immediately. This cannot be undone — you'll need to mint a new token to reconnect.`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw('componentsIamScimCard.line219JsxAttrConfirmLabelRevokeToken')}
+        confirmLabel="Revoke token"
+        confirmVariant="destructive"
         isPending={revokeMutation.isPending}
         onConfirm={() => {
           if (revokeTarget) revokeMutation.mutate(revokeTarget.token_id);
         }}
       />
-    </section>
+    </div>
   );
 }
 
@@ -287,7 +292,6 @@ function CreateScimTokenDialog({
   onOpenChange: (v: boolean) => void;
   accountId: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedScimToken | null>(null);
@@ -301,7 +305,7 @@ function CreateScimTokenDialog({
       setCreated(token);
       queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create token'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to create token'),
   });
 
   function handleClose(next: boolean) {
@@ -322,92 +326,104 @@ function CreateScimTokenDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{created ? 'SCIM token created' : 'Create SCIM token'}</DialogTitle>
-          <DialogDescription>
+    <Modal open={open} onOpenChange={handleClose}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{created ? 'SCIM token created' : 'Create SCIM token'}</ModalTitle>
+          <ModalDescription>
             {created
               ? 'Copy the token now — it will not be shown again. Then configure it in your IdP.'
               : 'Mint a bearer token for an IdP integration. Each integration should get its own token so revocation is targeted.'}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
         {created ? (
-          <div className="min-w-0 space-y-4">
-            <div>
-              <Label className="text-xs">Token</Label>
-              <div className="mt-1 flex min-w-0 items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
-                  {created.secret}
-                </code>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={tHardcodedUi.raw('componentsIamScimCard.line293JsxAttrAriaLabelCopyToken')}
-                  onClick={() => copyToClipboard(created.secret, 'Token copied')}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+          <>
+            <ModalBody className="min-w-0 space-y-4">
+              <div>
+                <Label className="text-xs">Token</Label>
+                <div className="mt-1 flex min-w-0 items-center gap-2">
+                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
+                    {created.secret}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="Copy token"
+                    onClick={() => copyToClipboard(created.secret, 'Token copied')}
+                  >
+                    <Copy className="size-3.5 shrink-0" />
+                  </Button>
+                </div>
               </div>
-            </div>
-            <div>
-              <Label className="text-xs">{tHardcodedUi.raw('componentsIamScimCard.line301JsxTextSCIMBaseURL')}</Label>
-              <div className="mt-1 flex min-w-0 items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs">
-                  {scimBaseUrl}
-                </code>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={tHardcodedUi.raw('componentsIamScimCard.line309JsxAttrAriaLabelCopyURL')}
-                  onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
+              <div>
+                <Label className="text-xs">SCIM base URL</Label>
+                <div className="mt-1 flex min-w-0 items-center gap-2">
+                  <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
+                    {scimBaseUrl}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="Copy URL"
+                    onClick={() => copyToClipboard(scimBaseUrl, 'URL copied')}
+                  >
+                    <Copy className="size-3.5 shrink-0" />
+                  </Button>
+                </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => handleClose(false)} className="gap-1.5">
-                <Check className="h-4 w-4" />
+            </ModalBody>
+            <ModalFooter>
+              <Button size="sm" onClick={() => handleClose(false)} className="gap-1.5">
+                <Check className="size-3.5 shrink-0" />
                 Done
               </Button>
-            </DialogFooter>
-          </div>
+            </ModalFooter>
+          </>
         ) : (
-          <form onSubmit={handleSubmit} className="min-w-0 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="scim-token-name">Name</Label>
-              <Input
-                id="scim-token-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsIamScimCard.line331JsxAttrPlaceholderOktaProduction')}
-                maxLength={128}
-                autoFocus
-                required
-                disabled={mutation.isPending}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                {tHardcodedUi.raw('componentsIamScimCard.line338JsxTextUsedOnlyToRecogniseThisTokenLater')}</p>
-            </div>
-            <DialogFooter>
+          <form onSubmit={handleSubmit}>
+            <ModalBody className="min-w-0 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="scim-token-name">Name</Label>
+                <Input
+                  id="scim-token-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Okta production"
+                  maxLength={128}
+                  autoFocus
+                  required
+                  disabled={mutation.isPending}
+                  variant="popover"
+                />
+                <p className="text-muted-foreground text-xs">
+                  Used only to recognise this token later.
+                </p>
+              </div>
+            </ModalBody>
+            <ModalFooter className="sm:justify-between">
               <Button
                 type="button"
-                variant="outline"
+                variant="outline-ghost"
+                size="sm"
                 onClick={() => handleClose(false)}
                 disabled={mutation.isPending}
               >
-                <X className="h-4 w-4" />
                 Cancel
               </Button>
-              <Button type="submit" disabled={!name.trim() || mutation.isPending}>
-                {mutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-                {tHardcodedUi.raw('componentsIamScimCard.line353JsxTextMintToken')}</Button>
-            </DialogFooter>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!name.trim() || mutation.isPending}
+                className="gap-1.5"
+              >
+                {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
+                Mint token
+              </Button>
+            </ModalFooter>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+      </ModalContent>
+    </Modal>
   );
 }

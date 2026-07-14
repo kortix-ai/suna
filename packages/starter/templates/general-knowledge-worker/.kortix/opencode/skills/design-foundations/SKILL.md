@@ -1,6 +1,6 @@
 ---
 name: design-foundations
-description: "Artifact-agnostic design guidance — works for CSS, PowerPoint, matplotlib, PDF, or any visual output."
+description: "Artifact-agnostic design guidance — works for CSS, PowerPoint, matplotlib, PDF, or any visual output. Also includes a curated catalog of named font/color themes for slides, docs, and reports (non-web assets)."
 defaultProjectInstall: true
 ---
 
@@ -289,3 +289,61 @@ Use in order for data series (bar, pie, line, scatter):
 - **Delta:** Colored arrow + %. Teal/green up, red down, gray flat
 - **Sparkline (optional):** Tiny trend line, no axes
 - **Animate** value on change/appear
+
+---
+
+# Named Themes — Slides, Docs, Reports (Non-Web Assets)
+
+> **Scope: Non-website assets only.** This section applies to slides, docs, reports, and other non-web artifacts. For website projects, do NOT use it — use the `website-building` skill instead, which has its own design tokens, typography, and color systems.
+
+A curated collection of professional font + color themes for non-web artifacts, layered on top of the Core Principles and palette guidance above. All themes follow the **1 accent + neutrals** philosophy — one dominant accent color used sparingly (headings, key data, icons), with the rest of the palette staying neutral/muted surface and text tones. If no theme is selected, default to the Kortix palette above.
+
+## Purpose
+
+Each theme includes:
+- A cohesive color palette with hex codes
+- Complementary font pairings for headers and body text (respect the Font Strategy by Format table above — slides/docs stay system-font-only)
+- A distinct visual identity suitable for different contexts and audiences
+
+## Usage Instructions
+
+To apply styling to a slide deck, document, or report:
+
+1. **Show the theme showcase**, if available (`theme-showcase.pdf` or equivalent), so the user can see the available themes visually. Do not modify it — just show it for viewing. If no showcase asset is available, describe the themes below directly.
+2. **Ask for their choice** of theme.
+3. **Wait for explicit confirmation** of the chosen theme.
+4. **Apply the theme** — colors and fonts — consistently across the deck/document/report. If the user is building a website, redirect them to the `website-building` skill instead.
+
+## Themes Available
+
+10 named starting points — treat these as curated presets to describe and adapt, not fixed hex-coded files:
+
+1. **Ocean Depths** — Professional and calming maritime theme
+2. **Sunset Boulevard** — Warm and vibrant sunset colors
+3. **Forest Canopy** — Natural and grounded earth tones
+4. **Modern Minimalist** — Clean and contemporary grayscale
+5. **Golden Hour** — Rich and warm autumnal palette
+6. **Arctic Frost** — Cool and crisp winter-inspired theme
+7. **Desert Rose** — Soft and sophisticated dusty tones
+8. **Tech Innovation** — Bold and modern tech aesthetic
+9. **Botanical Garden** — Fresh and organic garden colors
+10. **Midnight Galaxy** — Dramatic and cosmic deep tones
+
+For each, define: a cohesive color palette with hex codes, complementary header/body font pairing, and a short description of the intended context/audience — following the 1 accent + neutrals rule and the WCAG AA contrast rules above.
+
+## Application Process
+
+After a theme is selected (named or custom):
+1. Derive the concrete palette + font pairing for that theme (see Custom Theme below for the derivation rules — the same rules apply to named themes).
+2. Apply the specified colors and fonts consistently throughout the deck/document/report.
+3. Verify contrast and readability (WCAG AA, per Color Accessibility above).
+4. Maintain the theme's visual identity across every slide/page — don't drift partway through.
+
+## Create Your Own Theme
+
+When none of the 10 named themes fit, create a custom theme. Base it on the inputs provided (topic, audience, tone); give it a descriptive name reflecting the font/color combination. Show the generated theme for review and confirmation before applying it.
+
+**Custom theme requirements:**
+- **1 accent + neutrals** — one bold accent color, 1-2 neutral/muted supporting tones, one dark or light base. Do not create palettes with 2+ strong accent colors.
+- **WCAG AA contrast** — accent and text colors must pass 4.5:1 on their paired backgrounds. Never use maximum-saturation colors (e.g., `#00ffff`, `#ff0000`) as foreground on light backgrounds.
+- **Earn every color** — if a color doesn't help the viewer understand something, make it neutral.

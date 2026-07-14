@@ -88,7 +88,7 @@ function nativeConfigEnv(id: AcpHarnessId, env: NodeJS.ProcessEnv): Record<strin
   return { PI_CODING_AGENT_DIR: dir }
 }
 
-function nativeConfigDir(env: NodeJS.ProcessEnv): string | null {
+export function nativeConfigDir(env: NodeJS.ProcessEnv): string | null {
   const raw = env.KORTIX_RUNTIME_CONFIG_DIR?.trim()
   if (!raw) return null
   const workspace = env.KORTIX_WORKSPACE?.replace(/\/$/, '') || '/workspace'
