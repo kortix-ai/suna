@@ -79,6 +79,18 @@ describe('embedded enterprise Terraform graph', () => {
     expect(userData).toContain('aws --version');
   });
 
+  test('allows SSM managed instances to use both command transport services through the workload boundary', () => {
+    const state = enterpriseTerraformAssets['modules/enterprise-state/main.tf'];
+    const boundary = state.slice(
+      state.indexOf('sid    = "BoundRuntimeIdentityPolicies"'),
+      state.indexOf('sid    = "DenyIdentityAndKeyEscalation"'),
+    );
+
+    expect(boundary).toContain('"ssm:*"');
+    expect(boundary).toContain('"ssmmessages:*"');
+    expect(boundary).toContain('"ec2messages:*"');
+  });
+
   test('keeps the customer updater as the only enterprise Helm reconciler', () => {
     const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
     const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];
