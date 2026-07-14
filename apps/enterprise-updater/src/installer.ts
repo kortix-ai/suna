@@ -533,7 +533,7 @@ printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\\//) exit 1; count=split($0, segme
 tar -tvzf "$archive" | awk '{ type=substr($0, 1, 1); if (type != "-" && type != "d") exit 1 }'
 rm -rf "$staging"
 install -d -m 0700 "$staging"
-tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions
+(umask 022; tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions)
 test -x "$staging/bin/install"
 test -f "$staging/bundle.json"
 "$staging/bin/install" --runtime-secret-arn '${input.runtimeSecretArn}' --release '${input.version}' --instance '${input.instance}' --api-domain '${input.apiDomain}' --frontend-domain '${input.frontendDomain}'

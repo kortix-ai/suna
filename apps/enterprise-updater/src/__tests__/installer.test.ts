@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { MirroredImage } from '../artifacts.ts';
@@ -52,6 +52,36 @@ describe('Supabase host installer command', () => {
     expect(run('bundle.json\nvolumes/db/data\n').status).toBe(0);
     expect(run('/etc/passwd\n').status).toBe(1);
     expect(run('volumes/../etc/passwd\n').status).toBe(1);
+  });
+
+  test('extracts public bundle assets with container-readable modes under the secure installer umask', () => {
+    const root = mkdtempSync(join('/tmp', 'kortix-supabase-modes-'));
+    try {
+      const source = join(root, 'source');
+      const staging = join(root, 'staging');
+      const archive = join(root, 'bundle.tar.gz');
+      mkdirSync(join(source, 'bin'), { recursive: true });
+      mkdirSync(join(source, 'volumes', 'db'), { recursive: true });
+      writeFileSync(join(source, 'volumes', 'db', 'webhooks.sql'), 'select 1;\n', { mode: 0o644 });
+      writeFileSync(join(source, 'bin', 'install'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+      chmodSync(join(source, 'bin', 'install'), 0o755);
+      expect(spawnSync('tar', ['-czf', archive, '-C', source, '.']).status).toBe(0);
+      mkdirSync(staging);
+
+      const extraction = supabaseInstallScript(input).split('\n')
+        .find((candidate) => candidate.startsWith('(umask 022; tar -xzf '));
+      expect(extraction).toBeDefined();
+      const result = spawnSync('bash', [
+        '-ceu',
+        `umask 077\narchive="$1"\nstaging="$2"\n${extraction}`,
+        'bash', archive, staging,
+      ], { encoding: 'utf8' });
+      expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
+      expect(statSync(join(staging, 'volumes', 'db', 'webhooks.sql')).mode & 0o777).toBe(0o644);
+      expect(statSync(join(staging, 'bin', 'install')).mode & 0o777).toBe(0o755);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('emits bounded commit and rollback commands for the exact activation transaction', () => {
