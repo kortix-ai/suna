@@ -315,6 +315,20 @@ function eventIndex(events: string[], contains: string): number {
 }
 
 describe('release installation transaction', () => {
+  test('polls long-running SSM installs through their 30-minute command timeout', () => {
+    const fixture = installerFixture();
+    try {
+      fixture.installer.install(releaseManifest(), '/tmp/platform.tar.gz', '/tmp/supabase.tar.gz', mirroredImages());
+
+      const wait = fixture.events.find((event) => event.startsWith('run:bash -ceu'));
+      expect(wait).toContain('SECONDS + 1860');
+      expect(wait).toContain('Success|Cancelled|TimedOut|Failed');
+      expect(fixture.events.some((event) => event.startsWith('run:aws ssm wait command-executed'))).toBe(false);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   test('starts Supabase before API migrations and commits only after platform health succeeds', () => {
     const fixture = installerFixture();
     try {
