@@ -35,7 +35,7 @@ import {
 import { EVENT_DEDUPE_TTL_MS } from './slack/app';
 import { normalizeConversationPolicy } from './slack/participants';
 import { currentChannelSelection } from './slack/selection';
-import { telegramSendMessage } from './telegram-api';
+import { telegramAnswerCallbackQuery, telegramSendMessage } from './telegram-api';
 import {
   TELEGRAM_HELP_TEXT,
   TELEGRAM_LOCKED_TEXT,
@@ -43,6 +43,7 @@ import {
   TELEGRAM_PAIRED_TEXT,
   TELEGRAM_PAIRING_FAILED_TEXT,
   TELEGRAM_START_TEXT,
+  type TelegramCallbackQuery,
   type TelegramMessage,
   type TelegramUpdate,
   parseTelegramCommand,
@@ -51,6 +52,7 @@ import {
   shouldRespondInChat,
 } from './telegram/inbound';
 import { addTelegramAllowedUser, telegramPairingMatches } from './telegram/pairing';
+import { answerLabelFromKeyboard, isQuestionCallback } from './telegram/questions';
 import {
   finalizeTelegramTurnDirect,
   restartTelegramTurnForFollowUp,
@@ -99,6 +101,17 @@ telegramWebhookApp.openapi(
       update = (await c.req.json()) as TelegramUpdate;
     } catch {
       return c.json({ error: 'Invalid JSON' }, 400);
+    }
+
+    // Inline-keyboard taps (answers to a question) arrive as callback_query,
+    // not message. Dedupe on the update id (Telegram redelivers on non-2xx).
+    if (update.callback_query) {
+      if (await claimOnce(`telegram:update:${projectId}:${update.update_id}`)) {
+        handleCallbackQuery(projectId, update.callback_query).catch((err) =>
+          console.error('[telegram-webhook] callback handle failed', err),
+        );
+      }
+      return c.json({ ok: true });
     }
 
     const message = update.message ?? update.edited_message;
@@ -212,6 +225,50 @@ async function handleUpdate(
   }
 
   await createOrJoinChatSession({ projectId, botId, botUsername, chatId, message });
+}
+
+// An inline-keyboard tap answering the agent's `question` tool. We recover the
+// chosen option's LABEL from the message's own echoed keyboard (no storage),
+// ack the tap to clear its spinner, then deliver the label into the session as
+// an ordinary follow-up message — identical to the user typing that answer.
+async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery): Promise<void> {
+  const install = await loadTelegramInstall(projectId);
+  if (!install) return;
+  const { botId, botUsername } = install;
+  const token = await loadTelegramTokenForProject(projectId);
+
+  const cbMessage = cb.message;
+  // Only question taps are handled; anything else gets a silent ack so the
+  // client stops spinning.
+  const answer = isQuestionCallback(cb.data)
+    ? answerLabelFromKeyboard(cbMessage?.reply_markup?.inline_keyboard, cb.data)
+    : null;
+  if (!answer || !cbMessage?.chat) {
+    if (token) await telegramAnswerCallbackQuery(token, cb.id);
+    return;
+  }
+
+  // Ack immediately (clears the button spinner + shows a toast) — best-effort,
+  // independent of whether the session routing below succeeds.
+  if (token) await telegramAnswerCallbackQuery(token, cb.id, `✓ ${answer}`);
+
+  // Route the answer as a follow-up message. Synthesize a TelegramMessage from
+  // the tapper + the question's chat so the SAME create-or-join path (and its
+  // allowlist gate) runs — a tap from an unpaired user is rejected exactly like
+  // a typed message would be.
+  const synthetic: TelegramMessage = {
+    message_id: cbMessage.message_id,
+    chat: cbMessage.chat,
+    from: cb.from,
+    text: answer,
+  };
+  await createOrJoinChatSession({
+    projectId,
+    botId,
+    botUsername,
+    chatId: String(cbMessage.chat.id),
+    message: synthetic,
+  });
 }
 
 // `/start <code>`: validate the dashboard-minted single-use code and allowlist

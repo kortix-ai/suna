@@ -82,7 +82,12 @@ export async function telegramApiCall<T = unknown>(
       if (res.status === 429) {
         // Not processed → always safe to retry. Telegram tells us exactly when.
         const retryAfter = data.parameters?.retry_after ?? attempt;
-        last = { ok: false, description: 'ratelimited', error_code: 429, parameters: data.parameters };
+        last = {
+          ok: false,
+          description: 'ratelimited',
+          error_code: 429,
+          parameters: data.parameters,
+        };
         if (attempt < maxAttempts) {
           await sleep(Math.min(retryAfter, 5) * 1000);
           continue;
@@ -90,7 +95,11 @@ export async function telegramApiCall<T = unknown>(
         return last;
       }
       if (res.status >= 500) {
-        last = { ok: false, description: data.description ?? `http_${res.status}`, error_code: res.status };
+        last = {
+          ok: false,
+          description: data.description ?? `http_${res.status}`,
+          error_code: res.status,
+        };
         // May have been processed — only retry idempotent calls.
         if (idempotent && attempt < maxAttempts) {
           await sleep(attempt * 400);
@@ -174,30 +183,57 @@ export async function telegramSetMyCommands(
  * slow success can't become a duplicate (429 still retries; it wasn't
  * processed). Returns the new message id, or null on failure.
  */
+/** An inline-keyboard button. Exactly one of `url` (opens a link) or
+ *  `callbackData` (posts a callback_query back to the webhook) is set. */
 export interface TelegramInlineButton {
   text: string;
-  url: string;
+  url?: string;
+  callbackData?: string;
 }
 
 export interface TelegramSendOptions {
   replyToMessageId?: number;
   parseMode?: 'HTML';
-  /** One row of URL buttons under the message (e.g. "Open in Kortix"). */
+  /** One row of buttons under the message (e.g. "Open in Kortix"). */
   buttons?: TelegramInlineButton[];
+  /** Explicit multi-row keyboard (e.g. one question option per row). Takes
+   *  precedence over `buttons`. */
+  keyboard?: TelegramInlineButton[][];
   disableWebPagePreview?: boolean;
 }
 
+function serializeButton(b: TelegramInlineButton): Record<string, string> {
+  if (b.url != null) return { text: b.text, url: b.url };
+  if (b.callbackData != null) return { text: b.text, callback_data: b.callbackData };
+  return { text: b.text };
+}
+
+/** Build the `reply_markup.inline_keyboard` rows from either an explicit
+ *  multi-row `keyboard` or a single `buttons` row. Undefined when neither is set
+ *  (so we omit reply_markup rather than send an empty keyboard). */
+export function inlineKeyboardMarkup(
+  opts: Pick<TelegramSendOptions, 'buttons' | 'keyboard'>,
+): { inline_keyboard: Record<string, string>[][] } | undefined {
+  const rows = opts.keyboard ?? (opts.buttons?.length ? [opts.buttons] : undefined);
+  if (!rows?.length) return undefined;
+  return { inline_keyboard: rows.map((row) => row.map(serializeButton)) };
+}
+
 function sendPayload(chatId: number | string, text: string, opts: TelegramSendOptions) {
+  const markup = inlineKeyboardMarkup(opts);
   return {
     chat_id: chatId,
     text,
     ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
     ...(opts.replyToMessageId
-      ? { reply_parameters: { message_id: opts.replyToMessageId, allow_sending_without_reply: true } }
+      ? {
+          reply_parameters: {
+            message_id: opts.replyToMessageId,
+            allow_sending_without_reply: true,
+          },
+        }
       : {}),
-    ...(opts.buttons?.length
-      ? { reply_markup: { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, url: b.url }))] } }
-      : {}),
+    ...(markup ? { reply_markup: markup } : {}),
     ...(opts.disableWebPagePreview ? { link_preview_options: { is_disabled: true } } : {}),
   };
 }
@@ -215,7 +251,9 @@ export async function telegramSendMessage(
     { idempotent: false },
   );
   if (!r.ok) {
-    console.warn('[telegram-api] sendMessage failed', { error: redactToken(r.description ?? 'unknown') });
+    console.warn('[telegram-api] sendMessage failed', {
+      error: redactToken(r.description ?? 'unknown'),
+    });
     return null;
   }
   return typeof r.result?.message_id === 'number' ? r.result.message_id : null;
@@ -231,8 +269,12 @@ export async function telegramEditMessageText(
   chatId: number | string,
   messageId: number,
   text: string,
-  opts: Pick<TelegramSendOptions, 'parseMode' | 'buttons' | 'disableWebPagePreview'> = {},
+  opts: Pick<
+    TelegramSendOptions,
+    'parseMode' | 'buttons' | 'keyboard' | 'disableWebPagePreview'
+  > = {},
 ): Promise<boolean> {
+  const markup = inlineKeyboardMarkup(opts);
   const r = await telegramApiCall(
     token,
     'editMessageText',
@@ -241,17 +283,34 @@ export async function telegramEditMessageText(
       message_id: messageId,
       text,
       ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
-      ...(opts.buttons?.length
-        ? { reply_markup: { inline_keyboard: [opts.buttons.map((b) => ({ text: b.text, url: b.url }))] } }
-        : {}),
+      ...(markup ? { reply_markup: markup } : {}),
       ...(opts.disableWebPagePreview ? { link_preview_options: { is_disabled: true } } : {}),
     },
     { retries: 1 },
   );
   if (r.ok) return true;
   if ((r.description ?? '').includes('message is not modified')) return true;
-  console.warn('[telegram-api] editMessageText failed', { error: redactToken(r.description ?? 'unknown') });
+  console.warn('[telegram-api] editMessageText failed', {
+    error: redactToken(r.description ?? 'unknown'),
+  });
   return false;
+}
+
+/**
+ * Acknowledge an inline-keyboard tap — stops the button's spinner and (with
+ * `text`) shows a small toast to the tapper. Best-effort: a failed ack only
+ * leaves a spinner, never blocks the answer routing. `callback_query.id`s expire
+ * quickly, so this is idempotent-ish and never retried aggressively.
+ */
+export async function telegramAnswerCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text?: string,
+): Promise<void> {
+  await telegramApiCall(token, 'answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text: text.slice(0, 200) } : {}),
+  }).catch(() => {});
 }
 
 /** Fire-and-forget liveness cue ("typing…" for ~5s). Never throws. */

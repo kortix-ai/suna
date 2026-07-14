@@ -16,25 +16,25 @@
  * /turn-stream route by the session's source.
  */
 
-import { eq } from 'drizzle-orm';
 import { chatTurnStreams } from '@kortix/db';
-import { db } from '../../shared/db';
+import { eq } from 'drizzle-orm';
 import { config } from '../../config';
-import { claimFinalize, deleteTurn } from '../slack/turn';
+import { db } from '../../shared/db';
 import { loadTelegramTokenForProject } from '../install-store';
+import { claimFinalize, deleteTurn } from '../slack/turn';
 import {
+  type TelegramInlineButton,
   telegramEditMessageText,
   telegramSendChatAction,
   telegramSendMessage,
-  type TelegramInlineButton,
 } from '../telegram-api';
 import {
   TELEGRAM_MAX_MESSAGE,
+  type TelegramTurnStep,
   chunkTelegramText,
   renderWorkingStatus,
   sessionDeepLink,
   telegramHtml,
-  type TelegramTurnStep,
 } from './format';
 import type { TelegramMessage } from './inbound';
 
@@ -105,6 +105,14 @@ export async function saveTelegramTurn(handle: LiveTelegramTurn): Promise<void> 
     .insert(chatTurnStreams)
     .values(values)
     .onConflictDoUpdate({ target: chatTurnStreams.sessionId, set: values });
+}
+
+/** Load the live turn for the question renderer (postTelegramQuestion needs the
+ *  placeholder message + chat to morph it into the question). */
+export async function loadTelegramTurnForQuestion(
+  sessionId: string,
+): Promise<LiveTelegramTurn | null> {
+  return loadTelegramTurn(sessionId);
 }
 
 /** Platform dispatch for the shared /turn-stream route: is this session's
@@ -180,7 +188,12 @@ export async function finalizeTelegramTurnDirect(
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return;
   if (handle.statusMessageId != null) {
-    const edited = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, text);
+    const edited = await telegramEditMessageText(
+      token,
+      handle.chatId,
+      handle.statusMessageId,
+      text,
+    );
     if (edited) return;
   }
   await telegramSendMessage(token, handle.chatId, text, {
@@ -252,7 +265,9 @@ export async function relayTelegramTurnAnswer(sessionId: string, text: string): 
       edited =
         (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, opts)) ||
         // Telegram rejected the HTML — retry the same edit as plain text.
-        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, plain, { buttons }));
+        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, plain, {
+          buttons,
+        }));
     }
     if (!edited) {
       const sent = await telegramSendMessage(token, handle.chatId, html, {
@@ -275,7 +290,13 @@ export async function relayTelegramTurnAnswer(sessionId: string, text: string): 
       const isLast = i === chunks.length - 1;
       const opts = isLast ? { buttons } : {};
       if (i === 0 && handle.statusMessageId != null) {
-        const ok = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, chunks[i], opts);
+        const ok = await telegramEditMessageText(
+          token,
+          handle.chatId,
+          handle.statusMessageId,
+          chunks[i],
+          opts,
+        );
         if (!ok) await telegramSendMessage(token, handle.chatId, chunks[i], opts);
       } else {
         await telegramSendMessage(token, handle.chatId, chunks[i], opts);
@@ -303,7 +324,9 @@ export async function relayTelegramTurnEnd(
   const handle = await loadTelegramTurn(sessionId);
   if (!handle) {
     if (status === 'error') {
-      console.warn('[telegram-webhook] turn-end ERROR relay dropped — no open turn for session', { sessionId });
+      console.warn('[telegram-webhook] turn-end ERROR relay dropped — no open turn for session', {
+        sessionId,
+      });
     }
     return false;
   }
@@ -377,7 +400,10 @@ export function telegramQueuedMessage(reason?: string): string {
   return "I've queued your task behind the sessions already starting in this project — I'll reply right here the moment it begins.";
 }
 
-function openInKortixButtons(projectId: string, sessionId: string): TelegramInlineButton[] | undefined {
+function openInKortixButtons(
+  projectId: string,
+  sessionId: string,
+): TelegramInlineButton[] | undefined {
   const url = sessionDeepLink(config.KORTIX_URL, projectId, sessionId);
   return url ? [{ text: 'Open in Kortix', url }] : undefined;
 }

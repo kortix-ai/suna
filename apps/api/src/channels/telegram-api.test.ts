@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   buildTelegramWebhookUrl,
+  inlineKeyboardMarkup,
   isValidTelegramBotToken,
   redactToken,
   telegramApiBase,
@@ -76,5 +77,56 @@ describe('telegramApiBase', () => {
   test('honors the e2e stub override, read per call, trailing slash trimmed', () => {
     process.env.KORTIX_TELEGRAM_API_BASE = 'http://127.0.0.1:4567/';
     expect(telegramApiBase()).toBe('http://127.0.0.1:4567');
+  });
+});
+
+describe('inlineKeyboardMarkup', () => {
+  test('undefined when there are no buttons and no keyboard', () => {
+    expect(inlineKeyboardMarkup({})).toBeUndefined();
+    expect(inlineKeyboardMarkup({ buttons: [] })).toBeUndefined();
+    expect(inlineKeyboardMarkup({ keyboard: [] })).toBeUndefined();
+  });
+
+  test('a single `buttons` row becomes one keyboard row', () => {
+    const markup = inlineKeyboardMarkup({ buttons: [{ text: 'Open', url: 'https://k.x' }] });
+    expect(markup).toEqual({ inline_keyboard: [[{ text: 'Open', url: 'https://k.x' }]] });
+  });
+
+  test('serializes callback buttons to callback_data (not url)', () => {
+    const markup = inlineKeyboardMarkup({
+      keyboard: [
+        [{ text: 'Yes', callbackData: 'kxq:0:0' }],
+        [{ text: 'No', callbackData: 'kxq:0:1' }],
+      ],
+    });
+    expect(markup).toEqual({
+      inline_keyboard: [
+        [{ text: 'Yes', callback_data: 'kxq:0:0' }],
+        [{ text: 'No', callback_data: 'kxq:0:1' }],
+      ],
+    });
+  });
+
+  test('explicit `keyboard` rows take precedence over `buttons`', () => {
+    const markup = inlineKeyboardMarkup({
+      buttons: [{ text: 'ignored', url: 'https://x' }],
+      keyboard: [[{ text: 'A', callbackData: 'kxq:0:0' }]],
+    });
+    expect(markup).toEqual({ inline_keyboard: [[{ text: 'A', callback_data: 'kxq:0:0' }]] });
+  });
+
+  test('mixes url and callback buttons within a keyboard', () => {
+    const markup = inlineKeyboardMarkup({
+      keyboard: [
+        [
+          { text: 'Pick', callbackData: 'kxq:0:0' },
+          { text: 'Docs', url: 'https://d.x' },
+        ],
+      ],
+    });
+    expect(markup?.inline_keyboard[0]).toEqual([
+      { text: 'Pick', callback_data: 'kxq:0:0' },
+      { text: 'Docs', url: 'https://d.x' },
+    ]);
   });
 });

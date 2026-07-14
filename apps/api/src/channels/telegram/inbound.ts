@@ -80,10 +80,27 @@ export function describeAttachments(message: TelegramMessage): string {
   ].join('\n');
 }
 
+/** An inline-keyboard tap. `message` is the message the button was attached to
+ *  — Telegram echoes its full `reply_markup` back, which is how we recover the
+ *  tapped option's label without any server-side storage. */
+export interface TelegramCallbackQuery {
+  id: string;
+  from?: TelegramUser;
+  data?: string;
+  message?: {
+    message_id: number;
+    chat: TelegramChat;
+    reply_markup?: {
+      inline_keyboard?: Array<Array<{ text?: string; callback_data?: string; url?: string }>>;
+    };
+  };
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
 }
 
 // ─── Bot commands ────────────────────────────────────────────────────────────
@@ -221,9 +238,11 @@ const TURN_INSTRUCTIONS = [
   '  [links](https://…). Keep it chat-sized — lead with the answer, light',
   '  structure. Long answers are chunked automatically.',
   '- One `telegram send` per turn — it finalizes the live status message.',
-  '- Need to ask the user something? Ask it via `telegram send`, then END your',
-  '  turn — their reply arrives as a fresh message in this conversation. The',
-  '  built-in `question` tool has no answerer in a chat; do not use it.',
+  '- Need to ask the user something with a few fixed choices? Use the built-in',
+  '  `question` tool — its options render as tappable buttons in the chat. The',
+  "  user's tap (or a typed reply) arrives as a fresh message, so END your turn",
+  '  after asking; do not wait. For open-ended questions, just `telegram send`',
+  '  the question and end the turn.',
   '- Files: `telegram download --file-id <id> --out <path>` pulls a received',
   '  file into your workspace; `telegram send --file <path> [--caption "…"]`',
   '  sends a workspace file to the chat. Both are token-free (server-side',
