@@ -1,4 +1,5 @@
 import { config, type SandboxProviderName } from '../../config';
+import { isPlaceholderOpencodeTitle } from '../opencode-title-sync';
 import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
 import { type SecretGrant, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
@@ -68,7 +69,11 @@ export function serializeSession(
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
-  const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  // Historic rows may carry OpenCode's frozen placeholder ("New session - …")
+  // in metadata.name — expose it as untitled so clients fall back to their own
+  // display chain instead of a junk title (heals old rows with no backfill).
+  const rawAutoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,

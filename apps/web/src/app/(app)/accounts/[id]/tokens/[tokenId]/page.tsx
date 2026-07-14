@@ -3,18 +3,19 @@
 import { useTranslations } from 'next-intl';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, KeyRound } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
+import { ChevronLeft, KeyRound } from 'lucide-react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountTokensApi } from '@/lib/api/account-tokens';
-import { getAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
 function formatDate(iso: string | null | undefined) {
@@ -26,8 +27,6 @@ function formatDate(iso: string | null | undefined) {
 
 export default function TokenDetailPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const router = useRouter();
   const params = useParams<{ id: string; tokenId: string }>();
   const accountId = params?.id;
   const tokenId = params?.tokenId;
@@ -40,13 +39,6 @@ export default function TokenDetailPage() {
   const tokensQuery = useQuery({
     queryKey: ['account-tokens', accountId],
     queryFn: () => accountTokensApi.list(),
-    enabled: !!user && !!accountId,
-    staleTime: 30_000,
-  });
-
-  const accountQuery = useQuery({
-    queryKey: ['account', accountId],
-    queryFn: () => getAccount(accountId!),
     enabled: !!user && !!accountId,
     staleTime: 30_000,
   });
@@ -66,90 +58,56 @@ export default function TokenDetailPage() {
   }
 
   return (
-    <main className="w-full flex-1 px-4 py-8">
-      <div className="mx-auto w-full max-w-6xl space-y-8">
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => router.push('/projects')}
-            className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}
-          </button>
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <button
-              type="button"
-              onClick={() => router.push('/accounts')}
-              className="hover:text-foreground cursor-pointer transition-colors"
-            >
-              Accounts
-            </button>
-            <span className="text-muted-foreground/40">/</span>
-            <button
-              type="button"
-              onClick={() => router.push(`/accounts/${accountId}`)}
-              className="hover:text-foreground cursor-pointer transition-colors"
-            >
-              {accountQuery.data?.name ?? 'Account'}
-            </button>
-            <span className="text-muted-foreground/40">/</span>
-            <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}</span>
-            <span className="text-muted-foreground/40">/</span>
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-10">
+      <div className="space-y-5">
+        <Link
+          href={`/accounts/${accountId}`}
+          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
+        >
+          <ChevronLeft className="size-4" />
+          Account
+        </Link>
+
+        <div className="flex min-w-0 items-center gap-3.5">
+          <EntityAvatar icon={KeyRound} size="lg" />
+          <div className="min-w-0 space-y-0.5">
             {tokensQuery.isLoading ? (
-              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-6 w-44" />
             ) : (
-              <span className="text-foreground truncate font-medium">{token?.name ?? 'Token'}</span>
+              <h2 className="text-foreground truncate text-xl font-medium">
+                {token?.name ?? 'Token not found'}
+              </h2>
             )}
+            {token ? (
+              <InlineMeta className="text-sm">
+                <span className="capitalize">{token.status}</span>
+                <span>Created {formatDate(token.created_at)}</span>
+                <span>Last used {formatDate(token.last_used_at)}</span>
+              </InlineMeta>
+            ) : null}
           </div>
-          <div className="flex items-start gap-3">
-            <EntityAvatar icon={KeyRound} size="lg" />
-            <div>
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                {tokensQuery.isLoading ? (
-                  <Skeleton className="h-7 w-48" />
-                ) : (
-                  (token?.name ?? 'Token not found')
-                )}
-              </h1>
-              {token && (
-                <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
-                  <Badge
-                    variant={token.status === 'active' ? 'outline' : 'destructive'}
-                    size="sm"
-                    className="font-normal capitalize"
-                  >
-                    {token.status}
-                  </Badge>
-                  <span>Created {formatDate(token.created_at)}</span>
-                  <span className="text-muted-foreground/40">·</span>
-                  <span>
-                    {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}
-                    {formatDate(token.last_used_at)}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
+          {token && token.status !== 'active' ? (
+            <Badge variant="destructive" size="sm" className="ml-auto shrink-0 capitalize">
+              {token.status}
+            </Badge>
+          ) : null}
         </div>
-
-        {!tokensQuery.isLoading && !token && tokenId && (
-          <InfoBanner tone="neutral">
-            {tHardcodedUi.raw(
-              'appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas',
-            )}
-          </InfoBanner>
-        )}
-
-        {token && accountId && (
-          <InfoBanner
-            tone="info"
-            title={tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxAttrTitle403e73a7')}
-          >
-            {tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc')}
-          </InfoBanner>
-        )}
       </div>
-    </main>
+
+      {!tokensQuery.isLoading && !token && tokenId ? (
+        <InfoBanner tone="neutral">
+          This token doesn&apos;t exist or has been revoked.
+        </InfoBanner>
+      ) : null}
+
+      {token && accountId ? (
+        <InfoBanner
+          tone="info"
+          title={tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxAttrTitle403e73a7')}
+        >
+          {tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc')}
+        </InfoBanner>
+      ) : null}
+    </div>
   );
 }

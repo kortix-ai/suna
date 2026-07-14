@@ -55,6 +55,31 @@ jobs:
             kortix/kortix-gateway:dev-latest
             kortix/kortix-gateway:${{ steps.meta.outputs.tag }}
 
+  # Roll the freshly-built gateway image onto the dev ECS Fargate gateway service,
+  # in parallel with the EKS GitOps deploy below. The task-def is rendered from the
+  # kortix-dev-env Secrets Manager blob (same blob external-secrets syncs into EKS)
+  # so the two runtimes can't drift. When EKS is retired, this becomes the sole
+  # gateway deploy.
+  deploy-gateway-ecs:
+    name: Deploy gateway to dev (ECS Fargate)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC → ECS deploy role
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll the dev ECS gateway service onto the freshly-built image
+        run: bash infra/scripts/ecs-deploy.sh dev "kortix/kortix-gateway:${{ needs.build.outputs.tag }}" --service gateway
+
   deploy:
     name: Deploy gateway to dev (GitOps)
     needs: build

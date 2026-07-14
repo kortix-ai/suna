@@ -8,8 +8,7 @@
 // 402 without the entitlement (requireEntitlement), so we never render controls
 // the backend would reject.
 
-import { Check, FileClock, KeyRound, Lock, ShieldCheck, Users } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { Check, Lock } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,14 +24,12 @@ type UpsellFeature = 'groups' | 'roles' | 'audit' | 'identity';
 const FEATURE_COPY: Record<
   UpsellFeature,
   {
-    icon: ComponentType<{ className?: string }>;
     title: string;
     blurb: string;
     points: [string, string, string];
   }
 > = {
   groups: {
-    icon: Users,
     title: 'Groups are an Enterprise feature',
     blurb:
       'Bundle members into groups and grant the whole group a role on a project — one grant instead of dozens, revoked just as easily.',
@@ -43,7 +40,6 @@ const FEATURE_COPY: Record<
     ],
   },
   roles: {
-    icon: KeyRound,
     title: 'Custom roles are an Enterprise feature',
     blurb:
       'Go beyond the built-in presets: compose roles from fine-grained capabilities and assign them exactly where they apply.',
@@ -54,7 +50,6 @@ const FEATURE_COPY: Record<
     ],
   },
   audit: {
-    icon: FileClock,
     title: 'Audit logs are an Enterprise feature',
     blurb:
       'A complete, filterable trail of every admin and agent action in the account — who did what, where, and when.',
@@ -65,7 +60,6 @@ const FEATURE_COPY: Record<
     ],
   },
   identity: {
-    icon: ShieldCheck,
     title: 'SAML SSO & SCIM are Enterprise features',
     blurb:
       'Bring your identity provider — Okta, Microsoft Entra ID, or any SAML IdP — and let it drive who gets in and what they can touch.',
@@ -83,43 +77,39 @@ interface EnterpriseUpsellProps {
 
 export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
   const copy = FEATURE_COPY[feature];
-  const Icon = copy.icon;
   const openDemo = useRequestDemo();
 
   return (
-    <section className="border-border/70 bg-card rounded-md border">
-      <div className="flex flex-col items-center px-6 py-12 text-center">
-        <span className="bg-kortix-base/15 flex size-12 items-center justify-center rounded-md">
-          <Icon className="text-foreground size-5" />
-        </span>
-
-        <Badge variant="kortix" size="sm" className="mt-4">
-          <Lock />
-          Enterprise
-        </Badge>
-
-        <h3 className="text-foreground mt-3 text-base font-semibold">{copy.title}</h3>
-        <p className="text-muted-foreground mt-2 max-w-md text-sm">{copy.blurb}</p>
-
-        <ul className="mt-5 space-y-2 text-left">
+    <section className="bg-popover rounded-md border">
+      <div className="space-y-3 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-foreground text-sm font-medium">{copy.title}</h3>
+          <Badge variant="kortix" size="sm">
+            <Lock />
+            Enterprise
+          </Badge>
+        </div>
+        <p className="text-muted-foreground max-w-xl text-sm">{copy.blurb}</p>
+        <ul className="space-y-1.5">
           {copy.points.map((point) => (
-            <li key={point} className="text-muted-foreground flex items-start gap-2 text-sm">
-              <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
+            <li key={point} className="text-muted-foreground flex items-start gap-2 text-xs">
+              <Check className="text-kortix-green mt-0.5 size-3.5 shrink-0" />
               <span>{point}</span>
             </li>
           ))}
         </ul>
-
+      </div>
+      <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+        <p className="text-muted-foreground text-xs">
+          Talk to us about the Enterprise plan: SSO, SCIM, RBAC, audit, SLA, and DPA.
+        </p>
         <Button
           size="sm"
-          className="mt-6 gap-1.5"
+          className="shrink-0"
           onClick={() => openDemo({ source: `accounts-${feature}` })}
         >
           Request a demo
         </Button>
-        <p className="text-muted-foreground mt-2 text-xs">
-          Talk to us about the Enterprise plan — SSO, SCIM, RBAC, audit, SLA, and DPA.
-        </p>
       </div>
     </section>
   );

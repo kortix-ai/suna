@@ -55,7 +55,6 @@ module "platform" {
   alb_controller_role_arn  = local.instance.alb_controller_role_arn
   autoscaler_role_arn      = local.instance.autoscaler_role_arn
   argo_rollouts_role_arn   = local.instance.argo_rollouts_role_arn
-  runtime_secret_arn       = local.instance.runtime_secret_arn
   permissions_boundary_arn = local.instance.permissions_boundary_arn
   tags                     = var.tags
 }
