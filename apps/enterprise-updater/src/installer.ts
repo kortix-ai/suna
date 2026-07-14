@@ -43,6 +43,31 @@ interface PlatformActivation {
   changed: PlatformReleaseName[];
 }
 
+const SSM_COMMAND_WAIT_SCRIPT = `
+set -euo pipefail
+command_id="$1"
+instance_id="$2"
+region="$3"
+deadline=$((SECONDS + 1860))
+while (( SECONDS < deadline )); do
+  if current=$(aws ssm get-command-invocation \
+    --command-id "$command_id" --instance-id "$instance_id" \
+    --region "$region" --query Status --output text 2>&1); then
+    case "$current" in
+      Success|Cancelled|TimedOut|Failed) exit 0 ;;
+      Pending|InProgress|Delayed|Cancelling) ;;
+      *) printf 'Unexpected SSM command status: %s\n' "$current" >&2; exit 1 ;;
+    esac
+  elif [[ "$current" != *InvocationDoesNotExist* ]]; then
+    printf '%s\n' "$current" >&2
+    exit 1
+  fi
+  sleep 5
+done
+printf 'SSM command %s did not reach a terminal state within 31 minutes\n' "$command_id" >&2
+exit 1
+`;
+
 export interface InstallerConfig {
   workDir: string;
   region: string;
@@ -342,9 +367,9 @@ export class ReleaseInstaller {
     ]);
     const commandId = response.Command?.CommandId;
     if (!commandId) throw new Error('SSM did not return a command id for Supabase installation');
-    this.runner.run('aws', [
-      'ssm', 'wait', 'command-executed', '--command-id', commandId,
-      '--instance-id', this.config.supabaseInstanceId, '--region', this.config.region,
+    this.runner.run('bash', [
+      '-ceu', SSM_COMMAND_WAIT_SCRIPT, 'bash', commandId,
+      this.config.supabaseInstanceId, this.config.region,
     ]);
     const result = this.aws.awsJson<{ Status?: string; StandardErrorContent?: string }>([
       'ssm', 'get-command-invocation', '--command-id', commandId, '--instance-id', this.config.supabaseInstanceId,
