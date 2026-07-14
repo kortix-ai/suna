@@ -132,6 +132,7 @@ class InstallerRunner implements CommandRunner {
   readonly events: string[];
   failOn: string | null = null;
   apiVersion = '0.9.84';
+  apiFailures = 0;
 
   constructor(events: string[]) {
     this.events = events;
@@ -167,6 +168,10 @@ class InstallerRunner implements CommandRunner {
     }
     const requestUrl = args.at(-1);
     if (command === 'curl' && requestUrl === 'https://api.vpc-demo.kortix.com/v1/health') {
+      if (this.apiFailures > 0) {
+        this.apiFailures -= 1;
+        throw new Error('simulated DNS propagation delay');
+      }
       return JSON.stringify({ version: this.apiVersion });
     }
     return '';
@@ -224,12 +229,18 @@ class InstallerAws {
 }
 
 function materializePlatformBundle(root: string): void {
+  // Test-only root comes from mkdtempSync beneath the checked-out repository.
+  // lgtm[js/insecure-temporary-file]
   mkdirSync(join(root, 'platform'), { recursive: true });
   for (const chart of ['api', 'gateway', 'edge']) {
+    // lgtm[js/insecure-temporary-file]
     mkdirSync(join(root, 'charts', chart), { recursive: true });
+    // lgtm[js/insecure-temporary-file]
     writeFileSync(join(root, 'charts', chart, 'Chart.yaml'), `apiVersion: v2\nname: ${chart}\nversion: 1.0.0\n`);
   }
+  // lgtm[js/insecure-temporary-file]
   writeFileSync(join(root, 'platform', 'main.tf'), 'terraform {}\n');
+  // lgtm[js/insecure-temporary-file]
   writeFileSync(join(root, 'bundle.json'), JSON.stringify({
     schema_version: 1,
     kind: 'kortix-enterprise-platform',
@@ -356,6 +367,7 @@ describe('release installation transaction', () => {
       const recovery = eventIndex(fixture.events, 'Verify fresh Kortix recovery point before update');
       const terraform = eventIndex(fixture.events, 'run:terraform -chdir=');
       const externalSecrets = eventIndex(fixture.events, 'run:kubectl apply --filename');
+      const forceRefresh = eventIndex(fixture.events, 'annotate --overwrite externalsecret/kortix-runtime force-sync=');
       const runtimeSecret = eventIndex(fixture.events, 'ExternalSecret kortix-runtime did not become Ready');
       const api = eventIndex(fixture.events, 'run:helm upgrade --install kortix-api');
       const gateway = eventIndex(fixture.events, 'run:helm upgrade --install kortix-gateway');
@@ -365,10 +377,12 @@ describe('release installation transaction', () => {
       expect(recovery).toBeLessThan(supabase);
       expect(supabase).toBeLessThan(terraform);
       expect(terraform).toBeLessThan(externalSecrets);
-      expect(externalSecrets).toBeLessThan(runtimeSecret);
+      expect(externalSecrets).toBeLessThan(forceRefresh);
+      expect(forceRefresh).toBeLessThan(runtimeSecret);
       expect(runtimeSecret).toBeLessThan(api);
       expect(fixture.events[runtimeSecret]).toContain('SECONDS + 600');
       expect(fixture.events[runtimeSecret]).toContain('jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}');
+      expect(fixture.events[runtimeSecret]).toContain('jsonpath={.status.refreshTime}');
       expect(fixture.events.some((event) => event.includes('kubectl --namespace kortix wait'))).toBe(false);
       expect(api).toBeLessThan(gateway);
       expect(gateway).toBeLessThan(edge);
@@ -425,6 +439,20 @@ describe('release installation transaction', () => {
         .toBeLessThan(eventIndex(fixture.events, 'helm uninstall kortix-edge'));
       expect(eventIndex(fixture.events, 'helm uninstall kortix-api'))
         .toBeLessThan(eventIndex(fixture.events, 'Rollback Supabase after failed'));
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('waits for public DNS and ALB health propagation before accepting the release', () => {
+    const fixture = installerFixture();
+    fixture.runner.apiFailures = 2;
+    try {
+      fixture.installer.install(
+        releaseManifest(), '/tmp/platform.tar.gz', '/tmp/supabase.tar.gz', mirroredImages(),
+      );
+      expect(fixture.events.filter((event) => event === 'run:sleep 10')).toHaveLength(2);
+      expect(fixture.events.filter((event) => event.includes('api.vpc-demo.kortix.com/v1/health'))).toHaveLength(3);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

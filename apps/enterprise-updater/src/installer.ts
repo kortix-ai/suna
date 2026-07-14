@@ -111,11 +111,14 @@ exit 1
 const EXTERNAL_SECRET_WAIT_SCRIPT = `
 set -euo pipefail
 namespace="$1"
+minimum_refresh="$2"
 deadline=$((SECONDS + 600))
 while (( SECONDS < deadline )); do
   current=$(kubectl --namespace "$namespace" get externalsecret/kortix-runtime \
     --output='jsonpath={range .status.conditions[?(@.type=="Ready")]}{.status}{end}' 2>/dev/null || true)
-  if [ "$current" = "True" ]; then
+  refreshed=$(kubectl --namespace "$namespace" get externalsecret/kortix-runtime \
+    --output='jsonpath={.status.refreshTime}' 2>/dev/null || true)
+  if [ "$current" = "True" ] && [[ "$refreshed" > "$minimum_refresh" || "$refreshed" = "$minimum_refresh" ]]; then
     exit 0
   fi
   sleep 5
@@ -275,7 +278,14 @@ export class ReleaseInstaller {
       runtimeSecretArn: this.config.runtimeSecretArn,
     }), null, 2)}\n`, { mode: 0o600 });
     this.runner.run('kubectl', ['apply', '--filename', runtimeExternalSecrets], { env: kubeEnv });
-    this.runner.run('bash', ['-ceu', EXTERNAL_SECRET_WAIT_SCRIPT, 'bash', descriptor.namespace], { env: kubeEnv });
+    const secretRefreshRequestedAt = new Date().toISOString();
+    this.runner.run('kubectl', [
+      '--namespace', descriptor.namespace, 'annotate', '--overwrite',
+      'externalsecret/kortix-runtime', `force-sync=${Date.now()}`,
+    ], { env: kubeEnv });
+    this.runner.run('bash', [
+      '-ceu', EXTERNAL_SECRET_WAIT_SCRIPT, 'bash', descriptor.namespace, secretRefreshRequestedAt,
+    ], { env: kubeEnv });
     this.runner.run('kubectl', [
       '--namespace', descriptor.namespace, 'get', 'secret', 'kortix-runtime', '--output=name',
     ], { env: kubeEnv });
@@ -467,10 +477,11 @@ export class ReleaseInstaller {
   }
 
   private verifyHealth(manifest: EnterpriseReleaseManifest): void {
-    const api = this.runner.run('curl', [
+    const apiUrl = `https://${this.config.apiDomain}${manifest.health.api_path}`;
+    const api = this.curlWithRetry([
       '--fail', '--silent', '--show-error', '--proto', '=https', '--tlsv1.2',
-      `https://${this.config.apiDomain}${manifest.health.api_path}`,
-    ]);
+      apiUrl,
+    ], apiUrl);
     let health: Record<string, unknown>;
     try {
       health = JSON.parse(api) as Record<string, unknown>;
@@ -481,10 +492,24 @@ export class ReleaseInstaller {
     if (version !== manifest.health.expected_version) {
       throw new Error(`API health reports ${String(version)} instead of immutable prod ${manifest.health.expected_version}`);
     }
-    this.runner.run('curl', [
+    const frontendUrl = `https://${this.config.frontendDomain}${manifest.health.frontend_path}`;
+    this.curlWithRetry([
       '--fail', '--silent', '--show-error', '--output', '/dev/null', '--proto', '=https', '--tlsv1.2',
-      `https://${this.config.frontendDomain}${manifest.health.frontend_path}`,
-    ]);
+      frontendUrl,
+    ], frontendUrl);
+  }
+
+  private curlWithRetry(args: string[], url: string): string {
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 60; attempt++) {
+      try {
+        return this.runner.run('curl', args);
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < 60) this.runner.run('sleep', ['10']);
+      }
+    }
+    throw new Error(`health endpoint ${url} did not become ready within 10 minutes: ${lastError?.message ?? 'unknown error'}`);
   }
 }
 
