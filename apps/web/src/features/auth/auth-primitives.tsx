@@ -99,6 +99,7 @@ export function AuthTrustCue() {
       <Badge
         variant="muted"
         size="sm"
+        aria-label="Workspace access security"
         className="border-border/70 bg-popover text-muted-foreground h-7 cursor-default gap-1.5 rounded-full border px-2.5"
       >
         <LockKeyhole className="size-3.5 shrink-0" aria-hidden />

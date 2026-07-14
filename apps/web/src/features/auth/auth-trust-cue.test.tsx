@@ -9,6 +9,7 @@ describe('AuthTrustCue', () => {
 
     expect(html).toContain('Secure access to your Kortix workspace');
     expect(html).toContain('data-slot="badge"');
+    expect(html).toContain('aria-label="Workspace access security"');
     expect(html).toContain('text-muted-foreground');
     expect(html).toContain('aria-hidden="true"');
   });
