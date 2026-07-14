@@ -3725,6 +3725,36 @@ export function SessionChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastUserMessage?.info.id]);
 
+  // Channel/trigger sessions (Telegram, Slack, cron) relay USER messages WITHOUT
+  // a model field — the web attaches it, the channel doesn't — so the seed above
+  // finds nothing and the picker falls back to the agent default even though the
+  // turns ran on the session's bound model. Fall back to the model the ASSISTANT
+  // actually ran with (providerID+modelID on every reply) so the composer
+  // reflects the session's real model. Additive: only when there's no per-session
+  // pick yet, so it never overrides a user's explicit choice.
+  const lastRunModelKey = useMemo<ModelKey | undefined>(() => {
+    if (!messages) return undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const info = messages[i].info as {
+        model?: unknown;
+        providerID?: unknown;
+        modelID?: unknown;
+      };
+      const key =
+        parseModelKey(info?.model) ??
+        (typeof info?.providerID === 'string' && typeof info?.modelID === 'string'
+          ? parseModelKey({ providerID: info.providerID, modelID: info.modelID })
+          : undefined);
+      if (key) return key;
+    }
+    return undefined;
+  }, [messages]);
+  useEffect(() => {
+    if (local.model.hasSessionModel || !lastRunModelKey) return;
+    local.model.set(lastRunModelKey, { autoSeed: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastRunModelKey, local.model.hasSessionModel]);
+
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
   const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
