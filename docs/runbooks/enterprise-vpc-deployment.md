@@ -79,7 +79,7 @@ LATENT in v1. `TODO(bedrock-sigv4)` in
 `packages/llm-gateway/src/transports/bedrock/request.ts`: adding a SigV4 signing
 path (sign with the instance-role credentials instead of a Bearer header) would let
 the appliance drop the bearer key entirely and rely on IAM alone — no shared
-secret, no rotation. Until then the bearer key is required for the `aws-vpc` target.
+secret, no rotation. Until then the bearer key is required for the `aws-ec2` target.
 
 ## AWS bootstrap order
 
@@ -110,7 +110,7 @@ CIDR `10.60.0.0/16`.
 
 ```bash
 kortix self-host init \
-  --target aws-vpc --instance vpc-demo \
+  --target aws-ec2 --instance vpc-demo \
   --aws-profile default --region us-west-2 --vpc-cidr 10.60.0.0/16 \
   --api-domain api.vpc-demo.kortix.com --frontend-domain vpc-demo.kortix.com \
   --route53-zone-id "$CUSTOMER_PUBLIC_ZONE_ID" \
@@ -171,6 +171,30 @@ The watchdog timer curls the local health endpoints and restarts `kortix-app`
 after 3 consecutive failures (10-minute cooldown), and NEVER acts mid-deploy (it
 takes the same `flock` the updater holds). The prune timer reclaims dangling
 images/build cache weekly under the same lock.
+
+## Zero-downtime guarantee and the backward-compatible contract
+
+The start-first roll (step 7) briefly runs the OLD app containers against the NEW
+schema while the new containers come up healthy. That is safe ONLY when every
+migration in the release is backward-compatible — each release manifest carries a
+per-migration `backward_compatible` boolean in its compatibility contract. Before
+migrating an UPDATE (not a first install), the updater inspects those flags:
+
+- **All backward-compatible** → the normal zero-downtime start-first roll.
+- **Any NOT backward-compatible** → the release cannot be applied with zero
+  downtime. The updater REFUSES it unless the operator opts in with
+  `--allow-downtime` (CLI) / `KORTIX_ALLOW_DOWNTIME=1` (deployer env). Without the
+  opt-in the deploy aborts BEFORE pulling images or migrating — nothing is touched.
+  With it, the updater performs a brief, honest downtime window: drain the app tier
+  (stop `api`/`gateway`/`frontend`; Supabase and Caddy stay up), migrate, then start
+  the new containers.
+
+A first install is always fine (no old containers). Run a non-backward-compatible
+release only during a scheduled maintenance window:
+
+```bash
+kortix self-host update --instance vpc-demo --release 0.9.90-e1 --allow-downtime --yes
+```
 
 ## VPS bootstrap (appliance minus Terraform — one self-host system)
 

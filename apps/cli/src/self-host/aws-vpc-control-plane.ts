@@ -23,6 +23,8 @@ export interface UpdaterIntent {
   release?: string;
   rollback?: string;
   force?: boolean;
+  /** Permit a non-backward-compatible migration to deploy with brief downtime. */
+  allowDowntime?: boolean;
 }
 
 export interface UpdaterRunResult {
@@ -95,6 +97,7 @@ function updaterRunScript(intent: UpdaterIntent): string {
   if (intent.release) exports.push(`export KORTIX_DEPLOY_RELEASE=${shellQuote(intent.release)}`);
   if (intent.rollback) exports.push(`export KORTIX_DEPLOY_ROLLBACK=${shellQuote(intent.rollback)}`);
   if (intent.force) exports.push('export KORTIX_DEPLOY_FORCE=1');
+  if (intent.allowDowntime) exports.push('export KORTIX_ALLOW_DOWNTIME=1');
   return [
     'set -euo pipefail',
     // The box owns every credential + release coordinate in instance.env; the CLI

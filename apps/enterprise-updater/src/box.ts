@@ -30,6 +30,13 @@ export interface HostRuntime {
   runningDigest(role: AppRole): string | null;
   runMigrate(): void;
   rolloutService(role: AppRole, timeoutMs?: number): void;
+  /**
+   * Stop + remove the app-tier containers (api/gateway/frontend), leaving
+   * Supabase and Caddy running. Used only for the honest-downtime path when a
+   * release carries a migration that is NOT backward-compatible: the old app must
+   * not run against the new schema, so it is drained before migrate.
+   */
+  stopAppServices(): void;
   /** Bring up the Caddy edge (and any not-yet-running service) without recreating healthy app replicas. */
   startEdge(): void;
   readBreadcrumb(): DeployBreadcrumb | null;
@@ -108,6 +115,15 @@ export class DockerHost implements HostRuntime {
   /** Run migrations to completion. Throws on a nonzero exit — the caller aborts. */
   runMigrate(): void {
     this.runner.run('docker', this.compose(['run', '--rm', 'migrate']));
+  }
+
+  /**
+   * Stop + remove the app-tier containers for the honest-downtime path. Leaves
+   * Supabase and Caddy up; a subsequent rolloutService brings each service back
+   * fresh on the new digest. `rm --stop --force` stops then removes them.
+   */
+  stopAppServices(): void {
+    this.runner.run('docker', this.compose(['rm', '--stop', '--force', '--volumes', ...APP_ROLES]));
   }
 
   /**

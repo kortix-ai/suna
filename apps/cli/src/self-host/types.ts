@@ -23,4 +23,5 @@ export interface SelfHostCommandFlags {
   registry: boolean;
   json: boolean;
   force: boolean;
+  allowDowntime: boolean;
 }

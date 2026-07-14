@@ -33,11 +33,19 @@ const LOCAL_SOURCE_TAG = 'selfhost-local';
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run Kortix locally with Docker or deploy a production enterprise stack into
-an AWS VPC. Existing Docker instances remain fully compatible.
+Run Kortix on your own infrastructure. Two deployment targets:
+
+  this machine   --target docker    the full stack via Docker Compose on
+                                     whatever machine you run this on. Just works.
+  AWS EC2        --target aws-ec2    provision and manage a remote single-EC2
+                                     Kortix appliance in your AWS account.
+
+New instances default to docker. For the AWS EC2 walkthrough (Terraform,
+domains, secrets, signed updates) see docs/runbooks/enterprise-vpc-deployment.md.
+Existing Docker instances remain fully compatible.
 
 Subcommands:
-  init                 Create Docker or AWS VPC instance config.
+  init                 Create a this-machine (Docker) or AWS EC2 instance config.
   configure            Configure target integrations and secrets.
   plan                 Preview target changes without applying them.
   deploy               Bootstrap or converge the selected target.
@@ -57,13 +65,14 @@ Subcommands:
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
-  --target <target>    docker or aws-vpc (default: docker for new instances).
+  --target <target>    docker (this machine) or aws-ec2 (AWS EC2). Default:
+                       docker for new instances.
   --tag <tag>          Docker image tag / version (default: ${DEFAULT_TAG}).
   --release <version>  Immutable enterprise release (for example 0.9.84-e1).
   --channel <name>     Release channel (AWS default: stable; Docker: latest).
   --aws-profile <name> AWS CLI profile used to bootstrap/manage the target.
   --region <region>    AWS region (default: AWS config, then us-west-2).
-  --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS VPC target.
+  --vpc-cidr <cidr>    Dedicated /16 CIDR for an AWS EC2 target.
   --api-domain <name>  Public API DNS name for the AWS target.
   --frontend-domain <name> Public dashboard DNS name for the AWS target.
   --route53-zone-id <id> Customer Route 53 public hosted zone for DNS and ACM.
@@ -76,14 +85,17 @@ Options:
   --local              Use current-source local images instead of registry images.
   --registry           Force registry images even when running from a source checkout.
   --force              Run now, bypassing only the configured maintenance window.
+  --allow-downtime     Permit a release whose migration is not backward-compatible
+                       to deploy with a brief, honest downtime window (stop app,
+                       migrate, start new). Without it such a release is refused.
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
 
 Examples:
-  kortix self-host init
+  kortix self-host init                    # this machine (Docker)
   kortix self-host start
-  kortix self-host init --target aws-vpc --instance customer --aws-profile customer --region us-west-2
+  kortix self-host init --target aws-ec2 --instance customer --aws-profile customer --region us-west-2
   kortix self-host plan --instance customer
   kortix self-host deploy --instance customer
   kortix self-host reconcile --instance customer --channel stable
@@ -174,7 +186,7 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     return 2;
   }
 
-  if (target === 'aws-vpc') {
+  if (target === 'aws-ec2') {
     return runAwsVpcCommand(sub, args, flags);
   }
 
@@ -229,6 +241,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const registry = takeFlagBool(args, ['--registry']);
   const json = takeFlagBool(args, ['--json']);
   const force = takeFlagBool(args, ['--force']);
+  const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
   const instance = takeFlagValue(args, ['--instance']) ?? DEFAULT_INSTANCE;
   const release = takeFlagValue(args, ['--release']);
   const tag = takeFlagValue(args, ['--tag', '--version']) ?? release ?? DEFAULT_TAG;
@@ -275,6 +288,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     registry,
     json,
     force,
+    allowDowntime,
   };
 }
 

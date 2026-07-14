@@ -8,7 +8,7 @@ const TRUSTED_ROOT = 'a'.repeat(64);
 const BOOTSTRAP_DIGEST = 'b'.repeat(64);
 const BEDROCK_KEY = 'bedrock-super-secret-value';
 
-describe('kortix self-host aws-vpc', () => {
+describe('kortix self-host aws-ec2', () => {
   let tmp: string;
   let configRoot: string;
   let fakeBin: string;
@@ -185,7 +185,7 @@ esac
 
   function configuredInitArgs(instance = 'vpc-demo'): string[] {
     return [
-      'init', '--target', 'aws-vpc', '--instance', instance,
+      'init', '--target', 'aws-ec2', '--instance', instance,
       '--aws-profile', 'default', '--region', 'us-west-2', '--channel', 'stable',
       '--vpc-cidr', '10.60.0.0/16',
       '--api-domain', 'api.vpc-demo.kortix.com',
@@ -212,7 +212,7 @@ esac
     const config = JSON.parse(result.stdout);
     expect(config).toMatchObject({
       instance: 'vpc-demo',
-      target: 'aws-vpc',
+      target: 'aws-ec2',
       channel: 'stable',
       aws: {
         profile: 'default',
@@ -228,7 +228,7 @@ esac
 
     const instanceDir = join(configRoot, 'vpc-demo');
     const persisted = readFileSync(join(instanceDir, 'instance.json'), 'utf8');
-    expect(JSON.parse(persisted)).toMatchObject({ target: 'aws-vpc', aws: { account_id: '935064898258' } });
+    expect(JSON.parse(persisted)).toMatchObject({ target: 'aws-ec2', aws: { account_id: '935064898258' } });
     expect(persisted).not.toContain('cloudflare_api_token');
     expect(existsSync(join(instanceDir, '.env'))).toBe(false);
     expect(readFileSync(join(instanceDir, 'terraform/environments/enterprise-vpc/state/main.tf'), 'utf8'))
@@ -239,7 +239,7 @@ esac
 
   test('enforces Terraform-compatible lowercase DNS slugs for AWS instances', async () => {
     const result = await run([
-      'init', '--target', 'aws-vpc', '--instance', 'Essentia_VPC', '--aws-profile', 'default', '--yes',
+      'init', '--target', 'aws-ec2', '--instance', 'Essentia_VPC', '--aws-profile', 'default', '--yes',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('lowercase DNS slug');
