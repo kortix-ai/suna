@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -113,6 +113,34 @@ function BundleMemberRow({
     <button type="button" onClick={() => surface.openItem(id)} className={rowClass}>
       {body}
     </button>
+  );
+}
+
+/** A static content card (a project's agent / trigger) — matches the skill
+ *  card's visual, but display-only since these aren't their own catalog items. */
+function StaticContentCard({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string | null;
+}) {
+  return (
+    <div className="bg-popover flex w-full items-center gap-3.5 rounded-md border px-4 py-3">
+      {icon}
+      <div className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium capitalize">
+          {title.replaceAll('-', ' ')}
+        </span>
+        {description ? (
+          <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs leading-relaxed text-pretty">
+            {description}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -654,6 +682,41 @@ export function MarketplaceDetail({
                 </div>
               </section>
             ))}
+            {/* Agents + triggers, from the project's kortix.yaml, listed the same way. */}
+            {data.projectAgents?.length ? (
+              <section>
+                <SectionLabel count={data.projectAgents.length}>Agents</SectionLabel>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {data.projectAgents.map((a) => (
+                    <StaticContentCard
+                      key={a.name}
+                      icon={<TypeTile type="registry:agent" size="md" />}
+                      title={a.title}
+                      description={a.description}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {data.projectTriggers?.length ? (
+              <section>
+                <SectionLabel count={data.projectTriggers.length}>Triggers</SectionLabel>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {data.projectTriggers.map((t) => (
+                    <StaticContentCard
+                      key={t.slug}
+                      icon={
+                        <span className="bg-kortix-yellow/15 text-kortix-yellow flex size-8 shrink-0 items-center justify-center rounded-lg">
+                          <Zap className="size-4" />
+                        </span>
+                      }
+                      title={t.slug}
+                      description={t.description}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </>
         ) : (
           <>

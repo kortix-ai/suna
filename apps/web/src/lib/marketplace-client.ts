@@ -51,10 +51,25 @@ export interface DependencyItem {
   description: string | null;
 }
 
+export interface ProjectAgent {
+  name: string;
+  title: string;
+  description: string | null;
+}
+
+export interface ProjectTrigger {
+  slug: string;
+  description: string | null;
+  agent: string | null;
+}
+
 export interface MarketplaceItemDetail extends MarketplaceItem {
   files: Array<{ target: string; type: string }>;
   readme: string | null;
   dependencyItems: DependencyItem[];
+  /** For a `registry:project`: its agents + triggers (parsed from kortix.yaml). */
+  projectAgents?: ProjectAgent[];
+  projectTriggers?: ProjectTrigger[];
 }
 
 export interface InstallResult {

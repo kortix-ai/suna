@@ -22,6 +22,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
   describeRegistry,
@@ -83,10 +84,81 @@ export interface DependencyItem {
   description: string | null;
 }
 
+export interface ProjectAgent {
+  name: string;
+  title: string;
+  description: string | null;
+}
+
+export interface ProjectTrigger {
+  slug: string;
+  description: string | null;
+  agent: string | null;
+}
+
 export interface CatalogItemDetail extends CatalogItem {
   files: Array<{ target: string; type: string }>;
   readme: string | null;
   dependencyItems: DependencyItem[];
+  /** For a `registry:project`: its agents + triggers, parsed from kortix.yaml. */
+  projectAgents?: ProjectAgent[];
+  projectTriggers?: ProjectTrigger[];
+}
+
+/** Parse a project item's `kortix.yaml` (+ each agent's own `.md` frontmatter)
+ *  to surface its agents and triggers in the detail view, the same way its
+ *  skills are surfaced from `registryDependencies`. Best-effort: any parse
+ *  failure just yields empty lists. */
+/** Parse a markdown file's `--- … ---` YAML frontmatter with the real YAML
+ *  parser, so multi-line / folded block scalars resolve correctly. */
+function frontmatterOf(raw: string | undefined): Record<string, unknown> {
+  if (!raw?.startsWith("---")) return {};
+  const end = raw.indexOf("\n---", 3);
+  if (end === -1) return {};
+  try {
+    return (parseYaml(raw.slice(3, end)) ?? {}) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function projectAgentsAndTriggers(
+  files: Array<{ path: string; target?: string; content?: string }>,
+): { agents: ProjectAgent[]; triggers: ProjectTrigger[] } {
+  const pathOf = (f: { path: string; target?: string }) => f.target ?? f.path;
+  const manifestFile = files.find((f) => pathOf(f) === "kortix.yaml");
+  if (typeof manifestFile?.content !== "string") return { agents: [], triggers: [] };
+  let manifest: unknown;
+  try {
+    manifest = parseYaml(manifestFile.content);
+  } catch {
+    return { agents: [], triggers: [] };
+  }
+  const m = (manifest ?? {}) as { agents?: Record<string, unknown>; triggers?: unknown[] };
+
+  const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
+  const agents: ProjectAgent[] = agentNames.map((name) => {
+    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    // Parse the agent's own `.md` frontmatter with the YAML parser (not a
+    // line-based one) so folded block scalars (`description: >-`) resolve to the
+    // real text, and collapse it to a single line for the card.
+    const fm = frontmatterOf(md?.content);
+    const desc = typeof fm.description === "string" ? fm.description.replace(/\s+/g, " ").trim() : null;
+    return { name, title: name, description: desc || null };
+  });
+
+  const triggers: ProjectTrigger[] = (Array.isArray(m.triggers) ? m.triggers : [])
+    .map((t) => {
+      const tt = (t ?? {}) as { slug?: unknown; description?: unknown; agent?: unknown };
+      return {
+        slug: typeof tt.slug === "string" ? tt.slug : "",
+        description: typeof tt.description === "string" ? tt.description : null,
+        agent: typeof tt.agent === "string" ? tt.agent : null,
+      };
+    })
+    .filter((t) => t.slug.length > 0);
+
+  return { agents, triggers };
 }
 
 /** A catalog item + its provenance + precomputed capabilities (no magic fields). */
@@ -1814,7 +1886,19 @@ export async function getCatalogItemDetail(
     },
   );
 
-  return { ...base, files, readme, dependencyItems };
+  const { agents: projectAgents, triggers: projectTriggers } =
+    base.type === "registry:project"
+      ? projectAgentsAndTriggers(entry.item.files ?? [])
+      : { agents: [], triggers: [] };
+
+  return {
+    ...base,
+    files,
+    readme,
+    dependencyItems,
+    ...(projectAgents.length ? { projectAgents } : {}),
+    ...(projectTriggers.length ? { projectTriggers } : {}),
+  };
 }
 
 /** Fetch one file's raw content for the detail viewer, addressed by its install
