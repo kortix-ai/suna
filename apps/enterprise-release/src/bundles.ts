@@ -161,9 +161,11 @@ const LOG_LIMITS = `    logging:
         max-size: "10m"
         max-file: "5"`;
 
-const APP_HEALTHCHECK = (port: string, path: string): string =>
+// api/gateway are Bun services (bun in the image); the frontend is a Next.js
+// node image (no bun). Probe with a runtime that actually exists in each image.
+const APP_HEALTHCHECK = (port: string, path: string, runtime: 'bun' | 'node' = 'bun'): string =>
   `    healthcheck:
-      test: ["CMD-SHELL", "bun -e \\"fetch('http://localhost:${port}${path}').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\\""]
+      test: ["CMD-SHELL", "${runtime} -e \\"fetch('http://localhost:${port}${path}').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\\""]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -265,7 +267,7 @@ ${LOG_LIMITS}
       NODE_OPTIONS: "--max-http-header-size=131072"
     expose:
       - "3000"
-${APP_HEALTHCHECK('3000', '/')}
+${APP_HEALTHCHECK('3000', '/', 'node')}
     restart: always
 ${LOG_LIMITS}
 `;
