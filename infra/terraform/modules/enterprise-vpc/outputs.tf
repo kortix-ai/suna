@@ -1,40 +1,54 @@
 output "instance" {
-  description = "Secret-free coordinates consumed by kortix self-host and the platform stage."
+  description = "Secret-free coordinates consumed by kortix self-host, the deployer, and the DNS platform stage."
   value = {
-    name                     = var.name
-    account_id               = var.expected_account_id
-    region                   = local.region
-    release_channel          = var.release_channel
-    cluster_name             = module.eks.cluster_name
-    cluster_endpoint         = module.eks.cluster_endpoint
-    cluster_ca_data          = module.eks.cluster_ca_data
-    oidc_provider_arn        = module.eks.oidc_provider_arn
-    oidc_provider_url        = module.eks.oidc_provider_url
-    vpc_id                   = module.network.vpc_id
-    private_subnet_ids       = module.network.private_subnet_ids
-    api_domain               = var.api_domain
-    frontend_domain          = var.frontend_domain
-    certificate_arn          = aws_acm_certificate_validation.public.certificate_arn
-    app_namespace            = var.app_namespace
-    app_service_account      = var.app_service_account
-    app_irsa_role_arn        = module.app_irsa.role_arn
-    alb_controller_role_arn  = module.alb_controller_irsa.role_arn
-    autoscaler_role_arn      = module.cluster_autoscaler_irsa.role_arn
-    argo_rollouts_role_arn   = module.argo_rollouts_irsa.role_arn
-    external_dns_role_arn    = module.external_dns_irsa.role_arn
-    route53_zone_id          = var.route53_zone_id
+    name               = var.name
+    account_id         = var.expected_account_id
+    region             = local.region
+    release_channel    = var.release_channel
+    vpc_id             = module.network.vpc_id
+    private_subnet_ids = module.network.private_subnet_ids
+    public_subnet_ids  = module.network.public_subnet_ids
+    api_domain         = var.api_domain
+    frontend_domain    = var.frontend_domain
+    route53_zone_id    = var.route53_zone_id
+    certificate_arn    = aws_acm_certificate_validation.public.certificate_arn
+
+    # ECS control plane
+    cluster_name            = aws_ecs_cluster.this.name
+    cluster_arn             = aws_ecs_cluster.this.arn
+    api_service             = local.api_family
+    gateway_service         = local.gateway_family
+    frontend_service        = local.frontend_family
+    migrate_task_def        = local.migrate_family
+    deployer_task_def       = local.deployer_family
+    api_task_role_arn       = aws_iam_role.api_task.arn
+    gateway_task_role_arn   = aws_iam_role.gateway_task.arn
+    frontend_task_role_arn  = aws_iam_role.frontend_task.arn
+    execution_role_arn      = aws_iam_role.ecs_execution.arn
+    deployer_task_role_arn  = aws_iam_role.deployer_task.arn
+    tasks_security_group_id = aws_security_group.tasks.id
+
+    # Shared ALB + target groups
+    alb_dns_name              = aws_lb.this.dns_name
+    alb_zone_id               = aws_lb.this.zone_id
+    alb_arn                   = aws_lb.this.arn
+    api_target_group_arn      = aws_lb_target_group.api.arn
+    gateway_target_group_arn  = aws_lb_target_group.gateway.arn
+    frontend_target_group_arn = aws_lb_target_group.frontend.arn
+    supabase_target_group_arn = aws_lb_target_group.supabase.arn
+
+    # Data plane + secrets + release breadcrumb
     permissions_boundary_arn = var.permissions_boundary_arn
     runtime_secret_arn       = aws_secretsmanager_secret.runtime.arn
     updater_secret_arn       = aws_secretsmanager_secret.updater.arn
     supabase_instance_id     = aws_instance.supabase.id
     supabase_private_ip      = aws_instance.supabase.private_ip
-    release_state_table      = aws_dynamodb_table.release_state.name
-    state_machine_arn        = aws_sfn_state_machine.reconcile.arn
-    event_bus_arn            = aws_cloudwatch_event_bus.releases.arn
+    release_ssm_parameter    = aws_ssm_parameter.release.name
     operator_role_arn        = try(aws_iam_role.operator[0].arn, null)
   }
   sensitive = true
 }
+
 output "certificate_dns_validation_records" {
   description = "ACM validation records managed automatically in the customer Route 53 zone."
   value = [for option in aws_acm_certificate.public.domain_validation_options : {
@@ -49,13 +63,21 @@ output "ecr_repositories" {
   value = { for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url }
 }
 
+output "alb_dns_name" {
+  description = "Shared ALB DNS name; the platform stage aliases api_domain and frontend_domain here."
+  value       = aws_lb.this.dns_name
+}
+
+output "alb_zone_id" {
+  value = aws_lb.this.zone_id
+}
+
 output "backup_contract" {
-  description = "The signed runtime bundle configures WAL archival at <=5 minutes; hourly EBS recovery points are independent backstops."
+  description = "Durability contract: encrypted EBS + hourly AWS Backup recovery points. RPO tracks the EBS snapshot cadence (~60m); custom WAL/PITR was removed."
   value = {
-    wal_bucket        = aws_s3_bucket.backups.id
     backup_vault      = aws_backup_vault.supabase.name
     snapshot_schedule = "hourly"
-    rpo_minutes       = 5
+    rpo_minutes       = 60
     rto_minutes       = 60
   }
 }

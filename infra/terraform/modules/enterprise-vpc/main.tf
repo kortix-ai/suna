@@ -63,12 +63,12 @@ locals {
   # Naming contract discovered by the deployer + `kortix self-host` from the
   # instance slug alone: cluster kortix-<instance>; services/task-def families
   # kortix-<instance>-<role>; secret <instance>/runtime; SSM /kortix/<instance>/release.
-  cluster_name    = "kortix-${var.name}"
-  api_family      = "kortix-${var.name}-api"
-  gateway_family  = "kortix-${var.name}-gateway"
-  frontend_family = "kortix-${var.name}-frontend"
-  migrate_family  = "kortix-${var.name}-migrate"
-  deployer_family = "kortix-${var.name}-deployer"
+  cluster_name      = "kortix-${var.name}"
+  api_family        = "kortix-${var.name}-api"
+  gateway_family    = "kortix-${var.name}-gateway"
+  frontend_family   = "kortix-${var.name}-frontend"
+  migrate_family    = "kortix-${var.name}-migrate"
+  deployer_family   = "kortix-${var.name}-deployer"
   release_ssm_param = "/kortix/${var.name}/release"
 
   # ALB + target-group names cap at 32 chars; keep a compact, hyphen-safe base.
