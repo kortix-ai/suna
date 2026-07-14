@@ -15,6 +15,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
+  isStorageSecurityErrorNoise,
   isTronLinkProxyNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
@@ -530,6 +531,186 @@ test('does NOT suppress a real null-access error on a non-storage method', () =>
     }),
     false,
   )
+})
+
+// Reproduces Better Stack error patterns
+// 09b9cf65ca7c954bf031fc6fb570a96c4e47ce4ed5f0b9ed8b10c688fc2f27de and
+// ac75f0d8a9b73ae88b68f02693d72ecc5137b5e1d2c14a430de5190a42cdfd64
+// (Kortix Frontend prod, application_id 2346967), both
+// `SecurityError: Failed to read the 'localStorage' property from 'window':
+// Access is denied for this document.`, 1 occurrence each, 0 identified users,
+// last 2026-07-12 17:54:04 UTC. Storage-blocked browser contexts (Safari
+// private mode, sandboxed/cross-origin iframe, partitioned storage, some in-app
+// WebViews) reject the `window.localStorage`/`sessionStorage` accessor READ
+// itself with this `SecurityError`; a direct `window.localStorage` call site
+// that bypasses the managed-storage try/catch throws it uncaught → Sentry →
+// Better Stack. Browser-environment noise, not an app defect. The matcher
+// drops it UNLESS the stack carries a resolved first-party `apps/web/src/…`
+// frame (our own code is the direct-access culprit → actionable to fix).
+const STORAGE_SECURITY_ERROR_EVENTS = [
+  // The exact raw production message (localStorage).
+  "SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
+  // Bare message (no `SecurityError:` prefix).
+  "Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
+  // The sessionStorage sibling variant (same root class, same instant).
+  "SecurityError: Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
+  "Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
+  "Unhandled promise rejection: Failed to read the 'sessionStorage' property from 'window': Access is denied for this document.",
+]
+
+// A raw minified chunk frame (no resolved `apps/web/src/…` source) — the
+// browser-environment noise shape: storage blocked, no traceable first-party
+// call site. Should be suppressed.
+const CHUNK_FRAME_STORAGE = 'app:///_next/static/chunks/21544-ac9e889808bbe0af.js'
+
+test('classifies every storage-blocked SecurityError variant as noise (no first-party frame)', () => {
+  for (const message of STORAGE_SECURITY_ERROR_EVENTS) {
+    assert.equal(
+      isStorageSecurityErrorNoise({ message }),
+      true,
+      `expected "${message}" to be classified as storage SecurityError noise`,
+    )
+    assert.equal(
+      isStorageSecurityErrorNoise({ message, frames: [{ filename: CHUNK_FRAME_STORAGE }] }),
+      true,
+      `expected "${message}" from a minified chunk frame to be noise`,
+    )
+    assert.equal(
+      isStorageSecurityErrorNoise({ message, filename: CHUNK_FRAME_STORAGE }),
+      true,
+      `expected "${message}" from a chunk filename to be noise`,
+    )
+  }
+})
+
+test('suppresses the storage SecurityError Sentry event via the beforeSend gate', () => {
+  for (const value of STORAGE_SECURITY_ERROR_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [{ filename: CHUNK_FRAME_STORAGE }] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses a frameless storage SecurityError Sentry event (no first-party frame to preserve)', () => {
+  // A frameless capture carries no resolved first-party frame, so the negative
+  // guard does not apply — the message is the browser's own access-control
+  // throw (never an app-logic error), so it is safe to drop.
+  for (const value of STORAGE_SECURITY_ERROR_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      true,
+      `expected frameless Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the storage SecurityError unhandled rejection via the runtime (window.onerror) gate', () => {
+  for (const message of STORAGE_SECURITY_ERROR_EVENTS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message }),
+      true,
+      `expected runtime gate to suppress "${message}"`,
+    )
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({ message, filename: CHUNK_FRAME_STORAGE }),
+      true,
+      `expected runtime gate to suppress "${message}" from a chunk filename`,
+    )
+  }
+})
+
+test('does NOT suppress a storage SecurityError whose stack resolves to a first-party app frame', () => {
+  // A de-minified `apps/web/src/…` frame means our own code is reading
+  // `window.localStorage` directly (bypassing managed-storage) — actionable,
+  // so it must keep reporting so the call site can be fixed. This is the
+  // negative guard that distinguishes actionable noise from the rest.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    [{ filename: 'app:///apps/web/src/lib/storage/some-store.ts' }],
+    [{ filename: 'apps/web/src/features/auth/use-auth.ts' }],
+  ]
+  for (const frames of realAppFrames) {
+    for (const message of STORAGE_SECURITY_ERROR_EVENTS) {
+      assert.equal(
+        isStorageSecurityErrorNoise({ message, frames }),
+        false,
+        `expected first-party event "${message}" from ${JSON.stringify(frames)} to keep reporting`,
+      )
+      assert.equal(
+        shouldIgnoreSentryBrowserNoise({
+          exception: {
+            values: [{ value: message, stacktrace: { frames } }],
+          },
+        }),
+        false,
+        `expected Sentry gate to keep reporting first-party "${message}" from ${JSON.stringify(frames)}`,
+      )
+    }
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  for (const message of STORAGE_SECURITY_ERROR_EVENTS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: 'apps/web/src/lib/storage/some-store.ts',
+      }),
+      false,
+      `expected runtime gate to keep reporting first-party "${message}"`,
+    )
+  }
+})
+
+test('does NOT suppress a storage SecurityError when only ONE of several frames is first-party', () => {
+  // A mixed stack (chunk frame + one resolved first-party frame) still has a
+  // traceable first-party call site — keep reporting it.
+  assert.equal(
+    isStorageSecurityErrorNoise({
+      message: "SecurityError: Failed to read the 'localStorage' property from 'window': Access is denied for this document.",
+      frames: [
+        { filename: CHUNK_FRAME_STORAGE },
+        { filename: 'app:///apps/web/src/lib/desktop.ts' },
+      ],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a non-storage SecurityError with the same shape', () => {
+  // A SecurityError on a DIFFERENT window property is not the storage-blocked
+  // class — keep reporting it.
+  for (const value of [
+    "SecurityError: Failed to read the 'parent' property from 'Window': Access is denied for this document.",
+    "Failed to read the 'document' property from 'window'",
+    'Access is denied for this document.',
+  ]) {
+    assert.equal(
+      isStorageSecurityErrorNoise({ message: value }),
+      false,
+      `expected non-storage message "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected Sentry event "${value}" to keep reporting`,
+    )
+  }
 })
 
 // Reproduces Better Stack error 83e0c2af...189c3b17 (Kortix Frontend prod,

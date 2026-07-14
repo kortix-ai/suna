@@ -34,6 +34,46 @@ const STORAGE_NULL_ACCESS_NOISE_PATTERNS = [
   "Cannot read property 'removeItem' of null",
 ] as const;
 
+// Storage-blocked browser contexts (Safari private mode, sandboxed/cross-origin
+// iframes, partitioned storage, some in-app WebViews) reject the
+// `window.localStorage` / `window.sessionStorage` accessor READ itself with a
+// `SecurityError: Failed to read the 'localStorage' property from 'window':
+// Access is denied for this document.` — distinct from the #4529 null-access
+// `TypeError` class (where the accessor resolves to `null`). The managed-storage
+// layer (`getLocalStorage`/`getSessionStorage`) wraps the accessor in try/catch
+// and returns null on throw, so call sites routed through it are safe; but a
+// direct `window.localStorage` read elsewhere in the bundle bypasses that guard
+// and the uncaught `SecurityError` reaches Sentry → Better Stack. Two sibling
+// patterns (`09b9cf65…` / `ac75f0d8…`), 1 occurrence each, 0 identified users,
+// 2026-07-12 17:54 UTC, prod — browser-environment noise, not an app defect.
+//
+// The wording is the browser's OWN access-control throw on the Web Storage
+// accessor (never an app-logic TypeError/ReferenceError), so matching the
+// canonical `Failed to read the '<storage>' property from 'window'` prefix is
+// specific. BUT a first-party call site that reads `window.localStorage`
+// directly (bypassing managed-storage) IS actionable — we want to know which
+// call site to fix — so a NEGATIVE guard preserves any event whose stack
+// carries a resolved first-party `apps/web/src/…` frame (sourcemap-de-minified).
+// Only events with NO resolved first-party frame (third-party / extension /
+// injected / unresolved-minified-chunk / frameless captures) are dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare-string match there would swallow the
+// actionable first-party case the negative guard exists to preserve. The
+// frame-aware `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`)
+// is the only safe gate.
+const STORAGE_SECURITY_ERROR_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  /^Failed to read the 'localStorage' property from 'window'/,
+  /^Failed to read the 'sessionStorage' property from 'window'/,
+];
+
+// A de-minified first-party source frame: Sentry's sourcemap resolution
+// rewrote the raw `_next/static/chunks/…` filename back to the original
+// `apps/web/src/…` source path (with or without an `app:///` origin prefix).
+// A throw from such a frame originates in our own code, so it is actionable.
+function isFirstPartyResolvedSource(filename: unknown): boolean {
+  return normalizeString(filename).includes('apps/web/src/');
+}
+
 const KNOWN_TEST_NOISE_MESSAGES = [
   'E2E FINAL:',
   'E2E test:',
@@ -357,6 +397,39 @@ export function isKnownBrowserNoiseMessage(message: unknown): boolean {
 export function isStorageDisabledWebViewNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, STORAGE_NULL_ACCESS_NOISE_PATTERNS);
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the storage-blocked
+ * `SecurityError: Failed to read the 'localStorage'/'sessionStorage' property
+ * from 'window'` class — the browser rejecting the Web Storage accessor READ
+ * itself in a storage-blocked context (Safari private mode, sandboxed/
+ * cross-origin iframe, partitioned storage, some in-app WebViews). Distinct
+ * from #4529's null-access `TypeError` class. Requires the canonical
+ * `Failed to read the '<storage>' property from 'window'` message prefix, AND
+ * a NEGATIVE guard: if any frame (or the window.onerror filename) resolves to
+ * a de-minified first-party `apps/web/src/…` source, the event keeps reporting
+ * — that means our own code is reading `window.localStorage` directly
+ * (bypassing managed-storage) and is actionable to fix. Only events with NO
+ * resolved first-party frame are dropped. See
+ * `STORAGE_SECURITY_ERROR_NOISE_PATTERNS` for the full rationale.
+ */
+export function isStorageSecurityErrorNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!STORAGE_SECURITY_ERROR_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  // Negative guard: a resolved first-party frame means our own code is the
+  // direct-access culprit — keep reporting so the call site can be fixed.
+  return !sources.some(isFirstPartyResolvedSource);
 }
 
 // Sentry events whose exception carries NO message ("No error message" in
@@ -691,6 +764,18 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Storage-blocked browser contexts (Safari private mode, sandboxed/cross-
+  // origin iframe, partitioned storage, some in-app WebViews) reject the
+  // `window.localStorage`/`sessionStorage` accessor READ itself with a
+  // `SecurityError: Failed to read the '<storage>' property from 'window'`.
+  // A direct `window.localStorage` call site that bypasses managed-storage
+  // throws this uncaught. Browser-environment noise; drop it UNLESS the stack
+  // carries a resolved first-party `apps/web/src/…` frame (our own code is the
+  // culprit → actionable). See `isStorageSecurityErrorNoise`.
+  if (isStorageSecurityErrorNoise({ message, filename: input.filename })) {
+    return true;
+  }
+
   // Browser-native <img> / next/image load failures can surface as this exact
   // message through window.onerror. Keep this exact: pptx-react-viewer throws
   // actionable errors such as "Failed to load image for colour change
@@ -801,6 +886,18 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // throw `null.getItem/setItem/removeItem` TypeErrors. Browser-environment
   // noise, never an app defect — drop it at the Sentry gate too.
   if (isStorageDisabledWebViewNoiseMessage(message)) {
+    return true;
+  }
+
+  // Storage-blocked browser contexts (Safari private mode, sandboxed/cross-
+  // origin iframe, partitioned storage, some in-app WebViews) reject the
+  // `window.localStorage`/`sessionStorage` accessor READ itself with a
+  // `SecurityError: Failed to read the '<storage>' property from 'window'`.
+  // A direct `window.localStorage` call site that bypasses managed-storage
+  // throws this uncaught. Browser-environment noise; drop it UNLESS the stack
+  // carries a resolved first-party `apps/web/src/…` frame (our own code is the
+  // culprit → actionable). See `isStorageSecurityErrorNoise`.
+  if (isStorageSecurityErrorNoise({ message, frames })) {
     return true;
   }
 

@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { config } from '../../config';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { scheduleTitleCaptureAfterPrompt } from '../../projects/opencode-title-capture';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import { KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -530,6 +531,16 @@ export async function forwardToSandbox(
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           body = bodyWithoutPromptAgent(body, incomingHeaders);
         }
+        // A prompt is the one moment this sandbox is guaranteed awake, and
+        // OpenCode's summarizer titles the session seconds after the first
+        // reply — capture it on a deferred timer instead of hoping a session
+        // list gets requested while the box is still up (the frozen
+        // "New session - <date>" rows). Fire-and-forget; never blocks the prompt.
+        scheduleTitleCaptureAfterPrompt({
+          sessionId: record.sessionId,
+          projectId: record.projectId,
+          externalId: record.externalId,
+        });
         try {
           await syncSandboxEnvForPrompt({
             projectId: record.projectId,

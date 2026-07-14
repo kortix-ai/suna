@@ -42,6 +42,12 @@ variable "container_port" {
   default     = 8000
 }
 
+variable "container_name" {
+  description = "Name of the single container in the task (also the awslogs stream prefix). 'api' for the API service, 'gateway' for the gateway."
+  type        = string
+  default     = "api"
+}
+
 variable "environment" {
   description = "Plain (non-secret) environment variables for the container."
   type        = map(string)
