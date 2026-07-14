@@ -14,6 +14,7 @@ const coordinates = {
   apiDomain: 'api.vpc-demo.kortix.com',
   frontendDomain: 'vpc-demo.kortix.com',
   instance: 'kortix-vpc-demo',
+  region: 'us-west-2',
 };
 
 describe('AWS VPC runtime secret bootstrap', () => {
@@ -32,9 +33,12 @@ describe('AWS VPC runtime secret bootstrap', () => {
     expect(verifyJwt(secret.SERVICE_ROLE_KEY, secret.JWT_SECRET, 'service_role')).toBe(true);
     expect(secret.SUPABASE_PUBLISHABLE_KEY).toMatch(/^sb_publishable_[A-Za-z0-9_-]{32}$/);
     expect(secret.SUPABASE_SECRET_KEY).toMatch(/^sb_secret_[A-Za-z0-9_-]{43}$/);
+    // Managed Claude resolves to Bedrock: region is defaulted, the bearer key is
+    // an operator-required runtime value, and OpenRouter is NOT required.
+    expect(secret.AWS_BEDROCK_REGION).toBe('us-west-2');
     expect(missingOperatorRuntimeKeys(secret)).toEqual([
       'SMTP_ADMIN_EMAIL', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER',
-      'SMTP_PASS', 'SMTP_SENDER_NAME', 'DAYTONA_API_KEY', 'OPENROUTER_API_KEY',
+      'SMTP_PASS', 'SMTP_SENDER_NAME', 'DAYTONA_API_KEY', 'AWS_BEDROCK_API_KEY',
     ]);
   });
 

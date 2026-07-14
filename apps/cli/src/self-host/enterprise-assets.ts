@@ -25,11 +25,11 @@ import stateModuleVariables from '../../../../infra/terraform/modules/enterprise
 import stateModuleVersions from '../../../../infra/terraform/modules/enterprise-state/versions.tf' with { type: 'text' };
 
 import enterpriseAcm from '../../../../infra/terraform/modules/enterprise-vpc/acm.tf' with { type: 'text' };
+import enterpriseAlb from '../../../../infra/terraform/modules/enterprise-vpc/alb.tf' with { type: 'text' };
 import enterpriseBackup from '../../../../infra/terraform/modules/enterprise-vpc/backup.tf' with { type: 'text' };
-import enterpriseControllerIrsa from '../../../../infra/terraform/modules/enterprise-vpc/controller-irsa.tf' with { type: 'text' };
-import enterpriseEks from '../../../../infra/terraform/modules/enterprise-vpc/eks.tf' with { type: 'text' };
+import enterpriseDeployer from '../../../../infra/terraform/modules/enterprise-vpc/deployer.tf' with { type: 'text' };
+import enterpriseEcs from '../../../../infra/terraform/modules/enterprise-vpc/ecs.tf' with { type: 'text' };
 import supabaseUserData from '../../../../infra/terraform/modules/enterprise-vpc/files/supabase-user-data.sh.tftpl' with { type: 'text' };
-import updaterBuildspec from '../../../../infra/terraform/modules/enterprise-vpc/files/updater-buildspec.yml.tftpl' with { type: 'text' };
 import enterpriseFlowLogs from '../../../../infra/terraform/modules/enterprise-vpc/flow-logs.tf' with { type: 'text' };
 import enterpriseKms from '../../../../infra/terraform/modules/enterprise-vpc/kms.tf' with { type: 'text' };
 import enterpriseMain from '../../../../infra/terraform/modules/enterprise-vpc/main.tf' with { type: 'text' };
@@ -38,7 +38,6 @@ import enterpriseOperator from '../../../../infra/terraform/modules/enterprise-v
 import enterpriseOutputs from '../../../../infra/terraform/modules/enterprise-vpc/outputs.tf' with { type: 'text' };
 import enterpriseStorage from '../../../../infra/terraform/modules/enterprise-vpc/storage.tf' with { type: 'text' };
 import enterpriseSupabase from '../../../../infra/terraform/modules/enterprise-vpc/supabase.tf' with { type: 'text' };
-import enterpriseUpdater from '../../../../infra/terraform/modules/enterprise-vpc/updater.tf' with { type: 'text' };
 import enterpriseVariables from '../../../../infra/terraform/modules/enterprise-vpc/variables.tf' with { type: 'text' };
 import enterpriseVersions from '../../../../infra/terraform/modules/enterprise-vpc/versions.tf' with { type: 'text' };
 
@@ -87,11 +86,11 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   'modules/enterprise-state/variables.tf': stateModuleVariables,
   'modules/enterprise-state/versions.tf': stateModuleVersions,
   'modules/enterprise-vpc/acm.tf': enterpriseAcm,
+  'modules/enterprise-vpc/alb.tf': enterpriseAlb,
   'modules/enterprise-vpc/backup.tf': enterpriseBackup,
-  'modules/enterprise-vpc/controller-irsa.tf': enterpriseControllerIrsa,
-  'modules/enterprise-vpc/eks.tf': enterpriseEks,
+  'modules/enterprise-vpc/deployer.tf': enterpriseDeployer,
+  'modules/enterprise-vpc/ecs.tf': enterpriseEcs,
   'modules/enterprise-vpc/files/supabase-user-data.sh.tftpl': supabaseUserData,
-  'modules/enterprise-vpc/files/updater-buildspec.yml.tftpl': updaterBuildspec,
   'modules/enterprise-vpc/flow-logs.tf': enterpriseFlowLogs,
   'modules/enterprise-vpc/kms.tf': enterpriseKms,
   'modules/enterprise-vpc/main.tf': enterpriseMain,
@@ -100,7 +99,6 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   'modules/enterprise-vpc/outputs.tf': enterpriseOutputs,
   'modules/enterprise-vpc/storage.tf': enterpriseStorage,
   'modules/enterprise-vpc/supabase.tf': enterpriseSupabase,
-  'modules/enterprise-vpc/updater.tf': enterpriseUpdater,
   'modules/enterprise-vpc/variables.tf': enterpriseVariables,
   'modules/enterprise-vpc/versions.tf': enterpriseVersions,
   'modules/eks/cluster/addons.tf': eksClusterAddons,

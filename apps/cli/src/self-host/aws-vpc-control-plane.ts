@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
 import type { AwsVpcCoordinates, SelfHostInstanceConfig } from './config.ts';
@@ -9,47 +8,155 @@ export interface AwsIdentity {
   Arn: string;
 }
 
-export function startReconciliation(
+export type DeployServiceRole = 'api' | 'gateway' | 'frontend';
+export const DEPLOY_SERVICE_ROLES: DeployServiceRole[] = ['api', 'gateway', 'frontend'];
+
+export interface ReleaseRecord {
+  version?: string;
+  digests?: Record<string, string>;
+  supabase_bundle_sha?: string;
+  deployed_at?: string;
+  [key: string]: unknown;
+}
+
+/** The ECS deploy naming contract; everything is discovered from <instance>. */
+export function deployClusterName(instance: string): string {
+  return `kortix-${instance}`;
+}
+
+export function deployServiceName(instance: string, role: DeployServiceRole): string {
+  return `${deployClusterName(instance)}-${role}`;
+}
+
+export function deployerTaskFamily(instance: string): string {
+  return `${deployClusterName(instance)}-deployer`;
+}
+
+export function releaseParamName(instance: string): string {
+  return `/kortix/${instance}/release`;
+}
+
+/**
+ * Run the customer-owned deployer task (the slim updater binary) as a one-off ECS
+ * task and wait for it. It runs the SAME ecs-deploy library the daily EventBridge
+ * schedule runs — account-pinned TUF verify, digest mirror, migrate, service roll,
+ * circuit-breaker rollback — inside the customer VPC on its own task role. The CLI
+ * only passes the deploy intent as env overrides; the container command + release
+ * repository pinning live in the Terraform-owned task definition.
+ */
+export function runDeployerTask(
   config: SelfHostInstanceConfig,
-  input: Record<string, unknown>,
-  discoveredArn?: string,
-) {
+  intent: { release?: string; rollback?: string; force?: boolean },
+): { task_arn: string; status: string; exit_code: number | null } {
   const coordinates = config.aws!;
-  const stateMachineArn = discoveredArn || reconciliationStateMachineArn(config);
-  const executionName = `cli-${Date.now()}-${randomBytes(3).toString('hex')}`;
-  const result = awsJson<{ executionArn: string; startDate?: string }>(coordinates, [
-    'stepfunctions', 'start-execution',
-    '--state-machine-arn', stateMachineArn,
-    '--name', executionName,
-    '--input', JSON.stringify(input),
-  ]);
-  if (!result.executionArn) throw new Error('AWS did not return a Step Functions execution ARN');
-  return {
-    execution_arn: result.executionArn,
-    start_date: result.startDate ?? null,
-    input,
-  };
+  const cluster = deployClusterName(config.instance);
+  const network = apiServiceNetworkConfiguration(config);
+  const environment: Array<{ name: string; value: string }> = [];
+  if (intent.release) environment.push({ name: 'KORTIX_DEPLOY_RELEASE', value: intent.release });
+  if (intent.rollback) environment.push({ name: 'KORTIX_DEPLOY_ROLLBACK', value: intent.rollback });
+  if (intent.force) environment.push({ name: 'KORTIX_DEPLOY_FORCE', value: '1' });
+
+  const args = [
+    'ecs', 'run-task',
+    '--cluster', cluster,
+    '--task-definition', deployerTaskFamily(config.instance),
+    '--launch-type', 'FARGATE',
+    '--count', '1',
+  ];
+  if (network) args.push('--network-configuration', network);
+  if (environment.length > 0) {
+    args.push('--overrides', JSON.stringify({ containerOverrides: [{ name: 'deployer', environment }] }));
+  }
+  const started = awsJson<{ tasks?: Array<{ taskArn?: string }>; failures?: Array<{ reason?: string }> }>(coordinates, args);
+  const taskArn = started.tasks?.[0]?.taskArn;
+  if (!taskArn) {
+    throw new Error(`deployer task did not start: ${started.failures?.[0]?.reason ?? 'unknown'}`);
+  }
+  return waitDeployerTask(coordinates, cluster, taskArn);
 }
 
-export function releaseState(config: SelfHostInstanceConfig): Record<string, unknown> | null {
-  const response = awsJsonOptional<{ Item?: Record<string, DynamoAttribute> }>(config.aws!, [
-    'dynamodb', 'get-item',
-    '--table-name', `${config.instance}-release-state`,
-    '--key', JSON.stringify({ instance: { S: config.instance } }),
-    '--consistent-read',
-  ]);
-  if (!response?.Item) return null;
-  return Object.fromEntries(Object.entries(response.Item).map(([key, value]) => [key, fromDynamo(value)]));
+function waitDeployerTask(
+  coordinates: AwsVpcCoordinates,
+  cluster: string,
+  taskArn: string,
+): { task_arn: string; status: string; exit_code: number | null } {
+  for (let attempt = 0; attempt < 720; attempt++) {
+    const response = awsJson<{
+      tasks?: Array<{ lastStatus?: string; stoppedReason?: string; containers?: Array<{ exitCode?: number }> }>;
+    }>(coordinates, ['ecs', 'describe-tasks', '--cluster', cluster, '--tasks', taskArn]);
+    const task = response.tasks?.[0];
+    if (task?.lastStatus === 'STOPPED') {
+      const exitCode = task.containers?.[0]?.exitCode ?? null;
+      if (exitCode !== 0) {
+        throw new Error(`deployer task failed (exit ${exitCode ?? 'unknown'}): ${task.stoppedReason ?? 'see kortix self-host logs deployer'}`);
+      }
+      return { task_arn: taskArn, status: 'STOPPED', exit_code: exitCode };
+    }
+    spawnSync('sleep', ['5']);
+  }
+  throw new Error(`deployer task ${taskArn} did not stop in time; check kortix self-host status`);
 }
 
-type DynamoAttribute = { S?: string; N?: string; BOOL?: boolean; NULL?: boolean };
+function apiServiceNetworkConfiguration(config: SelfHostInstanceConfig): string | null {
+  // The deployer runs in the same awsvpc network as the api service; reuse it so
+  // no extra Terraform output/tag contract is needed for a one-off task.
+  const response = awsJsonOptional<{ services?: Array<{ networkConfiguration?: unknown }> }>(config.aws!, [
+    'ecs', 'describe-services',
+    '--cluster', deployClusterName(config.instance),
+    '--services', deployServiceName(config.instance, 'api'),
+  ]);
+  const network = response?.services?.[0]?.networkConfiguration;
+  return network ? JSON.stringify(network) : null;
+}
 
-function fromDynamo(value: DynamoAttribute): unknown {
-  if (value.S !== undefined) return value.S;
-  if (value.N !== undefined) return Number(value.N);
-  if (value.BOOL !== undefined) return value.BOOL;
-  if (value.NULL) return null;
-  return value;
+export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord | null {
+  const response = awsJson<{ Parameters?: Array<{ Value?: string }> }>(config.aws!, [
+    'ssm', 'get-parameters', '--names', releaseParamName(config.instance),
+  ]);
+  const value = response.Parameters?.[0]?.Value;
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as ReleaseRecord;
+  } catch {
+    return null;
+  }
+}
+
+export interface DeployServiceStatus {
+  role: DeployServiceRole;
+  status: string;
+  running: number;
+  desired: number;
+  rollout: string | null;
+}
+
+export function describeDeployServices(config: SelfHostInstanceConfig): DeployServiceStatus[] {
+  const coordinates = config.aws!;
+  const services = DEPLOY_SERVICE_ROLES.map((role) => deployServiceName(config.instance, role));
+  const response = awsJsonOptional<{
+    services?: Array<{
+      serviceName?: string;
+      status?: string;
+      runningCount?: number;
+      desiredCount?: number;
+      deployments?: Array<{ status?: string; rolloutState?: string }>;
+    }>;
+  }>(coordinates, [
+    'ecs', 'describe-services', '--cluster', deployClusterName(config.instance), '--services', ...services,
+  ]);
+  const found = response?.services ?? [];
+  return DEPLOY_SERVICE_ROLES.map((role) => {
+    const name = deployServiceName(config.instance, role);
+    const service = found.find((entry) => entry.serviceName === name);
+    const primary = service?.deployments?.find((entry) => entry.status === 'PRIMARY') ?? service?.deployments?.[0];
+    return {
+      role,
+      status: service?.status ?? 'NOT_DEPLOYED',
+      running: service?.runningCount ?? 0,
+      desired: service?.desiredCount ?? 0,
+      rollout: primary?.rolloutState ?? null,
+    };
+  });
 }
 
 export function awsJson<T>(coordinates: AwsVpcCoordinates, args: string[]): T {
@@ -107,11 +214,6 @@ export function verifyPinnedIdentity(coordinates: AwsVpcCoordinates): AwsIdentit
     throw new Error(`AWS account mismatch: expected ${coordinates.account_id}, resolved ${identity.Account}`);
   }
   return identity;
-}
-
-export function reconciliationStateMachineArn(config: SelfHostInstanceConfig): string {
-  const aws = config.aws!;
-  return `arn:aws:states:${aws.region}:${aws.account_id}:stateMachine:${config.instance}-reconcile`;
 }
 
 export function firstLine(value: string): string {

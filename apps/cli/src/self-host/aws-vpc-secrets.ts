@@ -19,7 +19,10 @@ export const REQUIRED_OPERATOR_RUNTIME_KEYS = [
   'SMTP_PASS',
   'SMTP_SENDER_NAME',
   'DAYTONA_API_KEY',
-  'OPENROUTER_API_KEY',
+  // Managed Claude models resolve to AWS Bedrock via this bearer key (see the
+  // Bedrock gap note below). Enterprise deployments do NOT depend on OpenRouter;
+  // an operator may still add OPENROUTER_API_KEY for non-managed models.
+  'AWS_BEDROCK_API_KEY',
 ] as const;
 
 const UPDATER_MANAGED_RUNTIME_KEYS = new Set([
@@ -39,6 +42,7 @@ interface RuntimeCoordinates {
   apiDomain: string;
   frontendDomain: string;
   instance: string;
+  region: string;
 }
 
 interface SecretResponse {
@@ -128,7 +132,7 @@ export function generateRuntimeDefaults(
   const frontendUrl = `https://${coordinates.frontendDomain}`;
 
   return {
-    ...generatedInternalDefaults(coordinates.instance),
+    ...generatedInternalDefaults(coordinates.instance, coordinates.region),
     ...current,
     POSTGRES_PASSWORD: postgresPassword,
     JWT_SECRET: jwtSecret,
@@ -181,8 +185,12 @@ export function assertOperatorRuntimeAssignments(assignments: Record<string, str
   }
 }
 
-function generatedInternalDefaults(instance: string): Record<string, string> {
+function generatedInternalDefaults(instance: string, region: string): Record<string, string> {
   return {
+    // Managed Claude → Bedrock: the API/gateway select the Bedrock upstream when
+    // AWS_BEDROCK_API_KEY is present and call bedrock-runtime.<region>. Region is
+    // defaulted here; the bearer key is an operator-supplied required runtime key.
+    AWS_BEDROCK_REGION: region,
     DASHBOARD_USERNAME: 'kortix',
     DASHBOARD_PASSWORD: token(24),
     SECRET_KEY_BASE: token(48),

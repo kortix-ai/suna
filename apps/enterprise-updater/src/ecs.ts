@@ -25,6 +25,14 @@ export interface EcsContext {
    * this to the deployer/CLI from the cluster module outputs.
    */
   networkConfiguration?: string;
+  /**
+   * Explicit ECS service names, when the Terraform naming is not the derived
+   * kortix-<instance>-<role> (WS-TF passes these to the deployer via env). Falls
+   * back to the derived name.
+   */
+  serviceNames?: Partial<Record<DeployServiceRole, string>>;
+  /** Explicit migrate task-def family; falls back to kortix-<instance>-migrate. */
+  migrateFamilyName?: string;
 }
 
 /** The digest-and-bundle fingerprint written to the SSM release parameter. */
@@ -54,11 +62,11 @@ export class EcsControlPlane {
   ) {}
 
   serviceName(role: DeployServiceRole): string {
-    return `${this.context.clusterName}-${role}`;
+    return this.context.serviceNames?.[role] ?? `${this.context.clusterName}-${role}`;
   }
 
   migrateFamily(): string {
-    return `${this.context.clusterName}-migrate`;
+    return this.context.migrateFamilyName ?? `${this.context.clusterName}-migrate`;
   }
 
   verifyIdentity(): AwsIdentity {

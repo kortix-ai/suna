@@ -25,12 +25,14 @@ async function main(): Promise<number> {
   }
 
   const flags = parseFlags(args);
-  const instance = requiredFlag(flags, 'instance');
+  // Flags win; the Terraform-owned deployer task-def supplies the rest via env
+  // (KORTIX_INSTANCE / KORTIX_RELEASE_REPOSITORY / KORTIX_TUF_ROOT_SHA256, …).
+  const instance = flags.get('instance') ?? process.env.KORTIX_INSTANCE ?? missing('--instance or KORTIX_INSTANCE');
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) throw new Error('instance is not a valid enterprise slug');
-  const channel = flags.get('channel') ?? 'stable';
+  const channel = flags.get('channel') ?? process.env.KORTIX_CHANNEL ?? 'stable';
   if (channel !== 'stable') throw new Error('enterprise updater may only track the stable channel');
-  const repositoryUrl = requiredFlag(flags, 'repository');
-  const trustedRootSha256 = requiredFlag(flags, 'trusted-root-sha256');
+  const repositoryUrl = flags.get('repository') ?? process.env.KORTIX_RELEASE_REPOSITORY ?? missing('--repository or KORTIX_RELEASE_REPOSITORY');
+  const trustedRootSha256 = flags.get('trusted-root-sha256') ?? process.env.KORTIX_TUF_ROOT_SHA256 ?? missing('--trusted-root-sha256 or KORTIX_TUF_ROOT_SHA256');
 
   const requestedRelease = flags.get('release');
   const rollbackTo = flags.get('rollback') ?? process.env.KORTIX_DEPLOY_ROLLBACK;
@@ -51,10 +53,8 @@ async function main(): Promise<number> {
 
   const region = env('AWS_REGION', 'AWS_DEFAULT_REGION');
   const expectedAccountId = env('KORTIX_EXPECTED_ACCOUNT_ID');
-  const clusterName = process.env.KORTIX_CLUSTER_NAME || `kortix-${instance}`;
+  const clusterName = process.env.KORTIX_CLUSTER || process.env.KORTIX_CLUSTER_NAME || `kortix-${instance}`;
   const runtimeSecretArn = env('KORTIX_RUNTIME_SECRET_ARN');
-  const apiDomain = env('KORTIX_API_DOMAIN');
-  const frontendDomain = env('KORTIX_FRONTEND_DOMAIN');
   const runner = new ProcessRunner();
   const control = new EcsControlPlane(runner, {
     region,
@@ -62,18 +62,26 @@ async function main(): Promise<number> {
     instance,
     clusterName,
     runtimeSecretArn,
-    releaseParamName: process.env.KORTIX_RELEASE_PARAM || `/kortix/${instance}/release`,
+    releaseParamName: process.env.KORTIX_RELEASE_SSM_PARAM || process.env.KORTIX_RELEASE_PARAM || `/kortix/${instance}/release`,
+    ...(explicitServiceNames() ? { serviceNames: explicitServiceNames()! } : {}),
+    ...(process.env.KORTIX_MIGRATE_TASKDEF ? { migrateFamilyName: process.env.KORTIX_MIGRATE_TASKDEF } : {}),
     ...(process.env.KORTIX_TASK_NETWORK_CONFIGURATION
       ? { networkConfiguration: process.env.KORTIX_TASK_NETWORK_CONFIGURATION }
       : {}),
   });
+  // Domains drive the public health checks + Supabase install; the deployer
+  // task-def may pass them explicitly, else derive from the runtime secret URLs.
+  const runtimeSecret = control.getSecretJson(runtimeSecretArn);
+  const apiDomain = process.env.KORTIX_API_DOMAIN || hostOf(runtimeSecret.SUPABASE_PUBLIC_URL || runtimeSecret.API_PUBLIC_URL);
+  const frontendDomain = process.env.KORTIX_FRONTEND_DOMAIN || hostOf(runtimeSecret.PUBLIC_URL || runtimeSecret.KORTIX_PUBLIC_URL);
+  if (!apiDomain || !frontendDomain) throw new Error('unable to resolve api/frontend domains from env or runtime secret');
   const supabase = new SupabaseInstaller(runner, control, {
     region,
     instance,
     supabaseInstanceId: env('KORTIX_SUPABASE_INSTANCE_ID'),
     runtimeSecretArn,
-    artifactBucket: env('KORTIX_ARTIFACT_BUCKET', 'KORTIX_BACKUP_BUCKET'),
-    artifactKmsKeyArn: env('KORTIX_ARTIFACT_KMS_KEY_ARN', 'KORTIX_BACKUP_KMS_KEY_ARN'),
+    artifactBucket: process.env.KORTIX_ARTIFACT_BUCKET || process.env.KORTIX_BACKUP_BUCKET || '',
+    artifactKmsKeyArn: process.env.KORTIX_ARTIFACT_KMS_KEY_ARN || process.env.KORTIX_BACKUP_KMS_KEY_ARN || '',
     apiDomain,
     frontendDomain,
   });
@@ -126,6 +134,27 @@ function env(...names: string[]): string {
     if (value) return value;
   }
   throw new Error(`missing required environment value ${names.join(' or ')}`);
+}
+
+function missing(what: string): never {
+  throw new Error(`missing required ${what}`);
+}
+
+function explicitServiceNames(): Partial<Record<'api' | 'gateway' | 'frontend', string>> | null {
+  const names: Partial<Record<'api' | 'gateway' | 'frontend', string>> = {};
+  if (process.env.KORTIX_API_SERVICE) names.api = process.env.KORTIX_API_SERVICE;
+  if (process.env.KORTIX_GATEWAY_SERVICE) names.gateway = process.env.KORTIX_GATEWAY_SERVICE;
+  if (process.env.KORTIX_FRONTEND_SERVICE) names.frontend = process.env.KORTIX_FRONTEND_SERVICE;
+  return Object.keys(names).length > 0 ? names : null;
+}
+
+function hostOf(url: string | undefined): string {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
 }
 
 try {

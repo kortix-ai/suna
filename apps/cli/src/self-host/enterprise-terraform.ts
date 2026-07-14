@@ -33,8 +33,6 @@ export interface BackendConfig {
 
 export interface EnterpriseInstanceOutput {
   cluster_name?: string;
-  state_machine_arn?: string;
-  release_state_table?: string;
   supabase_instance_id?: string;
   supabase_private_ip?: string;
   runtime_secret_arn?: string;
