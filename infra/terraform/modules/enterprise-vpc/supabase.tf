@@ -7,33 +7,13 @@ resource "aws_security_group" "supabase" {
   description = "Private Supabase Docker host; no public or SSH ingress"
   vpc_id      = module.network.vpc_id
 
-  ingress {
-    description     = "Supabase Kong from EKS workloads"
-    protocol        = "tcp"
-    from_port       = 8000
-    to_port         = 8000
-    security_groups = [module.eks.cluster_security_group_id]
-  }
-
-  ingress {
-    description = "Supabase Kong from the customer ALB nodes"
-    protocol    = "tcp"
-    from_port   = 8000
-    to_port     = 8000
-    cidr_blocks = [for index in range(3) : cidrsubnet(var.vpc_cidr, 4, index)]
-  }
-
-  ingress {
-    description     = "Postgres migrations and runtime access from EKS"
-    protocol        = "tcp"
-    from_port       = 5432
-    to_port         = 5432
-    security_groups = [module.eks.cluster_security_group_id]
-  }
+  # Ingress to Kong (:8000) and Postgres (:5432) is granted with standalone
+  # rules in alb.tf/ecs.tf so the ALB and ECS-task security groups can reference
+  # this host without a security-group dependency cycle.
 
   # Bootstrap and signed upgrades fetch packages and OCI layers through the VPC
   # NAT gateway. Runtime AWS API traffic uses private endpoints, ingress is
-  # restricted to EKS, and this exception is TCP/443 only.
+  # restricted to the ALB and ECS tasks, and this exception is TCP/443 only.
   #trivy:ignore:AVD-AWS-0104
   egress {
     description = "TLS-only connected-tier egress"
@@ -105,27 +85,6 @@ data "aws_iam_policy_document" "supabase" {
   }
 
   statement {
-    sid = "BackupObjects"
-    actions = [
-      "s3:AbortMultipartUpload",
-      "s3:GetObject",
-      "s3:GetObjectVersion",
-      "s3:ListBucket",
-      "s3:PutObject",
-    ]
-    resources = [
-      aws_s3_bucket.backups.arn,
-      "${aws_s3_bucket.backups.arn}/*",
-    ]
-  }
-
-  statement {
-    sid       = "RecordBackupFreshness"
-    actions   = ["dynamodb:UpdateItem"]
-    resources = [aws_dynamodb_table.release_state.arn]
-  }
-
-  statement {
     sid = "ReadMirroredReleaseArtifacts"
     actions = [
       "ecr:BatchCheckLayerAvailability",
@@ -179,7 +138,7 @@ resource "aws_ebs_volume" "supabase_data" {
 
   tags = merge(local.tags, {
     Name       = "${var.name}-supabase-data"
-    BackupTier = "continuous-wal-plus-hourly-snapshot"
+    BackupTier = "hourly-snapshot"
   })
 
   lifecycle {
@@ -226,9 +185,6 @@ resource "aws_instance" "supabase" {
     data_volume_id     = aws_ebs_volume.supabase_data.id
     instance_name      = var.name
     runtime_secret_arn = aws_secretsmanager_secret.runtime.arn
-    backup_bucket      = aws_s3_bucket.backups.id
-    backup_kms_key_arn = aws_kms_key.data.arn
-    state_table        = aws_dynamodb_table.release_state.name
     log_group          = aws_cloudwatch_log_group.supabase.name
   })
 
