@@ -24,7 +24,6 @@ import { loadTelegramTokenForProject } from '../install-store';
 import { claimFinalize, deleteTurn } from '../slack/turn';
 import {
   type TelegramInlineButton,
-  telegramEditMessageText,
   telegramSendChatAction,
   telegramSendMessage,
   telegramSetMessageReaction,
@@ -33,7 +32,6 @@ import {
   TELEGRAM_MAX_MESSAGE,
   type TelegramTurnStep,
   chunkTelegramText,
-  renderWorkingStatus,
   sessionDeepLink,
   telegramHtml,
 } from './format';
@@ -43,9 +41,11 @@ const TURN_TTL_MS = 30 * 60 * 1000;
 /** Min interval between status-message edits — stays inside Telegram's edit
  *  budget (~1/sec per chat) with margin. */
 const EDIT_THROTTLE_MS = 1200;
-/** Reaction cues on the user's message — both in Telegram's standard reaction
- *  set so setMessageReaction never 400s on them. */
-const REACTION_WORKING = '👀';
+/** Reaction cues on the user's message — the ambient turn status (no separate
+ *  "Working on it…" placeholder). Both in Telegram's fixed reaction set (⏳/✅
+ *  are NOT allowed), so setMessageReaction never 400s: 🤔 = working, 👍 = done.
+ *  Reactions are best-effort — a rejected one just silently no-ops. */
+const REACTION_WORKING = '🤔';
 const REACTION_DONE = '👍';
 
 export interface LiveTelegramTurn {
@@ -147,23 +147,18 @@ export async function startTelegramTurn(
 ): Promise<LiveTelegramTurn | null> {
   const token = await loadTelegramTokenForProject(projectId);
   if (!token) return null;
-  await telegramSendChatAction(token, message.chat.id);
-  // 👀 on the user's message — a lightweight "I've got this" ack alongside the
-  // status placeholder (finalize swaps it to 👍). Best-effort.
+  // Reaction-only status: 🤔 on the user's message + a typing cue. No
+  // "Working on it…" placeholder — the answer arrives as its own message and
+  // finalize swaps the reaction to 👍. Best-effort.
   await telegramSetMessageReaction(token, message.chat.id, message.message_id, REACTION_WORKING);
-  const statusMessageId = await telegramSendMessage(
-    token,
-    message.chat.id,
-    renderWorkingStatus([]),
-    { parseMode: 'HTML', replyToMessageId: message.message_id },
-  );
+  await telegramSendChatAction(token, message.chat.id);
   return {
     sessionId: null,
     projectId,
     botId,
     chatId: String(message.chat.id),
     triggerMessageId: message.message_id,
-    statusMessageId,
+    statusMessageId: null,
     steps: [],
     lastEditMs: Date.now(),
     finalized: false,
@@ -188,22 +183,13 @@ export async function restartTelegramTurnForFollowUp(
 }
 
 /** Webhook-side failure/queued surfacing for a turn that has no session (yet):
- *  edit the placeholder in place. The handle is in-memory only. */
+ *  reply to the trigger message. The handle is in-memory only. */
 export async function finalizeTelegramTurnDirect(
   handle: LiveTelegramTurn,
   text: string,
 ): Promise<void> {
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return;
-  if (handle.statusMessageId != null) {
-    const edited = await telegramEditMessageText(
-      token,
-      handle.chatId,
-      handle.statusMessageId,
-      text,
-    );
-    if (edited) return;
-  }
   await telegramSendMessage(token, handle.chatId, text, {
     replyToMessageId: handle.triggerMessageId,
   });
@@ -211,47 +197,27 @@ export async function finalizeTelegramTurnDirect(
 
 // ─── Relays (dispatched from the /turn-stream route) ─────────────────────────
 
-/** `telegram step "…"` — advance the live checklist in the status message. */
-export async function relayTelegramTurnStep(sessionId: string, title: string): Promise<boolean> {
+/** `telegram step "…"` — in the reaction-only UX there's no on-chat step list;
+ *  a step just re-ups the typing cue (throttled) so a long turn keeps showing
+ *  "typing…" without cluttering the chat. */
+export async function relayTelegramTurnStep(sessionId: string, _title: string): Promise<boolean> {
   const handle = await loadTelegramTurn(sessionId);
-  if (!handle || handle.finalized) {
-    // Finalized is the benign tail (a step after send/idle); missing means a
-    // step with no turn ever opened — keep a quiet signal for that one only.
-    if (!handle) {
-      console.warn('[telegram-webhook] turn step dropped — no open turn for session', {
-        sessionId,
-        title: title.slice(0, 80),
-      });
-    }
-    return false;
-  }
-
-  const last = handle.steps[handle.steps.length - 1];
-  if (last && !last.done) last.done = true;
-  handle.steps.push({ title: title.slice(0, 200), done: false });
+  if (!handle || handle.finalized) return false;
 
   const now = Date.now();
-  if (handle.statusMessageId != null && now - handle.lastEditMs >= EDIT_THROTTLE_MS) {
+  if (now - handle.lastEditMs >= EDIT_THROTTLE_MS) {
     const token = await loadTelegramTokenForProject(handle.projectId);
-    if (token) {
-      await telegramEditMessageText(
-        token,
-        handle.chatId,
-        handle.statusMessageId,
-        renderWorkingStatus(handle.steps),
-        { parseMode: 'HTML' },
-      );
-      await telegramSendChatAction(token, handle.chatId);
-      handle.lastEditMs = now;
-    }
+    if (token) await telegramSendChatAction(token, handle.chatId);
+    handle.lastEditMs = now;
+    await saveTelegramTurn(handle);
   }
-  await saveTelegramTurn(handle);
   return true;
 }
 
-/** `telegram send "…"` — the final answer. Edits the status message into the
- *  answer (single-message case) or chunks long answers, closing with the
- *  "Open in Kortix" button. Exactly-once via claimFinalize. */
+/** `telegram send "…"` — the final answer, sent as its own message (reply to the
+ *  user), rich HTML with a plain-text fallback, 4096-chunked when long, closing
+ *  with the "Open in Kortix" button. Flips the reaction 🤔→👍. Exactly-once via
+ *  claimFinalize. */
 export async function relayTelegramTurnAnswer(sessionId: string, text: string): Promise<boolean> {
   const handle = await loadTelegramTurn(sessionId);
   if (!handle || handle.finalized) return false;
@@ -259,58 +225,35 @@ export async function relayTelegramTurnAnswer(sessionId: string, text: string): 
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return false;
 
-  // 👀 → 👍 on the user's message: the answer landed.
+  // 🤔 → 👍 on the user's message: the answer landed.
   await telegramSetMessageReaction(token, handle.chatId, handle.triggerMessageId, REACTION_DONE);
   const buttons = openInKortixButtons(handle.projectId, sessionId);
   const html = telegramHtml(text);
 
   if (html.length <= TELEGRAM_MAX_MESSAGE) {
-    // Single message: prefer editing the status message in place (keeps the
-    // chat clean); fall back to a fresh reply, and to plain text if Telegram
-    // rejects the HTML.
-    const opts = { parseMode: 'HTML' as const, buttons, disableWebPagePreview: true };
-    const plain = text.slice(0, TELEGRAM_MAX_MESSAGE);
-    let edited = false;
-    if (handle.statusMessageId != null) {
-      edited =
-        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, opts)) ||
-        // Telegram rejected the HTML — retry the same edit as plain text.
-        (await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, plain, {
-          buttons,
-        }));
-    }
-    if (!edited) {
-      const sent = await telegramSendMessage(token, handle.chatId, html, {
-        ...opts,
+    // Single message — HTML, falling back to plain text if Telegram rejects it.
+    const sent = await telegramSendMessage(token, handle.chatId, html, {
+      parseMode: 'HTML',
+      buttons,
+      disableWebPagePreview: true,
+      replyToMessageId: handle.triggerMessageId,
+    });
+    if (sent == null) {
+      await telegramSendMessage(token, handle.chatId, text.slice(0, TELEGRAM_MAX_MESSAGE), {
+        buttons,
         replyToMessageId: handle.triggerMessageId,
       });
-      if (sent == null) {
-        await telegramSendMessage(token, handle.chatId, plain, {
-          buttons,
-          replyToMessageId: handle.triggerMessageId,
-        });
-      }
     }
   } else {
-    // Long answer: plain-text chunks (splitting can't break HTML pairs that
-    // way); the placeholder becomes the first chunk, the last carries the
-    // button.
+    // Long answer: plain-text chunks (splitting can't break HTML tag pairs); the
+    // last chunk carries the button.
     const chunks = chunkTelegramText(text);
     for (let i = 0; i < chunks.length; i++) {
-      const isLast = i === chunks.length - 1;
-      const opts = isLast ? { buttons } : {};
-      if (i === 0 && handle.statusMessageId != null) {
-        const ok = await telegramEditMessageText(
-          token,
-          handle.chatId,
-          handle.statusMessageId,
-          chunks[i],
-          opts,
-        );
-        if (!ok) await telegramSendMessage(token, handle.chatId, chunks[i], opts);
-      } else {
-        await telegramSendMessage(token, handle.chatId, chunks[i], opts);
-      }
+      const opts = i === chunks.length - 1 ? { buttons } : {};
+      await telegramSendMessage(token, handle.chatId, chunks[i], {
+        ...opts,
+        ...(i === 0 ? { replyToMessageId: handle.triggerMessageId } : {}),
+      });
     }
   }
 
@@ -345,7 +288,10 @@ export async function relayTelegramTurnEnd(
   const token = await loadTelegramTokenForProject(handle.projectId);
   if (!token) return false;
 
-  // 👍 on clean finish; drop the 👀 entirely on error (no misleading thumbs-up).
+  // This fires only when the agent ended WITHOUT a `telegram send` (a normal
+  // answer makes claimFinalize no-op this). 👍 on a clean finish; drop the 🤔
+  // on error (no misleading thumbs-up). Sent as a fresh message — there's no
+  // placeholder to edit.
   await telegramSetMessageReaction(
     token,
     handle.chatId,
@@ -353,8 +299,6 @@ export async function relayTelegramTurnEnd(
     status === 'error' ? null : REACTION_DONE,
   );
   const buttons = openInKortixButtons(handle.projectId, sessionId);
-  // Build the HTML and the plain-text fallback SEPARATELY from the same parts —
-  // never regex-strip tags out of the HTML (incomplete against nested tags).
   const errorLine = turnErrorLine(errorInfo);
   const html =
     status === 'error'
@@ -364,17 +308,16 @@ export async function relayTelegramTurnEnd(
     status === 'error'
       ? `❌ The run failed.\n${errorLine}\nOpen the session in Kortix for the full log, then send your message again.`
       : '✅ Done. The result is in the session — open it in Kortix to review.';
-
-  if (handle.statusMessageId != null) {
-    const ok = await telegramEditMessageText(token, handle.chatId, handle.statusMessageId, html, {
-      parseMode: 'HTML',
+  const sent = await telegramSendMessage(token, handle.chatId, html, {
+    parseMode: 'HTML',
+    buttons,
+    replyToMessageId: handle.triggerMessageId,
+  });
+  if (sent == null) {
+    await telegramSendMessage(token, handle.chatId, plain, {
       buttons,
+      replyToMessageId: handle.triggerMessageId,
     });
-    if (!ok) {
-      await telegramSendMessage(token, handle.chatId, plain, { buttons });
-    }
-  } else {
-    await telegramSendMessage(token, handle.chatId, html, { parseMode: 'HTML', buttons });
   }
   await deleteTurn(sessionId);
   return true;
