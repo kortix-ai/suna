@@ -26,14 +26,29 @@ let tmp: string;
 let originalCwd: string;
 let stdout = '';
 let stderr = '';
-let requests: Array<{ url: string; method: string; body: any }> = [];
+type RequestBody = Record<string, unknown> | string | undefined;
+let requests: Array<{ url: string; method: string; body: RequestBody }> = [];
 
 /** Shared secret rows the mocked GET returns; mutate per-test. */
-let secretItems: Array<{ identifier: string; name: string }>;
+let secretItems: Array<{
+  identifier: string;
+  name: string;
+  configured?: boolean;
+  effective_source?: 'mine' | 'shared' | 'none';
+}>;
 let manifestRequired: string[];
 let manifestOptional: string[];
 
-function secret(identifier: string, name = identifier) {
+function secret(
+  identifier: string,
+  name = identifier,
+  state: {
+    configured?: boolean;
+    effective_source?: 'mine' | 'shared' | 'none';
+  } = {},
+) {
+  const configured = state.configured ?? true;
+  const effectiveSource = state.effective_source ?? (configured ? 'shared' : 'none');
   return {
     identifier,
     name,
@@ -42,6 +57,8 @@ function secret(identifier: string, name = identifier) {
     created_by: 'user_1',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
+    configured,
+    effective_source: effectiveSource,
   };
 }
 
@@ -70,8 +87,16 @@ function writeConfig(): void {
 function captureOutput() {
   stdout = '';
   stderr = '';
-  (process.stdout as any).write = (chunk: unknown) => ((stdout += String(chunk)), true);
-  (process.stderr as any).write = (chunk: unknown) => ((stderr += String(chunk)), true);
+  const stdoutStream = process.stdout as unknown as { write: (chunk: unknown) => boolean };
+  const stderrStream = process.stderr as unknown as { write: (chunk: unknown) => boolean };
+  stdoutStream.write = (chunk: unknown) => {
+    stdout += String(chunk);
+    return true;
+  };
+  stderrStream.write = (chunk: unknown) => {
+    stderr += String(chunk);
+    return true;
+  };
 }
 
 function json(data: unknown, status = 200): Response {
@@ -85,7 +110,7 @@ function mockApi() {
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
-    let body: any = undefined;
+    let body: RequestBody = undefined;
     if (typeof init?.body === 'string') {
       try {
         body = JSON.parse(init.body);
@@ -97,7 +122,7 @@ function mockApi() {
 
     if (url.includes('/projects/proj_1/secrets') && method === 'GET') {
       return json({
-        items: secretItems.map((s) => secret(s.identifier, s.name)),
+        items: secretItems.map((s) => secret(s.identifier, s.name, s)),
         required: manifestRequired,
         optional: manifestOptional,
         can_manage: true,
@@ -106,8 +131,9 @@ function mockApi() {
       });
     }
     if (url.includes('/projects/proj_1/secrets') && method === 'POST') {
-      const name = String(body.name).toUpperCase();
-      const identifier = (body.identifier ?? name) as string;
+      const input = typeof body === 'object' && body !== null ? body : {};
+      const name = String(input.name).toUpperCase();
+      const identifier = String(input.identifier ?? name);
       return json(secret(identifier, name));
     }
     if (url.includes('/projects/proj_1/secrets/') && method === 'DELETE') {
@@ -139,8 +165,10 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
-  (process.stdout as any).write = ORIGINAL_STDOUT_WRITE;
-  (process.stderr as any).write = ORIGINAL_STDERR_WRITE;
+  const stdoutStream = process.stdout as unknown as { write: (chunk: unknown) => boolean };
+  const stderrStream = process.stderr as unknown as { write: (chunk: unknown) => boolean };
+  stdoutStream.write = ORIGINAL_STDOUT_WRITE as unknown as (chunk: unknown) => boolean;
+  stderrStream.write = ORIGINAL_STDERR_WRITE as unknown as (chunk: unknown) => boolean;
   process.chdir(originalCwd);
   for (const key of ENV_KEYS) {
     if (saved[key] === undefined) delete process.env[key];
@@ -153,20 +181,25 @@ function posts() {
   return requests.filter((r) => r.method === 'POST');
 }
 
+function objectBody(request: (typeof requests)[number]): Record<string, unknown> {
+  expect(request.body).toBeObject();
+  return request.body as Record<string, unknown>;
+}
+
 describe('kortix secrets set — identifier', () => {
   test('KEY=VALUE with no identifier posts {name,value}, identifier defaults server-side', async () => {
     const code = await runSecrets(['set', 'STRIPE_API_KEY=sk_live_1']);
     expect(code).toBe(0);
     const [p] = posts();
-    expect(p.body).toEqual({ name: 'STRIPE_API_KEY', value: 'sk_live_1' });
-    expect('identifier' in p.body).toBe(false);
+    expect(objectBody(p)).toEqual({ name: 'STRIPE_API_KEY', value: 'sk_live_1' });
+    expect('identifier' in objectBody(p)).toBe(false);
     expect(stripAnsi(stdout)).toContain('STRIPE_API_KEY');
   });
 
   test('lowercase key is uppercased before it is sent (web KEY_NAME parity)', async () => {
     const code = await runSecrets(['set', 'stripe_api_key=sk_live_1']);
     expect(code).toBe(0);
-    expect(posts()[0].body.name).toBe('STRIPE_API_KEY');
+    expect(objectBody(posts()[0]).name).toBe('STRIPE_API_KEY');
   });
 
   test('--identifier stores a second value under the same key', async () => {
@@ -178,7 +211,7 @@ describe('kortix secrets set — identifier', () => {
     ]);
     expect(code).toBe(0);
     const [p] = posts();
-    expect(p.body).toEqual({
+    expect(objectBody(p)).toEqual({
       name: 'GOOGLE_MAPS_API_KEY',
       identifier: 'GMAPS-backup',
       value: 'backup_val',
@@ -191,7 +224,7 @@ describe('kortix secrets set — identifier', () => {
   test('--id is an accepted alias for --identifier', async () => {
     const code = await runSecrets(['set', 'GOOGLE_MAPS_API_KEY=v', '--id', 'GMAPS-primary']);
     expect(code).toBe(0);
-    expect(posts()[0].body.identifier).toBe('GMAPS-primary');
+    expect(objectBody(posts()[0]).identifier).toBe('GMAPS-primary');
   });
 
   test('--identifier with multiple pairs is rejected (addresses one secret)', async () => {
@@ -241,25 +274,78 @@ describe('kortix secrets ls — identifier-first', () => {
     expect(out).toContain('1 required secret missing');
   });
 
-  test('--json emits identifier, key, has_value and source', async () => {
+  test('--json exposes API names and explicit availability with compatibility aliases', async () => {
     secretItems = [{ identifier: 'GMAPS-backup', name: 'GOOGLE_MAPS_API_KEY' }];
     manifestRequired = ['STRIPE_API_KEY'];
     const code = await runSecrets(['ls', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
-    const backup = parsed.secrets.find((s: { identifier: string }) => s.identifier === 'GMAPS-backup');
+    const backup = parsed.secrets.find(
+      (s: { identifier: string }) => s.identifier === 'GMAPS-backup',
+    );
     expect(backup).toEqual({
       identifier: 'GMAPS-backup',
+      name: 'GOOGLE_MAPS_API_KEY',
+      configured: true,
+      available: true,
+      effective_source: 'shared',
       key: 'GOOGLE_MAPS_API_KEY',
       has_value: true,
       source: 'undeclared',
     });
-    const stripe = parsed.secrets.find((s: { identifier: string }) => s.identifier === 'STRIPE_API_KEY');
+    const stripe = parsed.secrets.find(
+      (s: { identifier: string }) => s.identifier === 'STRIPE_API_KEY',
+    );
     expect(stripe).toEqual({
       identifier: 'STRIPE_API_KEY',
+      name: 'STRIPE_API_KEY',
+      configured: false,
+      available: false,
+      effective_source: 'none',
       key: 'STRIPE_API_KEY',
       has_value: false,
       source: 'required',
+    });
+  });
+
+  test('does not report a value-less API row as set merely because the row exists', async () => {
+    secretItems = [
+      {
+        identifier: 'EMPTY_SLOT',
+        name: 'EMPTY_SLOT',
+        configured: false,
+        effective_source: 'none',
+      },
+    ];
+    const code = await runSecrets(['ls', '--json']);
+    expect(code).toBe(0);
+    const [row] = JSON.parse(stdout).secrets;
+    expect(row).toMatchObject({
+      identifier: 'EMPTY_SLOT',
+      configured: false,
+      available: false,
+      effective_source: 'none',
+      has_value: false,
+    });
+  });
+
+  test('distinguishes a personal effective value from a shared configured value', async () => {
+    secretItems = [
+      {
+        identifier: 'PERSONAL_SLOT',
+        name: 'PERSONAL_SLOT',
+        configured: false,
+        effective_source: 'mine',
+      },
+    ];
+    const code = await runSecrets(['ls', '--json']);
+    expect(code).toBe(0);
+    const [row] = JSON.parse(stdout).secrets;
+    expect(row).toMatchObject({
+      configured: false,
+      available: true,
+      effective_source: 'mine',
+      has_value: true,
     });
   });
 });
