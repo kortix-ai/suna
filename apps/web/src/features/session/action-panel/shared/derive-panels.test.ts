@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
+import { describe, expect, it } from 'bun:test';
 import { deriveContext, deriveOutputs } from './derive-panels';
 
 function part(
@@ -119,12 +119,10 @@ describe('deriveOutputs', () => {
   });
 
   it('still does not report a deleted/listed presentation as an output (no regression from the image_gen fix)', () => {
-    expect(
-      deriveOutputs([part('presentation_gen', { action: 'delete_presentation' })]),
-    ).toEqual([]);
-    expect(
-      deriveOutputs([part('presentation_gen', { action: 'list_presentations' })]),
-    ).toEqual([]);
+    expect(deriveOutputs([part('presentation_gen', { action: 'delete_presentation' })])).toEqual(
+      [],
+    );
+    expect(deriveOutputs([part('presentation_gen', { action: 'list_presentations' })])).toEqual([]);
   });
 
   // ─── apply_patch: the tool's INPUT is an opaque patch blob — the per-file
@@ -269,9 +267,9 @@ describe('deriveOutputs', () => {
   });
 
   it('never reports a failed image_gen call as a produced image', () => {
-    expect(
-      deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'error' })]),
-    ).toEqual([]);
+    expect(deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'error' })])).toEqual(
+      [],
+    );
   });
 
   it('never reports an in-flight image_gen call as a produced image', () => {
@@ -297,7 +295,9 @@ describe('deriveOutputs', () => {
   });
 
   it('still reports a genuinely completed write/image_gen — no regression from the status gate', () => {
-    expect(deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'completed' })])).toHaveLength(1);
+    expect(
+      deriveOutputs([part('write', { filePath: '/a/report.md' }, { status: 'completed' })]),
+    ).toHaveLength(1);
     expect(
       deriveOutputs([part('image_gen', { action: 'generate' }, { status: 'completed' })]),
     ).toHaveLength(1);
@@ -436,9 +436,7 @@ describe('deriveContext', () => {
   // must never surface as something the agent inspected either. ────────────
 
   it('never surfaces a failed read in the Context files bucket', () => {
-    const { files } = deriveContext([
-      part('read', { filePath: '/a/one.ts' }, { status: 'error' }),
-    ]);
+    const { files } = deriveContext([part('read', { filePath: '/a/one.ts' }, { status: 'error' })]);
     expect(files).toEqual([]);
   });
 
@@ -452,5 +450,195 @@ describe('deriveContext', () => {
   it('never surfaces a failed tool call in the Context tools bucket', () => {
     const { tools } = deriveContext([part('bash', { command: 'ls' }, { status: 'error' })]);
     expect(tools).toEqual([]);
+  });
+});
+
+describe('deriveOutputs — running apps', () => {
+  it('surfaces a running app as an output, so the user can actually reach it', () => {
+    const out = deriveOutputs([
+      part('show', { url: 'http://localhost:3000', title: 'Landing page' }),
+    ]);
+    expect(out).toHaveLength(1);
+    const app = out[0];
+    expect(app.kind).toBe('app');
+    if (app.kind !== 'app') throw new Error('Expected a running app output');
+
+    // Compile-time contract: narrowing to `kind: "app"` must make the URL
+    // required, rather than leaving every caller to guard an optional field.
+    const url: string = app.url;
+    expect(url).toBe('http://localhost:3000');
+    expect(app.name).toBe('Landing page');
+  });
+
+  it('falls back to host:port when the agent gave no title', () => {
+    const out = deriveOutputs([part('show', { url: 'http://localhost:5173/' })]);
+    expect(out[0].name).toBe('localhost:5173');
+  });
+
+  it('deduplicates the same app shown twice', () => {
+    const out = deriveOutputs([
+      part('show', { url: 'http://localhost:3000', title: 'App' }),
+      part('show', { url: 'http://localhost:3000', title: 'App' }),
+    ]);
+    expect(out).toHaveLength(1);
+  });
+
+  it('never surfaces an app from a failed show call', () => {
+    const out = deriveOutputs([
+      part('show', { url: 'http://localhost:3000' }, { status: 'error' }),
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it('ignores a show call with no URL — that is a file, not an app', () => {
+    const out = deriveOutputs([part('show', { path: '/workspace/report.md' })]);
+    expect(out.every((o) => o.kind !== 'app')).toBe(true);
+  });
+
+  it('ignores a non-http URL', () => {
+    const out = deriveOutputs([part('show', { url: 'javascript:alert(1)' })]);
+    expect(out.every((o) => o.kind !== 'app')).toBe(true);
+  });
+});
+
+describe('deriveOutputs — files the agent SHOWED you', () => {
+  it('surfaces a shown spreadsheet — the deliverable, not a write call', () => {
+    const out = deriveOutputs([part('show', { path: '/workspace/report.xlsx' })]);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('report.xlsx');
+    expect(out[0].path).toBe('/workspace/report.xlsx');
+    expect(out[0].kind).toBe('file');
+  });
+
+  it('surfaces a shown PDF and a shown CSV', () => {
+    const out = deriveOutputs([
+      part('show', { path: '/workspace/q3.pdf' }),
+      part('show', { path: '/workspace/data.csv' }),
+    ]);
+    expect(out.map((o) => o.name)).toEqual(['q3.pdf', 'data.csv']);
+  });
+
+  it('reads the kind off the extension so the right renderer opens', () => {
+    const out = deriveOutputs([
+      part('show', { path: '/workspace/chart.png' }),
+      part('show', { path: '/workspace/demo.mp4' }),
+      part('show', { path: '/workspace/deck.pptx' }),
+    ]);
+    expect(out.map((o) => o.kind)).toEqual(['image', 'video', 'presentation']);
+  });
+
+  it('does not duplicate a file that was written and then shown', () => {
+    const out = deriveOutputs([
+      part('write', { filePath: '/workspace/report.md' }),
+      part('show', { path: '/workspace/report.md' }),
+    ]);
+    expect(out).toHaveLength(1);
+  });
+
+  it('never surfaces a file from a failed show', () => {
+    const out = deriveOutputs([
+      part('show', { path: '/workspace/report.xlsx' }, { status: 'error' }),
+    ]);
+    expect(out).toEqual([]);
+  });
+
+  it('a show with a URL is an app, not a file', () => {
+    const out = deriveOutputs([part('show', { url: 'http://localhost:3000' })]);
+    expect(out[0].kind).toBe('app');
+  });
+});
+
+describe('deriveOutputs — a show that hands over MANY things at once', () => {
+  it('surfaces every file in a multi-item show (the carousel case)', () => {
+    // Exactly the payload behind "All 5 files generated" — one show, five items,
+    // no top-level path. This produced ZERO Outputs rows before.
+    const out = deriveOutputs([
+      part('show', {
+        items: [
+          { type: 'csv', path: '/tmp/jay-files/jay_suthar_profile.csv' },
+          { type: 'xlsx', path: '/tmp/jay-files/jay_suthar_profile.xlsx' },
+          { type: 'docx', path: '/tmp/jay-files/jay_suthar_profile.docx' },
+          { type: 'pptx', path: '/tmp/jay-files/jay_suthar_profile.pptx' },
+          { type: 'pdf', path: '/tmp/jay-files/jay_suthar_profile.pdf' },
+        ],
+      }),
+    ]);
+
+    expect(out.map((o) => o.name)).toEqual([
+      'jay_suthar_profile.csv',
+      'jay_suthar_profile.xlsx',
+      'jay_suthar_profile.docx',
+      'jay_suthar_profile.pptx',
+      'jay_suthar_profile.pdf',
+    ]);
+    // The deck gets its own kind so it opens in the slides renderer.
+    expect(out.map((o) => o.kind)).toEqual(['file', 'file', 'file', 'presentation', 'file']);
+  });
+
+  it('handles a carousel mixing a running app and files', () => {
+    const out = deriveOutputs([
+      part('show', {
+        items: [
+          { type: 'url', url: 'http://localhost:3000', title: 'Live Site' },
+          { type: 'csv', path: '/tmp/data.csv' },
+        ],
+      }),
+    ]);
+    expect(out.map((o) => o.kind)).toEqual(['app', 'file']);
+    expect(out[0].name).toBe('Live Site');
+  });
+
+  it('skips carousel items with nothing to open (inline text, errors)', () => {
+    const out = deriveOutputs([
+      part('show', {
+        items: [
+          { type: 'text', content: 'here is a summary' },
+          { type: 'csv', path: '/tmp/data.csv' },
+        ],
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('data.csv');
+  });
+
+  it('does not double-count a file shown in a carousel and written earlier', () => {
+    const out = deriveOutputs([
+      part('write', { filePath: '/tmp/report.md' }),
+      part('show', { items: [{ type: 'file', path: '/tmp/report.md' }] }),
+    ]);
+    expect(out).toHaveLength(1);
+  });
+});
+
+describe('deriveOutputs — a show whose items arrive as a JSON STRING', () => {
+  // The real payload shape. `ShowTool` itself does
+  //   typeof raw === 'string' ? JSON.parse(raw) : raw
+  // because the model serializes `items` as a string. Anything that only checks
+  // Array.isArray silently sees nothing — which is exactly why five generated
+  // files rendered fine in the chat and appeared NOWHERE in Outputs.
+  it('parses stringified items and surfaces every file', () => {
+    const out = deriveOutputs([
+      part('show', {
+        items: JSON.stringify([
+          { type: 'csv', path: '/tmp/jay-files/jay_suthar_profile.csv' },
+          { type: 'xlsx', path: '/tmp/jay-files/jay_suthar_profile.xlsx' },
+          { type: 'docx', path: '/tmp/jay-files/jay_suthar_profile.docx' },
+          { type: 'pptx', path: '/tmp/jay-files/jay_suthar_profile.pptx' },
+          { type: 'pdf', path: '/tmp/jay-files/jay_suthar_profile.pdf' },
+        ]),
+      }),
+    ]);
+    expect(out.map((o) => o.name)).toEqual([
+      'jay_suthar_profile.csv',
+      'jay_suthar_profile.xlsx',
+      'jay_suthar_profile.docx',
+      'jay_suthar_profile.pptx',
+      'jay_suthar_profile.pdf',
+    ]);
+  });
+
+  it('survives malformed JSON without throwing', () => {
+    const out = deriveOutputs([part('show', { items: '[{"path": "/tmp/broken.csv"' })]);
+    expect(out).toEqual([]);
   });
 });

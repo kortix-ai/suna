@@ -125,7 +125,7 @@ export function SessionSiteHeader({
           dissolves into the page instead of hitting a hard rule. Gradient has
           to sit over the content — painting it inside the row would just fade
           background into the identical background behind it, i.e. invisible. */}
-      <div className="after:from-background relative z-20 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
+      <div className="after:from-background relative z-50 w-full after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-linear-to-b after:to-transparent">
         {/* Hidden sidebar on desktop: drop the whole row onto the title-bar
             line (children h-[28px] → center y≈26, matching the traffic lights
             and the shell's Open-sidebar toggle), and indent the leading side

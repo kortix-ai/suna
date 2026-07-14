@@ -2,7 +2,9 @@ import { describe, expect, it } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import { deriveIsRunning, outputKey, shouldAutoExpandOutputs } from './easy-panel-logic';
 
-function output(overrides: Partial<OutputItem> = {}): OutputItem {
+type FileOutputItem = Exclude<OutputItem, { kind: 'app' }> & { kind: 'file' };
+
+function output(overrides: Partial<FileOutputItem> = {}): FileOutputItem {
   return { callID: 'call-1', name: 'report.md', kind: 'file', ...overrides };
 }
 

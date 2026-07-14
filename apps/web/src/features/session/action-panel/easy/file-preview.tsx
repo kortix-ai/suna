@@ -16,7 +16,14 @@
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
+import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
+import {
+  type FileCategory,
+  FileContentRenderer,
+  FileSourceProvider,
+  getFileCategory,
+} from '@/features/file-viewer';
 import { getFileIcon } from '@/features/project-files';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { FileWarning, Maximize2, Minimize2 } from 'lucide-react';
@@ -67,7 +74,7 @@ function PreviewShell({
           <CloseButton onClose={onClose} />
         </span>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto px-4 pb-4">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto  pb-4">{children}</div>
     </div>
   );
 }
@@ -80,6 +87,25 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Formats with a real renderer of their own — a spreadsheet is a grid, a PDF is
+ * pages, a deck is slides. `FileViewer` only knows how to show text (markdown,
+ * HTML, source), so without this a CSV or an .xlsx or a PDF — exactly what a
+ * non-technical user asks for — would hit "this file can't be previewed here"
+ * despite the app already shipping a renderer for every one of them.
+ */
+const RICH_CATEGORIES = new Set<FileCategory>([
+  'pdf',
+  'docx',
+  'pptx',
+  'xlsx',
+  'csv',
+  'sqlite',
+  'video',
+  'audio',
+  'image',
+]);
+
 export function FilePreview({
   path,
   name,
@@ -91,7 +117,21 @@ export function FilePreview({
    *  owns the name and the close, so there is one bar instead of two. */
   onClose: () => void;
 }) {
-  const { data, isLoading, isError, error } = useFileContent(path);
+  const rich = RICH_CATEGORIES.has(getFileCategory(name));
+
+  // The rich renderers fetch their own bytes (and stream the big ones), so
+  // pulling the whole file into a string here first would be wasted work.
+  const { data, isLoading, isError, error } = useFileContent(path, { enabled: !rich });
+
+  if (rich) {
+    return (
+      <PreviewShell name={name} path={path} onClose={onClose}>
+        <FileSourceProvider value={workspaceFileSource}>
+          <FileContentRenderer filePath={path} showHeader={false} className="h-full" />
+        </FileSourceProvider>
+      </PreviewShell>
+    );
+  }
 
   if (isLoading) {
     return (

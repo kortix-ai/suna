@@ -4,13 +4,14 @@
  * `EasyPanel` — the non-technical home for a session's right panel: three
  * promise cards (Progress / Outputs / Context) over the same tool-call data
  * `AdvancedPanel` renders one-at-a-time. Same props shape as `AdvancedPanel`
- * (plus the project ids the file drill-in needs) so `session-layout.tsx` can
- * swap between them freely.
+ * (plus the session's busy flag) so `session-layout.tsx` can swap between them
+ * freely.
  *
  * Easy mode is chrome-free: no tab strip, no header, no border. The panel IS
  * the three cards. They expand in place and never navigate away from each
- * other — the only thing that ever replaces them is a file opened from
- * Outputs, which has nowhere else to go.
+ * other — the only thing that ever replaces them is a detail (a step's tool
+ * views, a Context group, a file, a running app), and the panel owns that,
+ * because a card cannot replace its own parent.
  *
  * Must use `collectAllToolParts`, not `collectToolParts`: the latter strips
  * `read`/`skill` parts, which is correct for Advanced's one-at-a-time
@@ -26,24 +27,23 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
 import { groupSteps } from '../shared/group-steps';
+import { sortOutputs } from '../shared/output-priority';
+import { AppPreview } from './app-preview';
 import { ContextCard } from './context-card';
 import { type Detail, DetailLayer } from './detail-view';
 import { deriveIsRunning, shouldAutoExpandOutputs } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
+import { AppsCard } from './apps-card';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 
 export const EasyPanel = memo(function EasyPanel({
   sessionId,
   messages,
-  projectId,
-  projectSessionId,
   isSessionBusy = false,
 }: {
   sessionId: string;
   messages: MessageWithParts[] | undefined;
-  projectId?: string;
-  projectSessionId?: string;
   /** The session's own busy/retry status — see `deriveIsRunning`. */
   isSessionBusy?: boolean;
 }) {
@@ -51,6 +51,18 @@ export const EasyPanel = memo(function EasyPanel({
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const outputs = useMemo(() => deriveOutputs(parts), [parts]);
   const context = useMemo(() => deriveContext(parts), [parts]);
+
+  // A running app is not "one of" the outputs — it's the thing the user asked
+  // for, and a list flattens it into row 13 of 13 under a dozen .tsx files they
+  // never wanted. It gets its own card; Outputs keeps the files.
+  const apps = useMemo(() => outputs.filter((o) => o.kind === 'app'), [outputs]);
+  // Sorted, not filtered: everything the agent produced is still here, but the
+  // report leads and the twelve files it took to build the report follow. See
+  // `sortOutputs` — chronological order buries the answer under its scaffolding.
+  const files = useMemo(
+    () => sortOutputs(outputs.filter((o) => o.kind !== 'app')),
+    [outputs],
+  );
 
   // Part-derived alone flickers between tool calls (assistant text streams
   // with no part running/pending) — OR it with the session's own status so
@@ -74,11 +86,11 @@ export const EasyPanel = memo(function EasyPanel({
   const wasRunningRef = useRef(isRunning);
   const [outputsDefaultOpen, setOutputsDefaultOpen] = useState(false);
   useEffect(() => {
-    if (shouldAutoExpandOutputs(wasRunningRef.current, isRunning, outputs.length)) {
+    if (shouldAutoExpandOutputs(wasRunningRef.current, isRunning, files.length)) {
       setOutputsDefaultOpen(true);
     }
     wasRunningRef.current = isRunning;
-  }, [isRunning, outputs.length]);
+  }, [isRunning, files.length]);
 
   // A tool call clicked in the chat transcript opens the Progress card with
   // that step's real tool view already expanded.
@@ -91,36 +103,35 @@ export const EasyPanel = memo(function EasyPanel({
     clearFocusedToolCall();
   }, [focusedToolCallId, steps, clearFocusedToolCall]);
 
-  // Clicking an output must actually open the file. Easy mode has no tab
-  // strip, so flipping the shared panel's `viewBySession` (what
-  // `requestFileOpen` also does, as a side effect) would point at a view
-  // nothing here renders — worse, it would silently overwrite whatever view
-  // Advanced mode had last shown, breaking `session-layout.tsx`'s invariant
-  // that Easy mode leaves `viewBySession` untouched so Advanced resumes right
-  // where the user left it. This drills into a `SessionFilesExplorer` mounted
-  // right here instead, and uses `requestFileOpenSilently` — the same
-  // file-open-request nonce, without the `viewBySession` write — so that
-  // instance's file-open-request effect actually fires on mount.
-  // Opening an output shows THAT FILE — not the file manager. Mounting the
-  // whole explorer (tree, search, breadcrumbs, git chips) to display one path
-  // the user already named is a filing cabinet in answer to "show me the page".
+  /**
+   * Opening an output shows the THING, not the machinery around it: a running
+   * app opens as the app, a file opens as that one file — never the file
+   * manager, which is a filing cabinet in answer to "show me the page".
+   *
+   * Both bring their own toolbar, so the layer's header is suppressed for both
+   * (one bar, not two), and both fill the pane, so neither takes the layer's
+   * padding.
+   */
   const handleOpenOutput = useCallback((output: OutputItem) => {
+    if (output.kind === 'app' && output.url) {
+      setDetail({
+        key: `app:${output.url}`,
+        title: output.name,
+        hideHeader: true,
+        padded: false,
+        body: <AppPreview url={output.url} name={output.name} onClose={() => setDetail(null)} />,
+      });
+      return;
+    }
+
     if (!output.path) return;
     setDetail({
       key: `file:${output.path}`,
       title: output.name,
       icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
-      // The preview brings its own toolbar (view toggle, file name, copy,
-      // full screen, close) — the layer's header would just repeat it.
       hideHeader: true,
       padded: false,
-      body: (
-        <FilePreview
-          path={output.path}
-          name={output.name}
-          onClose={() => setDetail(null)}
-        />
-      ),
+      body: <FilePreview path={output.path} name={output.name} onClose={() => setDetail(null)} />,
     });
   }, []);
 
@@ -141,7 +152,7 @@ export const EasyPanel = memo(function EasyPanel({
           onCloseDetail={goHome}
         />
         <OutputsCard
-          outputs={outputs}
+          outputs={files}
           defaultExpanded={outputsDefaultOpen}
           onOpenOutput={handleOpenOutput}
         />
@@ -152,6 +163,7 @@ export const EasyPanel = memo(function EasyPanel({
           sessionId={sessionId}
           onOpenDetail={setDetail}
         />
+        {apps.length > 0 && <AppsCard apps={apps} onOpenApp={handleOpenOutput} />}
       </div>
     </DetailLayer>
   );

@@ -14,20 +14,38 @@
  */
 
 import type { ToolPart } from '@/ui';
-import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
+import { parseImageOutput } from '../../image-output-path';
 import type { PatchFileLite } from '../../tool/shared/patch-helpers';
 import { parsePresentationOutput } from '../../tool/shared/presentation-helpers';
-import { parseImageOutput } from '../../image-output-path';
-import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
 import { looksLikeHtml, parseWebSearchOutput, wsDomain } from '../../tool/shared/web-helpers';
+import { getToolPrimaryArg, normalizeName } from '../../tool/tool-meta';
+import { extractReadableHtml } from '../../tool/tool-renderers-sanitization';
 import { createArtifactKind, familyForTool, humanizeToolName } from './narration';
 
-export interface OutputItem {
+interface OutputItemBase {
   callID: string;
   name: string;
-  path?: string;
-  kind: 'file' | 'image' | 'video' | 'presentation';
 }
+
+type ArtifactOutputItem = OutputItemBase & {
+  kind: 'file' | 'image' | 'video' | 'presentation';
+  path?: string;
+  url?: never;
+};
+
+type AppOutputItem = OutputItemBase & {
+  kind: 'app';
+  path?: never;
+  /**
+   * The URL the thing is running at. When a user asks for a web page
+   * or a React app, the deliverable is not a file on disk — it's a server on a
+   * port. Outputs has to be able to hand them the *running thing*, or the one
+   * output they actually wanted is the one they can't reach.
+   */
+  url: string;
+};
+
+export type OutputItem = ArtifactOutputItem | AppOutputItem;
 
 export interface ContextItem {
   callID: string;
@@ -191,9 +209,31 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
     }
 
     if (family === 'create') {
-      // image_gen / video_gen / presentation_gen / show / show_user — ask
-      // narration.ts's own action tables whether this specific call made
-      // anything, rather than assuming every call to these tool names did.
+      // `show` is the agent HANDING OVER what it produced — a running site, a
+      // spreadsheet, a deck. `createArtifactKind` returns null for it, rightly:
+      // showing a file isn't *making* one, and narration must never claim it
+      // did. But Outputs asks a different question — "is there something here I
+      // can open?" — and for a shown artifact the answer is plainly yes.
+      //
+      // One `show` can hand over SEVERAL things at once (the chat renders them
+      // as a carousel), so this yields a list, not a single item. That is the
+      // whole reason a run that produced a CSV, an XLSX, a DOCX, a PPTX and a
+      // PDF in one show showed *none* of them: the payload had no top-level
+      // path, only `items[]`.
+      const shown = showOutputsOf(part);
+      if (shown.length > 0) {
+        for (const item of shown) {
+          const key = item.url ?? item.path ?? item.name;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(item);
+        }
+        continue;
+      }
+
+      // image_gen / video_gen / presentation_gen — ask narration.ts's own action
+      // tables whether this specific call made anything, rather than assuming
+      // every call to these tool names did.
       const kind = createArtifactKind(part);
       if (!kind) continue;
       const { name, path } = createArtifactName(part);
@@ -202,6 +242,116 @@ export function deriveOutputs(parts: ToolPart[]): OutputItem[] {
   }
 
   return out;
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif|heic|bmp)$/i;
+const VIDEO_EXT = /\.(mp4|mov|webm|avi|mkv)$/i;
+const DECK_EXT = /\.(pptx?|key)$/i;
+
+/** One thing a `show` can hand over — the shape of both its top-level input and
+ *  each entry in its `items[]`. */
+interface ShowPayload {
+  path?: unknown;
+  url?: unknown;
+  title?: unknown;
+}
+
+/** A single shown thing → the row it becomes, or null if there's nothing to open. */
+function showPayloadToOutput(payload: ShowPayload, callID: string): OutputItem | null {
+  const url = typeof payload.url === 'string' ? payload.url.trim() : '';
+  if (url && /^https?:\/\//i.test(url)) return appOutput(url, payload.title, callID);
+
+  const path = typeof payload.path === 'string' ? payload.path.trim() : '';
+  // No path and no URL: a string, an inline chunk of text, an error message.
+  // Real, but not a thing you can open — and a row you can't click is worse
+  // than no row.
+  if (!path) return null;
+
+  const name = basename(path) || path;
+  // The kind drives the row's glyph AND which renderer opens: a sheet must open
+  // as a grid, not as a wall of text.
+  const kind: OutputItem['kind'] = IMAGE_EXT.test(name)
+    ? 'image'
+    : VIDEO_EXT.test(name)
+      ? 'video'
+      : DECK_EXT.test(name)
+        ? 'presentation'
+        : 'file';
+
+  return { callID, name, path, kind };
+}
+
+/**
+ * Everything a single `show` call hands over.
+ *
+ * `show` is how the agent says "here is what you asked for", and it's the only
+ * signal we get for files it produced with a *script* rather than by writing
+ * them directly — a `.pdf` from pandoc, an `.xlsx` from python, a `.csv` from a
+ * query. Those are never `write` calls, so without this they sit on disk and
+ * appear nowhere.
+ *
+ * Crucially, ONE show can carry MANY things: the agent generates five files and
+ * shows them together (the chat renders that as a carousel). The payload then
+ * has no top-level `path` at all — only `items[]` — which is exactly why a run
+ * that produced a CSV, XLSX, DOCX, PPTX and PDF surfaced none of them.
+ */
+function showOutputsOf(part: ToolPart): OutputItem[] {
+  const tool = normalizeName(part.tool);
+  if (tool !== 'show' && tool !== 'show_user') return [];
+
+  const input = (part.state?.input ?? {}) as Record<string, unknown> & ShowPayload;
+
+  const items = parseShowItems(input.items);
+  if (items.length > 0) {
+    return items
+      .map((item) => showPayloadToOutput(item ?? {}, part.callID))
+      .filter((item): item is OutputItem => item !== null);
+  }
+
+  const single = showPayloadToOutput(input, part.callID);
+  return single ? [single] : [];
+}
+
+/**
+ * `items` reaches us as EITHER an array or a JSON string — the model serializes
+ * it, and nothing downstream normalizes that before it lands in `state.input`.
+ * `ShowTool` handles both (`typeof raw === 'string' ? JSON.parse(raw) : raw`),
+ * which is why the chat rendered all five files perfectly while Outputs showed
+ * none of them: an `Array.isArray` check sees a string and quietly moves on.
+ */
+function parseShowItems(raw: unknown): ShowPayload[] {
+  if (Array.isArray(raw)) return raw as ShowPayload[];
+  if (typeof raw !== 'string') return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ShowPayload[]) : [];
+  } catch {
+    // Half-streamed or malformed JSON. Show nothing rather than throw and take
+    // the whole panel down with it.
+    return [];
+  }
+}
+
+/**
+ * A running app, if this call is handing one over.
+ *
+ * Named for the user's word, not the machine's: they asked for "a landing page"
+ * or "a dashboard", and what they get back is a thing they can open. The port
+ * number is the fallback name, never the first choice — `localhost:3000` means
+ * nothing to someone who has never run a server.
+ */
+function appOutput(url: string, rawTitle: unknown, callID: string): AppOutputItem {
+  const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+
+  let fallback = url;
+  try {
+    const parsed = new URL(url);
+    fallback = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+  } catch {
+    // A URL we can't parse still opens fine — just show it as-is.
+  }
+
+  return { callID, name: title || fallback, kind: 'app', url };
 }
 
 /**

@@ -1,22 +1,27 @@
 'use client';
 
 /**
- * `OutputsCard` — "what the agent MADE." An expander (not a drill-in like
- * Progress): the card toggles open in place, and each row inside is its own
- * navigation into a file viewer (see `EasyPanel`'s `onOpenOutput`).
+ * `OutputsCard` — "what you got." Everything the agent produced that you can
+ * actually open, which is not only files: ask for a landing page or a React app
+ * and the deliverable is a server on a port, with nothing on disk to click. A
+ * running app is an output in every sense the user cares about, so it sits in
+ * this list beside the spreadsheets and the PDFs. Each row opens in the detail
+ * layer (see `EasyPanel`'s `onOpenOutput`).
  *
  * Empty, it is a promise: soft placeholder art + one plain sentence, exactly
- * `PanelCard`'s contract — no technical detail until there is something to
- * show.
+ * `PanelCard`'s contract — no technical detail until there is something to show.
  */
 
 import { getFileIcon } from '@/features/project-files';
 import {
+  AppWindow,
+  ChevronDown,
   FileText,
   Image as ImageIcon,
   Presentation as PresentationIcon,
   Video as VideoIcon,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { outputKey } from './easy-panel-logic';
 import { PanelCard } from './panel-card';
@@ -26,13 +31,14 @@ const KIND_ICON = {
   image: ImageIcon,
   video: VideoIcon,
   presentation: PresentationIcon,
+  app: AppWindow,
 } as const;
 
 /**
  * A file gets its real per-extension glyph (the `.md` tile, the `.png` tile) —
  * the same one the files explorer uses, so an output looks like the thing the
- * user will open. Generated media has no filename to key off, so it keeps its
- * kind icon.
+ * user will open. A running app and generated media have no filename to key off,
+ * so they keep their kind icon.
  */
 function OutputIcon({ output }: { output: OutputItem }) {
   const tile = ' flex size-7 shrink-0 items-center justify-center rounded-sm';
@@ -53,36 +59,74 @@ function OutputIcon({ output }: { output: OutputItem }) {
   );
 }
 
+/** An output leads somewhere only if there's something to open: a file has a
+ *  path, a running app has a URL. Media the agent generated may have neither. */
+function isOpenable(output: OutputItem): boolean {
+  return Boolean(output.path || output.url);
+}
+
 /**
- * The list of files, as tappable rows. Shared: the Outputs card uses it, and so
- * does a Progress step that touched more than one file — a "Wrote 3 files" step
- * and the Outputs card are showing the same kind of thing, so they should look
- * like the same kind of thing.
+ * The outputs, as tappable rows. Shared: the Outputs card uses it, and so does a
+ * Progress step that touched more than one file — a "Wrote 3 files" step and the
+ * Outputs card are showing the same kind of thing, so they should look like the
+ * same kind of thing.
  */
+/**
+ * How many rows before the rest folds away. The list arrives sorted by what a
+ * person came for (see `sortOutputs`), so the first rows are always the
+ * deliverables — which means the fold can only ever hide scaffolding, never the
+ * thing the user asked for. A run touching 200 files would otherwise turn this
+ * card into the whole panel.
+ */
+const VISIBLE_LIMIT = 8;
+
 export function OutputRows({
   outputs,
   onOpenOutput,
 }: {
   outputs: OutputItem[];
-  /** Only called for outputs with a real path — see the disabled state below. */
+  /** Only called for outputs that are actually openable — see `isOpenable`. */
   onOpenOutput: (output: OutputItem) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const hidden = Math.max(0, outputs.length - VISIBLE_LIMIT);
+  const visible = showAll ? outputs : outputs.slice(0, VISIBLE_LIMIT);
+
   return (
-    <ul className="flex flex-col gap-0">
-      {outputs.map((o) => (
-        <li key={outputKey(o)}>
-          <button
-            type="button"
-            disabled={!o.path}
-            onClick={() => o.path && onOpenOutput(o)}
-            className="flex items-center gap-2.5 py-1.5 px-1 -mx-0.5 rounded-sm w-full text-left hover:bg-accent"
-          >
-            <OutputIcon output={o} />
-            <span className="text-foreground truncate text-sm">{o.name}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-0">
+        {visible.map((o) => (
+          <li key={outputKey(o)}>
+            <button
+              type="button"
+              disabled={!isOpenable(o)}
+              onClick={() => isOpenable(o) && onOpenOutput(o)}
+              className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left disabled:cursor-default"
+            >
+              <OutputIcon output={o} />
+              <span className="text-foreground truncate text-sm">{o.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {hidden > 0 && !showAll && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="text-muted-foreground hover:text-foreground hover:bg-accent -mx-0.5 mt-0.5 flex w-full cursor-pointer items-center gap-2.5 rounded-sm px-1 py-1.5 text-left text-sm transition-colors"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center">
+            <ChevronDown className="size-3.5" />
+          </span>
+          {/* Say what they are, not just how many — "8 more" is a mystery box;
+              "8 more files" is a decision the user can make without clicking. */}
+          <span className="truncate">
+            {hidden} more {hidden === 1 ? 'file' : 'files'}
+          </span>
+        </button>
+      )}
+    </>
   );
 }
 
@@ -103,7 +147,9 @@ export function OutputsCard({
       isEmpty={outputs.length === 0}
       defaultExpanded={defaultExpanded}
       emptyArt={<OutputsArt />}
-      emptyText="View and open files created during this task."
+      // Not "files": a landing page or an app is an output too, and promising
+      // only files would make the row that opens one look like a mistake.
+      emptyText="Open the files and apps created during this task."
       // The card body carries the horizontal padding; the rows carry none, so a
       // row's tint runs the full width of the list instead of being inset twice.
       contentClassName="border-border border-t px-2 py-2"
