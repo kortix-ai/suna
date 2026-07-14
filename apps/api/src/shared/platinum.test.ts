@@ -75,3 +75,91 @@ test('platinumJson respects an explicit caller-provided signal instead of the de
   const elapsed = Date.now() - start;
   expect(elapsed).toBeLessThan(2_000);
 });
+
+// Platinum auto-stops idle microVMs natively; while a box is stopped, POST
+// /:id/expose answers `409 {"code":"sandbox_not_running"}`. That is an EXPECTED
+// state — the caller wakes+retries or surfaces a retryable 503 — and must NOT
+// page Sentry. So platinumJson classifies it into a typed
+// PlatinumSandboxNotRunningError, while every OTHER non-2xx stays a generic
+// Error (captured normally). Regression for Better Stack error
+// ea98adefe8696ddbe341f3280fe699c230f8f0fb31221e7a5740a91f485085f0
+// (`platinum POST /v1/sandboxes/.../expose -> 409 {"code":"sandbox_not_running"}`).
+//
+// These drive the global fetch directly (no live server) so the classification
+// is exercised deterministically without Bun.serve bind/stop timing.
+
+const originalFetch = globalThis.fetch;
+let fetchScenario: { status: number; body: string } = { status: 409, body: '' };
+
+function mockFetchScenario() {
+  const handler = (): Promise<Response> =>
+    Promise.resolve(
+      new Response(fetchScenario.body, {
+        status: fetchScenario.status,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  globalThis.fetch = handler as unknown as typeof fetch;
+}
+
+test('platinumJson throws PlatinumSandboxNotRunningError on 409 sandbox_not_running', async () => {
+  fetchScenario = {
+    status: 409,
+    body: JSON.stringify({ error: 'sandbox not running', code: 'sandbox_not_running' }),
+  };
+  mockFetchScenario();
+
+  const { platinumJson, isPlatinumSandboxNotRunningError, PlatinumSandboxNotRunningError } =
+    await import('./platinum');
+
+  const err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
+  expect(err).toBeInstanceOf(PlatinumSandboxNotRunningError);
+  expect(isPlatinumSandboxNotRunningError(err)).toBe(true);
+  // The original diagnostics survive on the message so debugging still works.
+  expect((err as Error).message).toContain('409');
+  expect((err as Error).message).toContain('/expose');
+  expect((err as Error).name).toBe('PlatinumSandboxNotRunningError');
+
+  globalThis.fetch = originalFetch;
+});
+
+test('a 409 with a DIFFERENT code stays a generic Error (not misclassified as not-running)', async () => {
+  fetchScenario = {
+    status: 409,
+    body: JSON.stringify({ error: 'port already exposed', code: 'port_in_use' }),
+  };
+  mockFetchScenario();
+
+  const { platinumJson, isPlatinumSandboxNotRunningError } = await import('./platinum');
+  const err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
+  expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
+  expect(err).toBeInstanceOf(Error);
+  expect((err as Error).name).toBe('Error');
+  expect((err as Error).message).toContain('409');
+
+  globalThis.fetch = originalFetch;
+});
+
+test('a 500 / non-JSON 409 stays a generic Error (unexpected failures stay loud)', async () => {
+  const { platinumJson, isPlatinumSandboxNotRunningError } = await import('./platinum');
+
+  // 500 with a JSON body — a real upstream error, must NOT be classified.
+  fetchScenario = { status: 500, body: JSON.stringify({ error: 'internal' }) };
+  mockFetchScenario();
+  let err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
+  expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
+  expect(err).toBeInstanceOf(Error);
+  expect((err as Error).name).toBe('Error');
+  expect((err as Error).message).toContain('500');
+
+  // 409 with a NON-JSON body — the `code` field can't be parsed, so it must
+  // NOT be classified (falls back to the generic Error).
+  fetchScenario = { status: 409, body: 'not json at all' };
+  err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
+  expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
+  expect(err).toBeInstanceOf(Error);
+  expect((err as Error).name).toBe('Error');
+  expect((err as Error).message).toContain('409');
+
+  globalThis.fetch = originalFetch;
+});

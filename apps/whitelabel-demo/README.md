@@ -56,13 +56,12 @@ SDK-only rule, the same way raw `fetch` is correct *inside* `@kortix/sdk` itself
 
 ### Facade coverage
 
-This reference exercises **the `@kortix/sdk` facade end to end** — chat-first
-core plus the product surfaces around it (review/approvals, gateway
-observability, channels, apps, billing reads, account tokens + audit). Every
-method listed below has a real UI surface (a deliberate goal so nothing in
-this list is left undemonstrated). Still out of scope: enterprise IAM
-(SSO/SCIM/groups), Stripe checkout flows, the marketplace, and the platform
-admin console — operator surfaces that live in `apps/web`:
+This reference exercises **the core `@kortix/sdk` facade a chat-first product
+needs** — every method listed below has a real UI surface (a deliberate goal
+so nothing in this list is left undemonstrated). Newer platform-admin surfaces
+— Review Center, Approvals, Gateway observability, and Slack/email/Meet channels
+— aren't part of this lightweight reference; they live
+in `apps/web`:
 
 - **accounts** (`/account`): `list/get/create/updateName/leave/members/invite/removeMember/updateMemberRole/invites` · `tokens.{list,create,revoke}` · `audit.log`
 - **billing** (`/account`, read-only): `accountState/transactions/transactionsSummary/creditBreakdown`

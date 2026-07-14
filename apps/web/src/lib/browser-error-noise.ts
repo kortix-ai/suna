@@ -194,6 +194,47 @@ const OLD_BROWSER_SYNTAX_PARSE_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /^Cannot use import statement outside a module$/,
 ];
 
+// Android System WebView native-bridge instrumentation noise. The Android
+// WebView injects a synthetic `app://navigation_performance_logger_android`
+// script that records navigation timing (FBNavResponseStart / FBNavDomContent-
+// Loaded / …) and ships it back to its native Java bridge via
+// `sendDataToNative` → `postMessage`. The bridge holds only a WEAK reference
+// to its Java object, so once that object is garbage-collected — page
+// navigation, WebView teardown, or the host in-app browser (Threads/Barcelona,
+// Facebook, Instagram, …) dismissing the tab — the next `postMessage` throws
+// `Error invoking postMessage: Java object is gone`. This is the WebView's OWN
+// instrumentation, never first-party code: `app://navigation_performance_logger_android`
+// is a synthetic source injected by the System WebView (NOT an `app:///_next/…`
+// bundle frame and NOT a de-minified `apps/web/src/…` frame), and
+// `sendDataToNative` / `sendJsBlockingTimeMessage` are its internal functions.
+// Sentry's `BrowserApiErrors` integration auto-wraps `addEventListener` on
+// `EventTarget`, captures the throw, and leaks it to Better Stack as a global
+// error. Seen once (pattern `e6a45fe4…`, 1 occurrence, 0 identified users,
+// 2026-07-12 19:31:47 UTC) from a Threads (Barcelona) in-app WebView on Android
+// 14 / Chrome 149 visiting the marketing homepage (`https://kortix.com/`,
+// referer `https://l.threads.com/`).
+//
+// The message wording is generic enough that a genuine first-party
+// `window.postMessage` failure could conceivably share it, so — like the
+// stale-webpack-runtime and old-browser-SyntaxError classes — this is anchored
+// on BOTH the exact message AND a frame whose filename is the Android
+// navigation-performance-logger bridge source. A real app `postMessage` error
+// throws inside an `app:///_next/…` chunk (or a de-minified `apps/web/src/…`
+// frame), never from `app://navigation_performance_logger_android`, so it keeps
+// reporting. Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors`
+// list — that gate has no frame context, so a bare-string match there could
+// swallow a real first-party postMessage failure; the frame-aware `beforeSend`
+// hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES = [
+  'Error invoking postMessage: Java object is gone',
+] as const;
+
+const ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE = 'app://navigation_performance_logger_android';
+
+function isAndroidNavPerfLoggerFrame(filename: unknown): boolean {
+  return normalizeString(filename) === ANDROID_NAV_PERF_LOGGER_FRAME_SOURCE;
+}
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -238,6 +279,40 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   /^app:\/\/\/client_data\/[^/]+\/script\.js$/,
   /^app:\/\/\/embed\/embed\.js$/,
 ] as const;
+
+// TronLink (Tron blockchain wallet) browser-extension injected-script noise.
+// The TronLink extension injects a content script
+// (`app:///injected/injected.js`, function `BI`) that wraps a page object
+// (e.g. `window`) in a Proxy and exposes a `tronlinkParams` property for its
+// dapp provider. When the extension's own injected code — or another on-page
+// script — attempts a `set` on that proxied object and the trap declines the
+// assignment (returns falsish), the engine throws
+// `TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'`
+// (V8) / `proxy set handler returned false for property 'tronlinkParams'`
+// (SpiderMonkey). The throw originates INSIDE the extension's injected script,
+// never in first-party app code: `tronlinkParams` is a TronLink-private
+// property our app never touches. Better Stack pattern `951c1a31…`, Kortix
+// Frontend (prod, application_id 2346967), 2 occurrences, 0 identified users,
+// first/last 2026-07-12, call site `app:///injected/injected.js` function `BI`.
+//
+// The `'set' on proxy: trap returned falsish for property '<X>'` wording is a
+// GENERIC Proxy `set`-trap failure that legitimate first-party Proxy users
+// (MobX / Immer / Zustand middleware / a hand-rolled `new Proxy(...)` guard)
+// can also throw when their `set` trap returns `false`. Matching on message
+// alone would swallow those real app Proxy bugs. Require BOTH the
+// TronLink-specific property name AND an injected/extension frame/source so a
+// real first-party Proxy `set` failure keeps reporting.
+const TRONLINK_PROXY_NOISE_PATTERNS: ReadonlyArray<RegExp> = [
+  // V8 (Chrome/Edge/Opera): the observed production wording.
+  /'set' on proxy: trap returned falsish for property 'tronlinkParams'/,
+  // SpiderMonkey (Firefox): different engine, same TronLink property.
+  /proxy set handler returned false for property 'tronlinkParams'/,
+]
+
+function isTronLinkInjectedSource(filename: unknown): boolean {
+  const normalized = normalizeString(filename);
+  return /^app:\/\/\/injected\/injected\.js$/.test(normalized);
+}
 
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => message.includes(pattern));
@@ -356,6 +431,38 @@ export function isExtensionSource(filename: unknown): boolean {
 export function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Whether a Sentry / window.onerror event is the TronLink browser-extension
+ * injected-Proxy `set`-trap noise class: a `'set' on proxy: trap returned
+ * falsish for property 'tronlinkParams'` `TypeError` thrown from the
+ * extension's own injected script (`app:///injected/injected.js`) or an
+ * extension-origin frame. TronLink wraps a page object in a Proxy and exposes
+ * `tronlinkParams` for its dapp provider; the throw is in the extension, never
+ * in first-party app code. Requires BOTH the TronLink-specific property name
+ * AND an injected/extension source so a real first-party Proxy `set` failure
+ * (MobX/Immer/Zustand/hand-rolled Proxy) keeps reporting. Returns false when
+ * there is no source anchor at all (can't confirm extension origin — keep
+ * reporting rather than swallow a possible app Proxy bug). See
+ * `TRONLINK_PROXY_NOISE_PATTERNS` for the full rationale.
+ */
+export function isTronLinkProxyNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const stripped = stripErrorWrappers(normalizeString(input.message));
+  if (!TRONLINK_PROXY_NOISE_PATTERNS.some((re) => re.test(stripped))) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some(
+    (filename) => isTronLinkInjectedSource(filename) || isExtensionSource(filename),
+  );
 }
 
 export function isKnownTestNoiseMessage(message: unknown): boolean {
@@ -529,6 +636,41 @@ export function isOldBrowserSyntaxParseError(input: {
   return sources.some((filename) => isMinifiedChunkSource(filename));
 }
 
+/**
+ * Whether an event is the Android System WebView native-bridge
+ * `Error invoking postMessage: Java object is gone` noise class: the WebView's
+ * injected `app://navigation_performance_logger_android` script calls
+ * `sendDataToNative` → `postMessage` on a native Java bridge whose object has
+ * been garbage-collected (page navigation / WebView teardown / in-app browser
+ * dismiss). This is the WebView's own instrumentation, not first-party code.
+ * Requires BOTH the exact message AND a frame whose filename is the Android
+ * navigation-performance-logger bridge source, so a genuine first-party
+ * `window.postMessage` failure (which throws from an app chunk or a
+ * de-minified `apps/web/src/…` frame) keeps reporting. Never page Better Stack
+ * for this class. See
+ * `ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES` for the full
+ * rationale.
+ */
+export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (
+    !ANDROID_WEBVIEW_NATIVE_BRIDGE_POSTMESSAGE_NOISE_MESSAGES.some(
+      (noise) => message === noise,
+    )
+  ) {
+    return false;
+  }
+  const sources = [
+    input.filename,
+    ...(input.frames ?? []).map((frame) => frame?.filename),
+  ];
+  return sources.some((filename) => isAndroidNavPerfLoggerFrame(filename));
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -605,7 +747,30 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Android System WebView native-bridge instrumentation noise — the WebView's
+  // injected `app://navigation_performance_logger_android` script
+  // `sendDataToNative` → `postMessage` to a GC'd Java bridge object. Requires
+  // BOTH the exact message AND the Android bridge frame/filename, so a real
+  // first-party `window.postMessage` failure keeps reporting.
+  if (
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message,
+      filename: input.filename,
+    })
+  ) {
+    return true;
+  }
+
   if (isInjectedAppSource(input.filename)) {
+    return true;
+  }
+
+  // TronLink browser-extension injected-Proxy `set`-trap noise — the
+  // extension's `injected.js` wraps a page object in a Proxy and a `set` on
+  // `tronlinkParams` is declined. Requires BOTH the TronLink property name AND
+  // an injected/extension source so a real first-party Proxy `set` failure
+  // keeps reporting. See `isTronLinkProxyNoise`.
+  if (isTronLinkProxyNoise({ message, filename: input.filename })) {
     return true;
   }
 
@@ -711,6 +876,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Android System WebView native-bridge instrumentation noise — the WebView's
+  // injected `app://navigation_performance_logger_android` script
+  // `sendDataToNative` → `postMessage` to a GC'd Java bridge object, captured
+  // by Sentry's `BrowserApiErrors` addEventListener auto-wrapper. Requires BOTH
+  // the exact message AND a frame whose filename is the Android bridge source,
+  // so a genuine first-party `window.postMessage` failure keeps reporting. Not
+  // in `ignoreErrors` (no frame context there).
+  if (isAndroidWebViewNativeBridgePostMessageNoise({ message, frames })) {
+    return true;
+  }
+
   if (environment === 'test' || environment.startsWith('e2e')) {
     return true;
   }
@@ -738,6 +914,15 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (frames.some((frame) => isInjectedAppSource(frame.filename))) {
+    return true;
+  }
+
+  // TronLink browser-extension injected-Proxy `set`-trap noise — the
+  // extension's `injected.js` (or an extension-origin frame) declines a `set`
+  // on `tronlinkParams`. Requires BOTH the TronLink property name AND an
+  // injected/extension frame so a real first-party Proxy `set` failure keeps
+  // reporting. See `isTronLinkProxyNoise`.
+  if (isTronLinkProxyNoise({ message, frames })) {
     return true;
   }
 

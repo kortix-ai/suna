@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kortix-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-enterprise-edge.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "kortix-enterprise-edge.selectorLabels" . | nindent 6 }}

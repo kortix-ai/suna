@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { ApiClient } from '../api/client.ts';
+import type { ProjectSummary } from '../api/types.ts';
 import {
+  linkGitHubBackedProject,
   resolveExistingShipGitTarget,
   resolveProvisionShipGitTarget,
 } from '../commands/ship.ts';
-import type { ProjectSummary } from '../api/types.ts';
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
@@ -22,6 +24,67 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     ...overrides,
   };
 }
+
+function recordingClient(
+  calls: Array<{ path: string; body: unknown }>,
+  linkedProject: ProjectSummary,
+): ApiClient {
+  return {
+    apiBase: 'https://api.kortix.test',
+    post: async <T>(path: string, body?: unknown) => {
+      calls.push({ path, body });
+      return { project: linkedProject } as T;
+    },
+  } as unknown as ApiClient;
+}
+
+describe('GitHub-backed project linking', () => {
+  test('uses the projects-mounted route with a GitHub PAT', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+
+    await linkGitHubBackedProject(recordingClient(calls, project()), {
+      repoUrl: 'https://github.com/acme/demo.git',
+      name: 'Demo',
+      accountId: 'acct_1',
+      githubToken: 'github_pat_test',
+      yes: true,
+    });
+
+    expect(calls).toEqual([
+      {
+        path: '/projects/link-repository',
+        body: {
+          repo_url: 'https://github.com/acme/demo.git',
+          name: 'Demo',
+          account_id: 'acct_1',
+          github_token: 'github_pat_test',
+        },
+      },
+    ]);
+  });
+
+  test('uses the projects-mounted route with the GitHub App', async () => {
+    const calls: Array<{ path: string; body: unknown }> = [];
+
+    await linkGitHubBackedProject(recordingClient(calls, project()), {
+      repoUrl: 'https://github.com/acme/demo.git',
+      name: 'Demo',
+      accountId: 'acct_1',
+      yes: true,
+    });
+
+    expect(calls).toEqual([
+      {
+        path: '/projects/link-repository',
+        body: {
+          repo_url: 'https://github.com/acme/demo.git',
+          name: 'Demo',
+          account_id: 'acct_1',
+        },
+      },
+    ]);
+  });
+});
 
 describe('ship git target resolution', () => {
   test('first-time managed ship pushes to the managed upstream with the provision token', () => {

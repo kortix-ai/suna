@@ -85,7 +85,8 @@ signed in) yet, so these take only an `inviteId`, not an `accountId`.
 | `createRepo(input)`                          | create a project backed by a brand-new Kortix-managed GitHub repo |
 | `provision(id)`                              | provision its runtime                                             |
 | `update(id, input)` · `archive(id)`          | update settings · archive                                         |
-| `llmCatalog(id)`                             | available models                                                  |
+| `llmCatalog(id)`                             | complete runtime model catalog                                    |
+| `modelPicker(id)`                            | compact connected models for interactive selectors                |
 | `sandboxTemplates(id)`                       | sandbox build templates (Dockerfile/image/warm-pool)              |
 | `sandboxHealth(id)`                          | sandbox-image build health                                        |
 | `sessions(id)` · `createSession(id, input?)` | list · create sessions                                            |
@@ -94,14 +95,15 @@ signed in) yet, so these take only an `inviteId`, not an `accountId`.
 
 Account-scoped GitHub App installation and repository linking (not project-scoped).
 
-| method                                           | what                                        |
-| ------------------------------------------------ | ------------------------------------------- |
-| `getInstallation(accountId)`                     | this account's GitHub App installation      |
-| `listInstallations(accountId)`                   | installations reachable by the current user |
-| `saveInstallation(input)`                        | record an installation against the account  |
-| `deleteInstallation(accountId, installationId?)` | unlink an installation                      |
-| `listRepositories(accountId, installationId?)`   | repos the installation can see              |
-| `linkRepository(input)`                          | link a repo to a project                    |
+| method                                                            | what                                        |
+| ----------------------------------------------------------------- | ------------------------------------------- |
+| `getInstallation(accountId)`                                      | this account's GitHub App installation      |
+| `listInstallations(accountId)`                                    | installations reachable by the current user |
+| `saveInstallation(input)`                                         | record an installation against the account  |
+| `deleteInstallation(accountId, installationId?)`                  | unlink an installation                      |
+| `listRepositories(accountId, installationId?)`                    | repos the installation can see              |
+| `listRepositoryBranches(accountId, installationId, repoFullName)` | existing branches and the GitHub default    |
+| `linkRepository(input)`                                           | import a repo as an isolated project        |
 
 ## Billing — `kortix.billing`
 
@@ -180,11 +182,12 @@ const p = kortix.project(projectId);
 await p.detail();
 await p.update({ name });
 await p.llmCatalog();
+await p.modelPicker();
 await p.onboardingComplete();
 await p.archive();
 ```
 
-Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `sandboxHealth` · `onboardingComplete` · `validateManifest(raw)` (validate a `kortix.yaml` or legacy `kortix.toml` manifest's raw text server-side — format is auto-resolved from the project's manifest path — the same schema `kortix ship`/CR-merge use) · `gitToken()` (mint a fresh scoped git push token; 409 for BYO repos) · `setAgentScope(agentName, scope)` (bind an agent's allowed secrets + connectors — the inheritance pyramid's declaration step).
+Direct methods: `get` · `detail` · `update` · `archive` · `llmCatalog` · `modelPicker` · `sandboxHealth` · `onboardingComplete` · `validateManifest(raw)` (validate a `kortix.yaml` or legacy `kortix.toml` manifest's raw text server-side — format is auto-resolved from the project's manifest path — the same schema `kortix ship`/CR-merge use) · `gitToken()` (mint a fresh scoped git push token; 409 for BYO repos) · `setAgentScope(agentName, scope)` (bind an agent's allowed secrets + connectors — the inheritance pyramid's declaration step).
 
 ### `p.tokens` — project-scoped CLI PATs
 
@@ -245,22 +248,22 @@ resource (an agent, a skill, a secret) rather than the whole project:
 
 ### `p.connectors` — tool / MCP connectors
 
-| method                                                              | what                                                             |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `list()`                                                            | configured connectors                                             |
-| `config(connectorId)`                                               | one connector's config                                            |
-| `create(input)`                                                     | add a connector                                                   |
-| `remove(connectorId)`                                               | delete a connector                                                |
-| `sync()`                                                            | re-sync connectors                                                |
-| `setName(connectorId, name)`                                        | rename a connector                                                |
-| `setCredentialMode(connectorId, mode)`                              | switch how its credential is sourced                              |
-| `setCredential(connectorId, input)`                                 | set its credential value                                          |
-| `setSensitive(connectorId, sensitive)`                              | mark it sensitive (extra approval gating)                         |
-| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies                                  |
-| `profiles.list()`                                                   | list concrete server-side identities (manager-only)               |
-| `profiles.reconcile(input)`                                         | idempotently create/update one external/member/subject identity   |
-| `profiles.updateCredential(profileId, input)`                       | encrypt/rotate that profile's credential without returning it     |
-| `profiles.revoke(profileId)` · `profiles.activate(profileId)`       | deny or restore the identity live                                 |
+| method                                                              | what                                                            |
+| ------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `list()`                                                            | configured connectors                                           |
+| `config(connectorId)`                                               | one connector's config                                          |
+| `create(input)`                                                     | add a connector                                                 |
+| `remove(connectorId)`                                               | delete a connector                                              |
+| `sync()`                                                            | re-sync connectors                                              |
+| `setName(connectorId, name)`                                        | rename a connector                                              |
+| `setCredentialMode(connectorId, mode)`                              | switch how its credential is sourced                            |
+| `setCredential(connectorId, input)`                                 | set its credential value                                        |
+| `setSensitive(connectorId, sensitive)`                              | mark it sensitive (extra approval gating)                       |
+| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies                                |
+| `profiles.list()`                                                   | list concrete server-side identities (manager-only)             |
+| `profiles.reconcile(input)`                                         | idempotently create/update one external/member/subject identity |
+| `profiles.updateCredential(profileId, input)`                       | encrypt/rotate that profile's credential without returning it   |
+| `profiles.revoke(profileId)` · `profiles.activate(profileId)`       | deny or restore the identity live                               |
 
 `p.connectors.pipedream` drives the easy-connect (Pipedream) app-catalog handshake:
 
@@ -408,6 +411,13 @@ project's LLM traffic.
 | `keys()`                                                 | gateway API keys                                   |
 | `createKey(name)` · `revokeKey(keyId)`                   | mint · revoke a key                                |
 | `playground(prompt, models)`                             | run one prompt against up to 6 models side by side |
+| `routing.get()`                                         | project and effective routing policy               |
+| `routing.set(policy)` · `routing.reset()`               | replace · inherit the project policy               |
+| `routing.preview(input)`                                | resolve a finite route without invoking a model    |
+
+Routing policies contain a project default and vision model, an ordered default
+fallback chain, and exact-model overrides. Chains are bounded and each model is
+attempted at most once; `fallbackOn` is either `transient` or `any-error`.
 
 ### `p.channels` — Slack / email / Meet
 
@@ -429,24 +439,6 @@ a meeting bot.
 | `meet.setVoice(voice)` · `meet.previewVoice(voiceId)`       | set · preview a voice                                  |
 | `meet.setBotName(name)`                                     | rename the meeting bot                                 |
 | `meet.speak(botId, text, voice?)`                           | make the bot speak text in a live meeting              |
-
-### `p.apps` — deployments
-
-The `/projects/:id/apps/*` family — deploy a service out of the project's repo.
-
-| method                        | what             |
-| ----------------------------- | ---------------- |
-| `list()`                      | deployed apps    |
-| `create(input)`               | define a new app |
-| `update(slug, input)`         | edit its config  |
-| `remove(slug)`                | delete it        |
-| `deploy(slug)` · `stop(slug)` | deploy · stop    |
-| `logs(slug)`                  | its logs         |
-
-<Callout type="warn">
-  `apps.updateConfig(input)` still exists for parity with the underlying client but is
-  **deprecated** — use `p.updateExperimentalFeature('apps', enabled)` instead.
-</Callout>
 
 ### `p.updateExperimentalFeature` — feature flags
 

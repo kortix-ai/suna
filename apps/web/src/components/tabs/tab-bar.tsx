@@ -62,8 +62,6 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
 import { isDesktop, desktopShellPlatform, type DesktopShellPlatform } from '@/lib/desktop';
 
-const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
-
 
 // ============================================================================
 // Helpers
@@ -116,10 +114,6 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     '/admin/stress-test': { title: 'Stress Test', type: 'page' },
     '/changelog': { title: 'Changelog', type: 'page' },
   };
-
-  if (DEPLOYMENTS_ENABLED) {
-    ROUTE_MAP['/deployments'] = { title: 'Deployments', type: 'page' };
-  }
 
   const staticMatch = ROUTE_MAP[pathname];
   if (staticMatch) {

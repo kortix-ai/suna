@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isAndroidWebViewNativeBridgePostMessageNoise,
   isClientRequestTimeoutMessage,
   isEmptyMessageUnresolvedBrowserChunkNoise,
   isExpectedBillingGateMessage,
@@ -14,6 +15,7 @@ import {
   isRuntimeNotReadyNoiseMessage,
   isStaleWebpackRuntimeCallNoise,
   isStorageDisabledWebViewNoiseMessage,
+  isTronLinkProxyNoise,
   shouldIgnoreBrowserRuntimeNoise,
   shouldIgnoreSentryBrowserNoise,
 } from './browser-error-noise.ts'
@@ -1284,4 +1286,355 @@ test('does NOT suppress a real app TypeError with a different null-property name
       `expected Sentry gate to keep reporting real app TypeError "${message}" even from a chunk frame`,
     )
   }
+})
+
+// ---------------------------------------------------------------------------
+// TronLink browser-extension injected-Proxy `set`-trap noise
+// (Better Stack pattern 951c1a316cae8595da3f73877cb1fa8a77d04315ae1a2987b6348a97ec9a049a,
+// Kortix Frontend prod, application_id 2346967). The TronLink wallet extension
+// injects `app:///injected/injected.js` (function `BI`) which wraps a page
+// object in a Proxy exposing `tronlinkParams`; a `set` the trap declines throws
+// `TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'`.
+// 2 occurrences, 0 identified users, first/last 2026-07-12. The throw is inside
+// the EXTENSION's injected script, never first-party code. The matcher requires
+// BOTH the TronLink property name AND an injected/extension source so a real
+// first-party Proxy `set` failure keeps reporting.
+// ---------------------------------------------------------------------------
+
+const TRONLINK_INJECTED_FRAME = { filename: 'app:///injected/injected.js', function: 'BI' }
+
+const TRONLINK_PROXY_EVENTS = [
+  // The exact assigned production message (V8/Chrome).
+  "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // Bare message (no `TypeError:` prefix).
+  "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // Unhandled-rejection leak path preserving the message.
+  "Unhandled promise rejection: TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+  // SpiderMonkey (Firefox) wording, same TronLink property.
+  "proxy set handler returned false for property 'tronlinkParams'",
+  "TypeError: proxy set handler returned false for property 'tronlinkParams'",
+]
+
+test('classifies every TronLink proxy-trap variant as noise when sourced from the injected script', () => {
+  for (const message of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      isTronLinkProxyNoise({ message, filename: 'app:///injected/injected.js' }),
+      true,
+      `expected "${message}" from injected.js to be TronLink noise`,
+    )
+    assert.equal(
+      isTronLinkProxyNoise({ message, frames: [TRONLINK_INJECTED_FRAME] }),
+      true,
+      `expected "${message}" with an injected frame to be TronLink noise`,
+    )
+  }
+})
+
+test('classifies TronLink proxy-trap noise from a chrome-extension:// frame', () => {
+  assert.equal(
+    isTronLinkProxyNoise({
+      message: "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      frames: [{ filename: 'chrome-extension://egjidmnggjknjgkbjopmfcfhkagpnbgh/injected.js' }],
+    }),
+    true,
+  )
+})
+
+test('suppresses the TronLink proxy-trap Sentry event from the injected script', () => {
+  for (const value of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://app.kortix.com/projects' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: { frames: [TRONLINK_INJECTED_FRAME] },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the TronLink proxy-trap unhandled rejection from the browser (window.onerror)', () => {
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message:
+        "Unhandled promise rejection: TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      filename: 'app:///injected/injected.js',
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a TronLink-worded event with NO injected/extension source (conservative — keep reporting)', () => {
+  // No source anchor → can't confirm extension origin; a first-party Proxy
+  // could theoretically throw the same wording, so keep reporting.
+  for (const value of TRONLINK_PROXY_EVENTS) {
+    assert.equal(
+      isTronLinkProxyNoise({ message: value }),
+      false,
+      `expected frameless "${value}" to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${value}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a TronLink-worded event from a first-party app frame', () => {
+  // A genuine first-party Proxy `set` trap returning falsish (MobX/Immer/
+  // Zustand/hand-rolled Proxy) throws the SAME wording but inside app code —
+  // the de-minified frame is `apps/web/src/…`, not the extension's injected
+  // script. It must keep reporting so a real Proxy bug is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///apps/web/src/lib/store.ts' },
+    { filename: 'apps/web/src/lib/store.ts' },
+    { filename: 'https://app.kortix.com/_next/static/chunks/store.js' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///_next/static/chunks/app.js' }]]) {
+    assert.equal(
+      isTronLinkProxyNoise({
+        message: "TypeError: 'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+        frames,
+      }),
+      false,
+      `expected TronLink-worded event from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting TronLink-worded event from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: "'set' on proxy: trap returned falsish for property 'tronlinkParams'",
+      filename: 'app:///apps/web/src/lib/store.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a real first-party Proxy `set` failure on a DIFFERENT property', () => {
+  // The generic `'set' on proxy: trap returned falsish for property '<X>'`
+  // wording with a non-TronLink property name is a real app Proxy bug — even
+  // from the injected script frame, the property name is the TronLink marker,
+  // so a different property must keep reporting regardless of source.
+  for (const value of [
+    "'set' on proxy: trap returned falsish for property 'foo'",
+    "TypeError: 'set' on proxy: trap returned falsish for property 'bar'",
+    "'set' on proxy: trap returned falsish for property 'tronlinkParams_extra'",
+  ]) {
+    assert.equal(
+      isTronLinkProxyNoise({ message: value, filename: 'app:///injected/injected.js' }),
+      false,
+      `expected non-TronLink Proxy message "${value}" to keep reporting`,
+    )
+  }
+})
+
+// Reproduces Better Stack error e6a45fe4999b5a60f5cd64fd4153b18c2beebfc4409a3d54da456a4bbc24e5d2
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-12 19:31:47 UTC. A Threads (Barcelona) in-app Android WebView
+// (Android 14 / Chrome 149, referer https://l.threads.com/) visited the
+// marketing homepage (`https://kortix.com/`). The Android System WebView
+// injects a synthetic `app://navigation_performance_logger_android` script
+// that records navigation timing (FBNavResponseStart / FBNavDomContentLoaded /
+// …) and ships it to its native Java bridge via `sendDataToNative` →
+// `postMessage`. The bridge holds only a WEAK reference to the Java object,
+// so once it is garbage-collected (page navigation / WebView teardown / the
+// in-app browser dismissing the tab) the next `postMessage` throws
+// `Error invoking postMessage: Java object is gone`. Sentry's
+// `BrowserApiErrors` integration auto-wraps `addEventListener` on
+// `EventTarget` and captures the throw as a global error. The frames (Sentry
+// oldest-first → last is the throwing frame) are the Android bridge internals:
+//   app:///_next/static/chunks/66499-…?dpl=dpl_…   (Sentry wrapper frame `u`)
+//   app://navigation_performance_logger_android   `?`
+//   app://navigation_performance_logger_android   `sendJsBlockingTimeMessage`
+//   app://navigation_performance_logger_android   `sendDataToNative`  (throw)
+// This is the WebView's OWN instrumentation, never first-party code. The
+// matcher requires BOTH the exact message AND a frame whose filename is the
+// Android bridge source, so a genuine first-party `window.postMessage`
+// failure keeps reporting.
+const ANDROID_NAV_PERF_LOGGER_FRAME = 'app://navigation_performance_logger_android'
+const ANDROID_WEBVIEW_BRIDGE_EVENTS = [
+  // The exact raw exception value from the production event.
+  'Error invoking postMessage: Java object is gone',
+  // An unhandled-rejection wrapper preserving the message.
+  'Unhandled promise rejection: Error invoking postMessage: Java object is gone',
+]
+
+test('classifies the Android WebView native-bridge postMessage noise (with a bridge frame)', () => {
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message,
+        frames: [{ filename: ANDROID_NAV_PERF_LOGGER_FRAME }],
+      }),
+      true,
+      `expected "${message}" from the Android bridge frame to be classified as noise`,
+    )
+  }
+})
+
+test('suppresses the Android WebView bridge Sentry event via the beforeSend gate', () => {
+  // Exact frame chain from the raw production event (oldest-first → throwing
+  // frame last).
+  for (const value of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        request: { url: 'https://kortix.com/' },
+        exception: {
+          values: [
+            {
+              value,
+              stacktrace: {
+                frames: [
+                  {
+                    filename:
+                      'app:///_next/static/chunks/66499-704f783b0e8ea993.js?dpl=dpl_YsEdLTRagkN1LYLYMhUFP3rXtrAy',
+                    function: 'u',
+                  },
+                  { filename: ANDROID_NAV_PERF_LOGGER_FRAME, function: '?' },
+                  {
+                    filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+                    function: 'sendJsBlockingTimeMessage',
+                  },
+                  {
+                    filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+                    function: 'sendDataToNative',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      true,
+      `expected Sentry event for "${value}" to be suppressed`,
+    )
+  }
+})
+
+test('suppresses the Android WebView bridge noise via the runtime (window.onerror) gate with a bridge filename', () => {
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      shouldIgnoreBrowserRuntimeNoise({
+        message,
+        filename: ANDROID_NAV_PERF_LOGGER_FRAME,
+      }),
+      true,
+      `expected runtime gate to suppress "${message}" with the Android bridge filename`,
+    )
+  }
+})
+
+test('does NOT suppress the Android bridge message with NO bridge frame (conservative — keep reporting)', () => {
+  // The message wording is generic enough that a real first-party
+  // `window.postMessage` failure could share it; without the Android bridge
+  // frame/filename we cannot confirm origin — keep reporting.
+  for (const message of ANDROID_WEBVIEW_BRIDGE_EVENTS) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({ message }),
+      false,
+      `expected frameless "${message}" to keep reporting`,
+    )
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message,
+        frames: [{ filename: 'app:///_next/static/chunks/main.js' }],
+      }),
+      false,
+      `expected "${message}" from an app chunk (no bridge frame) to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: { values: [{ value: message }] },
+      }),
+      false,
+      `expected frameless Sentry event for "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('does NOT suppress a real first-party postMessage failure that throws from an app chunk', () => {
+  // A genuine `window.postMessage` / structured-clone failure in our own code
+  // throws the SAME message wording, but from an `app:///_next/…` chunk (or a
+  // de-minified `apps/web/src/…` frame), NEVER from the Android bridge source.
+  // It must keep reporting so a real postMessage regression is never hidden.
+  const realAppFrames: Array<{ filename: unknown }> = [
+    { filename: 'app:///_next/static/chunks/66499-704f783b0e8ea993.js' },
+    { filename: 'apps/web/src/features/messaging/postmessage-bridge.ts' },
+  ]
+  for (const frames of [realAppFrames, [{ filename: 'app:///apps/web/src/features/messaging/bridge.ts' }]]) {
+    assert.equal(
+      isAndroidWebViewNativeBridgePostMessageNoise({
+        message: 'Error invoking postMessage: Java object is gone',
+        frames,
+      }),
+      false,
+      `expected real first-party postMessage error from ${JSON.stringify(frames)} to keep reporting`,
+    )
+    assert.equal(
+      shouldIgnoreSentryBrowserNoise({
+        exception: {
+          values: [
+            {
+              value: 'Error invoking postMessage: Java object is gone',
+              stacktrace: { frames },
+            },
+          ],
+        },
+      }),
+      false,
+      `expected Sentry gate to keep reporting real first-party postMessage error from ${JSON.stringify(frames)}`,
+    )
+  }
+  // And via the runtime gate: a first-party filename keeps reporting too.
+  assert.equal(
+    shouldIgnoreBrowserRuntimeNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      filename: 'apps/web/src/features/messaging/postmessage-bridge.ts',
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress a same-worded message from a different bridge / non-Android source', () => {
+  // The matcher is anchored on the EXACT `app://navigation_performance_logger_android`
+  // source — a near-identical filename (e.g. a hypothetical iOS sibling or a
+  // typo) must NOT be swallowed by this guard.
+  assert.equal(
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      frames: [{ filename: 'app://navigation_performance_logger_ios' }],
+    }),
+    false,
+  )
+  assert.equal(
+    isAndroidWebViewNativeBridgePostMessageNoise({
+      message: 'Error invoking postMessage: Java object is gone',
+      frames: [{ filename: 'app://navigation_performance_logger_androidx' }],
+    }),
+    false,
+  )
 })

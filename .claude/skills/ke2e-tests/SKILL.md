@@ -7,7 +7,7 @@ description: "How Kortix end-to-end API tests work and the mandatory test-as-sou
 
 Kortix has **one** end-to-end test suite at `suna/tests/` (the `ke2e` runner). It is
 black-box: it hits a **real, deployed API over HTTP** (`staging-api.kortix.com`,
-`dev-api.kortix.com`, local `localhost:8008/v1`, or prod) with **live services** (real Daytona, Freestyle, Stripe
+`dev-api.kortix.com`, local `localhost:8008/v1`, or prod) with **live services** (real Daytona, GitHub, Stripe
 test-mode, LLM) — no mocking, no in-process app. Every test maps **1:1** to a stable
 flow ID in `tests/spec/end-to-end.md`. A coverage gate makes that mapping enforceable,
 so the spec + tests stay the source of truth for what the API does.

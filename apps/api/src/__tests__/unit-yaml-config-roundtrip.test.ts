@@ -2,7 +2,6 @@ import { describe, test, expect } from 'bun:test';
 import { parseManifestString, serializeManifest, extractTriggers } from '../projects/triggers';
 import { draftToSpec } from '../projects/lib/triggers';
 import { extractAgents } from '../projects/agents';
-import { extractApps } from '../projects/apps';
 import { extractConnectors } from '../projects/connectors';
 
 // Empirical ground truth for the dual-format (TOML v1 + YAML v2) manifest core:
@@ -90,8 +89,7 @@ describe('YAML v2 manifest — parse + extract', () => {
     expect(specs[0].agent).toBe('scout');
   });
 
-  test('extractApps / extractConnectors never throw on a yaml manifest', () => {
-    expect(() => extractApps(m)).not.toThrow();
+  test('extractConnectors never throws on a yaml manifest', () => {
     expect(() => extractConnectors(m)).not.toThrow();
   });
 });

@@ -1,5 +1,5 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import type { ManagedModel } from '@kortix/llm-catalog';
+import type { ManagedModel } from '../models/managed-models';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';

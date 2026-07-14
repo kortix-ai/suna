@@ -40,6 +40,7 @@ jobs:
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
+      enterprise: ${{ steps.filter.outputs.enterprise }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -89,7 +90,82 @@ jobs:
               - 'apps/api/src/config.ts'
               - 'packages/db/**'
               - 'apps/cli/src/commands/self-host.ts'
+              - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
+            enterprise:
+              - *pnpm
+              - 'apps/enterprise-updater/**'
+              - 'apps/enterprise-release/**'
+              - 'apps/cli/src/self-host/**'
+              - 'infra/terraform/modules/enterprise-*/**'
+              - 'infra/terraform/modules/eks/platform/**'
+              - 'infra/terraform/modules/eks/irsa/**'
+              - 'infra/terraform/environments/enterprise-vpc-template/**'
+              - 'infra/k8s/charts/kortix-api/**'
+              - 'infra/k8s/charts/kortix-gateway/**'
+              - 'infra/k8s/charts/kortix-enterprise-edge/**'
+
+  enterprise-release:
+    name: Enterprise updater + bundles
+    needs: changes
+    if: needs.changes.outputs.enterprise == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install workspace dependencies
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --filter "@kortix/enterprise-release..."
+        env:
+          npm_config_engine_strict: "false"
+      - name: Test, typecheck, and compile updater
+        run: |
+          pnpm --filter "@kortix/enterprise-updater" test
+          pnpm --filter "@kortix/enterprise-release" test
+          pnpm --filter "@kortix/enterprise-updater" typecheck
+          pnpm --filter "@kortix/enterprise-release" typecheck
+          BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
+          test -x apps/enterprise-updater/dist/kortix-enterprise-updater
+      - name: Install checksum-pinned Helm
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          echo 'ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd  /tmp/helm.tar.gz' | sha256sum --check --strict
+          tar -xzf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+      - name: Render digest-pinned enterprise charts
+        run: |
+          set -euo pipefail
+          api_digest="sha256:$(printf 'a%.0s' {1..64})"
+          gateway_digest="sha256:$(printf 'b%.0s' {1..64})"
+          frontend_digest="sha256:$(printf 'c%.0s' {1..64})"
+          helm template kortix-api infra/k8s/charts/kortix-api --namespace kortix-app \
+            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/api \
+            --set-string image.digest="$api_digest" --set serviceAccount.create=false \
+            --set-string serviceAccount.name=kortix --set externalSecrets.enabled=false \
+            --set-string externalSecrets.targetSecretName=kortix-runtime --set migrate.enabled=true \
+            --set ingress.enabled=false >/tmp/api.yaml
+          helm template kortix-gateway infra/k8s/charts/kortix-gateway --namespace kortix-app \
+            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/gateway \
+            --set-string image.digest="$gateway_digest" --set-string serviceAccount.name=kortix \
+            --set-string envFromSecret=kortix-runtime --set ingress.enabled=false >/tmp/gateway.yaml
+          helm template kortix-edge infra/k8s/charts/kortix-enterprise-edge --namespace kortix-app \
+            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/frontend \
+            --set-string image.digest="$frontend_digest" --set-string apiDomain=api.enterprise.example.com \
+            --set-string frontendDomain=enterprise.example.com \
+            --set-string certificateArn=arn:aws:acm:us-west-2:123456789012:certificate/test \
+            --set-string supabasePrivateIp=10.60.128.10 >/tmp/edge.yaml
+          grep -Fq "api@${api_digest}" /tmp/api.yaml
+          grep -Fq "gateway@${gateway_digest}" /tmp/gateway.yaml
+          grep -Fq "frontend@${frontend_digest}" /tmp/edge.yaml
+          grep -Fq 'command: ["bun", "scripts/migrate.ts", "up"]' /tmp/api.yaml
 
   api-typecheck:
     name: API typecheck

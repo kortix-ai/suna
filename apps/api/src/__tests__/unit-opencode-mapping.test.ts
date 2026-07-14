@@ -18,7 +18,11 @@ mock.module('../shared/db', () => ({
 
 mock.module('../sandbox-proxy/backend', () => ({
   resolveServiceKey: async () => 'svc-key',
-  resolvePreviewLink: async () => ({ url: 'https://sandbox.test', token: null }),
+  resolveSandboxIngress: async () => ({
+    url: 'https://sandbox.test',
+    headers: {},
+    effectivePort: 8000,
+  }),
 }));
 
 mock.module('../shared/preview-ownership', () => ({
