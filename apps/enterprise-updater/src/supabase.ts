@@ -1,109 +1,49 @@
-import type { EcsControlPlane } from './ecs.ts';
 import type { EnterpriseReleaseManifest } from './release-contract.ts';
 import type { CommandRunner } from './process.ts';
 
-const SSM_COMMAND_WAIT_SCRIPT = `
-set -euo pipefail
-command_id="$1"
-instance_id="$2"
-region="$3"
-deadline=$((SECONDS + 1860))
-while (( SECONDS < deadline )); do
-  if current=$(aws ssm get-command-invocation \
-    --command-id "$command_id" --instance-id "$instance_id" \
-    --region "$region" --query Status --output text 2>&1); then
-    case "$current" in
-      Success|Cancelled|TimedOut|Failed) exit 0 ;;
-      Pending|InProgress|Delayed|Cancelling) ;;
-      *) printf 'Unexpected SSM command status: %s\n' "$current" >&2; exit 1 ;;
-    esac
-  elif [[ "$current" != *InvocationDoesNotExist* ]]; then
-    printf '%s\n' "$current" >&2
-    exit 1
-  fi
-  sleep 5
-done
-printf 'SSM command %s did not reach a terminal state within 31 minutes\n' "$command_id" >&2
-exit 1
-`;
-
 export interface SupabaseConfig {
-  region: string;
   instance: string;
-  supabaseInstanceId: string;
   runtimeSecretArn: string;
-  artifactBucket: string;
-  artifactKmsKeyArn: string;
   apiDomain: string;
   frontendDomain: string;
 }
 
 /**
- * Drives the official Supabase Docker host on the customer EC2 through SSM
- * RunCommand. The install/finalize/rollback scripts keep their proven
- * transactional semantics (symlink swap + previous-release restore). Database
- * durability is handled out-of-band by encrypted EBS + hourly AWS Backup, not by
- * any in-host log-shipping or point-in-time tooling.
+ * Drives the official Supabase Docker host — now the SAME box as the app tier.
+ * The install/finalize/rollback scripts keep their proven transactional semantics
+ * (staging extract, symlink swap, previous-release restore) but run locally via
+ * `bash` instead of SSM RunCommand to a separate EC2. Database durability is
+ * handled out-of-band by encrypted EBS + hourly AWS Backup, not by any in-host
+ * log-shipping or point-in-time tooling.
  */
 export class SupabaseInstaller {
   constructor(
     private readonly runner: CommandRunner,
-    private readonly aws: Pick<EcsControlPlane, 'awsJson' | 'awsRaw'>,
     private readonly config: SupabaseConfig,
   ) {}
 
-  install(manifest: EnterpriseReleaseManifest, archive: string): void {
-    const key = `updater-staging/${manifest.artifacts.supabase_bundle.sha256}.tar.gz`;
-    this.aws.awsRaw([
-      's3', 'cp', archive, `s3://${this.config.artifactBucket}/${key}`,
-      '--sse', 'aws:kms', '--sse-kms-key-id', this.config.artifactKmsKeyArn,
-    ]);
-    const script = supabaseInstallScript({
-      bucket: this.config.artifactBucket,
-      key,
+  install(manifest: EnterpriseReleaseManifest, localTar: string): void {
+    this.run(supabaseInstallScript({
+      localTar,
       sha256: manifest.artifacts.supabase_bundle.sha256,
       version: manifest.version,
       runtimeSecretArn: this.config.runtimeSecretArn,
       instance: this.config.instance,
       apiDomain: this.config.apiDomain,
       frontendDomain: this.config.frontendDomain,
-    });
-    this.run(`Install verified Kortix enterprise release ${manifest.version}`, script);
+    }));
   }
 
   finalize(manifest: EnterpriseReleaseManifest): void {
-    this.run(
-      `Commit Kortix enterprise release ${manifest.version}`,
-      supabaseFinalizeScript(manifest.version, manifest.artifacts.supabase_bundle.sha256),
-    );
+    this.run(supabaseFinalizeScript(manifest.version, manifest.artifacts.supabase_bundle.sha256));
   }
 
   rollback(manifest: EnterpriseReleaseManifest): void {
-    this.run(
-      `Rollback Supabase after failed Kortix enterprise release ${manifest.version}`,
-      supabaseRollbackScript(manifest.version, manifest.artifacts.supabase_bundle.sha256),
-    );
+    this.run(supabaseRollbackScript(manifest.version, manifest.artifacts.supabase_bundle.sha256));
   }
 
-  private run(comment: string, script: string): void {
-    const response = this.aws.awsJson<{ Command?: { CommandId?: string } }>([
-      'ssm', 'send-command', '--document-name', 'AWS-RunShellScript',
-      '--instance-ids', this.config.supabaseInstanceId,
-      '--comment', comment,
-      '--parameters', JSON.stringify({ commands: [script], executionTimeout: ['1800'] }),
-    ]);
-    const commandId = response.Command?.CommandId;
-    if (!commandId) throw new Error('SSM did not return a command id for Supabase installation');
-    this.runner.run('bash', [
-      '-ceu', SSM_COMMAND_WAIT_SCRIPT, 'bash', commandId,
-      this.config.supabaseInstanceId, this.config.region,
-    ]);
-    const result = this.aws.awsJson<{ Status?: string; StandardErrorContent?: string }>([
-      'ssm', 'get-command-invocation', '--command-id', commandId, '--instance-id', this.config.supabaseInstanceId,
-    ]);
-    if (result.Status !== 'Success') {
-      throw new Error(`Supabase installation failed through SSM: ${(result.StandardErrorContent ?? result.Status ?? 'unknown').slice(0, 500)}`);
-    }
+  private run(script: string): void {
+    this.runner.run('bash', ['-c', script]);
   }
 }
 
@@ -147,8 +87,7 @@ function curlWithRetry(runner: CommandRunner, args: string[], url: string): stri
 }
 
 export function supabaseInstallScript(input: {
-  bucket: string;
-  key: string;
+  localTar: string;
   sha256: string;
   version: string;
   runtimeSecretArn: string;
@@ -156,9 +95,10 @@ export function supabaseInstallScript(input: {
   apiDomain: string;
   frontendDomain: string;
 }): string {
-  for (const value of [input.bucket, input.key, input.version, input.instance]) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(value)) throw new Error('unsafe Supabase installation coordinate');
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(input.version) || !/^[a-zA-Z0-9][a-zA-Z0-9._/-]*$/.test(input.instance)) {
+    throw new Error('unsafe Supabase installation coordinate');
   }
+  if (!/^\/[a-zA-Z0-9._/-]+$/.test(input.localTar)) throw new Error('unsafe Supabase archive path');
   for (const domain of [input.apiDomain, input.frontendDomain]) {
     if (domain.length > 253 || !domain.includes('.') || domain.split('.').some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) {
       throw new Error('unsafe Supabase installation domain');
@@ -169,16 +109,16 @@ export function supabaseInstallScript(input: {
   }
   return `set -euo pipefail
 umask 077
-archive=/tmp/kortix-supabase-${input.sha256}.tar.gz
+archive=${input.localTar}
 staging=/opt/kortix/releases/${input.version}.staging
 release_dir=/opt/kortix/releases/${input.version}
 transaction=/opt/kortix/update-transactions/${input.sha256}
-aws s3 cp s3://${input.bucket}/${input.key} "$archive"
 echo '${input.sha256}  '"$archive" | sha256sum --check --strict
 entries=$(tar -tzf "$archive")
 test -n "$entries"
 printf '%s\n' "$entries" | awk '{ if ($0 ~ /^\\//) exit 1; count=split($0, segments, "/"); for (part=1; part<=count; part++) if (segments[part] == "..") exit 1 }'
 tar -tvzf "$archive" | awk '{ type=substr($0, 1, 1); if (type != "-" && type != "d") exit 1 }'
+install -d -m 0700 /opt/kortix/releases
 rm -rf "$staging"
 install -d -m 0700 "$staging"
 (umask 022; tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions)

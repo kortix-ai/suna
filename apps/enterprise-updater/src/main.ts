@@ -2,14 +2,23 @@
 
 import { join } from 'node:path';
 
-import { EcsDeployer, type DeployRequest } from './ecs-deploy.ts';
-import { EcsControlPlane } from './ecs.ts';
+import { DockerHost, UPDATER_LOCK_PATH, APP_PROJECT } from './box.ts';
+import { ComposeDeployer, type DeployRequest } from './compose-deploy.ts';
 import { launchSignedUpdaterIfNeeded } from './launcher.ts';
-import { ProcessRunner } from './process.ts';
+import { ProcessRunner, type CommandRunner } from './process.ts';
+import {
+  EcrImagePreparer,
+  LocalAppBundleInstaller,
+  PublicImagePreparer,
+  materializeRuntimeEnvFile,
+  runUnderUpdaterLock,
+  type AppInstallEnv,
+} from './runtime.ts';
 import { SupabaseInstaller } from './supabase.ts';
 import { TrustedRepository } from './tuf-repository.ts';
 
 const VERSION = process.env.KORTIX_ENTERPRISE_UPDATER_VERSION ?? '0.1.0-dev';
+const APP_DIR = process.env.KORTIX_APP_DIR ?? '/opt/kortix/app';
 
 async function main(): Promise<number> {
   const [command, ...args] = process.argv.slice(2);
@@ -17,30 +26,39 @@ async function main(): Promise<number> {
     process.stdout.write(`kortix-enterprise-updater ${VERSION}\n`);
     return 0;
   }
-  // `deploy` is the operator/scheduled verb; `reconcile` stays as an alias so any
-  // existing wiring keeps working. Both run the identical ECS deploy library.
-  if (command !== 'deploy' && command !== 'reconcile') {
-    process.stderr.write('Usage: kortix-enterprise-updater deploy [required options]\n');
+  // `run` is the on-box verb (systemd timer + `kortix-updater run`); `deploy`
+  // and `reconcile` stay as aliases. All three run the identical compose deploy.
+  if (command !== 'run' && command !== 'deploy' && command !== 'reconcile') {
+    process.stderr.write('Usage: kortix-enterprise-updater run [required options]\n');
     return 64;
   }
 
+  // Single-flight: hold a real advisory flock for the whole run so the watchdog
+  // and prune timers (which take the same lock) never fire mid-deploy. A busy
+  // lock is a clean no-op skip.
+  if (!process.env.KORTIX_UPDATER_LOCKED) {
+    const guard = runUnderUpdaterLock(UPDATER_LOCK_PATH, process.execPath, process.argv.slice(1));
+    if ('skipped' in guard) {
+      process.stdout.write(`${JSON.stringify({ action: 'noop', reason: 'deployment already in progress' })}\n`);
+      return 0;
+    }
+    return guard.status;
+  }
+
   const flags = parseFlags(args);
-  // Flags win; the Terraform-owned deployer task-def supplies the rest via env
-  // (KORTIX_INSTANCE / KORTIX_RELEASE_REPOSITORY / KORTIX_TUF_ROOT_SHA256, …).
   const instance = flags.get('instance') ?? process.env.KORTIX_INSTANCE ?? missing('--instance or KORTIX_INSTANCE');
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) throw new Error('instance is not a valid enterprise slug');
-  // Resources are named kortix-<instance>; a kortix- prefix would double it.
   if (instance.startsWith('kortix-')) throw new Error('instance must not start with "kortix-"; resources are already named kortix-<instance>');
   const channel = flags.get('channel') ?? process.env.KORTIX_CHANNEL ?? 'stable';
   if (channel !== 'stable') throw new Error('enterprise updater may only track the stable channel');
   const repositoryUrl = flags.get('repository') ?? process.env.KORTIX_RELEASE_REPOSITORY ?? missing('--repository or KORTIX_RELEASE_REPOSITORY');
   const trustedRootSha256 = flags.get('trusted-root-sha256') ?? process.env.KORTIX_TUF_ROOT_SHA256 ?? missing('--trusted-root-sha256 or KORTIX_TUF_ROOT_SHA256');
 
-  const requestedRelease = flags.get('release');
+  const requestedRelease = flags.get('release') ?? process.env.KORTIX_DEPLOY_RELEASE;
   const rollbackTo = flags.get('rollback') ?? process.env.KORTIX_DEPLOY_ROLLBACK;
   if (requestedRelease && rollbackTo) throw new Error('--release and --rollback are mutually exclusive');
   const request: DeployRequest = {
-    ...(requestedRelease ? { requestedRelease } : (process.env.KORTIX_DEPLOY_RELEASE ? { requestedRelease: process.env.KORTIX_DEPLOY_RELEASE } : {})),
+    ...(requestedRelease ? { requestedRelease } : {}),
     ...(rollbackTo ? { rollbackTo } : {}),
   };
 
@@ -53,52 +71,75 @@ async function main(): Promise<number> {
   });
   if (payloadExit !== null) return payloadExit;
 
-  const region = env('AWS_REGION', 'AWS_DEFAULT_REGION');
-  const expectedAccountId = env('KORTIX_EXPECTED_ACCOUNT_ID');
-  const clusterName = process.env.KORTIX_CLUSTER || process.env.KORTIX_CLUSTER_NAME || `kortix-${instance}`;
-  const runtimeSecretArn = env('KORTIX_RUNTIME_SECRET_ARN');
   const runner = new ProcessRunner();
-  const control = new EcsControlPlane(runner, {
-    region,
-    expectedAccountId,
-    instance,
-    clusterName,
-    runtimeSecretArn,
-    releaseParamName: process.env.KORTIX_RELEASE_SSM_PARAM || process.env.KORTIX_RELEASE_PARAM || `/kortix/${instance}/release`,
-    ...(explicitServiceNames() ? { serviceNames: explicitServiceNames()! } : {}),
-    ...(process.env.KORTIX_MIGRATE_TASKDEF ? { migrateFamilyName: process.env.KORTIX_MIGRATE_TASKDEF } : {}),
-    ...(process.env.KORTIX_TASK_NETWORK_CONFIGURATION
-      ? { networkConfiguration: process.env.KORTIX_TASK_NETWORK_CONFIGURATION }
-      : {}),
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+  const apiDomain = envRequired('KORTIX_API_DOMAIN');
+  const frontendDomain = envRequired('KORTIX_FRONTEND_DOMAIN');
+  // KORTIX_CADDY_IMAGE is a digest-pinned Caddy build with the caddy-dns/route53
+  // plugin (needed for DNS-01). It is NOT in the base instance.env yet — see the
+  // seam note: user-data/instance.env must supply it (a stock caddy:2 works only
+  // for the HTTP-01 fallback).
+  const caddyImage = envRequired('KORTIX_CADDY_IMAGE');
+  // On AWS the instance role holds zone-scoped Route53 perms, so ACME uses
+  // DNS-01 whenever a hosted zone is provided; a VPS without one falls back to
+  // HTTP-01. KORTIX_ACME_PROVIDER can force either.
+  const route53ZoneId = process.env.KORTIX_ROUTE53_ZONE_ID;
+  const acmeProvider = (process.env.KORTIX_ACME_PROVIDER ?? (route53ZoneId ? 'route53' : 'http')) === 'route53'
+    ? 'route53'
+    : 'http';
+
+  const expectedAccountId = process.env.KORTIX_EXPECTED_ACCOUNT_ID;
+  const verifyIdentity = expectedAccountId
+    ? () => verifyAwsIdentity(runner, expectedAccountId, region)
+    : undefined;
+
+  const runtimeSecretArn = process.env.KORTIX_RUNTIME_SECRET_ARN;
+  const runtimeEnvFilePath = process.env.KORTIX_RUNTIME_ENV_FILE;
+  const ecrRepositories = process.env.KORTIX_ECR_REPOSITORIES;
+
+  const images = ecrRepositories
+    ? new EcrImagePreparer(runner, ecrRepositories, caddyImage)
+    : new PublicImagePreparer(runner, process.env.KORTIX_SKIP_COSIGN !== '1', caddyImage);
+
+  const host = new DockerHost(runner, {
+    appDir: APP_DIR,
+    composeFile: join(APP_DIR, 'docker-compose.yml'),
+    envFile: join(APP_DIR, '.env'),
+    ...(process.env.KORTIX_RELEASE_SSM_PARAM ? { releaseSsmParam: process.env.KORTIX_RELEASE_SSM_PARAM } : {}),
+    ...(region ? { region } : {}),
+    log: (message) => process.stderr.write(`${message}\n`),
   });
-  // Domains drive the public health checks + Supabase install; the deployer
-  // task-def may pass them explicitly, else derive from the runtime secret URLs.
-  const runtimeSecret = control.getSecretJson(runtimeSecretArn);
-  // The Terraform deployer task-def sets KORTIX_API_DOMAIN/KORTIX_FRONTEND_DOMAIN
-  // explicitly; the secret fallbacks are defense-in-depth. Note the public
-  // Supabase URL lives on the FRONTEND host, so the api domain derives from the
-  // app's own public origin, never from a SUPABASE_* URL.
-  const apiDomain = process.env.KORTIX_API_DOMAIN || hostOf(runtimeSecret.API_PUBLIC_URL || runtimeSecret.KORTIX_URL);
-  const frontendDomain = process.env.KORTIX_FRONTEND_DOMAIN || hostOf(runtimeSecret.PUBLIC_URL || runtimeSecret.KORTIX_PUBLIC_URL);
-  if (!apiDomain || !frontendDomain) throw new Error('unable to resolve api/frontend domains from env or runtime secret');
-  const supabase = new SupabaseInstaller(runner, control, {
-    region,
+
+  const supabase = new SupabaseInstaller(runner, {
     instance,
-    supabaseInstanceId: env('KORTIX_SUPABASE_INSTANCE_ID'),
-    runtimeSecretArn,
-    artifactBucket: process.env.KORTIX_ARTIFACT_BUCKET || process.env.KORTIX_BACKUP_BUCKET || '',
-    artifactKmsKeyArn: process.env.KORTIX_ARTIFACT_KMS_KEY_ARN || process.env.KORTIX_BACKUP_KMS_KEY_ARN || '',
+    runtimeSecretArn: runtimeSecretArn ?? missing('KORTIX_RUNTIME_SECRET_ARN (the Supabase bundle install reads Secrets Manager)'),
     apiDomain,
     frontendDomain,
   });
-  const deployer = new EcsDeployer({
+
+  const appInstallEnv: AppInstallEnv = {
+    appDir: APP_DIR,
+    apiDomain,
+    frontendDomain,
+    acmeProvider,
+    acmeEmail: process.env.KORTIX_ACME_EMAIL ?? '',
+    ...(route53ZoneId ? { route53HostedZone: route53ZoneId } : {}),
+  };
+
+  const deployer = new ComposeDeployer({
     runner,
-    control,
+    host,
     supabase,
-    region,
-    ecrRepositoriesJson: env('KORTIX_ECR_REPOSITORIES'),
+    images,
+    app: new LocalAppBundleInstaller(runner, appInstallEnv),
+    runtimeEnvFile: () => materializeRuntimeEnvFile(runner, {
+      ...(runtimeSecretArn ? { runtimeSecretArn } : {}),
+      ...(runtimeEnvFilePath ? { runtimeEnvFile: runtimeEnvFilePath } : {}),
+      ...(region ? { region } : {}),
+    }),
     apiDomain,
     frontendDomain,
+    ...(verifyIdentity ? { verifyIdentity } : {}),
     openRepository: () => TrustedRepository.open({
       repositoryUrl,
       trustedRootSha256,
@@ -109,8 +150,17 @@ async function main(): Promise<number> {
   });
 
   const outcome = await deployer.deploy(request);
-  process.stdout.write(`${JSON.stringify({ instance, channel: 'stable', ...outcome })}\n`);
+  process.stdout.write(`${JSON.stringify({ instance, channel: 'stable', project: APP_PROJECT, ...outcome })}\n`);
   return 0;
+}
+
+function verifyAwsIdentity(runner: CommandRunner, expectedAccountId: string, region?: string): void {
+  const args = ['sts', 'get-caller-identity', '--output', 'json'];
+  if (region) args.push('--region', region);
+  const identity = JSON.parse(runner.run('aws', args) || '{}') as { Account?: string };
+  if (identity.Account !== expectedAccountId) {
+    throw new Error(`AWS account mismatch: expected ${expectedAccountId}, received ${identity.Account}`);
+  }
 }
 
 function parseFlags(args: string[]): Map<string, string> {
@@ -128,13 +178,7 @@ function parseFlags(args: string[]): Map<string, string> {
   return flags;
 }
 
-function requiredFlag(flags: Map<string, string>, name: string): string {
-  const value = flags.get(name);
-  if (!value) throw new Error(`missing required option --${name}`);
-  return value;
-}
-
-function env(...names: string[]): string {
+function envRequired(...names: string[]): string {
   for (const name of names) {
     const value = process.env[name];
     if (value) return value;
@@ -144,23 +188,6 @@ function env(...names: string[]): string {
 
 function missing(what: string): never {
   throw new Error(`missing required ${what}`);
-}
-
-function explicitServiceNames(): Partial<Record<'api' | 'gateway' | 'frontend', string>> | null {
-  const names: Partial<Record<'api' | 'gateway' | 'frontend', string>> = {};
-  if (process.env.KORTIX_API_SERVICE) names.api = process.env.KORTIX_API_SERVICE;
-  if (process.env.KORTIX_GATEWAY_SERVICE) names.gateway = process.env.KORTIX_GATEWAY_SERVICE;
-  if (process.env.KORTIX_FRONTEND_SERVICE) names.frontend = process.env.KORTIX_FRONTEND_SERVICE;
-  return Object.keys(names).length > 0 ? names : null;
-}
-
-function hostOf(url: string | undefined): string {
-  if (!url) return '';
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return '';
-  }
 }
 
 try {
