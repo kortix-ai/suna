@@ -153,9 +153,10 @@ resource "aws_iam_role_policy" "deployer_task" {
 # Human-readable breadcrumb of the currently reconciled release (replaces the
 # DynamoDB release-state table; never a lock). The deployer owns the value.
 resource "aws_ssm_parameter" "release" {
+  #checkov:skip=CKV_AWS_337:The breadcrumb holds only public release metadata (version + image digests already visible via DescribeServices); the AWS-managed aws/ssm key avoids KeyId drift between Terraform and the deployer's overwrite calls.
   name        = local.release_ssm_param
   description = "Currently reconciled Kortix stable release for ${var.name}. Written by the deployer; never a lock."
-  type        = "String"
+  type        = "SecureString"
   value       = "unset"
   tier        = "Standard"
 
@@ -220,6 +221,7 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 resource "aws_scheduler_schedule" "deployer" {
+  #checkov:skip=CKV_AWS_297:The schedule payload is a non-sensitive RunTask target; AWS-managed encryption suffices.
   count = var.enable_scheduled_deploy ? 1 : 0
 
   name        = "${var.name}-deployer"

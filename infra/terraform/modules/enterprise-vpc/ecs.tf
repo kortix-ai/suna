@@ -16,6 +16,7 @@ locals {
 
 # ── Cluster ───────────────────────────────────────────────────────────────────
 resource "aws_ecs_cluster" "this" {
+  #checkov:skip=CKV_AWS_224:ECS Exec is not used; task I/O goes to KMS-encrypted CloudWatch log groups, so an Exec-session CMK adds nothing here.
   name = local.cluster_name
 
   setting {

@@ -5,6 +5,7 @@
 # single edge for the whole installation); there is no in-cluster edge tier.
 
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_260:Port 80 exists only for the ALB's HTTP->HTTPS redirect listener and honors alb_ingress_cidrs.
   name_prefix = "${var.name}-alb-"
   description = "Public ingress to the shared Kortix ALB"
   vpc_id      = module.network.vpc_id
@@ -42,6 +43,7 @@ resource "aws_lb" "this" {
   # point for the frontend, API, and Supabase data plane. Reach is governed by
   # alb_ingress_cidrs, which enterprise customers restrict to their networks.
   #checkov:skip=CKV2_AWS_28:Enterprise customers restrict alb_ingress_cidrs and may front the ALB with their own WAF; a Kortix-managed WAF is out of the single-tenant scope.
+  #checkov:skip=CKV_AWS_91:Access logging needs an ELB-log-delivery bucket policy; planned follow-up, not a v1 gate. CloudTrail + VPC flow logs cover the account audit trail.
   #checkov:skip=CKV_AWS_150:deletion_protection is governed by the customer's reviewed decommission procedure, not always-on in the template.
   name                       = "${local.lb_base}-alb"
   load_balancer_type         = "application"
@@ -55,6 +57,7 @@ resource "aws_lb" "this" {
 
 # ── Target groups ─────────────────────────────────────────────────────────────
 resource "aws_lb_target_group" "api" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; target traffic is HTTP inside private subnets to tasks/Kong, the standard ALB pattern.
   name        = "${local.lb_base}-api"
   port        = local.api_port
   protocol    = "HTTP"
@@ -75,6 +78,7 @@ resource "aws_lb_target_group" "api" {
 }
 
 resource "aws_lb_target_group" "gateway" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; target traffic is HTTP inside private subnets to tasks/Kong, the standard ALB pattern.
   name        = "${local.lb_base}-gw"
   port        = local.gateway_port
   protocol    = "HTTP"
@@ -117,6 +121,7 @@ resource "aws_lb_target_group" "frontend" {
 # Supabase Kong runs on the private EC2, not on ECS, so this TG registers the
 # host's private IP directly (IP target type, no ECS service).
 resource "aws_lb_target_group" "supabase" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; target traffic is HTTP inside private subnets to tasks/Kong, the standard ALB pattern.
   name        = "${local.lb_base}-sb"
   port        = local.supabase_port
   protocol    = "HTTP"

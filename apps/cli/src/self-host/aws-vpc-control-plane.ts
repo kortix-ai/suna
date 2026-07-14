@@ -111,7 +111,7 @@ function apiServiceNetworkConfiguration(config: SelfHostInstanceConfig): string 
 
 export function readReleaseRecord(config: SelfHostInstanceConfig): ReleaseRecord | null {
   const response = awsJson<{ Parameters?: Array<{ Value?: string }> }>(config.aws!, [
-    'ssm', 'get-parameters', '--names', releaseParamName(config.instance),
+    'ssm', 'get-parameters', '--names', releaseParamName(config.instance), '--with-decryption',
   ]);
   const value = response.Parameters?.[0]?.Value;
   if (!value) return null;

@@ -72,6 +72,7 @@ resource "aws_s3_bucket_policy" "artifacts" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  #checkov:skip=CKV_AWS_300:abort_incomplete_multipart_upload IS set (1 day); checkov mis-evaluates rules that use a filter block.
   bucket = aws_s3_bucket.artifacts.id
 
   rule {

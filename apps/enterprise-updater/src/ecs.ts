@@ -108,7 +108,7 @@ export class EcsControlPlane {
     // get-parameters (plural) returns exit 0 with the name in InvalidParameters
     // when it is absent, so a missing breadcrumb never looks like a hard failure.
     const response = this.awsJson<{ Parameters?: Array<{ Value?: string }> }>([
-      'ssm', 'get-parameters', '--names', this.context.releaseParamName,
+      'ssm', 'get-parameters', '--names', this.context.releaseParamName, '--with-decryption',
     ]);
     const value = response.Parameters?.[0]?.Value;
     if (!value) return null;
@@ -122,7 +122,7 @@ export class EcsControlPlane {
   writeReleaseRecord(record: ReleaseRecord): void {
     this.awsJson([
       'ssm', 'put-parameter', '--name', this.context.releaseParamName,
-      '--type', 'String', '--overwrite', '--value', JSON.stringify(record),
+      '--type', 'SecureString', '--overwrite', '--value', JSON.stringify(record),
     ]);
   }
 
