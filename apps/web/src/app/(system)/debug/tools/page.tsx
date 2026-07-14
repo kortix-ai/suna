@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { Badge } from '@/components/ui/badge';
 import { SessionActionsPanel } from '@/features/session/session-actions-panel';
 import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
 import { SessionFilesPanel } from '@/features/session/session-files-panel';
@@ -469,9 +470,14 @@ export default function DebugToolsPage() {
     <div className="bg-background text-foreground min-h-screen w-full">
       <div className="border-border/60 bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-6 py-3 backdrop-blur">
         <div>
-          <h1 className="text-base font-semibold">
-            {tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}
-          </h1>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-base font-semibold">
+              {tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}
+            </h1>
+            <Badge variant="kortix" size="xs">
+              Sample PR demo
+            </Badge>
+          </div>
           <p className="text-muted-foreground text-xs">
             {tHardcodedUi.raw(
               'appDebugToolsPage.line270JsxTextDebugToolsVisualHarnessForSessionToolChrome',
