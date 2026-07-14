@@ -35,8 +35,9 @@ for DNS writes but does not persist it as a managed resource attribute.
 
 ## Bootstrap order
 
-1. The CLI resolves the AWS target and prints the STS account, ARN, region, and
-   planned instance name. It refuses an account mismatch.
+1. The CLI resolves the AWS target and prints the STS account, region, and
+   planned instance name. It refuses an account mismatch. `doctor` also prints
+   the resolved caller ARN while validating target access.
 2. The `state` root plans locally. Bootstrap IAM/KMS/S3/DynamoDB changes always
    require explicit customer review.
 3. The state root applies, its local state migrates to the new encrypted S3
