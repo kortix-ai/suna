@@ -31,10 +31,10 @@ routes = [
 # Fargate is the warm standby. Flip with `--var ACTIVE_BACKEND:ecs-fargate`
 # (instant, reversible). Both kept current by CI. The gateway has its OWN toggle
 # (GATEWAY_ACTIVE_BACKEND) so it flips independently of the API.
-ACTIVE_BACKEND = "eks"
+ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
-GATEWAY_ACTIVE_BACKEND = "eks"
+GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
 GATEWAY_BACKEND_EKS = "https://gateway-eks.kortix.com"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
 
