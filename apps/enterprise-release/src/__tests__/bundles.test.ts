@@ -142,6 +142,14 @@ describe('enterprise release bundles', () => {
       expect(compose.match(/driver: json-file/g)?.length).toBe(5); // + migrate
       expect(compose).toContain('max-size: "10m"');
       expect(compose).toContain('max-file: "5"');
+      // Caddy must receive the Kong origin, or the Supabase data-plane proxy has
+      // no upstream (503) — the Caddyfile reads {$KORTIX_SUPABASE_KONG_ORIGIN}
+      // from the container environment.
+      expect(compose).toContain('KORTIX_SUPABASE_KONG_ORIGIN: ${KORTIX_SUPABASE_KONG_ORIGIN}');
+      // The rendered .env must never leave KORTIX_ACME_EMAIL empty, or Caddy's
+      // global `email` directive crash-loops at config parse.
+      const installScript = readFileSync(join(root, 'bin', 'install'), 'utf8');
+      expect(installScript).toContain('if $acme_email == "" then "admin@" + $frontend_domain else $acme_email end');
       // api runs 2 replicas.
       expect(compose).toMatch(/api:[\s\S]*?replicas: 2/);
       // Images are env-substituted; the install script enforces the digest lock.
