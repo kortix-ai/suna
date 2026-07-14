@@ -100,12 +100,12 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 
 | namespace | what |
 |---|---|
-| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
+| `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (Enterprise audit trail) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
-| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.secrets` · `.access` · `.connectors` · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `send`/`abort`/`setModel`/`setAgent` (opinionated prompt wrappers) · `stream()` (live SSE, framework-free) · `transcript()` (compact server-side transcript read) · `.files` (the 12-op workspace-files surface, bound to THIS session's own runtime) · **its own runtime** (`health`/`previewUrl`/`proxyUrl` — sandbox resolved for you) + `.runtime` (the typed opencode client) |
 | `kortix.runtime()` | the opencode v2 client for the active sandbox (escape hatch) |
 
@@ -321,6 +321,10 @@ Every non-streaming request also carries a **30s default timeout** (the
 long-lived SSE event stream is exempt), so a hung sandbox/daemon call can't
 wedge a server-side handler forever — it surfaces as an `ApiError` with
 `code: 'TIMEOUT'` instead.
+
+Idempotent reads (`GET`/`HEAD`) also absorb transient gateway blips: `502`,
+`503`, and `504` retry up to two times with 250ms → 500ms backoff before an
+`ApiError` is surfaced. Mutations and HTTP `500` responses are never retried.
 
 ## Subpath modules
 

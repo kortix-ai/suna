@@ -22,13 +22,6 @@ export interface ProjectBranch {
 
 export interface ProjectBranchesResponse {
   default_branch: string;
-  /** Effective branch for a new session started by the current caller. */
-  session_default_ref?: string;
-  session_default_source?: 'project' | 'group';
-  session_default_groups?: Array<{ group_id: string; group_name: string }>;
-  /** True when multiple group defaults disagreed and the project default won. */
-  session_default_conflict?: boolean;
-  conflicting_group_refs?: string[];
   branches: ProjectBranch[];
 }
 

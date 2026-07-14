@@ -4,7 +4,29 @@ set -euo pipefail
 exec > >(tee -a /var/log/kortix-bootstrap.log | logger -t kortix-bootstrap -s 2>/dev/console) 2>&1
 
 dnf update -y
-dnf install -y amazon-cloudwatch-agent docker xfsprogs
+dnf install -y amazon-cloudwatch-agent docker jq unzip xfsprogs
+
+aws_cli_tmp=$(mktemp -d)
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.25.14.zip \
+  -o "$${aws_cli_tmp}/awscliv2.zip"
+printf '%s  %s\n' '9145327c1e33e5df50ad9a283fd1cb47e256f858c0a846017c11bc2eab8e47f1' "$${aws_cli_tmp}/awscliv2.zip" | sha256sum --check --strict
+unzip -q "$${aws_cli_tmp}/awscliv2.zip" -d "$${aws_cli_tmp}"
+if [ -x /usr/local/aws-cli/v2/current/bin/aws ]; then
+  "$${aws_cli_tmp}/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+else
+  "$${aws_cli_tmp}/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli
+fi
+rm -rf "$${aws_cli_tmp}"
+aws --version
+
+install -d -m 0755 /usr/local/lib/docker/cli-plugins
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://github.com/docker/compose/releases/download/v5.3.1/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+echo 'f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959  /usr/local/lib/docker/cli-plugins/docker-compose' | sha256sum --check --strict
+chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+docker compose version
 systemctl enable --now docker amazon-ssm-agent
 
 install -d -m 0755 /etc/kortix /opt/kortix/releases /var/lib/kortix
@@ -30,6 +52,8 @@ AWS_REGION=${aws_region}
 KORTIX_INSTANCE=${instance_name}
 KORTIX_RUNTIME_SECRET_ARN=${runtime_secret_arn}
 KORTIX_BACKUP_BUCKET=${backup_bucket}
+KORTIX_BACKUP_KMS_KEY_ARN=${backup_kms_key_arn}
+KORTIX_STATE_TABLE=${state_table}
 KORTIX_LOG_GROUP=${log_group}
 ENV
 chmod 0600 /etc/kortix/instance.env

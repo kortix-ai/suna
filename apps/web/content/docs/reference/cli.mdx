@@ -72,28 +72,53 @@ One Kortix login can belong to many accounts (personal, a company account, …).
 
 ### Self-host
 
-`kortix self-host start` creates and starts a production-style local Kortix stack
-using Docker Compose. On first interactive setup it always collects a Daytona
-API key (the sandbox runtime — required, or agent sessions can't start) and
-managed GitHub access (a PAT or GitHub App — required to create projects), plus
-the optional Pipedream integration for app connectors. Local ports, Supabase, generated secrets, and
-Docker defaults are handled automatically. `start` prints a warning if the
-sandbox provider or git provider still isn't configured.
+`kortix self-host` manages two targets: a local Docker Compose stack
+(`--target docker`, the default for new instances) and a production Enterprise
+AWS VPC stack (`--target aws-vpc`). Existing Docker instances remain fully
+compatible.
+
+For Docker, `start` creates config if needed, starts Supabase/API/web locally,
+and collects the Daytona sandbox key, managed GitHub access, and optional
+Pipedream connector integration. Local ports, generated secrets, and Docker
+defaults are handled automatically.
+
+For AWS VPC, `init --target aws-vpc` stores secret-free desired settings and the
+CLI materializes the reviewed Terraform roots plus signed enterprise updater
+assets. `init`, `configure`, `doctor`, and `plan` are non-mutating; `deploy`
+requires confirmation (or `--yes`) and migrates bootstrap state into customer
+S3. After bootstrap, `reconcile`, `update`, and `rollback` start the
+customer-owned updater workflow and cannot bypass TUF signature, digest,
+compatibility, account, Terraform-plan, migration, or health gates. The full
+operator runbook lives at `docs/runbooks/enterprise-vpc-deployment.md` in the
+repository.
 
 | Command | Effect |
 | --- | --- |
-| `kortix self-host init` | Create the self-host config with production defaults, without starting the stack. |
-| `kortix self-host start` | Create config if needed, start the local stack, and register the `selfhost` host. |
-| `kortix self-host update [--tag <v>]` | Pull a newer version (default: `latest`), apply migrations, and recreate the stack in place — preserves the Postgres volume. |
+| `kortix self-host init [--target docker\|aws-vpc]` | Create the self-host config with production defaults, without starting the target. |
+| `kortix self-host configure` | Re-run the target credential/config wizard. |
+| `kortix self-host doctor` | Validate local tools, credentials, and target access. Non-mutating. |
+| `kortix self-host plan` | Preview target changes without applying them. Non-mutating. |
+| `kortix self-host deploy` | Bootstrap or converge an AWS VPC target from a saved plan. |
+| `kortix self-host start` | Docker only: create config if needed, start the local stack, and register the `selfhost` host. |
+| `kortix self-host update [--tag <v> \| --release <v>]` | Docker: pull a newer image tag and recreate the stack in place. AWS VPC: start the signed updater for an immutable enterprise release. |
+| `kortix self-host reconcile` | Ask an AWS VPC target to converge to its configured release channel. |
+| `kortix self-host rollback --release <v>` | Roll an AWS VPC target back to a compatible signed release. |
 | `kortix self-host version` | Show the running version and image tags. |
-| `kortix self-host restart` | Restart the stack. |
-| `kortix self-host status` | Show Docker Compose service status. |
+| `kortix self-host restart` | Docker only: restart the local stack. |
+| `kortix self-host status` | Show Docker Compose service status or AWS target health/deployment status. |
 | `kortix self-host open` | Open the local dashboard in your browser. |
-| `kortix self-host configure` | Re-run the Daytona, GitHub, and Pipedream credential wizard. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
 | `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
 | `kortix self-host logs [service]` | Tail Docker Compose logs. |
-| `kortix self-host stop` | Stop the stack. |
+| `kortix self-host stop` | Docker only: stop the local stack. |
+
+Common target flags: `--instance`, `--target`, `--json`, and `--yes`. Docker
+adds `--tag`, `--local`, and `--registry`. AWS VPC adds `--release`,
+`--channel`, `--aws-profile`, `--region`, `--vpc-cidr`, `--api-domain`,
+`--frontend-domain`, `--route53-zone-id`, `--release-repository-url`,
+`--tuf-root-sha256`, `--updater-bootstrap-url`,
+`--updater-bootstrap-sha256`, `--release-publisher-account-id`,
+`--maintenance-window`, and `--force`.
 
 ### Projects
 
@@ -252,7 +277,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print a session's recent messages, read-only — peek at what an agent is doing without sending it anything. Alias: `messages`. |
 | `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review for reflection: metadata + compressed transcript snippets with tool outputs stripped. Aliases: `review`, `summary`. |
 | `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable, root-served preview URL for a port in the session's sandbox (default `3000`). |
-| `kortix sessions restart <id>` | Re-provision a session in place. |
+| `kortix sessions restart <id>` | Restart the session's sandbox. An already materialized provider runtime is stop/started in place; a replacement is allocated only if the original sandbox never materialized. |
 | `kortix sessions rename <id> <name>` | Set a session's name. Pass `""` to clear it and revert to the automatic title. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
@@ -479,7 +504,7 @@ The CLI reads `KORTIX_CLI_TOKEN` automatically (falling back to `KORTIX_EXECUTOR
 
 ### Rotating
 
-A sandbox's project token is minted at session create and lives for that sandbox. Restarting re-provisions and issues a fresh token; an existing sandbox keeps its token until it restarts.
+A sandbox's project token is minted for the session sandbox and remains the token for that sandbox across restart of an already materialized runtime. Restarting stop/starts that same provider runtime in place. A replacement runtime is allocated only if the original sandbox never materialized.
 
 ## Common workflows
 
@@ -561,6 +586,6 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 ## What the CLI is not
 
-- **Not a separate runtime.** Use `kortix self-host start` to run your own local Kortix Cloud stack, then switch between Cloud and local APIs with `kortix hosts use`.
+- **Not a separate runtime.** Use `kortix self-host start` for local Docker or `kortix self-host deploy --target aws-vpc` for Enterprise AWS VPC, then switch between Cloud and self-hosted APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
 - **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

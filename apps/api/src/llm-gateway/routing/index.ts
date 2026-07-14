@@ -2,6 +2,7 @@ import type { ModelRouteInput, ModelRoutePlan, AuthedPrincipal } from '@kortix/l
 import { config } from '../../config';
 import { gatewayModelCatalog } from '../models/catalog-models';
 import { createGatewayRouteResolver } from './resolve-route';
+import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 
 const routingCatalog = () => gatewayModelCatalog('gateway-routing');
 
@@ -13,6 +14,7 @@ const resolver = createGatewayRouteResolver({
     const wire = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
     return routingCatalog()[wire]?.attachment === true;
   },
+  getProjectPolicy: getProjectRoutingPolicy,
 });
 
 export function resolveGatewayRoute(

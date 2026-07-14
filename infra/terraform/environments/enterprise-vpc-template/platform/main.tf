@@ -46,12 +46,15 @@ module "platform" {
   oidc_provider_arn        = local.instance.oidc_provider_arn
   oidc_provider_url        = local.instance.oidc_provider_url
   api_domain               = local.instance.api_domain
-  cloudflare_zone_id       = var.cloudflare_zone_id
-  cloudflare_api_token     = var.cloudflare_api_token
+  frontend_domain          = local.instance.frontend_domain
+  route53_zone_id          = local.instance.route53_zone_id
+  external_dns_role_arn    = local.instance.external_dns_role_arn
   app_namespace            = local.instance.app_namespace
   app_service_account      = local.instance.app_service_account
   app_irsa_role_arn        = local.instance.app_irsa_role_arn
-  runtime_secret_arn       = local.instance.runtime_secret_arn
+  alb_controller_role_arn  = local.instance.alb_controller_role_arn
+  autoscaler_role_arn      = local.instance.autoscaler_role_arn
+  argo_rollouts_role_arn   = local.instance.argo_rollouts_role_arn
   permissions_boundary_arn = local.instance.permissions_boundary_arn
   tags                     = var.tags
 }

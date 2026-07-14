@@ -2,6 +2,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { endComputeSession, reopenComputeForSandbox } from '../billing/services/compute-metering';
+import type { ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 
 export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
@@ -131,7 +132,7 @@ export async function markInPlaceRuntimeRecoveryAccepted(
       return updatedRow;
     });
     if (updated && recovery === 'running') {
-      void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId).catch(
+      void reopenComputeForSandbox(updated.sandboxId, updated.accountId, updated.sessionId, null, updated.provider as ProviderName).catch(
         (err) =>
           console.warn(`[runtime-identity] compute reopen failed for ${updated.sandboxId}:`, err),
       );

@@ -23,7 +23,6 @@ import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { denierFromConfig, filterConfigResourcesForUser, resourceDenierForRequest } from '../lib/project-resources';
 import { AnyObject, CommitSchema, ProjectSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { resolveEffectiveSessionBaseRef } from '../lib/session-base-ref-resolution';
 import {
   normalizeString,
   readBody,
@@ -442,36 +441,19 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
 
-  const sessionDefault = await resolveEffectiveSessionBaseRef({
-    userId: loaded.userId,
-    accountId: loaded.row.accountId,
-    projectId,
-    projectDefaultRef: loaded.row.defaultBranch,
-  });
-
-  const payload = (branches: Awaited<ReturnType<typeof listBranches>>) => ({
-    default_branch: loaded.row.defaultBranch,
-    session_default_ref: sessionDefault.ref,
-    session_default_source: sessionDefault.source,
-    session_default_groups: sessionDefault.groups.map((group) => ({
-      group_id: group.groupId,
-      group_name: group.groupName,
-    })),
-    session_default_conflict: sessionDefault.conflict,
-    conflicting_group_refs: sessionDefault.conflictingRefs,
-    branches,
-  });
-
   try {
     const branches = await listBranches(await withProjectGitAuth(loaded.row));
-    return c.json(payload(branches));
+    return c.json({
+      default_branch: loaded.row.defaultBranch,
+      branches,
+    });
   } catch (error) {
     console.warn('[projects] branch listing unavailable', {
       projectId,
       error: error instanceof Error ? error.message : String(error),
     });
     c.header('X-Kortix-Repo-Status', 'unavailable');
-    return c.json(payload([]));
+    return c.json({ default_branch: loaded.row.defaultBranch, branches: [] });
   }
 },
 );

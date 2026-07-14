@@ -1,12 +1,9 @@
-/**
- * Platform API client — managed VPS ("JustAVPS") instance admin: server-type
- * catalog, create/delete, error reporting, the legacy free-computer claim,
- * and the provisioning status/stream endpoints polled by the provisioning UI.
- */
+/** Generic instance administration and provisioning status surfaces. */
 
 import { backendApi } from '../../http/api-client';
 import { getPlatformUrl } from './shared';
 
+/** @deprecated The standalone VPS catalog was retired. */
 export interface ServerType {
   name: string;
   description: string;
@@ -20,6 +17,7 @@ export interface ServerType {
   location: string;
 }
 
+/** @deprecated The standalone VPS catalog was retired. */
 export interface ServerTypesResponse {
   serverTypes: ServerType[];
   location: string;
@@ -27,26 +25,15 @@ export interface ServerTypesResponse {
   defaultLocation?: string;
 }
 
+/**
+ * @deprecated The standalone VPS catalog was retired. This compatibility stub
+ * remains only so existing npm consumers do not fail to import the SDK.
+ */
 export async function getJustavpsServerTypes(location?: string): Promise<ServerTypesResponse> {
-  const params = location ? `?location=${location}` : '';
-  const response = await backendApi.get<ServerTypesResponse>(
-    `/platform/sandbox/justavps/server-types${params}`,
-  );
-  if (response.error) {
-    if (
-      response.error.status === 404 &&
-      /justavps provider is not enabled/i.test(response.error.message || '')
-    ) {
-      return {
-        serverTypes: [],
-        location: location || 'hel1',
-      };
-    }
-    throw response.error;
-  }
-  return response.data!;
+  return { serverTypes: [], location: location || 'hel1' };
 }
 
+/** @deprecated Standalone instance provisioning was retired. */
 export interface CreateInstanceRequest {
   provider: 'justavps';
   serverType?: string;
@@ -55,10 +42,14 @@ export interface CreateInstanceRequest {
   backgroundProvisioning?: boolean;
 }
 
-export async function createInstance(request: CreateInstanceRequest): Promise<any> {
-  const response = await backendApi.post<any>('/platform/sandbox', request, { timeout: 180000 });
-  if (response.error) throw response.error;
-  return response.data!;
+/**
+ * @deprecated Standalone instance provisioning was retired. The supported
+ * sandbox provider contract is `daytona | platinum | e2b`.
+ */
+export async function createInstance(_request: CreateInstanceRequest): Promise<never> {
+  throw new Error(
+    'Retired instance provisioning is unavailable. Create a project session with daytona, platinum, or e2b.',
+  );
 }
 
 export async function deleteInstance(sandboxId: string): Promise<{ success: boolean }> {

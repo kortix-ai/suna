@@ -25,7 +25,10 @@ joined to that agent's `.kortix/opencode/agents/<name>.md` by name. Each entry i
 governance only: `connectors`, `secrets`, `kortix_cli`, `skills`, `workspace`,
 `enabled`. Nothing about prompt, mode, tools, or permissions lives here — that's
 entirely the `.md` file's job. `default_agent` is required at the top level and
-must name a declared, enabled agent.
+must name a declared, enabled agent. The project default agent can be set (or
+changed) from the dashboard, API, or SDK — each writes `default_agent` in
+`kortix.yaml` — and sessions (UI, triggers, channels) inherit it unless the
+caller passes an explicit agent for that session.
 
 v2 is **deny-by-default**: an agent with no `connectors`/`secrets`/`kortix_cli`/
 `skills` key gets none of that access. Give it `all` explicitly to grant full

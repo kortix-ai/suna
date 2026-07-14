@@ -59,6 +59,25 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: 'default' |
   );
 }
 
+/** The quiet page frame every auth surface shares: mark, centered column, legal footer. */
+export function AuthFrame({
+  children,
+  footerVariant = 'default',
+}: {
+  children: React.ReactNode;
+  footerVariant?: 'default' | 'signup';
+}) {
+  return (
+    <div className="bg-background relative flex min-h-svh flex-col">
+      <AuthMobileLogo />
+      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
+        <div className="w-full max-w-[380px]">{children}</div>
+      </main>
+      <AuthLegalFooter variant={footerVariant} />
+    </div>
+  );
+}
+
 export function AuthCardShell({
   title,
   description,
@@ -79,29 +98,22 @@ export function AuthCardShell({
   });
 
   return (
-    <div className="bg-background relative flex min-h-svh flex-col">
-      <AuthMobileLogo />
-      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
-        <div className="w-full max-w-[380px]">
-          <motion.div {...rise(0)}>
-            <div className="mb-10">
-              <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
-              <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance md:mt-6">
-                {title}
-              </h1>
-              <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
-            </div>
-          </motion.div>
-
-          <motion.div {...rise(0.06)}>
-            {children}
-            {footer ? <div className="mt-8">{footer}</div> : null}
-          </motion.div>
+    <AuthFrame>
+      <motion.div {...rise(0)}>
+        <div className="mb-10">
+          <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+          <h1 className="text-foreground text-2xl font-medium tracking-tight text-balance md:mt-6">
+            {title}
+          </h1>
+          <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
         </div>
-      </main>
+      </motion.div>
 
-      <AuthLegalFooter />
-    </div>
+      <motion.div {...rise(0.06)}>
+        {children}
+        {footer ? <div className="mt-8">{footer}</div> : null}
+      </motion.div>
+    </AuthFrame>
   );
 }
 

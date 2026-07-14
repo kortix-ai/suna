@@ -25,8 +25,8 @@ export default function SsoSetupPage() {
   }
 
   return (
-    <main className="px-6 py-10">
+    <div className="px-6 py-10">
       <SsoSetupWizard accountId={accountId} />
-    </main>
+    </div>
   );
 }

@@ -8389,12 +8389,6 @@
           "notNull": true,
           "default": "'member'"
         },
-        "default_base_ref": {
-          "name": "default_base_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "granted_by": {
           "name": "granted_by",
           "type": "uuid",
@@ -10127,7 +10121,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

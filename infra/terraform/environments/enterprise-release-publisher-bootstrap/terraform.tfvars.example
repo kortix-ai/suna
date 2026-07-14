@@ -1,0 +1,16 @@
+aws_region                = "us-west-2"
+expected_account_id       = "935064898258"
+publisher_name            = "kortix-enterprise-releases"
+terraform_role_name       = "kortix-enterprise-publisher-terraform"
+repository_bucket_name    = "kortix-enterprise-releases-935064898258-us-west-2"
+github_oidc_provider_arn  = "arn:aws:iam::935064898258:oidc-provider/token.actions.githubusercontent.com"
+github_repository         = "kortix-ai/suna"
+github_environment        = "enterprise-stable"
+customer_event_bus_arns = [
+  "arn:aws:events:us-west-2:935064898258:event-bus/kortix-vpc-demo-releases",
+]
+
+tags = {
+  Environment = "shared"
+  Owner       = "kortix"
+}

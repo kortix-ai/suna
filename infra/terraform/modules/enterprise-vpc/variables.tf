@@ -23,8 +23,12 @@ variable "vpc_cidr" {
   type        = string
 
   validation {
-    condition     = can(cidrsubnet(var.vpc_cidr, 4, 0)) && endswith(var.vpc_cidr, "/16")
-    error_message = "vpc_cidr must be a valid /16 CIDR."
+    condition = can(cidrsubnet(var.vpc_cidr, 4, 0)) && endswith(var.vpc_cidr, "/16") && (
+      startswith(var.vpc_cidr, "10.") ||
+      can(regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.0\\.0/16$", var.vpc_cidr)) ||
+      var.vpc_cidr == "192.168.0.0/16"
+    )
+    error_message = "vpc_cidr must be a canonical RFC1918 /16 CIDR."
   }
 }
 
@@ -75,6 +79,16 @@ variable "api_domain" {
 variable "frontend_domain" {
   description = "Customer frontend FQDN covered by ACM and managed during platform bootstrap."
   type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Customer-owned public Route 53 hosted zone containing both application domains."
+  type        = string
+
+  validation {
+    condition     = can(regex("^Z[A-Z0-9]{5,31}$", var.route53_zone_id))
+    error_message = "route53_zone_id must be a Route 53 hosted zone ID."
+  }
 }
 
 variable "supabase_instance_type" {
@@ -173,13 +187,13 @@ variable "release_channel" {
 }
 
 variable "image_repositories" {
-  description = "Customer-owned ECR repositories populated by the signed updater. The release-bundle repository stores signed OCI bundles as well as rollback metadata."
+  description = "Customer-owned ECR repositories populated by the signed updater. Release bundles remain authenticated TUF targets and are not duplicated as OCI images."
   type        = set(string)
-  default     = ["api", "frontend", "gateway", "migrate", "release-bundle"]
+  default     = ["api", "frontend", "gateway"]
 
   validation {
-    condition     = length(setsubtract(toset(["api", "frontend", "gateway", "migrate", "release-bundle"]), var.image_repositories)) == 0
-    error_message = "image_repositories must include api, frontend, gateway, migrate, and release-bundle."
+    condition     = length(setsubtract(toset(["api", "frontend", "gateway"]), var.image_repositories)) == 0
+    error_message = "image_repositories must include api, frontend, and gateway."
   }
 }
 
@@ -215,6 +229,21 @@ variable "permissions_boundary_arn" {
     condition     = can(regex("^arn:[^:]+:iam::${var.expected_account_id}:policy/.+$", var.permissions_boundary_arn))
     error_message = "permissions_boundary_arn must be a managed-policy ARN owned by expected_account_id."
   }
+}
+
+variable "terraform_state_bucket" {
+  description = "Customer-owned remote-state bucket used by the private platform stage."
+  type        = string
+}
+
+variable "terraform_state_lock_table" {
+  description = "Customer-owned DynamoDB lock table used by the private platform stage."
+  type        = string
+}
+
+variable "terraform_state_kms_key_arn" {
+  description = "Customer-owned KMS key protecting remote Terraform state."
+  type        = string
 }
 
 variable "backup_retention_days" {

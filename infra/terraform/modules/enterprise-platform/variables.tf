@@ -4,11 +4,9 @@ variable "vpc_id" { type = string }
 variable "oidc_provider_arn" { type = string }
 variable "oidc_provider_url" { type = string }
 variable "api_domain" { type = string }
-variable "cloudflare_zone_id" { type = string }
-variable "cloudflare_api_token" {
-  type      = string
-  sensitive = true
-}
+variable "frontend_domain" { type = string }
+variable "route53_zone_id" { type = string }
+variable "external_dns_role_arn" { type = string }
 variable "app_namespace" {
   type    = string
   default = "kortix-app"
@@ -18,16 +16,10 @@ variable "app_service_account" {
   default = "kortix"
 }
 variable "app_irsa_role_arn" { type = string }
-variable "runtime_secret_arn" { type = string }
+variable "alb_controller_role_arn" { type = string }
+variable "autoscaler_role_arn" { type = string }
+variable "argo_rollouts_role_arn" { type = string }
 variable "permissions_boundary_arn" { type = string }
-variable "argocd_domain" {
-  type    = string
-  default = ""
-}
-variable "argocd_certificate_arn" {
-  type    = string
-  default = ""
-}
 variable "tags" {
   type    = map(string)
   default = {}

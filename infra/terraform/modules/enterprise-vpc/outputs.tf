@@ -14,10 +14,15 @@ output "instance" {
     private_subnet_ids       = module.network.private_subnet_ids
     api_domain               = var.api_domain
     frontend_domain          = var.frontend_domain
-    certificate_arn          = aws_acm_certificate.public.arn
+    certificate_arn          = aws_acm_certificate_validation.public.certificate_arn
     app_namespace            = var.app_namespace
     app_service_account      = var.app_service_account
     app_irsa_role_arn        = module.app_irsa.role_arn
+    alb_controller_role_arn  = module.alb_controller_irsa.role_arn
+    autoscaler_role_arn      = module.cluster_autoscaler_irsa.role_arn
+    argo_rollouts_role_arn   = module.argo_rollouts_irsa.role_arn
+    external_dns_role_arn    = module.external_dns_irsa.role_arn
+    route53_zone_id          = var.route53_zone_id
     permissions_boundary_arn = var.permissions_boundary_arn
     runtime_secret_arn       = aws_secretsmanager_secret.runtime.arn
     updater_secret_arn       = aws_secretsmanager_secret.updater.arn
@@ -31,7 +36,7 @@ output "instance" {
   sensitive = true
 }
 output "certificate_dns_validation_records" {
-  description = "Add these exact CNAMEs in Cloudflare (DNS-only) before the platform stage."
+  description = "ACM validation records managed automatically in the customer Route 53 zone."
   value = [for option in aws_acm_certificate.public.domain_validation_options : {
     domain = option.domain_name
     name   = option.resource_record_name
