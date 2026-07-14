@@ -70,6 +70,15 @@ describe('embedded enterprise Terraform graph', () => {
     expect(cloudTrail).toContain('variable = "aws:SourceArn"');
   });
 
+  test('installs a pinned AWS CLI distribution supported by the AL2023 Supabase host', () => {
+    const userData = enterpriseTerraformAssets['modules/enterprise-vpc/files/supabase-user-data.sh.tftpl'];
+
+    expect(userData).not.toContain('dnf install -y amazon-cloudwatch-agent awscli2');
+    expect(userData).toContain('awscli-exe-linux-x86_64-2.25.14.zip');
+    expect(userData).toContain('9145327c1e33e5df50ad9a283fd1cb47e256f858c0a846017c11bc2eab8e47f1');
+    expect(userData).toContain('aws --version');
+  });
+
   test('keeps the customer updater as the only enterprise Helm reconciler', () => {
     const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
     const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];
