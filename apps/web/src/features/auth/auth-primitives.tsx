@@ -7,9 +7,11 @@
  */
 
 import { DangerTriangleSolid, InfoCircleSolid } from '@mynaui/icons-react';
+import { LockKeyhole } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import {
   applyBackspace,
@@ -88,6 +90,21 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
     <label htmlFor={htmlFor} className="text-muted-foreground text-sm font-medium">
       {children}
     </label>
+  );
+}
+
+export function AuthTrustCue() {
+  return (
+    <div className="mt-8 flex justify-center">
+      <Badge
+        variant="muted"
+        size="sm"
+        className="border-border/70 bg-popover text-muted-foreground h-7 cursor-default gap-1.5 rounded-full border px-2.5"
+      >
+        <LockKeyhole className="size-3.5 shrink-0" aria-hidden />
+        <span>Secure access to your Kortix workspace</span>
+      </Badge>
+    </div>
   );
 }
 

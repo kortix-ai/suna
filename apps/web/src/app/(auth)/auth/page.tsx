@@ -22,7 +22,13 @@ import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import {
+  AuthTrustCue,
+  CodeInput,
+  FieldLabel,
+  InfoStrip,
+  StepHeader,
+} from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -728,6 +734,7 @@ function AuthContent() {
         returnUrl={returnUrl}
         mobileCallbackState={mobileCallbackState}
       />
+      <AuthTrustCue />
     </AuthFrame>
   );
 }
