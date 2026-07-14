@@ -119,6 +119,42 @@ module "api" {
   tags                       = local.tags
 }
 
+# ── Gateway (LLM proxy) as its own ECS Fargate service ────────────────────────
+# Same reusable module as the API, in its own cluster/ALB. Retiring EKS means the
+# gateway leaves the cluster too; on Fargate it reaches the API over the public
+# dev-api hostname (no in-cluster DNS). Shares the dev env blob with the API.
+module "gateway" {
+  source     = "../../modules/ecs-api"
+  name       = "${local.name}-gateway"
+  aws_region = var.aws_region
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  image             = var.gateway_image
+  container_name    = "gateway"
+  container_port    = 8090
+  health_check_path = "/health/live"
+  enable_https      = var.enable_https
+  certificate_arn   = var.enable_https ? one(module.acm[*].certificate_arn) : ""
+  # PORT is auto-injected by the module; the gateway also needs to call back to
+  # the API, which on Fargate is the public (Cloudflare-fronted) dev-api host.
+  environment = merge(var.gateway_environment, { KORTIX_API_URL = "https://dev-api.kortix.com" })
+  secrets     = var.api_secrets
+
+  alb_ingress_cidrs = local.cloudflare_ip_ranges
+
+  # gateway is light (LLM proxy) — smaller than the API
+  task_cpu         = 256
+  task_memory      = 512
+  desired_count    = 1
+  min_capacity     = 1
+  max_capacity     = 3
+  use_fargate_spot = true
+  tags             = local.tags
+}
+
 # ── DNS: dev-api-ecs-fargate.kortix.com → the ALB (Cloudflare-proxied) ─────────
 # This is the ECS fallback backend the dev-api Worker routes to. dev-api itself
 # is the Worker's custom domain (AAAA 100:: placeholder) and is intentionally NOT
@@ -133,6 +169,13 @@ module "dns" {
       name    = "dev-api-ecs-fargate"
       type    = "CNAME"
       value   = module.api.alb_dns_name
+      proxied = true
+      ttl     = 1
+    }
+    gateway-dev-ecs-fargate = {
+      name    = "gateway-dev-ecs-fargate"
+      type    = "CNAME"
+      value   = module.gateway.alb_dns_name
       proxied = true
       ttl     = 1
     }

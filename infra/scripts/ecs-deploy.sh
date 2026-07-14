@@ -41,9 +41,11 @@ case "$ENV" in
   *) echo "unknown env: $ENV" >&2; exit 2 ;;
 esac
 
-# api service == cluster/service named kortix-<env>; gateway == kortix-<env>-gateway
+# Each service lives in its own cluster (the ecs-api module names cluster==service):
+#   api     → cluster/service kortix-<env>,         container "api"
+#   gateway → cluster/service kortix-<env>-gateway,  container "gateway"
 if [ "$SVC_KIND" = "gateway" ]; then
-  CLUSTER="kortix-${ENV}"
+  CLUSTER="kortix-${ENV}-gateway"
   SERVICE="kortix-${ENV}-gateway"
   CONTAINER="gateway"
 else

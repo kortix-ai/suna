@@ -36,6 +36,18 @@ variable "api_image" {
   default     = "ghcr.io/kortix-ai/kortix-api:latest"
 }
 
+variable "gateway_image" {
+  description = "Container image for the gateway (LLM proxy). CI rolls new revisions; Terraform only seeds the initial task-def."
+  type        = string
+  default     = "kortix/kortix-gateway:dev-latest"
+}
+
+variable "gateway_environment" {
+  description = "Non-secret env vars for the gateway container (besides PORT and KORTIX_API_URL, which are set by the module/env)."
+  type        = map(string)
+  default     = {}
+}
+
 variable "container_port" {
   description = "Port the API container listens on."
   type        = number
