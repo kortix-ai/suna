@@ -19,11 +19,7 @@ import stateModuleOutputs from '../../../../infra/terraform/modules/enterprise-s
 import stateModuleVariables from '../../../../infra/terraform/modules/enterprise-state/variables.tf' with { type: 'text' };
 import stateModuleVersions from '../../../../infra/terraform/modules/enterprise-state/versions.tf' with { type: 'text' };
 
-import enterpriseAcm from '../../../../infra/terraform/modules/enterprise-vpc/acm.tf' with { type: 'text' };
-import enterpriseAlb from '../../../../infra/terraform/modules/enterprise-vpc/alb.tf' with { type: 'text' };
 import enterpriseBackup from '../../../../infra/terraform/modules/enterprise-vpc/backup.tf' with { type: 'text' };
-import enterpriseDeployer from '../../../../infra/terraform/modules/enterprise-vpc/deployer.tf' with { type: 'text' };
-import enterpriseEcs from '../../../../infra/terraform/modules/enterprise-vpc/ecs.tf' with { type: 'text' };
 import supabaseUserData from '../../../../infra/terraform/modules/enterprise-vpc/files/supabase-user-data.sh.tftpl' with { type: 'text' };
 import enterpriseFlowLogs from '../../../../infra/terraform/modules/enterprise-vpc/flow-logs.tf' with { type: 'text' };
 import enterpriseKms from '../../../../infra/terraform/modules/enterprise-vpc/kms.tf' with { type: 'text' };
@@ -62,11 +58,7 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   'modules/enterprise-state/outputs.tf': stateModuleOutputs,
   'modules/enterprise-state/variables.tf': stateModuleVariables,
   'modules/enterprise-state/versions.tf': stateModuleVersions,
-  'modules/enterprise-vpc/acm.tf': enterpriseAcm,
-  'modules/enterprise-vpc/alb.tf': enterpriseAlb,
   'modules/enterprise-vpc/backup.tf': enterpriseBackup,
-  'modules/enterprise-vpc/deployer.tf': enterpriseDeployer,
-  'modules/enterprise-vpc/ecs.tf': enterpriseEcs,
   'modules/enterprise-vpc/files/supabase-user-data.sh.tftpl': supabaseUserData,
   'modules/enterprise-vpc/flow-logs.tf': enterpriseFlowLogs,
   'modules/enterprise-vpc/kms.tf': enterpriseKms,

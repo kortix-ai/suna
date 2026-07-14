@@ -38,17 +38,17 @@ variable "vpc_cidr" {
 }
 
 variable "api_domain" {
-  description = "Customer API FQDN covered by ACM and pointed at the shared ALB."
+  description = "Customer API FQDN. An A record is created in route53_zone_id pointing at the appliance EIP; Caddy on the box terminates TLS via ACME."
   type        = string
 }
 
 variable "frontend_domain" {
-  description = "Customer frontend FQDN covered by ACM and pointed at the shared ALB."
+  description = "Customer frontend FQDN. An A record is created in route53_zone_id pointing at the appliance EIP; Caddy on the box terminates TLS via ACME."
   type        = string
 }
 
 variable "route53_zone_id" {
-  description = "Customer-owned public Route 53 hosted zone containing both application domains."
+  description = "Customer-owned public Route 53 hosted zone containing both application domains. Also used for ACME DNS-01 by the on-box updater via the instance role."
   type        = string
 
   validation {
@@ -57,161 +57,22 @@ variable "route53_zone_id" {
   }
 }
 
-# ── ECS service images (digest-pinned by the deployer at runtime) ──────────────
-variable "placeholder_image" {
-  description = "Long-lived, no-op public image seeded into every task-def until the deployer rolls a signed, digest-pinned image from customer ECR. Its default entrypoint blocks forever so tasks do not crash-loop before the first deploy."
+variable "acme_email" {
+  description = "Contact email Caddy registers with the ACME CA (Let's Encrypt/ZeroSSL) for the appliance certificates. Optional; empty issues anonymously. Recommended so the CA can send expiry/revocation notices."
   type        = string
-  default     = "public.ecr.aws/eks-distro/kubernetes/pause:3.9"
+  default     = ""
 }
 
-variable "api_image" {
-  description = "Initial API image ref. Null seeds the placeholder; the deployer owns real revisions (services ignore task_definition changes)."
-  type        = string
-  default     = null
-}
-
-variable "gateway_image" {
-  description = "Initial gateway image ref. Null seeds the placeholder."
-  type        = string
-  default     = null
-}
-
-variable "frontend_image" {
-  description = "Initial frontend image ref. Null seeds the placeholder."
-  type        = string
-  default     = null
-}
-
-variable "deployer_image" {
-  description = "Slim enterprise-updater/deployer image ref (apps/enterprise-updater). Null seeds the placeholder; the deploy tooling owns real revisions."
-  type        = string
-  default     = null
-}
-
-variable "deployer_command" {
-  description = "Command for the one-off deployer task. Empty uses the image's own entrypoint."
-  type        = list(string)
-  default     = ["reconcile"]
-}
-
-variable "runtime_secret_keys" {
-  description = "Optional seed list of JSON keys inside <instance>/runtime to wire as container secrets. The deployer re-derives the authoritative full set from the live secret on every roll (the ecs-deploy.sh pattern), so this can stay empty; the execution role can read every key regardless."
-  type        = list(string)
-  default     = []
-}
-
-# ── ECS sizing / autoscaling ──────────────────────────────────────────────────
-variable "api_task_cpu" {
-  type    = number
-  default = 1024
-}
-
-variable "api_task_memory" {
-  type    = number
-  default = 2048
-}
-
-variable "api_min_capacity" {
-  description = "Autoscaling floor for the api service. Enterprise HA requires >= 2."
-  type        = number
-  default     = 2
-}
-
-variable "api_max_capacity" {
-  type    = number
-  default = 6
-}
-
-variable "gateway_task_cpu" {
-  type    = number
-  default = 512
-}
-
-variable "gateway_task_memory" {
-  type    = number
-  default = 1024
-}
-
-variable "gateway_min_capacity" {
-  description = "Autoscaling floor for the gateway service. Enterprise HA requires >= 2."
-  type        = number
-  default     = 2
-}
-
-variable "gateway_max_capacity" {
-  type    = number
-  default = 4
-}
-
-variable "frontend_task_cpu" {
-  type    = number
-  default = 512
-}
-
-variable "frontend_task_memory" {
-  type    = number
-  default = 1024
-}
-
-variable "frontend_desired_count" {
-  type    = number
-  default = 2
-}
-
-variable "migrate_task_cpu" {
-  type    = number
-  default = 1024
-}
-
-variable "migrate_task_memory" {
-  type    = number
-  default = 2048
-}
-
-variable "deployer_task_cpu" {
-  type    = number
-  default = 512
-}
-
-variable "deployer_task_memory" {
-  type    = number
-  default = 1024
-}
-
-variable "cpu_target" {
-  description = "Target average CPU %% for target-tracking autoscaling."
-  type        = number
-  default     = 60
-}
-
-variable "memory_target" {
-  description = "Target average memory %% for target-tracking autoscaling."
-  type        = number
-  default     = 70
-}
-
-# ── ALB ───────────────────────────────────────────────────────────────────────
-variable "alb_ingress_cidrs" {
-  description = "CIDRs allowed to reach the public ALB. Enterprise customers SHOULD restrict this to their corporate egress ranges; the open default exists only for first bring-up."
+# ── Ingress ───────────────────────────────────────────────────────────────────
+variable "ingress_cidrs" {
+  description = "CIDRs allowed to reach the appliance host on 80/443 (the whole customer-facing surface). Enterprise customers SHOULD restrict this to their corporate egress ranges; the open default exists only for first bring-up."
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
 
-variable "alb_idle_timeout" {
-  description = "ALB idle timeout (s). Raised for long-lived/streaming agent responses."
-  type        = number
-  default     = 300
-}
-
-variable "log_retention_days" {
-  description = "CloudWatch retention for ECS task logs."
-  type        = number
-  default     = 365
-}
-
-# ── Bedrock (LLM upstream for the gateway task role) ──────────────────────────
+# ── Bedrock (LLM upstream; the gateway SigV4-signs with the instance role) ─────
 variable "bedrock_model_allowlist" {
-  description = "Resource ARNs the gateway task role may invoke via bedrock:InvokeModel[WithResponseStream]. Defaults to Anthropic foundation models and cross-region inference profiles; restrict per certification."
+  description = "Resource ARNs the instance role may invoke via bedrock:InvokeModel[WithResponseStream]. Defaults to Anthropic foundation models and cross-region inference profiles; restrict per certification."
   type        = list(string)
   default = [
     "arn:aws:bedrock:*::foundation-model/anthropic.*",
@@ -220,53 +81,57 @@ variable "bedrock_model_allowlist" {
   ]
 }
 
-# ── Scheduled deploy (auto-update check) ──────────────────────────────────────
-variable "enable_scheduled_deploy" {
-  description = "Create the EventBridge Scheduler rule that runs the deployer task daily. The deployer exits 0 when running digests already match the stable manifest."
-  type        = bool
-  default     = true
-}
-
-variable "scheduler_schedule_expression" {
-  description = "EventBridge Scheduler expression for the daily auto-update check."
+# ── Appliance EC2 (runs the whole product: Caddy + api/gateway/frontend + Supabase) ─
+variable "appliance_instance_type" {
+  description = "EC2 instance type for the single-box appliance. Sized for Supabase plus api (x2) + gateway + frontend + Caddy on one host."
   type        = string
-  default     = "rate(1 day)"
+  default     = "m7i.2xlarge"
 }
 
-# ── Supabase EC2 ──────────────────────────────────────────────────────────────
-variable "supabase_instance_type" {
-  description = "Private EC2 instance type for the single-tenant Supabase Docker stack."
-  type        = string
-  default     = "r7i.xlarge"
-}
-
-variable "supabase_ami_id" {
+variable "appliance_ami_id" {
   description = "Optional reviewed AL2023 AMI. Null resolves the current AWS AL2023 x86_64 image during plan."
   type        = string
   default     = null
 }
 
-variable "supabase_data_volume_size_gib" {
+variable "root_volume_size_gib" {
+  description = "Encrypted root volume size (GiB). Sized with headroom for Docker image churn between prunes."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.root_volume_size_gib >= 50
+    error_message = "Root volume must be at least 50 GiB."
+  }
+}
+
+variable "data_volume_size_gib" {
   type    = number
   default = 500
 
   validation {
-    condition     = var.supabase_data_volume_size_gib >= 100
-    error_message = "Supabase data volume must be at least 100 GiB."
+    condition     = var.data_volume_size_gib >= 100
+    error_message = "Data volume must be at least 100 GiB."
   }
 }
 
-variable "supabase_data_volume_iops" {
+variable "data_volume_iops" {
   type    = number
   default = 6000
 }
 
-variable "supabase_data_volume_throughput" {
+variable "data_volume_throughput" {
   type    = number
   default = 250
 }
 
-# ── Signed-release / deployer configuration ───────────────────────────────────
+variable "disk_used_percent_alarm_threshold" {
+  description = "CloudWatch alarm threshold (%%) on the data volume's used space, published by the CloudWatch agent."
+  type        = number
+  default     = 85
+}
+
+# ── Signed-release / updater configuration ────────────────────────────────────
 variable "release_repository_url" {
   description = "HTTPS base URL of the immutable enterprise TUF repository the deployer fetches and verifies."
   type        = string
@@ -296,6 +161,26 @@ variable "release_channel" {
   validation {
     condition     = var.release_channel == "stable"
     error_message = "Enterprise installations may only track the stable channel."
+  }
+}
+
+variable "updater_bootstrap_url" {
+  description = "HTTPS URL of the initial signed updater binary the host fetches on first boot. The binary self-updates to the channel's signed updater on every run."
+  type        = string
+
+  validation {
+    condition     = startswith(var.updater_bootstrap_url, "https://")
+    error_message = "updater_bootstrap_url must use HTTPS."
+  }
+}
+
+variable "updater_bootstrap_sha256" {
+  description = "SHA-256 of the initial updater binary at updater_bootstrap_url, verified on the host before execution."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.updater_bootstrap_sha256))
+    error_message = "updater_bootstrap_sha256 must be a lowercase SHA-256 digest."
   }
 }
 
