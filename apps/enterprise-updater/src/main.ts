@@ -2,10 +2,12 @@
 
 import { join } from 'node:path';
 
-import { AwsControlPlane } from './aws.ts';
+import { EcsDeployer, type DeployRequest } from './ecs-deploy.ts';
+import { EcsControlPlane } from './ecs.ts';
 import { launchSignedUpdaterIfNeeded } from './launcher.ts';
 import { ProcessRunner } from './process.ts';
-import { EnterpriseReconciler } from './reconciler.ts';
+import { SupabaseInstaller } from './supabase.ts';
+import { TrustedRepository } from './tuf-repository.ts';
 
 const VERSION = process.env.KORTIX_ENTERPRISE_UPDATER_VERSION ?? '0.1.0-dev';
 
@@ -15,22 +17,28 @@ async function main(): Promise<number> {
     process.stdout.write(`kortix-enterprise-updater ${VERSION}\n`);
     return 0;
   }
-  if (command !== 'reconcile') {
-    process.stderr.write('Usage: kortix-enterprise-updater reconcile [required options]\n');
+  // `deploy` is the operator/scheduled verb; `reconcile` stays as an alias so any
+  // existing wiring keeps working. Both run the identical ECS deploy library.
+  if (command !== 'deploy' && command !== 'reconcile') {
+    process.stderr.write('Usage: kortix-enterprise-updater deploy [required options]\n');
     return 64;
   }
 
   const flags = parseFlags(args);
   const instance = requiredFlag(flags, 'instance');
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) throw new Error('instance is not a valid enterprise slug');
-  const channel = requiredFlag(flags, 'channel');
-  if (channel !== 'stable') throw new Error('enterprise updater may only reconcile stable');
+  const channel = flags.get('channel') ?? 'stable';
+  if (channel !== 'stable') throw new Error('enterprise updater may only track the stable channel');
   const repositoryUrl = requiredFlag(flags, 'repository');
   const trustedRootSha256 = requiredFlag(flags, 'trusted-root-sha256');
-  const stateTable = requiredFlag(flags, 'state-table');
-  const applyRoleArn = requiredFlag(flags, 'apply-role');
-  const maintenanceWindow = requiredFlag(flags, 'maintenance-window');
-  const executionInput = requiredFlag(flags, 'execution-input');
+
+  const requestedRelease = flags.get('release');
+  const rollbackTo = flags.get('rollback') ?? process.env.KORTIX_DEPLOY_ROLLBACK;
+  if (requestedRelease && rollbackTo) throw new Error('--release and --rollback are mutually exclusive');
+  const request: DeployRequest = {
+    ...(requestedRelease ? { requestedRelease } : (process.env.KORTIX_DEPLOY_RELEASE ? { requestedRelease: process.env.KORTIX_DEPLOY_RELEASE } : {})),
+    ...(rollbackTo ? { rollbackTo } : {}),
+  };
 
   const workDir = process.env.KORTIX_UPDATER_WORK_DIR ?? `/tmp/kortix-enterprise-updater/${instance}`;
   const payloadExit = await launchSignedUpdaterIfNeeded({
@@ -43,47 +51,51 @@ async function main(): Promise<number> {
 
   const region = env('AWS_REGION', 'AWS_DEFAULT_REGION');
   const expectedAccountId = env('KORTIX_EXPECTED_ACCOUNT_ID');
+  const clusterName = process.env.KORTIX_CLUSTER_NAME || `kortix-${instance}`;
+  const runtimeSecretArn = env('KORTIX_RUNTIME_SECRET_ARN');
+  const apiDomain = env('KORTIX_API_DOMAIN');
+  const frontendDomain = env('KORTIX_FRONTEND_DOMAIN');
   const runner = new ProcessRunner();
-  const aws = new AwsControlPlane(runner, { region, expectedAccountId, stateTable, instance });
-  const backupBucket = env('KORTIX_BACKUP_BUCKET');
-  const backupKmsKeyArn = env('KORTIX_BACKUP_KMS_KEY_ARN');
-  const reconciler = new EnterpriseReconciler(runner, aws, {
-    executionInput,
-    maintenanceWindow,
-    repository: {
+  const control = new EcsControlPlane(runner, {
+    region,
+    expectedAccountId,
+    instance,
+    clusterName,
+    runtimeSecretArn,
+    releaseParamName: process.env.KORTIX_RELEASE_PARAM || `/kortix/${instance}/release`,
+    ...(process.env.KORTIX_TASK_NETWORK_CONFIGURATION
+      ? { networkConfiguration: process.env.KORTIX_TASK_NETWORK_CONFIGURATION }
+      : {}),
+  });
+  const supabase = new SupabaseInstaller(runner, control, {
+    region,
+    instance,
+    supabaseInstanceId: env('KORTIX_SUPABASE_INSTANCE_ID'),
+    runtimeSecretArn,
+    artifactBucket: env('KORTIX_ARTIFACT_BUCKET', 'KORTIX_BACKUP_BUCKET'),
+    artifactKmsKeyArn: env('KORTIX_ARTIFACT_KMS_KEY_ARN', 'KORTIX_BACKUP_KMS_KEY_ARN'),
+    apiDomain,
+    frontendDomain,
+  });
+  const deployer = new EcsDeployer({
+    runner,
+    control,
+    supabase,
+    region,
+    ecrRepositoriesJson: env('KORTIX_ECR_REPOSITORIES'),
+    apiDomain,
+    frontendDomain,
+    openRepository: () => TrustedRepository.open({
       repositoryUrl,
       trustedRootSha256,
       metadataDir: join(workDir, 'tuf-metadata'),
       targetDir: join(workDir, 'tuf-targets'),
-    },
-    ecrRepositoriesJson: env('KORTIX_ECR_REPOSITORIES'),
-    region,
-    tufCacheBucket: backupBucket,
-    tufCacheKmsKeyArn: backupKmsKeyArn,
-    installer: {
-      workDir,
-      region,
-      instance,
-      expectedAccountId,
-      applyRoleArn,
-      clusterName: env('KORTIX_CLUSTER_NAME'),
-      kubernetesMinor: env('KORTIX_KUBERNETES_MINOR'),
-      stateBucket: env('KORTIX_STATE_BUCKET'),
-      stateLockTable: env('KORTIX_STATE_LOCK_TABLE'),
-      stateKmsKeyArn: env('KORTIX_STATE_KMS_KEY_ARN'),
-      runtimeSecretArn: env('KORTIX_RUNTIME_SECRET_ARN'),
-      supabaseInstanceId: env('KORTIX_SUPABASE_INSTANCE_ID'),
-      backupBucket,
-      backupKmsKeyArn,
-      apiDomain: env('KORTIX_API_DOMAIN'),
-      frontendDomain: env('KORTIX_FRONTEND_DOMAIN'),
-      certificateArn: env('KORTIX_CERTIFICATE_ARN'),
-      supabasePrivateIp: env('KORTIX_SUPABASE_PRIVATE_IP'),
-      appServiceAccount: env('KORTIX_APP_SERVICE_ACCOUNT'),
-    },
+    }),
+    log: (message) => process.stderr.write(`${message}\n`),
   });
-  const result = await reconciler.run();
-  process.stdout.write(`${JSON.stringify({ instance, channel: 'stable', ...result })}\n`);
+
+  const outcome = await deployer.deploy(request);
+  process.stdout.write(`${JSON.stringify({ instance, channel: 'stable', ...outcome })}\n`);
   return 0;
 }
 
