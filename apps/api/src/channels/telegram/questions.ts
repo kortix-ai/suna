@@ -253,3 +253,65 @@ export async function postTelegramQuestion(
   await deleteTurn(sessionId);
   return { ok: true, answers: questions.map(() => [QUESTION_SENTINEL]) };
 }
+
+/** Coerce opencode's raw `GET /question` payload to QuestionInfo[]. Tolerates the
+ *  SDK's `value`-only options (falls back to value when there's no label), same
+ *  as the /turn-question route. */
+export function coerceQuestions(rawQuestions: unknown[]): QuestionInfo[] {
+  const out: QuestionInfo[] = [];
+  for (const q of rawQuestions) {
+    if (!q || typeof q !== 'object') continue;
+    const obj = q as Record<string, unknown>;
+    const question = String(obj.question ?? '').trim();
+    if (!question) continue;
+    const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
+    const options = optionsRaw
+      .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
+      .filter(
+        (o): o is Record<string, unknown> =>
+          !!o && (typeof o.label === 'string' || typeof o.value === 'string'),
+      )
+      .map((o) => ({
+        label: String(o.label ?? o.value),
+        description: typeof o.description === 'string' ? String(o.description) : undefined,
+      }));
+    out.push({
+      question,
+      header: obj.header ? String(obj.header) : undefined,
+      options,
+      multiple: !!obj.multiple,
+      custom: obj.custom === false ? false : true,
+    });
+  }
+  return out;
+}
+
+/**
+ * Post the agent's question as an inline keyboard WITHOUT finalizing the turn.
+ * Unlike `postTelegramQuestion` (the old push model), the opencode turn is
+ * genuinely BLOCKED waiting for a reply, so the telegram turn must stay alive
+ * (🤔). The tap routes to `submitTelegramQuestionReply` which POSTs the answer to
+ * opencode and resumes the tool; the agent's continuation then arrives via the
+ * normal /turn-stream relay. Returns false if the turn/token is gone or there's
+ * nothing renderable. Best-effort transport.
+ */
+export async function postTelegramQuestionCard(
+  sessionId: string,
+  rawQuestions: unknown[],
+): Promise<boolean> {
+  const handle = await loadTelegramTurnForQuestion(sessionId);
+  if (!handle) return false;
+  const token = await loadTelegramTokenForProject(handle.projectId);
+  if (!token) return false;
+  const questions = coerceQuestions(rawQuestions);
+  if (questions.length === 0) return false;
+  const html = renderQuestionHtml(questions);
+  const keyboard = buildQuestionKeyboard(questions);
+  const sent = await telegramSendMessage(token, handle.chatId, html, {
+    parseMode: 'HTML',
+    keyboard,
+    disableWebPagePreview: true,
+    replyToMessageId: handle.triggerMessageId,
+  });
+  return sent != null;
+}

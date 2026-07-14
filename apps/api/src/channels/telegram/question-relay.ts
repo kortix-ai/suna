@@ -1,0 +1,228 @@
+/**
+ * Server-side relay of opencode's blocking `question` tool to Telegram.
+ *
+ * WHY this exists: opencode's question flow is POLL-based, and the channel relay
+ * (`/turn-question`) was never wired on the sandbox side — nothing calls it. The
+ * agent's `question` tool BLOCKS the turn and exposes the pending question at the
+ * sandbox's `GET /question`; the web polls that, renders a card, and POSTs the
+ * answer to `POST /question/{requestID}/reply` to resume the tool. Channels were
+ * never part of that loop, so a telegram turn just hangs on "Running question…".
+ *
+ * We mirror the web SERVER-SIDE (no sandbox-image change): while a telegram turn
+ * is live we poll the sandbox's /question, relay any NEW question to Telegram as
+ * an inline keyboard, and on a tap POST the answer back to unblock the agent.
+ *
+ * Reuses the reaper's in-process sandbox-call pattern (sandbox-busy-probe.ts):
+ * resolve ingress + service key, sign a platform-admin user-context header, fetch.
+ * The service key is cached in-process at sandbox creation, so this only works
+ * from INSIDE the running API (a standalone probe gets no key).
+ */
+
+import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { resolveSandboxIngress, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { db } from '../../shared/db';
+import {
+  KORTIX_USER_CONTEXT_HEADER,
+  encodeKortixUserContext,
+} from '../../shared/kortix-user-context';
+import { postTelegramQuestionCard } from './questions';
+import { telegramTurnExists } from './turn';
+
+const SANDBOX_PORT = 8000;
+const POLL_MS = 2_000;
+const MAX_WATCH_MS = 30 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 6_000;
+
+export interface PendingQuestion {
+  requestID: string;
+  sessionID: string | null;
+  questions: unknown[];
+}
+
+interface SessionSandboxInfo {
+  sandboxId: string;
+  externalId: string;
+  opencodeSessionId: string | null;
+}
+
+/** requestID currently shown in Telegram per kortix session — the reply target. */
+const pendingReplyTarget = new Map<string, { requestID: string; info: SessionSandboxInfo }>();
+/** kortix sessions we're already polling, so we never double-watch. */
+const watching = new Set<string>();
+/** `${sessionId}:${requestID}` already relayed so we never repost the same card. */
+const relayed = new Set<string>();
+
+async function loadSessionSandbox(sessionId: string): Promise<SessionSandboxInfo | null> {
+  const [oc] = await db
+    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  const [sb] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, externalId: sessionSandboxes.externalId })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.sessionId, sessionId), eq(sessionSandboxes.status, 'active')))
+    .limit(1);
+  if (!sb?.sandboxId || !sb?.externalId) return null;
+  return {
+    sandboxId: sb.sandboxId,
+    externalId: sb.externalId,
+    opencodeSessionId: oc?.opencodeSessionId ?? null,
+  };
+}
+
+/** Signed headers + base URL for calling this session's sandbox opencode server.
+ *  null when the sandbox has no resolvable service key (unreachable box). */
+async function sandboxCall(
+  info: SessionSandboxInfo,
+): Promise<{ url: string; headers: Record<string, string> } | null> {
+  const [link, serviceKey] = await Promise.all([
+    resolveSandboxIngress(info.externalId, { port: SANDBOX_PORT, transport: 'http' }),
+    resolveServiceKey(info.sandboxId),
+  ]);
+  if (!serviceKey) return null;
+  return {
+    url: link.url,
+    headers: {
+      ...link.headers,
+      Authorization: `Bearer ${serviceKey}`,
+      [KORTIX_USER_CONTEXT_HEADER]: encodeKortixUserContext(
+        {
+          userId: 'system:telegram-question-relay',
+          sandboxId: info.sandboxId,
+          sandboxRole: 'platform_admin',
+          scopes: [],
+        },
+        serviceKey,
+      ),
+    },
+  };
+}
+
+/** opencode's GET /question shape isn't pinned in a type we can import here, and
+ *  may be an array OR a map keyed by requestID — normalize both. Exported for
+ *  unit tests. */
+export function normalizePendingQuestions(body: unknown): PendingQuestion[] {
+  const raw: unknown[] = Array.isArray(body)
+    ? body
+    : body && typeof body === 'object'
+      ? Object.entries(body as Record<string, unknown>).map(([k, v]) =>
+          v && typeof v === 'object' ? { requestID: k, ...(v as Record<string, unknown>) } : v,
+        )
+      : [];
+  const out: PendingQuestion[] = [];
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    const props = (o.properties as Record<string, unknown> | undefined) ?? o;
+    const requestID = String(o.requestID ?? o.id ?? props.requestID ?? '');
+    if (!requestID) continue;
+    const sessionRaw = props.sessionID ?? props.sessionId ?? o.sessionID ?? o.sessionId;
+    const sessionID = typeof sessionRaw === 'string' ? sessionRaw : null;
+    const questions = Array.isArray(props.questions)
+      ? props.questions
+      : Array.isArray(o.questions)
+        ? o.questions
+        : [];
+    out.push({ requestID, sessionID, questions });
+  }
+  return out;
+}
+
+async function fetchPendingQuestions(info: SessionSandboxInfo): Promise<PendingQuestion[]> {
+  const ctx = await sandboxCall(info);
+  if (!ctx) return [];
+  try {
+    const res = await fetch(`${ctx.url}/question`, {
+      headers: ctx.headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return [];
+    return normalizePendingQuestions(await res.json());
+  } catch {
+    return [];
+  }
+}
+
+/** True while a telegram session has a question awaiting the user's tap. */
+export function hasPendingTelegramQuestion(sessionId: string): boolean {
+  return pendingReplyTarget.has(sessionId);
+}
+
+/** Submit the user's answer to opencode's `/question/{requestID}/reply`, which
+ *  unblocks the agent's `question` tool. The agent's continuation then flows back
+ *  through the normal /turn-stream relay. Returns false if there's nothing to
+ *  answer or the sandbox rejects it. */
+export async function submitTelegramQuestionReply(
+  sessionId: string,
+  answers: string[][],
+): Promise<boolean> {
+  const target = pendingReplyTarget.get(sessionId);
+  if (!target) return false;
+  const ctx = await sandboxCall(target.info);
+  if (!ctx) return false;
+  try {
+    const res = await fetch(`${ctx.url}/question/${encodeURIComponent(target.requestID)}/reply`, {
+      method: 'POST',
+      headers: { ...ctx.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      pendingReplyTarget.delete(sessionId);
+      relayed.delete(`${sessionId}:${target.requestID}`);
+      return true;
+    }
+    console.warn(
+      '[telegram-question] reply rejected',
+      res.status,
+      await res.text().catch(() => ''),
+    );
+    return false;
+  } catch (err) {
+    console.warn('[telegram-question] reply error', err);
+    return false;
+  }
+}
+
+/** Poll the session's sandbox for pending questions while its telegram turn is
+ *  live; relay each NEW one to Telegram as an inline keyboard. Idempotent — a
+ *  second call for a session already being watched is a no-op. */
+export function startTelegramQuestionWatch(sessionId: string): void {
+  if (watching.has(sessionId)) return;
+  watching.add(sessionId);
+  void (async () => {
+    const started = Date.now();
+    try {
+      while (Date.now() - started < MAX_WATCH_MS) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        // Turn finished (finalized/handed off) → stop watching.
+        if (!(await telegramTurnExists(sessionId))) return;
+        const info = await loadSessionSandbox(sessionId);
+        if (!info) continue;
+        const pending = await fetchPendingQuestions(info);
+        for (const q of pending) {
+          // GET /question returns every session in the box — scope to ours.
+          if (info.opencodeSessionId && q.sessionID && q.sessionID !== info.opencodeSessionId) {
+            continue;
+          }
+          const key = `${sessionId}:${q.requestID}`;
+          if (relayed.has(key)) continue;
+          relayed.add(key);
+          pendingReplyTarget.set(sessionId, { requestID: q.requestID, info });
+          console.log('[telegram-question] relaying question', {
+            sessionId,
+            requestID: q.requestID,
+            count: q.questions.length,
+          });
+          await postTelegramQuestionCard(sessionId, q.questions).catch((err) =>
+            console.warn('[telegram-question] postCard failed', err),
+          );
+        }
+      }
+    } finally {
+      watching.delete(sessionId);
+    }
+  })();
+}

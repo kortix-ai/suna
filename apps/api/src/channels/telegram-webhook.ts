@@ -85,6 +85,11 @@ import {
   selectedLabelsFromKeyboard,
   toggleKeyboardOption,
 } from './telegram/questions';
+import {
+  hasPendingTelegramQuestion,
+  startTelegramQuestionWatch,
+  submitTelegramQuestionReply,
+} from './telegram/question-relay';
 import { applyTelegramReviewVerdict, isReviewCallback } from './telegram/review';
 import {
   finalizeTelegramTurnDirect,
@@ -437,6 +442,14 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
         null,
       ).catch(() => {});
     }
+    // Blocking-question model: submit the selection to opencode's /reply to
+    // resume the waiting agent (its continuation returns via /turn-stream). Only
+    // fall back to a fresh follow-up turn when nothing is tracked as pending.
+    const submitSessionId = await chatSessionId(botId, String(cbMessage.chat.id));
+    if (submitSessionId && hasPendingTelegramQuestion(submitSessionId)) {
+      await submitTelegramQuestionReply(submitSessionId, [labels]);
+      return;
+    }
     await createOrJoinChatSession({
       projectId,
       botId,
@@ -466,10 +479,28 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
   // independent of whether the session routing below succeeds.
   if (token) await telegramAnswerCallbackQuery(token, cb.id, `✓ ${answer}`);
 
-  // Route the answer as a follow-up message. Synthesize a TelegramMessage from
-  // the tapper + the question's chat so the SAME create-or-join path (and its
-  // allowlist gate) runs — a tap from an unpaired user is rejected exactly like
-  // a typed message would be.
+  // Blocking-question model: if the agent's turn is BLOCKED waiting on this
+  // question, submit the answer to opencode's /reply to resume it — the agent's
+  // continuation returns through the normal /turn-stream relay. Collapse the
+  // keyboard so the option can't be tapped twice.
+  const answerSessionId = await chatSessionId(botId, String(cbMessage.chat.id));
+  if (answerSessionId && hasPendingTelegramQuestion(answerSessionId)) {
+    if (token) {
+      await telegramEditMessageReplyMarkup(
+        token,
+        cbMessage.chat.id,
+        cbMessage.message_id,
+        null,
+      ).catch(() => {});
+    }
+    await submitTelegramQuestionReply(answerSessionId, [[answer]]);
+    return;
+  }
+
+  // Legacy fallback (no tracked pending question): route the answer as a
+  // follow-up message. Synthesize a TelegramMessage from the tapper + the
+  // question's chat so the SAME create-or-join path (and its allowlist gate)
+  // runs — a tap from an unpaired user is rejected exactly like a typed message.
   const synthetic: TelegramMessage = {
     message_id: cbMessage.message_id,
     chat: cbMessage.chat,
@@ -624,6 +655,9 @@ async function createOrJoinChatSession(input: {
       text: renderTelegramFollowUpPrompt(message, botUsername),
       userId,
     });
+    // Watch the sandbox for a blocking `question` tool and relay it to Telegram
+    // (opencode's question flow is poll-based; nothing pushes it to the channel).
+    startTelegramQuestionWatch(sessionId);
   };
 
   // Existing conversation → follow up into it.
@@ -732,6 +766,8 @@ async function createOrJoinChatSession(input: {
   if (result.sessionId && turnHandle) {
     turnHandle.sessionId = result.sessionId;
     await saveTelegramTurn(turnHandle);
+    // Relay a blocking `question` tool from the sandbox to Telegram (poll-based).
+    startTelegramQuestionWatch(result.sessionId);
   }
 }
 
