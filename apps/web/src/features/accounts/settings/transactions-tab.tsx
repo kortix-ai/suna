@@ -1,20 +1,9 @@
 'use client';
 
-import { SectionCard } from '@/components/ui/section-card';
 import CreditTransactions from '@/features/billing/credit-transactions';
-import { useTranslations } from 'next-intl';
 
+// The accounts page's content pane already renders the "Credits" section
+// header; this tab only carries the ledger itself.
 export function TransactionsTab() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  return (
-    <SectionCard
-      title={tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1723JsxTextCreditLedger')}
-      description={tHardcodedUi.raw(
-        'componentsSettingsUserSettingsModal.line1725JsxTextLedgerBackedAccountEventsFromTheKortixSchema',
-      )}
-    >
-      <CreditTransactions />
-    </SectionCard>
-  );
+  return <CreditTransactions />;
 }
