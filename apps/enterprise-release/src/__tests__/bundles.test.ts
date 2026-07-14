@@ -96,7 +96,7 @@ describe('enterprise release bundles', () => {
     }
   });
 
-  test('materializes the reviewed platform Terraform and digest-aware charts', () => {
+  test('materializes only the reviewed post-cluster DNS Terraform stage (no Helm/EKS)', () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-platform-bundle-'));
     try {
       const descriptor = materializePlatformBundle(root, '0.9.84-e1');
@@ -105,25 +105,16 @@ describe('enterprise release bundles', () => {
         kind: 'kortix-enterprise-platform',
         version: '0.9.84-e1',
         terraform_root: 'terraform/environments/enterprise-vpc-template/platform',
-        charts: {
-          api: 'charts/kortix-api',
-          gateway: 'charts/kortix-gateway',
-          edge: 'charts/kortix-enterprise-edge',
-        },
-        namespace: 'kortix-app',
-        deployments: ['kortix-api', 'kortix-gateway', 'kortix-frontend'],
       } satisfies PlatformBundleDescriptor);
-      expect(readFileSync(join(root, descriptor.terraform_root, 'main.tf'), 'utf8'))
-        .toContain('module "platform"');
-      for (const chart of Object.values(descriptor.charts)) {
-        expect(readFileSync(join(root, chart, 'Chart.yaml'), 'utf8')).toContain('apiVersion: v2');
-      }
-      expect(readFileSync(join(root, descriptor.charts.api, 'templates/migrate-job.yaml'), 'utf8'))
-        .toContain('command: ["bun", "scripts/migrate.ts", "bootstrap"]');
-      expect(readFileSync(join(root, descriptor.charts.api, 'templates/_helpers.tpl'), 'utf8'))
-        .toContain('@%s');
-      expect(readFileSync(join(root, descriptor.charts.edge, 'templates/ingress.yaml'), 'utf8'))
-        .toContain('/auth/v1');
+      expect(JSON.parse(readFileSync(join(root, 'bundle.json'), 'utf8'))).toEqual(descriptor);
+
+      const platformMain = readFileSync(join(root, descriptor.terraform_root, 'main.tf'), 'utf8');
+      // ECS model: the DNS stage only aliases the app domains at the shared ALB.
+      expect(platformMain).toContain('resource "aws_route53_record" "app_alias"');
+      expect(platformMain).not.toContain('module "platform"');
+      // No Helm charts or EKS modules are bundled any more.
+      expect(existsSync(join(root, 'charts'))).toBe(false);
+      expect(existsSync(join(root, 'terraform', 'modules'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

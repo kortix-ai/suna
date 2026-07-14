@@ -38,10 +38,10 @@ describe('embedded enterprise Terraform graph', () => {
     expect(REMOTE_STATE_BACKEND).not.toContain('bucket');
   });
 
-  test('embeds the ALB controller policy as text for the compiled CLI', () => {
-    const policy = enterpriseTerraformAssets['modules/eks/platform/files/alb-controller-policy.json'];
-    expect(typeof policy).toBe('string');
-    expect(JSON.parse(policy)).toMatchObject({ Version: '2012-10-17' });
+  test('does not embed any EKS/Helm-era module (ECS deployment only)', () => {
+    const paths = Object.keys(enterpriseTerraformAssets);
+    expect(paths.some((path) => path.startsWith('modules/eks/'))).toBe(false);
+    expect(paths.some((path) => path.startsWith('modules/enterprise-platform/'))).toBe(false);
   });
 
   test('accepts only the Route 53 apex or a label-bounded subdomain after provider name normalization', () => {

@@ -26,13 +26,6 @@ export interface PlatformBundleDescriptor {
   kind: 'kortix-enterprise-platform';
   version: string;
   terraform_root: 'terraform/environments/enterprise-vpc-template/platform';
-  charts: {
-    api: 'charts/kortix-api';
-    gateway: 'charts/kortix-gateway';
-    edge: 'charts/kortix-enterprise-edge';
-  };
-  namespace: 'kortix-app';
-  deployments: ['kortix-api', 'kortix-gateway', 'kortix-frontend'];
 }
 
 const ENTERPRISE_VERSION = /^\d+\.\d+\.\d+-e[1-9]\d*$/;
@@ -83,17 +76,15 @@ export function materializePlatformBundle(
   rmSync(root, { recursive: true, force: true });
   mkdirSync(root, { recursive: true, mode: 0o700 });
 
+  // The ECS deploy flow consumes only cosign_public_key + supabase_bundle; the
+  // reviewed Terraform graph is materialized by the CLI (enterprise-assets), not
+  // from this bundle. The platform bundle now ships just the post-cluster DNS
+  // stage (Route 53 aliases at the ALB) — no in-cluster charts or modules.
   const copies: Array<[string, string]> = [
     [
       'infra/terraform/environments/enterprise-vpc-template/platform',
       'terraform/environments/enterprise-vpc-template/platform',
     ],
-    ['infra/terraform/modules/enterprise-platform', 'terraform/modules/enterprise-platform'],
-    ['infra/terraform/modules/eks/platform', 'terraform/modules/eks/platform'],
-    ['infra/terraform/modules/eks/irsa', 'terraform/modules/eks/irsa'],
-    ['infra/k8s/charts/kortix-api', 'charts/kortix-api'],
-    ['infra/k8s/charts/kortix-gateway', 'charts/kortix-gateway'],
-    ['infra/k8s/charts/kortix-enterprise-edge', 'charts/kortix-enterprise-edge'],
   ];
   for (const [source, destination] of copies) {
     cpSync(join(repositoryRoot, source), join(root, destination), {
@@ -109,13 +100,6 @@ export function materializePlatformBundle(
     kind: 'kortix-enterprise-platform',
     version,
     terraform_root: 'terraform/environments/enterprise-vpc-template/platform',
-    charts: {
-      api: 'charts/kortix-api',
-      gateway: 'charts/kortix-gateway',
-      edge: 'charts/kortix-enterprise-edge',
-    },
-    namespace: 'kortix-app',
-    deployments: ['kortix-api', 'kortix-gateway', 'kortix-frontend'],
   };
   writeFileSync(join(root, 'bundle.json'), `${JSON.stringify(descriptor, null, 2)}\n`, {
     encoding: 'utf8',
@@ -182,7 +166,10 @@ function supabaseHostInstallScript(): string {
     '',
     'allowed=\'["POSTGRES_PASSWORD","JWT_SECRET","ANON_KEY","SERVICE_ROLE_KEY","SUPABASE_PUBLISHABLE_KEY","SUPABASE_SECRET_KEY","JWT_KEYS","JWT_JWKS","DASHBOARD_USERNAME","DASHBOARD_PASSWORD","SECRET_KEY_BASE","REALTIME_DB_ENC_KEY","VAULT_ENC_KEY","PG_META_CRYPTO_KEY","LOGFLARE_PUBLIC_ACCESS_TOKEN","LOGFLARE_PRIVATE_ACCESS_TOKEN","S3_PROTOCOL_ACCESS_KEY_ID","S3_PROTOCOL_ACCESS_KEY_SECRET","POOLER_TENANT_ID","OPENAI_API_KEY","SMTP_ADMIN_EMAIL","SMTP_HOST","SMTP_PORT","SMTP_USER","SMTP_PASS","SMTP_SENDER_NAME","ENABLE_EMAIL_SIGNUP","ENABLE_EMAIL_AUTOCONFIRM","ENABLE_ANONYMOUS_USERS","ENABLE_PHONE_SIGNUP","ENABLE_PHONE_AUTOCONFIRM","DISABLE_SIGNUP"]\'',
     'defaults=\'{"COMPOSE_FILE":"docker-compose.yml:docker-compose.logs.yml","POSTGRES_HOST":"db","POSTGRES_DB":"postgres","POSTGRES_PORT":"5432","POOLER_PROXY_PORT_TRANSACTION":"6543","POOLER_DEFAULT_POOL_SIZE":"20","POOLER_MAX_CLIENT_CONN":"100","POOLER_DB_POOL_SIZE":"5","STUDIO_DEFAULT_ORGANIZATION":"Kortix","STUDIO_DEFAULT_PROJECT":"Kortix Enterprise","JWT_EXPIRY":"3600","MAILER_URLPATHS_CONFIRMATION":"/auth/v1/verify","MAILER_URLPATHS_INVITE":"/auth/v1/verify","MAILER_URLPATHS_RECOVERY":"/auth/v1/verify","MAILER_URLPATHS_EMAIL_CHANGE":"/auth/v1/verify","GLOBAL_S3_BUCKET":"stub","REGION":"stub","STORAGE_TENANT_ID":"kortix","FUNCTIONS_VERIFY_JWT":"false","PGRST_DB_SCHEMAS":"public,graphql_public","PGRST_DB_MAX_ROWS":"1000","PGRST_DB_EXTRA_SEARCH_PATH":"public","DOCKER_SOCKET_LOCATION":"/var/run/docker.sock","KONG_HTTP_PORT":"8000","KONG_HTTPS_PORT":"8443","IMGPROXY_AUTO_WEBP":"true","DASHBOARD_USERNAME":"kortix"}\'',
-    'jq -r --argjson allowed "$allowed" --argjson defaults "$defaults" --arg supabase_url "https://$api_domain" --arg site_url "https://$frontend_domain" \'. as $secret | ($defaults + ($secret | with_entries(select(.key as $key | $allowed | index($key)))) + {SUPABASE_PUBLIC_URL:$supabase_url, API_EXTERNAL_URL:($supabase_url + "/auth/v1"), SITE_URL:$site_url, ADDITIONAL_REDIRECT_URLS:($site_url + "/**")}) | to_entries | sort_by(.key)[] | select(.value | type == "string") | "\\(.key)=\\(.value | @json)"\' <<<"$secret_json" >"$root/.env"',
+    '# The ALB serves the Supabase data-plane (/rest, /auth, /storage, …) on the',
+    '# frontend/root host, so the GoTrue public + external URLs use the frontend',
+    '# origin; email links and the token issuer resolve back through the ALB.',
+    'jq -r --argjson allowed "$allowed" --argjson defaults "$defaults" --arg supabase_url "https://$frontend_domain" --arg site_url "https://$frontend_domain" \'. as $secret | ($defaults + ($secret | with_entries(select(.key as $key | $allowed | index($key)))) + {SUPABASE_PUBLIC_URL:$supabase_url, API_EXTERNAL_URL:($supabase_url + "/auth/v1"), SITE_URL:$site_url, ADDITIONAL_REDIRECT_URLS:($site_url + "/**")}) | to_entries | sort_by(.key)[] | select(.value | type == "string") | "\\(.key)=\\(.value | @json)"\' <<<"$secret_json" >"$root/.env"',
     'chmod 0600 "$root/.env"',
     'printf "%s\\n" "$instance" >"$root/.instance"',
     'chmod 0600 "$root/.instance"',

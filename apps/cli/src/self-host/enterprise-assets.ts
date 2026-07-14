@@ -14,11 +14,6 @@ import stateLock from '../../../../infra/terraform/environments/enterprise-vpc-t
 import stateMain from '../../../../infra/terraform/environments/enterprise-vpc-template/state/main.tf' with { type: 'text' };
 import stateVariables from '../../../../infra/terraform/environments/enterprise-vpc-template/state/variables.tf' with { type: 'text' };
 
-import platformModuleMain from '../../../../infra/terraform/modules/enterprise-platform/main.tf' with { type: 'text' };
-import platformModuleOutputs from '../../../../infra/terraform/modules/enterprise-platform/outputs.tf' with { type: 'text' };
-import platformModuleVariables from '../../../../infra/terraform/modules/enterprise-platform/variables.tf' with { type: 'text' };
-import platformModuleVersions from '../../../../infra/terraform/modules/enterprise-platform/versions.tf' with { type: 'text' };
-
 import stateModuleMain from '../../../../infra/terraform/modules/enterprise-state/main.tf' with { type: 'text' };
 import stateModuleOutputs from '../../../../infra/terraform/modules/enterprise-state/outputs.tf' with { type: 'text' };
 import stateModuleVariables from '../../../../infra/terraform/modules/enterprise-state/variables.tf' with { type: 'text' };
@@ -41,20 +36,6 @@ import enterpriseSupabase from '../../../../infra/terraform/modules/enterprise-v
 import enterpriseVariables from '../../../../infra/terraform/modules/enterprise-vpc/variables.tf' with { type: 'text' };
 import enterpriseVersions from '../../../../infra/terraform/modules/enterprise-vpc/versions.tf' with { type: 'text' };
 
-import eksClusterAddons from '../../../../infra/terraform/modules/eks/cluster/addons.tf' with { type: 'text' };
-import eksClusterEbsCsi from '../../../../infra/terraform/modules/eks/cluster/ebs-csi.tf' with { type: 'text' };
-import eksClusterIam from '../../../../infra/terraform/modules/eks/cluster/iam.tf' with { type: 'text' };
-import eksClusterMain from '../../../../infra/terraform/modules/eks/cluster/main.tf' with { type: 'text' };
-import eksClusterOutputs from '../../../../infra/terraform/modules/eks/cluster/outputs.tf' with { type: 'text' };
-import eksClusterVariables from '../../../../infra/terraform/modules/eks/cluster/variables.tf' with { type: 'text' };
-import eksIrsaMain from '../../../../infra/terraform/modules/eks/irsa/main.tf' with { type: 'text' };
-import eksIrsaOutputs from '../../../../infra/terraform/modules/eks/irsa/outputs.tf' with { type: 'text' };
-import eksIrsaVariables from '../../../../infra/terraform/modules/eks/irsa/variables.tf' with { type: 'text' };
-import albControllerPolicy from '../../../../infra/terraform/modules/eks/platform/files/alb-controller-policy.json' with { type: 'text' };
-import eksPlatformIrsa from '../../../../infra/terraform/modules/eks/platform/irsa.tf' with { type: 'text' };
-import eksPlatformMain from '../../../../infra/terraform/modules/eks/platform/main.tf' with { type: 'text' };
-import eksPlatformOutputs from '../../../../infra/terraform/modules/eks/platform/outputs.tf' with { type: 'text' };
-import eksPlatformVariables from '../../../../infra/terraform/modules/eks/platform/variables.tf' with { type: 'text' };
 import networkMain from '../../../../infra/terraform/modules/network/main.tf' with { type: 'text' };
 import networkOutputs from '../../../../infra/terraform/modules/network/outputs.tf' with { type: 'text' };
 import networkVariables from '../../../../infra/terraform/modules/network/variables.tf' with { type: 'text' };
@@ -77,10 +58,6 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   [STATE_BACKEND_PATH]: LOCAL_STATE_BACKEND,
   'environments/enterprise-vpc/state/main.tf': stateMain,
   'environments/enterprise-vpc/state/variables.tf': stateVariables,
-  'modules/enterprise-platform/main.tf': platformModuleMain,
-  'modules/enterprise-platform/outputs.tf': platformModuleOutputs,
-  'modules/enterprise-platform/variables.tf': platformModuleVariables,
-  'modules/enterprise-platform/versions.tf': platformModuleVersions,
   'modules/enterprise-state/main.tf': stateModuleMain,
   'modules/enterprise-state/outputs.tf': stateModuleOutputs,
   'modules/enterprise-state/variables.tf': stateModuleVariables,
@@ -101,20 +78,6 @@ export const enterpriseTerraformAssets: Readonly<Record<string, string>> = {
   'modules/enterprise-vpc/supabase.tf': enterpriseSupabase,
   'modules/enterprise-vpc/variables.tf': enterpriseVariables,
   'modules/enterprise-vpc/versions.tf': enterpriseVersions,
-  'modules/eks/cluster/addons.tf': eksClusterAddons,
-  'modules/eks/cluster/ebs-csi.tf': eksClusterEbsCsi,
-  'modules/eks/cluster/iam.tf': eksClusterIam,
-  'modules/eks/cluster/main.tf': eksClusterMain,
-  'modules/eks/cluster/outputs.tf': eksClusterOutputs,
-  'modules/eks/cluster/variables.tf': eksClusterVariables,
-  'modules/eks/irsa/main.tf': eksIrsaMain,
-  'modules/eks/irsa/outputs.tf': eksIrsaOutputs,
-  'modules/eks/irsa/variables.tf': eksIrsaVariables,
-  'modules/eks/platform/files/alb-controller-policy.json': albControllerPolicy as unknown as string,
-  'modules/eks/platform/irsa.tf': eksPlatformIrsa,
-  'modules/eks/platform/main.tf': eksPlatformMain,
-  'modules/eks/platform/outputs.tf': eksPlatformOutputs,
-  'modules/eks/platform/variables.tf': eksPlatformVariables,
   'modules/network/main.tf': networkMain,
   'modules/network/outputs.tf': networkOutputs,
   'modules/network/variables.tf': networkVariables,
