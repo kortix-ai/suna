@@ -4,7 +4,8 @@ export type NavSubLink = {
 };
 
 export type NavLink =
-  { id: number; name: string; href: string } | { id: number; name: string; href: NavSubLink[] };
+  | { id: number; name: string; href: string }
+  | { id: number; name: string; href: NavSubLink[] };
 
 import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
 
@@ -16,6 +17,7 @@ export const siteConfig = {
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Use Cases', href: '/use-cases' },
       { id: 4, name: 'Pricing', href: '/pricing' },
+      { id: 5, name: 'CLI', href: '/#cli' },
       { id: 6, name: 'Docs', href: '/docs' },
     ] as NavLink[],
   },
