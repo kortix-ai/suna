@@ -27,6 +27,14 @@ curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
 echo 'f9ebc6ebdb19d769b793c245a736caaeb198c62587f13b25c660c13b4987f959  /usr/local/lib/docker/cli-plugins/docker-compose' | sha256sum --check --strict
 chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
 
+# cosign: the on-box updater cosign-verifies each signed image against the
+# release's public key before pulling it by digest.
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 \
+  -o /usr/local/bin/cosign
+echo '8b24b946dd5809c6bd93de08033bcf6bc0ed7d336b7785787c080f574b89249b  /usr/local/bin/cosign' | sha256sum --check --strict || { echo "cosign checksum mismatch"; exit 1; }
+chmod 0755 /usr/local/bin/cosign
+
 # Docker daemon resilience: live-restore keeps containers running across a
 # dockerd restart/upgrade, and a global log cap is a belt-and-suspenders to the
 # per-service limits the signed app bundle sets. Written BEFORE docker starts.
@@ -83,7 +91,6 @@ KORTIX_API_DOMAIN=${api_domain}
 KORTIX_FRONTEND_DOMAIN=${frontend_domain}
 KORTIX_ACME_EMAIL=${acme_email}
 KORTIX_ROUTE53_ZONE_ID=${route53_zone_id}
-KORTIX_ECR_REPOSITORIES=${ecr_repositories}
 ENV
 chmod 0600 /etc/kortix/instance.env
 

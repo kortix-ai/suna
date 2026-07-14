@@ -11,6 +11,16 @@ locals {
   region        = data.aws_region.current.region
   partition     = data.aws_partition.current.partition
   appliance_ami = coalesce(var.appliance_ami_id, try(data.aws_ssm_parameter.al2023_ami[0].value, null))
+
+  # The env-root passes these through as null when the operator does not override
+  # them (Terraform passes null explicitly, which would defeat a module-var
+  # default), so resolve the effective value here.
+  appliance_instance_type = coalesce(var.appliance_instance_type, "m7i.2xlarge")
+  bedrock_model_allowlist = var.bedrock_model_allowlist != null ? var.bedrock_model_allowlist : [
+    "arn:aws:bedrock:*::foundation-model/anthropic.*",
+    "arn:aws:bedrock:*:*:inference-profile/*anthropic.*",
+    "arn:aws:bedrock:*:*:application-inference-profile/*",
+  ]
   kms_owner_actions = [
     "kms:CancelKeyDeletion",
     "kms:CreateAlias",

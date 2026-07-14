@@ -148,7 +148,7 @@ data "aws_iam_policy_document" "appliance" {
       "bedrock:InvokeModel",
       "bedrock:InvokeModelWithResponseStream",
     ]
-    resources = var.bedrock_model_allowlist
+    resources = local.bedrock_model_allowlist
   }
 
   # ACME DNS-01: the updater writes _acme-challenge TXT records in the customer
@@ -264,7 +264,7 @@ resource "aws_ssm_parameter" "release" {
 resource "aws_instance" "appliance" {
   #checkov:skip=CKV_AWS_88:Public exposure is the product — this single box is the customer-facing edge (Caddy terminates TLS on 80/443). Reach is governed by the appliance security group (ingress_cidrs only); there is no SSH and management is SSM-only.
   ami                         = local.appliance_ami
-  instance_type               = var.appliance_instance_type
+  instance_type               = local.appliance_instance_type
   subnet_id                   = data.aws_subnet.appliance.id
   vpc_security_group_ids      = [aws_security_group.appliance.id]
   iam_instance_profile        = aws_iam_instance_profile.appliance.name
