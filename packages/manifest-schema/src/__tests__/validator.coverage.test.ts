@@ -253,50 +253,6 @@ describe('validateManifest — [[channels]]', () => {
   });
 });
 
-describe('validateManifest — [[apps]]', () => {
-  test('non-array apps is rejected', () => {
-    expect(errorPaths('kortix_version = 1\napps = 1')).toContain('apps');
-  });
-
-  test('missing slug is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\n')).toContain('apps[0].slug');
-  });
-
-  test('duplicate slug is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\n[[apps]]\nslug = "s"')).toContain('apps[1].slug');
-  });
-
-  test('non-coercible enabled is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenabled = "maybe"')).toContain('apps[0].enabled');
-  });
-
-  test('non-array domains is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\ndomains = "x"')).toContain('apps[0].domains');
-  });
-
-  test('non-string domain entry is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\ndomains = [1]')).toContain('apps[0].domains[0]');
-  });
-
-  test('valid git source passes', () => {
-    expect(
-      validateManifest('kortix_version = 1\n[[apps]]\nslug = "s"\n[apps.source]\ntype = "git"').valid,
-    ).toBe(true);
-  });
-
-  test('non-table build is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nbuild = "x"')).toContain('apps[0].build');
-  });
-
-  test('non-table env is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nenv = "x"')).toContain('apps[0].env');
-  });
-
-  test('non-table source is rejected', () => {
-    expect(errorPaths('kortix_version = 1\n[[apps]]\nslug = "s"\nsource = "x"')).toContain('apps[0].source');
-  });
-});
-
 describe('validateManifest — [[connectors]] provider requirements', () => {
   test('pipedream requires app', () => {
     expect(errorPaths('kortix_version = 1\n[[connectors]]\nslug = "p"\nprovider = "pipedream"')).toContain(
@@ -503,25 +459,13 @@ describe('exported constants', () => {
 
 // Things the runtime rejects but that the gate surfaces as NON-BLOCKING warnings
 // (no overblocking): the merge still passes (valid === true) while the author is
-// told what would fail to materialize / deploy / fire at runtime.
+// told what would fail to materialize or fire at runtime.
 describe('validateManifest — non-blocking warnings (runtime enforces; gate advises)', () => {
   function assertWarnsButValid(input: string, warnPath: string) {
     const result = validateManifest(input);
     expect(result.valid).toBe(true);
     expect(warningPaths(input)).toContain(warnPath);
   }
-
-  test('app with no [apps.source] warns (would not deploy) but does not block', () => {
-    assertWarnsButValid('kortix_version = 1\n[[apps]]\nslug = "site"', 'apps[0].source');
-  });
-
-  test('tar app source without url warns', () => {
-    assertWarnsButValid('kortix_version = 1\n[[apps]]\nslug = "site"\n  [apps.source]\n  type = "tar"', 'apps[0].source.url');
-  });
-
-  test('app env with a non-string value warns', () => {
-    expect(warningPaths('kortix_version = 1\n[[apps]]\nslug = "s"\n  [apps.source]\n  type = "git"\n  [apps.env]\n  PORT = 3000')).toContain('apps[0].env.PORT');
-  });
 
   test('over-long sandbox template slug warns (runtime would drop it) but does not block', () => {
     const longSlug = 'a'.repeat(80);

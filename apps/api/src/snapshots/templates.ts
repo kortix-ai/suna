@@ -7,8 +7,9 @@
  * from. Custom templates can be defined either in `kortix.yaml` (synced to
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
- * Provider-agnostic: each template carries a `provider` column; the matching
- * adapter (currently just Daytona) is resolved via `getSandboxProvider`.
+ * Provider-agnostic: each template carries the provider of its most recent
+ * successful build; the matching Daytona, Platinum, or E2B adapter is resolved
+ * through the shared provider registry.
  */
 
 import { and, eq, isNull, ne, or } from 'drizzle-orm';

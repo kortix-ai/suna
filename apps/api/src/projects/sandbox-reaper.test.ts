@@ -8,7 +8,9 @@ let throwOnUsageLookup = false;
 let statusByExternal: Record<string, 'running' | 'stopped' | 'removed' | 'unknown'> = {};
 let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
+let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
 let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
+let e2bManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -31,7 +33,11 @@ function hybrid(rows: any[], throwOnGroupBy = false) {
 // test doesn't import the real config, which calls process.exit on incomplete
 // local env. Run this file in its own `bun test <file>` invocation (as CI does)
 // so the mock never leaks into a sibling file that uses the real config.
-mock.module('../config', () => ({ config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15, KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5, DAYTONA_API_KEY: 'test-key' } }));
+mock.module('../config', () => ({ config: {
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+} }));
 
 let busyByExternal: Record<string, 'busy' | 'idle' | 'unknown'> = {};
 mock.module('./sandbox-busy-probe', () => ({
@@ -81,14 +87,15 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../platform/providers', () => ({
-  getProvider: (_name: string) => ({
+  getProvider: (name: string) => ({
     getStatus: async (externalId: string) => statusByExternal[externalId] ?? 'unknown',
     stop: async (externalId: string) => {
       stops.push(externalId);
+      stopsByProvider.push({ provider: name, externalId });
       const err = stopErrorByExternal[externalId];
       if (err) throw err;
     },
-    listManagedRunningSandboxes: async () => managedBoxes,
+    listManagedRunningSandboxes: async () => name === 'e2b' ? e2bManagedBoxes : managedBoxes,
   }),
 }));
 
@@ -119,7 +126,9 @@ beforeEach(() => {
   statusByExternal = {};
   stopErrorByExternal = {};
   stops = [];
+  stopsByProvider = [];
   managedBoxes = [];
+  e2bManagedBoxes = [];
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
@@ -475,7 +484,7 @@ describe('reapOrphanProviderBoxes', () => {
 
   test('stops boxes with no live DB row; keeps live, too-young, and unknown-age boxes', async () => {
     // keepSet (the DB's view of live boxes) comes from the sessionSandboxes query.
-    candidates = [{ externalId: 'keep-1' }];
+    candidates = [{ provider: 'daytona', externalId: 'keep-1' }];
     managedBoxes = [
       { externalId: 'keep-1', createdAt: hoursAgo(48) }, // in keepSet → live
       { externalId: 'orphan-1', createdAt: hoursAgo(48) }, // orphan + old → STOP
@@ -507,6 +516,19 @@ describe('reapOrphanProviderBoxes', () => {
     expect(stops).toContain('orphan-b'); // and the next one still ran
     expect(r.stopped).toBe(1);
     expect(r.errors).toBe(1);
+  });
+
+  test('lists and stops orphan boxes through every configured provider adapter', async () => {
+    managedBoxes = [{ externalId: 'daytona-orphan', createdAt: hoursAgo(10) }];
+    e2bManagedBoxes = [{ externalId: 'e2b-orphan', createdAt: hoursAgo(10) }];
+
+    const r = await reapOrphanProviderBoxes(NOW2);
+
+    expect(stopsByProvider).toEqual([
+      { provider: 'daytona', externalId: 'daytona-orphan' },
+      { provider: 'e2b', externalId: 'e2b-orphan' },
+    ]);
+    expect(r).toEqual({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });
 
   test('env flag off → no-op (never lists or stops)', async () => {

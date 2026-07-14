@@ -1,0 +1,38 @@
+image:
+  repository: kortix/kortix-frontend
+  tag: latest
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicas: 3
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+runtimeSecretName: kortix-runtime
+apiDomain: ""
+frontendDomain: ""
+certificateArn: ""
+supabasePrivateIp: ""
+inboundCidrs: ""
+
+services:
+  api: kortix-api
+  gateway: kortix-gateway
+
+ingress:
+  idleTimeoutSeconds: 300
+
+pdb:
+  minAvailable: 2

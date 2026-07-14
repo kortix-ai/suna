@@ -19,7 +19,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
     FRONTEND_URL: `http://localhost:${ports.web}`,
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
     KORTIX_SKIP_ENSURE_SCHEMA: '1',
     DATABASE_URL: c.dbUrl,
     SUPABASE_URL: c.supabaseUrl,

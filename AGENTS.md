@@ -143,9 +143,9 @@ mocked internals when a real surface exists.
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
-- **Sandboxes** — REAL Daytona cloud sandboxes (`DAYTONA_API_KEY` in
-  `apps/api/.env`). Each project session gets its own sandbox; `session_id ==
-  sandbox_id`. The OpenCode runtime inside a sandbox is reached via the API
+- **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
+  Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
+  session gets its own sandbox; `session_id == sandbox_id`. The OpenCode runtime inside a sandbox is reached via the API
   proxy: `http://localhost:8008/v1/p/<external_id>/8000/...` (SSE event stream
   at `…/event`).
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared

@@ -233,13 +233,13 @@ function validateManifestBodyV1(
   validateConnectors(parsed.connectors, 'connectors', issues, 1, format);
   validateAgents(parsed.agents, 'agents', issues, format);
   validateChannels(parsed.channels, 'channels', issues, format);
-  validateApps(parsed.apps, 'apps', issues, format);
+  rejectRetiredApps(parsed.apps, 'apps', issues);
 }
 
 /**
  * kortix_version 2 section validators. Every v1 top-level section keeps its
- * v1 shape/validation (project, env, opencode, sandbox, triggers, connectors,
- * apps — spec §2.7/§5); `agents` becomes a name→block map (§2.2), `channels`
+ * v1 shape/validation (project, env, opencode, sandbox, triggers, connectors);
+ * `agents` becomes a name→block map (§2.2), `channels`
  * is removed (§2.5), and `default_agent` + `runtime` are new top-level keys
  * (§2.1/§2.3).
  */
@@ -255,7 +255,7 @@ function validateManifestBodyV2(
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
   validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
-  validateApps(parsed.apps, 'apps', issues, format);
+  rejectRetiredApps(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
@@ -702,6 +702,15 @@ function rejectLegacySandboxes(node: unknown, path: string, issues: ManifestIssu
     path,
     message:
       '`[[sandboxes]]` has been renamed to `[[sandbox.templates]]`. The fields are unchanged — rename each `[[sandboxes]]` header to `[[sandbox.templates]]` and remove the old block.',
+    severity: 'error',
+  });
+}
+
+function rejectRetiredApps(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined) return;
+  issues.push({
+    path,
+    message: 'The hosted `apps` manifest section has been removed. Delete this section.',
     severity: 'error',
   });
 }
@@ -1185,133 +1194,6 @@ function validateChannels(node: unknown, path: string, issues: ManifestIssue[], 
             });
           }
         });
-      }
-    }
-  });
-}
-
-function validateApps(node: unknown, path: string, issues: ManifestIssue[], format: ManifestFormat = 'toml'): void {
-  if (node == null) return;
-  if (!Array.isArray(node)) {
-    issues.push({
-      path,
-      message: listSectionHint('apps', format),
-      severity: 'error',
-    });
-    return;
-  }
-  const seenSlugs = new Set<string>();
-  node.forEach((entry, i) => {
-    const where = `${path}[${i}]`;
-    if (!isTable(entry)) {
-      issues.push({ path: where, message: 'must be a table.', severity: 'error' });
-      return;
-    }
-    const slug = typeof entry.slug === 'string' ? entry.slug.trim() : '';
-    if (!slug) {
-      issues.push({ path: `${where}.slug`, message: 'slug is required.', severity: 'error' });
-    } else if (!SLUG_RE.test(slug)) {
-      issues.push({
-        path: `${where}.slug`,
-        message: `"${slug}" is not a valid slug.`,
-        severity: 'error',
-      });
-    } else if (seenSlugs.has(slug)) {
-      issues.push({
-        path: `${where}.slug`,
-        message: `duplicate slug "${slug}".`,
-        severity: 'error',
-      });
-    } else {
-      seenSlugs.add(slug);
-    }
-    expectStringOrAbsent(entry.name, `${where}.name`, issues);
-    expectStringOrAbsent(entry.framework, `${where}.framework`, issues);
-    if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
-      issues.push({
-        path: `${where}.enabled`,
-        message: 'enabled must be a boolean.',
-        severity: 'error',
-      });
-    }
-    if (entry.domains !== undefined) {
-      if (!Array.isArray(entry.domains)) {
-        issues.push({
-          path: `${where}.domains`,
-          message: 'domains must be an array of strings.',
-          severity: 'error',
-        });
-      } else {
-        entry.domains.forEach((d, j) => {
-          if (typeof d !== 'string') {
-            issues.push({
-              path: `${where}.domains[${j}]`,
-              message: 'must be a string.',
-              severity: 'error',
-            });
-          }
-        });
-      }
-    }
-    if (entry.source === undefined) {
-      // The runtime requires [apps.source]; without it the app never deploys.
-      issues.push({
-        path: `${where}.source`,
-        message:
-          'no [apps.source] declared; the runtime requires one, so this app will not deploy.',
-        severity: 'warning',
-      });
-    } else if (!isTable(entry.source)) {
-      issues.push({
-        path: `${where}.source`,
-        message: 'source must be a table.',
-        severity: 'error',
-      });
-    } else {
-      const type = typeof entry.source.type === 'string' ? entry.source.type : '';
-      if (type !== 'git' && type !== 'tar') {
-        issues.push({
-          path: `${where}.source.type`,
-          message: `source.type must be "git" or "tar" (got "${type || 'unset'}").`,
-          severity: 'error',
-        });
-      } else if (type === 'tar' && typeof entry.source.url !== 'string') {
-        issues.push({
-          path: `${where}.source.url`,
-          message: 'tar sources need a `url`; without it the app fails to deploy.',
-          severity: 'warning',
-        });
-      }
-    }
-    if (entry.build !== undefined && !isTable(entry.build)) {
-      issues.push({ path: `${where}.build`, message: 'build must be a table.', severity: 'error' });
-    }
-    if (entry.env !== undefined) {
-      if (!isTable(entry.env)) {
-        issues.push({
-          path: `${where}.env`,
-          message: 'env must be a table of string KEY=VALUE pairs.',
-          severity: 'error',
-        });
-      } else {
-        // The runtime rejects non-string values and non-env-name keys; warn so a
-        // hand-edited manifest isn't blocked but the author sees what will fail.
-        for (const [k, v] of Object.entries(entry.env)) {
-          if (typeof v !== 'string') {
-            issues.push({
-              path: `${where}.env.${k}`,
-              message: 'app env values must be strings; the runtime rejects non-string values.',
-              severity: 'warning',
-            });
-          }
-          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
-            issues.push({
-              path: `${where}.env.${k}`,
-              message: `"${k}" is not a valid env-var name; the runtime rejects it.`,
-              severity: 'warning',
-            });
-          }
-        }
       }
     }
   });

@@ -1,0 +1,31 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - set -euo pipefail
+      - install -d -m 0755 /opt/kortix-updater /opt/kortix-updater/tools
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip -o /tmp/terraform.zip
+      - echo '186e0145f5e5f2eb97cbd785bc78f21bae4ef15119349f6ad4fa535b83b10df8  /tmp/terraform.zip' | sha256sum --check --strict
+      - unzip -q /tmp/terraform.zip -d /opt/kortix-updater/tools
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://github.com/sigstore/cosign/releases/download/v2.4.3/cosign-linux-amd64 -o /opt/kortix-updater/tools/cosign
+      - echo 'caaad125acef1cb81d58dcdc454a1e429d09a750d1e9e2b3ed1aed8964454708  /opt/kortix-updater/tools/cosign' | sha256sum --check --strict
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://github.com/google/go-containerregistry/releases/download/v0.20.3/go-containerregistry_Linux_x86_64.tar.gz -o /tmp/go-containerregistry.tar.gz
+      - echo '36c67a932f489b3f2724b64af90b599a8ef2aa7b004872597373c0ad694dc059  /tmp/go-containerregistry.tar.gz' | sha256sum --check --strict
+      - tar -xzf /tmp/go-containerregistry.tar.gz -C /opt/kortix-updater/tools crane
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://dl.k8s.io/release/v1.32.9/bin/linux/amd64/kubectl -o /opt/kortix-updater/tools/kubectl
+      - echo '509ae171bac7ad3b98cc49f5594d6bc84900cf6860f155968d1059fde3be5286  /opt/kortix-updater/tools/kubectl' | sha256sum --check --strict
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+      - echo 'ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd  /tmp/helm.tar.gz' | sha256sum --check --strict
+      - tar -xzf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
+      - install -m 0755 /tmp/linux-amd64/helm /opt/kortix-updater/tools/helm
+      - chmod 0755 /opt/kortix-updater/tools/terraform /opt/kortix-updater/tools/cosign /opt/kortix-updater/tools/crane /opt/kortix-updater/tools/kubectl /opt/kortix-updater/tools/helm
+      - curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "$KORTIX_UPDATER_BOOTSTRAP_URL" -o /opt/kortix-updater/kortix-enterprise-updater
+      - echo "$KORTIX_UPDATER_BOOTSTRAP_SHA256  /opt/kortix-updater/kortix-enterprise-updater" | sha256sum --check --strict
+      - chmod 0755 /opt/kortix-updater/kortix-enterprise-updater
+  build:
+    commands:
+      - set -euo pipefail
+      - export PATH="/opt/kortix-updater/tools:$PATH"
+      - test "$KORTIX_CHANNEL" = stable
+      - /opt/kortix-updater/kortix-enterprise-updater reconcile --instance "$KORTIX_INSTANCE" --channel "$KORTIX_CHANNEL" --repository "$KORTIX_RELEASE_REPOSITORY" --trusted-root-sha256 "$KORTIX_TUF_ROOT_SHA256" --state-table "$KORTIX_STATE_TABLE" --apply-role "$KORTIX_APPLY_ROLE_ARN" --maintenance-window "$KORTIX_MAINTENANCE_WINDOW" --execution-input "$KORTIX_EXECUTION_INPUT"

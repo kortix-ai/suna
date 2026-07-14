@@ -123,7 +123,7 @@ config dir is symlinked into each wired coding agent's native location
 (\`.opencode\`, \`.claude\`, \`.agents\`), so its skills and agents are shared.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
-sandbox image, sessions, deployable apps, or how to configure OpenCode
+sandbox image, sessions, connectors, or how to configure OpenCode
 (agents / skills / commands / tools / plugins / MCP servers / custom tools /
 ACP) — read \`${CANONICAL_SKILL}\` first. It is the canonical reference.
 

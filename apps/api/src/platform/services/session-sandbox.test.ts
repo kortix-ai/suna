@@ -71,6 +71,9 @@ let recordedEvents: Array<{ outcome: string }> = [];
 let identityConflict = false;
 let recoveryPlaceholder = false;
 let providerCreateCalls = 0;
+let providerFallbackEnabled = false;
+let providerNamesRequested: string[] = [];
+let providerCreateErrors: Record<string, string | undefined> = {};
 
 function compile(condition: unknown): { sql: string; params: unknown[] } {
   try {
@@ -93,7 +96,7 @@ function updateResult(rows: unknown[]) {
 
 mock.module('../../config', () => ({
   config: {
-    ALLOWED_SANDBOX_PROVIDERS: ['daytona'],
+    ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
     KORTIX_URL: 'http://localhost:8008',
     LLM_GATEWAY_PROXY_PORT: undefined,
     LLM_GATEWAY_PROXY_TARGET: undefined,
@@ -170,12 +173,16 @@ mock.module('../../shared/db', () => ({
 }));
 
 mock.module('../providers', () => ({
-  getProvider: (_name: string) => ({
+  getProvider: (name: string) => {
+    providerNamesRequested.push(name);
+    return {
+    name,
     provisioning: { async: true, stages: [{ id: 'boot', progress: 50, message: 'Booting…' }] },
     create: async (_opts: unknown) => {
       providerCreateCalls += 1;
+      if (providerCreateErrors[name]) throw new Error(providerCreateErrors[name]);
       return {
-        externalId: EXTERNAL_ID,
+        externalId: name === 'daytona' ? EXTERNAL_ID : `ext-${name}-1`,
         baseUrl: 'https://sandbox.test',
         metadata: {},
       };
@@ -191,8 +198,16 @@ mock.module('../providers', () => ({
     getStatus: async () => 'running',
     resolveEndpoint: async () => ({ url: '', headers: {} }),
     resolveProxyEndpoint: async () => ({ url: '', headers: {} }),
-  }),
+  }},
   WarmRuntimeUnavailableError: class WarmRuntimeUnavailableError extends Error {},
+}));
+
+mock.module('./runtime-settings', () => ({
+  providerFallbackSetting: () => ({ enabled: providerFallbackEnabled }),
+}));
+
+mock.module('./provider-balancer', () => ({
+  selectProvider: async () => 'e2b',
 }));
 
 mock.module('../../snapshots/builder', () => ({
@@ -217,7 +232,7 @@ mock.module('./provider-events', () => ({
 }));
 
 mock.module('../../billing/services/compute-metering', () => ({
-  startComputeSession: async (input: { sandboxId: string; accountId: string }) => {
+  startComputeSession: async (input: { sandboxId: string; accountId: string; provider: string }) => {
     computeSessionsOpened.push(input);
     onComputeOpened?.();
   },
@@ -251,6 +266,10 @@ mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: (_metadata: unknown) => false,
 }));
 
+mock.module('../../shared/session-failure-notifier', () => ({
+  notifySessionProvisioningFailed: async () => {},
+}));
+
 const { provisionSessionSandbox } = await import('./session-sandbox');
 
 function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): Promise<void> {
@@ -280,6 +299,9 @@ beforeEach(() => {
   identityConflict = false;
   recoveryPlaceholder = false;
   providerCreateCalls = 0;
+  providerFallbackEnabled = false;
+  providerNamesRequested = [];
+  providerCreateErrors = {};
 });
 
 function baseOpts() {
@@ -297,6 +319,64 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) => call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(finishCall?.updates.metadata).toMatchObject({
+      providerExternalId: 'ext-e2b-1',
+      runtimeArtifact: { provider: 'e2b', artifactType: 'e2b_template' },
+    });
+    expect(finishCall?.updates.metadata).not.toHaveProperty('daytonaSandboxId');
+    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'e2b' });
+  });
+
+  test('an explicitly selected E2B provider never fails over to another provider', async () => {
+    providerFallbackEnabled = true;
+    providerCreateErrors.e2b = 'E2B unavailable';
+    const failed = waitFor((resolve) => {
+      onProviderEvent = resolve;
+    });
+
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await failed;
+
+    expect(providerNamesRequested).toEqual(['e2b']);
+    expect(providerCreateCalls).toBe(3);
+    expect(
+      updateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
+      ),
+    ).toBe(false);
+  });
+
+  test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
+    providerFallbackEnabled = true;
+    providerCreateErrors.e2b = 'E2B unavailable';
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    const { provider: _provider, ...automaticOpts } = baseOpts();
+
+    await provisionSessionSandbox(automaticOpts);
+    await opened;
+
+    expect(providerNamesRequested).toEqual(['e2b', 'daytona']);
+    expect(providerCreateCalls).toBe(4);
+    expect(
+      updateCalls.some(
+        (call) => call.table === sessionSandboxes && call.updates.provider === 'daytona',
+      ),
+    ).toBe(true);
+  });
+
   test('authoritative row conflict fails closed before a second provider sandbox can be created', async () => {
     identityConflict = true;
 

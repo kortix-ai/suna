@@ -26,6 +26,8 @@ import type {
   ProvisioningTraits,
   ProvisioningStatus,
   InPlaceRecoveryStatus,
+  ResolvedSandboxIngress,
+  SandboxIngressRequest,
 } from './index';
 import { providerAutoStopBackstopMinutes } from './index';
 
@@ -275,17 +277,37 @@ export class PlatinumProvider implements SandboxProvider {
     return 'recovering';
   }
 
-  async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
+  async resolveIngress(externalId: string, request: SandboxIngressRequest): Promise<ResolvedSandboxIngress> {
+    const route = this.routeIngress(request);
+    const effectivePort = route.effectivePort;
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
     // No preview token: the sandbox is gated by the serviceKey bearer the proxy
     // already adds. Idempotent — re-exposing returns the same URL.
     const exposed = await platinumJson<PlatinumExposedPort>(
       `/v1/sandboxes/${externalId}/expose`,
-      { method: 'POST', body: JSON.stringify({ port, public: true }) },
+      { method: 'POST', body: JSON.stringify({ port: effectivePort, public: true }) },
     );
     const url = (exposed.url ?? '').replace(/\/$/, '');
-    if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${port}`);
-    return { url, token: null };
+    if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${effectivePort}`);
+    return {
+      url,
+      headers: {},
+      effectivePort,
+      websocket: route.websocket,
+    };
+  }
+
+  routeIngress(request: SandboxIngressRequest) {
+    const ptyWebsocket = request.transport === 'websocket' && request.path?.startsWith('/pty/');
+    return {
+      effectivePort: request.port === 4096 || ptyWebsocket ? AGENT_PORT : request.port,
+      websocket: ptyWebsocket
+        ? {
+            userContextQueryParam: '__kortix_user_context',
+            queryDefaults: { cursor: '0' },
+          }
+        : undefined,
+    };
   }
 
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
@@ -298,14 +320,8 @@ export class PlatinumProvider implements SandboxProvider {
     // POST /:id/expose takes a SINGLE {port,public} and returns a single
     // {url,port,...} — the array {expose:[...]} shape is only valid on the
     // create route's inline expose. Sending the array here 400s.
-    const exposed = await platinumJson<PlatinumExposedPort>(
-      `/v1/sandboxes/${externalId}/expose`,
-      { method: 'POST', body: JSON.stringify({ port: AGENT_PORT, public: true }) },
-    );
-    const url = (exposed.url ?? '').replace(/\/$/, '');
-    if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${AGENT_PORT}`);
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const ingress = await this.resolveIngress(externalId, { port: AGENT_PORT, transport: 'http' });
+    const headers: Record<string, string> = { ...ingress.headers, 'Content-Type': 'application/json' };
     try {
       const serviceKey = await serviceKeyForExternalId(externalId);
       if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
@@ -313,7 +329,7 @@ export class PlatinumProvider implements SandboxProvider {
       console.warn(`[PLATINUM] Failed to look up service key for ${externalId}:`, err);
     }
 
-    return { url, headers };
+    return { url: ingress.url, headers };
   }
 
   async ensureRunning(externalId: string): Promise<void> {

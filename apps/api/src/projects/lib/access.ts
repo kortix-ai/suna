@@ -21,25 +21,14 @@ import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
 
 // Enforce the per-account project cap (free → 3, paid → effectively uncapped).
 // Returns a 403 Response to send, or null when the account may create another
-// project. `repoUrl`, when supplied, makes re-linking a repo the account already
-// owns idempotent — that's an update, not a new project, so it never trips the
-// limit even when the account is at its cap.
+// project. Every isolated project counts, even when another project uses the
+// same Git repository or branch.
 export async function enforceProjectQuota(
   c: Context,
   accountId: string,
-  opts?: { repoUrl?: string | null },
 ): Promise<Response | null> {
   const limit = await maxProjectsForAccount(accountId);
   if (limit >= Number.MAX_SAFE_INTEGER) return null;
-
-  if (opts?.repoUrl) {
-    const [existing] = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(and(eq(projects.accountId, accountId), eq(projects.repoUrl, opts.repoUrl)))
-      .limit(1);
-    if (existing) return null;
-  }
 
   // Count only ACTIVE projects — an archived (soft-deleted) project must not
   // permanently consume a free account's single slot.
@@ -321,7 +310,7 @@ export async function resolveProjectAccount(c: Context, body?: Record<string, un
 // Maps the high-level project access action onto the IAM action key
 // the engine recognises. Keep this narrow — these three labels cover
 // every gate this file uses; bespoke actions (project.trigger.fire,
-// project.deploy, project.secrets.write, etc.) should call authorize()
+// project.trigger.create, project.secret.write, etc.) should call authorize()
 // directly with the exact action.
 
 export function iamActionForProjectAccess(action: ProjectAccessAction): string {

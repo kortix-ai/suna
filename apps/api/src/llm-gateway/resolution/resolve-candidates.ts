@@ -1,15 +1,16 @@
 import {
   type AuthedPrincipal,
   type UpstreamDescriptor,
-  resolveCatalogUpstream,
 } from '@kortix/llm-gateway';
-import { getManagedModel, pickAutoModel } from '@kortix/llm-catalog';
 import { getAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getProjectSecretValue } from '../../projects/secrets';
 import { resolveCodexCredential } from '../credentials/codex';
 import { codexDescriptor, livePricing, managedCandidates } from './descriptors';
+import { resolveCatalogUpstream } from '../models/provider-registry';
+import { resolveGatewayRoute } from '../routing';
+import { getRuntimeManagedModel } from '../models/managed-models';
 
 const PLATFORM_FEE_MARKUP = 0.1;
 const TIER_CACHE_TTL_MS = 30_000;
@@ -33,7 +34,7 @@ function byokFallbackCandidates(): UpstreamDescriptor[] {
   if (!config.LLM_GATEWAY_ENABLED) return [];
   const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
   if (!fallbackId) return [];
-  const managed = getManagedModel(fallbackId);
+  const managed = getRuntimeManagedModel(fallbackId);
   return managed ? managedCandidates(managed) : [];
 }
 
@@ -41,14 +42,18 @@ export async function resolveCandidates(
   principal: AuthedPrincipal,
   model: string,
 ): Promise<UpstreamDescriptor[]> {
-  // The gateway package normally applies pickAutoModel before calling this hook.
+  // The gateway normally applies the API-owned route plan before calling this hook.
   // Keep the same fallback here so a stale standalone gateway that asks the API
   // to resolve raw "auto" still gets a concrete upstream instead of 400ing — and
-  // resolve it against the same account/agent default the autoRouter used.
+  // resolve it against the same account/agent default the control plane used.
   // Free-tier principals cannot use managed Kortix models, so stale AUTO below
   // resolves to no candidates rather than a paid/default upstream.
-  const effectiveModel =
-    pickAutoModel(model, {}, { defaultModel: principal.defaultModel }) ?? model;
+  const effectiveModel = model === 'auto' || model === 'kortix/auto'
+    ? (await resolveGatewayRoute(principal, {
+        requestedModel: model,
+        requires: { imageInput: false },
+      })).primaryModel
+    : model;
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
 
   if (provider === 'codex') {
@@ -90,7 +95,7 @@ export async function resolveCandidates(
   // `provider/model`) is handled above and requires the user's own key; it never
   // falls through here. A non-managed, non-connected model yields no candidate →
   // clear "model not available" error.
-  const managed = getManagedModel(effectiveModel);
+  const managed = getRuntimeManagedModel(effectiveModel);
   if (managed && config.LLM_GATEWAY_ENABLED) {
     if (principal.freeModelsOnly) return [];
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {

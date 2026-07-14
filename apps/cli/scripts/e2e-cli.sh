@@ -3,8 +3,8 @@
 #
 # It scaffolds a throwaway project, ships it (creating a real cloud project +
 # managed git repo), then drives every command group — secrets, env, providers,
-# connectors, sandboxes, files, triggers, channels, cr, sessions + chat, access,
-# apps — asserting each works. Finally it purges everything it created.
+# connectors, sandboxes, files, triggers, channels, cr, sessions + chat, and
+# access — asserting each works. Finally it purges everything it created.
 #
 # Prereqs: logged in (`kortix login`) against a host whose account has credits.
 # Usage:   bash apps/cli/scripts/e2e-cli.sh
@@ -133,9 +133,6 @@ run            "cr ls"                        -- "${RUN[@]}" cr ls
 section "access (project members)"
 run_grep "access ls"       "$(whoami >/dev/null; echo '@')" -- "${RUN[@]}" access ls
 run            "access pending"               -- "${RUN[@]}" access pending
-
-section "apps (experimental — may be gated)"
-"${RUN[@]}" apps ls >/dev/null 2>&1 && echo "  ✓ apps ls (enabled)" || echo "  ⊘ apps gated (expected unless KORTIX_APPS_EXPERIMENTAL=true)"
 
 section "sessions + chat (provisions a real sandbox)"
 SID="$("${RUN[@]}" sessions new 2>/dev/null | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)"

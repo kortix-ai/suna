@@ -143,9 +143,18 @@ jobs:
         run: |
           pnpm --filter "Kortix-Computer-Frontend" \
                --filter "@kortix/cli" \
+               --filter "@kortix/enterprise-updater" \
+               --filter "@kortix/enterprise-release" \
                --filter "@kortix/sandbox-agent-server" \
                --filter "kortix" \
                --if-present test
+
+      - name: Typecheck and compile enterprise release tooling
+        run: |
+          pnpm --filter "@kortix/enterprise-updater" typecheck
+          pnpm --filter "@kortix/enterprise-release" typecheck
+          BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
+          test -x apps/enterprise-updater/dist/kortix-enterprise-updater
 
       - name: Lint test surface (advisory ratchet)
         continue-on-error: true

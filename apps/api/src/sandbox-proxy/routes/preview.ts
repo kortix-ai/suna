@@ -12,12 +12,11 @@ import {
   loadSandbox,
   markSandboxErrored,
   markSandboxUsed,
-  resolvePreviewLink,
+  resolveSandboxIngress,
+  routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
 import { PROXY_RETRY_BUDGET_MS, proxyAttemptTimeoutMs } from '../preview-retry-budget';
-
-const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 const preview = new Hono<{ Variables: { userId: string; userEmail: string } }>();
@@ -351,7 +350,6 @@ function principalUserId(access: PreviewProxyAccess): string {
 // block) key on the EFFECTIVE upstream port so rerouted opencode traffic is
 // subject to the SAME protection as a direct :8000 request — the reroute changes
 // reachability, never the auth/control surface.
-const OPENCODE_INTERNAL_PORT = 4096;
 const SANDBOX_AGENT_PORT = 8000;
 
 /**
@@ -369,12 +367,6 @@ export function shouldAutoResumeStoppedSandbox(
 ): boolean {
   return status === 'stopped' && upstreamPort === SANDBOX_AGENT_PORT && accessKind === 'principal';
 }
-function effectiveUpstreamPort(provider: string | null | undefined, addressedPort: number): number {
-  return provider === 'platinum' && addressedPort === OPENCODE_INTERNAL_PORT
-    ? SANDBOX_AGENT_PORT
-    : addressedPort;
-}
-
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -420,7 +412,8 @@ export async function forwardToSandbox(
   // the client-addressed `port` ON PURPOSE — the prefix must reflect the URL the
   // client actually used (/4096), and env-sync-before-prompt must behave identically
   // to Daytona, which likewise skips it on the direct 4096 opencode path.
-  const upstreamPort = effectiveUpstreamPort(record.provider, port);
+  const ingressRequest = { port, path: remainingPath, transport: 'http' as const };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
   // The daemon port serves the session's OpenCode conversation + owner-synced
   // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
@@ -504,7 +497,8 @@ export async function forwardToSandbox(
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+      const ingress = await resolveSandboxIngress(record, ingressRequest);
+      const previewUrl = ingress.url;
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -533,7 +527,7 @@ export async function forwardToSandbox(
             sessionId: record.sessionId,
             serviceKey,
             previewUrl,
-            previewToken,
+            providerHeaders: ingress.headers,
           });
         } catch (err) {
           const message = errorMessage(err, 'project env sync failed');
@@ -567,7 +561,7 @@ export async function forwardToSandbox(
         sandboxId,
         userId,
         serviceKey,
-        previewToken,
+        providerHeaders: ingress.headers,
       });
       for (const [key, value] of Object.entries(authHeaders)) {
         headers.set(key, value);
@@ -815,13 +809,12 @@ export async function resolvePreviewWsUpstream(opts: {
   const record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
-  // Platinum cannot safely expose OpenCode's loopback-only 4096 port directly.
-  // PTY WebSockets for Platinum go through the sandbox agent on 8000, which
-  // validates X-Kortix-User-Context and bridges to localhost:4096 in-box.
-  const upstreamPort =
-    remainingPath.startsWith('/pty/') && record.provider === 'platinum'
-      ? 8000
-      : opts.upstreamPort;
+  const ingressRequest = {
+    port: opts.upstreamPort,
+    path: remainingPath,
+    transport: 'websocket' as const,
+  };
+  const upstreamPort = routeSandboxIngress(record, ingressRequest).effectivePort;
 
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
@@ -843,7 +836,8 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
+  const ingress = await resolveSandboxIngress(record, ingressRequest);
+  const previewUrl = ingress.url;
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
@@ -852,22 +846,18 @@ export async function resolvePreviewWsUpstream(opts: {
     sandboxId,
     userId,
     serviceKey: record.serviceKey,
-    previewToken,
+    providerHeaders: ingress.headers,
   });
 
   const upstreamUrl = new URL(wsBase + remainingPath + queryString);
-  if (remainingPath.startsWith('/pty/') && record.provider === 'platinum') {
+  if (ingress.websocket?.userContextQueryParam) {
     const signedContext = headers[KORTIX_USER_CONTEXT_HEADER];
-    if (signedContext) upstreamUrl.searchParams.set(KORTIX_USER_CONTEXT_QUERY_PARAM, signedContext);
-    // opencode's PTY WS replays its scrollback — including the live shell prompt —
-    // ONLY when a cursor is supplied. The in-box agent's bridge otherwise defaults
-    // the upstream to cursor=-1, which makes opencode skip the buffer entirely, so
-    // the terminal renders only a cursor and no prompt (then idles → 1006 loop).
-    // This is Platinum-only: Daytona connects to opencode :4096 directly and never
-    // hits the agent's ticket+cursor default. Default to replay-from-start when the
-    // FE didn't pin a cursor; a FE-supplied cursor (reconnect resume) is preserved
-    // by the has() guard. Verified in-box: cursor=0 → "TEXT '# '", cursor=-1 → none.
-    if (!upstreamUrl.searchParams.has('cursor')) upstreamUrl.searchParams.set('cursor', '0');
+    if (signedContext) {
+      upstreamUrl.searchParams.set(ingress.websocket.userContextQueryParam, signedContext);
+    }
+  }
+  for (const [key, value] of Object.entries(ingress.websocket?.queryDefaults ?? {})) {
+    if (!upstreamUrl.searchParams.has(key)) upstreamUrl.searchParams.set(key, value);
   }
 
   return { ok: true, url: upstreamUrl.toString(), headers };
