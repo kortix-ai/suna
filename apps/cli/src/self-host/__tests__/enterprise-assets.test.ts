@@ -117,6 +117,24 @@ describe('embedded enterprise Terraform graph', () => {
     expect(hourlyTarget).toContain('force   = false');
   });
 
+  test('scopes SSM send while allowing the updater to observe command completion', () => {
+    const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
+    const send = updater.slice(
+      updater.indexOf('sid     = "SendSupabaseCommand"'),
+      updater.indexOf('sid = "ObserveSupabaseCommand"'),
+    );
+    const observe = updater.slice(
+      updater.indexOf('sid = "ObserveSupabaseCommand"'),
+      updater.indexOf('sid       = "ReadRuntimeSecrets"'),
+    );
+
+    expect(send).toContain('actions = ["ssm:SendCommand"]');
+    expect(send).toContain('aws_instance.supabase.arn');
+    expect(observe).toContain('"ssm:GetCommandInvocation"');
+    expect(observe).toContain('"ssm:ListCommandInvocations"');
+    expect(observe).toContain('resources = ["*"]');
+  });
+
   test('does not grant the automatic platform apply role AWS infrastructure mutation', () => {
     const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
     const applyPolicy = updater.slice(
