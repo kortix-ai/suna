@@ -24,6 +24,13 @@ import { telegramHtml } from './format';
 import { loadTelegramTurnForQuestion } from './turn';
 
 const CALLBACK_PREFIX = 'kxq';
+/** Multi-select (question.multiple): toggle a checkbox, then Submit. Distinct
+ *  callback namespaces — `kxqt`/`kxqs` don't collide with `kxq:` single-select
+ *  (that pattern requires a `:` immediately after `kxq`). */
+const TOGGLE_PREFIX = 'kxqt';
+const SUBMIT_PREFIX = 'kxqs';
+const CHECKED = '✅';
+const UNCHECKED = '☐';
 /** Telegram inline-button text render limit is generous, but keep options tidy
  *  and predictable; labels are 1-5 words by the tool's contract anyway. */
 const MAX_BUTTON_TEXT = 60;
@@ -56,12 +63,56 @@ function truncateButtonText(label: string): string {
   return label.length <= MAX_BUTTON_TEXT ? label : `${label.slice(0, MAX_BUTTON_TEXT - 1)}…`;
 }
 
+// ─── Multi-select (question.multiple) ────────────────────────────────────────
+
+export function encodeToggleCallback(questionIndex: number, optionIndex: number): string {
+  return `${TOGGLE_PREFIX}:${questionIndex}:${optionIndex}`;
+}
+
+export function isToggleCallback(data: string | undefined): boolean {
+  return !!data && new RegExp(`^${TOGGLE_PREFIX}:\\d+:\\d+$`).test(data);
+}
+
+export function encodeSubmitCallback(questionIndex: number): string {
+  return `${SUBMIT_PREFIX}:${questionIndex}`;
+}
+
+export function isSubmitCallback(data: string | undefined): boolean {
+  return !!data && new RegExp(`^${SUBMIT_PREFIX}:\\d+$`).test(data);
+}
+
+/** A single-question multi-select renders as toggles + Submit; everything else
+ *  (single-select, or multi-question) stays one-tap-answers. */
+function isMultiSelect(questions: QuestionInfo[]): boolean {
+  return questions.length === 1 && questions[0].multiple === true;
+}
+
+/** Strip a leading ✅/☐ marker to recover the option label. */
+export function stripToggleMark(text: string): string {
+  return text.replace(/^(?:✅|☐)\s+/, '');
+}
+
 /**
- * One button per option, one option per row (readable on a phone). Button text
- * IS the option label (verbatim, lightly truncated) so a tap round-trips the
- * answer without a lookup table.
+ * One button per option, one option per row (readable on a phone). Single-select
+ * → one-tap answer buttons; multi-select (question.multiple) → checkbox toggles
+ * (start unchecked) followed by a Submit row. Button text carries the label so a
+ * tap round-trips without a lookup table.
  */
 export function buildQuestionKeyboard(questions: QuestionInfo[]): TelegramInlineButton[][] {
+  if (isMultiSelect(questions)) {
+    const rows: TelegramInlineButton[][] = [];
+    (questions[0].options ?? []).forEach((o, oi) => {
+      if (!o.label) return;
+      rows.push([
+        {
+          text: `${UNCHECKED} ${truncateButtonText(o.label)}`,
+          callbackData: encodeToggleCallback(0, oi),
+        },
+      ]);
+    });
+    rows.push([{ text: `${CHECKED} Submit`, callbackData: encodeSubmitCallback(0) }]);
+    return rows;
+  }
   const rows: TelegramInlineButton[][] = [];
   questions.forEach((q, qi) => {
     (q.options ?? []).forEach((o, oi) => {
@@ -72,6 +123,52 @@ export function buildQuestionKeyboard(questions: QuestionInfo[]): TelegramInline
     });
   });
   return rows;
+}
+
+/**
+ * Flip the tapped checkbox and return the rebuilt keyboard (for
+ * editMessageReplyMarkup). Operates on the keyboard Telegram echoes back — the
+ * toggle state lives in the message, so no storage. Null when the tapped button
+ * isn't in the keyboard.
+ */
+export function toggleKeyboardOption(
+  keyboard: Array<Array<{ text?: string; callback_data?: string; url?: string }>> | undefined,
+  data: string | undefined,
+): TelegramInlineButton[][] | null {
+  if (!keyboard || !data) return null;
+  let found = false;
+  const next = keyboard.map((row) =>
+    row.map((btn) => {
+      const out: TelegramInlineButton = { text: btn.text ?? '' };
+      if (btn.url != null) out.url = btn.url;
+      else if (btn.callback_data != null) out.callbackData = btn.callback_data;
+      if (btn.callback_data === data) {
+        found = true;
+        const label = stripToggleMark(btn.text ?? '');
+        const checked = (btn.text ?? '').startsWith(CHECKED);
+        out.text = `${checked ? UNCHECKED : CHECKED} ${label}`;
+      }
+      return out;
+    }),
+  );
+  return found ? next : null;
+}
+
+/** The labels of every checked option in the echoed keyboard (Submit row
+ *  excluded — it's never a toggle callback). */
+export function selectedLabelsFromKeyboard(
+  keyboard: Array<Array<{ text?: string; callback_data?: string }>> | undefined,
+): string[] {
+  if (!keyboard) return [];
+  const labels: string[] = [];
+  for (const row of keyboard) {
+    for (const btn of row) {
+      if (isToggleCallback(btn.callback_data) && (btn.text ?? '').startsWith(CHECKED)) {
+        labels.push(stripToggleMark(btn.text ?? ''));
+      }
+    }
+  }
+  return labels;
 }
 
 /**
@@ -102,9 +199,11 @@ export function renderQuestionHtml(questions: QuestionInfo[]): string {
   const anyOptions = questions.some((q) => (q.options ?? []).length > 0);
   lines.push('');
   lines.push(
-    anyOptions
-      ? '<i>Tap an option below, or just reply in the chat.</i>'
-      : '<i>Reply in the chat with your answer.</i>',
+    isMultiSelect(questions)
+      ? '<i>Select any that apply, then tap Submit — or just reply in the chat.</i>'
+      : anyOptions
+        ? '<i>Tap an option below, or just reply in the chat.</i>'
+        : '<i>Reply in the chat with your answer.</i>',
   );
   return lines.join('\n');
 }

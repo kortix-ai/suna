@@ -5,8 +5,15 @@ import {
   buildQuestionKeyboard,
   decodeQuestionCallback,
   encodeQuestionCallback,
+  encodeSubmitCallback,
+  encodeToggleCallback,
   isQuestionCallback,
+  isSubmitCallback,
+  isToggleCallback,
   renderQuestionHtml,
+  selectedLabelsFromKeyboard,
+  stripToggleMark,
+  toggleKeyboardOption,
 } from './questions';
 
 const q = (
@@ -117,5 +124,77 @@ describe('renderQuestionHtml', () => {
     const html = renderQuestionHtml([q('Use <script> & co?', ['ok'])]);
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+describe('multi-select questions', () => {
+  const multi = (options: string[]) => [q('Pick colors', options, { multiple: true })];
+
+  test('renders checkbox toggles (unchecked) + a Submit row', () => {
+    const kb = buildQuestionKeyboard(multi(['Red', 'Green', 'Blue']));
+    expect(kb).toHaveLength(4);
+    expect(kb[0][0]).toEqual({ text: '☐ Red', callbackData: 'kxqt:0:0' });
+    expect(kb[2][0]).toEqual({ text: '☐ Blue', callbackData: 'kxqt:0:2' });
+    expect(kb[3][0]).toEqual({ text: '✅ Submit', callbackData: 'kxqs:0' });
+  });
+
+  test('single-select is unaffected (no toggles) and multi-question stays single-tap', () => {
+    expect(buildQuestionKeyboard([q('One?', ['a', 'b'])])[0][0].callbackData).toBe('kxq:0:0');
+    // two questions, even if one is multiple, fall back to single-tap
+    const kb = buildQuestionKeyboard([q('A', ['a'], { multiple: true }), q('B', ['b'])]);
+    expect(kb.every((row) => row[0].callbackData?.startsWith('kxq:'))).toBe(true);
+  });
+
+  test('toggle/submit callback recognizers do not collide with single-select', () => {
+    expect(isToggleCallback('kxqt:0:1')).toBe(true);
+    expect(isSubmitCallback('kxqs:0')).toBe(true);
+    expect(isQuestionCallback('kxqt:0:1')).toBe(false);
+    expect(isQuestionCallback('kxqs:0')).toBe(false);
+    expect(isToggleCallback('kxq:0:1')).toBe(false);
+    expect(encodeToggleCallback(0, 2)).toBe('kxqt:0:2');
+    expect(encodeSubmitCallback(1)).toBe('kxqs:1');
+  });
+
+  test('toggleKeyboardOption flips only the tapped checkbox, preserving the rest', () => {
+    const echoed = [
+      [{ text: '☐ Red', callback_data: 'kxqt:0:0' }],
+      [{ text: '☐ Green', callback_data: 'kxqt:0:1' }],
+      [{ text: '✅ Submit', callback_data: 'kxqs:0' }],
+    ];
+    const next = toggleKeyboardOption(echoed, 'kxqt:0:1');
+    expect(next?.[0][0]).toEqual({ text: '☐ Red', callbackData: 'kxqt:0:0' });
+    expect(next?.[1][0]).toEqual({ text: '✅ Green', callbackData: 'kxqt:0:1' });
+    // toggling again unchecks it
+    const back = toggleKeyboardOption(
+      [[{ text: '✅ Green', callback_data: 'kxqt:0:1' }]],
+      'kxqt:0:1',
+    );
+    expect(back?.[0][0].text).toBe('☐ Green');
+  });
+
+  test('toggleKeyboardOption returns null when the button is absent', () => {
+    expect(
+      toggleKeyboardOption([[{ text: '☐ x', callback_data: 'kxqt:0:0' }]], 'kxqt:9:9'),
+    ).toBeNull();
+  });
+
+  test('selectedLabelsFromKeyboard collects checked labels, excluding Submit', () => {
+    const kb = [
+      [{ text: '✅ Red', callback_data: 'kxqt:0:0' }],
+      [{ text: '☐ Green', callback_data: 'kxqt:0:1' }],
+      [{ text: '✅ Blue', callback_data: 'kxqt:0:2' }],
+      [{ text: '✅ Submit', callback_data: 'kxqs:0' }],
+    ];
+    expect(selectedLabelsFromKeyboard(kb)).toEqual(['Red', 'Blue']);
+  });
+
+  test('stripToggleMark recovers the bare label', () => {
+    expect(stripToggleMark('✅ Ship it')).toBe('Ship it');
+    expect(stripToggleMark('☐ Wait')).toBe('Wait');
+    expect(stripToggleMark('no mark')).toBe('no mark');
+  });
+
+  test('multi-select hint nudges toward Submit', () => {
+    expect(renderQuestionHtml(multi(['a']))).toContain('then tap Submit');
   });
 });

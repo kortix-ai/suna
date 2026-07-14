@@ -338,6 +338,27 @@ export function setMessageReactionPayload(
   };
 }
 
+/** Replace ONLY a message's inline keyboard (leaves the text) — the checkbox
+ *  repaint for multi-select toggles. `null` clears the keyboard. Edits are
+ *  idempotent; "message is not modified" is treated as success. */
+export async function telegramEditMessageReplyMarkup(
+  token: string,
+  chatId: number | string,
+  messageId: number,
+  keyboard: TelegramInlineButton[][] | null,
+): Promise<boolean> {
+  const markup = keyboard ? inlineKeyboardMarkup({ keyboard }) : { inline_keyboard: [] };
+  const r = await telegramApiCall(
+    token,
+    'editMessageReplyMarkup',
+    { chat_id: chatId, message_id: messageId, reply_markup: markup },
+    { retries: 1 },
+  );
+  if (r.ok) return true;
+  if ((r.description ?? '').includes('message is not modified')) return true;
+  return false;
+}
+
 /** React to a message (the user's, as a liveness cue). Best-effort — a rejected
  *  reaction (unsupported emoji, message too old, no rights) is swallowed. */
 export async function telegramSetMessageReaction(

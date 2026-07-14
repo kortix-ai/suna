@@ -37,6 +37,7 @@ import { normalizeConversationPolicy } from './slack/participants';
 import { currentChannelSelection } from './slack/selection';
 import {
   telegramAnswerCallbackQuery,
+  telegramEditMessageReplyMarkup,
   telegramEditMessageText,
   telegramSendMessage,
 } from './telegram-api';
@@ -70,7 +71,14 @@ import {
   telegramAllowedUserIds,
   telegramPairingMatches,
 } from './telegram/pairing';
-import { answerLabelFromKeyboard, isQuestionCallback } from './telegram/questions';
+import {
+  answerLabelFromKeyboard,
+  isQuestionCallback,
+  isSubmitCallback,
+  isToggleCallback,
+  selectedLabelsFromKeyboard,
+  toggleKeyboardOption,
+} from './telegram/questions';
 import { applyTelegramReviewVerdict, isReviewCallback } from './telegram/review';
 import {
   finalizeTelegramTurnDirect,
@@ -381,8 +389,58 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
     return;
   }
 
-  // Only question taps are handled beyond this point; anything else gets a
-  // silent ack so the client stops spinning.
+  // Multi-select question: a checkbox toggle just repaints the keyboard (state
+  // lives in the message); no gate — nothing runs until Submit.
+  if (isToggleCallback(cb.data) && cbMessage?.chat) {
+    const next = toggleKeyboardOption(cbMessage.reply_markup?.inline_keyboard, cb.data);
+    if (token) {
+      if (next) {
+        await telegramEditMessageReplyMarkup(
+          token,
+          cbMessage.chat.id,
+          cbMessage.message_id,
+          next,
+        ).catch(() => {});
+      }
+      await telegramAnswerCallbackQuery(token, cb.id);
+    }
+    return;
+  }
+
+  // Multi-select Submit: gather the checked labels and deliver them as one
+  // answer (the create-or-join path re-runs the allowlist gate).
+  if (isSubmitCallback(cb.data) && cbMessage?.chat) {
+    const labels = selectedLabelsFromKeyboard(cbMessage.reply_markup?.inline_keyboard);
+    if (labels.length === 0) {
+      if (token) await telegramAnswerCallbackQuery(token, cb.id, 'Pick at least one option first.');
+      return;
+    }
+    if (token) {
+      await telegramAnswerCallbackQuery(token, cb.id, `✓ ${labels.length} selected`);
+      await telegramEditMessageReplyMarkup(
+        token,
+        cbMessage.chat.id,
+        cbMessage.message_id,
+        null,
+      ).catch(() => {});
+    }
+    await createOrJoinChatSession({
+      projectId,
+      botId,
+      botUsername,
+      chatId: String(cbMessage.chat.id),
+      message: {
+        message_id: cbMessage.message_id,
+        chat: cbMessage.chat,
+        from: cb.from,
+        text: labels.join(', '),
+      },
+    });
+    return;
+  }
+
+  // Only single-select question taps are handled beyond this point; anything
+  // else gets a silent ack so the client stops spinning.
   const answer = isQuestionCallback(cb.data)
     ? answerLabelFromKeyboard(cbMessage?.reply_markup?.inline_keyboard, cb.data)
     : null;
