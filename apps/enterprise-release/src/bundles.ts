@@ -270,7 +270,6 @@ function supabaseStartScript(): string {
     'curl --fail --silent --show-error --max-time 10 --header "apikey: $anon_key" http://127.0.0.1:8000/auth/v1/health >/dev/null',
     'unset anon_key',
     'systemctl enable --now kortix-wal-archive.timer kortix-base-backup.timer',
-    'systemctl start kortix-wal-archive.service',
     '',
   ].join('\n');
 }

@@ -77,6 +77,10 @@ describe('enterprise release bundles', () => {
       const start = readFileSync(join(root, 'bin', 'supabase-start'), 'utf8');
       expect(start).toContain('docker inspect supabase-kong');
       expect(start).toContain('--header "apikey: $anon_key"');
+      expect(start).toContain('systemctl enable --now kortix-wal-archive.timer kortix-base-backup.timer');
+      expect(start).not.toContain('systemctl start kortix-wal-archive.service');
+      const walUnit = readFileSync(join(root, 'systemd', 'kortix-wal-archive.service'), 'utf8');
+      expect(walUnit).toContain('After=network-online.target kortix-supabase.service');
       const physicalRoot = start.split('\n').find((line) => line.startsWith('root=$(readlink -f '));
       expect(physicalRoot).toBeDefined();
       symlinkSync('.', join(root, 'current'));
