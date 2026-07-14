@@ -44,20 +44,20 @@ case "$*" in
     ;;
   *"ssm get-parameters"*)
     if [ "\${FAKE_RELEASE_EMPTY:-}" = "1" ]; then
-      printf '%s\n' '{"Parameters":[],"InvalidParameters":["/kortix/kortix-vpc-demo/release"]}'
+      printf '%s\n' '{"Parameters":[],"InvalidParameters":["/kortix/vpc-demo/release"]}'
     else
       printf '%s\n' '{"Parameters":[{"Value":"{\\\"version\\\":\\\"0.9.84-e1\\\",\\\"digests\\\":{\\\"api\\\":\\\"sha256:aaa\\\"},\\\"supabase_bundle_sha\\\":\\\"d\\\",\\\"deployed_at\\\":\\\"2026-07-14T12:00:00Z\\\"}"}]}'
     fi
     ;;
   *"ssm put-parameter"*) printf '%s\n' '{"Version":1}' ;;
   *"ecs describe-clusters"*)
-    printf '%s\n' '{"clusters":[{"clusterName":"kortix-kortix-vpc-demo","status":"ACTIVE","runningTasksCount":6}]}'
+    printf '%s\n' '{"clusters":[{"clusterName":"kortix-vpc-demo","status":"ACTIVE","runningTasksCount":6}]}'
     ;;
   *"ecs describe-services"*)
-    printf '%s\n' '{"services":[{"serviceName":"kortix-kortix-vpc-demo-api","status":"ACTIVE","runningCount":2,"desiredCount":2,"networkConfiguration":{"awsvpcConfiguration":{"subnets":["subnet-1"],"securityGroups":["sg-1"]}},"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]},{"serviceName":"kortix-kortix-vpc-demo-gateway","status":"ACTIVE","runningCount":2,"desiredCount":2,"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]},{"serviceName":"kortix-kortix-vpc-demo-frontend","status":"ACTIVE","runningCount":1,"desiredCount":1,"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]}]}'
+    printf '%s\n' '{"services":[{"serviceName":"kortix-vpc-demo-api","status":"ACTIVE","runningCount":2,"desiredCount":2,"networkConfiguration":{"awsvpcConfiguration":{"subnets":["subnet-1"],"securityGroups":["sg-1"]}},"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]},{"serviceName":"kortix-vpc-demo-gateway","status":"ACTIVE","runningCount":2,"desiredCount":2,"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]},{"serviceName":"kortix-vpc-demo-frontend","status":"ACTIVE","runningCount":1,"desiredCount":1,"deployments":[{"status":"PRIMARY","rolloutState":"COMPLETED"}]}]}'
     ;;
   *"ecs run-task"*)
-    printf '%s\n' '{"tasks":[{"taskArn":"arn:aws:ecs:us-west-2:935064898258:task/kortix-kortix-vpc-demo/deploy-1"}]}'
+    printf '%s\n' '{"tasks":[{"taskArn":"arn:aws:ecs:us-west-2:935064898258:task/kortix-vpc-demo/deploy-1"}]}'
     ;;
   *"ecs describe-tasks"*)
     printf '%s\n' '{"tasks":[{"lastStatus":"STOPPED","stoppedReason":"Essential container exited","containers":[{"exitCode":0}]}]}'
@@ -74,7 +74,7 @@ case "$*" in
     ;;
   *"secretsmanager put-secret-value"*)
     cat >/dev/null
-    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
+    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
     ;;
   *"logs tail"*) printf '%s\n' '2026-07-13T11:05:00Z deployer up to date' ;;
   *"--version"*) printf '%s\n' 'aws-cli/2.31.0' ;;
@@ -97,13 +97,13 @@ case "$*" in
     printf '%s\n' '{"format_version":"1.2","resource_changes":[{"address":"module.enterprise.aws_ecs_service.api","type":"aws_ecs_service","change":{"actions":["create"]}}]}'
     ;;
   *"output -json backend_config"*)
-    printf '%s\n' '{"bucket":"kortix-vpc-demo-935064898258-us-west-2-tfstate","dynamodb_table":"kortix-vpc-demo-terraform-locks","region":"us-west-2","encrypt":true,"kms_key_id":"arn:aws:kms:us-west-2:935064898258:key/state"}'
+    printf '%s\n' '{"bucket":"vpc-demo-935064898258-us-west-2-tfstate","dynamodb_table":"vpc-demo-terraform-locks","region":"us-west-2","encrypt":true,"kms_key_id":"arn:aws:kms:us-west-2:935064898258:key/state"}'
     ;;
   *"output -json permissions_boundary_arn"*)
-    printf '%s\n' '"arn:aws:iam::935064898258:policy/kortix-vpc-demo-workload-boundary"'
+    printf '%s\n' '"arn:aws:iam::935064898258:policy/vpc-demo-workload-boundary"'
     ;;
   *"output -json instance"*)
-    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-kortix-vpc-demo","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test"}'
+    printf '%s\n' '{"name":"vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-test"}'
     ;;
   *"state pull"*)
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
@@ -191,7 +191,7 @@ esac
     return { code, stdout, stderr };
   }
 
-  function configuredInitArgs(instance = 'kortix-vpc-demo'): string[] {
+  function configuredInitArgs(instance = 'vpc-demo'): string[] {
     return [
       'init', '--target', 'aws-vpc', '--instance', instance,
       '--aws-profile', 'default', '--region', 'us-west-2', '--channel', 'stable',
@@ -209,7 +209,7 @@ esac
     ];
   }
 
-  async function initConfigured(instance = 'kortix-vpc-demo') {
+  async function initConfigured(instance = 'vpc-demo') {
     const result = await run(configuredInitArgs(instance));
     expect(result.code, result.stderr).toBe(0);
     return result;
@@ -219,7 +219,7 @@ esac
     const result = await initConfigured();
     const config = JSON.parse(result.stdout);
     expect(config).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       target: 'aws-vpc',
       channel: 'stable',
       aws: {
@@ -234,7 +234,7 @@ esac
       },
     });
 
-    const instanceDir = join(configRoot, 'kortix-vpc-demo');
+    const instanceDir = join(configRoot, 'vpc-demo');
     const persisted = readFileSync(join(instanceDir, 'instance.json'), 'utf8');
     expect(JSON.parse(persisted)).toMatchObject({ target: 'aws-vpc', aws: { account_id: '935064898258' } });
     expect(persisted).not.toContain('cloudflare_api_token');
@@ -259,10 +259,10 @@ esac
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const plan = await run(['plan', '--instance', 'kortix-vpc-demo', '--json']);
+    const plan = await run(['plan', '--instance', 'vpc-demo', '--json']);
     expect(plan.code).toBe(0);
     expect(JSON.parse(plan.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       stages: [{ name: 'state', decision: 'auto_apply' }],
     });
     expect(readFileSync(terraformLog, 'utf8')).toContain('plan');
@@ -271,7 +271,7 @@ esac
 
     writeFileSync(terraformLog, '');
     const mismatch = await run(
-      ['plan', '--instance', 'kortix-vpc-demo'],
+      ['plan', '--instance', 'vpc-demo'],
       { FAKE_AWS_ACCOUNT: '327903111249' },
     );
     expect(mismatch.code).toBe(1);
@@ -282,11 +282,11 @@ esac
   test('does not persist a replacement AWS profile unless it resolves to the pinned account', async () => {
     await initConfigured();
     const result = await run([
-      'configure', '--instance', 'kortix-vpc-demo', '--aws-profile', 'wrong-account', '--yes',
+      'configure', '--instance', 'vpc-demo', '--aws-profile', 'wrong-account', '--yes',
     ]);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('AWS account mismatch');
-    const persisted = JSON.parse(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8'));
+    const persisted = JSON.parse(readFileSync(join(configRoot, 'vpc-demo/instance.json'), 'utf8'));
     expect(persisted.aws.profile).toBe('default');
   });
 
@@ -295,7 +295,7 @@ esac
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo']);
+    const result = await run(['deploy', '--instance', 'vpc-demo']);
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('requires confirmation');
     expect(readFileSync(terraformLog, 'utf8')).toBe('');
@@ -308,10 +308,10 @@ esac
     writeFileSync(terraformLog, '');
     writeFileSync(awsLog, '');
 
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json']);
+    const result = await run(['deploy', '--instance', 'vpc-demo', '--yes', '--json']);
     expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       state_migration: {
         verified: true,
         lineage: 'remote-lineage',
@@ -341,7 +341,7 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      ['deploy', '--instance', 'vpc-demo', '--yes', '--json'],
       { FAKE_RUNTIME_MISSING: '1' },
     );
     expect(result.code, result.stderr).toBe(0);
@@ -363,12 +363,12 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes'],
+      ['deploy', '--instance', 'vpc-demo', '--yes'],
       { FAKE_TERRAFORM_FAIL_MIGRATE: '1' },
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('local bootstrap state was preserved');
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
     expect(readFileSync(awsLog, 'utf8')).not.toContain('ecs run-task');
@@ -377,7 +377,7 @@ esac
   test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
     await initConfigured();
     writeFileSync(`${terraformLog}.fail-apply`, '');
-    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes']);
+    const result = await run(['deploy', '--instance', 'vpc-demo', '--yes']);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('Terraform apply failed: Error: simulated actionable apply failure');
     expect(result.stderr).not.toContain('Terraform apply failed: ╷');
@@ -389,19 +389,19 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes'],
+      ['deploy', '--instance', 'vpc-demo', '--yes'],
       { FAKE_TERRAFORM_REMOTE_DIFFERENT: '1' },
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('remote state verification failed');
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
     expect(readFileSync(awsLog, 'utf8')).not.toContain('ecs run-task');
   });
 
   test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
     await initConfigured();
-    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    const stateRoot = join(configRoot, 'vpc-demo/terraform/environments/enterprise-vpc/state');
     writeFileSync(join(stateRoot, 'backend.tf'), 'terraform { backend "s3" {} }\n');
     writeFileSync(
       join(stateRoot, 'backend.hcl'),
@@ -413,7 +413,7 @@ esac
     );
 
     const result = await run(
-      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      ['deploy', '--instance', 'vpc-demo', '--yes', '--json'],
       { FAKE_TERRAFORM_REMOTE_REFRESHED: '1' },
     );
     expect(result.code, result.stderr).toBe(0);
@@ -431,14 +431,14 @@ esac
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const reconcile = await run(['reconcile', '--instance', 'kortix-vpc-demo', '--json']);
+    const reconcile = await run(['reconcile', '--instance', 'vpc-demo', '--json']);
     expect(reconcile.code, reconcile.stderr).toBe(0);
     const update = await run([
-      'update', '--instance', 'kortix-vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
+      'update', '--instance', 'vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
     ]);
     expect(update.code).toBe(0);
     const rollback = await run([
-      'rollback', '--instance', 'kortix-vpc-demo', '--release', '0.9.84-e1', '--yes', '--json',
+      'rollback', '--instance', 'vpc-demo', '--release', '0.9.84-e1', '--yes', '--json',
     ]);
     expect(rollback.code).toBe(0);
 
@@ -455,16 +455,16 @@ esac
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const list = await run(['env', 'ls', '--instance', 'kortix-vpc-demo', '--json']);
+    const list = await run(['env', 'ls', '--instance', 'vpc-demo', '--json']);
     expect(list.code, list.stderr).toBe(0);
     expect(JSON.parse(list.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       missing_required: [],
     });
     expect(list.stdout).not.toContain('smtp-pass');
 
     const set = await run([
-      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'kortix-vpc-demo', '--json',
+      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'vpc-demo', '--json',
     ]);
     expect(set.code).toBe(0);
     expect(JSON.parse(set.stdout)).toMatchObject({ updated: ['SMTP_PASS'] });
@@ -472,17 +472,17 @@ esac
     expect(calls).toContain('secretsmanager put-secret-value');
     expect(calls).toContain('file://');
     expect(calls).not.toContain('rotated-secret');
-    expect(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
+    expect(readFileSync(join(configRoot, 'vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
   });
 
   test('reports live ECS status/version and tails customer-owned deployer logs', async () => {
     await initConfigured();
     writeFileSync(awsLog, '');
 
-    const statusResult = await run(['status', '--instance', 'kortix-vpc-demo', '--json']);
+    const statusResult = await run(['status', '--instance', 'vpc-demo', '--json']);
     expect(statusResult.code).toBe(0);
     expect(JSON.parse(statusResult.stdout)).toMatchObject({
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       cluster: { status: 'ACTIVE' },
       services: expect.arrayContaining([
         expect.objectContaining({ role: 'api', status: 'ACTIVE', running: 2 }),
@@ -491,21 +491,21 @@ esac
       release: { version: '0.9.84-e1' },
     });
 
-    const version = await run(['version', '--instance', 'kortix-vpc-demo', '--json']);
+    const version = await run(['version', '--instance', 'vpc-demo', '--json']);
     expect(version.code).toBe(0);
     expect(JSON.parse(version.stdout)).toMatchObject({ release: '0.9.84-e1', channel: 'stable', status: 'deployed' });
 
-    const logs = await run(['logs', 'deployer', '--instance', 'kortix-vpc-demo']);
+    const logs = await run(['logs', 'deployer', '--instance', 'vpc-demo']);
     expect(logs.code).toBe(0);
     expect(logs.stdout).toContain('deployer up to date');
-    expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/kortix-vpc-demo/deployer');
+    expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/vpc-demo/deployer');
   });
 
   test('reports not-deployed release state when the SSM release parameter is absent', async () => {
     await initConfigured();
 
     const result = await run(
-      ['version', '--instance', 'kortix-vpc-demo', '--json'],
+      ['version', '--instance', 'vpc-demo', '--json'],
       { FAKE_RELEASE_EMPTY: '1' },
     );
 

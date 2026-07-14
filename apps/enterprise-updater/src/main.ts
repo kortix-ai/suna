@@ -29,6 +29,8 @@ async function main(): Promise<number> {
   // (KORTIX_INSTANCE / KORTIX_RELEASE_REPOSITORY / KORTIX_TUF_ROOT_SHA256, …).
   const instance = flags.get('instance') ?? process.env.KORTIX_INSTANCE ?? missing('--instance or KORTIX_INSTANCE');
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) throw new Error('instance is not a valid enterprise slug');
+  // Resources are named kortix-<instance>; a kortix- prefix would double it.
+  if (instance.startsWith('kortix-')) throw new Error('instance must not start with "kortix-"; resources are already named kortix-<instance>');
   const channel = flags.get('channel') ?? process.env.KORTIX_CHANNEL ?? 'stable';
   if (channel !== 'stable') throw new Error('enterprise updater may only track the stable channel');
   const repositoryUrl = flags.get('repository') ?? process.env.KORTIX_RELEASE_REPOSITORY ?? missing('--repository or KORTIX_RELEASE_REPOSITORY');
@@ -72,7 +74,11 @@ async function main(): Promise<number> {
   // Domains drive the public health checks + Supabase install; the deployer
   // task-def may pass them explicitly, else derive from the runtime secret URLs.
   const runtimeSecret = control.getSecretJson(runtimeSecretArn);
-  const apiDomain = process.env.KORTIX_API_DOMAIN || hostOf(runtimeSecret.SUPABASE_PUBLIC_URL || runtimeSecret.API_PUBLIC_URL);
+  // The Terraform deployer task-def sets KORTIX_API_DOMAIN/KORTIX_FRONTEND_DOMAIN
+  // explicitly; the secret fallbacks are defense-in-depth. Note the public
+  // Supabase URL lives on the FRONTEND host, so the api domain derives from the
+  // app's own public origin, never from a SUPABASE_* URL.
+  const apiDomain = process.env.KORTIX_API_DOMAIN || hostOf(runtimeSecret.API_PUBLIC_URL || runtimeSecret.KORTIX_URL);
   const frontendDomain = process.env.KORTIX_FRONTEND_DOMAIN || hostOf(runtimeSecret.PUBLIC_URL || runtimeSecret.KORTIX_PUBLIC_URL);
   if (!apiDomain || !frontendDomain) throw new Error('unable to resolve api/frontend domains from env or runtime secret');
   const supabase = new SupabaseInstaller(runner, control, {

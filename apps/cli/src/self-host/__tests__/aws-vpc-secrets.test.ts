@@ -9,11 +9,11 @@ import {
 } from '../aws-vpc-secrets.ts';
 
 const coordinates = {
-  runtimeSecretArn: 'arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test',
+  runtimeSecretArn: 'arn:aws:secretsmanager:us-west-2:935064898258:secret:vpc-demo/runtime-test',
   supabasePrivateIp: '10.60.16.10',
   apiDomain: 'api.vpc-demo.kortix.com',
   frontendDomain: 'vpc-demo.kortix.com',
-  instance: 'kortix-vpc-demo',
+  instance: 'vpc-demo',
   region: 'us-west-2',
 };
 
@@ -22,9 +22,14 @@ describe('AWS VPC runtime secret bootstrap', () => {
     const secret = generateRuntimeDefaults({}, coordinates);
 
     expect(secret.POSTGRES_PASSWORD.length).toBeGreaterThanOrEqual(32);
-    expect(secret.DATABASE_URL).toMatch(/^postgresql:\/\/postgres\.kortix-vpc-demo:.+@10\.60\.16\.10:5432\/postgres$/);
+    expect(secret.DATABASE_URL).toMatch(/^postgresql:\/\/postgres\.vpc-demo:.+@10\.60\.16\.10:5432\/postgres$/);
+    // Server-side reaches Kong on the private IP; the browser-facing Supabase
+    // URLs are the FRONTEND/root origin (where the ALB serves /rest, /auth, …),
+    // never the api host.
     expect(secret.SUPABASE_URL).toBe('http://10.60.16.10:8000');
-    expect(secret.SUPABASE_PUBLIC_URL).toBe('https://api.vpc-demo.kortix.com');
+    expect(secret.SUPABASE_PUBLIC_URL).toBe('https://vpc-demo.kortix.com');
+    expect(secret.KORTIX_PUBLIC_SUPABASE_URL).toBe('https://vpc-demo.kortix.com');
+    expect(secret.API_PUBLIC_URL).toBe('https://api.vpc-demo.kortix.com');
     expect(secret.PUBLIC_URL).toBe('https://vpc-demo.kortix.com');
     expect(secret.REALTIME_DB_ENC_KEY).toHaveLength(16);
     expect(secret.VAULT_ENC_KEY).toHaveLength(32);
@@ -58,7 +63,7 @@ describe('AWS VPC runtime secret bootstrap', () => {
     expect(second.SUPABASE_SECRET_KEY).toBe(first.SUPABASE_SECRET_KEY);
     expect(second.API_KEY_SECRET).toBe(first.API_KEY_SECRET);
     expect(second.SMTP_HOST).toBe('smtp.example.com');
-    expect(second.DATABASE_URL).toMatch(/^postgresql:\/\/postgres\.kortix-vpc-demo:.+@10\.60\.16\.11:5432\/postgres$/);
+    expect(second.DATABASE_URL).toMatch(/^postgresql:\/\/postgres\.vpc-demo:.+@10\.60\.16\.11:5432\/postgres$/);
   });
 
   test('parses only explicit non-empty uppercase assignments', () => {

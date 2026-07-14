@@ -146,14 +146,18 @@ export function generateRuntimeDefaults(
     // Port 5432 is the official Supabase Supavisor session endpoint. Supavisor
     // selects the tenant from the username suffix before proxying to Postgres.
     DATABASE_URL: `postgresql://postgres.${coordinates.instance}:${encodeURIComponent(postgresPassword)}@${coordinates.supabasePrivateIp}:5432/postgres`,
+    // Server-side (api/frontend tasks) reach Kong directly on the private IP.
     SUPABASE_URL: supabaseInternalUrl,
-    SUPABASE_PUBLIC_URL: apiUrl,
+    // Browser-facing Supabase base. The ALB routes the Supabase data-plane
+    // prefixes (/rest/v1, /auth/v1, /storage/v1, …) on the FRONTEND/root host,
+    // not on api.<domain>, so every public Supabase URL is the frontend origin.
+    SUPABASE_PUBLIC_URL: frontendUrl,
     PUBLIC_URL: frontendUrl,
     API_PUBLIC_URL: apiUrl,
     KORTIX_URL: apiUrl,
     KORTIX_PUBLIC_URL: frontendUrl,
     KORTIX_PUBLIC_BACKEND_URL: `${apiUrl}/v1`,
-    KORTIX_PUBLIC_SUPABASE_URL: apiUrl,
+    KORTIX_PUBLIC_SUPABASE_URL: frontendUrl,
     KORTIX_PUBLIC_SUPABASE_ANON_KEY: anonKey,
     INTERNAL_KORTIX_ENV: 'prod',
     KORTIX_BILLING_INTERNAL_ENABLED: 'false',

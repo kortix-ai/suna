@@ -41,9 +41,9 @@ export interface SupabaseConfig {
 /**
  * Drives the official Supabase Docker host on the customer EC2 through SSM
  * RunCommand. The install/finalize/rollback scripts keep their proven
- * transactional semantics (symlink swap + previous-release restore); the
- * WAL/base-backup/PITR machinery is gone — encrypted EBS + hourly AWS Backup is
- * the v1 durability story.
+ * transactional semantics (symlink swap + previous-release restore). Database
+ * durability is handled out-of-band by encrypted EBS + hourly AWS Backup, not by
+ * any in-host log-shipping or point-in-time tooling.
  */
 export class SupabaseInstaller {
   constructor(

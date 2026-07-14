@@ -43,7 +43,7 @@ describe('self-host instance config', () => {
   test('writes a secret-free AWS target config with owner-only permissions', () => {
     const config: SelfHostInstanceConfig = {
       schema_version: 1,
-      instance: 'kortix-vpc-demo',
+      instance: 'vpc-demo',
       target: 'aws-vpc',
       channel: 'stable',
       aws: {
@@ -76,6 +76,17 @@ describe('self-host instance config', () => {
     chmodSync(instanceConfigPath('broken'), 0o600);
 
     expect(() => loadInstanceConfig('broken')).toThrow('unsupported field "api_key"');
+  });
+
+  test('rejects an aws-vpc instance name that starts with kortix- (would double the resource prefix)', () => {
+    const config = {
+      schema_version: 1,
+      instance: 'kortix-vpc-demo',
+      target: 'aws-vpc',
+      channel: 'stable',
+      aws: { profile: 'default', region: 'us-west-2', account_id: '935064898258' },
+    } as SelfHostInstanceConfig;
+    expect(() => writeInstanceConfig(config)).toThrow('must not start with "kortix-"');
   });
 
   test('requires complete AWS coordinates', () => {
