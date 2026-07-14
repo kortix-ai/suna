@@ -545,7 +545,15 @@ else
   mv "$staging" "$release_dir"
 fi
 install -d -m 0700 /opt/kortix/update-transactions
-previous=$(readlink -f /opt/kortix/current 2>/dev/null || true)
+previous=
+if [ -L /opt/kortix/current ]; then
+  previous=$(readlink -f /opt/kortix/current)
+  case "$previous" in
+    /opt/kortix/releases/*) ;;
+    *) echo 'Unsafe previous Supabase release path' >&2; exit 1 ;;
+  esac
+  test -d "$previous"
+fi
 printf '%s\n' "$previous" >"$transaction.previous"
 printf '%s\n' "$release_dir" >"$transaction.expected"
 ln -sfn "$release_dir" /opt/kortix/current.new
