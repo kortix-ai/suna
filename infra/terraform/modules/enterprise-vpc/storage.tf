@@ -7,6 +7,7 @@ locals {
 # it via SSM RunCommand over the S3 gateway endpoint. Customer-data durability is
 # encrypted EBS + hourly AWS Backup recovery points (backup.tf); this bucket ever
 # holds only transient deploy artifacts, which lifecycle-expire automatically.
+#trivy:ignore:AVD-AWS-0089
 resource "aws_s3_bucket" "artifacts" {
   #checkov:skip=CKV_AWS_18:Transient release-staging bucket; contents are short-lived KMS-encrypted deploy artifacts, not audited data.
   #checkov:skip=CKV_AWS_144:Cross-region replication is unnecessary for transient staging artifacts kept in the customer residency region.

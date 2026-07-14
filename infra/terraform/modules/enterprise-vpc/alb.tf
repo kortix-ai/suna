@@ -36,7 +36,11 @@ resource "aws_security_group" "alb" {
   tags = merge(local.tags, { Name = "${var.name}-alb" })
 }
 
+#trivy:ignore:AVD-AWS-0053
 resource "aws_lb" "this" {
+  # Public exposure is the product: this ALB is the single customer-facing entry
+  # point for the frontend, API, and Supabase data plane. Reach is governed by
+  # alb_ingress_cidrs, which enterprise customers restrict to their networks.
   #checkov:skip=CKV2_AWS_28:Enterprise customers restrict alb_ingress_cidrs and may front the ALB with their own WAF; a Kortix-managed WAF is out of the single-tenant scope.
   #checkov:skip=CKV_AWS_150:deletion_protection is governed by the customer's reviewed decommission procedure, not always-on in the template.
   name                       = "${local.lb_base}-alb"

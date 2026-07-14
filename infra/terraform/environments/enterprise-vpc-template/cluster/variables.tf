@@ -29,10 +29,6 @@ variable "operator_external_id" {
 variable "permissions_boundary_arn" {
   type = string
 }
-variable "terraform_state_bucket" { type = string }
-variable "terraform_state_lock_table" { type = string }
-variable "terraform_state_kms_key_arn" { type = string }
-
 # ── ECS / ALB / Bedrock / scheduler ───────────────────────────────────────────
 variable "alb_ingress_cidrs" {
   description = "CIDRs allowed to reach the public ALB. Enterprise customers should restrict this."

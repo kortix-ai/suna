@@ -82,9 +82,6 @@ export function writeClusterFiles(
     release_publisher_account_id: aws.release_publisher_account_id,
     maintenance_window: aws.maintenance_window,
     permissions_boundary_arn: permissionsBoundaryArn,
-    terraform_state_bucket: backend.bucket,
-    terraform_state_lock_table: backend.dynamodb_table,
-    terraform_state_kms_key_arn: backend.kms_key_id,
     tags: { Environment: 'enterprise', ManagedBy: 'kortix-self-host' },
   });
 }

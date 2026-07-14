@@ -345,21 +345,6 @@ variable "permissions_boundary_arn" {
   }
 }
 
-variable "terraform_state_bucket" {
-  description = "Customer-owned remote-state bucket used by the private platform stage."
-  type        = string
-}
-
-variable "terraform_state_lock_table" {
-  description = "Customer-owned DynamoDB lock table used by the private platform stage."
-  type        = string
-}
-
-variable "terraform_state_kms_key_arn" {
-  description = "Customer-owned KMS key protecting remote Terraform state."
-  type        = string
-}
-
 variable "backup_retention_days" {
   type    = number
   default = 35

@@ -9,7 +9,3 @@ variable "cluster_state_key" {
 }
 variable "lock_table" { type = string }
 variable "state_kms_key_arn" { type = string }
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
