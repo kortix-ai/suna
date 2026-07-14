@@ -19,7 +19,6 @@ variable "app_irsa_role_arn" { type = string }
 variable "alb_controller_role_arn" { type = string }
 variable "autoscaler_role_arn" { type = string }
 variable "argo_rollouts_role_arn" { type = string }
-variable "runtime_secret_arn" { type = string }
 variable "permissions_boundary_arn" { type = string }
 variable "tags" {
   type    = map(string)
