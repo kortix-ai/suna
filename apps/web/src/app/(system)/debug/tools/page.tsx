@@ -474,7 +474,7 @@ export default function DebugToolsPage() {
             <h1 className="text-base font-semibold">
               {tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}
             </h1>
-            <Badge variant="kortix" size="xs">
+            <Badge variant="kortix" size="xs" title="Sample PR evidence demo">
               Sample PR demo
             </Badge>
           </div>
