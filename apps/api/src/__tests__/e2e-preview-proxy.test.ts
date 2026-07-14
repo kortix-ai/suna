@@ -169,6 +169,12 @@ mock.module('../shared/preview-ownership', () => ({
 
 // Daytona SDK mock
 mock.module('../shared/daytona', () => ({
+  isDaytonaConfigured: () => true,
+  archiveDaytonaSandboxById: async () => ({ ok: true }),
+  isDaytonaDiskQuotaError: () => false,
+  listStoppedDaytonaSandboxesOldestFirst: async function* () {},
+  listDaytonaSnapshots: async () => [],
+  deleteDaytonaSnapshotById: async () => true,
   getDaytona: () => ({
     get: async (sandboxId: string) => {
       return {
@@ -190,22 +196,54 @@ mock.module('../platform/providers', () => ({
       this.name = 'WarmRuntimeUnavailableError';
     }
   },
-  getProvider: () => ({
-    resolvePreviewLink: async (_externalId: string, port: number) => {
-      mockResolvedPreviewPorts.push(port);
-      return { url: mockPreviewUrl, token: mockPreviewToken };
+  getProvider: (name: string) => {
+    const routeIngress = (request: { port: number; path?: string; transport?: string }) => {
+      const ptyWebsocket =
+        name === 'platinum' &&
+        request.transport === 'websocket' &&
+        request.path?.startsWith('/pty/');
+      return {
+        effectivePort: name === 'platinum' && (request.port === 4096 || ptyWebsocket)
+          ? 8000
+          : request.port,
+        websocket: ptyWebsocket
+          ? {
+              userContextQueryParam: '__kortix_user_context',
+              queryDefaults: { cursor: '0' },
+            }
+          : undefined,
+      };
+    };
+    return {
+    routeIngress,
+    resolveIngress: async (_externalId: string, request: { port: number; path?: string; transport?: string }) => {
+      const route = routeIngress(request);
+      mockResolvedPreviewPorts.push(route.effectivePort);
+      return {
+        url: mockPreviewUrl,
+        headers: name === 'daytona'
+          ? {
+              'X-Daytona-Skip-Preview-Warning': 'true',
+              'X-Daytona-Disable-CORS': 'true',
+              ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
+            }
+          : name === 'e2b' && mockPreviewToken
+            ? { 'e2b-traffic-access-token': mockPreviewToken }
+            : {},
+        effectivePort: route.effectivePort,
+        websocket: route.websocket,
+      };
     },
     ensureRunning: async (sandboxId: string) => {
       mockWakeCalls.push(sandboxId);
     },
-  }),
+  }},
 }));
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test-version',
   config: {
     isDaytonaEnabled: () => true,
-    isJustAVPSEnabled: () => false,
   },
 }));
 
@@ -219,6 +257,15 @@ mock.module('../projects/secrets', () => {
     revision: `rev-${projectId}`,
   });
   return {
+    AmbiguousSecretGrantError: class AmbiguousSecretGrantError extends Error {},
+    resolveGrantedSecretEnv: () => ({}),
+    isValidSecretName: () => true,
+    isValidIdentifier: () => true,
+    identifierKeyConflicts: () => false,
+    encryptProjectSecret: (_projectId: string, value: string) => value,
+    decryptProjectSecret: (_projectId: string, value: string) => value,
+    writeSharedProjectSecret: async () => ({}),
+    listResolvedProjectSecrets: async () => [],
     listProjectSecrets: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsForUser: async (projectId: string) => snapshot(projectId).env,
     listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
@@ -236,7 +283,8 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.')
+    !urlStr.startsWith('http://preview.') &&
+    !urlStr.includes('.e2b.test')
   ) {
     return originalFetch(url, init);
   }
@@ -276,6 +324,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
 const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
 const { resolvePreviewWsUpstream } = await import('../sandbox-proxy/routes/preview');
+const { invalidateSandbox } = await import('../sandbox-proxy/backend');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -313,6 +362,9 @@ function createProxyTestApp() {
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  invalidateSandbox(TEST_SANDBOX_ID);
+  invalidateSandbox('platinum-oc-http');
+  invalidateSandbox('daytona-oc-http');
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
@@ -852,6 +904,22 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0].headers['x-daytona-skip-preview-warning']).toBe('true');
     expect(mockFetchCalls[0].headers['x-daytona-disable-cors']).toBe('true');
     expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBe('daytona-preview-token-123');
+  });
+
+  test('forwards E2B private-traffic auth without any provider branch in the proxy', async () => {
+    mockDbSandbox = { ...mockDbSandbox, provider: 'e2b' };
+    mockPreviewUrl = 'https://8080-e2b-sandbox.e2b.test';
+    mockPreviewToken = 'e2b-traffic-token';
+    mockFetchResponses = [{ status: 200, body: 'OK' }];
+    const app = createProxyTestApp();
+
+    await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+
+    expect(mockFetchCalls[0].headers['e2b-traffic-access-token']).toBe('e2b-traffic-token');
+    expect(mockFetchCalls[0].headers['x-daytona-preview-token']).toBeUndefined();
+    expect(mockResolvedPreviewPorts).toEqual([TEST_PORT]);
   });
 
   test('forwards signed user context for session sandbox access', async () => {

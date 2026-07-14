@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
 import { backendApi, type ApiClientOptions } from '../../http/api-client';
+import type { SandboxProviderName } from '../platform-client/types';
 import {
   normalizeServerBackendBase,
   serverTokenGet,
@@ -12,7 +13,7 @@ import {
 } from './shared';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
+export type ExperimentalFeatureKey = 'agent_tunnel' | 'marketplace' | 'agentmail_email' | 'meet' | 'llm_gateway' | 'review_center';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -47,17 +48,15 @@ export interface KortixProject {
   /** Full experimental-feature catalog (drives Customize → Settings →
    *  Experimental). Self-describing so the UI never hard-codes the list. */
   experimental_features?: ExperimentalFeatureView[];
-  /** Back-compat alias for `experimental.apps`. */
-  apps_enabled?: boolean;
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
   /** Whether the warm pool feature is enabled platform-wide (gates the UI). */
   warm_pool_available?: boolean;
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
-  default_sandbox_provider?: string | null;
+  default_sandbox_provider?: SandboxProviderName | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
-  available_sandbox_providers?: string[];
+  available_sandbox_providers?: SandboxProviderName[];
 }
 
 export interface ProjectConfigSummary {
@@ -239,6 +238,20 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
   );
 }
 
+/**
+ * Load the compact, connection-aware catalog intended for interactive model
+ * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
+ * runtime models.dev projection used to configure OpenCode sandboxes.
+ */
+export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
 export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
@@ -293,21 +306,13 @@ export async function updateExperimentalFeature(
  *  be one of the project's `available_sandbox_providers`. */
 export async function updateProjectSandboxProvider(
   projectId: string,
-  provider: string | null,
+  provider: SandboxProviderName | null,
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {
       provider,
     }),
   );
-}
-
-/** @deprecated Use {@link updateExperimentalFeature}('apps', …). */
-export async function updateAppsConfig(
-  projectId: string,
-  input: { enabled: boolean | null },
-) {
-  return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
 /**

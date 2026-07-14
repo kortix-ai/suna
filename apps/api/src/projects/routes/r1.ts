@@ -7,7 +7,7 @@ import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
-import { createRepo, getGitHubAppInstallation, listInstallationRepositories, verifyGitHubAppInstallStatePayload } from '../github';
+import { createRepo, getGitHubAppInstallation, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { buildProjectSeedFiles, normalizeMarketplaceItems } from '../seed-files';
@@ -18,8 +18,9 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
-import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
+import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
+import { registerGitHubLinkedProject } from '../lib/project-registration';
+import { PROJECT_NAME_MAX_LENGTH, UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
@@ -265,8 +266,11 @@ projectsApp.openapi(
     return c.json({ error: 'repo_url is required' }, 400);
   }
 
+  const quota = await enforceProjectQuota(c, scope.accountId);
+  if (quota) return quota;
+
   const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+  const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
   let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
@@ -275,7 +279,7 @@ projectsApp.openapi(
       accountId: scope.accountId,
       repoUrl,
       installationId: normalizeString(body.installation_id ?? body.installationId),
-      defaultBranch,
+      defaultBranch: requestedBranch,
     });
   } catch (error) {
     if (error instanceof GitHubInstallationRequiredError) {
@@ -286,9 +290,6 @@ projectsApp.openapi(
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
-
-  const quota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
-  if (quota) return quota;
 
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
@@ -454,10 +455,6 @@ projectsApp.openapi(
         require_declared_agents: true,
       },
       updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: { name, defaultBranch: provisioned.defaultBranch, status: 'active', updatedAt: now },
     })
     .returning();
 
@@ -908,55 +905,6 @@ projectsApp.openapi(
     ));
 
   return c.json({ ok: true });
-},
-);
-
-// GET /v1/projects/github/repositories?account_id=...
-// Vercel-style import surface: list repos available to the account's GitHub App
-// installation without exposing an installation token to the browser.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/repositories',
-    tags: ['github'],
-    summary: 'GET /github/repositories',
-    ...auth,
-      request: {
-        query: z.object({}).passthrough(),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(409, 502),
-    },
-  }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
-
-  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
-  const installation = await getAccountGitHubInstallation(scope.accountId, installationId);
-  if (!installation) {
-    return c.json({
-      error: installationId
-        ? 'Selected GitHub installation is not connected to this account'
-        : 'Install the Kortix GitHub App before importing repositories',
-      install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
-    }, 409);
-  }
-
-  try {
-    const repos = await listInstallationRepositories(installation.installationId);
-    return c.json({
-      account_id: scope.accountId,
-      installation_id: installation.installationId,
-      owner_login: installation.ownerLogin,
-      repositories: repos.map(serializeGitHubRepo),
-    });
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to list GitHub repositories';
-    return c.json({ error: message }, 502);
-  }
 },
 );
 

@@ -30,6 +30,7 @@ interface InMemorySession {
   sandboxId: string;
   sessionId: string | null;
   actorUserId: string | null;
+  provider: 'daytona' | 'platinum' | 'e2b';
   cpuCores: number;
   memoryGb: number;
   diskGb: number;
@@ -63,6 +64,7 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
       sandboxId: data.sandboxId,
       sessionId: data.sessionId ?? null,
       actorUserId: data.actorUserId ?? null,
+      provider: data.provider ?? 'daytona',
       cpuCores: data.cpuCores,
       memoryGb: data.memoryGb,
       diskGb: data.diskGb,
@@ -239,6 +241,7 @@ describe('compute metering — per-seat happy path', () => {
       sandboxId: 'sb_race',
       sessionId: null,
       actorUserId: null,
+      provider: 'daytona',
       cpuCores: SPEC.cpuCores,
       memoryGb: SPEC.memoryGb,
       diskGb: SPEC.diskGb,
@@ -308,5 +311,19 @@ describe('compute metering — cost calculation', () => {
     const c = calculateComputeCost(SPEC, 3600);
     expect(c).toBeGreaterThan(0.10);
     expect(c).toBeLessThan(0.15);
+  });
+
+  test('provider attribution is persisted and E2B uses its own rate card', async () => {
+    await startComputeSession({
+      sandboxId: 'sb_e2b',
+      accountId: 'acc_test_123',
+      provider: 'e2b',
+      spec: SPEC,
+    });
+
+    expect(sessions[0].provider).toBe('e2b');
+    expect(calculateComputeCost(SPEC, 3600, 'e2b')).toBeGreaterThan(
+      calculateComputeCost(SPEC, 3600, 'daytona'),
+    );
   });
 });

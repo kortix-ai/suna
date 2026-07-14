@@ -19,6 +19,7 @@ import { checkBudget } from './budgets';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { validateGatewayKey } from './gateway-keys';
 import { gatewayModelCatalog } from './models/catalog-models';
+import { resolveGatewayRoute } from './routing';
 import { resolveCandidates } from './resolution/resolve-candidates';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
@@ -209,6 +210,7 @@ export async function persistGatewayTrace(trace: GatewayTrace): Promise<void> {
 export function createInProcessGatewayHooks(): GatewayHooks {
   return {
     authenticate: authenticatePrincipal,
+    resolveRoute: resolveGatewayRoute,
     resolveUpstream: resolveCandidates,
     assertBillingActive,
     assertBudget: assertGatewayBudget,

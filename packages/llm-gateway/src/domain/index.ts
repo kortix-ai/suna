@@ -6,7 +6,12 @@ export type { AuthorizeResult, GatewayHooks } from './hooks';
 export type { ModelInfo, ModelCatalog } from './catalog';
 export type {
   GatewayConfig,
-  ModelFallbackCondition,
-  ModelFallbackRoute,
 } from './config';
+export type {
+  ModelFallbackCondition,
+  ModelFallbackPolicy,
+  ModelFallbackPolicyMatch,
+  ModelRouteInput,
+  ModelRoutePlan,
+} from './routing';
 export type { GatewayLogger } from './logger';

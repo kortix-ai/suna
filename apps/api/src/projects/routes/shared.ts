@@ -6,7 +6,6 @@ import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
@@ -67,6 +66,8 @@ export async function resumeStoppedSandbox(row: {
     'needsReprovision',
     'runtimeWakeError',
     'runtimeWakeFailedAt',
+    'opencodeReadyWaitStartedAt',
+    'opencodeReadyWaitReason',
   ])
     delete wakeMetadata[key];
   Object.assign(wakeMetadata, {
@@ -96,7 +97,7 @@ export async function resumeStoppedSandbox(row: {
 
   await db
     .update(projectSessions)
-    .set({ status: 'running', updatedAt: now })
+    .set({ status: 'running', error: null, updatedAt: now })
     .where(eq(projectSessions.sessionId, row.sessionId))
     .catch((err) =>
       console.warn(
@@ -105,7 +106,7 @@ export async function resumeStoppedSandbox(row: {
       ),
     );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId).catch((err) =>
+  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId, null, row.provider as SandboxProviderName).catch((err) =>
     console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
   );
 
@@ -308,13 +309,6 @@ export async function allocateRuntimeOnOpen(
     .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
-  // Migrated session — restore its original chat as part of provisioning, before
-  // the sandbox goes 'active' (so the frontend's ensure-opencode pin survives).
-  const legacySandboxId = (
-    loaded.row as {
-      metadata?: { legacy_migration?: { source_sandbox_id?: unknown } };
-    }
-  ).metadata?.legacy_migration?.source_sandbox_id;
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
@@ -346,15 +340,6 @@ export async function allocateRuntimeOnOpen(
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
       }),
     resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
-    beforeActive:
-      typeof legacySandboxId === 'string'
-        ? (externalId) =>
-            rehydrateSessionChat({
-              sessionId,
-              legacySandboxId,
-              newExternalId: externalId,
-            })
-        : undefined,
   });
 }
 

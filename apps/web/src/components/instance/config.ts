@@ -1,10 +1,6 @@
 /**
- * Instance configuration — single source of truth for regions and feature flags.
- * Region IDs must match JustAVPS provider regions (hel1 = EU/Finland).
- *
- * Default server type and location come from the backend API response
- * (GET /platform/sandbox/justavps/server-types returns defaultServerType + defaultLocation).
- * The fallbackRegion is only used until the API responds.
+ * Legacy checkout display defaults. Runtime provider selection is session
+ * scoped and never derives from these product-display values.
  *
  * NOTE: US region removed — EU-only deployments for cost optimisation.
  */

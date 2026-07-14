@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { CATALOG, MANAGED_MODELS } from '@kortix/llm-catalog';
+import { CATALOG } from '@kortix/llm-catalog';
+import { RUNTIME_MANAGED_MODELS } from './managed-models';
 import {
   connectedByokPickerModels,
   flagshipRefForEnvVar,
   labelForModelRef,
   managedPickerModels,
+  projectPickerCatalog,
   providerFlagship,
 } from './picker-catalog';
 
@@ -27,7 +29,7 @@ describe('providerFlagship', () => {
 
 describe('labelForModelRef', () => {
   test('managed ref (kortix/<id>) → the managed display name', () => {
-    const sonnet = MANAGED_MODELS.find((m) => m.id === 'claude-sonnet-4.6');
+    const sonnet = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'claude-sonnet-4.6');
     expect(labelForModelRef('kortix/claude-sonnet-4.6')).toBe(sonnet!.name);
     // bare managed id resolves too
     expect(labelForModelRef('claude-sonnet-4.6')).toBe(sonnet!.name);
@@ -41,7 +43,7 @@ describe('labelForModelRef', () => {
 describe('managedPickerModels', () => {
   test('every managed model is offered as a kortix/<id> opencode ref', () => {
     const models = managedPickerModels();
-    expect(models.length).toBe(MANAGED_MODELS.length);
+    expect(models.length).toBe(RUNTIME_MANAGED_MODELS.length);
     for (const m of models) {
       expect(m.id.startsWith('kortix/')).toBe(true);
       expect(m.managed).toBe(true);
@@ -77,5 +79,42 @@ describe('flagshipRefForEnvVar (auto-seed mapping)', () => {
     expect(flagshipRefForEnvVar('CODEX_AUTH_JSON')).toBeNull();
     expect(flagshipRefForEnvVar('OPENCODE_AUTH_JSON')).toBeNull();
     expect(flagshipRefForEnvVar('SOME_RANDOM_SECRET')).toBeNull();
+  });
+});
+
+describe('projectPickerCatalog', () => {
+  test('keeps managed and connected-provider models without returning the full runtime catalog', () => {
+    const full = {
+      auto: { name: 'Auto' },
+      'glm-5.2': { name: 'GLM 5.2' },
+      'anthropic/claude-a': { name: 'Claude A' },
+      'anthropic/claude-b': { name: 'Claude B' },
+      'openai/gpt-a': { name: 'GPT A' },
+      'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
+    };
+
+    expect(
+      projectPickerCatalog(full, new Set(['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON']), [
+        'openai/gpt-a',
+      ]),
+    ).toEqual({
+      auto: full.auto,
+      'glm-5.2': full['glm-5.2'],
+      'anthropic/claude-a': full['anthropic/claude-a'],
+      'anthropic/claude-b': full['anthropic/claude-b'],
+      'openai/gpt-a': full['openai/gpt-a'],
+      'codex/gpt-5.6-sol': full['codex/gpt-5.6-sol'],
+    });
+  });
+
+  test('does not expose disconnected provider catalogs', () => {
+    const full = {
+      auto: { name: 'Auto' },
+      'anthropic/claude-a': { name: 'Claude A' },
+      'openai/gpt-a': { name: 'GPT A' },
+      'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
+    };
+
+    expect(Object.keys(projectPickerCatalog(full, new Set(), []))).toEqual(['auto']);
   });
 });

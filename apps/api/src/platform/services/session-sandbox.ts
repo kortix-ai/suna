@@ -62,6 +62,7 @@ async function openComputeSessionForSandbox(
   project: GitBackedProject,
   userId: string | null | undefined,
   sandboxSlug: string | undefined,
+  provider: ProviderName,
 ): Promise<void> {
   let spec = { ...DEFAULT_METERING_SPEC };
   try {
@@ -78,6 +79,7 @@ async function openComputeSessionForSandbox(
     accountId,
     sessionId: sandboxId,
     actorUserId: userId ?? null,
+    provider,
     spec,
   });
 }
@@ -197,6 +199,7 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
+  const providerWasExplicitlySelected = opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -519,7 +522,7 @@ export async function provisionSessionSandbox(opts: {
               initAbortedAt: new Date().toISOString(),
               lastInitError: 'Session was stopped before provider create completed',
               provisionTimeline: timeline,
-              daytonaSandboxId: result.externalId,
+              providerExternalId: result.externalId,
             },
             updatedAt: new Date(),
           })
@@ -556,7 +559,7 @@ export async function provisionSessionSandbox(opts: {
                 {
                   ...result.metadata,
                   provisionTimeline: timeline,
-                  daytonaSandboxId: result.externalId,
+                  providerExternalId: result.externalId,
                 },
                 attempts,
               ),
@@ -601,9 +604,9 @@ export async function provisionSessionSandbox(opts: {
             ...result.metadata,
             provisioningStage: firstStage?.id,
             provisionTimeline: timeline,
-            daytonaSandboxId: result.externalId,
+            providerExternalId: result.externalId,
             runtimeArtifact: {
-              artifactType: (providerName === 'daytona' || providerName === 'managed') ? 'daytona_snapshot' : 'unknown',
+              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
               providerArtifactRef: imageInfo!.snapshotName,
               contentHash: imageInfo!.contentHash,
               sandboxSlug: imageInfo!.slug,
@@ -622,8 +625,8 @@ export async function provisionSessionSandbox(opts: {
         finishUpdate.status = 'active';
       } else {
         // For cloud providers we still flip to active here because the legacy
-        // provision-poller (which only handles JustAVPS) doesn't see this
-        // table; the frontend's own readiness poller validates port 8000.
+        // provider provisioning status does not gate this table; the frontend's
+        // own readiness poller validates port 8000.
         finishUpdate.status = 'active';
       }
 
@@ -700,7 +703,7 @@ export async function provisionSessionSandbox(opts: {
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
-      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug).catch(
+      void openComputeSessionForSandbox(sandbox.sandboxId, accountId, opts.gitProject, userId, imageInfo?.slug, providerName).catch(
         (err) =>
           console.warn(
             `[session-sandbox] failed to open compute metering for ${sandbox.sandboxId}:`,
@@ -709,12 +712,12 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
-      // Daytona dropped the image between resolve and create. Force a rebuild
+      // The selected provider dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug }).catch((err) =>
+        await deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName }).catch((err) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,
@@ -742,7 +745,7 @@ export async function provisionSessionSandbox(opts: {
       // only — a running box is never migrated here. The new provider re-resolves
       // its own image (the snapshot is provider-specific), so we clear all image
       // state and re-enter the loop.
-      if (!fallbackAttempted && providerFallbackSetting().enabled) {
+      if (!providerWasExplicitlySelected && !fallbackAttempted && providerFallbackSetting().enabled) {
         const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
         if (next) {
           fallbackAttempted = true;

@@ -185,37 +185,6 @@ export const AUTO_MODEL_ENABLED = false;
 // managed bare id (`glm-5.2`) or a provider-qualified id (`codex/gpt-5.6-sol`).
 export const AUTO_DEFAULT_MODEL_ID = "codex/gpt-5.6-sol";
 
-export const DEFAULT_MODEL_FALLBACK_POLICY = {
-  primary: AUTO_DEFAULT_MODEL_ID,
-  fallbacks: ["glm-5.2"],
-  fallbackOn: "any-error",
-} as const;
-
-export interface ModelFallbackPolicy {
-  primary: string;
-  fallbacks: readonly string[];
-  fallbackOn: "transient" | "any-error";
-}
-
-export function createModelFallbackRouter(
-  policies: readonly ModelFallbackPolicy[],
-): (model: string) => {
-  fallbackModels: readonly string[];
-  fallbackOn: ModelFallbackPolicy["fallbackOn"];
-} | null {
-  const byPrimary = new Map(policies.map((policy) => [policy.primary, policy] as const));
-  return (model) => {
-    const policy = byPrimary.get(model);
-    return policy
-      ? { fallbackModels: policy.fallbacks, fallbackOn: policy.fallbackOn }
-      : null;
-  };
-}
-
-export const routeDefaultModelFallbacks = createModelFallbackRouter([
-  DEFAULT_MODEL_FALLBACK_POLICY,
-]);
-
 const AUTO_TARGET_MODEL = AUTO_DEFAULT_MODEL_ID;
 const AUTO_VISION_MODEL = "claude-sonnet-4.6"; // when the request has image content
 

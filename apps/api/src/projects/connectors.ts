@@ -28,7 +28,7 @@
  *       app: gmail
  *       account: work                # 1-click connected in the dashboard
  *
- * Parser mirrors `projects/apps.ts` + `projects/triggers.ts`: never throws on
+ * Parser mirrors `projects/agents.ts` + `projects/triggers.ts`: never throws on
  * a bad entry, collects them in `errors` so the UI can render them next to the
  * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */

@@ -8,7 +8,8 @@
 // form so a default can't be obvious garbage that 400s every session.
 
 import { createRoute, z } from "@hono/zod-openapi";
-import { AUTO_MODEL_ID, getManagedModel } from "@kortix/llm-catalog";
+import { AUTO_MODEL_ID } from "@kortix/llm-catalog";
+import { getRuntimeManagedModel } from '../../llm-gateway/models/managed-models';
 import { auth, errors, json } from "../../openapi";
 import { invalidateAccountModelDefaults } from "../../llm-gateway/resolution/default-model";
 import {
@@ -25,7 +26,7 @@ import { PROJECT_ACTIONS } from "../../iam";
  *  synthetic `auto` ("Default" = no row, i.e. DELETE). */
 function isStorableModel(model: string): boolean {
   if (model === AUTO_MODEL_ID || model === `kortix/${AUTO_MODEL_ID}`) return false;
-  return model.includes("/") || !!getManagedModel(model);
+  return model.includes("/") || !!getRuntimeManagedModel(model);
 }
 
 const ModelDefaultBody = z.object({

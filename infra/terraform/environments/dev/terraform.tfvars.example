@@ -29,6 +29,5 @@ api_environment = {
 api_secrets = {
   # API_KEY_SECRET   = "arn:aws:secretsmanager:...:API_KEY_SECRET::"
   # SUPABASE_SERVICE_ROLE_KEY = "arn:aws:secretsmanager:...:SUPABASE_SERVICE_ROLE_KEY::"
-  # FREESTYLE_API_KEY = "arn:aws:secretsmanager:...:FREESTYLE_API_KEY::"
   # ... DAYTONA_API_KEY, OPENROUTER_API_KEY, STRIPE_*, PIPEDREAM_*, etc.
 }

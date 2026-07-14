@@ -8,8 +8,6 @@ export {
   kortixSchema,
   // Enums
   sandboxStatusEnum,
-  deploymentStatusEnum,
-	  deploymentSourceEnum,
 	  projectStatusEnum,
 	  projectSessionStatusEnum,
 	  sessionLifecycleCommandStatusEnum,
@@ -56,6 +54,7 @@ export {
   projectSessions,
   projectSessionRuntimeContexts,
   accountModelPreferences,
+  projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
   projectSessionVisibilityEnum,
@@ -71,7 +70,6 @@ export {
   sandboxInvites,
   legacySandboxMigrations,
   sunaAccountMigrations,
-  deployments,
   kortixApiKeys,
   accountTokens,
   workerLeaderLease,
@@ -86,7 +84,6 @@ export {
   sandboxesRelations,
   sandboxMembersRelations,
   sandboxInvitesRelations,
-  deploymentsRelations,
   kortixApiKeysRelations,
   // Billing / Credits (moved from public → kortix schema)
   billingCustomers,

@@ -21,14 +21,8 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthBrowserNoiseGuard } from '@/features/auth/auth-browser-noise-guard';
-import { AuthLegalFooter } from '@/features/auth/auth-card-shell';
-import {
-  AuthMobileLogo,
-  CodeInput,
-  FieldLabel,
-  InfoStrip,
-  StepHeader,
-} from '@/features/auth/auth-primitives';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -670,24 +664,6 @@ function AuthCardForm({
 }
 
 /* ─── Page shell ───────────────────────────────────────────────────────── */
-
-function AuthFrame({
-  children,
-  footerVariant,
-}: {
-  children: React.ReactNode;
-  footerVariant: 'default' | 'signup';
-}) {
-  return (
-    <div className="bg-background relative flex min-h-svh flex-col">
-      <AuthMobileLogo />
-      <main className="flex flex-1 flex-col items-center justify-center px-6 py-24">
-        <div className="w-full max-w-[380px]">{children}</div>
-      </main>
-      <AuthLegalFooter variant={footerVariant} />
-    </div>
-  );
-}
 
 function AuthContent() {
   const router = useRouter();

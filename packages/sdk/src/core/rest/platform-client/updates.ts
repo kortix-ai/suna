@@ -69,8 +69,8 @@ export interface SandboxUpdateResult {
 /**
  * Update phases — Docker image-based flow.
  *
- * JustAVPS: backing_up → pulling → patching → stopping → restarting → verifying → complete
- * Local Docker is manual-only and is not updated through the API.
+ * Instance updater: backing_up → pulling → patching → stopping → restarting → verifying → complete
+ * Session sandboxes are updated through the provider-neutral lifecycle API.
  */
 export type UpdatePhase =
   | 'idle'
