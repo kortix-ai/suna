@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,15 +29,8 @@ describe('enterprise release bundles', () => {
         persistent_paths: {
           'volumes/db/data': '/var/lib/kortix/postgres',
           'volumes/storage': '/var/lib/kortix/storage',
-          wal_spool: '/var/lib/kortix/wal',
-          recovery_wal: '/var/lib/kortix/recovery-wal',
         },
         image_digests: { ...SUPABASE_IMAGE_DIGESTS },
-        backup: {
-          archive_timeout_seconds: 300,
-          wal_upload_interval_seconds: 60,
-          base_backup_interval: 'daily',
-        },
         required_services: [
           'analytics', 'auth', 'db', 'functions', 'imgproxy', 'kong', 'meta',
           'realtime', 'rest', 'storage', 'studio', 'supavisor', 'vector',
@@ -51,17 +44,17 @@ describe('enterprise release bundles', () => {
       expect(compose).not.toContain('llm-gateway:');
       expect(compose).toMatch(/image: supabase\/postgres:17\.6\.1\.136@sha256:[a-f0-9]{64}/);
       const overlay = readFileSync(join(root, 'docker-compose.enterprise.yml'), 'utf8');
-      expect(overlay).toContain('archive_mode=on');
-      expect(overlay).toContain('archive_timeout=300s');
-      expect(overlay).toContain('/var/lib/kortix/wal:/var/lib/kortix-wal:Z');
-      expect(overlay).toContain('/var/lib/kortix/recovery-wal:/var/lib/kortix-recovery-wal:ro,Z');
       expect(overlay).toContain('supavisor:\n    ulimits:\n      nofile:\n        soft: 100000\n        hard: 100000');
+      expect(overlay).not.toMatch(/wal|pitr|base.?backup|archive_command|checkpoint/i);
 
-      for (const script of ['install', 'supabase-start', 'supabase-stop', 'wal-archive', 'base-backup', 'pitr-restore']) {
+      for (const script of ['install', 'supabase-start', 'supabase-stop']) {
         const path = join(root, 'bin', script);
         expect(statSync(path).mode & 0o777, script).toBe(0o755);
         const syntax = spawnSync('bash', ['-n', path], { encoding: 'utf8' });
         expect(syntax.status, `${script}: ${syntax.stderr}`).toBe(0);
+      }
+      for (const script of ['wal-archive', 'base-backup', 'pitr-restore']) {
+        expect(existsSync(join(root, 'bin', script)), script).toBe(false);
       }
       const installer = readFileSync(join(root, 'bin', 'install'), 'utf8');
       expect(installer).toContain('aws secretsmanager get-secret-value');
@@ -69,18 +62,16 @@ describe('enterprise release bundles', () => {
       expect(installer).toContain('/var/lib/kortix/storage');
       expect(installer).toContain('docker compose');
       expect(installer).toContain('Compose images do not match the signed immutable image lock');
-      expect(installer).toContain('kortix-wal-archive.timer');
-      expect(readFileSync(join(root, 'bin', 'wal-archive'), 'utf8')).toContain('s3api head-object');
-      expect(readFileSync(join(root, 'bin', 'base-backup'), 'utf8')).toContain('pg_basebackup');
       expect(installer).not.toContain('kortix-api');
+      expect(installer).not.toMatch(/wal|pitr|base.?backup/i);
 
       const start = readFileSync(join(root, 'bin', 'supabase-start'), 'utf8');
       expect(start).toContain('docker inspect supabase-kong');
       expect(start).toContain('--header "apikey: $anon_key"');
-      expect(start).toContain('systemctl enable --now kortix-wal-archive.timer kortix-base-backup.timer');
-      expect(start).not.toContain('systemctl start kortix-wal-archive.service');
-      const walUnit = readFileSync(join(root, 'systemd', 'kortix-wal-archive.service'), 'utf8');
-      expect(walUnit).toContain('After=network-online.target kortix-supabase.service');
+      expect(start).not.toMatch(/wal|pitr|base.?backup/i);
+      const stop = readFileSync(join(root, 'bin', 'supabase-stop'), 'utf8');
+      expect(stop).not.toMatch(/wal|pitr|base.?backup/i);
+      expect(existsSync(join(root, 'systemd'))).toBe(false);
       const physicalRoot = start.split('\n').find((line) => line.startsWith('root=$(readlink -f '));
       expect(physicalRoot).toBeDefined();
       symlinkSync('.', join(root, 'current'));
