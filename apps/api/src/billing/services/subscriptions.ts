@@ -11,6 +11,7 @@ import { BillingError, SubscriptionError } from '../../errors';
 import { getTier, isUpgrade, resolvePriceId, getComputeDisplayPriceCents, getComputeProductId, getComputeDescription, resolvePerSeatPriceId, MAX_SEATS_PER_ACCOUNT } from './tiers';
 import { countActiveMembers } from './seat-management';
 import { grantCredits, resetExpiringCredits } from './credits';
+import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
@@ -188,12 +189,50 @@ export async function createCheckoutSession(params: {
           active: true,
         });
 
+        // Grant activation credits inline — this path skips hosted Checkout, so
+        // checkout.session.completed never runs and the webhook won't backfill
+        // the wallet (stripeSubscriptionId is already set). Mirror the grant
+        // logic in handleSubscriptionCheckout (webhooks.ts) and
+        // confirmCheckoutSession below.
+        const creditAmount = tier.monthlyCredits;
+        if (creditAmount > 0) {
+          try {
+            await grantCredits(
+              accountId,
+              creditAmount,
+              'tier_grant',
+              `${tier.displayName} subscription activated: ${creditAmount} credits`,
+              true,
+              `subscription_activation:${subscription.id}`,
+            );
+          } catch (err) {
+            console.error('[Billing] Failed to grant initial plan credits during direct subscription create:', err);
+          }
+        }
+
+        // Compute purchases include a one-time machine bonus — same as the
+        // checkout webhook path when server_type is in session metadata.
+        if (serverType) {
+          try {
+            await grantMachineBonusOnce({
+              accountId,
+              idempotencyKey: getStripeMachineBonusKey(subscription.id),
+            });
+          } catch (err) {
+            console.error(`[Billing] Failed to grant machine bonus for ${accountId} (sub=${subscription.id}):`, err);
+          }
+        }
+
+        if (previousFreeSubscriptionId && previousFreeSubscriptionId !== subscription.id) {
+          // Free → paid re-purchase: drop the stale free-tier Stripe sub so we
+          // don't carry two active subscription ids on the account.
+          await cancelFreeSubscriptionForUpgrade(previousFreeSubscriptionId, accountId);
+        }
+
         // Legacy auto-provision of a per-account sandbox at checkout time
         // has been removed — sandboxes are now per-session, provisioned on
         // demand under /v1/projects/:id/sessions.
-        void serverType;
         void location;
-        void tierKey;
 
         return {
           status: 'subscription_created' as const,

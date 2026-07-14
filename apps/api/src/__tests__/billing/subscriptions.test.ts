@@ -25,6 +25,7 @@ let upsertCreditAccountCalls: any[] = [];
 let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let resetExpiringCreditsCalls: any[] = [];
+let grantCreditsCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
@@ -32,6 +33,7 @@ beforeEach(() => {
   updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   resetExpiringCreditsCalls = [];
+  grantCreditsCalls = [];
   stripeCancelSubCalls = [];
   resetMockRegistry();
 
@@ -75,7 +77,9 @@ beforeEach(() => {
   };
 
   // Credit service defaults
-  mockRegistry.grantCredits = async () => {};
+  mockRegistry.grantCredits = async (...args: any[]) => {
+    grantCreditsCalls.push(args);
+  };
   mockRegistry.resetExpiringCredits = async (...args: any[]) => {
     resetExpiringCreditsCalls.push(args);
   };
@@ -169,6 +173,50 @@ describe('createCheckoutSession', () => {
     expect(capturedParams).not.toBeNull();
     expect(capturedParams.line_items[0].price_data.unit_amount).toBe(2000);
     expect(capturedParams.line_items[0].price_data.recurring.interval).toBe('month');
+  });
+
+  test('grants tier credits when a saved card instant-creates the subscription', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null });
+
+    mockRegistry.stripeClient.customers.retrieve = async () => ({
+      id: 'cus_test_123',
+      invoice_settings: { default_payment_method: 'pm_saved_card' },
+      deleted: false,
+    });
+    mockRegistry.stripeClient.paymentMethods.list = async () => ({
+      data: [{ id: 'pm_saved_card' }],
+    });
+
+    let checkoutCreateCalled = false;
+    mockRegistry.stripeClient.checkout.sessions.create = async () => {
+      checkoutCreateCalled = true;
+      return { id: 'cs_new_123', url: 'https://checkout.stripe.com/test' };
+    };
+
+    mockRegistry.stripeClient.subscriptions.create = async () =>
+      createMockStripeSubscription({
+        id: 'sub_direct_123',
+        status: 'active',
+      });
+
+    const result = await createCheckoutSession({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'per_seat',
+      successUrl: 'https://example.com/success',
+      cancelUrl: 'https://example.com/cancel',
+    });
+
+    expect((result as any).status).toBe('subscription_created');
+    expect((result as any).subscription_id).toBe('sub_direct_123');
+    expect(checkoutCreateCalled).toBe(false);
+    expect(grantCreditsCalls.length).toBe(1);
+    expect(grantCreditsCalls[0][0]).toBe('acc_test_123');
+    expect(grantCreditsCalls[0][1]).toBe(25);
+    expect(grantCreditsCalls[0][2]).toBe('tier_grant');
+    expect(grantCreditsCalls[0][4]).toBe(true);
+    expect(grantCreditsCalls[0][5]).toBe('subscription_activation:sub_direct_123');
   });
 });
 
