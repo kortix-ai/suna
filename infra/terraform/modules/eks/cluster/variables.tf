@@ -94,6 +94,24 @@ variable "cluster_log_types" {
   default     = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 }
 
+variable "secrets_encryption_kms_key_arn" {
+  description = "Optional customer KMS key for Kubernetes secret envelope encryption."
+  type        = string
+  default     = null
+}
+
+variable "bootstrap_cluster_creator_admin_permissions" {
+  description = "Grant the creating principal permanent bootstrap cluster-admin. Enterprise installs disable this and use explicit access entries."
+  type        = bool
+  default     = true
+}
+
+variable "permissions_boundary_arn" {
+  description = "Optional permissions boundary for the EBS CSI workload role. EKS control-plane and node roles are excluded because their AWS-managed policies require network-interface operations forbidden by the enterprise boundary."
+  type        = string
+  default     = null
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

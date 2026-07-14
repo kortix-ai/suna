@@ -285,7 +285,7 @@ Use `useUpdatePty()` to push a title or `{ rows, cols }` resize.
 `useModelStore(allModels, opts?)` is a zustand-backed store of the user's model
 preferences — visibility, recents, per-agent and per-session selections, the
 global default, variants. Persisted client-side and pure UI state (it does **not**
-fetch — pass the flattened catalog from `kortix.project(id).llmCatalog()` or
+fetch — pass the flattened compact catalog from `kortix.project(id).modelPicker()` or
 `useProjectModels()`).
 
 ```tsx
@@ -323,6 +323,7 @@ global default from the server the first time it resolves.
 | `useQuestionSelfHeal()` / `hasRunningQuestionTool`                                        | polls for a missed `question.asked` SSE event and repairs pending-question state                                                                                                     |
 | `usePermissionSelfHeal()` / `findPermissionBlockedCandidate` / `hasActiveNonQuestionTool` | the same self-heal watchdog for missed permission requests                                                                                                                           |
 | `useGatewayCatalogSync(projectId)`                                                        | keeps the gateway model catalog cache warm                                                                                                                                           |
+| `useGatewayRoutingPolicy(projectId)`                                                      | reads routing policy and exposes set, reset, and preview mutations                                                                                                                    |
 
 ## More hooks
 

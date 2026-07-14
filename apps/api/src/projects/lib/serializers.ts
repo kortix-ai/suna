@@ -151,9 +151,17 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
     // create path (which ignores a disabled/removed pin and falls back), so the
     // picker never shows a value with no matching option.
-    default_sandbox_provider: ((): string | null => {
+    default_sandbox_provider: ((): SandboxProviderName | null => {
       const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
-      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+      if (
+        typeof pin !== 'string'
+        || !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
+      ) {
+        return null;
+      }
+
+      const provider = pin as SandboxProviderName;
+      return config.isProviderEnabled(provider) ? provider : null;
     })(),
     available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
@@ -473,6 +481,7 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
      */
     fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
     source: b.source,
+    provider: b.provider,
     started_at: b.startedAt.toISOString(),
     finished_at: b.finishedAt?.toISOString() ?? null,
   };
@@ -501,6 +510,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }
 

@@ -19,8 +19,40 @@ const forbiddenCapabilityIdentifiers = [
   'use-apps-enabled',
   'use-project-apps',
   'use-deployments',
+  'deploymentStatusEnum',
+  'deploymentSourceEnum',
+  'deploymentsRelations',
+  'NewDeployment',
+  'DeploymentSelect',
+  'kortix apps deploy',
+  'Apps (experimental)',
+  'deployable apps',
+  'deploy apps',
+  'apps deploy family',
+  '{triggers,apps}',
+  'sandbox/triggers/apps',
+  'bad triggers and apps',
+  'change requests, apps',
+  'project manifest (agents: map, triggers, sandbox, apps)',
+  'project(id).apps',
+  'building and deploying websites and apps',
+  'deploys them as live apps',
+  'can deploy them as live apps',
+  'App deployment is governed by the project manifest',
+  'deployed sites',
+  'A declarative, durable deployment defined in config',
+  'a declarative, durable deployment: define a service in config',
+  'channels, apps, connectors',
+  'trigger, memory, app, change request',
+  'channels, the apps, the connectors',
+  'channels/apps)',
+  'flow (mirrors triggers/apps)',
+  'apps) on managed/self-hosted projects',
 ];
-const transitionalSchemaPrefix = 'packages/db/';
+const immutableSchemaHistoryPrefixes = [
+  'packages/db/drizzle/',
+  'packages/db/migrations/',
+];
 const trackingFiles = new Set([
   'packages/sdk/PROGRESS.md',
   'apps/api/src/__tests__/unit-hosted-deployment-vendor-removal.test.ts',
@@ -35,7 +67,9 @@ function trackedTextFiles(): string[] {
     .filter(Boolean)
     .filter((file) => existsSync(resolve(repoRoot, file)))
     .filter((file) => !trackingFiles.has(file))
-    .filter((file) => !file.startsWith(transitionalSchemaPrefix));
+    .filter(
+      (file) => !immutableSchemaHistoryPrefixes.some((prefix) => file.startsWith(prefix)),
+    );
 }
 
 describe('retired hosted deployment vendor', () => {

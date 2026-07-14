@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
+import {
+  DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
+  parseFallbackPolicies,
+} from './llm-gateway/routing/policy-config';
 
 /**
  * Running sandbox version.
@@ -12,7 +16,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum';
+export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -47,6 +51,23 @@ const optBoolFalse = z
   .optional()
   .default('false')
   .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
+
+/** Declarative, operator-defined model fallback policies. */
+const optFallbackPolicies = z
+  .string()
+  .optional()
+  .default(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)
+  .transform((raw, ctx) => {
+    try {
+      return parseFallbackPolicies(raw);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return z.NEVER;
+  });
 
 // ─── Env Schema ─────────────────────────────────────────────────────────────
 //
@@ -161,14 +182,6 @@ const envSchema = z.object({
   // behavior (absence of `[[agents]]` → unrestricted) untouched.
   KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
 
-  // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
-  // The new backend has no JustAVPS provider, but it must reach legacy VMs to
-  // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
-  // exec goes through the Daytona toolbox API on that host. JUSTAVPS_API_* are
-  // only needed to refresh an expired per-sandbox proxy token.
-  JUSTAVPS_PROXY_DOMAIN:       optStrDefault('kortix.cloud'),
-  JUSTAVPS_API_URL:            optStrDefault('http://localhost:3001'),
-  JUSTAVPS_API_KEY:            optStr,
   // Supabase Storage bucket holding the durable per-sandbox backup bundle
   // (workspace files + OpenCode chat-history store). Source for rehydrate.
   LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
@@ -249,6 +262,19 @@ const envSchema = z.object({
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // Runtime routing is control-plane configuration, not a model-catalog
+  // constant baked into the gateway binary. Operators can replace the default
+  // and define any number of exact-match fallback policies without code changes.
+  LLM_GATEWAY_DEFAULT_MODEL:   optStrDefault('codex/gpt-5.6-sol'),
+  LLM_GATEWAY_VISION_MODEL:    optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
+  // Optional JSON array replacing the platform managed-model overlay (transport,
+  // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
+  // defaults; managed routes are otherwise fully operator-defined.
+  LLM_GATEWAY_MANAGED_MODELS: optStr,
+  // Runtime source for provider/model metadata. The API keeps the last known
+  // snapshot if this source is temporarily unavailable.
+  LLM_GATEWAY_CATALOG_URL:     optUrl('https://models.dev/api.json'),
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
@@ -318,6 +344,12 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET:     optStr,
+
+  // ── E2B Cloud — sandbox provisioning (conditional: required if enabled) ──
+  // E2B_TEMPLATE is an optional ready fallback template. Project-specific
+  // templates built by the shared snapshot system take precedence.
+  E2B_API_KEY:                 optStr,
+  E2B_TEMPLATE:                optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
@@ -425,7 +457,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum', 'e2b'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
@@ -469,6 +501,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (providers.includes('platinum')) {
     if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
     if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+  }
+  if (providers.includes('e2b') && !raw.E2B_API_KEY) {
+    issues.push({ var: 'E2B_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -619,9 +654,6 @@ export const config = {
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
-  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
-  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
-  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
   LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
@@ -662,6 +694,11 @@ export const config = {
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
+  LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
+  LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
+  LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
+  LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
@@ -701,6 +738,8 @@ export const config = {
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
+  E2B_API_KEY: env.E2B_API_KEY,
+  E2B_TEMPLATE: env.E2B_TEMPLATE,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
@@ -810,6 +849,7 @@ export const config = {
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'platinum': return !!this.PLATINUM_API_KEY;
+      case 'e2b': return !!this.E2B_API_KEY;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -820,9 +860,8 @@ export const config = {
   /**
    * Default sandbox provider for new sessions. First entry of
    * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
-   * empty list. The single-provider invariant means there's no resolution
-   * order today, but the function is the contract callers depend on —
-   * adding a new provider later just changes what the list can contain.
+   * empty list. The ordering is the automatic-selection preference; callers
+   * that explicitly choose a provider bypass that preference.
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
@@ -834,6 +873,10 @@ export const config = {
 
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
+  },
+
+  isE2BEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
   },
 
 };

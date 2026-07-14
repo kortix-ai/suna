@@ -18,7 +18,7 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
   ensurePrimarySupabase, primaryCredsFromStatus, SHARED_SUPABASE_PORTS,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
@@ -336,8 +336,13 @@ async function cmdCreate(a: Args) {
     sub(`created branch "${branch}" from ${from}`);
   }
 
-  step('Installing dependencies (own pnpm store)');
-  if (await run(['pnpm', 'install', '--store-dir', pnpmStore(name)], { cwd: wtPath }) !== 0) die(`pnpm install failed — fix and re-run \`pnpm worktree create --name ${name}\``);
+  // Use the shared global pnpm store (default). Each worktree still has its own
+  // isolated node_modules/.pnpm virtual layer (separate working tree), so a
+  // sibling install can't touch it; the content store is concurrency-safe by
+  // design. A per-worktree --store-dir defeats hardlink dedup and materialised
+  // a full ~2.8GB copy per worktree (91 of them once leaked 244GB into ~/.kortix).
+  step('Installing dependencies (shared pnpm store)');
+  if (await run(['pnpm', 'install'], { cwd: wtPath }) !== 0) die(`pnpm install failed — fix and re-run \`pnpm worktree create --name ${name}\``);
 
   if (dbMode === 'isolated') {
     step(`Rendering isolated Supabase project ${pc.dim('('+entry.projectId+')')}`);

@@ -1,6 +1,7 @@
 // Projects — project CRUD, detail, experimental features, warm pool, onboarding.
 
 import { backendApi, type ApiClientOptions } from '../../http/api-client';
+import type { SandboxProviderName } from '../platform-client/types';
 import {
   normalizeServerBackendBase,
   serverTokenGet,
@@ -53,9 +54,9 @@ export interface KortixProject {
   warm_pool_available?: boolean;
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
-  default_sandbox_provider?: string | null;
+  default_sandbox_provider?: SandboxProviderName | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
-  available_sandbox_providers?: string[];
+  available_sandbox_providers?: SandboxProviderName[];
 }
 
 export interface ProjectConfigSummary {
@@ -237,6 +238,20 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
   );
 }
 
+/**
+ * Load the compact, connection-aware catalog intended for interactive model
+ * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
+ * runtime models.dev projection used to configure OpenCode sandboxes.
+ */
+export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
 export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
@@ -291,7 +306,7 @@ export async function updateExperimentalFeature(
  *  be one of the project's `available_sandbox_providers`. */
 export async function updateProjectSandboxProvider(
   projectId: string,
-  provider: string | null,
+  provider: SandboxProviderName | null,
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/sandbox-provider`, {

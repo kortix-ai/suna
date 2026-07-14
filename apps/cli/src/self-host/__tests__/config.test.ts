@@ -93,4 +93,22 @@ describe('self-host instance config', () => {
 
     expect(() => loadInstanceConfig('incomplete')).toThrow('aws.account_id');
   });
+
+  test('rejects non-private VPC address space and non-stable enterprise channels', () => {
+    const base = {
+      schema_version: 1,
+      instance: 'enterprise',
+      target: 'aws-vpc',
+      channel: 'stable',
+      aws: {
+        profile: 'default',
+        region: 'us-west-2',
+        account_id: '123456789012',
+        vpc_cidr: '8.8.0.0/16',
+      },
+    };
+    expect(() => writeInstanceConfig(base as SelfHostInstanceConfig)).toThrow('canonical RFC1918 /16');
+    expect(() => writeInstanceConfig({ ...base, channel: 'prod', aws: { ...base.aws, vpc_cidr: '10.60.0.0/16' } } as SelfHostInstanceConfig))
+      .toThrow('only track the stable channel');
+  });
 });

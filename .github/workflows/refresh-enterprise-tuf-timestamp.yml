@@ -1,0 +1,103 @@
+name: Refresh Enterprise TUF Timestamp
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: enterprise-tuf-repository
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  refresh:
+    name: Renew authenticated timestamp metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: enterprise-tuf-refresh
+    env:
+      AWS_REGION: ${{ vars.ENTERPRISE_PUBLISHER_REGION || 'us-west-2' }}
+      EXPECTED_ACCOUNT_ID: ${{ vars.ENTERPRISE_PUBLISHER_ACCOUNT_ID || '935064898258' }}
+      RELEASE_BUCKET: ${{ vars.ENTERPRISE_RELEASE_BUCKET }}
+      REPOSITORY_KMS_KEY_ARN: ${{ vars.ENTERPRISE_REPOSITORY_KMS_KEY_ARN }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.ENTERPRISE_CLOUDFRONT_DISTRIBUTION_ID }}
+      RELEASE_DOMAIN: ${{ vars.ENTERPRISE_RELEASE_DOMAIN }}
+      KORTIX_TUF_TIMESTAMP_KEY_ARN: ${{ vars.ENTERPRISE_TUF_TIMESTAMP_KEY_ARN }}
+      KORTIX_TUF_ROOT_SHA256: ${{ vars.ENTERPRISE_TUF_ROOT_SHA256 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Install timestamp refresher
+        run: |
+          set -euo pipefail
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --filter "@kortix/enterprise-release..."
+
+      - name: Configure timestamp-only AWS identity
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        with:
+          role-to-assume: ${{ vars.ENTERPRISE_TUF_REFRESH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify pinned publisher coordinates
+        run: |
+          set -euo pipefail
+          test "$(aws sts get-caller-identity --query Account --output text)" = "$EXPECTED_ACCOUNT_ID"
+          test -n "$RELEASE_BUCKET"
+          test -n "$REPOSITORY_KMS_KEY_ARN"
+          test -n "$CLOUDFRONT_DISTRIBUTION_ID"
+          test -n "$RELEASE_DOMAIN"
+          test -n "$KORTIX_TUF_TIMESTAMP_KEY_ARN"
+          [[ "$KORTIX_TUF_ROOT_SHA256" =~ ^[a-f0-9]{64}$ ]]
+
+      - name: Verify repository and renew timestamp
+        id: timestamp
+        run: |
+          set -euo pipefail
+          install -d -m 0700 /tmp/tuf-repository/metadata
+          aws s3 sync "s3://$RELEASE_BUCKET/metadata/" /tmp/tuf-repository/metadata/ --only-show-errors
+          test -s /tmp/tuf-repository/metadata/1.root.json
+          test -s /tmp/tuf-repository/metadata/root.json
+          test -s /tmp/tuf-repository/metadata/targets.json
+          test -s /tmp/tuf-repository/metadata/snapshot.json
+          test -s /tmp/tuf-repository/metadata/timestamp.json
+          result=$(bun apps/enterprise-release/src/refresh-timestamp.ts /tmp/tuf-repository)
+          version=$(jq -er '.timestampVersion | numbers' <<<"$result")
+          expires=$(jq -er '.expires | strings' <<<"$result")
+          aws s3 cp /tmp/tuf-repository/metadata/timestamp.json \
+            "s3://$RELEASE_BUCKET/metadata/timestamp.json" \
+            --content-type application/json --sse aws:kms \
+            --sse-kms-key-id "$REPOSITORY_KMS_KEY_ARN" --only-show-errors
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "expires=$expires" >> "$GITHUB_OUTPUT"
+
+      - name: Invalidate and prove public timestamp
+        env:
+          EXPECTED_VERSION: ${{ steps.timestamp.outputs.version }}
+        run: |
+          set -euo pipefail
+          invalidation=$(aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths '/metadata/timestamp.json' --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --id "$invalidation"
+          public_version=$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            "https://$RELEASE_DOMAIN/metadata/timestamp.json" | jq -er '.signed.version | numbers')
+          test "$public_version" = "$EXPECTED_VERSION"
+
+      - name: Renewal summary
+        run: |
+          {
+            echo '### Enterprise TUF timestamp renewed'
+            echo "- Version: \`${{ steps.timestamp.outputs.version }}\`"
+            echo "- Expires: \`${{ steps.timestamp.outputs.expires }}\`"
+            echo '- Signing identity can update only `metadata/timestamp.json`.'
+          } >> "$GITHUB_STEP_SUMMARY"

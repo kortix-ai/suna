@@ -1,6 +1,6 @@
 ---
 name: about-kortix
-description: "Answer the user's questions about what Kortix itself can do — its capabilities and how they fit together: research and the web, browser automation, code and data execution, document and media creation, building and deploying websites and apps, connectors and integrations, secrets, memory, scheduling and triggers, channels, parallel subagents, and model selection. Use whenever the user asks 'what can you do', 'can you do X', 'how does Kortix work', 'how do I do Y in Kortix', or compares Kortix to other AI tools."
+description: "Answer the user's questions about what Kortix itself can do — its capabilities and how they fit together: research and the web, browser automation, code and data execution, document and media creation, building websites and apps, connectors and integrations, secrets, memory, scheduling and triggers, channels, parallel subagents, and model selection. Use whenever the user asks 'what can you do', 'can you do X', 'how does Kortix work', 'how do I do Y in Kortix', or compares Kortix to other AI tools."
 defaultProjectInstall: true
 ---
 
@@ -35,7 +35,7 @@ Because it's all a repo, everything is versioned, diffable, portable, and self-h
 | Code & data | A full Linux sandbox — run Python, Node, shell, install anything, process files |
 | Documents | Produces finished PDF, DOCX, PPTX, XLSX — formatted deliverables, not text dumps |
 | Media | Generates images and video, narration/text-to-speech, and transcription |
-| Websites & apps | Builds sites and web apps in the repo and deploys them as live apps |
+| Websites & apps | Builds sites and web apps directly in the project repo |
 | Integrations | 3,000+ connectors plus MCP, OpenAPI, GraphQL, and raw HTTP — brokered server-side |
 | Secrets | Encrypted, scoped credentials injected at runtime, never shown to the model or logs |
 | Memory | A living, file-based company brain that compounds what it learns across sessions |
@@ -62,7 +62,7 @@ Kortix produces finished, shareable deliverables: **PDF**, **DOCX**, **PPTX**, a
 Kortix can generate images and short videos, produce natural-sounding narration (text-to-speech), and transcribe audio and video. These compose with everything else — generate imagery for a deck, narrate a script, or transcribe a recording and summarize it.
 
 ### Websites and apps
-Kortix builds websites and web apps directly in the project repo — from content sites and landing pages to dashboards and interactive web apps — and can deploy them as live apps from the project. Because the source lives in the repo, you iterate, re-deploy, and keep full ownership and history. (App deployment is governed by the project manifest; see `kortix-system` for the deploy surface.)
+Kortix builds websites and web apps directly in the project repo — from content sites and landing pages to dashboards and interactive web apps. Because the source lives in the repo, you can iterate while keeping full ownership and history.
 
 ### Integrations and connectors
 Kortix reaches **3,000+ apps** through managed connectors, plus MCP servers, OpenAPI, GraphQL, and raw HTTP — all brokered server-side through a single scoped token, so the agent acts in your tools (read *and* write) without ever holding raw credentials. Connectors are discovered dynamically: check what's connected before assuming something is unavailable. When a needed app or key isn't connected, **mint a setup link and surface it in the same turn** rather than telling the user to dig through settings or paste a secret into chat (see the `kortix-system` credentials reference).
@@ -89,7 +89,7 @@ Kortix is model-agnostic: bring your own provider and keys (or a subscription yo
 
 - **It's code you own.** Your agents, skills, memory, and automations are a git repo — versioned, diffable, portable, self-hostable. You can `grep` your entire company; nothing is a black box.
 - **A workforce, not one assistant.** Specialist agents run in parallel and compound a shared memory, rather than a single chat thread.
-- **Real output, not just chat.** Agents run on real machines and return finished deliverables — decks, reports, code, deployed sites — and take real actions in connected tools.
+- **Real output, not just chat.** Agents run on real machines and return finished deliverables — decks, reports, code, and websites — and take real actions in connected tools.
 - **Reviewed self-improvement.** Every persistent change lands through a change request you approve, so the system gets better one auditable step at a time.
 - **Open and yours.** Source-available and self-hostable — your data, your models, your infrastructure, no lock-in.
 

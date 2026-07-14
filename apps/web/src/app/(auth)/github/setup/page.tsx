@@ -1,40 +1,27 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { useAuth } from '@/features/providers/auth-provider';
-import { saveGitHubInstallation } from '@kortix/sdk/projects-client';
-import { CheckCircleSolid, InfoCircleSolid } from '@mynaui/icons-react';
-import { AlertCircle } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { useAuth } from '@/features/providers/auth-provider';
+import { saveGitHubInstallation } from '@kortix/sdk/projects-client';
 
 type SetupState = 'saving' | 'done' | 'error';
 
 export default function GitHubSetupPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense
-      fallback={
-        <ConnectingScreen
-          forceConnecting
-          minimal
-          title={tHardcodedUi.raw('appGithubSetupPage.line15JsxAttrTitleConnectingGithub')}
-        />
-      }
-    >
+    <Suspense fallback={<AuthPendingScreen />}>
       <GitHubSetup />
     </Suspense>
   );
 }
 
 function GitHubSetup() {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
@@ -109,86 +96,35 @@ function GitHubSetup() {
   }, [installState, installationId, isLoading, router, setupAction, user]);
 
   if (isLoading || !user) {
-    return (
-      <ConnectingScreen
-        forceConnecting
-        minimal
-        title={tHardcodedUi.raw('appGithubSetupPage.line90JsxAttrTitleConnectingGithub')}
-      />
-    );
+    return <AuthPendingScreen />;
   }
 
   const heading = getHeading(state, setupAction);
 
+  // The live region wraps only the status content — not the frame — so
+  // screen readers don't re-announce the mark and legal footer on updates.
   return (
-    <main
-      className="bg-background fixed inset-0 flex items-center justify-center px-4"
-      role="status"
-      aria-live="polite"
-      aria-label={heading}
-    >
-      <div className="w-full max-w-sm space-y-6 py-6">
+    <AuthFrame>
+      <div role="status" aria-live="polite" aria-label={heading}>
+        <Rise>
+          <StepHeader title={heading} description={message} />
+        </Rise>
         {state === 'saving' ? (
-          <>
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                <Loading />
-                <span>Connecting</span>
-              </div>
-              <div className="space-y-1.5">
-                <h1 className="text-base font-semibold tracking-tight">
-                  {getHeading(state, setupAction)}
-                </h1>
-                <p className="text-muted-foreground text-sm leading-relaxed">{message}</p>
-              </div>
+          <Rise delay={0.06}>
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
+              <Loading className="size-4 shrink-0" />
+              <span>This usually takes a few seconds</span>
             </div>
-            <p className="text-muted-foreground text-center text-xs">
-              {tI18nHardcoded.raw('autoAppAuthGithubSetupPageJsxTextThisUsuallyTakes85d58321')}
-            </p>
-          </>
+          </Rise>
         ) : state === 'error' ? (
-          <>
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className="border-destructive/25 bg-destructive/5 flex h-10 w-10 items-center justify-center rounded-lg border">
-                <AlertCircle className="text-destructive h-5 w-5" aria-hidden />
-              </div>
-              <div className="space-y-1.5">
-                <h1 className="text-base font-semibold tracking-tight">
-                  {getHeading(state, setupAction)}
-                </h1>
-              </div>
-            </div>
-            <InfoBanner tone="destructive" icon={InfoCircleSolid}>
-              {message}
-            </InfoBanner>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => router.replace('/projects')}
-            >
-              {tHardcodedUi.raw('appGithubSetupPage.line123JsxTextBackToProjects')}
+          <Rise delay={0.06}>
+            <Button size="lg" className="w-full" onClick={() => router.replace('/projects')}>
+              Back to projects
             </Button>
-          </>
-        ) : (
-          <>
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className="border-border bg-primary/6 flex h-10 w-10 items-center justify-center rounded-lg border">
-                <CheckCircleSolid className="text-foreground size-5" aria-hidden />
-              </div>
-              <div className="space-y-1.5">
-                <h1 className="text-base font-semibold tracking-tight">
-                  {getHeading(state, setupAction)}
-                </h1>
-                <p className="text-muted-foreground text-sm leading-relaxed">{message}</p>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-center text-xs">
-              {tI18nHardcoded.raw('autoAppAuthGithubSetupPageJsxTextRedirecting69a84dea')}
-            </p>
-          </>
-        )}
+          </Rise>
+        ) : null}
       </div>
-    </main>
+    </AuthFrame>
   );
 }
 

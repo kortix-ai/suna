@@ -13,7 +13,6 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { AUTO_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { and, eq, inArray } from 'drizzle-orm';
 import { getCachedAccountTier } from '../../billing/services/entitlements';
 import { accountIsFreeTierForModels } from '../../billing/services/tiers';
@@ -97,6 +96,7 @@ import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -108,7 +108,9 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
+import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
+import { listProjectSecretsSnapshot } from '../secrets';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
@@ -2529,6 +2531,60 @@ projectsApp.openapi(
   },
 );
 
+// GET /v1/projects/:projectId/model-picker
+// UI-specific, connection-aware projection of the runtime catalog. The full
+// /llm-catalog response remains available for sandbox/OpenCode configuration;
+// interactive selectors should use this bounded payload instead.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/model-picker',
+    tags: ['projects'],
+    summary: 'GET /:projectId/model-picker',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
+
+    const accountId = loaded.row.accountId as string;
+    const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
+      : false;
+    const [secrets, defaults, routing] = await Promise.all([
+      listProjectSecretsSnapshot(projectId).catch(() => ({ names: [] as string[] })),
+      getAccountModelDefaults(accountId),
+      getProjectRoutingPolicy(projectId),
+    ]);
+    const requiredModels = [
+      defaults.projects[projectId],
+      defaults.account,
+      config.LLM_GATEWAY_DEFAULT_MODEL,
+      routing?.visionModel,
+      ...(routing?.defaultFallback?.models ?? []),
+      ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
+    ].filter((model): model is string => !!model);
+    const models = projectPickerCatalog(
+      gatewayModelCatalog(projectId, { freeManagedOnly }),
+      new Set(secrets.names.map((name) => name.toUpperCase())),
+      requiredModels,
+    );
+    return c.json({ models });
+  },
+);
+
 // ─── Default model preferences (account-scoped) ─────────────────────────────
 // The gateway is the source of truth for the default model: a request for the
 // synthetic `auto` resolves server-side to the per-agent default → account
@@ -2575,11 +2631,11 @@ projectsApp.openapi(
       freeModelsOnly: freeTier,
     });
     return c.json({
-      platformDefault: AUTO_DEFAULT_MODEL_ID,
+      platformDefault: config.LLM_GATEWAY_DEFAULT_MODEL,
       accountDefault: defaults.account,
       agentDefaults: defaults.agents,
       projectDefault: defaults.projects[projectId] ?? null,
-      resolvedForCaller: resolved.model ?? AUTO_DEFAULT_MODEL_ID,
+      resolvedForCaller: resolved.model ?? config.LLM_GATEWAY_DEFAULT_MODEL,
       resolvedSource: resolved.source,
       freeTier,
     });

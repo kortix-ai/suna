@@ -13,6 +13,9 @@
 **/.ruff_cache
 .turbo
 **/.turbo
+**/.terraform
+**/*.tfstate
+**/*.tfstate.*
 .vercel
 **/.vercel
 .buildx-cache

@@ -3,27 +3,15 @@ import {
   AUTO_DEFAULT_MODEL_ID,
   AUTO_MODEL_ENABLED,
   AUTO_MODEL_ID,
-  DEFAULT_MODEL_FALLBACK_POLICY,
   getManagedModel,
   pickAutoModel,
-  routeDefaultModelFallbacks,
 } from "./index";
 
 const msg = (content: string) => ({ role: "user", content });
 
 describe("pickAutoModel", () => {
-  test("platform default is Codex GPT-5.6 Sol with a bounded GLM 5.2 fallback", () => {
+  test("shared picker compatibility default remains Codex GPT-5.6 Sol", () => {
     expect(AUTO_DEFAULT_MODEL_ID).toBe("codex/gpt-5.6-sol");
-    expect(DEFAULT_MODEL_FALLBACK_POLICY).toEqual({
-      primary: "codex/gpt-5.6-sol",
-      fallbacks: ["glm-5.2"],
-      fallbackOn: "any-error",
-    });
-    expect(routeDefaultModelFallbacks("codex/gpt-5.6-sol")).toEqual({
-      fallbackModels: ["glm-5.2"],
-      fallbackOn: "any-error",
-    });
-    expect(routeDefaultModelFallbacks("glm-5.2")).toBeNull();
   });
   test("returns null for any non-auto model (pass-through)", () => {
     expect(

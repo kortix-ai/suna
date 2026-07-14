@@ -46,7 +46,7 @@ This mandate applies to **everything**:
 
 - code edits
 - new files (skills, agents, slash commands, tools, plugins)
-- `kortix.yaml` edits (triggers, env, sandbox, apps)
+- `kortix.yaml` edits (triggers, env, sandbox)
 - `AGENTS.md` rule changes
 - new MCP server configs
 - anything else committed to the working tree
@@ -291,7 +291,6 @@ Validation rules on `POST /`:
 | **Skills**    | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR that contains them merges to `main`. Until then, only the originating session sees them. |
 | **Agents**    | Same: new `.kortix/opencode/agents/<agent>.md` files need to land via CR.                       |
 | **Triggers**  | Edits to `triggers:` in `kortix.yaml` only reach the scheduler after the CR merges. The scheduler reads `kortix.yaml` on `main`. |
-| **Apps**      | `apps:` redeploys are driven by manifest-hash changes on `main`. A CR that changes app config triggers a redeploy *after* merge, not before. |
 | **Secrets**   | Decoupled. Secrets live in the Kortix Secrets Manager, not the manifest; CRs don't move secrets. |
 | **Dashboard** | Renders CR list / detail / diff / merge button. Same data as the CLI sees.                       |
 | **Triggers firing inside a session** | A trigger-spawned session can itself open a CR — same flow.                       |

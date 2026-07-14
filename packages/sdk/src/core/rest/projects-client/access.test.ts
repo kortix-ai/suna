@@ -245,12 +245,6 @@ test('attachGroupToProject sends a real expires_at string when given', async () 
   expect(last().body).toEqual({ group_id: 'g1', role: 'member', expires_at: '2026-12-31T00:00:00Z' });
 });
 
-test('attachGroupToProject sends an optional default_base_ref for group session defaults', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'member' } };
-  await attachGroupToProject('P1', 'g1', 'member', undefined, 'staging');
-  expect(last().body).toEqual({ group_id: 'g1', role: 'member', default_base_ref: 'staging' });
-});
-
 test('updateProjectGroupGrant PATCHes with { role } only when expiresAt is undefined', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
   await updateProjectGroupGrant('P1', 'g1', 'editor');
@@ -269,18 +263,6 @@ test('updateProjectGroupGrant PATCHes with a real expires_at string when given',
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
   await updateProjectGroupGrant('P1', 'g1', 'editor', '2026-12-31T00:00:00Z');
   expect(last().body).toEqual({ role: 'editor', expires_at: '2026-12-31T00:00:00Z' });
-});
-
-test('updateProjectGroupGrant PATCHes a group session default without changing expiry', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
-  await updateProjectGroupGrant('P1', 'g1', 'editor', undefined, 'dev');
-  expect(last().body).toEqual({ role: 'editor', default_base_ref: 'dev' });
-});
-
-test('updateProjectGroupGrant can clear a group session default explicitly', async () => {
-  nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'editor' } };
-  await updateProjectGroupGrant('P1', 'g1', 'editor', undefined, null);
-  expect(last().body).toEqual({ role: 'editor', default_base_ref: null });
 });
 
 test('detachGroupFromProject DELETEs /group-grants/:groupId', async () => {

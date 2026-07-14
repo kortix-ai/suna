@@ -1,15 +1,22 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { Check } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
+import { AuthFrame } from '@/features/auth/auth-card-shell';
+import {
+  AuthPendingScreen,
+  AuthStatusScreen,
+  DetailPanel,
+  DetailRow,
+} from '@/features/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-import { Shield, X } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
@@ -18,18 +25,17 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
 
 export default function OAuthConsentPage() {
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Authorizing" />}>
+    <Suspense fallback={<AuthPendingScreen />}>
       <OAuthConsent />
     </Suspense>
   );
 }
 
 function OAuthConsent() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
+  const [decision, setDecision] = useState<'allow' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [consentRequest, setConsentRequest] = useState<{
     clientName: string;
@@ -103,7 +109,7 @@ function OAuthConsent() {
   }, [isLoading, requestId, user]);
 
   const handleConsent = async (approved: boolean) => {
-    setSubmitting(true);
+    setDecision(approved ? 'allow' : 'deny');
     setError(null);
 
     try {
@@ -113,7 +119,7 @@ function OAuthConsent() {
       } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setError('Session expired. Please sign in again.');
-        setSubmitting(false);
+        setDecision(null);
         return;
       }
 
@@ -133,7 +139,7 @@ function OAuthConsent() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Unknown error' }));
         setError(err.error_description || err.error || 'Authorization failed');
-        setSubmitting(false);
+        setDecision(null);
         return;
       }
 
@@ -143,112 +149,97 @@ function OAuthConsent() {
       }
     } catch (err) {
       setError('Network error. Please try again.');
-      setSubmitting(false);
+      setDecision(null);
     }
   };
 
   if (isLoading || !user) {
-    return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
+    return <AuthPendingScreen />;
   }
 
   if (!requestId) {
     return (
-      <div className="bg-background fixed inset-0 flex items-center justify-center">
-        <div className="max-w-sm space-y-4 text-center">
-          <p className="text-destructive font-medium">
-            {tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}
-          </p>
-        </div>
-      </div>
+      <AuthStatusScreen
+        title="Invalid authorization request"
+        description="This link is missing required parameters. Start the authorization again from the app that sent you here."
+      />
     );
   }
 
   if (!consentRequest) {
-    return (
-      <div className="bg-background fixed inset-0 flex items-center justify-center">
-        <div className="max-w-sm space-y-4 text-center">
-          {error ? (
-            <>
-              <p className="text-destructive font-medium">
-                {tHardcodedUi.raw(
-                  'appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable',
-                )}
-              </p>
-              <p className="text-muted-foreground text-sm">{error}</p>
-            </>
-          ) : (
-            <ConnectingScreen forceConnecting minimal title="Authorizing" />
-          )}
-        </div>
-      </div>
-    );
+    if (error) {
+      return <AuthStatusScreen title="Authorization request unavailable" description={error} />;
+    }
+    return <AuthPendingScreen />;
   }
 
+  const submitting = decision !== null;
+
   return (
-    <div className="bg-background fixed inset-0 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-2 text-center">
-          <div className="mb-4 flex items-center justify-center">
-            <div className="bg-foreground/[0.06] border-foreground/[0.08] flex h-14 w-14 items-center justify-center rounded-full border">
-              <Shield className="text-foreground/50 h-6 w-6" />
+    <AuthFrame>
+      <Rise>
+        <StepHeader
+          title={`Authorize ${clientName}`}
+          description={
+            <>
+              <span className="text-foreground font-medium">{clientName}</span> wants to access your
+              Kortix account.
+            </>
+          }
+        />
+      </Rise>
+
+      <Rise delay={0.06}>
+        {error ? <ErrorStrip message={error} /> : null}
+
+        <div className="space-y-5">
+          {scopes.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-sm font-medium">It will be able to</p>
+              <ul className="border-border divide-border/60 divide-y rounded-md border">
+                {scopes.map((s) => (
+                  <li key={s} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm">
+                    <Check className="text-muted-foreground size-4 shrink-0" />
+                    <span className="min-w-0 truncate">{SCOPE_DESCRIPTIONS[s] || s}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
+          ) : null}
+
+          <DetailPanel>
+            <DetailRow label="Signed in as" value={user.email ?? 'You'} />
+          </DetailPanel>
+
+          <div className="space-y-3">
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={() => handleConsent(true)}
+              disabled={submitting}
+            >
+              {decision === 'allow' ? <Loading className="size-4 shrink-0" /> : null}
+              Allow
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={() => handleConsent(false)}
+              disabled={submitting}
+            >
+              {decision === 'deny' ? (
+                <Loading className="text-foreground! size-4 shrink-0" />
+              ) : null}
+              Deny
+            </Button>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Authorize {clientName}</h1>
-          <p className="text-muted-foreground text-sm">
-            <span className="text-foreground font-medium">{clientName}</span>
-            {tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}
-          </p>
         </div>
 
-        <div className="border-border bg-muted/30 space-y-3 rounded-md border p-4">
-          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            {tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')} {clientName} to:
-          </p>
-          <ul className="space-y-2">
-            {scopes.map((s) => (
-              <li key={s} className="flex items-start gap-2 text-sm">
-                <div className="bg-foreground/40 mt-1.5 size-1.5 shrink-0 rounded-full" />
-                <span>{SCOPE_DESCRIPTIONS[s] || s}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="border-border bg-muted/20 rounded-md border px-4 py-3">
-          <p className="text-muted-foreground text-xs">
-            {tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}
-          </p>
-          <p className="truncate text-sm font-medium">{user.email}</p>
-        </div>
-
-        {error && (
-          <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-md border p-3 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => handleConsent(false)}
-            disabled={submitting}
-          >
-            <X className="size-4" />
-            Deny
-          </Button>
-          <Button className="flex-1" onClick={() => handleConsent(true)} disabled={submitting}>
-            {submitting ? 'Authorizing...' : 'Allow'}
-          </Button>
-        </div>
-
-        <p className="text-muted-foreground text-center text-xs">
-          {tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}
+        <p className="text-muted-foreground mt-8 text-sm">
+          You can revoke access at any time in your account settings.
         </p>
-      </div>
-    </div>
+      </Rise>
+    </AuthFrame>
   );
 }

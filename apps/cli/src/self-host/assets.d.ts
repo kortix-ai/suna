@@ -17,3 +17,23 @@ declare module '*.txt' {
   const text: string;
   export default text;
 }
+
+declare module '*.tf' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.hcl' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.tftpl' {
+  const text: string;
+  export default text;
+}
+
+declare module '*.json' {
+  const text: string;
+  export default text;
+}

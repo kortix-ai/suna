@@ -4,7 +4,7 @@ import { agentMayUseEnv, getAgentGrant } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
-import { kickPreBuild } from '../../snapshots/builder';
+import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
@@ -33,7 +33,7 @@ projectsApp.openapi(
       },
     responses: {
         202: json(z.any(), 'OK'),
-        ...errors(404),
+        ...errors(404, 503),
     },
   }),
   async (c: any) => {
@@ -53,8 +53,21 @@ projectsApp.openapi(
   }
 
   const project = await loadGitProject(loaded);
-  kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
-  return c.json({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
+  const providers = templateBuildProviders();
+  if (providers.length === 0) {
+    return c.json({ error: 'No sandbox template provider is enabled' }, 503);
+  }
+  kickRoutedPreBuild(project, {
+    slug: row.slug,
+    accountId: loaded.row.accountId,
+    source: 'manual',
+  });
+  return c.json({
+    status: 'started',
+    template_id: row.templateId,
+    slug: row.slug,
+    providers,
+  }, 202);
 },
 );
 

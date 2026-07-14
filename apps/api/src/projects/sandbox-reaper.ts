@@ -629,13 +629,13 @@ export async function countBillingInvariantViolations(): Promise<number> {
 //
 // Safety:
 //  - Scoped to this env via provider labels (the org is shared across
-//    prod/dev/local) — see DaytonaProvider.listManagedRunningSandboxes.
+//    prod/dev/local) — each provider adapter owns that filter.
 //  - keepSet = every box the DB considers live (active/provisioning) OR touched
 //    within ORPHAN_KEEP_RECENT_MS, so an in-flight session is never stopped.
 //  - Age grace: a box younger than ORPHAN_BOX_GRACE_MS (or whose createdAt we
 //    can't read) is skipped — covers the window between provider-create and the
 //    DB row landing.
-//  - STOP only, never delete (Daytona auto-archives stopped boxes); bounded per
+//  - STOP only, never delete; bounded per
 //    pass; failures are logged and the sweep continues.
 const ORPHAN_KEEP_RECENT_MS = 15 * 60_000; // don't stop a just-touched box
 const ORPHAN_BOX_GRACE_MS = 60 * 60_000; // a box must be this old to qualify
@@ -651,30 +651,31 @@ export interface OrphanReapResult {
 export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanReapResult> {
   const zero: OrphanReapResult = { listed: 0, orphans: 0, stopped: 0, errors: 0 };
   if (process.env.KORTIX_ORPHAN_BOX_REAP_ENABLED === 'false') return zero;
-  // Daytona is the only org-shared provider that leaks this way; Platinum is
-  // reconciled on its own path.
-  if (!config.DAYTONA_API_KEY) return zero;
-  let listManaged: (() => Promise<Array<{ externalId: string; createdAt: Date | null }>>) | undefined;
-  try {
-    const provider = getProvider('daytona');
-    listManaged = provider.listManagedRunningSandboxes?.bind(provider);
-  } catch {
-    return zero;
-  }
-  if (!listManaged) return zero;
-
-  let boxes: Array<{ externalId: string; createdAt: Date | null }>;
-  try {
-    boxes = await listManaged();
-  } catch (err) {
-    console.warn('[reaper] orphan-box list failed:', err instanceof Error ? err.message : err);
-    return zero;
+  const boxes: Array<{
+    provider: ProviderName;
+    externalId: string;
+    createdAt: Date | null;
+  }> = [];
+  for (const providerName of config.ALLOWED_SANDBOX_PROVIDERS) {
+    try {
+      const provider = getProvider(providerName);
+      if (!provider.listManagedRunningSandboxes) continue;
+      const listed = await provider.listManagedRunningSandboxes();
+      boxes.push(...listed.map((box) => ({ provider: providerName, ...box })));
+    } catch (err) {
+      // One provider control-plane outage must not suppress orphan cleanup on
+      // the other configured providers.
+      console.warn(
+        `[reaper] ${providerName} orphan-box list failed:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
   if (boxes.length === 0) return zero;
 
   // keepSet: never stop a box the DB considers live or touched recently.
   const keepRows = await db
-    .select({ externalId: sessionSandboxes.externalId })
+    .select({ provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId })
     .from(sessionSandboxes)
     .where(
       and(
@@ -685,11 +686,18 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
         ),
       ),
     );
-  const keep = new Set(keepRows.map((r) => r.externalId).filter((x): x is string => !!x));
+  const keep = new Set(
+    keepRows
+      .filter((row): row is typeof row & { externalId: string } => !!row.externalId)
+      .map((row) => `${row.provider}:${row.externalId}`),
+  );
 
   const cutoff = now.getTime() - ORPHAN_BOX_GRACE_MS;
   const orphans = boxes.filter(
-    (b) => !keep.has(b.externalId) && b.createdAt != null && b.createdAt.getTime() <= cutoff,
+    (box) =>
+      !keep.has(`${box.provider}:${box.externalId}`) &&
+      box.createdAt != null &&
+      box.createdAt.getTime() <= cutoff,
   );
 
   let stopped = 0;
@@ -699,7 +707,7 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
     while (cursor < orphans.length && stopped + errors < ORPHAN_REAP_MAX_PER_PASS) {
       const box = orphans[cursor++];
       try {
-        await getProvider('daytona').stop(box.externalId);
+        await getProvider(box.provider).stop(box.externalId);
         // Reconcile any DB row (state drift) + close billing; no-op when there's none.
         await reconcileSandboxStoppedByExternalId(box.externalId, now).catch(() => {});
         stopped += 1;
