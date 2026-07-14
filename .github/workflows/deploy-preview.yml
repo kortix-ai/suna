@@ -257,7 +257,7 @@ jobs:
           mkdir -p .vercel
           jq -n --arg org "$TEAM_ID" --arg project "$PROJECT_ID" \
             '{orgId:$org, projectId:$project}' > .vercel/project.json
-          frontend_url="$(VERCEL_ORG_ID="$TEAM_ID" npx vercel deploy --yes --target preview --archive=tgz \
+          frontend_url="$(VERCEL_ORG_ID="$TEAM_ID" VERCEL_PROJECT_ID="$PROJECT_ID" npx vercel deploy --yes --target preview --archive=tgz \
             --token "$VERCEL_TOKEN" \
             -e NEXT_PUBLIC_BACKEND_URL="$BACKEND" \
             -e KORTIX_PUBLIC_BACKEND_URL="$BACKEND" \
