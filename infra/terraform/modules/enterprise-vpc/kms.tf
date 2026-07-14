@@ -36,6 +36,7 @@ data "aws_iam_policy_document" "data_key" {
   statement {
     sid = "CloudTrailEncryption"
     actions = [
+      "kms:Decrypt",
       "kms:DescribeKey",
       "kms:GenerateDataKey*",
     ]
