@@ -26,26 +26,23 @@ resource "aws_iam_role" "operator" {
 data "aws_iam_policy_document" "operator" {
   count = length(var.operator_principal_arns) > 0 ? 1 : 0
 
-  #checkov:skip=CKV_AWS_356:Read-only describe/list APIs for ECS, EC2, ECR, logs, and scheduler do not support resource-level scoping; no mutation is granted here.
+  #checkov:skip=CKV_AWS_356:Read-only describe/list APIs for EC2, ECR, CloudWatch, logs, and SSM do not support resource-level scoping; no mutation is granted here.
   statement {
     sid = "InspectInstallation"
     actions = [
       "backup:Describe*",
       "backup:Get*",
       "backup:List*",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:GetMetricData",
       "ec2:Describe*",
       "ecr:Describe*",
       "ecr:ListImages",
-      "ecs:Describe*",
-      "ecs:List*",
-      "elasticloadbalancing:Describe*",
       "logs:Describe*",
       "logs:FilterLogEvents",
       "logs:GetLogEvents",
       "logs:GetQueryResults",
       "logs:StartQuery",
-      "scheduler:GetSchedule",
-      "scheduler:ListSchedules",
       "secretsmanager:DescribeSecret",
       "ssm:Describe*",
       "ssm:GetCommandInvocation",
@@ -65,7 +62,7 @@ data "aws_iam_policy_document" "operator" {
       "ssm:TerminateSession",
     ]
     resources = [
-      aws_instance.supabase.arn,
+      aws_instance.appliance.arn,
       "arn:${local.partition}:ssm:${local.region}::document/AWS-RunShellScript",
       "arn:${local.partition}:ssm:${local.region}:${var.expected_account_id}:session/*",
     ]
