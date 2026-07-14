@@ -32,12 +32,12 @@ describe('marketplace HTTP contract', () => {
     server?.stop(true);
   });
 
-  test('GET /marketplace/items surfaces the starter project; managed kortix-* skills stay internal', async () => {
+  test('GET /marketplace/items surfaces the starter project + its skills; managed kortix-* skills stay internal', async () => {
     const res = await fetch(`${baseUrl}/marketplace/items?source=kortix`, {
       headers: { Authorization: 'Bearer test-token' },
     });
     expect(res.status).toBe(200);
-    const body = await res.json() as { items: Array<{ id: string; name: string; type: string; managedBy?: string }> };
+    const body = await res.json() as { items: Array<{ id: string; name: string; type: string; managedBy?: string; partOfProject?: { id: string; title: string } }> };
 
     // Kortix-managed system skills (kortix-computer/executor/memory/slack/system/
     // marketplace/meet/onboarding) are server-injected platform floor now — they
@@ -47,25 +47,27 @@ describe('marketplace HTTP contract', () => {
       expect(body.items.find((item) => item.name === name)).toBeUndefined();
     }
 
-    // Browse now leads with the "Kortix Starter" project — the individual
-    // kortix-starter skills (agent-browser, pdf, …) are folded inside it rather
-    // than listed as their own top-level tiles.
+    // Browse leads with the "Kortix Starter" project AND lists the individual
+    // kortix-starter skills (agent-browser, pdf, …) as their own top-level
+    // tiles again — each one carries a `partOfProject` badge back to the project.
     expect(body.items.find((item) => item.id === 'kortix-projects:starter')).toBeTruthy();
-    expect(body.items.find((item) => item.name === 'agent-browser')).toBeUndefined();
+    const agentBrowser = body.items.find((item) => item.name === 'agent-browser');
+    expect(agentBrowser).toBeTruthy();
+    expect(agentBrowser?.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
+    expect(body.items.find((item) => item.name === 'pdf')).toBeTruthy();
     expect(body.items.find((item) => item.name === 'pty')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'web_search')).toBeUndefined();
-    expect(body.items.find((item) => item.name === 'pdf')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'kortix')).toBeUndefined();
     expect(body.items.find((item) => item.name === 'memory-reflector')).toBeUndefined();
   });
 
   test('GET /marketplace/items is public read-only', async () => {
     authCalls = 0;
-    const res = await fetch(`${baseUrl}/marketplace/items?query=starter&source=kortix`);
+    const res = await fetch(`${baseUrl}/marketplace/items?query=agent-browser&source=kortix`);
     expect(res.status).toBe(200);
     const body = await res.json() as { items: Array<{ id: string; name: string; type: string }> };
     expect(body.items).toContainEqual(
-      expect.objectContaining({ id: 'kortix-projects:starter', type: 'registry:project' }),
+      expect.objectContaining({ id: 'kortix-starter:agent-browser', type: 'registry:skill' }),
     );
     expect(authCalls).toBe(0);
   });
@@ -79,7 +81,7 @@ describe('marketplace HTTP contract', () => {
     expect(authCalls).toBeGreaterThan(0);
   });
 
-  test('GET /marketplace/items/:id exposes the starter project detail; managed system skills stay unreachable', async () => {
+  test('GET /marketplace/items/:id exposes the starter project detail and its skills; managed system skills stay unreachable', async () => {
     const detail = await fetch(`${baseUrl}/marketplace/items/${encodeURIComponent('kortix-projects:starter')}`, {
       headers: { Authorization: 'Bearer test-token' },
     });
@@ -94,8 +96,23 @@ describe('marketplace HTTP contract', () => {
 
     expect(body.name).toBe('starter');
     expect(body.type).toBe('registry:project');
-    // The "what's inside" list resolves the folded kortix-starter skills, typed.
+    // The "what's inside" list resolves the kortix-starter skills, typed.
     expect(body.dependencyItems.some((d) => d.name === 'pdf')).toBe(true);
+
+    // A starter skill is also reachable as its own browse-and-install card, at
+    // its own id, badged back to the project it also ships inside of.
+    const skillDetail = await fetch(`${baseUrl}/marketplace/items/${encodeURIComponent('kortix-starter:agent-browser')}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    });
+    expect(skillDetail.status).toBe(200);
+    const skillBody = await skillDetail.json() as {
+      name: string;
+      type: string;
+      partOfProject?: { id: string; title: string };
+    };
+    expect(skillBody.name).toBe('agent-browser');
+    expect(skillBody.type).toBe('registry:skill');
+    expect(skillBody.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
 
     // Kortix-managed system skills are server-injected platform truth — never a
     // browse-and-detail card, even by a hand-built id.

@@ -70,6 +70,9 @@ export interface CatalogItem {
   defaultProjectInstall?: boolean;
   defaultProjectInstallOrder?: number;
   hidden?: boolean;
+  /** Set when this item also ships inside a whole `registry:project` (e.g. a
+   *  starter skill) — the UI badges it "Part of <project>" and links to it. */
+  partOfProject?: { id: string; title: string };
 }
 
 export interface DependencyItem {
@@ -215,6 +218,12 @@ function entryToCatalogItem(e: CatalogEntry): CatalogItem {
     defaultProjectInstall: e.item.meta?.defaultProjectInstall === true,
     defaultProjectInstallOrder,
     hidden: e.item.meta?.hidden === true,
+    partOfProject:
+      e.item.meta?.partOfProject &&
+      typeof e.item.meta.partOfProject === "object" &&
+      typeof (e.item.meta.partOfProject as { id?: unknown }).id === "string"
+        ? (e.item.meta.partOfProject as { id: string; title: string })
+        : undefined,
   };
 }
 
@@ -275,6 +284,14 @@ function buildStarterRegistry(): RegistryJson {
         ...(item.meta ?? {}),
         managedBy: "kortix",
         updatePolicy: "kortix-managed",
+      };
+    } else if (item.type === "registry:skill") {
+      // A browsable starter skill: it stands on its own in the catalog AND ships
+      // inside the Kortix Starter project, so tag it so the UI can badge it
+      // "Part of Kortix Starter" and link back to the whole project.
+      item.meta = {
+        ...(item.meta ?? {}),
+        partOfProject: { id: STARTER_KIT_ITEM_ID, title: "Kortix Starter" },
       };
     }
     for (const f of item.files ?? []) {
@@ -353,6 +370,7 @@ function buildProjectTemplateRegistry(): RegistryItem[] {
 // clone). This is the single project we lead the marketplace with; individual
 // starter skills live *inside* it rather than as their own top-level tiles.
 export const STARTER_KIT_ITEM_NAME = "starter";
+export const STARTER_KIT_ITEM_ID = `kortix-projects:${STARTER_KIT_ITEM_NAME}`;
 
 const STARTER_KIT_README = `# Kortix Starter
 
@@ -897,7 +915,6 @@ export async function listMarketplaces(): Promise<MarketplaceFacet[]> {
   const by = new Map<string, MarketplaceFacet>();
   for (const it of items) {
     if (!isBrowseableCatalogItem(it)) continue;
-    if (isStarterKitMember(it)) continue; // counted inside the Kortix Starter project
     const id = it.marketplaceId;
     let m = by.get(id);
     // A company/source's sourceUrl means "the repo this whole source lives in"
@@ -1587,14 +1604,6 @@ function isBrowseableCatalogItem(it: CatalogItem): boolean {
   return MARKETPLACE_VISIBLE_TYPES.has(it.type) && !it.hidden;
 }
 
-// Every first-party `kortix-starter` skill lives *inside* the synthetic "Kortix
-// Starter" project now (see `buildStarterKitProjectItem`) — the project is the
-// marketplace's top-level unit, so the individual skills are no longer their own
-// browse tiles. They stay fully resolvable by id (detail, file browser, and the
-// project's typed "what's inside"), just hidden from the top-level LIST.
-function isStarterKitMember(it: CatalogItem): boolean {
-  return it.registry === "kortix-starter";
-}
 
 function filterCatalogItems(
   items: CatalogItem[],
@@ -1605,7 +1614,6 @@ function filterCatalogItems(
   const source = opts.source?.trim();
   return items.filter((it) => {
     if (!isBrowseableCatalogItem(it)) return false;
-    if (isStarterKitMember(it)) return false; // folded inside the Kortix Starter project
     if (
       type &&
       type !== "all" &&

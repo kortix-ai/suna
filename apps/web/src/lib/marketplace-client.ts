@@ -38,6 +38,9 @@ export interface MarketplaceItem {
   sourceId?: string;
   defaultProjectInstall?: boolean;
   defaultProjectInstallOrder?: number;
+  /** Set when this item also ships inside a whole project (e.g. a starter skill);
+   *  the card badges it "Part of <project>". */
+  partOfProject?: { id: string; title: string };
 }
 
 export interface DependencyItem {

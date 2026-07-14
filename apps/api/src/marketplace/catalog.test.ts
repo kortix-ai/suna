@@ -116,14 +116,22 @@ describe('pageCatalogItems', () => {
     expect(result.items.every((it) => it.name.startsWith('alpha'))).toBe(true);
   });
 
-  test('folds kortix-starter skills out of the browse list (they live inside the Kortix Starter project)', () => {
+  test('surfaces kortix-starter skills in the browse list alongside the Kortix Starter project', () => {
     const items = [
-      item({ id: 'kortix-starter:pdf', name: 'pdf', type: 'registry:skill', registry: 'kortix-starter' }),
+      item({
+        id: 'kortix-starter:pdf',
+        name: 'pdf',
+        type: 'registry:skill',
+        registry: 'kortix-starter',
+        partOfProject: { id: 'kortix-projects:starter', title: 'Kortix Starter' },
+      }),
       item({ id: 'kortix-projects:starter', name: 'starter', type: 'registry:project', registry: 'kortix-projects' }),
     ];
     const result = pageCatalogItems(items, {});
-    expect(result.items.map((it) => it.name)).toEqual(['starter']);
-    expect(result.total).toBe(1);
+    expect(result.items.map((it) => it.name).sort()).toEqual(['pdf', 'starter']);
+    expect(result.total).toBe(2);
+    const pdf = result.items.find((it) => it.name === 'pdf')!;
+    expect(pdf.partOfProject).toEqual({ id: 'kortix-projects:starter', title: 'Kortix Starter' });
   });
 
   test('surfaces skills and projects as browseable; hides agents/commands/bundles/support types', () => {

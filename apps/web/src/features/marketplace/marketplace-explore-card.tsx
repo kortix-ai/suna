@@ -35,6 +35,11 @@ export function MarketplaceExploreCard({
               Installed
             </Badge>
           ) : null}
+          {item.partOfProject ? (
+            <Badge variant="outline" size="sm" className="shrink-0 font-normal">
+              Part of {item.partOfProject.title}
+            </Badge>
+          ) : null}
         </div>
         {item.description ? (
           <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs leading-relaxed text-pretty">

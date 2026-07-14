@@ -525,11 +525,21 @@ export function MarketplaceDetail({
     setSelectedFile(readmeTarget);
   }, [readmeTarget]);
 
+  // A skill that ships inside a project gets that project as a breadcrumb level:
+  // Marketplace / <source> / <Project> / <item>.
+  const projectCrumb = data.partOfProject
+    ? { label: data.partOfProject.title, href: marketplaceItemHref(data.partOfProject.id) }
+    : null;
   const crumbs = onBack
-    ? [{ label: 'Marketplace', onClick: onBack }, { label: itemTitle }]
+    ? [
+        { label: 'Marketplace', onClick: onBack },
+        ...(projectCrumb ? [projectCrumb] : []),
+        { label: itemTitle },
+      ]
     : [
         { label: 'Marketplace', href: '/marketplace' },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
+        ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
       ];
 
