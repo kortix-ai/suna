@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 501,
+  "count": 497,
   "routes": [
     {
       "method": "GET",
@@ -863,10 +863,6 @@
       "path": "/v1/oauth/authorize/consent/:requestId"
     },
     {
-      "method": "GET",
-      "path": "/v1/oauth/claimable-machines"
-    },
-    {
       "method": "POST",
       "path": "/v1/oauth/token"
     },
@@ -1701,18 +1697,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/github/repository-branches"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/legacy-migration/eligibility"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/legacy-migration/start"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/legacy-migration/status"
     },
     {
       "method": "POST",
