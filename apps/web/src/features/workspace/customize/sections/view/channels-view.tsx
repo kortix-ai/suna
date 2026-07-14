@@ -82,7 +82,7 @@ import { cn } from '@/lib/utils';
 import { getProject, listProjectAccess } from '@kortix/sdk/projects-client';
 import { Check, CheckCircleSolid, ExternalLinkSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Mail, MessageSquare, Send, X } from 'lucide-react';
+import { Copy, Mail, MessageSquare, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -638,7 +638,7 @@ function TelegramChannelRow({
       <TableRow className="hover:bg-transparent">
         <TableCell>
           <div className="flex items-center gap-2.5">
-            <Send className="text-muted-foreground size-5 shrink-0" />
+            <Icon.Telegram className="size-5 shrink-0" />
             <span className="text-sm font-medium">Telegram</span>
             <Badge variant="muted" size="xs">
               Optional
