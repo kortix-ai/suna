@@ -171,6 +171,10 @@ exit 64
   executable(join(bin, 'docker'), `#!/usr/bin/env bash
 set -euo pipefail
 printf 'docker %s\\n' "\$*" >>"\$FAKE_COMMAND_LOG"
+if [ "\${1:-} \${2:-}" = 'inspect supabase-kong' ]; then
+  printf 'SUPABASE_ANON_KEY=test-anon-key\\n'
+  exit 0
+fi
 if [[ " \$* " == *' config --images '* ]]; then
   printf 'supabase/postgres:17.6.1.136@sha256:%064d\\n' 0
   exit 0

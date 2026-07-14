@@ -84,6 +84,25 @@ describe('Supabase host installer command', () => {
     }
   });
 
+  test('does not treat a missing current symlink as a previous release', () => {
+    const root = mkdtempSync(join('/tmp', 'kortix-supabase-previous-'));
+    try {
+      const script = supabaseInstallScript(input).replaceAll('/opt/kortix', root);
+      const lines = script.split('\n');
+      const start = lines.indexOf('previous=');
+      const end = lines.findIndex((line) => line.includes('"$transaction.previous"'));
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      const fragment = lines.slice(start, end + 1).join('\n');
+      const transaction = join(root, 'transaction');
+      const result = spawnSync('bash', ['-ceu', `transaction="$1"\n${fragment}\ncat "$transaction.previous"`, 'bash', transaction], { encoding: 'utf8' });
+      expect({ status: result.status, stdout: result.stdout, stderr: result.stderr })
+        .toEqual({ status: 0, stdout: '\n', stderr: '' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('emits bounded commit and rollback commands for the exact activation transaction', () => {
     const commit = supabaseFinalizeScript(input.version, input.sha256);
     const rollback = supabaseRollbackScript(input.version, input.sha256);

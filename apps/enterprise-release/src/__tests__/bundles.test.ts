@@ -75,6 +75,8 @@ describe('enterprise release bundles', () => {
       expect(installer).not.toContain('kortix-api');
 
       const start = readFileSync(join(root, 'bin', 'supabase-start'), 'utf8');
+      expect(start).toContain('docker inspect supabase-kong');
+      expect(start).toContain('--header "apikey: $anon_key"');
       const physicalRoot = start.split('\n').find((line) => line.startsWith('root=$(readlink -f '));
       expect(physicalRoot).toBeDefined();
       symlinkSync('.', join(root, 'current'));
