@@ -252,7 +252,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print a session's recent messages, read-only — peek at what an agent is doing without sending it anything. Alias: `messages`. |
 | `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review for reflection: metadata + compressed transcript snippets with tool outputs stripped. Aliases: `review`, `summary`. |
 | `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable, root-served preview URL for a port in the session's sandbox (default `3000`). |
-| `kortix sessions restart <id>` | Re-provision a session in place. |
+| `kortix sessions restart <id>` | Restart the session's sandbox. An already materialized provider runtime is stop/started in place; a replacement is allocated only if the original sandbox never materialized. |
 | `kortix sessions rename <id> <name>` | Set a session's name. Pass `""` to clear it and revert to the automatic title. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
@@ -479,7 +479,7 @@ The CLI reads `KORTIX_CLI_TOKEN` automatically (falling back to `KORTIX_EXECUTOR
 
 ### Rotating
 
-A sandbox's project token is minted at session create and lives for that sandbox. Restarting re-provisions and issues a fresh token; an existing sandbox keeps its token until it restarts.
+A sandbox's project token is minted for the session sandbox and remains the token for that sandbox across restart of an already materialized runtime. Restarting stop/starts that same provider runtime in place. A replacement runtime is allocated only if the original sandbox never materialized.
 
 ## Common workflows
 
