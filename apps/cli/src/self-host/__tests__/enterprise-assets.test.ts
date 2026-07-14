@@ -70,6 +70,29 @@ describe('embedded enterprise Terraform graph', () => {
     expect(cloudTrail).toContain('variable = "aws:SourceArn"');
   });
 
+  test('installs a pinned AWS CLI distribution supported by the AL2023 Supabase host', () => {
+    const userData = enterpriseTerraformAssets['modules/enterprise-vpc/files/supabase-user-data.sh.tftpl'];
+
+    expect(userData).not.toContain('dnf install -y amazon-cloudwatch-agent awscli2');
+    expect(userData).toContain('dnf install -y amazon-cloudwatch-agent docker jq unzip xfsprogs');
+    expect(userData).not.toContain('dnf install -y amazon-cloudwatch-agent curl');
+    expect(userData).toContain('awscli-exe-linux-x86_64-2.25.14.zip');
+    expect(userData).toContain('9145327c1e33e5df50ad9a283fd1cb47e256f858c0a846017c11bc2eab8e47f1');
+    expect(userData).toContain('aws --version');
+  });
+
+  test('allows SSM managed instances to use both command transport services through the workload boundary', () => {
+    const state = enterpriseTerraformAssets['modules/enterprise-state/main.tf'];
+    const boundary = state.slice(
+      state.indexOf('sid    = "BoundRuntimeIdentityPolicies"'),
+      state.indexOf('sid    = "DenyIdentityAndKeyEscalation"'),
+    );
+
+    expect(boundary).toContain('"ssm:*"');
+    expect(boundary).toContain('"ssmmessages:*"');
+    expect(boundary).toContain('"ec2messages:*"');
+  });
+
   test('keeps the customer updater as the only enterprise Helm reconciler', () => {
     const sharedPlatform = enterpriseTerraformAssets['modules/eks/platform/main.tf'];
     const enterprisePlatform = enterpriseTerraformAssets['modules/enterprise-platform/main.tf'];
@@ -92,6 +115,24 @@ describe('embedded enterprise Terraform graph', () => {
     expect(hourlyTarget).toContain('arn      = aws_sfn_state_machine.reconcile.arn');
     expect(hourlyTarget).toContain('trigger = "hourly"');
     expect(hourlyTarget).toContain('force   = false');
+  });
+
+  test('scopes SSM send while allowing the updater to observe command completion', () => {
+    const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
+    const send = updater.slice(
+      updater.indexOf('sid     = "SendSupabaseCommand"'),
+      updater.indexOf('sid = "ObserveSupabaseCommand"'),
+    );
+    const observe = updater.slice(
+      updater.indexOf('sid = "ObserveSupabaseCommand"'),
+      updater.indexOf('sid       = "ReadRuntimeSecrets"'),
+    );
+
+    expect(send).toContain('actions = ["ssm:SendCommand"]');
+    expect(send).toContain('aws_instance.supabase.arn');
+    expect(observe).toContain('"ssm:GetCommandInvocation"');
+    expect(observe).toContain('"ssm:ListCommandInvocations"');
+    expect(observe).toContain('resources = ["*"]');
   });
 
   test('does not grant the automatic platform apply role AWS infrastructure mutation', () => {

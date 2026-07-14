@@ -626,7 +626,7 @@ function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommand
       'codebuild', 'batch-get-projects', '--names', `${config.instance}-updater`,
     ])?.projects?.[0] ?? null;
     const execution = awsJsonOptional<{ executions?: Array<Record<string, unknown>> }>(coordinates, [
-      'states', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
+      'stepfunctions', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
     ])?.executions?.[0] ?? null;
     const release = releaseState(config);
     const payload = {
