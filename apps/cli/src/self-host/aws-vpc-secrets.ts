@@ -26,6 +26,7 @@ const UPDATER_MANAGED_RUNTIME_KEYS = new Set([
   'POSTGRES_PASSWORD', 'DATABASE_URL',
   'JWT_SECRET', 'SUPABASE_JWT_SECRET', 'ANON_KEY', 'SUPABASE_ANON_KEY',
   'SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY',
   'DASHBOARD_PASSWORD', 'SECRET_KEY_BASE', 'REALTIME_DB_ENC_KEY', 'VAULT_ENC_KEY',
   'PG_META_CRYPTO_KEY', 'LOGFLARE_PUBLIC_ACCESS_TOKEN', 'LOGFLARE_PRIVATE_ACCESS_TOKEN',
   'S3_PROTOCOL_ACCESS_KEY_ID', 'S3_PROTOCOL_ACCESS_KEY_SECRET', 'POOLER_TENANT_ID',
@@ -120,6 +121,8 @@ export function generateRuntimeDefaults(
   const postgresPassword = current.POSTGRES_PASSWORD || token(32);
   const anonKey = current.ANON_KEY || supabaseJwt('anon', jwtSecret);
   const serviceRoleKey = current.SERVICE_ROLE_KEY || supabaseJwt('service_role', jwtSecret);
+  const publishableKey = current.SUPABASE_PUBLISHABLE_KEY || `sb_publishable_${randomBytes(24).toString('base64url')}`;
+  const secretKey = current.SUPABASE_SECRET_KEY || `sb_secret_${randomBytes(32).toString('base64url')}`;
   const supabaseInternalUrl = `http://${coordinates.supabasePrivateIp}:8000`;
   const apiUrl = `https://${coordinates.apiDomain}`;
   const frontendUrl = `https://${coordinates.frontendDomain}`;
@@ -134,7 +137,11 @@ export function generateRuntimeDefaults(
     SUPABASE_ANON_KEY: anonKey,
     SERVICE_ROLE_KEY: serviceRoleKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
-    DATABASE_URL: `postgresql://postgres:${encodeURIComponent(postgresPassword)}@${coordinates.supabasePrivateIp}:5432/postgres`,
+    SUPABASE_PUBLISHABLE_KEY: publishableKey,
+    SUPABASE_SECRET_KEY: secretKey,
+    // Port 5432 is the official Supabase Supavisor session endpoint. Supavisor
+    // selects the tenant from the username suffix before proxying to Postgres.
+    DATABASE_URL: `postgresql://postgres.${coordinates.instance}:${encodeURIComponent(postgresPassword)}@${coordinates.supabasePrivateIp}:5432/postgres`,
     SUPABASE_URL: supabaseInternalUrl,
     SUPABASE_PUBLIC_URL: apiUrl,
     PUBLIC_URL: frontendUrl,

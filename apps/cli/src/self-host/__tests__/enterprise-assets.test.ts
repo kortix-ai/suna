@@ -81,6 +81,13 @@ describe('embedded enterprise Terraform graph', () => {
     expect(userData).toContain('aws --version');
   });
 
+  test('allows the Supabase stack enough time for its graceful Compose shutdown', () => {
+    const userData = enterpriseTerraformAssets['modules/enterprise-vpc/files/supabase-user-data.sh.tftpl'];
+
+    expect(userData).toContain('TimeoutStartSec=1800');
+    expect(userData).toContain('TimeoutStopSec=300');
+  });
+
   test('allows SSM managed instances to use both command transport services through the workload boundary', () => {
     const state = enterpriseTerraformAssets['modules/enterprise-state/main.tf'];
     const boundary = state.slice(

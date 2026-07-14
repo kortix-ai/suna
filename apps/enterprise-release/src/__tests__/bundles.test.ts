@@ -127,6 +127,8 @@ describe('enterprise release bundles', () => {
       for (const chart of Object.values(descriptor.charts)) {
         expect(readFileSync(join(root, chart, 'Chart.yaml'), 'utf8')).toContain('apiVersion: v2');
       }
+      expect(readFileSync(join(root, descriptor.charts.api, 'templates/migrate-job.yaml'), 'utf8'))
+        .toContain('command: ["bun", "scripts/migrate.ts", "bootstrap"]');
       expect(readFileSync(join(root, descriptor.charts.api, 'templates/_helpers.tpl'), 'utf8'))
         .toContain('@%s');
       expect(readFileSync(join(root, descriptor.charts.edge, 'templates/ingress.yaml'), 'utf8'))

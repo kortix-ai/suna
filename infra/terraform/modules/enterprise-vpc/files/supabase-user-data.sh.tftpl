@@ -72,6 +72,7 @@ EnvironmentFile=/etc/kortix/instance.env
 ExecStart=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-start ]; then exec /opt/kortix/current/bin/supabase-start; else echo "awaiting signed release reconciliation"; fi'
 ExecStop=/bin/bash -c 'if [ -x /opt/kortix/current/bin/supabase-stop ]; then exec /opt/kortix/current/bin/supabase-stop; fi'
 TimeoutStartSec=1800
+TimeoutStopSec=300
 
 [Install]
 WantedBy=multi-user.target

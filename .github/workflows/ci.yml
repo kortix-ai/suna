@@ -165,7 +165,7 @@ jobs:
           grep -Fq "api@${api_digest}" /tmp/api.yaml
           grep -Fq "gateway@${gateway_digest}" /tmp/gateway.yaml
           grep -Fq "frontend@${frontend_digest}" /tmp/edge.yaml
-          grep -Fq 'command: ["bun", "scripts/migrate.ts", "up"]' /tmp/api.yaml
+          grep -Fq 'command: ["bun", "scripts/migrate.ts", "bootstrap"]' /tmp/api.yaml
 
   api-typecheck:
     name: API typecheck
