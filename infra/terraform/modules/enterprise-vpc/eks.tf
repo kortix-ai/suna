@@ -25,6 +25,17 @@ module "eks" {
   depends_on = [terraform_data.account_guard]
 }
 
+resource "aws_vpc_security_group_ingress_rule" "updater_eks_api" {
+  security_group_id            = module.eks.cluster_security_group_id
+  referenced_security_group_id = aws_security_group.updater.id
+  description                  = "Private Kubernetes API access from the customer-owned updater"
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+
+  tags = local.tags
+}
+
 data "aws_iam_policy_document" "app_secrets" {
   statement {
     actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue"]

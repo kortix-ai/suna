@@ -101,6 +101,21 @@ describe('embedded enterprise Terraform graph', () => {
     expect(enterprisePlatform).toContain('argo_cd_enabled             = false');
   });
 
+  test('allows only the customer updater security group into the private EKS API', () => {
+    const eks = enterpriseTerraformAssets['modules/enterprise-vpc/eks.tf'];
+    const rule = eks.slice(
+      eks.indexOf('resource "aws_vpc_security_group_ingress_rule" "updater_eks_api"'),
+      eks.indexOf('data "aws_iam_policy_document" "app_secrets"'),
+    );
+
+    expect(rule).toContain('security_group_id            = module.eks.cluster_security_group_id');
+    expect(rule).toContain('referenced_security_group_id = aws_security_group.updater.id');
+    expect(rule).toContain('ip_protocol                  = "tcp"');
+    expect(rule).toContain('from_port                    = 443');
+    expect(rule).toContain('to_port                      = 443');
+    expect(rule).not.toContain('cidr_ipv4');
+  });
+
   test('recovers missed publisher hints through the same authoritative hourly reconciler', () => {
     const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
     const hintTarget = updater.slice(
