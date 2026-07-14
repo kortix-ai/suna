@@ -35,7 +35,17 @@ import {
 import { EVENT_DEDUPE_TTL_MS } from './slack/app';
 import { normalizeConversationPolicy } from './slack/participants';
 import { currentChannelSelection } from './slack/selection';
-import { telegramAnswerCallbackQuery, telegramSendMessage } from './telegram-api';
+import {
+  telegramAnswerCallbackQuery,
+  telegramEditMessageText,
+  telegramSendMessage,
+} from './telegram-api';
+import {
+  applyControlPick,
+  isControlCallback,
+  postTelegramAgentPicker,
+  postTelegramModelPicker,
+} from './telegram/controls';
 import {
   TELEGRAM_HELP_TEXT,
   TELEGRAM_LOCKED_TEXT,
@@ -221,6 +231,14 @@ async function handleUpdate(
       );
       return;
     }
+    if (command.command === 'agent') {
+      await postTelegramAgentPicker(projectId, botId, chatId, message.message_id);
+      return;
+    }
+    if (command.command === 'model') {
+      await postTelegramModelPicker(projectId, botId, chatId, message.message_id);
+      return;
+    }
     // /start <code> is the pairing handshake (deep links t.me/<bot>?start=<code>
     // arrive in exactly this shape) — it must work for UNPAIRED senders, which
     // is why commands are handled before the allowlist gate.
@@ -250,10 +268,41 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
   if (!install) return;
   const { botId, botUsername } = install;
   const token = await loadTelegramTokenForProject(projectId);
-
   const cbMessage = cb.message;
-  // Only question taps are handled; anything else gets a silent ack so the
-  // client stops spinning.
+
+  // /agent · /model picker taps: change the chat's binding (same allowlist gate
+  // as running a turn — an unpaired tapper can't reconfigure the chat).
+  if (isControlCallback(cb.data) && cbMessage?.chat) {
+    const chatId = String(cbMessage.chat.id);
+    const syntheticTap: TelegramMessage = {
+      message_id: cbMessage.message_id,
+      chat: cbMessage.chat,
+      from: cb.from,
+      text: '',
+    };
+    if (await telegramSenderLocked(projectId, syntheticTap)) {
+      if (token)
+        await telegramAnswerCallbackQuery(token, cb.id, 'Pair with the bot first (/start <code>).');
+      return;
+    }
+    const result = await applyControlPick(botId, chatId, cb.data);
+    if (token) {
+      await telegramAnswerCallbackQuery(token, cb.id, result?.toast ?? 'Done');
+      // Collapse the picker into its outcome (drop the keyboard).
+      if (result) {
+        await telegramEditMessageText(
+          token,
+          chatId,
+          cbMessage.message_id,
+          `✅ ${result.toast}`,
+        ).catch(() => {});
+      }
+    }
+    return;
+  }
+
+  // Only question taps are handled beyond this point; anything else gets a
+  // silent ack so the client stops spinning.
   const answer = isQuestionCallback(cb.data)
     ? answerLabelFromKeyboard(cbMessage?.reply_markup?.inline_keyboard, cb.data)
     : null;
