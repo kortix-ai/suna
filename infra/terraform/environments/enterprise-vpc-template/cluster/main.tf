@@ -13,6 +13,8 @@ module "enterprise" {
   route53_zone_id          = var.route53_zone_id
   release_repository_url   = var.release_repository_url
   tuf_root_sha256          = var.tuf_root_sha256
+  updater_bootstrap_url    = var.updater_bootstrap_url
+  updater_bootstrap_sha256 = var.updater_bootstrap_sha256
   maintenance_window       = var.maintenance_window
   operator_principal_arns  = var.operator_principal_arns
   operator_external_id     = var.operator_external_id

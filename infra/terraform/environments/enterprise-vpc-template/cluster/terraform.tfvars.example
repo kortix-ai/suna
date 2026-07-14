@@ -5,8 +5,10 @@ vpc_cidr               = "10.61.0.0/16"
 api_domain             = "api.kortix.customer.example"
 frontend_domain        = "kortix.customer.example"
 route53_zone_id        = "Z0123456789EXAMPLE"
-release_repository_url = "https://releases.kortix.com"
-tuf_root_sha256        = "0000000000000000000000000000000000000000000000000000000000000000"
+release_repository_url   = "https://releases.kortix.com"
+tuf_root_sha256          = "0000000000000000000000000000000000000000000000000000000000000000"
+updater_bootstrap_url    = "https://releases.kortix.com/bootstrap/kortix-updater-linux-x64"
+updater_bootstrap_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
 permissions_boundary_arn = "arn:aws:iam::123456789012:policy/customer-name-workload-boundary"
 
 # Optional: restrict who can reach the appliance host on 80/443 (strongly recommended).

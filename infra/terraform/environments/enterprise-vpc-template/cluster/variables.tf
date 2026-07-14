@@ -13,6 +13,8 @@ variable "tuf_root_sha256" {
   type      = string
   sensitive = true
 }
+variable "updater_bootstrap_url" { type = string }
+variable "updater_bootstrap_sha256" { type = string }
 variable "maintenance_window" {
   type    = string
   default = "Sun:02:00-05:00"

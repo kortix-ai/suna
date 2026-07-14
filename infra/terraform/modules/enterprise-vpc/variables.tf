@@ -164,6 +164,26 @@ variable "release_channel" {
   }
 }
 
+variable "updater_bootstrap_url" {
+  description = "HTTPS URL of the initial signed updater binary the host fetches on first boot. The binary self-updates to the channel's signed updater on every run."
+  type        = string
+
+  validation {
+    condition     = startswith(var.updater_bootstrap_url, "https://")
+    error_message = "updater_bootstrap_url must use HTTPS."
+  }
+}
+
+variable "updater_bootstrap_sha256" {
+  description = "SHA-256 of the initial updater binary at updater_bootstrap_url, verified on the host before execution."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.updater_bootstrap_sha256))
+    error_message = "updater_bootstrap_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
 variable "image_repositories" {
   description = "Customer-owned ECR repositories populated by the signed deployer. Release bundles remain authenticated TUF targets and are not duplicated as OCI images."
   type        = set(string)

@@ -138,8 +138,10 @@ data "aws_iam_policy_document" "appliance" {
     resources = ["${aws_s3_bucket.artifacts.arn}/updater-staging/*"]
   }
 
-  # The gateway resolves managed Claude models to Bedrock, SigV4-signing with the
-  # instance role (no bearer key, no OpenRouter dependency).
+  # The gateway resolves managed Claude models to Bedrock. v1 authenticates with
+  # the AWS_BEDROCK_API_KEY bearer key (no OpenRouter dependency); this grant is
+  # latent until the gateway transport gains SigV4 (TODO(bedrock-sigv4)), after
+  # which the bearer key can be dropped in favor of instance-role signing.
   statement {
     sid = "InvokeBedrock"
     actions = [
@@ -288,25 +290,27 @@ resource "aws_instance" "appliance" {
   }
 
   user_data = templatefile("${path.module}/files/supabase-user-data.sh.tftpl", {
-    aws_region             = local.region
-    data_volume_id         = aws_ebs_volume.supabase_data.id
-    instance_name          = var.name
-    expected_account_id    = var.expected_account_id
-    runtime_secret_arn     = aws_secretsmanager_secret.runtime.arn
-    updater_secret_arn     = aws_secretsmanager_secret.updater.arn
-    log_group              = aws_cloudwatch_log_group.appliance.name
-    metric_namespace       = "Kortix/${var.name}"
-    release_channel        = var.release_channel
-    release_repository_url = var.release_repository_url
-    tuf_root_sha256        = var.tuf_root_sha256
-    maintenance_window     = var.maintenance_window
-    release_ssm_param      = local.release_ssm_param
-    artifact_bucket        = aws_s3_bucket.artifacts.bucket
-    api_domain             = var.api_domain
-    frontend_domain        = var.frontend_domain
-    acme_email             = var.acme_email
-    route53_zone_id        = var.route53_zone_id
-    ecr_repositories       = jsonencode({ for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url })
+    aws_region               = local.region
+    data_volume_id           = aws_ebs_volume.supabase_data.id
+    instance_name            = var.name
+    expected_account_id      = var.expected_account_id
+    runtime_secret_arn       = aws_secretsmanager_secret.runtime.arn
+    updater_secret_arn       = aws_secretsmanager_secret.updater.arn
+    log_group                = aws_cloudwatch_log_group.appliance.name
+    metric_namespace         = "Kortix/${var.name}"
+    release_channel          = var.release_channel
+    release_repository_url   = var.release_repository_url
+    tuf_root_sha256          = var.tuf_root_sha256
+    updater_bootstrap_url    = var.updater_bootstrap_url
+    updater_bootstrap_sha256 = var.updater_bootstrap_sha256
+    maintenance_window       = var.maintenance_window
+    release_ssm_param        = local.release_ssm_param
+    artifact_bucket          = aws_s3_bucket.artifacts.bucket
+    api_domain               = var.api_domain
+    frontend_domain          = var.frontend_domain
+    acme_email               = var.acme_email
+    route53_zone_id          = var.route53_zone_id
+    ecr_repositories         = jsonencode({ for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url })
   })
 
   tags = merge(local.tags, {

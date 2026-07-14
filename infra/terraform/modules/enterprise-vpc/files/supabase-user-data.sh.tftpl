@@ -87,6 +87,16 @@ KORTIX_ECR_REPOSITORIES=${ecr_repositories}
 ENV
 chmod 0600 /etc/kortix/instance.env
 
+# Initial signed updater binary. The host fetches it once here; on every run it
+# TUF-verifies the stable channel and self-updates to the channel's signed
+# updater, so this bootstrap copy only needs to be good enough to reach the
+# channel. Digest-checked before it is ever executed.
+install -d -m 0755 /opt/kortix/bin
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  "${updater_bootstrap_url}" -o /opt/kortix/bin/kortix-updater
+echo "${updater_bootstrap_sha256}  /opt/kortix/bin/kortix-updater" | sha256sum --check --strict
+chmod 0755 /opt/kortix/bin/kortix-updater
+
 # CloudWatch agent: publish data-volume disk usage for the self-healing alarm,
 # aggregated on InstanceId so a single-dimension alarm matches deterministically.
 cat >/etc/kortix/cwagent-config.json <<'CWAGENT'
