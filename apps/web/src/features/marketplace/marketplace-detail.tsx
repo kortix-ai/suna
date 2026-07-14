@@ -294,9 +294,7 @@ function ItemSidebar({
         </div>
       </div>
 
-      {/* Projects present their contents as cards in the main column, not a raw
-          file tree — so the sidebar file browser is for non-project items only. */}
-      {!isProject && fileTargets.length > 0 ? (
+      {fileTargets.length > 0 ? (
         <div>
           <SectionLabel count={fileTargets.length}>Files</SectionLabel>
           <div className="bg-popover max-h-72 overflow-y-auto rounded-md border py-1">
@@ -538,7 +536,6 @@ export function MarketplaceDetail({
   const filesSection =
     data.files.length > 0 ? (
       <section className="space-y-3">
-        {isProject ? <SectionLabel>Files</SectionLabel> : null}
         <MarketplaceFileView
           itemId={data.id}
           selected={selectedFile}
@@ -601,12 +598,9 @@ export function MarketplaceDetail({
       <div className="space-y-8">
         {isProject ? (
           <>
-            {/* README first — the project's own overview. */}
-            {readme ? (
-              <section className="space-y-3">
-                <ReadmeMarkdown content={readme} />
-              </section>
-            ) : null}
+            {/* README first — the file view defaults to the project's README.md
+                (the sidebar file tree drives it to browse any other file). */}
+            {filesSection}
             {/* Then the contents, as the SAME cards + typed grid as the gallery. */}
             {memberItemGroups.map((g) => (
               <section key={g.label}>
