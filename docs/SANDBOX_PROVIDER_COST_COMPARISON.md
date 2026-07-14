@@ -2,552 +2,303 @@
 
 **Reference date:** 2026-07-14
 
-**Workload window:** the preceding 30 days (720 hours)
+**Currency:** USD only
 
-**Currency:** USD unless explicitly marked EUR
+**Benchmark:** a workload that costs exactly **$10,000/month on Daytona**
 
-This document compares the managed sandbox providers and self-hosted runtime
-options available to Kortix. It uses one measured Daytona billing period as the
-common workload, rather than comparing headline rates against hypothetical
-machines.
+This is a normalized pricing reference. It does not contain Kortix account
+usage, invoice totals, sandbox counts, or other customer-specific numbers.
 
-The comparison covers:
+## The short list
 
-- Daytona managed cloud
-- E2B managed cloud
-- Modal Sandboxes
-- Platinum sold as a Kortix-managed provider
-- Platinum's underlying self-hosted infrastructure cost and gross profit
-- E2B self-hosted on AWS
-- A purpose-built container sandbox platform on AWS ECS/Fargate or ECS/EKS on EC2
+| Provider or architecture | Equivalent monthly price or cost | Versus Daytona | Notes |
+|---|---:|---:|---|
+| **Platinum managed retail** | **$3,333** | **67% cheaper** | Kortix policy: exactly Daytona divided by three |
+| **Custom AWS Fargate ARM64** | **$5,100-$5,900** | **41-49% cheaper** | Containers, not user-controlled microVMs |
+| **Custom AWS ECS on Graviton** | **$5,900-$7,600** | **24-41% cheaper** | Containers on EC2; range covers shared platform services |
+| **Custom AWS Fargate x86** | **$6,300-$7,100** | **29-37% cheaper** | Containers; 20 GB ephemeral storage included per task |
+| **Self-hosted E2B on AWS, ideal elastic fleet** | **$8,200-$9,500** | **5-18% cheaper** | Requires worker autoscaling not supplied by the current reference deployment |
+| **Self-hosted E2B on AWS, fixed fleet with 25% headroom** | **$9,400-$10,800** | **8% cheaper to 8% more expensive** | More realistic current reference-deployment shape |
+| **Daytona managed cloud** | **$10,000** | Baseline | Published pay-as-you-go rates |
+| **E2B managed cloud Pro** | **$10,053** | **1% more expensive** | Published CPU/RAM rates plus the $150 Pro plan |
+| **Modal Sandboxes Team** | **$14,380** | **44% more expensive** | Published Sandbox CPU/RAM rates and net Team plan fee |
 
-## Executive summary
+The managed-provider numbers use public self-serve prices. AWS and Platinum raw
+infrastructure numbers are cost estimates built from public infrastructure
+rates; they are not managed-provider quotes.
 
-| Option | Estimated monthly price or cost | What the number represents |
-|---|---:|---|
-| **Platinum managed retail policy** | **$5,881** | Kortix policy target: exactly one-third of Daytona for the same metered workload; not a third-party published rate card |
-| **Platinum raw COGS, two sandbox hosts** | **$3,842** | Estimated infrastructure COGS with 35% aggregate RAM headroom; excludes engineering labor |
-| **Platinum raw COGS, three sandbox hosts** | **$5,319** | N+1-oriented infrastructure COGS; excludes engineering labor |
-| **Custom AWS Fargate, ARM64** | **$9,500-$11,500** | Container sandbox implementation, not E2B/Platinum microVM semantics |
-| **Custom AWS Fargate, x86** | **$10,500-$13,000** | Container sandbox implementation, not E2B/Platinum microVM semantics |
-| **Custom ECS/EKS on Graviton EC2** | **$11,000-$14,500** | Container sandbox implementation with a managed cluster scheduler |
-| **Self-hosted E2B, ideal elastic AWS fleet** | **$14,500-$16,000** | Mathematical lower bound with effective worker autoscaling |
-| **E2B managed cloud** | **$16,266 plus extra concurrency if required** | Published Pro plan and CPU/RAM usage; assumes included ephemeral sandbox disk is sufficient |
-| **Daytona managed cloud** | **$17,644 actual** | The measured invoice for this workload |
-| **Self-hosted E2B, fixed 25-worker AWS fleet** | **$18,000-$20,000** | Realistic unmodified AWS reference deployment |
-| **Self-hosted E2B, fixed 30-worker AWS fleet** | **$21,000-$23,000** | More conservative capacity and bin-packing headroom |
-| **Modal Sandboxes** | **$23,331 compute; up to ~$25,010 with equivalent retained volume storage** | Published Sandbox CPU/RAM rates, Team plan net credit, and optional volume mapping |
+## Benchmark definition
 
-The central conclusion is that the scheduler name is not the primary cost
-driver. Isolation model, host type, memory guarantees, storage semantics,
-autoscaling, and the amount of platform engineering being purchased are what
-change the economics.
+The comparison uses one generic, common sandbox shape:
 
-Platinum is the lowest-price microVM option under the Kortix pricing policy in this
-document. Its margin is healthy with a two-host cell but thin if every cell must
-carry a third full sandbox host for N+1 capacity at this workload. Custom AWS
-containers can also be inexpensive, but they are a different product and
-security boundary. Self-hosted E2B on AWS On-Demand is not clearly cheaper than
-the existing Daytona invoice without commitments, Spot capacity, and additional
-autoscaling work.
+| Resource | Per sandbox |
+|---|---:|
+| CPU | 2 vCPU |
+| Memory | 4 GiB |
+| Disk | 20 GiB |
 
-## Measured reference workload
+At Daytona's published rates, this shape costs:
 
-The source billing period contained:
-
-| Metric | 30-day consumption | Average over 720 hours |
+| Component | Calculation | Cost per sandbox-hour |
 |---|---:|---:|
-| Sandboxes created | 16,738 | 558/day |
-| CPU | 188,589.8 vCPU-hours | 261.93 vCPU |
-| Memory | 408,090.3 GiB-hours | 566.79 GiB |
-| Disk | 14,169,675.6 GiB-hours | 19,680.11 GiB |
-| GPU | 0 | 0 |
-| Daytona invoice | $17,644.07 | $24.51 per elapsed hour |
+| CPU | 2 × $0.0504 | $0.100800 |
+| Memory | 4 × $0.0162 | $0.064800 |
+| Billable storage | 15 × $0.000108 after 5 GiB free | $0.001620 |
+| **Total** | | **$0.167220** |
 
-The separately observed `124 vCPU / 264 GiB` live reading is only an
-instantaneous sample. It is below the 30-day average and is not a safe fleet
-sizing input.
+A $10,000 Daytona month therefore represents approximately **59,801 sandbox-hours**,
+or **83.1 average concurrent sandboxes** across a 720-hour month. Every row uses
+that same normalized workload.
 
-The measured average cost per created sandbox was approximately $1.05. That
-figure is useful for financial reporting, but not for capacity planning because
-sandbox lifetimes and requested sizes vary.
+This benchmark models steady average utilization. Real bills can differ because
+of burst concurrency, minimum allocations, plan limits, regional pricing,
+promotional credits, negotiated discounts, data transfer, and taxes.
 
-## Published managed-provider prices
+## Published managed-provider calculation
 
-The managed-provider comparison below starts with the providers' public rate
-cards, not inferred machine prices or privately negotiated enterprise quotes.
-Platinum is the one explicit exception: its row is a proposed Kortix retail
-policy derived mechanically from Daytona's published rates.
+### Daytona: $10,000 baseline
 
-| Provider | Public plan price and credits | Published usage prices used here | Treatment in the monthly comparison |
-|---|---|---|---|
-| Daytona | Pay as you go; pricing page advertises $200 in free compute | $0.0504/vCPU-hour; $0.0162/GiB-hour RAM; $0.000108/GiB-hour storage after 5 GiB free | The supplied $17,644.07 invoice is authoritative; no speculative recurring credit is deducted |
-| E2B | Pro: $150/month plus usage; Hobby includes a one-time $100 usage credit | $0.0504/vCPU-hour; $0.0162/GiB-hour RAM; 20 GiB sandbox storage included on Pro | Pro fee plus CPU/RAM usage; one-time Hobby credit is not deducted |
-| Modal | Team: $250/month plus compute; $100/month free credits | Sandbox CPU: $0.00003942/physical-core-second; RAM: $0.00000667/GiB-second; Volumes: $0.09/GiB-month with 1 TiB/month free | Published Team fee and recurring credit are included; retained Volume storage is shown separately |
-| Platinum | No independent public managed-cloud rate card | Kortix policy: each Daytona resource rate divided by three | Exact supplied Daytona invoice divided by three is authoritative |
-
-Public pricing is self-serve list pricing as observed on the reference date.
-Taxes, negotiated discounts, enterprise support, excess-concurrency contracts,
-and one-time promotional credits are excluded unless explicitly shown.
-
-### Daytona
-
-Daytona's published rates at the reference date were:
+Published prices used:
 
 | Resource | Published price |
 |---|---:|
-| vCPU | $0.0504/vCPU-hour |
+| CPU | $0.0504/vCPU-hour |
 | Memory | $0.0162/GiB-hour |
-| Storage | $0.000108/GiB-hour after the published free allowance |
+| Storage | $0.000108/GiB-hour after 5 GiB free |
 
-Applied to the measured usage:
-
-| Component | Calculation | Cost |
-|---|---:|---:|
-| CPU | 188,589.8 × $0.0504 | $9,504.93 |
-| Memory | 408,090.3 × $0.0162 | $6,611.06 |
-| Disk | 14,169,675.6 × $0.000108 | $1,530.32 |
-| Calculated total | | $17,646.31 |
-| Actual invoice | | **$17,644.07** |
-
-The $2.24 difference is consistent with free allowances and billing rounding.
-This validates that the supplied resource-hour units can be used directly in
-the comparison.
+Daytona advertises $200 in free compute. No promotional or one-time credit is
+deducted from the recurring benchmark.
 
 Source: [Daytona pricing](https://www.daytona.io/pricing).
 
-### Platinum managed pricing policy
+### Platinum managed retail: $3,333
 
-Platinum's managed retail policy is:
+Kortix's Platinum pricing policy is exactly three times cheaper than Daytona:
 
-> Use the same metered workload basis as Daytona, priced at exactly one-third
-> of the equivalent Daytona charge.
-
-This gives the following Kortix policy rates derived from Daytona's public rate
-card:
-
-| Resource | Platinum policy rate | Relationship to Daytona |
-|---|---:|---:|
-| vCPU | **$0.0168/vCPU-hour** | $0.0504 ÷ 3 |
-| Memory | **$0.0054/GiB-hour** | $0.0162 ÷ 3 |
-| Storage | **$0.000036/GiB-hour** | $0.000108 ÷ 3 |
-
-For the measured workload:
-
-| Component | Cost |
+| Resource | Platinum policy price |
 |---|---:|
-| CPU | $3,168.31 |
-| Memory | $2,203.69 |
-| Disk | $510.11 |
-| Total derived from published component rates | $5,882.10 |
-| Policy total using the exact Daytona invoice divided by three | **$5,881.36** |
+| CPU | $0.0168/vCPU-hour |
+| Memory | $0.0054/GiB-hour |
+| Storage | $0.000036/GiB-hour |
+| **Normalized monthly price** | **$10,000 ÷ 3 = $3,333.33** |
 
-The exact invoice-derived figure is the authoritative comparison total. The
-component total differs by $0.74 because it starts from Daytona's unadjusted
-published-rate calculation rather than its final invoice allowances.
+This is a Kortix retail policy, not a separately published third-party Platinum
+managed-cloud rate card.
 
-This is a Kortix pricing policy, not a third-party Platinum SaaS rate card. The
-underlying open-source Platinum project describes itself as a self-hosted
-microVM cloud rather than a managed SaaS plan. Kortix can nevertheless operate
-it as a managed provider and sell the resulting service under this policy.
+### E2B managed Pro: $10,053
 
-### E2B managed cloud
-
-E2B's published managed rates were:
+Published prices used:
 
 | Resource | Published price |
 |---|---:|
-| CPU | $0.000014/vCPU-second = $0.0504/vCPU-hour |
-| Memory | $0.0000045/GiB-second = $0.0162/GiB-hour |
-| Sandbox storage | 10 GiB included on Hobby; 20 GiB included on Pro |
+| CPU | $0.0504/vCPU-hour |
+| Memory | $0.0162/GiB-hour |
+| Sandbox disk | 20 GiB included on Pro |
 | Pro plan | $150/month plus usage |
-| Pro concurrency | 100 running sandboxes; additional concurrency can be purchased |
 
-Applied to the workload:
+For 59,801 hours of the benchmark sandbox:
 
-| Component | Cost |
+| Component | Monthly cost |
 |---|---:|
-| CPU | $9,504.93 |
-| Memory | $6,611.06 |
-| Pro plan | $150.00 |
-| Published usage plus plan | **$16,265.99** |
+| CPU and memory | $9,903 |
+| Pro plan | $150 |
+| **Total** | **$10,053** |
 
-This figure assumes E2B's included 20 GiB sandbox filesystem satisfies the
-workload. The Daytona disk-hour total cannot be translated directly because the
-providers expose and meter storage differently. The measured average CPU load
-also implies more than 100 concurrent two-vCPU sandboxes if the workload were
-uniform, so additional E2B concurrency or an enterprise agreement may be
-required. E2B does not publish that incremental concurrency price on the public
-calculator; it must not be silently treated as zero.
+The average 83.1 concurrent sandboxes fit within Pro's published limit of 100,
+but bursts above 100 require additional concurrency. E2B publishes that extra
+concurrency is purchasable but does not publish its price. The one-time $100
+Hobby credit is not applicable to this recurring Pro comparison.
 
 Source: [E2B pricing](https://e2b.dev/pricing).
 
-### Modal Sandboxes
+### Modal Sandboxes Team: $14,380
 
-Modal publishes separate, higher rates for Sandboxes and Notebooks than for its
-standard function containers:
+Published prices used:
 
-| Resource | Published Sandbox price |
+| Resource | Published price |
 |---|---:|
-| CPU | $0.00003942/physical-core-second |
-| CPU equivalence | One physical core is listed as two vCPUs equivalent |
-| Memory | $0.00000667/GiB-second |
-| Volumes | $0.09/GiB-month, including 1 TiB/month free |
-| Team plan | $250/month with $100/month free compute credits |
+| Sandbox CPU | $0.00003942/physical-core-second |
+| CPU conversion | 1 physical core equals 2 vCPU |
+| Sandbox memory | $0.00000667/GiB-second |
+| Team plan | $250/month with $100/month credits |
+| Volumes | $0.09/GiB-month with 1 TiB/month free |
 
-For an apples-to-apples vCPU conversion, 188,589.8 vCPU-hours becomes 94,294.9
-Modal physical-core-hours:
+For 59,801 hours of the benchmark sandbox:
 
-| Component | Calculation | Cost |
+| Component | Monthly cost |
+|---|---:|
+| One physical CPU core | $8,486 |
+| 4 GiB memory | $5,744 |
+| Team plan less monthly credit | $150 |
+| **Total** | **$14,380** |
+
+The total uses sandbox-local ephemeral storage. Persistent Modal Volume storage
+is workload-dependent and is not silently added. If the 83.1 average concurrent
+sandboxes each required 20 GiB of retained Volume capacity, the published
+Volume rate would add approximately $48/month after the free first TiB.
+
+Sources: [Modal pricing](https://modal.com/pricing) and
+[Modal Sandboxes](https://modal.com/docs/guide/sandbox).
+
+## Platinum raw infrastructure COGS and profit
+
+Platinum runs Cloud Hypervisor microVMs on bare-metal KVM hosts. The reference
+host has 384 GiB RAM, 48 physical cores, 96 threads, and local NVMe storage.
+Platinum's current capacity model uses 5× CPU overcommit, a 1× hard RAM
+guarantee, and sparse/reflink storage.
+
+The public infrastructure inputs are expressed only in USD:
+
+| Infrastructure | USD monthly cost |
+|---|---:|
+| One large sandbox host | approximately $1,285 |
+| Two control-plane nodes | approximately $368 |
+| Load balancer and database | approximately $48 |
+| Object storage for the normalized active footprint | approximately $30 |
+| Miscellaneous infrastructure contingency | 15% |
+
+At 83.1 concurrent 4-GiB sandboxes, one host would carry only about 16% memory
+headroom and no host redundancy. The commercially safer reference is two
+sandbox hosts:
+
+| Platinum economics | One-host minimum | Two-host safer cell |
 |---|---:|---:|
-| CPU | 94,294.9 × $0.141912/core-hour | $13,381.58 |
-| Memory | 408,090.3 × $0.024012/GiB-hour | $9,799.06 |
-| Sandbox compute | | **$23,180.64** |
-| Team plan less included $100 credit | $250 - $100 | $150.00 |
-| Compute plus net plan | | **$23,330.64** |
+| Estimated infrastructure COGS | approximately $1,990 | approximately $3,467 |
+| Retail revenue | $3,333 | $3,333 |
+| Gross profit | approximately $1,343 | approximately **-$134** |
+| Infrastructure gross margin | approximately 40% | approximately **-4%** |
 
-Modal sandbox ephemeral filesystem usage is not published as the same GB-hour
-meter used by Daytona. If all 19.68 TiB instead had to be retained in Modal
-Volumes for the entire month, the volume estimate would add approximately
-$1,679 after the first free TiB, producing approximately **$25,010/month**.
-That is deliberately shown as an upper mapping rather than mixed into the
-compute-only number.
+This is an important pricing result: at the normalized $10,000 Daytona workload,
+the one-third retail policy is profitable only if Kortix accepts a tightly
+packed single host or amortizes the control plane and redundancy across a larger
+multi-cell fleet. A dedicated two-host cell at this scale is approximately
+break-even before labor.
 
-Source: [Modal pricing](https://modal.com/pricing) and [Modal Sandboxes](https://modal.com/docs/guide/sandbox).
+COGS excludes engineering salaries, on-call support, taxes, payment processing,
+corporate overhead, and customer acquisition. It should not be described as net
+profit.
 
-## Platinum raw infrastructure cost and gross profit
-
-### Runtime characteristics
-
-Platinum runs one Cloud Hypervisor microVM per sandbox on bare-metal KVM hosts.
-The internal operator model currently specifies:
-
-- CPU ticket inventory at 5× physical-core overcommit, protected by CPU-weight
-  fairness and a host CPU pressure refusal threshold.
-- RAM sold at a 1× hard guarantee. KSM and `MAP_PRIVATE` sharing reduce physical
-  use in practice, but that saving is not treated as a contractual capacity
-  guarantee.
-- Disk tracked at 1× logical allocation, while sparse files and reflinks provide
-  an observed effective physical ratio of roughly 2-10×.
-- The large-host reference profile has 384 GiB RAM, 48 physical cores / 96
-  threads, and 2×3.84 TB NVMe.
-
-At 566.79 GiB average reserved RAM, two 384 GiB hosts provide 768 GiB total,
-which is approximately 35% above the measured average. CPU is not the binding
-resource under Platinum's workload model. Two hosts do not provide full N+1
-capacity: after one host fails, 384 GiB is below the measured 566.79 GiB
-average. A three-host cell is therefore included as the stronger reliability
-case.
-
-### Public infrastructure inputs
-
-The cost model uses the Scaleway deployment topology documented by Platinum and
-the public Scaleway product catalog:
-
-| Resource | Quantity | Public unit rate |
-|---|---:|---:|
-| EM-I520E-NVMe sandbox host | 2 or 3 | €1.562/hour |
-| PRO2-S control-plane node | 2 | €0.22338/hour |
-| LB-S | 1 | €0.023/hour |
-| DB-DEV-S PostgreSQL nodes | 2 | €0.0136/hour each |
-| DB-DEV-S Multi-AZ management | 1 | €0.0075/hour |
-| Object Storage Standard Multi-AZ | conservative 19.68 TiB | €0.000022/GiB-hour |
-| EUR/USD conversion | | 1 EUR = 1.1424 USD |
-| Miscellaneous infrastructure contingency | | 15% |
-
-The object-storage line conservatively maps every average logical disk GiB into
-Multi-AZ object storage. Platinum's sparse/reflink/CAS behavior should make real
-stored bytes smaller, but that saving is not booked into the headline margin.
-The 15% contingency covers monitoring, backups, control-plane disks, DNS,
-requests, and normal small infrastructure omissions. It does not include
-engineering salaries, support, taxes, payment fees, or corporate overhead.
-
-### COGS and margin
-
-| Platinum cell | Estimated monthly COGS | Retail revenue | Gross profit | Infrastructure gross margin |
-|---|---:|---:|---:|---:|
-| Two sandbox hosts | **$3,841.73** | $5,881.36 | **$2,039.63** | **34.7%** |
-| Three sandbox hosts | **$5,319.24** | $5,881.36 | **$562.12** | **9.6%** |
-
-Interpretation:
-
-- The two-host cell is the economically attractive baseline and has aggregate
-  capacity headroom, but cannot sustain the full average load after losing one
-  sandbox host.
-- The three-host cell carries much stronger failure headroom but nearly consumes
-  the margin at the one-third-Daytona retail policy.
-- Actual COGS can improve through reserved/monthly bare-metal pricing, higher KSM
-  density, lower physical CAS storage, larger cells that amortize the control
-  plane, or a tiered reliability policy.
-- The price should not be advertised internally as a 67% gross margin merely
-  because it is one-third of Daytona. Daytona's retail price is not Platinum's
-  cost basis.
-
-Internal implementation references: [Platinum repository](https://github.com/kortix-ai/platinum),
-[`OPS.md`](https://github.com/kortix-ai/platinum/blob/main/OPS.md), and
-[`docs/host-disk-layout.md`](https://github.com/kortix-ai/platinum/blob/main/docs/host-disk-layout.md).
-Public infrastructure source: [Scaleway public product catalog API](https://api.scaleway.com/product-catalog/v2alpha1/public-catalog/products).
+Sources: [Platinum](https://github.com/kortix-ai/platinum),
+[Platinum operations](https://github.com/kortix-ai/platinum/blob/main/OPS.md),
+and [Scaleway public product catalog](https://api.scaleway.com/product-catalog/v2alpha1/public-catalog/products).
+The catalog host rate was converted to its USD equivalent at the reference-date
+exchange rate; no non-USD values are presented in this document.
 
 ## Self-hosted E2B on AWS
 
-### What the reference infrastructure deploys
+The E2B AWS reference deployment uses Nomad/Consul control servers, API and
+ClickHouse nodes, a template builder, `m8i.4xlarge` nested-virtualization sandbox
+workers, gp3 worker disks, an ALB, NAT Gateway, S3, ECR, Secrets Manager, and an
+external PostgreSQL database.
 
-The E2B AWS reference architecture at commit
-[`5b465bc`](https://github.com/e2b-dev/infra/tree/5b465bc3e72aaca4a8c9dd80fada0c3854cd4431)
-deploys:
+Published AWS prices used for the normalized model:
 
-- 3× `t3.medium` Nomad/Consul control servers
-- 1× `t3.xlarge` API/control-plane worker
-- 1× `t3.xlarge` ClickHouse node
-- 1× `m8i.2xlarge` template-build worker
-- N× `m8i.4xlarge` sandbox workers with nested virtualization
-- 500 GB gp3 root storage on every sandbox worker
-- ALB, NAT Gateway, S3, ECR, Secrets Manager, and an external PostgreSQL database
-
-E2B's architecture describes AWS support as beta. More importantly, the current
-AWS sandbox-worker Auto Scaling Group sets `min_size` and `max_size` to the same
-configured cluster size. The generic architecture describes sandbox nodes as
-autoscaled, but the AWS reference does not currently provide demand-driven
-sandbox-worker scaling. The elastic estimate below therefore requires
-additional engineering.
-
-Sources: [E2B self-host guide](https://github.com/e2b-dev/infra/blob/5b465bc3e72aaca4a8c9dd80fada0c3854cd4431/self-host.md),
-[AWS defaults](https://github.com/e2b-dev/infra/blob/5b465bc3e72aaca4a8c9dd80fada0c3854cd4431/iac/provider-aws/variables.tf),
-and [AWS worker ASG](https://github.com/e2b-dev/infra/blob/5b465bc3e72aaca4a8c9dd80fada0c3854cd4431/iac/provider-aws/modules/nodepool-client/main.tf).
-
-### AWS price inputs
-
-Rates were queried from the AWS Price List API for `us-west-2`:
-
-| Resource | Price |
+| Resource | Published USD price |
 |---|---:|
-| `m8i.4xlarge`, 16 vCPU / 64 GiB | $0.84672/hour On-Demand |
-| `m8i.4xlarge` recent Spot observations | $0.3405-$0.4697/hour; $0.4054 average |
+| `m8i.4xlarge`, 16 vCPU / 64 GiB | $0.84672/hour |
 | `m8i.2xlarge` | $0.42336/hour |
 | `t3.xlarge` | $0.1664/hour |
 | `t3.medium` | $0.0416/hour |
 | gp3 | $0.08/GB-month |
-| S3 Standard, first 50 TB | $0.023/GB-month |
-| NAT Gateway | $0.045/hour + $0.045/GB processed |
-| Application Load Balancer | $0.0225/hour + $0.008/LCU-hour |
+| S3 Standard | $0.023/GB-month for the first 50 TB |
+| NAT Gateway | $0.045/hour plus $0.045/GB processed |
+| Application Load Balancer | $0.0225/hour plus $0.008/LCU-hour |
 
-### Capacity calculation
-
-CPU is the binding resource for the measured workload:
-
-- Perfect packing: 261.93 average vCPU ÷ 16 = 16.37 worker nodes.
-- With 25% headroom: 20.46 average worker nodes.
-- Many six-vCPU sandboxes fragment a 16-vCPU host into two sandboxes, leaving
-  four vCPUs unused and increasing the required worker count.
+One `m8i.4xlarge` fits eight benchmark sandboxes. The 83.1-sandbox average needs
+10.4 workers at perfect packing or approximately 13 workers with 25% headroom.
 
 | Scenario | Estimated monthly AWS cost |
 |---|---:|
-| Ideal autoscaling, no headroom | $11,800-$13,000 |
-| Ideal autoscaling with 25% headroom | **$14,500-$16,000** |
-| Fixed 25-worker fleet | **$18,000-$20,000** |
-| Fixed 30-worker fleet | **$21,000-$23,000** |
-| Ideal 25%-headroom fleet at the observed all-Spot rate | $8,500-$10,000 |
+| Ideal demand-driven worker autoscaling | **$8,200-$9,500** |
+| Fixed 13-worker fleet with 25% headroom | **$9,400-$10,800** |
 
-All-Spot is not recommended without sandbox draining, interruption handling,
-checkpointing, and placement exclusion. A realistic optimized design would keep
-a committed On-Demand base and use Spot only for recoverable burst capacity.
+The current AWS reference fixes the worker Auto Scaling Group minimum and
+maximum to the configured cluster size. Achieving the elastic number requires
+additional autoscaling, placement, draining, and interruption engineering.
+Spot and committed-use discounts are excluded so this remains a public
+On-Demand comparison.
 
-### Storage warning
+Sources: [E2B self-host guide](https://github.com/e2b-dev/infra/blob/main/self-host.md),
+[E2B AWS infrastructure](https://github.com/e2b-dev/infra/tree/main/iac/provider-aws),
+and [AWS EC2 On-Demand pricing](https://aws.amazon.com/ec2/pricing/on-demand/).
 
-Daytona's 19.68 TiB average is logical billed storage. E2B uses lazy template
-loading, copy-on-write root filesystems, sparse dirty blocks, local caches, and
-S3 snapshot artifacts. It is therefore incorrect to multiply every Daytona
-disk-hour directly by gp3 pricing.
+## Custom AWS container sandbox alternatives
 
-For bounds:
+These options are cheaper partly because they do not reproduce the E2B or
+Platinum microVM contract. Fargate does not expose the nested virtualization,
+host root access, huge pages, NBD, and Firecracker lifecycle control needed to
+run the E2B worker layer.
 
-- 19.68 TiB entirely in S3 Standard is approximately $453/month.
-- 19.68 TiB entirely provisioned as gp3 is approximately $1,574/month.
-- A fixed 25-worker E2B fleet already contains 12.5 TB of gp3 worker disks at
-  approximately $1,000/month.
-
-Physical dirty bytes, retained snapshots, cache hit rate, and egress must be
-measured during a pilot before replacing the bounded storage estimates.
-
-## Custom AWS container sandbox platform
-
-This option means building a Kortix-specific sandbox provider on ECS or EKS. It
-does not mean placing the existing E2B orchestrator inside Kubernetes.
-
-E2B needs nested virtualization, host root access, huge pages, NBD, cgroups,
-and Firecracker lifecycle control. Fargate does not expose those facilities.
-Running E2B in privileged pods on nested-virtualization EC2 workers would retain
-the expensive `m8i` worker layer and add Kubernetes complexity; it would not
-produce the container estimates below.
-
-### ECS Fargate x86
+### Fargate x86: $6,300-$7,100
 
 Published `us-west-2` rates:
 
-| Resource | Price |
+| Resource | Published price |
 |---|---:|
-| vCPU | $0.04048/vCPU-hour |
+| CPU | $0.04048/vCPU-hour |
 | Memory | $0.004445/GiB-hour |
-| Ephemeral storage above 20 GB/task | $0.000111/GB-hour |
+| Ephemeral storage | First 20 GB per task included |
 
-Applied to the workload:
+The normalized compute cost is approximately $5,905/month. Adding ALB, NAT,
+logs, database, registry, and ordinary platform overhead produces the stated
+**$6,300-$7,100/month** range.
 
-| Component | Cost |
-|---|---:|
-| CPU | $7,634.12 |
-| Memory | $1,813.96 |
-| Compute subtotal | **$9,448.08** |
-| Maximum direct mapping of all Daytona disk-hours | $1,572.83 |
-| ALB, NAT, logs, database, registry and normal overhead | approximately $700-$2,000+ |
-| Expected total | **$10,500-$13,000** |
+### Fargate ARM64: $5,100-$5,900
 
-Fargate includes 20 GB of ephemeral storage per task, so the maximum disk line
-is intentionally conservative. The actual value depends on the number of task
-hours and which state must persist outside a running task.
+Published rates are $0.03238/vCPU-hour and $0.00356/GiB-hour. Normalized compute
+is approximately $4,724/month; shared services produce the stated
+**$5,100-$5,900/month** range. This requires ARM64-compatible images and runtime
+binaries.
 
-### ECS Fargate ARM64
+### ECS on Graviton EC2: $5,900-$7,600
 
-Published ARM rates were $0.03238/vCPU-hour and $0.00356/GiB-hour. The measured
-CPU and memory would cost approximately $7,559 before storage and shared
-services, producing an expected **$9,500-$11,500/month** total.
+Representative published On-Demand hosts:
 
-This requires ARM64-compatible base images and agent/runtime binaries. It is not
-a drop-in assumption for existing x86 templates.
-
-### ECS or EKS on Graviton EC2
-
-Representative On-Demand `us-west-2` hosts:
-
-| Instance | Resources | Price |
+| Instance | Resources | Published price |
 |---|---:|---:|
 | `c7g.4xlarge` | 16 vCPU / 32 GiB | $0.58/hour |
 | `m7g.4xlarge` | 16 vCPU / 64 GiB | $0.6528/hour |
 
-With 25% headroom, the workload needs approximately 22.1 `c7g.4xlarge` nodes or
-20.5 `m7g.4xlarge` nodes. Raw worker compute is approximately $9,246-$9,618 per
-month. After storage, cluster services, load balancing, NAT, logs and database,
-the expected total is **$11,000-$14,000/month**.
-
-ECS has no separate cluster control-plane fee. Standard EKS adds $0.10/hour,
-about $72 per 30-day month. EKS Auto Mode adds per-instance management charges;
-Karpenter with ordinary EC2 nodes is the lower-cost EKS design.
+Approximately 13 nodes provide 25% headroom for the normalized workload. Raw
+workers cost roughly $5,429-$6,110/month. Storage, load balancing, NAT, logs,
+database, and registry produce the stated **$5,900-$7,600/month** range. ECS has
+no separate control-plane fee; choosing standard EKS adds $72/month before any
+optional management charges.
 
 Sources: [AWS Fargate pricing](https://aws.amazon.com/fargate/pricing/),
 [Amazon ECS pricing](https://aws.amazon.com/ecs/pricing/),
 [Amazon EKS pricing](https://aws.amazon.com/eks/pricing/), and
-[EC2 On-Demand pricing](https://aws.amazon.com/ec2/pricing/on-demand/).
+[Amazon EC2 On-Demand pricing](https://aws.amazon.com/ec2/pricing/on-demand/).
 
-### What is lost relative to microVM providers
+## Capability warning
 
-| Capability | ECS/EKS containers | E2B / Platinum microVMs |
+| Capability | Managed Daytona/E2B/Platinum | Custom ECS/EKS containers |
 |---|---|---|
-| Kernel isolation | Shared host kernel, except opaque Fargate implementation | Separate guest kernel per sandbox |
-| Arbitrary privileged workloads | Restricted; unavailable on Fargate | Supported inside the VM boundary subject to policy |
-| E2B-compatible memory snapshots | No | E2B yes; Platinum supports Cloud Hypervisor snapshots |
-| Near-instant snapshot resume | Requires custom implementation | Native design goal |
-| Filesystem persistence after task stop | External EFS/EBS/S3 design required | Provider snapshot/persistence model |
-| Provider implementation effort | High | Already implemented |
-| AWS unit economics | Lowest with Graviton/Fargate | Higher nested-virtualization host cost |
+| Separate guest kernel | Yes | No on ordinary EC2-backed containers |
+| Provider-managed snapshots and resume | Yes | Must be built |
+| Privileged workloads inside an isolation boundary | MicroVM-dependent | Restricted, especially on Fargate |
+| Persistence after stop | Provider abstraction | EFS/EBS/S3 design required |
+| Provider implementation and on-call burden | Purchased service | Owned by Kortix |
 
-Fargate internally uses strong AWS-managed isolation, but AWS does not expose
-the Firecracker control surface required to reproduce E2B semantics. Ordinary
-EC2-backed ECS/EKS containers share the worker kernel and are not an equivalent
-boundary for arbitrary adversarial code.
+The container options are useful cost references, but they are not drop-in
+replacements for an agent sandbox microVM platform.
 
-## Full 4,000-vCPU quota reference
+## Bottom line
 
-The supplied Daytona account ceiling is not current usage. Supporting it
-continuously on self-hosted E2B would require:
+For every **$10,000 of Daytona spend** under this normalized sandbox mix:
 
-- 250 `m8i.4xlarge` workers at perfect packing.
-- Approximately 313 workers with 25% headroom.
-- Approximately $205,000/month at On-Demand rates including the modeled fixed
-  E2B infrastructure, worker disks, and 40 TB object storage.
-- Approximately $105,500/month at the observed all-Spot worker rate, before
-  designing safe interruption handling.
+1. Platinum retail policy charges approximately **$3,333**.
+2. Custom AWS containers cost approximately **$5,100-$7,600**, with weaker or
+   separately engineered sandbox semantics.
+3. Self-hosted E2B on AWS costs approximately **$8,200-$10,800**, depending on
+   whether Kortix builds real worker autoscaling or carries a fixed fleet.
+4. Managed E2B Pro costs approximately **$10,053** before privately priced burst
+   concurrency.
+5. Modal Sandboxes Team costs approximately **$14,380** before workload-specific
+   persistent storage.
 
-Provisioning against the quota ceiling would be severe overcapacity relative to
-the measured 261.93 average vCPU. The right design target is p95/p99 concurrent
-reserved vCPU and RAM, plus a defined failure and burst policy.
-
-## Decision framework
-
-### Choose Daytona when
-
-- Operational simplicity and the proven current integration matter most.
-- Paying the managed premium is preferable to owning capacity and reliability.
-- The existing workload and bill are acceptable.
-
-### Choose managed E2B when
-
-- E2B SDK and snapshot semantics are preferred.
-- The 20 GiB included filesystem fits.
-- Required concurrency and enterprise pricing are confirmed contractually.
-
-### Choose Modal when
-
-- Modal's ecosystem, serverless burst model, or GPU services are specifically
-  valuable.
-- Its higher Sandbox CPU/RAM price is justified by those platform capabilities.
-- Workloads naturally terminate within Modal's sandbox lifecycle model.
-
-### Choose Platinum managed when
-
-- Kortix wants the lowest managed microVM price under its stated retail policy
-  and controls the fleet.
-- The one-third-Daytona pricing policy is strategic.
-- Capacity can be pooled across enough customers/cells to amortize N+1 hosts and
-  control-plane overhead.
-- Kortix is prepared to own the reliability and support burden.
-
-### Choose self-hosted E2B when
-
-- Owning the E2B stack and data plane is mandatory.
-- The team is prepared to engineer AWS worker autoscaling and interruptions.
-- Commitments or Spot can materially reduce the expensive `m8i` worker layer.
-
-### Choose custom ECS/EKS containers when
-
-- The workloads can accept container rather than microVM semantics.
-- Lowest AWS infrastructure cost matters more than provider parity.
-- Kortix is willing to build persistence, lifecycle, image, networking,
-  metering, security and recovery systems itself.
-
-## Recommended next measurements
-
-Before making a provider migration decision, collect the following for at least
-30 days at five-minute resolution:
-
-1. p50, p95, p99 and maximum concurrent reserved vCPU and RAM.
-2. Sandbox-size distribution, especially the percentage of six-vCPU sandboxes.
-3. Actual dirty filesystem bytes versus logical disk allocation.
-4. Paused snapshot bytes, retention age and object-storage request volume.
-5. Network ingress, internet egress, and NAT-processed GB.
-6. CPU utilization rather than only reserved CPU.
-7. Platinum KSM shared-memory ratio and physical resident memory under load.
-8. Host-loss capacity requirement: degraded service, N+1, or full no-impact N+1.
-9. Creation-rate bursts and acceptable cold-start latency.
-10. Engineering and on-call cost allocated to each self-hosted platform.
-
-The last item matters: the infrastructure gross margins above deliberately
-exclude labor. A self-hosted platform can have a low cloud bill while still
-being more expensive in total cost of ownership than a managed provider.
-
-## Calculation rules and limitations
-
-- A 30-day month is treated as exactly 720 hours.
-- Rates are the published or API-returned rates observed on 2026-07-14.
-- Taxes, negotiated enterprise discounts, committed-spend credits and support
-  contracts are excluded unless explicitly stated.
-- Daytona uses the actual supplied invoice as its authoritative total.
-- Platinum retail is a pricing policy fixed at the actual Daytona total divided
-  by three.
-- Platinum COGS is a capacity model based on public Scaleway rates and internal
-  runtime requirements; it is not an imported production invoice.
-- E2B additional concurrency is unpriced because no public incremental rate was
-  available.
-- Modal storage is shown separately because Daytona disk-hours do not map
-  directly to Modal Volumes.
-- AWS bandwidth can materially change every AWS estimate and was not supplied.
-- No estimate promises feature, security, or lifecycle equivalence between
-  containers and microVMs.
+Platinum's three-times-cheaper retail policy is aggressive. It creates healthy
+infrastructure margin on a tightly utilized host, but a dedicated redundant
+two-host cell is around break-even at this normalized scale. Fleet-wide
+amortization and measured physical resource density are therefore essential to
+the policy's profitability.
