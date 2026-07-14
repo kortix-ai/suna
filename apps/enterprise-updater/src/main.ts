@@ -38,7 +38,11 @@ async function main(): Promise<number> {
   // and prune timers (which take the same lock) never fire mid-deploy. A busy
   // lock is a clean no-op skip.
   if (!process.env.KORTIX_UPDATER_LOCKED) {
-    const guard = runUnderUpdaterLock(UPDATER_LOCK_PATH, process.execPath, process.argv.slice(1));
+    // Re-exec with the parsed command + args, NOT process.argv.slice(1): in a
+    // compiled single-file binary argv[1] is a phantom "/$bunfs/root/..." path,
+    // and passing it through would shift the command out of the child's
+    // slice(2) window and trip the usage guard.
+    const guard = runUnderUpdaterLock(UPDATER_LOCK_PATH, process.execPath, [command, ...args]);
     if ('skipped' in guard) {
       process.stdout.write(`${JSON.stringify({ action: 'noop', reason: 'deployment already in progress' })}\n`);
       return 0;
