@@ -161,6 +161,19 @@ export async function telegramSetWebhook(
   return r.ok ? { ok: true } : { ok: false, error: r.description ?? 'unknown error' };
 }
 
+export interface TelegramWebhookInfo {
+  url: string;
+  pending_update_count?: number;
+  last_error_message?: string;
+}
+
+/** What webhook Telegram currently has registered for this bot (used to skip a
+ *  redundant setWebhook when the URL is already correct). Null on failure. */
+export async function telegramGetWebhookInfo(token: string): Promise<TelegramWebhookInfo | null> {
+  const r = await telegramApiCall<TelegramWebhookInfo>(token, 'getWebhookInfo', {}, { retries: 1 });
+  return r.ok && r.result ? r.result : null;
+}
+
 /** Best-effort webhook teardown on disconnect. */
 export async function telegramDeleteWebhook(
   token: string,

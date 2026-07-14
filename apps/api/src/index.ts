@@ -1,80 +1,94 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
-import { emitOtelSpan } from './lib/otel';
 import {
-  recordHttpRequest,
-  incInFlight,
   decInFlight,
-  setEventLoopLagSeconds,
-  renderMetrics,
+  incInFlight,
   metricsEnabled,
+  recordHttpRequest,
+  renderMetrics,
+  setEventLoopLagSeconds,
 } from './lib/metrics';
+import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
+import { addBreadcrumb, captureException, flushSentry } from './lib/sentry';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { mountOpenApiDocs, json, errors, auth } from './openapi';
-import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
-import { sendDemoRequestNotification } from './lib/demo-request-email';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { HTTPException } from 'hono/http-exception';
 import { config } from './config';
 import { BillingError } from './errors';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { auth, errors, json, mountOpenApiDocs } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 
-// ─── Sub-Service Imports ──────────────────────────────────────────────────── 
+// ─── Sub-Service Imports ────────────────────────────────────────────────────
 
-import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { accessControlApp } from './access-control';
+import { accountsRouter } from './accounts';
+import { accountInvitesRouter } from './accounts/invites';
+import { adminApp } from './admin';
+import { authRouter } from './auth';
+import { accountDeletionApp, billingApp } from './billing';
+import { ensureSchema } from './ensure-schema';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
+import { marketplaceApp } from './marketplace';
+import { combinedAuth, supabaseAuth } from './middleware/auth';
+import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
+import { oauthApp } from './oauth';
+import { opsApp } from './ops';
 import { platformApp } from './platform';
+import {
+  getTriggerSchedulerHealth,
+  projectWebhooksApp,
+  projectsApp,
+  schedulerSweepIsStale,
+  startProjectTriggerScheduler,
+  stopProjectTriggerScheduler,
+} from './projects';
+import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import {
+  startSunaMigrationWorker,
+  stopSunaMigrationWorker,
+} from './projects/suna-migration/suna-migration-worker';
+import { templatesApp } from './projects/templates/routes';
+import { router } from './router';
+import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { sandboxProxyApp } from './sandbox-proxy';
+import { scimRouter } from './scim';
 import { setupApp } from './setup';
-import { supabaseAuth, combinedAuth } from './middleware/auth';
-import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { auditStateChangingRequest } from './shared/audit';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
 // idleTimeout kills the socket with an empty reply. Frontend-polled routes
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { db, hasDatabase } from './shared/db';
-import { getPlatformRole } from './shared/platform-roles';
-import { platformSettings } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { ensureSchema } from './ensure-schema';
-import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
-import { accessControlApp } from './access-control';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
-import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
-import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
-import { marketplaceApp } from './marketplace';
-import { templatesApp } from './projects/templates/routes';
-import { oauthApp } from './oauth';
 import {
-  projectWebhooksApp,
-  projectsApp,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
-  schedulerSweepIsStale,
-} from './projects';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+  isLeader,
+  runsSingletonWorkers,
+  startLeaderElection,
+  stopLeaderElection,
+} from './shared/leader-election';
+import { getPlatformRole } from './shared/platform-roles';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
-import { accountsRouter } from './accounts';
-import { authRouter } from './auth';
-import { scimRouter } from './scim';
-import { accountInvitesRouter } from './accounts/invites';
-import { auditStateChangingRequest } from './shared/audit';
-import { opsApp } from './ops';
-import { adminApp } from './admin';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
+import {
+  getTunnelServiceStatus,
+  startTunnelService,
+  stopTunnelService,
+  tunnelApp,
+  wsHandlers as tunnelWsHandlers,
+} from './tunnel';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -106,10 +120,15 @@ process.on('unhandledRejection', (reason: unknown) => {
 process.on('uncaughtException', (err: Error) => {
   try {
     if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
-      appLogger.localError('Dropped logging-transport exception', { error: err?.message ?? String(err) });
+      appLogger.localError('Dropped logging-transport exception', {
+        error: err?.message ?? String(err),
+      });
       return;
     }
-    appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
+    appLogger.error('Uncaught exception', {
+      error: err?.message ?? String(err),
+      stack: err?.stack,
+    });
     captureException(err, { handler: 'uncaughtException' });
   } catch {
     // never let the crash guard itself crash the process
@@ -150,7 +169,7 @@ app.use('*', async (c, next) => {
   }
 });
 
-// === Global Middleware === 
+// === Global Middleware ===
 
 // CORS origins: production domains + localhost for local dev + any extras from env.
 const cloudOrigins = [
@@ -172,12 +191,14 @@ const localOrigins = [
   'http://127.0.0.1:3010',
 ];
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   : [];
 const corsOrigins = [
   ...new Set([
     ...cloudOrigins,
-    ...localOrigins,  // Always include — needed for local dev and self-hosted
+    ...localOrigins, // Always include — needed for local dev and self-hosted
     ...extraOrigins,
   ]),
 ];
@@ -200,9 +221,20 @@ app.use(
       return null; // not allowed → no Access-Control-Allow-Origin
     },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Kortix-Token',
+      'X-Api-Key',
+      'Accept',
+      'X-Kortix-Signature',
+      'X-Hub-Signature-256',
+      'traceparent',
+      'tracestate',
+      'X-Request-Id',
+    ],
     credentials: true,
-  })
+  }),
 );
 
 // ─── Request context (AsyncLocalStorage) ────────────────────────────────────
@@ -210,27 +242,31 @@ app.use(
 // (auth, route handlers, console.error calls) automatically gets context fields
 // (requestId, userId, accountId, sandboxId) attached to every log.
 app.use('*', async (c, next) => {
-  await runWithContext(c.req.method, c.req.path, async () => {
-    // Auto-extract common resource IDs from URL patterns for logs/traces.
-    const path = c.req.path;
-    const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
-    if (projectSessionMatch) {
-      setContextField('projectId', projectSessionMatch[1]);
-      setContextField('sessionId', projectSessionMatch[2]);
-    } else {
-      const projectMatch = path.match(/\/projects\/([^/]+)/);
-      if (projectMatch) setContextField('projectId', projectMatch[1]);
-    }
-    const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) ||
-                    path.match(/\/p\/([^/]+)/);
-    if (sbMatch) setContextField('sandboxId', sbMatch[1]);
-    await next();
-    const ctx = getRequestContext();
-    if (ctx) {
-      c.header('X-Request-Id', ctx.requestId);
-      c.header('traceparent', ctx.traceparent);
-    }
-  }, c.req.header('traceparent'));
+  await runWithContext(
+    c.req.method,
+    c.req.path,
+    async () => {
+      // Auto-extract common resource IDs from URL patterns for logs/traces.
+      const path = c.req.path;
+      const projectSessionMatch = path.match(/\/projects\/([^/]+)\/sessions\/([^/]+)/);
+      if (projectSessionMatch) {
+        setContextField('projectId', projectSessionMatch[1]);
+        setContextField('sessionId', projectSessionMatch[2]);
+      } else {
+        const projectMatch = path.match(/\/projects\/([^/]+)/);
+        if (projectMatch) setContextField('projectId', projectMatch[1]);
+      }
+      const sbMatch = path.match(/\/sandbox(?:es)?\/([^/]+)/) || path.match(/\/p\/([^/]+)/);
+      if (sbMatch) setContextField('sandboxId', sbMatch[1]);
+      await next();
+      const ctx = getRequestContext();
+      if (ctx) {
+        c.header('X-Request-Id', ctx.requestId);
+        c.header('traceparent', ctx.traceparent);
+      }
+    },
+    c.req.header('traceparent'),
+  );
 });
 
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
@@ -252,37 +288,40 @@ app.use('*', async (c, next) => {
   if (accountId) setContextField('accountId', accountId);
 
   // Add breadcrumb to Sentry for request context on future errors
-  addBreadcrumb(`${c.req.method} ${c.req.path} ${status}`, {
-    method,
-    path,
-    status,
-    duration,
-    userAgent: c.req.header('user-agent')?.slice(0, 100),
-  }, 'http');
+  addBreadcrumb(
+    `${c.req.method} ${c.req.path} ${status}`,
+    {
+      method,
+      path,
+      status,
+      duration,
+      userAgent: c.req.header('user-agent')?.slice(0, 100),
+    },
+    'http',
+  );
 
   // Expected sandbox proxy noise we intentionally suppress:
   // - long-poll/SSE event stream timing out after ~30s (504)
   // - sandbox startup probes returning 502/503 before services are ready
   const isSandboxProxyPath = path.includes('/v1/p/');
-  const isProxyLongPoll = isSandboxProxyPath && (
-    path.includes('/global/event') ||
-    path.includes('/session/status') ||
-    /\/session\/[^/]+\/message(?:$|\?)/.test(path)
-  );
-  const isProxyStartupProbe = isSandboxProxyPath && (
-    path.includes('/global/health') ||
-    path.includes('/kortix/health') ||
-    /\/sessions(?:\/|$)/.test(path)
-  );
-  const isExpectedProxyNoise = method === 'GET' && (
-    (isProxyLongPoll && (
-      (status === 200 && duration > 5000) ||
-      status === 504 ||
-      status === 502 ||
-      status === 503
-    )) ||
-    (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
-  );
+  const isProxyLongPoll =
+    isSandboxProxyPath &&
+    (path.includes('/global/event') ||
+      path.includes('/session/status') ||
+      /\/session\/[^/]+\/message(?:$|\?)/.test(path));
+  const isProxyStartupProbe =
+    isSandboxProxyPath &&
+    (path.includes('/global/health') ||
+      path.includes('/kortix/health') ||
+      /\/sessions(?:\/|$)/.test(path));
+  const isExpectedProxyNoise =
+    method === 'GET' &&
+    ((isProxyLongPoll &&
+      ((status === 200 && duration > 5000) ||
+        status === 504 ||
+        status === 502 ||
+        status === 503)) ||
+      (isProxyStartupProbe && (status === 502 || status === 503 || status === 504)));
 
   // Health/liveness probes fire every few seconds from the ALB + kubelet across
   // every pod — by far the highest-volume request. A healthy probe carries no
@@ -522,14 +561,15 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
   async (c: any) => {
-  if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const [row] = await db
-    .select({ value: platformSettings.value })
-    .from(platformSettings)
-    .where(eq(platformSettings.key, MAINTENANCE_KEY))
-    .limit(1);
-  return c.json(row?.value ?? DEFAULT_MAINTENANCE);
-});
+    if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
+    const [row] = await db
+      .select({ value: platformSettings.value })
+      .from(platformSettings)
+      .where(eq(platformSettings.key, MAINTENANCE_KEY))
+      .limit(1);
+    return c.json(row?.value ?? DEFAULT_MAINTENANCE);
+  },
+);
 
 app.openapi(
   createRoute({
@@ -550,11 +590,18 @@ app.openapi(
     }
     if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
     const body = await c.req.json().catch(() => ({}));
-    const maintenanceConfig = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+    const maintenanceConfig = {
+      ...DEFAULT_MAINTENANCE,
+      ...body,
+      updatedAt: new Date().toISOString(),
+    };
     await db
       .insert(platformSettings)
       .values({ key: MAINTENANCE_KEY, value: maintenanceConfig, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: platformSettings.key, set: { value: maintenanceConfig, updatedAt: new Date() } });
+      .onConflictDoUpdate({
+        target: platformSettings.key,
+        set: { value: maintenanceConfig, updatedAt: new Date() },
+      });
     return c.json(maintenanceConfig);
   },
 );
@@ -649,7 +696,6 @@ app.route('/v1/account-invites', accountInvitesRouter);
 
 app.route('/v1/ops', opsApp);
 
-
 app.openapi(
   createRoute({
     method: 'get',
@@ -659,23 +705,26 @@ app.openapi(
     ...auth,
     middleware: [supabaseAuth] as const,
     responses: {
-      200: json(z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'), 'Platform role'),
+      200: json(
+        z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'),
+        'Platform role',
+      ),
       ...errors(401),
     },
   }),
   async (c: any) => {
-  const accountId = c.get('userId') as string;
-  const role = await getPlatformRole(accountId);
-  const isAdmin = role === 'admin' || role === 'super_admin';
+    const accountId = c.get('userId') as string;
+    const role = await getPlatformRole(accountId);
+    const isAdmin = role === 'admin' || role === 'super_admin';
 
-  return c.json({ isAdmin, role });
+    return c.json({ isAdmin, role });
   },
 );
 
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
 
 {
   // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
@@ -684,7 +733,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   mountLlmGateway(app);
 }
 
-app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
+app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
@@ -712,7 +761,17 @@ app.route('/v1/templates', templatesApp); // /v1/templates — installable use-c
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, teamsWebhookApp, teamsIdentityApp, teamsOauthApp, telegramWebhookApp, slackOauthApp, slackIdentityApp, emailWebhookApp, meetWebhookApp } = await import('./channels');
+const {
+  slackWebhookApp,
+  teamsWebhookApp,
+  teamsIdentityApp,
+  teamsOauthApp,
+  telegramWebhookApp,
+  slackOauthApp,
+  slackIdentityApp,
+  emailWebhookApp,
+  meetWebhookApp,
+} = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
@@ -747,7 +806,7 @@ app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/se
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-  app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
+  app.route('/v1/setup', setupApp); // /v1/setup/install-status (public), rest (auth inside router)
 }
 // /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
 // requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
@@ -804,7 +863,9 @@ app.onError((err, c) => {
   // shared/platinum.ts PlatinumSandboxNotRunningError.
   if (isPlatinumSandboxNotRunningError(err)) {
     appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
-      method, path, errorType: 'PlatinumSandboxNotRunningError',
+      method,
+      path,
+      errorType: 'PlatinumSandboxNotRunningError',
     });
     c.header('Retry-After', '10');
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
@@ -812,7 +873,10 @@ app.onError((err, c) => {
 
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
-      statusCode: err.statusCode, message: err.message, path, method,
+      statusCode: err.statusCode,
+      message: err.message,
+      path,
+      method,
     });
     return c.json({ error: err.message }, err.statusCode as any);
   }
@@ -829,7 +893,10 @@ app.onError((err, c) => {
       captureException(err, { method, path, status: err.status });
     }
     appLogger.error(`${method} ${path} -> ${err.status} [HTTPException]`, {
-      status: err.status, message: err.message, path, method,
+      status: err.status,
+      message: err.message,
+      path,
+      method,
     });
 
     const response: Record<string, unknown> = {
@@ -847,23 +914,40 @@ app.onError((err, c) => {
   }
 
   // Database / postgres.js errors — extract the useful info, not the full SQL dump
-  const isDbError = errName === 'PostgresError' || (err as any).severity || (err as any).code?.match?.(/^[0-9]{5}$/);
+  const isDbError =
+    errName === 'PostgresError' ||
+    (err as any).severity ||
+    (err as any).code?.match?.(/^[0-9]{5}$/);
   if (isDbError) {
     const pgErr = err as any;
     captureException(err, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, schema: pgErr.schema_name || pgErr.schema,
+      method,
+      path,
+      errorType: 'database',
+      pgCode: pgErr.code,
+      table: pgErr.table,
+      schema: pgErr.schema_name || pgErr.schema,
     });
-    appLogger.error(`${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`, {
-      method, path, errorType: 'database',
-      pgCode: pgErr.code, table: pgErr.table, hint: pgErr.hint, detail: pgErr.detail,
-      message: err.message.split('\n')[0],
-    });
+    appLogger.error(
+      `${method} ${path} -> 500 [DB ${pgErr.severity || 'ERROR'} ${pgErr.code || '?'}]`,
+      {
+        method,
+        path,
+        errorType: 'database',
+        pgCode: pgErr.code,
+        table: pgErr.table,
+        hint: pgErr.hint,
+        detail: pgErr.detail,
+        message: err.message.split('\n')[0],
+      },
+    );
   } else {
     // Generic unhandled error — capture to Sentry + structured log
     captureException(err, { method, path, errorType: errName });
     appLogger.error(`${method} ${path} -> 500 [${errName}] ${err.message}`, {
-      method, path, errorType: errName,
+      method,
+      path,
+      errorType: errName,
       stack: err.stack?.split('\n').slice(0, 5).join('\n'),
     });
   }
@@ -874,7 +958,7 @@ app.onError((err, c) => {
       message: 'Internal server error',
       status: 500,
     },
-    500
+    500,
   );
 });
 
@@ -887,7 +971,7 @@ app.notFound((c) => {
       message: 'Not found',
       status: 404,
     },
-    404
+    404,
   );
 });
 
@@ -923,9 +1007,11 @@ console.log(`
 initModelPricing().catch((err) =>
   console.error('[startup] Model pricing init failed (will retry in 24h):', err),
 );
-runtimeModelCatalog.start().catch((err) =>
-  console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
-);
+runtimeModelCatalog
+  .start()
+  .catch((err) =>
+    console.error('[startup] Gateway model catalog init failed (keeping bundled snapshot):', err),
+  );
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
@@ -976,6 +1062,12 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // Re-point connected Telegram bot webhooks at the current KORTIX_URL. One-shot,
+  // best-effort — heals a dev tunnel-URL rotation; a no-op on a stable prod URL.
+  const { resyncTelegramWebhooks } = await import('./channels/telegram/webhook-sync');
+  void resyncTelegramWebhooks().catch((err) =>
+    console.error('[startup] Telegram webhook resync failed:', err),
+  );
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -998,7 +1090,9 @@ async function bootServices() {
   // holding it while running nothing and starving the scheduler fleet-wide.
   const eligible = runsSingletonWorkers();
   if (!eligible) {
-    appLogger.info('[workers] API-only pod — singleton workers disabled; not joining leader election');
+    appLogger.info(
+      '[workers] API-only pod — singleton workers disabled; not joining leader election',
+    );
   }
   startLeaderElection(
     {
@@ -1055,7 +1149,11 @@ if (import.meta.main) {
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
 import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
-import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from './sandbox-proxy/ws-proxy';
+import {
+  matchPreviewWsPath,
+  preparePreviewWsUpgrade,
+  previewWsHandlers,
+} from './sandbox-proxy/ws-proxy';
 
 export default {
   port: config.PORT,
@@ -1130,13 +1228,16 @@ export default {
       const { tunnelRateLimiter } = await import('./tunnel/core/rate-limiter');
       const wsRateCheck = tunnelRateLimiter.check('wsConnect', tunnelId);
       if (!wsRateCheck.allowed) {
-        return new Response(JSON.stringify({
-          error: 'Too many connection attempts',
-          retryAfterMs: wsRateCheck.retryAfterMs,
-        }), {
-          status: 429,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            error: 'Too many connection attempts',
+            retryAfterMs: wsRateCheck.retryAfterMs,
+          }),
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
       }
 
       const success = server.upgrade(req, {
@@ -1183,7 +1284,11 @@ export default {
     // heartbeat mechanism (30s ping/pong) for liveness detection.
     idleTimeout: 0,
 
-    open(ws: { data: any; send: (data: any) => void; close: (code?: number, reason?: string) => void }) {
+    open(ws: {
+      data: any;
+      send: (data: any) => void;
+      close: (code?: number, reason?: string) => void;
+    }) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onOpen(ws.data.tunnelId, ws as any);
         return;
@@ -1193,10 +1298,15 @@ export default {
         return;
       }
       // No other WS upgrades are accepted.
-      try { ws.close(1011, 'unsupported websocket upgrade'); } catch {}
+      try {
+        ws.close(1011, 'unsupported websocket upgrade');
+      } catch {}
     },
 
-    message(ws: { data: any; close: (code?: number, reason?: string) => void }, message: string | Buffer) {
+    message(
+      ws: { data: any; close: (code?: number, reason?: string) => void },
+      message: string | Buffer,
+    ) {
       if (ws.data?.type === 'tunnel-agent') {
         tunnelWsHandlers.onMessage(ws.data.tunnelId, message);
         return;
