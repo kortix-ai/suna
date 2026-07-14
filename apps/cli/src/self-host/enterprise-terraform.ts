@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -19,6 +20,7 @@ import type { CompleteAwsVpcConfig } from './aws-vpc-settings.ts';
 interface TerraformStateIdentity {
   lineage: string;
   serial: number;
+  [key: string]: unknown;
 }
 
 export interface BackendConfig {
@@ -34,6 +36,8 @@ export interface EnterpriseInstanceOutput {
   state_machine_arn?: string;
   release_state_table?: string;
   supabase_instance_id?: string;
+  supabase_private_ip?: string;
+  runtime_secret_arn?: string;
   [key: string]: unknown;
 }
 
@@ -72,6 +76,7 @@ export function writeClusterFiles(
     vpc_cidr: aws.vpc_cidr,
     api_domain: aws.api_domain,
     frontend_domain: aws.frontend_domain,
+    route53_zone_id: aws.route53_zone_id,
     release_repository_url: aws.release_repository_url,
     tuf_root_sha256: aws.tuf_root_sha256,
     updater_bootstrap_url: aws.updater_bootstrap_url,
@@ -79,6 +84,9 @@ export function writeClusterFiles(
     release_publisher_account_id: aws.release_publisher_account_id,
     maintenance_window: aws.maintenance_window,
     permissions_boundary_arn: permissionsBoundaryArn,
+    terraform_state_bucket: backend.bucket,
+    terraform_state_lock_table: backend.dynamodb_table,
+    terraform_state_kms_key_arn: backend.kms_key_id,
     tags: { Environment: 'enterprise', ManagedBy: 'kortix-self-host' },
   });
 }
@@ -108,8 +116,11 @@ export function migrateAndVerifyState(
   aws: CompleteAwsVpcConfig,
   alreadyRemote: boolean,
 ) {
-  const before = terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
-  assertStateIdentity(before, 'local/source');
+  const bootstrapPath = join(stateDirectory, 'terraform.bootstrap.tfstate');
+  const before = alreadyRemote && existsSync(bootstrapPath)
+    ? readStateFile(bootstrapPath, 'preserved local bootstrap')
+    : terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
+  assertStateIdentity(before, alreadyRemote ? 'preserved local bootstrap/remote source' : 'local/source');
   const backend = terraformOutput<BackendConfig>(stateDirectory, aws, 'backend_config');
   const permissionsBoundaryArn = terraformOutput<string>(stateDirectory, aws, 'permissions_boundary_arn');
   const backendPath = join(stateDirectory, 'backend.hcl');
@@ -132,20 +143,113 @@ export function migrateAndVerifyState(
 
   const after = terraformJson<TerraformStateIdentity>(stateDirectory, aws, ['state', 'pull']);
   assertStateIdentity(after, 'remote');
-  if (before.lineage !== after.lineage || before.serial !== after.serial) {
+  const beforeDigest = stateContentDigest(before);
+  const afterDigest = stateContentDigest(after);
+  const beforeObjects = stateObjectDigest(before);
+  const afterObjects = stateObjectDigest(after);
+  const exactMatch = beforeDigest === afterDigest;
+  const refreshedRecoveryMatch = alreadyRemote && beforeObjects === afterObjects;
+  if (!exactMatch && !refreshedRecoveryMatch) {
     throw new Error(
-      `remote state verification failed: source ${before.lineage}/${before.serial}, remote ${after.lineage}/${after.serial}; local bootstrap state was preserved`,
+      `remote state verification failed: source ${before.lineage}/${before.serial} (${beforeDigest}/${beforeObjects}), remote ${after.lineage}/${after.serial} (${afterDigest}/${afterObjects}); local bootstrap state was preserved`,
     );
   }
-  if (!alreadyRemote) {
-    rmSync(join(stateDirectory, 'terraform.bootstrap.tfstate'), { force: true });
+  if (!alreadyRemote || existsSync(bootstrapPath)) {
+    rmSync(bootstrapPath, { force: true });
     rmSync(join(stateDirectory, 'terraform.bootstrap.tfstate.backup'), { force: true });
   }
   return {
     backend,
     permissionsBoundaryArn,
-    verification: { verified: true, lineage: after.lineage, serial: after.serial, already_remote: alreadyRemote },
+    verification: {
+      verified: true,
+      lineage: after.lineage,
+      serial: after.serial,
+      already_remote: alreadyRemote,
+      verification_mode: exactMatch ? 'exact-content' : 'refreshed-object-identity',
+    },
   };
+}
+
+function readStateFile(path: string, label: string): TerraformStateIdentity {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as TerraformStateIdentity;
+  } catch (error) {
+    throw new Error(`${label} Terraform state is invalid JSON: ${(error as Error).message}`);
+  }
+}
+
+function stateContentDigest(state: TerraformStateIdentity): string {
+  const content: Record<string, unknown> = { ...state };
+  delete content.lineage;
+  delete content.serial;
+  if (Array.isArray(content.check_results)) {
+    content.check_results = [...content.check_results]
+      .sort((left, right) => stableJson(left).localeCompare(stableJson(right)));
+  }
+  return digestJson(content);
+}
+
+/**
+ * Recovery-only projection for a state that Terraform already migrated and
+ * subsequently refreshed against the provider. Refresh may fill computed
+ * attributes (for example an S3 bucket's versioning/policy) and advance the
+ * backend serial, while the tracked object graph remains the same. The state
+ * stage has just been planned, guarded, and applied before this check, so a
+ * recovery is accepted only when every resource instance identity and every
+ * output still match the preserved bootstrap state.
+ */
+function stateObjectDigest(state: TerraformStateIdentity): string {
+  const resources = Array.isArray(state.resources)
+    ? state.resources.map(projectResourceIdentity).sort((left, right) => stableJson(left).localeCompare(stableJson(right)))
+    : state.resources;
+  return digestJson({ outputs: state.outputs, resources });
+}
+
+function projectResourceIdentity(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const resource = value as Record<string, unknown>;
+  const instances = Array.isArray(resource.instances)
+    ? resource.instances.map(projectInstanceIdentity).sort((left, right) => stableJson(left).localeCompare(stableJson(right)))
+    : resource.instances;
+  return {
+    module: resource.module,
+    mode: resource.mode,
+    type: resource.type,
+    name: resource.name,
+    provider: resource.provider,
+    instances,
+  };
+}
+
+function projectInstanceIdentity(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const instance = value as Record<string, unknown>;
+  const attributes = instance.attributes && typeof instance.attributes === 'object' && !Array.isArray(instance.attributes)
+    ? instance.attributes as Record<string, unknown>
+    : {};
+  const identity: Record<string, unknown> = {};
+  for (const key of ['id', 'arn', 'name', 'bucket', 'key_id', 'alias_name', 'table_name']) {
+    if (Object.hasOwn(attributes, key)) identity[key] = attributes[key];
+  }
+  return {
+    index_key: instance.index_key,
+    schema_version: instance.schema_version,
+    identity,
+  };
+}
+
+function digestJson(value: unknown): string {
+  return createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export function terraformOutput<T>(directory: string, aws: CompleteAwsVpcConfig, name: string): T {
@@ -205,7 +309,7 @@ function terraform(directory: string, aws: CompleteAwsVpcConfig, args: string[])
   });
   if (result.error) throw new Error(`unable to run Terraform: ${result.error.message}`);
   if (result.status !== 0) {
-    throw new Error(`Terraform ${args[0]} failed: ${firstLine(result.stderr || result.stdout) || `exit ${result.status}`}`);
+    throw new Error(`Terraform ${args[0]} failed: ${terraformDiagnostic(result.stderr || result.stdout) || `exit ${result.status}`}`);
   }
   return result.stdout;
 }
@@ -240,6 +344,11 @@ function assertStateIdentity(state: TerraformStateIdentity, label: string): void
   }
 }
 
-function firstLine(value: string): string {
-  return value.trim().split(/\r?\n/, 1)[0] ?? '';
+function terraformDiagnostic(value: string): string {
+  const lines = value
+    .replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[│|]\s?/, '').trim())
+    .filter((line) => line !== '' && !/^[╷╵─]+$/.test(line));
+  return lines.find((line) => line.startsWith('Error:')) ?? lines[0] ?? '';
 }

@@ -8,12 +8,12 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
-import { featureFlags } from '@kortix/sdk/feature-flags';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@kortix/sdk/feature-flags';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';
@@ -89,7 +89,7 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [{ name: 'Kortix Team', url: 'https://www.kortix.com' }],
+  authors: [{ name: 'Kortix Team', url: siteMetadata.url }],
   creator: 'Kortix Team',
   publisher: 'Kortix Team',
   applicationName: siteMetadata.name,
@@ -233,58 +233,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             `,
           }}
         />
-
-        {/* Static SEO meta tags - rendered in initial HTML */}
-        <title>
-          {tHardcodedUi.raw('appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem')}
-        </title>
-        <meta
-          name="description"
-          content={tHardcodedUi.raw(
-            'appLayout.line197JsxAttrContentACloudComputerWhereAiAgentsRunYour',
-          )}
-        />
-        <meta
-          name="keywords"
-          content={tHardcodedUi.raw(
-            'appLayout.line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf',
-          )}
-        />
-        <meta
-          property="og:title"
-          content={tHardcodedUi.raw(
-            'appLayout.line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem',
-          )}
-        />
-        <meta
-          property="og:description"
-          content={tHardcodedUi.raw(
-            'appLayout.line200JsxAttrContentACloudComputerWhereAiAgentsRunYour',
-          )}
-        />
-        <meta property="og:image" content="https://kortix.com/banner.png" />
-        <meta property="og:url" content="https://kortix.com" />
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="Kortix" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta
-          name="twitter:title"
-          content={tHardcodedUi.raw(
-            'appLayout.line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem',
-          )}
-        />
-        <meta
-          name="twitter:description"
-          content={tHardcodedUi.raw(
-            'appLayout.line207JsxAttrContentACloudComputerWhereAiAgentsRunYour',
-          )}
-        />
-        <meta name="twitter:image" content="https://kortix.com/banner.png" />
-        <meta
-          name="twitter:site"
-          content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')}
-        />
-        <link rel="canonical" href="https://kortix.com" />
 
         {/* iOS Smart App Banner - shows native install banner in Safari */}
         {!featureFlags.disableMobileAdvertising ? (

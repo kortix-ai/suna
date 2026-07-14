@@ -26,6 +26,15 @@ import {
   promptForConfiguration,
 } from './aws-vpc-settings.ts';
 import {
+  assertOperatorRuntimeAssignments,
+  bootstrapRuntimeSecret,
+  missingOperatorRuntimeKeys,
+  parseRuntimeAssignments,
+  readRuntimeSecret,
+  runtimeSecretId,
+  writeRuntimeSecret,
+} from './aws-vpc-secrets.ts';
+import {
   assertAwsVpcInstanceName,
   loadInstanceConfig,
   writeInstanceConfig,
@@ -75,7 +84,7 @@ type AwsVpcCommand =
   | 'restart'
   | 'env';
 
-const DOCKER_ONLY = new Set<AwsVpcCommand>(['start', 'up', 'stop', 'down', 'restart', 'env']);
+const DOCKER_ONLY = new Set<AwsVpcCommand>(['start', 'up', 'stop', 'down', 'restart']);
 
 export async function runAwsVpcCommand(
   command: string,
@@ -95,7 +104,7 @@ export async function runAwsVpcCommand(
     );
     return 2;
   }
-  if (!['configure', 'config', 'logs'].includes(typedCommand) && args.length > 0) {
+  if (!['configure', 'config', 'logs', 'env'].includes(typedCommand) && args.length > 0) {
     process.stderr.write(`${status.err(`unexpected AWS VPC arguments: ${args.join(' ')}`)}\n`);
     return 2;
   }
@@ -126,6 +135,8 @@ export async function runAwsVpcCommand(
       return showAwsVpcLogs(config, args, flags);
     case 'open':
       return openAwsVpc(config);
+    case 'env':
+      return manageAwsVpcEnv(config, args, flags);
     default:
       process.stderr.write(`${status.err(`unknown AWS VPC self-host command "${command}"`)}\n`);
       return 2;
@@ -385,11 +396,27 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
     terraformApply(roots.cluster, aws, plans[1].planPath);
 
     const instance = terraformOutput<EnterpriseInstanceOutput>(roots.cluster, aws, 'instance');
-    const reconciliation = startReconciliation(config, {
-      trigger: 'bootstrap',
-      force: false,
-      ...(flags.release ? { requested_release: flags.release } : {}),
-    }, instance.state_machine_arn);
+    const runtimeSecretArn = requiredOutputString(instance, 'runtime_secret_arn');
+    const supabasePrivateIp = requiredOutputString(instance, 'supabase_private_ip');
+    const runtime = bootstrapRuntimeSecret(aws, {
+      runtimeSecretArn,
+      supabasePrivateIp,
+      apiDomain: aws.api_domain,
+      frontendDomain: aws.frontend_domain,
+      instance: config.instance,
+    });
+    const reconciliation = runtime.missingOperatorKeys.length === 0
+      ? startReconciliation(config, {
+          trigger: 'bootstrap',
+          force: false,
+          ...(flags.release ? { requested_release: flags.release } : {}),
+        }, instance.state_machine_arn)
+      : {
+          execution_arn: null,
+          start_date: null,
+          status: 'WAITING_FOR_RUNTIME_CONFIG',
+          missing: runtime.missingOperatorKeys,
+        };
     const payload = {
       instance: config.instance,
       account_id: identity.Account,
@@ -397,6 +424,11 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       state: { ...publicPlan(plans[0]), applied: true },
       state_migration: migration.verification,
       cluster: { ...publicPlan(plans[1]), applied: true },
+      runtime_secret: {
+        arn: runtimeSecretArn,
+        bootstrapped: runtime.created,
+        missing: runtime.missingOperatorKeys,
+      },
       reconciliation,
     };
     if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -404,7 +436,14 @@ async function deployAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostComma
       process.stdout.write(`\n  ${C.bold}Kortix Enterprise VPC deployed${C.reset}\n`);
       process.stdout.write(`${status.ok(`Terraform state verified at lineage ${migration.verification.lineage}, serial ${migration.verification.serial}`)}\n`);
       process.stdout.write(`${status.ok('Customer cluster infrastructure applied')}\n`);
-      process.stdout.write(`${status.ok(`Customer reconciler started: ${reconciliation.execution_arn}`)}\n\n`);
+      process.stdout.write(`${status.ok('Generated core runtime credentials directly into customer Secrets Manager')}\n`);
+      if (runtime.missingOperatorKeys.length > 0) {
+        process.stdout.write(`${status.warn(`Reconciliation is waiting for: ${runtime.missingOperatorKeys.join(', ')}`)}\n`);
+        process.stdout.write(`  ${C.cyan}kortix self-host env set --instance ${config.instance} KEY=VALUE ...${C.reset}\n`);
+        process.stdout.write(`  ${C.cyan}kortix self-host reconcile --instance ${config.instance}${C.reset}\n\n`);
+      } else {
+        process.stdout.write(`${status.ok(`Customer reconciler started: ${reconciliation.execution_arn}`)}\n\n`);
+      }
     }
     return 0;
   } catch (error) {
@@ -424,6 +463,7 @@ async function startManagedUpdate(
     verifyPinnedIdentity(config.aws!);
     if (flags.channel && flags.channel !== 'stable') throw new Error('AWS VPC targets may only track the stable channel');
     if (flags.release) assertEnterpriseRelease(flags.release);
+    assertRuntimeReady(config);
     const result = startReconciliation(config, {
       trigger,
       force: flags.force,
@@ -436,6 +476,73 @@ async function startManagedUpdate(
     process.stderr.write(`${status.err((error as Error).message)}\n`);
     return 1;
   }
+}
+
+function manageAwsVpcEnv(
+  config: SelfHostInstanceConfig,
+  args: string[],
+  flags: SelfHostCommandFlags,
+): number {
+  try {
+    const coordinates = config.aws!;
+    verifyPinnedIdentity(coordinates);
+    const action = args[0] ?? 'ls';
+    const secretId = runtimeSecretId(config.instance);
+    const current = readRuntimeSecret(coordinates, secretId);
+    if (!current) throw new Error(`runtime secret is not initialized; deploy ${config.instance} infrastructure first`);
+
+    if (action === 'ls' || action === 'list') {
+      const payload = {
+        instance: config.instance,
+        secret_id: secretId,
+        keys: Object.keys(current).sort(),
+        missing_required: missingOperatorRuntimeKeys(current),
+      };
+      if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      else {
+        for (const key of payload.keys) process.stdout.write(`${key}=<set>\n`);
+        for (const key of payload.missing_required) process.stdout.write(`${key}=<required>\n`);
+      }
+      return payload.missing_required.length === 0 ? 0 : 1;
+    }
+    if (action === 'set') {
+      const assignments = parseRuntimeAssignments(args.slice(1));
+      assertOperatorRuntimeAssignments(assignments);
+      const next = { ...current, ...assignments };
+      writeRuntimeSecret(coordinates, next, secretId);
+      const missing = missingOperatorRuntimeKeys(next);
+      const payload = {
+        instance: config.instance,
+        updated: Object.keys(assignments).sort(),
+        missing_required: missing,
+      };
+      if (flags.json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      else {
+        process.stdout.write(`${status.ok(`Updated ${payload.updated.length} value(s) in customer Secrets Manager`)}\n`);
+        if (missing.length > 0) process.stdout.write(`  ${C.dim}Still required: ${missing.join(', ')}${C.reset}\n`);
+      }
+      return 0;
+    }
+    throw new Error(`unknown env subcommand "${action}"`);
+  } catch (error) {
+    process.stderr.write(`${status.err((error as Error).message)}\n`);
+    return 1;
+  }
+}
+
+function assertRuntimeReady(config: SelfHostInstanceConfig): void {
+  const secret = readRuntimeSecret(config.aws!, runtimeSecretId(config.instance));
+  if (!secret) throw new Error(`runtime secret is not initialized; run kortix self-host deploy --instance ${config.instance}`);
+  const missing = missingOperatorRuntimeKeys(secret);
+  if (missing.length > 0) {
+    throw new Error(`runtime configuration is incomplete (${missing.join(', ')}); run kortix self-host env set --instance ${config.instance} KEY=VALUE ...`);
+  }
+}
+
+function requiredOutputString(value: EnterpriseInstanceOutput, key: string): string {
+  const item = value[key];
+  if (typeof item !== 'string' || item.length === 0) throw new Error(`cluster output is missing ${key}`);
+  return item;
 }
 
 async function rollbackAwsVpc(config: SelfHostInstanceConfig, flags: SelfHostCommandFlags): Promise<number> {
@@ -519,7 +626,7 @@ function showAwsVpcStatus(config: SelfHostInstanceConfig, flags: SelfHostCommand
       'codebuild', 'batch-get-projects', '--names', `${config.instance}-updater`,
     ])?.projects?.[0] ?? null;
     const execution = awsJsonOptional<{ executions?: Array<Record<string, unknown>> }>(coordinates, [
-      'states', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
+      'stepfunctions', 'list-executions', '--state-machine-arn', stateMachineArn, '--max-results', '1',
     ])?.executions?.[0] ?? null;
     const release = releaseState(config);
     const payload = {

@@ -32,8 +32,9 @@ GitOps value files under `infra/k8s/envs/<env>/`:
 The chart `fail`s fast if `serviceAccount.roleArn` or `ingress.certificateArn`
 are unset, so a misconfigured deploy never reaches the cluster.
 
-Database migrations are **not** applied by this chart in the current live deploy
-path. The GitHub Actions `migrate-db` jobs run `pnpm --filter @kortix/db migrate`
-(node-pg-migrate) before the GitOps rollout. The chart still contains a disabled
-legacy PreSync hook; do not enable it until it is ported or removed
-(https://github.com/kortix-ai/suna/issues/3628).
+Kortix Cloud keeps migrations in the GitHub Actions `migrate-db` jobs before its
+GitOps rollout. The chart's hook is disabled by default there. Enterprise VPC
+installations enable the hook because their customer-owned updater has no Kortix
+CI database credentials; it runs the same canonical
+`bun scripts/migrate.ts up` node-pg-migrate ledger from the digest-pinned API
+image before Helm rolls the application.

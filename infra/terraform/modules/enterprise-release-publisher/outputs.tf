@@ -1,0 +1,12 @@
+output "repository_bucket" { value = aws_s3_bucket.repository.id }
+output "repository_kms_key_arn" { value = aws_kms_key.repository.arn }
+output "repository_url" { value = "https://${var.repository_domain}" }
+output "cloudfront_domain_name" { value = aws_cloudfront_distribution.repository.domain_name }
+output "cloudfront_distribution_id" { value = aws_cloudfront_distribution.repository.id }
+output "promotion_role_arn" { value = aws_iam_role.promotion.arn }
+output "timestamp_refresh_role_arn" { value = aws_iam_role.timestamp_refresh.arn }
+output "root_key_arns" { value = aws_kms_key.root[*].arn }
+output "targets_key_arn" { value = aws_kms_key.online["targets"].arn }
+output "snapshot_key_arn" { value = aws_kms_key.online["snapshot"].arn }
+output "timestamp_key_arn" { value = aws_kms_key.online["timestamp"].arn }
+output "cosign_key_arn" { value = aws_kms_key.cosign.arn }

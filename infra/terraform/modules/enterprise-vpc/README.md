@@ -13,12 +13,15 @@ data boundary, and update control plane.
   control-plane logging, and customer-KMS Kubernetes secret encryption.
 - One private, SSM-only EC2 host for the official Supabase Docker stack, with a
   separately attached encrypted EBS data volume and EC2 system recovery.
-- Customer KMS keys, Secrets Manager, immutable ECR repositories, ACM,
-  CloudTrail, encrypted logs, alerting, immutable ECR release bundles, WAL
+- Customer KMS keys, Secrets Manager, immutable ECR image repositories, ACM,
+  CloudTrail, encrypted logs, alerting, authenticated TUF release bundles, WAL
   bucket, hourly AWS Backup recovery points, and vault lock.
 - Customer-owned EventBridge, Step Functions, and CodeBuild reconciliation. A
   Kortix event is only a wake-up hint; hourly reconciliation and TUF metadata
   are authoritative.
+- Customer Route 53 owns ACM validation and the two application records.
+  `external-dns` is restricted to the configured hosted-zone ID through a
+  pre-created IRSA role; enterprise deployments have no Cloudflare API token.
 
 ## Safety contract
 
@@ -53,11 +56,17 @@ Do not apply this module with placeholder release values. Deployment requires:
 3. immutable enterprise artifacts signed with KMS-backed Cosign; and
 4. a certified `stable` target using `<prod-version>-e<revision>`.
 
-The runtime secret must be populated before platform reconciliation. The signed
-Supabase release bundle owns Compose startup, WAL archival, migrations, health
-checks, rollback hooks, and coordinated secret rotation. Hourly EBS recovery
-points are the backstop; the five-minute RPO depends on WAL archival being live
-and tested.
+The CLI generates all internal database, Supabase, API, gateway, and signing
+credentials directly into customer Secrets Manager after the cluster stage.
+It never persists those values in the instance config. Operator-owned values
+(SMTP, Daytona, and the initial model provider) are set with
+`kortix self-host env set`; first reconciliation waits until they are present.
+The signed Supabase release bundle owns Compose startup, WAL archival,
+checksum-verified point-in-time restore, migrations, health checks, rollback
+hooks, and coordinated rotation of the updater-managed credentials. PITR and
+the updater use mutually exclusive DynamoDB recovery/lease flags. Hourly EBS
+recovery points are the backstop; the five-minute RPO depends on WAL archival
+and a real restore drill being live and tested.
 
 Reusable modules never retain `.terraform.lock.hcl`; generated environment
 roots do, so provider selections are reviewable and reproducible.

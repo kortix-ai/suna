@@ -28,11 +28,13 @@ export function useGatewayRoutingPolicy(projectId: string | null | undefined) {
 
   return Object.assign(query, {
     set: useMutation({
+      mutationKey: gatewayRoutingPolicyKey(projectId),
       mutationFn: (policy: GatewayProjectRoutingPolicy) =>
         setGatewayRoutingPolicy(projectId as string, policy),
       onSuccess: invalidate,
     }),
     reset: useMutation({
+      mutationKey: gatewayRoutingPolicyKey(projectId),
       mutationFn: () => resetGatewayRoutingPolicy(projectId as string),
       onSuccess: invalidate,
     }),

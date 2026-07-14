@@ -18,7 +18,7 @@ export function startReconciliation(
   const stateMachineArn = discoveredArn || reconciliationStateMachineArn(config);
   const executionName = `cli-${Date.now()}-${randomBytes(3).toString('hex')}`;
   const result = awsJson<{ executionArn: string; startDate?: string }>(coordinates, [
-    'states', 'start-execution',
+    'stepfunctions', 'start-execution',
     '--state-machine-arn', stateMachineArn,
     '--name', executionName,
     '--input', JSON.stringify(input),
@@ -70,9 +70,10 @@ export function awsJsonOptional<T>(coordinates: AwsVpcCoordinates, args: string[
   if (result.error) throw new Error(`unable to run AWS CLI: ${result.error.message}`);
   if (result.status !== 0) {
     const detail = firstLine(result.stderr) || `exit ${result.status}`;
-    if (/ResourceNotFound|NotFound|does not exist|not found/i.test(detail)) return null;
+    if (/ResourceNotFound|NotFound|does not exist|not found|can't find|cannot find/i.test(detail)) return null;
     throw new Error(`AWS ${args.slice(0, 2).join(' ')} failed: ${detail}`);
   }
+  if (result.stdout.trim() === '') return null;
   try {
     return JSON.parse(result.stdout) as T;
   } catch (error) {

@@ -8,7 +8,9 @@ single-tenant application boundary:
 - a namespaced External Secrets `SecretStore`; and
 - the `kortix-runtime` `ExternalSecret` backed by customer Secrets Manager.
 
-Argo CD is headless. It reconciles only the immutable overlay contained in a
-verified enterprise release; there is no customer fork or customer desired-
-state repository. The Kubernetes and Helm providers connect to the private EKS
-endpoint from inside the VPC, never from Kortix GitHub.
+The customer-owned enterprise updater is the single deployment authority. It
+applies only the Terraform and Helm content from a verified immutable release;
+Argo CD is deliberately not installed because a second reconciler would create
+split ownership. Argo Rollouts remains available for progressive workload
+rollouts. The Kubernetes and Helm providers connect to the private EKS endpoint
+from inside the VPC, never from Kortix GitHub.

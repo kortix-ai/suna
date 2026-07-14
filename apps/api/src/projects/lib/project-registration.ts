@@ -1,5 +1,5 @@
 import {
-  accountGithubInstallations,
+  type accountGithubInstallations,
   projectGitConnections,
   projectGitCredentials,
   projectMembers,
@@ -10,8 +10,7 @@ import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
 import { encryptProjectSecret } from '../secrets';
-import { clampProjectName, deriveProjectName, type ProjectRow } from './serializers';
-import { and, eq } from 'drizzle-orm';
+import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
@@ -58,7 +57,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
   };
 
   const row = await db.transaction(async (tx) => {
-    const [inserted] = await tx
+    const [project] = await tx
       .insert(projects)
       .values({
         accountId: input.accountId,
@@ -70,42 +69,8 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         metadata,
         updatedAt: now,
       })
-      // Phase-one compatibility: production still has the historical unique
-      // (account_id, repo_url) index. Once phase two makes that index
-      // non-unique, this insert naturally creates an independent project.
-      .onConflictDoNothing()
       .returning();
-
-    let project = inserted;
-    if (!inserted) {
-      const [existing] = await tx
-        .select()
-        .from(projects)
-        .where(
-          and(
-            eq(projects.accountId, input.accountId),
-            eq(projects.repoUrl, input.repo.clone_url),
-          ),
-        )
-        .limit(1);
-      if (!existing) {
-        throw new Error('Project registration conflicted without an existing repository project');
-      }
-      const [updated] = await tx
-        .update(projects)
-        .set({
-          name: projectName,
-          defaultBranch: input.defaultBranch,
-          manifestPath: input.manifestPath,
-          status: 'active',
-          metadata,
-          updatedAt: now,
-        })
-        .where(eq(projects.projectId, existing.projectId))
-        .returning();
-      if (!updated) throw new Error('Existing repository project disappeared during registration');
-      project = updated;
-    }
+    if (!project) throw new Error('Project registration did not return the inserted project');
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {

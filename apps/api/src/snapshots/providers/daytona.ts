@@ -13,18 +13,20 @@ import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured, listDaytonaSnapshots } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
 import {
-  stageBuildContext,
   DEFAULT_CPU,
-  DEFAULT_MEMORY_GB,
   DEFAULT_DISK_GB,
+  DEFAULT_MEMORY_GB,
   KORTIX_ENTRYPOINT,
+  stageBuildContext,
 } from '../build-context';
+import { type InvalidatableObservation, shortLivedObservation } from '../observation-cache';
 import type {
-  BuildableTemplate,
   BuildLogTap,
+  BuildableTemplate,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
+import { normalizeExistingProviderState } from './state';
 
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;
@@ -48,7 +50,38 @@ const SNAPSHOT_STATE_CACHE_TTL_MS = 60_000;
  * if several templates are checked back-to-back.
  */
 const SNAPSHOT_STATE_TIMEOUT_MS = 8_000;
-const snapshotStateCache = new Map<string, { state: ProviderState; expiresAt: number }>();
+const snapshotStateObservations = new Map<string, InvalidatableObservation<ProviderState>>();
+
+function invalidateSnapshotState(snapshotName: string): void {
+  snapshotStateObservations.get(snapshotName)?.invalidate();
+  snapshotStateObservations.delete(snapshotName);
+}
+
+function observeSnapshotState(snapshotName: string): InvalidatableObservation<ProviderState> {
+  const existing = snapshotStateObservations.get(snapshotName);
+  if (existing) return existing;
+  const observation = shortLivedObservation(
+    async (): Promise<ProviderState> => {
+      try {
+        const snap = await withTimeout(
+          getDaytona().snapshot.get(snapshotName),
+          SNAPSHOT_STATE_TIMEOUT_MS,
+          `Daytona snapshot.get(${snapshotName})`,
+        );
+        return snap
+          ? normalizeExistingProviderState((snap as { state?: string }).state)
+          : 'missing';
+      } catch (err) {
+        if (isDaytonaSnapshotNotFoundError(err)) return 'missing';
+        return 'unknown';
+      }
+    },
+    SNAPSHOT_STATE_CACHE_TTL_MS,
+    (state) => state === 'active',
+  );
+  snapshotStateObservations.set(snapshotName, observation);
+  return observation;
+}
 
 class DaytonaAdapter implements SandboxProviderAdapter {
   readonly id = 'daytona' as const;
@@ -61,6 +94,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     if (!input.image && !input.userDockerfile) {
       throw new Error('DaytonaAdapter.buildSnapshot: neither image nor userDockerfile set');
     }
+    invalidateSnapshotState(input.snapshotName);
     const daytona = getDaytona();
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const resources = {
@@ -105,13 +139,23 @@ class DaytonaAdapter implements SandboxProviderAdapter {
           },
         );
         await this.waitForActive(input.snapshotName);
+        invalidateSnapshotState(input.snapshotName);
         return;
       } catch (err) {
         lastErr = err;
-        const settled = await this.waitForSettle(input.snapshotName, POST_FAILURE_SETTLE_TIMEOUT_MS);
-        if (settled === 'active') return;
+        const settled = await this.waitForSettle(
+          input.snapshotName,
+          POST_FAILURE_SETTLE_TIMEOUT_MS,
+        );
+        if (settled === 'active') {
+          invalidateSnapshotState(input.snapshotName);
+          return;
+        }
         if (!isRetryableBuildError(err) || attempt === BUILD_ATTEMPTS) {
-          throw new Error(`Snapshot build failed: ${err instanceof Error ? err.message : String(err)}`);
+          invalidateSnapshotState(input.snapshotName);
+          throw new Error(
+            `Snapshot build failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(
@@ -122,6 +166,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
       }
     }
+    invalidateSnapshotState(input.snapshotName);
     throw lastErr;
   }
 
@@ -135,55 +180,32 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     // accurate state, and the auto-heal in session-sandbox.ts already covers
     // the rare race where an `active` snapshot disappears between our check
     // and the actual sandbox.create.
-    const cached = snapshotStateCache.get(snapshotName);
-    if (cached && Date.now() < cached.expiresAt) return cached.state;
-    try {
-      // The Daytona SDK takes no per-call timeout, so a degraded upstream can
-      // leave `snapshot.get` pending indefinitely. This runs on the warm boot
-      // path and behind the `/sandbox-health` polling endpoint, where an
-      // unbounded hang stalls the request until the *client* gives up (the
-      // frontend's 30s timeout → "Request timed out after 30s"). Bound it so a
-      // slow Daytona degrades to the same safe `missing` fallback as an error.
-      const snap = await withTimeout(
-        getDaytona().snapshot.get(snapshotName),
-        SNAPSHOT_STATE_TIMEOUT_MS,
-        `Daytona snapshot.get(${snapshotName})`,
-      );
-      const state = (snap
-        ? String((snap as { state?: string }).state ?? 'missing')
-        : 'missing'
-      ).toLowerCase() as ProviderState;
-      if (state === 'active') {
-        snapshotStateCache.set(snapshotName, {
-          state,
-          expiresAt: Date.now() + SNAPSHOT_STATE_CACHE_TTL_MS,
-        });
-      } else {
-        snapshotStateCache.delete(snapshotName);
-      }
-      return state;
-    } catch {
-      // Error *or* timeout (TimeoutError) → treat as unknown/missing. We never
-      // poison the positive cache here, so the next poll re-checks once Daytona
-      // recovers.
-      snapshotStateCache.delete(snapshotName);
-      return 'missing';
-    }
+    return observeSnapshotState(snapshotName)();
   }
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
     if (!isDaytonaConfigured()) return;
-    snapshotStateCache.delete(snapshotName); // invalidate before mutating
+    invalidateSnapshotState(snapshotName);
     try {
       // Bounded for the same reason as getSnapshotState() above: the Daytona
       // SDK's axios client has a 24h default timeout, so an unbounded call
       // here can hang the caller indefinitely instead of hitting this
       // method's own already-forgiving try/catch.
-      const snap = await withTimeout(getDaytona().snapshot.get(snapshotName), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${snapshotName})`);
+      const snap = await withTimeout(
+        getDaytona().snapshot.get(snapshotName),
+        SNAPSHOT_STATE_TIMEOUT_MS,
+        `Daytona snapshot.get(${snapshotName})`,
+      );
       if (!snap) return;
-      await withTimeout(getDaytona().snapshot.delete(snap), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.delete(${snapshotName})`);
-    } catch {
-      // not found / transient — treat as already gone
+      await withTimeout(
+        getDaytona().snapshot.delete(snap),
+        SNAPSHOT_STATE_TIMEOUT_MS,
+        `Daytona snapshot.delete(${snapshotName})`,
+      );
+    } catch (err) {
+      if (!isDaytonaSnapshotNotFoundError(err)) throw err;
+    } finally {
+      invalidateSnapshotState(snapshotName);
     }
   }
 
@@ -199,7 +221,11 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       try {
         // Bounded so one hung poll can't defeat this loop's own deadline
         // check — see deleteSnapshot()'s comment above for why.
-        const snap = await withTimeout(getDaytona().snapshot.get(name), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${name})`);
+        const snap = await withTimeout(
+          getDaytona().snapshot.get(name),
+          SNAPSHOT_STATE_TIMEOUT_MS,
+          `Daytona snapshot.get(${name})`,
+        );
         lastState = String((snap as { state?: string } | null)?.state ?? 'missing').toLowerCase();
         if (lastState === 'active') return;
         if (lastState === 'error' || lastState === 'build_failed') {
@@ -212,7 +238,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       }
       await new Promise((r) => setTimeout(r, 1_000));
     }
-    throw new Error(`Snapshot ${name} did not become active after create (last state: ${lastState})`);
+    throw new Error(
+      `Snapshot ${name} did not become active after create (last state: ${lastState})`,
+    );
   }
 
   private async waitForSettle(
@@ -224,11 +252,19 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       try {
         // Bounded so one hung poll can't defeat this loop's own deadline
         // check — see deleteSnapshot()'s comment above for why.
-        const snap = await withTimeout(getDaytona().snapshot.get(name), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.get(${name})`);
+        const snap = await withTimeout(
+          getDaytona().snapshot.get(name),
+          SNAPSHOT_STATE_TIMEOUT_MS,
+          `Daytona snapshot.get(${name})`,
+        );
         const state = (snap as { state?: string } | null | undefined)?.state;
         if (state === 'active') return 'active';
         if (state === 'error' || state === 'build_failed') {
-          await withTimeout(getDaytona().snapshot.delete(snap as never), SNAPSHOT_STATE_TIMEOUT_MS, `Daytona snapshot.delete(${name})`).catch(() => {});
+          await withTimeout(
+            getDaytona().snapshot.delete(snap as never),
+            SNAPSHOT_STATE_TIMEOUT_MS,
+            `Daytona snapshot.delete(${name})`,
+          ).catch(() => {});
           return 'failed';
         }
       } catch {
@@ -238,6 +274,31 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     return 'unknown';
   }
+}
+
+export function isDaytonaSnapshotNotFoundError(err: unknown): boolean {
+  const value = err as
+    | {
+        status?: unknown;
+        name?: unknown;
+        message?: unknown;
+        code?: unknown;
+        statusCode?: unknown;
+        response?: { status?: unknown };
+      }
+    | null
+    | undefined;
+  const name = String(value?.name ?? '').toLowerCase();
+  const message = String(value?.message ?? '').toLowerCase();
+
+  const statuses = [value?.statusCode, value?.response?.status, value?.status, value?.code];
+  const has404Status = statuses.some((status) => status === 404);
+  const hasDaytonaNotFoundName = name === 'daytonanotfounderror';
+  const hasPreciseSnapshotNotFoundMessage = /\bsnapshot with name\b[\s\S]*\bnot found\b/.test(
+    message,
+  );
+
+  return has404Status || hasDaytonaNotFoundName || hasPreciseSnapshotNotFoundMessage;
 }
 
 function isTransientDaytonaError(err: unknown): boolean {
@@ -259,7 +320,9 @@ function isTransientDaytonaError(err: unknown): boolean {
     m.includes('network') ||
     m.includes('gateway') ||
     m.includes('not found') ||
-    m.includes(' 502') || m.includes(' 503') || m.includes(' 504')
+    m.includes(' 502') ||
+    m.includes(' 503') ||
+    m.includes(' 504')
   );
 }
 

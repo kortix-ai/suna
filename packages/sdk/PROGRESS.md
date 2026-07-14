@@ -699,3 +699,91 @@ installed, imported, and constructed `@kortix/sdk` successfully.
 
 **Shippable to production: YES** — the public addition is typed, additive,
 snapshot-locked, and verified from the packed package.
+
+---
+
+### 2026-07-13 — session `gateway-routing-ux` (claim)
+
+Claimed the user-directed LLM Gateway routing UX simplification. The SDK scope is
+an additive compact project model-picker REST surface so chat and settings model
+selectors no longer download the full 5,262-model runtime catalog. The existing
+`llm-catalog`, model-default, and routing-policy APIs remain backward compatible.
+Implementation will follow RED -> GREEN -> REFACTOR and finish with the full SDK
+typecheck, test, and packed-install smoke gates.
+
+**Status:** IN PROGRESS.
+
+### 2026-07-13 — session `gateway-routing-ux` (completion)
+
+Completed the additive compact project model-picker SDK surface. The project
+transport and `createKortix().project(id).models.picker()` facade now load the
+connection-aware picker projection rather than the full runtime catalog, while
+the existing `llm-catalog` API remains available and unchanged. React project
+model/provider hooks share the compact project cache, and model visibility now
+uses an indexed lookup instead of repeatedly scanning the catalog. Runtime and
+type public-surface snapshots contain additions only.
+
+The surrounding product flow now uses the shared model selector for the single
+project-default control and every fallback choice. Routing saves and project-
+default writes are mutually excluded through a shared mutation key, and an
+effective-default refetch cannot replace unsaved fallback edits.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1094 pass / 0 fail** across 79 files
+with 4988 assertions; `pnpm --filter @kortix/sdk smoke:install` built, packed,
+installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** — the SDK change is additive, snapshot-locked,
+install-verified, and backed by the real local compact-picker API flow.
+
+---
+
+### 2026-07-13 — session `sandbox-template-provider-readiness` (claim)
+
+Claimed the additive provider-aware sandbox-template observation contract. The
+template API will expose current launch readiness independently for Daytona,
+Platinum, and E2B while retaining every existing response field. The web host
+will consume that typed SDK contract instead of interpreting the legacy
+Daytona-named field as universal provider truth.
+
+**Status:** IN PROGRESS.
+
+---
+
+### 2026-07-13 — session `sandbox-template-provider-readiness` (completion)
+
+Completed the additive provider-aware template contract. Sandbox template
+responses now type independent Daytona, Platinum, and E2B launch-readiness
+observations, routed provider mode, and exact provider attribution for new build
+rows. Reusable template builds fan out to every enabled provider independently
+of project routing pins. Existing fields and exported names remain compatible.
+
+**TDD evidence:** the initial typecheck failed because `provider_coverage` was
+absent, then passed after the additive contract was implemented. Final SDK gates:
+`pnpm --filter @kortix/sdk typecheck` exited 0; `pnpm --filter @kortix/sdk test`
+reported **1095 pass / 0 fail** across 80 files with 4990 assertions;
+`pnpm --filter @kortix/sdk run smoke:install` built, packed, installed, imported,
+and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. Parent API/UI rollout and
+live provider verification remain part of the enclosing change.
+
+---
+
+### 2026-07-13 — session `sandbox-template-provider-status-v2` (completion)
+
+Completed the follow-up provider-status and failure-recovery contract on top of
+the provider-neutral synchronization rollout. The additive rebuild response can
+now report providers that failed before their rebuild was started, while the UI
+keeps Automatic neutral and shows selected-provider plus current-image status
+only for pinned projects. Existing provider readiness and `launch_ready` fields
+remain backward compatible.
+
+**Final SDK gates:** `pnpm --filter @kortix/sdk typecheck` exited 0;
+`pnpm --filter @kortix/sdk test` reported **1094 pass / 2 skip / 0 fail**
+across 80 files with 4986 assertions; `pnpm --filter @kortix/sdk run smoke:install` built,
+packed, installed, imported, and constructed `@kortix/sdk` successfully.
+
+**Shippable to production: YES** for the SDK surface. API/web typechecks,
+focused provider tests, and UI lint also pass; live dev verification remains the
+enclosing rollout gate.

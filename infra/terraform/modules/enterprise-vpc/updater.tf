@@ -133,22 +133,53 @@ data "aws_iam_policy_document" "codebuild" {
   }
 
   statement {
+    sid = "PersistVerifiedUpdaterMetadata"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.backups.arn}/updater-metadata/${var.name}/*",
+      "${aws_s3_bucket.backups.arn}/updater-staging/*",
+    ]
+  }
+
+  statement {
+    sid       = "ListVerifiedUpdaterMetadata"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.backups.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["updater-metadata/${var.name}/*", "updater-staging/*"]
+    }
+  }
+
+  statement {
     sid       = "EcrLogin"
     actions   = ["ecr:GetAuthorizationToken"]
     resources = ["*"]
   }
 
   statement {
-    sid = "OperateSupabaseThroughSsm"
-    actions = [
-      "ssm:GetCommandInvocation",
-      "ssm:ListCommandInvocations",
-      "ssm:SendCommand",
-    ]
+    sid     = "SendSupabaseCommand"
+    actions = ["ssm:SendCommand"]
     resources = [
       aws_instance.supabase.arn,
       "arn:${local.partition}:ssm:${local.region}::document/AWS-RunShellScript",
     ]
+  }
+
+  # GetCommandInvocation and ListCommandInvocations do not support resource
+  # scoping. Keep command submission pinned to the host/document above, while
+  # allowing the runner to wait for that submitted command to finish.
+  statement {
+    sid = "ObserveSupabaseCommand"
+    actions = [
+      "ssm:GetCommandInvocation",
+      "ssm:ListCommandInvocations",
+    ]
+    resources = ["*"]
   }
 
   statement {
@@ -195,83 +226,60 @@ resource "aws_iam_role" "updater_apply" {
 }
 
 data "aws_iam_policy_document" "updater_apply" {
-  #checkov:skip=CKV_AWS_356:Read-only trust-plane inspection and services without resource-level authorization require Resource star; all mutation is bounded by identity conditions, explicit denies, and the mandatory customer permissions boundary.
   statement {
-    sid = "ManageTaggedKortixInfrastructure"
+    sid = "ReadPinnedCluster"
     actions = [
-      "autoscaling:*",
-      "backup:*",
-      "cloudwatch:*",
-      "codebuild:*",
-      "dynamodb:*",
-      "ec2:*",
-      "ecr:*",
-      "eks:*",
-      "elasticloadbalancing:*",
-      "events:*",
-      "logs:*",
-      "secretsmanager:*",
-      "ssm:*",
-      "states:*",
-      "tag:*",
+      "eks:DescribeCluster",
     ]
-    resources = ["*"]
-    condition {
-      test     = "StringEqualsIfExists"
-      variable = "aws:RequestedRegion"
-      values   = [local.region]
-    }
-    condition {
-      test     = "StringEqualsIfExists"
-      variable = "aws:RequestTag/KortixInstance"
-      values   = [var.name]
-    }
+    resources = [module.eks.cluster_arn]
   }
 
   statement {
-    sid = "InspectKortixStorage"
+    sid = "ManagePlatformTerraformState"
     actions = [
-      "s3:Get*",
-      "s3:List*",
+      "s3:GetObject",
+      "s3:ListBucket",
+      "s3:PutObject",
     ]
     resources = [
-      aws_s3_bucket.backups.arn,
-      "${aws_s3_bucket.backups.arn}/*",
-      aws_s3_bucket.audit.arn,
-      "${aws_s3_bucket.audit.arn}/*",
+      "arn:${local.partition}:s3:::${var.terraform_state_bucket}",
+      "arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/platform.tfstate",
     ]
   }
 
-  # Terraform must refresh the reviewed trust-plane resources, but the
-  # automatic role cannot mutate them. IAM/KMS/network trust changes are
-  # manual-review changes and require a customer-authorized bootstrap identity.
   statement {
-    sid = "InspectTrustPlane"
+    sid       = "ReadClusterTerraformState"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/cluster.tfstate"]
+  }
+
+  statement {
+    sid = "LockPlatformTerraformState"
     actions = [
-      "acm:DescribeCertificate",
-      "acm:ListCertificates",
-      "acm:ListTagsForCertificate",
-      "cloudtrail:DescribeTrails",
-      "cloudtrail:GetEventSelectors",
-      "cloudtrail:GetInsightSelectors",
-      "cloudtrail:GetTrailStatus",
-      "cloudtrail:ListTags",
-      "iam:Get*",
-      "iam:List*",
-      "kms:DescribeKey",
-      "kms:GetKeyPolicy",
-      "kms:GetKeyRotationStatus",
-      "kms:ListResourceTags",
-      "sns:GetTopicAttributes",
-      "sns:ListSubscriptionsByTopic",
-      "sns:ListTagsForResource",
-      "sts:GetCallerIdentity",
+      "dynamodb:DeleteItem",
+      "dynamodb:DescribeTable",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
     ]
+    resources = ["arn:${local.partition}:dynamodb:${local.region}:${var.expected_account_id}:table/${var.terraform_state_lock_table}"]
+  }
+
+  statement {
+    sid       = "UsePlatformTerraformStateKey"
+    actions   = ["kms:Decrypt", "kms:DescribeKey", "kms:Encrypt", "kms:GenerateDataKey"]
+    resources = [var.terraform_state_kms_key_arn]
+  }
+
+  statement {
+    sid       = "VerifyAssumedIdentity"
+    actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
   }
 
-  # Defense in depth: even a compromised signed-updater process cannot bypass
-  # the plan guard to destroy resources or alter a customer trust boundary.
+  # Defense in depth: keep the destructive/trust-boundary deny even though the
+  # automatic role has no AWS infrastructure mutation grant. Future policy
+  # additions therefore fail closed unless this deny is also reviewed.
   statement {
     sid    = "DenyDestructiveOrBoundaryChanges"
     effect = "Deny"
@@ -279,7 +287,7 @@ data "aws_iam_policy_document" "updater_apply" {
       "autoscaling:Delete*",
       "backup:Delete*",
       "codebuild:Delete*",
-      "dynamodb:Delete*",
+      "dynamodb:DeleteTable",
       "ec2:AssociateRouteTable",
       "ec2:AuthorizeSecurityGroup*",
       "ec2:CreateInternetGateway",
@@ -408,10 +416,6 @@ resource "aws_codebuild_project" "updater" {
       value = aws_dynamodb_table.release_state.name
     }
     environment_variable {
-      name  = "KORTIX_RELEASE_BUNDLE_REPOSITORY"
-      value = aws_ecr_repository.enterprise["release-bundle"].repository_url
-    }
-    environment_variable {
       name  = "KORTIX_APPLY_ROLE_ARN"
       value = aws_iam_role.updater_apply.arn
     }
@@ -426,6 +430,62 @@ resource "aws_codebuild_project" "updater" {
     environment_variable {
       name  = "KORTIX_SUPABASE_INSTANCE_ID"
       value = aws_instance.supabase.id
+    }
+    environment_variable {
+      name  = "KORTIX_EXPECTED_ACCOUNT_ID"
+      value = var.expected_account_id
+    }
+    environment_variable {
+      name  = "KORTIX_CLUSTER_NAME"
+      value = module.eks.cluster_name
+    }
+    environment_variable {
+      name  = "KORTIX_KUBERNETES_MINOR"
+      value = var.cluster_version
+    }
+    environment_variable {
+      name  = "KORTIX_STATE_BUCKET"
+      value = var.terraform_state_bucket
+    }
+    environment_variable {
+      name  = "KORTIX_STATE_LOCK_TABLE"
+      value = var.terraform_state_lock_table
+    }
+    environment_variable {
+      name  = "KORTIX_STATE_KMS_KEY_ARN"
+      value = var.terraform_state_kms_key_arn
+    }
+    environment_variable {
+      name  = "KORTIX_BACKUP_BUCKET"
+      value = aws_s3_bucket.backups.id
+    }
+    environment_variable {
+      name  = "KORTIX_BACKUP_KMS_KEY_ARN"
+      value = aws_kms_key.data.arn
+    }
+    environment_variable {
+      name  = "KORTIX_ECR_REPOSITORIES"
+      value = jsonencode({ for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url })
+    }
+    environment_variable {
+      name  = "KORTIX_API_DOMAIN"
+      value = var.api_domain
+    }
+    environment_variable {
+      name  = "KORTIX_FRONTEND_DOMAIN"
+      value = var.frontend_domain
+    }
+    environment_variable {
+      name  = "KORTIX_CERTIFICATE_ARN"
+      value = aws_acm_certificate.public.arn
+    }
+    environment_variable {
+      name  = "KORTIX_SUPABASE_PRIVATE_IP"
+      value = aws_instance.supabase.private_ip
+    }
+    environment_variable {
+      name  = "KORTIX_APP_SERVICE_ACCOUNT"
+      value = var.app_service_account
     }
   }
 

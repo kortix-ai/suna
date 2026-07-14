@@ -41,13 +41,14 @@ case "$*" in
     case "$*" in *"--profile wrong-account"*) account="327903111249" ;; esac
     printf '{"UserId":"fake","Account":"%s","Arn":"arn:aws:iam::%s:user/fake"}\n' "$account" "$account"
     ;;
-  *"states start-execution"*)
+  *"stepfunctions start-execution"*)
     printf '%s\n' '{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:cli-1","startDate":"2026-07-13T12:00:00Z"}'
     ;;
-  *"states list-executions"*)
+  *"stepfunctions list-executions"*)
     printf '%s\n' '{"executions":[{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:hourly-1","name":"hourly-1","status":"SUCCEEDED","startDate":"2026-07-13T11:00:00Z","stopDate":"2026-07-13T11:05:00Z"}]}'
     ;;
   *"dynamodb get-item"*)
+    if [ "\${FAKE_DYNAMO_EMPTY:-}" = "1" ]; then exit 0; fi
     printf '%s\n' '{"Item":{"instance":{"S":"kortix-vpc-demo"},"release":{"S":"0.9.84-e1"},"channel":{"S":"stable"},"status":{"S":"healthy"},"updated_at":{"S":"2026-07-13T11:05:00Z"}}}'
     ;;
   *"eks describe-cluster"*)
@@ -58,6 +59,17 @@ case "$*" in
     ;;
   *"ec2 describe-instances"*)
     printf '%s\n' '{"Reservations":[{"Instances":[{"InstanceId":"i-0123456789","State":{"Name":"running"},"PrivateIpAddress":"10.60.16.10"}]}]}'
+    ;;
+  *"secretsmanager get-secret-value"*)
+    if [ "\${FAKE_RUNTIME_MISSING:-}" = "1" ]; then
+      printf '%s\n' 'ResourceNotFoundException: Secrets Manager can not find the specified secret value' >&2
+      exit 254
+    fi
+    printf '%s\n' '{"SecretString":"{\\\"SMTP_ADMIN_EMAIL\\\":\\\"admin@example.com\\\",\\\"SMTP_HOST\\\":\\\"smtp.example.com\\\",\\\"SMTP_PORT\\\":\\\"587\\\",\\\"SMTP_USER\\\":\\\"smtp-user\\\",\\\"SMTP_PASS\\\":\\\"smtp-pass\\\",\\\"SMTP_SENDER_NAME\\\":\\\"Kortix\\\",\\\"DAYTONA_API_KEY\\\":\\\"daytona-key\\\",\\\"OPENROUTER_API_KEY\\\":\\\"openrouter-key\\\"}"}'
+    ;;
+  *"secretsmanager put-secret-value"*)
+    cat >/dev/null
+    printf '%s\n' '{"ARN":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test","VersionId":"00000000-0000-0000-0000-000000000000"}'
     ;;
   *"logs tail"*) printf '%s\n' '2026-07-13T11:05:00Z updater healthy' ;;
   *"--version"*) printf '%s\n' 'aws-cli/2.31.0' ;;
@@ -86,26 +98,45 @@ case "$*" in
     printf '%s\n' '"arn:aws:iam::935064898258:policy/kortix-vpc-demo-workload-boundary"'
     ;;
   *"output -json instance"*)
-    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","state_machine_arn":"arn:aws:states:us-west-2:935064898258:stateMachine:kortix-vpc-demo-reconcile","release_state_table":"kortix-vpc-demo-release-state","supabase_instance_id":"i-0123456789"}'
+    printf '%s\n' '{"name":"kortix-vpc-demo","account_id":"935064898258","region":"us-west-2","cluster_name":"kortix-vpc-demo","state_machine_arn":"arn:aws:states:us-west-2:935064898258:stateMachine:kortix-vpc-demo-reconcile","release_state_table":"kortix-vpc-demo-release-state","supabase_instance_id":"i-0123456789","supabase_private_ip":"10.60.16.10","runtime_secret_arn":"arn:aws:secretsmanager:us-west-2:935064898258:secret:kortix-vpc-demo/runtime-test"}'
     ;;
   *"state pull"*)
     for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
     case "\${dir:-}" in */state)
       if [ ! -f "$dir/terraform.bootstrap.tfstate" ]; then
-        printf '%s\n' '{"version":4,"serial":7,"lineage":"lineage-123"}' > "$dir/terraform.bootstrap.tfstate"
+        printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}' > "$dir/terraform.bootstrap.tfstate"
+      fi
+      if grep -q 'backend "s3"' "$dir/backend.tf"; then
+        if [ "\${FAKE_TERRAFORM_REMOTE_DIFFERENT:-}" = "1" ]; then
+          printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":1,"lineage":"remote-lineage","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"stale","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[]}]}'
+        elif [ "\${FAKE_TERRAFORM_REMOTE_REFRESHED:-}" = "1" ]; then
+          printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":2,"lineage":"remote-lineage","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"account_guard","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[{"schema_version":0,"attributes":{"id":"guard-1","output":{"provider_filled":true}}}]}]}'
+        else
+          printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":1,"lineage":"remote-lineage","outputs":{},"resources":[]}'
+        fi
+        exit 0
       fi
       ;;
     esac
     printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}'
     ;;
+  *"apply"*)
+    if [ -f "\${FAKE_TERRAFORM_LOG}.fail-apply" ]; then
+      printf '%s\n' '╷' '│ Error: simulated actionable apply failure' '╵' >&2
+      exit 66
+    fi
+    for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
+    case "\${dir:-}" in */state)
+      if ! grep -q 'backend "s3"' "$dir/backend.tf"; then
+        printf '%s\n' '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[]}' > "$dir/terraform.bootstrap.tfstate"
+      fi
+      ;;
+    esac
+    printf '%s\n' 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.'
+    ;;
   *"plan"*)
     for arg in "$@"; do case "$arg" in -out=*) : > "\${arg#-out=}" ;; esac; done
     printf '%s\n' 'Plan: 1 to add, 0 to change, 0 to destroy.'
-    ;;
-  *"apply"*)
-    for arg in "$@"; do case "$arg" in -chdir=*) dir="\${arg#-chdir=}" ;; esac; done
-    case "\${dir:-}" in */state) printf '%s\n' '{"version":4,"serial":7,"lineage":"lineage-123"}' > "$dir/terraform.bootstrap.tfstate" ;; esac
-    printf '%s\n' 'Apply complete! Resources: 1 added, 0 changed, 0 destroyed.'
     ;;
   *"init -input=false -migrate-state"*)
     if [ "\${FAKE_TERRAFORM_FAIL_MIGRATE:-}" = "1" ]; then
@@ -162,6 +193,7 @@ esac
       '--vpc-cidr', '10.60.0.0/16',
       '--api-domain', 'api.vpc-demo.kortix.com',
       '--frontend-domain', 'vpc-demo.kortix.com',
+      '--route53-zone-id', 'Z0123456789EXAMPLE',
       '--release-repository-url', 'https://releases.kortix.com/enterprise',
       '--tuf-root-sha256', TRUSTED_ROOT,
       '--updater-bootstrap-url', 'https://releases.kortix.com/enterprise/bootstrap/updater-linux-amd64',
@@ -174,7 +206,7 @@ esac
 
   async function initConfigured(instance = 'kortix-vpc-demo') {
     const result = await run(configuredInitArgs(instance));
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     return result;
   }
 
@@ -192,6 +224,7 @@ esac
         vpc_cidr: '10.60.0.0/16',
         api_domain: 'api.vpc-demo.kortix.com',
         frontend_domain: 'vpc-demo.kortix.com',
+        route53_zone_id: 'Z0123456789EXAMPLE',
         tuf_root_sha256: TRUSTED_ROOT,
       },
     });
@@ -207,6 +240,8 @@ esac
       .toContain('aws_instance" "supabase');
     expect(readFileSync(join(instanceDir, 'terraform/modules/eks/platform/main.tf'), 'utf8'))
       .toContain('helm_release" "argo_cd');
+    expect(readFileSync(join(instanceDir, 'terraform/modules/enterprise-platform/main.tf'), 'utf8'))
+      .toContain('argo_cd_enabled             = false');
   });
 
   test('enforces Terraform-compatible lowercase DNS slugs for AWS instances', async () => {
@@ -273,10 +308,15 @@ esac
     writeFileSync(awsLog, '');
 
     const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json']);
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({
       instance: 'kortix-vpc-demo',
-      state_migration: { verified: true, lineage: 'lineage-123', serial: 7 },
+      state_migration: {
+        verified: true,
+        lineage: 'remote-lineage',
+        serial: 1,
+        verification_mode: 'exact-content',
+      },
       cluster: { decision: 'manual_review', applied: true },
       reconciliation: { execution_arn: expect.stringContaining('kortix-vpc-demo-reconcile') },
     });
@@ -289,10 +329,35 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
-    expect(readFileSync(awsLog, 'utf8')).toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).toContain('stepfunctions start-execution');
+    expect(readFileSync(awsLog, 'utf8')).toContain('secretsmanager put-secret-value');
+    expect(readFileSync(awsLog, 'utf8')).toContain('file://');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('openrouter-key');
 
     await run(['configure', '--instance', 'kortix-vpc-demo', '--maintenance-window', 'Sat:03:00-04:00', '--yes']);
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
+  });
+
+  test('bootstraps internal credentials but waits for operator runtime values before first reconcile', async () => {
+    await initConfigured();
+    writeFileSync(terraformLog, '');
+    writeFileSync(awsLog, '');
+
+    const result = await run(
+      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      { FAKE_RUNTIME_MISSING: '1' },
+    );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      runtime_secret: {
+        bootstrapped: true,
+        missing: expect.arrayContaining(['SMTP_HOST', 'DAYTONA_API_KEY', 'OPENROUTER_API_KEY']),
+      },
+      reconciliation: { status: 'WAITING_FOR_RUNTIME_CONFIG', execution_arn: null },
+    });
+    const calls = readFileSync(awsLog, 'utf8');
+    expect(calls).toContain('secretsmanager put-secret-value');
+    expect(calls).not.toContain('stepfunctions start-execution');
   });
 
   test('preserves local bootstrap state and restores the local backend when migration fails', async () => {
@@ -309,7 +374,60 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
+  });
+
+  test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
+    await initConfigured();
+    writeFileSync(`${terraformLog}.fail-apply`, '');
+    const result = await run(['deploy', '--instance', 'kortix-vpc-demo', '--yes']);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('Terraform apply failed: Error: simulated actionable apply failure');
+    expect(result.stderr).not.toContain('Terraform apply failed: ╷');
+  });
+
+  test('rejects a migrated remote state whose resources differ from the preserved bootstrap state', async () => {
+    await initConfigured();
+    writeFileSync(terraformLog, '');
+    writeFileSync(awsLog, '');
+
+    const result = await run(
+      ['deploy', '--instance', 'kortix-vpc-demo', '--yes'],
+      { FAKE_TERRAFORM_REMOTE_DIFFERENT: '1' },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('remote state verification failed');
+    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
+  });
+
+  test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
+    await initConfigured();
+    const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
+    writeFileSync(join(stateRoot, 'backend.tf'), 'terraform { backend "s3" {} }\n');
+    writeFileSync(
+      join(stateRoot, 'backend.hcl'),
+      'bucket = "state"\ndynamodb_table = "locks"\nregion = "us-west-2"\nencrypt = true\nkms_key_id = "key"\n',
+    );
+    writeFileSync(
+      join(stateRoot, 'terraform.bootstrap.tfstate'),
+      '{"version":4,"terraform_version":"1.9.8","serial":7,"lineage":"lineage-123","outputs":{},"resources":[{"mode":"managed","type":"terraform_data","name":"account_guard","provider":"provider[\\"terraform.io/builtin/terraform\\"]","instances":[{"schema_version":0,"attributes":{"id":"guard-1"}}]}]}\n',
+    );
+
+    const result = await run(
+      ['deploy', '--instance', 'kortix-vpc-demo', '--yes', '--json'],
+      { FAKE_TERRAFORM_REMOTE_REFRESHED: '1' },
+    );
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      state_migration: {
+        verified: true,
+        already_remote: true,
+        verification_mode: 'refreshed-object-identity',
+      },
+    });
+    expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
   });
 
   test('routes reconcile, force update, and rollback through the customer state machine', async () => {
@@ -317,7 +435,7 @@ esac
     writeFileSync(awsLog, '');
 
     const reconcile = await run(['reconcile', '--instance', 'kortix-vpc-demo', '--json']);
-    expect(reconcile.code).toBe(0);
+    expect(reconcile.code, reconcile.stderr).toBe(0);
     const update = await run([
       'update', '--instance', 'kortix-vpc-demo', '--release', '0.9.85-e1', '--force', '--json',
     ]);
@@ -328,12 +446,36 @@ esac
     expect(rollback.code).toBe(0);
 
     const calls = readFileSync(awsLog, 'utf8');
-    expect(calls.match(/states start-execution/g)).toHaveLength(3);
+    expect(calls.match(/stepfunctions start-execution/g)).toHaveLength(3);
     expect(calls).toContain('"trigger":"cli-reconcile"');
     expect(calls).toContain('"requested_release":"0.9.85-e1"');
     expect(calls).toContain('"force":true');
     expect(calls).toContain('"trigger":"cli-rollback"');
     expect(calls).toContain('"rollback_to":"0.9.84-e1"');
+  });
+
+  test('manages AWS runtime environment only in customer Secrets Manager', async () => {
+    await initConfigured();
+    writeFileSync(awsLog, '');
+
+    const list = await run(['env', 'ls', '--instance', 'kortix-vpc-demo', '--json']);
+    expect(list.code, list.stderr).toBe(0);
+    expect(JSON.parse(list.stdout)).toMatchObject({
+      instance: 'kortix-vpc-demo',
+      missing_required: [],
+    });
+    expect(list.stdout).not.toContain('smtp-pass');
+
+    const set = await run([
+      'env', 'set', 'SMTP_PASS=rotated-secret', '--instance', 'kortix-vpc-demo', '--json',
+    ]);
+    expect(set.code).toBe(0);
+    expect(JSON.parse(set.stdout)).toMatchObject({ updated: ['SMTP_PASS'] });
+    const calls = readFileSync(awsLog, 'utf8');
+    expect(calls).toContain('secretsmanager put-secret-value');
+    expect(calls).toContain('file://');
+    expect(calls).not.toContain('rotated-secret');
+    expect(readFileSync(join(configRoot, 'kortix-vpc-demo/instance.json'), 'utf8')).not.toContain('rotated-secret');
   });
 
   test('reports live AWS status/version and tails customer-owned updater logs', async () => {
@@ -361,6 +503,20 @@ esac
     expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/kortix-vpc-demo/updater');
   });
 
+  test('reports not-deployed release state when DynamoDB returns an empty successful response', async () => {
+    await initConfigured();
+
+    const result = await run(
+      ['status', '--instance', 'kortix-vpc-demo', '--json'],
+      { FAKE_DYNAMO_EMPTY: '1' },
+    );
+
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      release: { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+    });
+  });
+
   test('does not reinterpret Docker lifecycle commands for AWS', async () => {
     await initConfigured('enterprise');
     const result = await run(['start', '--instance', 'enterprise']);
@@ -380,6 +536,7 @@ esac
     expect(result.stdout).toContain('--target <target>');
     expect(result.stdout).toContain('--aws-profile <name>');
     expect(result.stdout).toContain('--vpc-cidr <cidr>');
+    expect(result.stdout).toContain('--route53-zone-id <id>');
     expect(result.stdout).toContain('--tuf-root-sha256 <digest>');
   });
 });

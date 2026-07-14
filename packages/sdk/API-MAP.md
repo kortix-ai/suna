@@ -54,7 +54,7 @@ try/catching every call.
 | detail (config+agents+skills+files) | `GET /v1/projects/:id/detail` | ✅ |
 | provision / import linked repo / create repo | `POST /v1/projects/{provision,link-repository,create-repo}` | ✅ |
 | github installs / repos / repository branches / collaborators | `GET /v1/projects/github/*`, `/:id/git/collaborators` | ✅ |
-| llm-catalog | `GET /v1/projects/:id/llm-catalog` | ✅ |
+| model catalogs | `GET /v1/projects/:id/llm-catalog` (full runtime), `GET /v1/projects/:id/model-picker` (compact connected UI picker) | ✅ |
 | experimental flags / onboarding | `GET/PUT /v1/projects/:id/{experimental,onboarding}` | ✅ |
 
 ### 3. Project secrets / env  ✅

@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kortix-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-enterprise-edge.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    {{- include "kortix-enterprise-edge.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kortix-supabase
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: kortix-supabase
+    app.kubernetes.io/part-of: kortix-enterprise
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /auth/v1/health
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: kortix-supabase
+  namespace: {{ .Release.Namespace }}
+  labels:
+    kubernetes.io/service-name: kortix-supabase
+    app.kubernetes.io/name: kortix-supabase
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+endpoints:
+  - addresses: [{{ required "supabasePrivateIp is required" .Values.supabasePrivateIp | quote }}]
+    conditions:
+      ready: true

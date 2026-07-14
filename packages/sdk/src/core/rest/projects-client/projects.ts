@@ -238,6 +238,20 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
   );
 }
 
+/**
+ * Load the compact, connection-aware catalog intended for interactive model
+ * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
+ * runtime models.dev projection used to configure OpenCode sandboxes.
+ */
+export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
+  return unwrap(
+    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+      showErrors: false,
+      ...options,
+    }),
+  );
+}
+
 export async function createProject(input: ProjectInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }

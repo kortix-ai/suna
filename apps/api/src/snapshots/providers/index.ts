@@ -46,13 +46,13 @@ export interface BuildableTemplate {
 
 export type ProviderState =
   | 'active'
-  | 'pulling'
   | 'building'
-  | 'error'
   | 'build_failed'
   | 'removing'
-  | 'missing'
-  | string;
+  | 'unknown'
+  | 'missing';
+
+export { normalizeExistingProviderState } from './state';
 
 export interface BuildLogTap {
   /** Streamed per line from the provider build. */

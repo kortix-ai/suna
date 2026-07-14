@@ -6,6 +6,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `getProjectModelPicker()` plus `kortix.projects.modelPicker` and
+  `kortix.project(id).modelPicker()` for the compact, connection-aware selector
+  catalog; the existing `llmCatalog` remains the complete runtime catalog.
 - Typed GitHub repository branch discovery through
   `kortix.github.listRepositoryBranches(accountId, installationId, repoFullName)`,
   including GitHub's default branch and branch protection metadata.
@@ -28,6 +31,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - `getPlatformUrl()` no longer reads a bare `process.env`, which threw a
   `ReferenceError` in a browser `<script>` bundle and on React Native.
+- The HTTP layer (`backendApi`/`makeRequest`) now transparently retries transient
+  `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
+  with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
+  retried.
 
 ### Internal
 - `src/` is now tiered: `core/` (isomorphic), `browser/`, `node/`, `react/`.

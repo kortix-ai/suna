@@ -481,6 +481,7 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
      */
     fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
     source: b.source,
+    provider: b.provider,
     started_at: b.startedAt.toISOString(),
     finished_at: b.finishedAt?.toISOString() ?? null,
   };
@@ -509,6 +510,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }
 

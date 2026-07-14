@@ -8,12 +8,14 @@ import {
   DEFAULT_MEMORY_GB,
   stageBuildContext,
 } from '../build-context';
+import { normalizeExistingProviderState } from './state';
 import type {
   BuildableTemplate,
   BuildLogTap,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
+import { shortLivedObservation } from '../observation-cache';
 
 interface E2BTemplateView {
   templateID: string;
@@ -35,6 +37,11 @@ async function listTemplates(): Promise<E2BTemplateView[]> {
   return response.json() as Promise<E2BTemplateView[]>;
 }
 
+const observeTemplates = shortLivedObservation(
+  listTemplates,
+  process.env.NODE_ENV === 'test' ? 0 : 2_000,
+);
+
 function matchesTemplate(template: E2BTemplateView, name: string): boolean {
   return [...(template.names ?? []), ...(template.aliases ?? [])].some(
     (candidate) => candidate === name || candidate.endsWith(`/${name}`) || candidate.endsWith(`/${name}:default`) || candidate === `${name}:default`,
@@ -54,6 +61,7 @@ class E2BAdapter implements SandboxProviderAdapter {
     }
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
     const context = await stageBuildContext(input.snapshotName, userDockerfile, input.warmRepo);
+    observeTemplates.invalidate();
     try {
       // fromDockerfile() converts the Dockerfile ENTRYPOINT into E2B's start
       // command. E2B executes that command while finalizing the template, before
@@ -82,6 +90,7 @@ class E2BAdapter implements SandboxProviderAdapter {
         },
       });
     } finally {
+      observeTemplates.invalidate();
       await rm(context.contextDir, { recursive: true, force: true }).catch(() => {});
     }
   }
@@ -89,29 +98,34 @@ class E2BAdapter implements SandboxProviderAdapter {
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!this.isConfigured()) return 'missing';
     try {
-      if (await Template.exists(snapshotName, connectionOpts())) return 'active';
-      const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
+      const template = (await observeTemplates()).find((item) => matchesTemplate(item, snapshotName));
       if (!template) return 'missing';
-      const status = String(template.buildStatus ?? '').toLowerCase();
-      if (status === 'ready') return 'active';
-      if (status === 'error') return 'build_failed';
-      return status || 'building';
+      // Template.exists() becomes true when E2B creates the template identity,
+      // before its launchable :default tag exists. Only buildStatus=ready is a
+      // usable snapshot; every non-terminal provider status is canonicalized to
+      // building so the UI keeps polling and the session path falls back cold.
+      return normalizeExistingProviderState(template.buildStatus);
     } catch {
-      return 'missing';
+      return 'unknown';
     }
   }
 
   async deleteSnapshot(snapshotName: string): Promise<void> {
     if (!this.isConfigured()) return;
-    const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
-    if (!template) return;
-    const response = await fetch(`https://api.e2b.dev/templates/${encodeURIComponent(template.templateID)}`, {
-      method: 'DELETE',
-      headers: { 'X-API-KEY': config.E2B_API_KEY },
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`);
+    observeTemplates.invalidate();
+    try {
+      const template = (await listTemplates()).find((item) => matchesTemplate(item, snapshotName));
+      if (!template) return;
+      const response = await fetch(`https://api.e2b.dev/templates/${encodeURIComponent(template.templateID)}`, {
+        method: 'DELETE',
+        headers: { 'X-API-KEY': config.E2B_API_KEY },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`E2B delete template ${snapshotName} -> ${response.status} ${(await response.text()).slice(0, 300)}`);
+      }
+    } finally {
+      observeTemplates.invalidate();
     }
   }
 
