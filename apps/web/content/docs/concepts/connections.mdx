@@ -19,9 +19,15 @@ per-project, and the agent can only use what you connect.
   can't shadow the built-in channel. The Slack credential is the install
   token; the `computer` connector has no credential at all (the live tunnel is
   the credential), and per-machine access is granted in Computers.
-- **Credentials are shared.** One credential covers the whole project. (Legacy
-  manifests can still say `credential = "per_user"` — per-member BYO credential —
-  but that mode was removed; it's tolerated and silently resolves to `shared`.)
+- **Credentials live in project-owned connection profiles.** Each connector has
+  a default shared profile for the project and can also hold multiple
+  **connection profiles** (e.g. several email inboxes), each with its own
+  credential. A session can bind a specific profile per connector. Once a
+  session binds any profile, every connector for that session must be bound
+  explicitly (no silent fallback to the project default). (Legacy manifests can
+  still say `credential = "per_user"` —
+  per-member BYO credential — but that mode was removed; it's tolerated and
+  silently resolves to `shared`.)
 - **Per-call policies** — each tool can be set to run, require approval, or be
   blocked.
 - **Set up in the dashboard** — the project's Connectors page offers Pipedream
