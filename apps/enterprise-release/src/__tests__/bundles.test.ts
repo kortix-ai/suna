@@ -9,11 +9,17 @@ import {
   SUPABASE_UPSTREAM_COMMIT,
 } from '../../../cli/src/self-host/compose-assets.ts';
 import {
-  materializePlatformBundle,
+  materializeAppBundle,
   materializeSupabaseBundle,
-  type PlatformBundleDescriptor,
+  type AppBundleDescriptor,
   type SupabaseBundleDescriptor,
 } from '../bundles.ts';
+
+const APP_DIGESTS = {
+  api: `sha256:${'a'.repeat(64)}`,
+  frontend: `sha256:${'b'.repeat(64)}`,
+  gateway: `sha256:${'c'.repeat(64)}`,
+};
 
 describe('enterprise release bundles', () => {
   test('materializes an authenticated Supabase-only EC2 payload', () => {
@@ -96,25 +102,102 @@ describe('enterprise release bundles', () => {
     }
   });
 
-  test('materializes only the reviewed post-cluster DNS Terraform stage (no Helm/EKS)', () => {
-    const root = mkdtempSync(join(tmpdir(), 'kortix-platform-bundle-'));
+  test('materializes a signed, digest-pinned, self-healing app bundle (100% Docker, no ECS)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-app-bundle-'));
     try {
-      const descriptor = materializePlatformBundle(root, '0.9.84-e1');
+      const descriptor = materializeAppBundle(root, '0.9.84-e1', APP_DIGESTS);
       expect(descriptor).toEqual({
         schema_version: 1,
-        kind: 'kortix-enterprise-platform',
+        kind: 'kortix-enterprise-app',
         version: '0.9.84-e1',
-        terraform_root: 'terraform/environments/enterprise-vpc-template/platform',
-      } satisfies PlatformBundleDescriptor);
+        compose_files: ['docker-compose.yml'],
+        persistent_paths: { caddy: '/var/lib/kortix/caddy' },
+        image_digests: { api: APP_DIGESTS.api, frontend: APP_DIGESTS.frontend, gateway: APP_DIGESTS.gateway },
+        required_services: ['api', 'caddy', 'frontend', 'gateway'],
+      } satisfies AppBundleDescriptor);
       expect(JSON.parse(readFileSync(join(root, 'bundle.json'), 'utf8'))).toEqual(descriptor);
 
-      const platformMain = readFileSync(join(root, descriptor.terraform_root, 'main.tf'), 'utf8');
-      // ECS model: the DNS stage only aliases the app domains at the shared ALB.
-      expect(platformMain).toContain('resource "aws_route53_record" "app_alias"');
-      expect(platformMain).not.toContain('module "platform"');
-      // No Helm charts or EKS modules are bundled any more.
-      expect(existsSync(join(root, 'charts'))).toBe(false);
-      expect(existsSync(join(root, 'terraform', 'modules'))).toBe(false);
+      const compose = readFileSync(join(root, 'docker-compose.yml'), 'utf8');
+      // 100% Docker: nothing ECS/Fargate anywhere in the generated bundle.
+      const allText = [
+        compose,
+        readFileSync(join(root, 'Caddyfile'), 'utf8'),
+        readFileSync(join(root, 'bin', 'install'), 'utf8'),
+        readFileSync(join(root, 'bin', 'app-start'), 'utf8'),
+        readFileSync(join(root, 'bin', 'watchdog'), 'utf8'),
+      ].join('\n');
+      expect(allText).not.toMatch(/ecs|fargate|task-definition|register-task|run-task|update-service/i);
+
+      // Self-healing: every service has restart: always AND a real healthcheck AND bounded logs.
+      for (const service of ['caddy', 'api', 'gateway', 'frontend']) {
+        expect(compose).toContain(`${service}:`);
+      }
+      expect(compose.match(/restart: always/g)?.length).toBe(4); // caddy, api, gateway, frontend
+      expect(compose.match(/healthcheck:/g)?.length).toBe(4);
+      expect(compose.match(/driver: json-file/g)?.length).toBe(5); // + migrate
+      expect(compose).toContain('max-size: "10m"');
+      expect(compose).toContain('max-file: "5"');
+      // api runs 2 replicas.
+      expect(compose).toMatch(/api:[\s\S]*?replicas: 2/);
+      // Images are env-substituted; the install script enforces the digest lock.
+      expect(compose).toContain('image: ${KORTIX_API_IMAGE}');
+      expect(compose).toContain('image: ${KORTIX_CADDY_IMAGE}');
+      expect(compose).not.toMatch(/image:\s*supabase\//);
+
+      // Caddy load-balances ALL api replicas via Docker DNS with passive health.
+      const caddyfile = readFileSync(join(root, 'Caddyfile'), 'utf8');
+      expect(caddyfile).toContain('dynamic a');
+      expect(caddyfile).toContain('name api');
+      expect(caddyfile).toContain('fail_duration');
+      expect(caddyfile).toContain('lb_policy round_robin');
+      expect(caddyfile).toContain('/v1/llm*');
+      expect(caddyfile).toContain('reverse_proxy gateway:8090');
+      expect(caddyfile).toContain('reverse_proxy frontend:3000');
+      expect(caddyfile).toContain('/rest/v1* /auth/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*');
+      expect(caddyfile).toContain('import /etc/caddy/acme.caddy');
+
+      // Scripts are executable + bash-valid.
+      for (const script of ['install', 'app-start', 'app-stop', 'watchdog', 'prune']) {
+        const path = join(root, 'bin', script);
+        expect(statSync(path).mode & 0o777, script).toBe(0o755);
+        const syntax = spawnSync('bash', ['-n', path], { encoding: 'utf8' });
+        expect(syntax.status, `${script}: ${syntax.stderr}`).toBe(0);
+      }
+      const installer = readFileSync(join(root, 'bin', 'install'), 'utf8');
+      expect(installer).toContain('kortix-enterprise-app');
+      expect(installer).toContain('does not match the signed digest');
+      expect(installer).toContain('acme_dns route53');
+
+      // Watchdog respects the updater flock and restarts kortix-app after N failures.
+      const watchdog = readFileSync(join(root, 'bin', 'watchdog'), 'utf8');
+      expect(watchdog).toContain('/var/lib/kortix/updater.lock');
+      expect(watchdog).toContain('flock -n 9 || exit 0');
+      expect(watchdog).toContain('systemctl restart kortix-app.service');
+      expect(watchdog).toContain('THRESHOLD=3');
+      expect(watchdog).toContain('COOLDOWN=600');
+      const prune = readFileSync(join(root, 'bin', 'prune'), 'utf8');
+      expect(prune).toContain('flock -n 9 || exit 0');
+      expect(prune).toContain('docker image prune');
+
+      // systemd units: self-healing restart + Persistent timers.
+      const appUnit = readFileSync(join(root, 'systemd', 'kortix-app.service'), 'utf8');
+      expect(appUnit).toContain('Restart=on-failure');
+      expect(appUnit).toContain('RestartSec=');
+      const updaterTimer = readFileSync(join(root, 'systemd', 'kortix-updater.timer'), 'utf8');
+      expect(updaterTimer).toContain('Persistent=true');
+      const watchdogTimer = readFileSync(join(root, 'systemd', 'kortix-watchdog.timer'), 'utf8');
+      expect(watchdogTimer).toContain('OnUnitActiveSec=2min');
+      expect(existsSync(join(root, 'systemd', 'kortix-prune.timer'))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('refuses app bundle image digests that are not sha256-pinned', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-app-bundle-invalid-'));
+    try {
+      expect(() => materializeAppBundle(root, '0.9.84-e1', { ...APP_DIGESTS, api: 'latest' }))
+        .toThrow('app bundle api image digest must be sha256');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
