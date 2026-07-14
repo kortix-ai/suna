@@ -56,6 +56,7 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-onboarding',
   'kortix-slack',
   'kortix-system',
+  'kortix-teams',
 ] as const;
 export type KortixManagedSkillName = (typeof KORTIX_MANAGED_SKILL_NAMES)[number];
 

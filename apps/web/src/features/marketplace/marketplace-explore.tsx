@@ -156,8 +156,12 @@ export function MarketplaceExplore({
     ? null
     : displayCompanyLabel(source, marketplaces.find((m) => m.id === source)?.label);
 
+  // Hide items that ship inside a project (e.g. the Kortix Starter skills) from
+  // the main grid — the project represents them here. They stay fully browseable
+  // by id and addable individually (project detail, add-to-project), just not as
+  // their own tiles on the landing grid.
   const componentItems = useMemo(
-    () => catalogItems.filter((it) => it.type !== 'registry:project'),
+    () => catalogItems.filter((it) => it.type !== 'registry:project' && !it.partOfProject),
     [catalogItems],
   );
   const typeCounts = useMemo(() => sumMarketplaceTypeCounts(marketplaces), [marketplaces]);

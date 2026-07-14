@@ -197,6 +197,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-onboarding',
       'kortix-slack',
       'kortix-system',
+      'kortix-teams',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);

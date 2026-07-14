@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import type { MarketplaceItem } from '@/lib/marketplace-client';
 import { cn } from '@/lib/utils';
+import { MarketplaceAvatar } from './marketplace-avatar';
 import { projectBannerClass } from './marketplace-project-visual';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -63,8 +64,18 @@ export function MarketplaceProjectCard({
           ) : null}
         </div>
         <div className="mt-auto flex items-center justify-between gap-3 pt-1">
-          <span className="text-muted-foreground/70 text-xs tabular-nums">
-            {skillCount > 0 ? `${skillCount} ${skillCount === 1 ? 'skill' : 'skills'} included` : ''}
+          <span className="text-muted-foreground/70 inline-flex min-w-0 items-center gap-1.5 text-xs">
+            <MarketplaceAvatar
+              id={item.marketplaceId}
+              owner={item.owner}
+              sourceUrl={item.sourceUrl}
+              label={item.marketplaceLabel}
+              size="xs"
+            />
+            <span className="truncate tabular-nums">
+              {item.marketplaceLabel}
+              {skillCount > 0 ? ` · ${skillCount} ${skillCount === 1 ? 'skill' : 'skills'}` : ''}
+            </span>
           </span>
           <span className="text-foreground group-hover:text-kortix-blue inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors">
             Install

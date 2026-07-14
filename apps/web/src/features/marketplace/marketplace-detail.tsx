@@ -294,6 +294,38 @@ function ItemSidebar({
         </div>
       </div>
 
+      {data.partOfProject ? (
+        <div>
+          <SectionLabel>Part of a project</SectionLabel>
+          {surface.variant === 'public' ? (
+            <Link
+              href={marketplaceItemHref(data.partOfProject.id)}
+              className="group bg-popover hover:bg-muted/50 flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors"
+            >
+              <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                <Boxes className="size-4" />
+              </span>
+              <span className="text-foreground truncate text-sm font-medium group-hover:underline">
+                {data.partOfProject.title}
+              </span>
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => surface.openItem(data.partOfProject!.id)}
+              className="group bg-popover hover:bg-muted/50 flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors"
+            >
+              <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
+                <Boxes className="size-4" />
+              </span>
+              <span className="text-foreground truncate text-sm font-medium group-hover:underline">
+                {data.partOfProject.title}
+              </span>
+            </button>
+          )}
+        </div>
+      ) : null}
+
       {fileTargets.length > 0 ? (
         <div>
           <SectionLabel count={fileTargets.length}>Files</SectionLabel>

@@ -125,6 +125,7 @@ describe('marketplace catalog', () => {
       'kortix-onboarding',
       'kortix-slack',
       'kortix-system',
+      'kortix-teams',
     ];
     for (const name of managedCandidates) {
       const entry = await findCatalogEntryByName(name);
