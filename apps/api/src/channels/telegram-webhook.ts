@@ -16,7 +16,13 @@
 
 import { timingSafeEqual } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
-import { chatChannelBindings, chatEventDedup, chatThreads, projects } from '@kortix/db';
+import {
+  chatChannelBindings,
+  chatEventDedup,
+  chatThreads,
+  projects,
+  sessionLifecycleCommands,
+} from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import {
@@ -223,10 +229,16 @@ async function handleUpdate(
     const token = await loadTelegramTokenForProject(projectId);
     if (!token) return;
     if (command.command === 'new') {
-      // Forget the chat's session mapping AND its create-claim so the next
-      // message starts a genuinely fresh session (a lingering claim row would
-      // strand the next create behind an 8s wait for a mapping that never
-      // comes).
+      // Forget EVERYTHING that would make the next message resume this chat's
+      // session instead of starting a fresh one:
+      //  - chat_threads: the chat→session mapping (else the next msg follows up)
+      //  - chat_event_dedup: the create-claim (a lingering claim strands the
+      //    next create behind an 8s wait for a mapping that never comes)
+      //  - session_lifecycle_commands: the createSession idempotency record —
+      //    its key is a CONSTANT per chat (telegram:threadcreate:bot:chat), so
+      //    without this delete createSession replays the SAME (now-dead) session
+      //    forever and /new does nothing.
+      const claimKey = threadClaimKey(botId, chatId);
       await db
         .delete(chatThreads)
         .where(
@@ -236,9 +248,10 @@ async function handleUpdate(
             eq(chatThreads.threadId, chatId),
           ),
         );
+      await db.delete(chatEventDedup).where(eq(chatEventDedup.eventId, claimKey));
       await db
-        .delete(chatEventDedup)
-        .where(eq(chatEventDedup.eventId, threadClaimKey(botId, chatId)));
+        .delete(sessionLifecycleCommands)
+        .where(eq(sessionLifecycleCommands.idempotencyKey, claimKey));
       await telegramSendMessage(token, message.chat.id, TELEGRAM_NEW_TEXT, {
         replyToMessageId: message.message_id,
       });
