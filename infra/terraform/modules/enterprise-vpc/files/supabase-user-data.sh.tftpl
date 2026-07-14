@@ -4,7 +4,7 @@ set -euo pipefail
 exec > >(tee -a /var/log/kortix-bootstrap.log | logger -t kortix-bootstrap -s 2>/dev/console) 2>&1
 
 dnf update -y
-dnf install -y amazon-cloudwatch-agent curl docker jq unzip xfsprogs
+dnf install -y amazon-cloudwatch-agent docker jq unzip xfsprogs
 
 aws_cli_tmp=$(mktemp -d)
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \

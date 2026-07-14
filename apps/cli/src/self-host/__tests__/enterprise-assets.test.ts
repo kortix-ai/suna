@@ -74,6 +74,8 @@ describe('embedded enterprise Terraform graph', () => {
     const userData = enterpriseTerraformAssets['modules/enterprise-vpc/files/supabase-user-data.sh.tftpl'];
 
     expect(userData).not.toContain('dnf install -y amazon-cloudwatch-agent awscli2');
+    expect(userData).toContain('dnf install -y amazon-cloudwatch-agent docker jq unzip xfsprogs');
+    expect(userData).not.toContain('dnf install -y amazon-cloudwatch-agent curl');
     expect(userData).toContain('awscli-exe-linux-x86_64-2.25.14.zip');
     expect(userData).toContain('9145327c1e33e5df50ad9a283fd1cb47e256f858c0a846017c11bc2eab8e47f1');
     expect(userData).toContain('aws --version');
