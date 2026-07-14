@@ -162,4 +162,16 @@ describe('embedded enterprise Terraform graph', () => {
     expect(applyPolicy).not.toContain('ManageTaggedKortixInfrastructure');
     expect(applyPolicy).not.toMatch(/"(?:autoscaling|backup|cloudwatch|codebuild|ec2|ecr|eks|elasticloadbalancing|events|logs|secretsmanager|ssm|states|tag):\*"/);
   });
+
+  test('lets the platform apply role read the pinned cluster remote state', () => {
+    const updater = enterpriseTerraformAssets['modules/enterprise-vpc/updater.tf'];
+    const applyPolicy = updater.slice(
+      updater.indexOf('data "aws_iam_policy_document" "updater_apply"'),
+      updater.indexOf('resource "aws_iam_role_policy" "updater_apply"'),
+    );
+
+    expect(applyPolicy).toContain('sid       = "ReadClusterTerraformState"');
+    expect(applyPolicy).toContain('actions   = ["s3:GetObject"]');
+    expect(applyPolicy).toContain('"arn:${local.partition}:s3:::${var.terraform_state_bucket}/enterprise/cluster.tfstate"');
+  });
 });
