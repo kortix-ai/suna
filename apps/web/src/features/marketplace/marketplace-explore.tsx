@@ -1,6 +1,6 @@
 'use client';
 
-import { PackageSearch, Plus, Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,6 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import { AddMarketplaceModal } from './add-marketplace-modal';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
@@ -292,6 +291,8 @@ export function MarketplaceExplore({
           </section>
         ) : null}
 
+        {/* Hidden entirely when there's nothing to show — no empty-state placeholder. */}
+        {searching || !isAll || componentItems.length > 0 ? (
         <div className="space-y-12">
           <SectionHeading
             title={sourceLabel ?? 'Skills'}
@@ -322,37 +323,30 @@ export function MarketplaceExplore({
               )}
             />
           ) : isAll ? (
-            componentItems.length === 0 ? (
-              <EmptyState
-                icon={PackageSearch}
-                title="Nothing here yet"
-                description="The catalog is empty right now — check back soon."
-              />
-            ) : (
-              // Show the whole catalog at once — one virtualized, scrollable grid
-              // per type. Single type (skills) → no redundant per-type heading
-              // (the "Skills" section heading above already names it).
-              <div className="space-y-12">
-                {groups.map((g) => (
-                  <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
-                    {groups.length > 1 ? (
-                      <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
-                        {g.label}
-                      </h2>
-                    ) : null}
-                    <MarketplacePagedGrid
-                      type={g.type}
-                      publicOnly={publicOnly}
-                      scrollContainerRef={scrollContainerRef}
-                      columns={MARKETPLACE_GRID_COLUMNS}
-                      gridClassName="sm:grid-cols-3"
-                      emptyTitle="Nothing here yet"
-                      emptyDescription="The catalog is empty right now — check back soon."
-                    />
-                  </section>
-                ))}
-              </div>
-            )
+            // Show the whole catalog at once — one virtualized, scrollable grid
+            // per type. Single type (skills) → no redundant per-type heading
+            // (the "Skills" section heading above already names it). When there's
+            // nothing here, the section is hidden entirely (see the wrapper below).
+            <div className="space-y-12">
+              {groups.map((g) => (
+                <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
+                  {groups.length > 1 ? (
+                    <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
+                      {g.label}
+                    </h2>
+                  ) : null}
+                  <MarketplacePagedGrid
+                    type={g.type}
+                    publicOnly={publicOnly}
+                    scrollContainerRef={scrollContainerRef}
+                    columns={MARKETPLACE_GRID_COLUMNS}
+                    gridClassName="sm:grid-cols-3"
+                    emptyTitle=""
+                    emptyDescription=""
+                  />
+                </section>
+              ))}
+            </div>
           ) : (
             <MarketplacePagedGrid
               source={source}
@@ -371,6 +365,7 @@ export function MarketplaceExplore({
             />
           )}
         </div>
+        ) : null}
       </div>
     </MarketplaceShell>
   );

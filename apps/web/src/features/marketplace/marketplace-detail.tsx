@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText, Zap } from 'lucide-react';
+import { ArrowRight, Boxes, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -113,34 +113,6 @@ function BundleMemberRow({
     <button type="button" onClick={() => surface.openItem(id)} className={rowClass}>
       {body}
     </button>
-  );
-}
-
-/** A static content card (a project's agent / trigger) — matches the skill
- *  card's visual, but display-only since these aren't their own catalog items. */
-function StaticContentCard({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string | null;
-}) {
-  return (
-    <div className="bg-popover flex w-full items-center gap-3.5 rounded-md border px-4 py-3">
-      {icon}
-      <div className="min-w-0 flex-1">
-        <span className="text-foreground block truncate text-sm font-medium capitalize">
-          {title.replaceAll('-', ' ')}
-        </span>
-        {description ? (
-          <p className="text-muted-foreground mt-0.5 line-clamp-1 text-xs leading-relaxed text-pretty">
-            {description}
-          </p>
-        ) : null}
-      </div>
-    </div>
   );
 }
 
@@ -568,6 +540,53 @@ export function MarketplaceDetail({
       }));
     return groupMarketplaceItemsByType(items);
   }, [isProject, data]);
+  // A project's agents + triggers (parsed from kortix.yaml) rendered with the
+  // SAME card + name-based icon heuristic as its skills — just non-navigable,
+  // since they aren't their own catalog items.
+  const projectExtraGroups = useMemo(() => {
+    if (!isProject) return [] as { label: string; items: MarketplaceItem[] }[];
+    const toItem = (
+      name: string,
+      title: string,
+      description: string | null,
+      type: string,
+      prefix: string,
+    ): MarketplaceItem => ({
+      id: `${prefix}:${name}`,
+      registry: data.registry,
+      name,
+      type,
+      title,
+      description,
+      categories: [],
+      capabilities: { secrets: [], connectors: [], tools: [], network: [] },
+      dependencies: [],
+      fileCount: 0,
+      external: data.external,
+      marketplaceId: data.marketplaceId,
+      marketplaceLabel: data.marketplaceLabel,
+      owner: data.owner,
+      sourceUrl: data.sourceUrl,
+    });
+    const groups: { label: string; items: MarketplaceItem[] }[] = [];
+    if (data.projectAgents?.length) {
+      groups.push({
+        label: 'Agents',
+        items: data.projectAgents.map((a) =>
+          toItem(a.name, a.title.replaceAll('-', ' '), a.description, 'registry:agent', 'agent'),
+        ),
+      });
+    }
+    if (data.projectTriggers?.length) {
+      groups.push({
+        label: 'Triggers',
+        items: data.projectTriggers.map((t) =>
+          toItem(t.slug, t.slug.replaceAll('-', ' '), t.description, 'registry:trigger', 'trigger'),
+        ),
+      });
+    }
+    return groups;
+  }, [isProject, data]);
   const readme = data.readme ? stripFrontmatter(data.readme) : '';
   const itemTitle = data.title.replaceAll('-', ' ');
   const companyLabel = displayCompanyLabel(data.marketplaceId, data.marketplaceLabel);
@@ -682,41 +701,23 @@ export function MarketplaceDetail({
                 </div>
               </section>
             ))}
-            {/* Agents + triggers, from the project's kortix.yaml, listed the same way. */}
-            {data.projectAgents?.length ? (
-              <section>
-                <SectionLabel count={data.projectAgents.length}>Agents</SectionLabel>
+            {/* Agents + triggers (from kortix.yaml), rendered as the SAME cards
+                in the SAME grid as the skills above — just non-navigable. */}
+            {projectExtraGroups.map((g) => (
+              <section key={g.label}>
+                <SectionLabel count={g.items.length}>{g.label}</SectionLabel>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  {data.projectAgents.map((a) => (
-                    <StaticContentCard
-                      key={a.name}
-                      icon={<TypeTile type="registry:agent" size="md" />}
-                      title={a.title}
-                      description={a.description}
+                  {g.items.map((it) => (
+                    <MarketplaceExploreCard
+                      key={it.id}
+                      item={it}
+                      showSource={false}
+                      navigable={false}
                     />
                   ))}
                 </div>
               </section>
-            ) : null}
-            {data.projectTriggers?.length ? (
-              <section>
-                <SectionLabel count={data.projectTriggers.length}>Triggers</SectionLabel>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {data.projectTriggers.map((t) => (
-                    <StaticContentCard
-                      key={t.slug}
-                      icon={
-                        <span className="bg-kortix-yellow/15 text-kortix-yellow flex size-8 shrink-0 items-center justify-center rounded-lg">
-                          <Zap className="size-4" />
-                        </span>
-                      }
-                      title={t.slug}
-                      description={t.description}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
+            ))}
           </>
         ) : (
           <>

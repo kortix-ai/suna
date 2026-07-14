@@ -12,16 +12,22 @@ import { useMarketplaceSurface } from './marketplace-surface';
 export function MarketplaceExploreCard({
   item,
   showSource = true,
+  navigable = true,
 }: {
   item: MarketplaceItem;
   showSource?: boolean;
+  /** When false, the card is a static tile (no link/button, no chevron) — used
+   *  for a project's own agents/triggers, which aren't their own catalog items
+   *  but should still read exactly like the skill boxes. */
+  navigable?: boolean;
 }) {
   const surface = useMarketplaceSurface();
   const installed = surface.variant === 'project' && surface.installedNames.has(item.name);
 
   const className = cn(
-    'group bg-popover hover:bg-muted/70 flex w-full items-center gap-3.5 rounded-md border px-4 py-3 text-left',
-    'transition-[background-color,transform] duration-150 active:scale-[0.99]',
+    'group bg-popover flex w-full items-center gap-3.5 rounded-md border px-4 py-3 text-left',
+    navigable &&
+      'hover:bg-muted/70 transition-[background-color,transform] duration-150 active:scale-[0.99]',
   );
 
   const inner = (
@@ -42,13 +48,18 @@ export function MarketplaceExploreCard({
           </p>
         ) : null}
       </div>
-      <ChevronRight
-        className="text-muted-foreground/50 size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
-        aria-hidden
-      />
+      {navigable ? (
+        <ChevronRight
+          className="text-muted-foreground/50 size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      ) : null}
     </>
   );
 
+  if (!navigable) {
+    return <div className={className}>{inner}</div>;
+  }
   // Public surface renders a real crawlable link; the in-project overlay uses a
   // button that opens the detail store (can't navigate away from the panel).
   if (surface.variant === 'public') {
