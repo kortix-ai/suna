@@ -41,13 +41,14 @@ case "$*" in
     case "$*" in *"--profile wrong-account"*) account="327903111249" ;; esac
     printf '{"UserId":"fake","Account":"%s","Arn":"arn:aws:iam::%s:user/fake"}\n' "$account" "$account"
     ;;
-  *"states start-execution"*)
+  *"stepfunctions start-execution"*)
     printf '%s\n' '{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:cli-1","startDate":"2026-07-13T12:00:00Z"}'
     ;;
-  *"states list-executions"*)
+  *"stepfunctions list-executions"*)
     printf '%s\n' '{"executions":[{"executionArn":"arn:aws:states:us-west-2:935064898258:execution:kortix-vpc-demo-reconcile:hourly-1","name":"hourly-1","status":"SUCCEEDED","startDate":"2026-07-13T11:00:00Z","stopDate":"2026-07-13T11:05:00Z"}]}'
     ;;
   *"dynamodb get-item"*)
+    if [ "\${FAKE_DYNAMO_EMPTY:-}" = "1" ]; then exit 0; fi
     printf '%s\n' '{"Item":{"instance":{"S":"kortix-vpc-demo"},"release":{"S":"0.9.84-e1"},"channel":{"S":"stable"},"status":{"S":"healthy"},"updated_at":{"S":"2026-07-13T11:05:00Z"}}}'
     ;;
   *"eks describe-cluster"*)
@@ -328,7 +329,7 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "s3"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(false);
-    expect(readFileSync(awsLog, 'utf8')).toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).toContain('stepfunctions start-execution');
     expect(readFileSync(awsLog, 'utf8')).toContain('secretsmanager put-secret-value');
     expect(readFileSync(awsLog, 'utf8')).toContain('file://');
     expect(readFileSync(awsLog, 'utf8')).not.toContain('openrouter-key');
@@ -356,7 +357,7 @@ esac
     });
     const calls = readFileSync(awsLog, 'utf8');
     expect(calls).toContain('secretsmanager put-secret-value');
-    expect(calls).not.toContain('states start-execution');
+    expect(calls).not.toContain('stepfunctions start-execution');
   });
 
   test('preserves local bootstrap state and restores the local backend when migration fails', async () => {
@@ -373,7 +374,7 @@ esac
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(readFileSync(join(stateRoot, 'backend.tf'), 'utf8')).toContain('backend "local"');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
   });
 
   test('surfaces Terraform diagnostics instead of a box-drawing border', async () => {
@@ -398,7 +399,7 @@ esac
     expect(result.stderr).toContain('remote state verification failed');
     const stateRoot = join(configRoot, 'kortix-vpc-demo/terraform/environments/enterprise-vpc/state');
     expect(existsSync(join(stateRoot, 'terraform.bootstrap.tfstate'))).toBe(true);
-    expect(readFileSync(awsLog, 'utf8')).not.toContain('states start-execution');
+    expect(readFileSync(awsLog, 'utf8')).not.toContain('stepfunctions start-execution');
   });
 
   test('recovers an already-remote state after provider refresh when all object identities and outputs match', async () => {
@@ -445,7 +446,7 @@ esac
     expect(rollback.code).toBe(0);
 
     const calls = readFileSync(awsLog, 'utf8');
-    expect(calls.match(/states start-execution/g)).toHaveLength(3);
+    expect(calls.match(/stepfunctions start-execution/g)).toHaveLength(3);
     expect(calls).toContain('"trigger":"cli-reconcile"');
     expect(calls).toContain('"requested_release":"0.9.85-e1"');
     expect(calls).toContain('"force":true');
@@ -500,6 +501,20 @@ esac
     expect(logs.code).toBe(0);
     expect(logs.stdout).toContain('updater healthy');
     expect(readFileSync(awsLog, 'utf8')).toContain('logs tail /kortix/kortix-vpc-demo/updater');
+  });
+
+  test('reports not-deployed release state when DynamoDB returns an empty successful response', async () => {
+    await initConfigured();
+
+    const result = await run(
+      ['status', '--instance', 'kortix-vpc-demo', '--json'],
+      { FAKE_DYNAMO_EMPTY: '1' },
+    );
+
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      release: { release: null, channel: 'stable', status: 'not-deployed', updated_at: null },
+    });
   });
 
   test('does not reinterpret Docker lifecycle commands for AWS', async () => {
