@@ -103,19 +103,30 @@ ensure_dev_tunnel() {
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
 
-  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
-  # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
-  # tunnel URL or a leftover like https://api.trycloudflare.com baked into .env)
-  # used to be trusted blindly, so no tunnel started and every sandbox got a 404
-  # callback URL — sessions reach 'running' in ~2s but the UI panel loads a dead
-  # URL → infinite spinner that looks like "kortix is broken". Probe it first;
-  # fall through to a fresh quick tunnel if it's unreachable.
+  # Respect an explicit public KORTIX_URL (stable named/ngrok tunnel, staging
+  # API, …) — but only if the TUNNEL is live. FAA: a stale/bogus value (e.g. a
+  # dead quick-tunnel URL baked into .env) used to be trusted blindly, so no
+  # tunnel started and every sandbox got a dead callback URL → infinite spinner.
+  # But we probe BEFORE the API is up, so requiring a 200 wrongly rejected a
+  # healthy stable tunnel (it returns 502 "upstream down" until the API boots) —
+  # which then fell back to a rotating quick tunnel, defeating the point of a
+  # stable URL. So trust ANY http response that proves the tunnel forwards
+  # (200 = API already up, 502/503/504 = tunnel live, API still booting); only a
+  # dead tunnel (000 conn/DNS failure, or cloudflared's 530 origin-error) falls
+  # through to a fresh quick tunnel.
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
-    if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
-      echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+    local probe
+    probe="$(curl -s -o /dev/null -w '%{http_code}' -m 6 "${KORTIX_URL%/}/health" 2>/dev/null || echo 000)"
+    if [[ "$probe" == "200" || "$probe" == "502" || "$probe" == "503" || "$probe" == "504" ]]; then
+      # Stable preset tunnel: export it for the API child and leave TUNNEL_URL_FILE
+      # UNSET — that's the signal downstream (watchdog + API supervisor) that we do
+      # NOT own a rotating quick tunnel to babysit, so they don't cat a file that
+      # doesn't exist (set -u → "unbound variable") or bounce the API on rotation.
+      export KORTIX_URL
+      echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL (tunnel live, http $probe)"
       return 0
     fi
-    echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
+    echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is UNREACHABLE (http $probe) — ignoring it and starting a fresh tunnel."
     unset KORTIX_URL
   fi
 
@@ -178,6 +189,14 @@ ensure_dev_tunnel() {
 # (its KORTIX_URL is baked at spawn). Sessions created on the old URL can't be
 # saved (their baked env is gone with it) — but everything new just works.
 start_tunnel_watchdog() {
+  # Nothing to watch when KORTIX_URL is a stable preset (named/ngrok tunnel,
+  # staging) — there's no quick tunnel we own that can silently rot, and probing
+  # an unset TUNNEL_URL_FILE would just trip set -u. The external tunnel's own
+  # supervisor keeps it alive.
+  if [[ -z "${TUNNEL_URL_FILE:-}" ]]; then
+    echo "[dev] Tunnel watchdog off — stable preset KORTIX_URL (no rotation to heal)."
+    return 0
+  fi
   (
     while :; do
       sleep 60
@@ -755,14 +774,21 @@ PYC
 
   start_tunnel_watchdog
 
-  echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
   cd "$ROOT_DIR"
-  while :; do
-    KORTIX_SKIP_ENSURE_SCHEMA=1 KORTIX_URL="$(cat "$TUNNEL_URL_FILE")" pnpm --filter kortix-api dev || true
-    # Restart only when the watchdog rotated the tunnel; a plain exit (ctrl-C,
-    # crash without rotation) leaves the loop so the script terminates normally.
-    [[ -f "$TUNNEL_URL_FILE.rotated" ]] || break
-    rm -f "$TUNNEL_URL_FILE.rotated"
-    echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
-  done
+  if [[ -z "${TUNNEL_URL_FILE:-}" ]]; then
+    # Stable preset KORTIX_URL (already exported) — it never rotates, so run the
+    # API once with the env as-is. No TUNNEL_URL_FILE to cat, no supervise loop.
+    echo "[dev] Starting API (stable KORTIX_URL=$KORTIX_URL)..."
+    KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev || true
+  else
+    echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
+    while :; do
+      KORTIX_SKIP_ENSURE_SCHEMA=1 KORTIX_URL="$(cat "$TUNNEL_URL_FILE")" pnpm --filter kortix-api dev || true
+      # Restart only when the watchdog rotated the tunnel; a plain exit (ctrl-C,
+      # crash without rotation) leaves the loop so the script terminates normally.
+      [[ -f "$TUNNEL_URL_FILE.rotated" ]] || break
+      rm -f "$TUNNEL_URL_FILE.rotated"
+      echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
+    done
+  fi
 fi
