@@ -26,44 +26,34 @@ resource "aws_iam_role" "operator" {
 data "aws_iam_policy_document" "operator" {
   count = length(var.operator_principal_arns) > 0 ? 1 : 0
 
+  #checkov:skip=CKV_AWS_356:Read-only describe/list APIs for ECS, EC2, ECR, logs, and scheduler do not support resource-level scoping; no mutation is granted here.
   statement {
     sid = "InspectInstallation"
     actions = [
       "backup:Describe*",
       "backup:Get*",
       "backup:List*",
-      "codebuild:BatchGetBuilds",
-      "codebuild:ListBuildsForProject",
-      "dynamodb:DescribeTable",
-      "dynamodb:GetItem",
-      "dynamodb:Query",
       "ec2:Describe*",
       "ecr:Describe*",
       "ecr:ListImages",
-      "eks:DescribeCluster",
-      "eks:List*",
+      "ecs:Describe*",
+      "ecs:List*",
+      "elasticloadbalancing:Describe*",
       "logs:Describe*",
       "logs:FilterLogEvents",
       "logs:GetLogEvents",
       "logs:GetQueryResults",
       "logs:StartQuery",
+      "scheduler:GetSchedule",
+      "scheduler:ListSchedules",
       "secretsmanager:DescribeSecret",
       "ssm:Describe*",
       "ssm:GetCommandInvocation",
       "ssm:GetConnectionStatus",
+      "ssm:GetParameter",
       "ssm:List*",
-      "states:DescribeExecution",
-      "states:DescribeStateMachine",
-      "states:GetExecutionHistory",
-      "states:ListExecutions",
     ]
     resources = ["*"]
-  }
-
-  statement {
-    sid       = "ForceOrNormalReconcile"
-    actions   = ["states:StartExecution"]
-    resources = [aws_sfn_state_machine.reconcile.arn]
   }
 
   statement {
@@ -87,22 +77,4 @@ resource "aws_iam_role_policy" "operator" {
   name   = "${var.name}-operator"
   role   = aws_iam_role.operator[0].id
   policy = data.aws_iam_policy_document.operator[0].json
-}
-
-resource "aws_eks_access_entry" "operator" {
-  count         = length(var.operator_principal_arns) > 0 ? 1 : 0
-  cluster_name  = module.eks.cluster_name
-  principal_arn = aws_iam_role.operator[0].arn
-  type          = "STANDARD"
-}
-
-resource "aws_eks_access_policy_association" "operator" {
-  count         = length(var.operator_principal_arns) > 0 ? 1 : 0
-  cluster_name  = module.eks.cluster_name
-  principal_arn = aws_iam_role.operator[0].arn
-  policy_arn    = "arn:${local.partition}:eks::aws:cluster-access-policy/AmazonEKSAdminViewPolicy"
-  access_scope {
-    type = "cluster"
-  }
-  depends_on = [aws_eks_access_entry.operator]
 }

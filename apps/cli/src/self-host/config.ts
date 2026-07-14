@@ -219,6 +219,11 @@ export function assertAwsVpcInstanceName(instance: string): void {
   if (!/^[a-z][a-z0-9-]{2,30}[a-z0-9]$/.test(instance)) {
     throw new Error('AWS VPC instance must be a 4-32 character lowercase DNS slug');
   }
+  // Every AWS resource is named kortix-<instance>; a kortix- prefix here would
+  // double it (kortix-kortix-...). Reject it explicitly rather than stripping.
+  if (instance.startsWith('kortix-')) {
+    throw new Error('AWS VPC instance must not start with "kortix-"; resources are already named kortix-<instance>');
+  }
 }
 
 function rejectUnknownFields(value: Record<string, unknown>, allowed: Set<string>, prefix = ''): void {
