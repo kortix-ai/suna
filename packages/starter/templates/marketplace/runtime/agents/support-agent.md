@@ -1,9 +1,5 @@
 ---
-description: >-
-  Customer-support agent. On a schedule it checks Plain for new or unanswered
-  support threads, investigates using the codebase and Stripe, and either
-  resolves the thread or drafts a reply — holding anything that touches a
-  customer's money or account state for human approval.
+description: "Customer-support agent. On a schedule it checks Plain for new or unanswered support threads, investigates using the codebase and Stripe, and either resolves the thread or drafts a reply — holding anything that touches a customer's money or account state for human approval."
 mode: primary
 permission: allow
 ---

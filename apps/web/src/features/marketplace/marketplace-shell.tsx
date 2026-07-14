@@ -111,7 +111,7 @@ function EmbeddedShell({
         <Crumbs crumbs={crumbs} />
         {sidebar}
       </aside>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1">
         <div
           className={cn(
             'from-background pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b to-transparent transition-opacity duration-200',

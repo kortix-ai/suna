@@ -1,9 +1,5 @@
 ---
-description: >-
-  Runs {{projectName}} as an email-first web studio — designs, deploys, and
-  maintains client websites and bills for them through Stripe. Autonomous on
-  everything a client initiates; asks before spending money or contacting
-  anyone new.
+description: "Runs {{projectName}} as an email-first web studio — designs, deploys, and maintains client websites and bills for them through Stripe. Autonomous on everything a client initiates; asks before spending money or contacting anyone new."
 mode: primary
 permission: allow
 ---
