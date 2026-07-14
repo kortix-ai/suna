@@ -68,6 +68,7 @@ import {
   telegramPairingMatches,
 } from './telegram/pairing';
 import { answerLabelFromKeyboard, isQuestionCallback } from './telegram/questions';
+import { applyTelegramReviewVerdict, isReviewCallback } from './telegram/review';
 import {
   finalizeTelegramTurnDirect,
   restartTelegramTurnForFollowUp,
@@ -269,6 +270,61 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
   const { botId, botUsername } = install;
   const token = await loadTelegramTokenForProject(projectId);
   const cbMessage = cb.message;
+
+  // Review-card taps (Approve / Reject / Ask-for-changes): apply the verdict as
+  // the project's automation actor, then resume the session with the decision.
+  // Gated by the allowlist — an unpaired tapper can't decide reviews.
+  if (isReviewCallback(cb.data) && cbMessage?.chat) {
+    const chatId = String(cbMessage.chat.id);
+    const [project] = await db
+      .select({ accountId: projects.accountId, metadata: projects.metadata })
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+    if (!project) {
+      if (token) await telegramAnswerCallbackQuery(token, cb.id);
+      return;
+    }
+    const syntheticTap: TelegramMessage = {
+      message_id: cbMessage.message_id,
+      chat: cbMessage.chat,
+      from: cb.from,
+      text: '',
+    };
+    if (
+      telegramRequireUserIdentityForTest() &&
+      !isKnownTelegramSenderForTest(project, syntheticTap)
+    ) {
+      if (token) {
+        await telegramAnswerCallbackQuery(token, cb.id, 'Pair with the bot first (/start <code>).');
+      }
+      return;
+    }
+    const actorUserId = await resolveProjectAutomationActor(project.accountId);
+    const result = actorUserId
+      ? await applyTelegramReviewVerdict(projectId, cb.data, actorUserId)
+      : null;
+    if (token) await telegramAnswerCallbackQuery(token, cb.id, result?.toast ?? 'Done');
+    if (result?.decisionLine) {
+      if (token) {
+        await telegramEditMessageText(
+          token,
+          chatId,
+          cbMessage.message_id,
+          `✅ ${result.toast}`,
+        ).catch(() => {});
+      }
+      // Resume the agent from the decision — same follow-up path as a typed reply.
+      await createOrJoinChatSession({
+        projectId,
+        botId,
+        botUsername,
+        chatId,
+        message: { ...syntheticTap, text: result.decisionLine },
+      });
+    }
+    return;
+  }
 
   // /agent · /model picker taps: change the chat's binding (same allowlist gate
   // as running a turn — an unpaired tapper can't reconfigure the chat).
