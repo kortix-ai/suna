@@ -318,7 +318,11 @@ describe('release installation transaction', () => {
   test('polls long-running SSM installs through their 30-minute command timeout', () => {
     const fixture = installerFixture();
     try {
-      fixture.installer.install(releaseManifest(), '/tmp/platform.tar.gz', '/tmp/supabase.tar.gz', mirroredImages());
+      const runSupabaseCommand = Reflect.get(fixture.installer, 'runSupabaseCommand') as (
+        comment: string,
+        script: string,
+      ) => void;
+      runSupabaseCommand.call(fixture.installer, 'Test long-running SSM command', 'true');
 
       const wait = fixture.events.find((event) => event.startsWith('run:bash -ceu'));
       expect(wait).toContain('SECONDS + 1860');
