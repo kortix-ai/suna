@@ -189,6 +189,7 @@ describe('getStarterFiles', () => {
 describe('KORTIX_MANAGED_SKILL_NAMES', () => {
   test('tracks only the first-party kortix-* skill directories', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
+      'kortix-cli',
       'kortix-computer',
       'kortix-executor',
       'kortix-marketplace',

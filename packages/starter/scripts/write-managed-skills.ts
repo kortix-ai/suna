@@ -16,9 +16,6 @@ import { getStarterFiles, isKortixManagedSkillName } from '../src/index';
 const outDir = process.argv[2] ?? join(import.meta.dir, '..', 'dist', 'managed-skills');
 
 const SKILLS_PREFIX = '.kortix/opencode/skills/';
-// `kortix-cli` ships as a real default skill (not in the managed set) but is the
-// front door we always inject; everything else here is the managed kortix-* family.
-const ALWAYS_INJECT = new Set(['kortix-cli']);
 
 function skillNameOf(path: string): string | null {
   if (!path.startsWith(SKILLS_PREFIX)) return null;
@@ -31,7 +28,7 @@ let count = 0;
 for (const f of files) {
   const name = skillNameOf(f.path);
   if (!name) continue;
-  if (!isKortixManagedSkillName(name) && !ALWAYS_INJECT.has(name)) continue;
+  if (!isKortixManagedSkillName(name)) continue; // the managed kortix-* family (incl. kortix-cli)
   const dest = join(outDir, f.path.slice(SKILLS_PREFIX.length)); // <name>/<...>
   mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, f.content);

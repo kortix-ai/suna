@@ -117,6 +117,7 @@ describe('marketplace catalog', () => {
     // browseable again, so their managed status can also be checked directly
     // off the browse list.
     const managedCandidates = [
+      'kortix-cli',
       'kortix-computer',
       'kortix-executor',
       'kortix-marketplace',
