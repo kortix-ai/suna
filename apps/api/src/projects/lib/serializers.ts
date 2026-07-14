@@ -1,4 +1,5 @@
 import { config, type SandboxProviderName } from '../../config';
+import { isPlaceholderOpencodeTitle } from '../opencode-title-sync';
 import type { Project, ProjectSession, Secret } from '@kortix/api-contract';
 import { type SecretGrant, visibilityToIntent } from '../../executor/share';
 import { db } from '../../shared/db';
@@ -68,7 +69,11 @@ export function serializeSession(
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
   const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
-  const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  // Historic rows may carry OpenCode's frozen placeholder ("New session - …")
+  // in metadata.name — expose it as untitled so clients fall back to their own
+  // display chain instead of a junk title (heals old rows with no backfill).
+  const rawAutoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -151,9 +156,17 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     // Surface the pin only when it's still USABLE (allowed + key) — mirrors the
     // create path (which ignores a disabled/removed pin and falls back), so the
     // picker never shows a value with no matching option.
-    default_sandbox_provider: ((): string | null => {
+    default_sandbox_provider: ((): SandboxProviderName | null => {
       const pin = (row.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_provider;
-      return typeof pin === 'string' && config.isProviderEnabled(pin as SandboxProviderName) ? pin : null;
+      if (
+        typeof pin !== 'string'
+        || !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
+      ) {
+        return null;
+      }
+
+      const provider = pin as SandboxProviderName;
+      return config.isProviderEnabled(provider) ? provider : null;
     })(),
     available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) => config.isProviderEnabled(p)),
   };
@@ -473,6 +486,7 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
      */
     fixable_by_agent: category ? describeSnapshotError(category).fixableByAgent : false,
     source: b.source,
+    provider: b.provider,
     started_at: b.startedAt.toISOString(),
     finished_at: b.finishedAt?.toISOString() ?? null,
   };
@@ -501,6 +515,7 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
 }
 

@@ -195,39 +195,23 @@ run_check v1_playwright_spec_guards bash -lc '
 run_check v1_legacy_script_guards bash -lc '
   set -euo pipefail
 
-  bash -n scripts/start-sandbox.sh
-
-  start_sandbox_output="$(mktemp)"
-  build_snapshot_output="$(mktemp)"
-  ssh_bridge_output="$(mktemp)"
-  trap "rm -f \"$start_sandbox_output\" \"$build_snapshot_output\" \"$ssh_bridge_output\"" EXIT
-
-  if scripts/start-sandbox.sh >"$start_sandbox_output" 2>&1; then
-    cat "$start_sandbox_output"
-    exit 1
-  fi
-  grep -q "legacy JustAVPS snapshot bootstrapper" "$start_sandbox_output"
-
-  if bun apps/api/scripts/build-snapshot.ts >"$build_snapshot_output" 2>&1; then
-    cat "$build_snapshot_output"
-    exit 1
-  fi
-  grep -q "disabled for repo-first Kortix v1" "$build_snapshot_output"
-
-  if bun apps/api/scripts/apply-justavps-ssh-bridge.ts >"$ssh_bridge_output" 2>&1; then
-    cat "$ssh_bridge_output"
-    exit 1
-  fi
-  grep -q "disabled for repo-first Kortix v1" "$ssh_bridge_output"
+  for retired_path in \
+    scripts/start-sandbox.sh \
+    apps/api/scripts/build-snapshot.ts \
+    apps/api/scripts/apply-justavps-ssh-bridge.ts \
+    apps/api/src/platform/services/local-sandbox-health.ts
+  do
+    [ ! -e "$retired_path" ]
+  done
 
   if git grep -n -E "core/startup|core/docker|raw.githubusercontent.com/kortix-ai/suna/main/core" -- scripts apps/api; then
     exit 1
   fi
 
-  if git grep -n -E "justavps-docker|justavps-workload|JustAVPSProvider" -- \
-    scripts/start-sandbox.sh \
+  if git grep -n -E "justavps-docker|justavps-workload|JustAVPSProvider|apply-justavps-ssh-bridge" -- \
+    scripts \
     apps/api/scripts \
-    apps/api/src/platform/services/local-sandbox-health.ts
+    apps/api/src
   then
     exit 1
   fi

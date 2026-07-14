@@ -229,7 +229,7 @@ resource "aws_ecs_task_definition" "this" {
   task_role_arn            = aws_iam_role.task.arn
 
   container_definitions = jsonencode([{
-    name      = "api"
+    name      = var.container_name
     image     = var.image
     essential = true
     portMappings = [{
@@ -243,7 +243,7 @@ resource "aws_ecs_task_definition" "this" {
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.this.name
         "awslogs-region"        = var.aws_region
-        "awslogs-stream-prefix" = "api"
+        "awslogs-stream-prefix" = var.container_name
       }
     }
     # No container-level healthCheck: the Bun image has no curl/wget, and the
@@ -275,7 +275,7 @@ resource "aws_ecs_service" "this" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.this.arn
-    container_name   = "api"
+    container_name   = var.container_name
     container_port   = var.container_port
   }
 

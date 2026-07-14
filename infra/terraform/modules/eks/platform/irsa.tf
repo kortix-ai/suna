@@ -9,6 +9,7 @@
 
 # AWS Load Balancer Controller — provisions/owns the ALB from the app's Ingress.
 module "alb_controller_irsa" {
+  count             = var.alb_controller_role_arn == null ? 1 : 0
   source            = "../irsa"
   name              = "${var.cluster_name}-alb-controller"
   oidc_provider_arn = var.oidc_provider_arn
@@ -23,6 +24,7 @@ module "alb_controller_irsa" {
 # to place pods. Write actions are scoped to THIS cluster's ASG via the
 # auto-applied k8s.io/cluster-autoscaler/<name> tag.
 data "aws_iam_policy_document" "cluster_autoscaler" {
+  #checkov:skip=CKV_AWS_356:AWS autoscaling and EC2 discovery APIs require Resource star; scaling writes are constrained by this cluster's ownership tag.
   statement {
     sid    = "Discovery"
     effect = "Allow"
@@ -57,14 +59,16 @@ data "aws_iam_policy_document" "cluster_autoscaler" {
 }
 
 module "cluster_autoscaler_irsa" {
-  source            = "../irsa"
-  name              = "${var.cluster_name}-cluster-autoscaler"
-  oidc_provider_arn = var.oidc_provider_arn
-  oidc_provider_url = var.oidc_provider_url
-  namespace         = "kube-system"
-  service_accounts  = ["cluster-autoscaler"]
-  policy_json       = data.aws_iam_policy_document.cluster_autoscaler.json
-  tags              = var.tags
+  count                    = var.cluster_autoscaler_role_arn == null ? 1 : 0
+  source                   = "../irsa"
+  name                     = "${var.cluster_name}-cluster-autoscaler"
+  oidc_provider_arn        = var.oidc_provider_arn
+  oidc_provider_url        = var.oidc_provider_url
+  namespace                = "kube-system"
+  service_accounts         = ["cluster-autoscaler"]
+  policy_json              = data.aws_iam_policy_document.cluster_autoscaler.json
+  permissions_boundary_arn = var.permissions_boundary_arn
+  tags                     = var.tags
 }
 
 # Argo Rollouts controller — reads CloudWatch so the canary AnalysisRuns can
@@ -78,20 +82,24 @@ data "aws_iam_policy_document" "rollouts_cloudwatch" {
 }
 
 module "argo_rollouts_irsa" {
-  source            = "../irsa"
-  name              = "${var.cluster_name}-argo-rollouts"
-  oidc_provider_arn = var.oidc_provider_arn
-  oidc_provider_url = var.oidc_provider_url
-  namespace         = "argo-rollouts"
-  service_accounts  = ["argo-rollouts"]
-  policy_json       = data.aws_iam_policy_document.rollouts_cloudwatch.json
-  tags              = var.tags
+  count                    = var.argo_rollouts_role_arn == null ? 1 : 0
+  source                   = "../irsa"
+  name                     = "${var.cluster_name}-argo-rollouts"
+  oidc_provider_arn        = var.oidc_provider_arn
+  oidc_provider_url        = var.oidc_provider_url
+  namespace                = "argo-rollouts"
+  service_accounts         = ["argo-rollouts"]
+  policy_json              = data.aws_iam_policy_document.rollouts_cloudwatch.json
+  permissions_boundary_arn = var.permissions_boundary_arn
+  tags                     = var.tags
 }
 
 # ── Cloudflare API token for external-dns ─────────────────────────────────────
 # external-dns reads CF_API_TOKEN from this secret to create the proxied
 # api-eks.kortix.com record pointing at the ALB it discovers.
 resource "kubernetes_secret" "cloudflare_api_token" {
+  count = var.external_dns_provider == "cloudflare" ? 1 : 0
+
   metadata {
     name      = "cloudflare-api-token"
     namespace = "kube-system"
@@ -100,4 +108,10 @@ resource "kubernetes_secret" "cloudflare_api_token" {
     apiToken = var.cloudflare_api_token
   }
   type = "Opaque"
+}
+
+locals {
+  alb_controller_role_arn     = coalesce(var.alb_controller_role_arn, try(module.alb_controller_irsa[0].role_arn, null))
+  cluster_autoscaler_role_arn = coalesce(var.cluster_autoscaler_role_arn, try(module.cluster_autoscaler_irsa[0].role_arn, null))
+  argo_rollouts_role_arn      = coalesce(var.argo_rollouts_role_arn, try(module.argo_rollouts_irsa[0].role_arn, null))
 }

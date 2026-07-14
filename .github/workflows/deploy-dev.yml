@@ -286,6 +286,34 @@ jobs:
           fi
           pnpm --filter @kortix/db migrate
 
+  # ── Roll the freshly-built image onto the dev ECS Fargate service ───────────
+  # Runs in PARALLEL with the EKS GitOps deploy during the ECS↔EKS transition,
+  # so both runtimes stay on the same image and we can flip the Cloudflare router
+  # between them at will. The task-def is rendered from the kortix-dev-env
+  # Secrets Manager blob (the same blob external-secrets syncs into EKS), so the
+  # ECS and EKS env contracts can never drift. When EKS is retired, delete the
+  # deploy-api (EKS) job and this becomes the sole API deploy.
+  deploy-api-ecs:
+    name: Deploy API to dev (ECS Fargate)
+    needs: [detect-changes, tag-api, migrate-db]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC → ECS deploy role
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll the dev ECS service onto the freshly-built image
+        run: bash infra/scripts/ecs-deploy.sh dev "${{ needs.tag-api.outputs.image }}"
+
   deploy-api:
     name: Deploy API to dev (EKS / GitOps)
     needs: [detect-changes, tag-api, migrate-db]

@@ -35,6 +35,7 @@ import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -53,7 +54,6 @@ import { startAccessControlCache, stopAccessControlCache } from './shared/access
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader, runsSingletonWorkers } from './shared/leader-election';
 import { marketplaceApp } from './marketplace';
-import { templatesApp } from './projects/templates/routes';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -65,8 +65,6 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
-import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
 import { accountsRouter } from './accounts';
@@ -688,11 +686,9 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
-registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
-app.route('/v1/templates', templatesApp); // /v1/templates — installable use-case templates (public read)
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -775,7 +771,7 @@ app.route('/v1/tunnel', tunnelApp);
 
 // Preview Proxy — unified route for sandbox HTTP access.
 // Pattern: /v1/p/{sandboxId}/{port}/* — sandboxId is the provider external ID,
-// resolved to a reachable upstream URL via the provider's resolvePreviewLink.
+// resolved to a reachable upstream URL via the provider ingress contract.
 // Auth: unified previewProxyAuth (accepts Supabase JWT and kortix_ tokens).
 // MUST be after all explicit routes (wildcard catch-all).
 app.route('/v1/p', sandboxProxyApp);
@@ -793,6 +789,23 @@ app.onError((err, c) => {
   const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
   if (isAbort && isSandboxProxy) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
+  }
+
+  // Platinum auto-stops idle microVMs natively; while a box is stopped, POST
+  // /:id/expose answers `409 sandbox_not_running`. That is an EXPECTED,
+  // transient state, not a 500 — the caller either wakes the box and retries
+  // (preview proxy) or the client retries (transcript / lease-discover). It
+  // must NOT page Sentry, so the typed error is classified out of
+  // captureException and surfaced as a retryable 503 + Retry-After (mirroring
+  // the request-deadline 503 pattern). Other Platinum failures still throw a
+  // generic Error and fall through to the generic capture below. See
+  // shared/platinum.ts PlatinumSandboxNotRunningError.
+  if (isPlatinumSandboxNotRunningError(err)) {
+    appLogger.warn(`${method} ${path} -> 503 [PlatinumSandboxNotRunningError] ${err.message}`, {
+      method, path, errorType: 'PlatinumSandboxNotRunningError',
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
   }
 
   if (err instanceof BillingError) {
@@ -955,7 +968,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
@@ -968,7 +980,6 @@ async function stopSingletonWorkers() {
   singletonWorkersRunning = false;
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
-  stopLegacyMigrationWorker();
   stopSunaMigrationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();

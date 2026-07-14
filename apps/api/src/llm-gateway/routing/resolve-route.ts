@@ -5,12 +5,20 @@ import {
   type ModelRouteInput,
   type ModelRoutePlan,
 } from '@kortix/llm-gateway';
+import type { ProjectRoutingFallback, ProjectRoutingRule } from './project-policy';
+
+export interface ResolvedProjectRoutingPolicy {
+  visionModel: string | null;
+  defaultFallback: ProjectRoutingFallback | null;
+  rules: ProjectRoutingRule[];
+}
 
 export interface GatewayRouteResolverOptions {
   defaultModel: string;
   visionModel: string;
   policies: readonly ModelFallbackPolicy[];
   supportsImage: (model: string) => boolean;
+  getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
 }
 
 export type GatewayRouteResolver = (
@@ -29,12 +37,34 @@ export function createGatewayRouteResolver(
 
   return async (principal, input) => {
     const isAuto = input.requestedModel === 'auto' || input.requestedModel === 'kortix/auto';
+    const projectPolicy = principal.projectId && options.getProjectPolicy
+      ? await options.getProjectPolicy(principal.projectId)
+      : null;
     let primaryModel = isAuto
       ? principal.defaultModel || options.defaultModel
       : input.requestedModel;
 
     if (isAuto && input.requires.imageInput && !options.supportsImage(primaryModel)) {
-      primaryModel = options.visionModel;
+      primaryModel = projectPolicy?.visionModel || options.visionModel;
+    }
+
+    const exactRule = projectPolicy?.rules.find((rule) => rule.model === primaryModel);
+    if (exactRule) {
+      return {
+        policyId: `project:exact:${primaryModel}`,
+        primaryModel,
+        fallbackModels: exactRule.fallbackModels,
+        fallbackOn: exactRule.fallbackOn,
+      };
+    }
+
+    if (isAuto && projectPolicy?.defaultFallback) {
+      return {
+        policyId: 'project:default',
+        primaryModel,
+        fallbackModels: projectPolicy.defaultFallback.models,
+        fallbackOn: projectPolicy.defaultFallback.fallbackOn,
+      };
     }
 
     const policy = fallbackPolicies.route(primaryModel);

@@ -88,3 +88,21 @@ variable "api_secrets" {
   type        = map(string)
   default     = {}
 }
+
+variable "gateway_image" {
+  description = "Container image for the gateway (LLM proxy). CI rolls new revisions; Terraform seeds the initial task-def."
+  type        = string
+  default     = "kortix/kortix-gateway:latest"
+}
+
+variable "gateway_environment" {
+  description = "Non-secret env vars for the gateway container (besides PORT and KORTIX_API_URL, set by the module/env)."
+  type        = map(string)
+  default     = {}
+}
+
+variable "gateway_domain" {
+  description = "FQDN for the gateway ECS origin (the Worker's gateway-eks/ecs-fargate backend). Gets its own ACM cert. gateway.kortix.com itself stays the Worker's hostname."
+  type        = string
+  default     = "gateway-ecs-fargate.kortix.com"
+}

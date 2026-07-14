@@ -6,6 +6,7 @@ import {
   flagshipRefForEnvVar,
   labelForModelRef,
   managedPickerModels,
+  projectPickerCatalog,
   providerFlagship,
 } from './picker-catalog';
 
@@ -78,5 +79,42 @@ describe('flagshipRefForEnvVar (auto-seed mapping)', () => {
     expect(flagshipRefForEnvVar('CODEX_AUTH_JSON')).toBeNull();
     expect(flagshipRefForEnvVar('OPENCODE_AUTH_JSON')).toBeNull();
     expect(flagshipRefForEnvVar('SOME_RANDOM_SECRET')).toBeNull();
+  });
+});
+
+describe('projectPickerCatalog', () => {
+  test('keeps managed and connected-provider models without returning the full runtime catalog', () => {
+    const full = {
+      auto: { name: 'Auto' },
+      'glm-5.2': { name: 'GLM 5.2' },
+      'anthropic/claude-a': { name: 'Claude A' },
+      'anthropic/claude-b': { name: 'Claude B' },
+      'openai/gpt-a': { name: 'GPT A' },
+      'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
+    };
+
+    expect(
+      projectPickerCatalog(full, new Set(['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON']), [
+        'openai/gpt-a',
+      ]),
+    ).toEqual({
+      auto: full.auto,
+      'glm-5.2': full['glm-5.2'],
+      'anthropic/claude-a': full['anthropic/claude-a'],
+      'anthropic/claude-b': full['anthropic/claude-b'],
+      'openai/gpt-a': full['openai/gpt-a'],
+      'codex/gpt-5.6-sol': full['codex/gpt-5.6-sol'],
+    });
+  });
+
+  test('does not expose disconnected provider catalogs', () => {
+    const full = {
+      auto: { name: 'Auto' },
+      'anthropic/claude-a': { name: 'Claude A' },
+      'openai/gpt-a': { name: 'GPT A' },
+      'codex/gpt-5.6-sol': { name: 'GPT-5.6 Sol' },
+    };
+
+    expect(Object.keys(projectPickerCatalog(full, new Set(), []))).toEqual(['auto']);
   });
 });

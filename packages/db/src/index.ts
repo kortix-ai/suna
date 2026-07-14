@@ -54,6 +54,7 @@ export {
   projectSessions,
   projectSessionRuntimeContexts,
   accountModelPreferences,
+  projectLlmRoutingPolicies,
   projectSessionGrants,
   projectSessionPublicShares,
   projectSessionVisibilityEnum,

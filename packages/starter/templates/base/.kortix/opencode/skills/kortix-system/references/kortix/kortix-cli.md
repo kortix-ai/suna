@@ -31,7 +31,7 @@ kortix cr open --title "..."        # propose merging your branch into main
 
 The token in the sandbox is **project-scoped**: it can read + write
 anything on *this* project (secrets, sessions, triggers, change
-requests, apps), but it cannot list other projects or touch
+requests), but it cannot list other projects or touch
 account-level resources. See "Token scope" below for the full
 permission model.
 
@@ -353,7 +353,7 @@ column on the token row.
 | Type | Scope | Issued by | Typical use |
 | --- | --- | --- | --- |
 | **User token** | All projects on accounts the user belongs to + account-level routes (`/v1/accounts/me`, billing, etc.) | `kortix login` browser flow → minted via `POST /v1/accounts/tokens` | The CLI on your laptop |
-| **Project token** | Read + write everything on **one** project — secrets, sessions, triggers, change requests, apps. Cannot list other projects or hit account-level routes. | Auto-minted at session create; surfaced via `POST /v1/projects/:id/cli-token` | The CLI inside a sandbox |
+| **Project token** | Read + write everything on **one** project — secrets, sessions, triggers, and change requests. Cannot list other projects or hit account-level routes. | Auto-minted at session create; surfaced via `POST /v1/projects/:id/cli-token` | The CLI inside a sandbox |
 
 Enforcement: every project route handler checks the token's
 `project_id` against the URL's `:projectId` parameter. Mismatch → 403.

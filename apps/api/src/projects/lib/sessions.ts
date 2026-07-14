@@ -32,7 +32,6 @@ import { AmbiguousSecretGrantError, listProjectSecretsSnapshotForUser } from '..
 import { resolveCompiledAgentConfigForSession } from './compile-agent-config';
 import { resolveProjectGitAuth } from './git';
 import { resolveSessionProvider } from './provider-precedence';
-import { resolveEffectiveSessionBaseRef } from './session-base-ref-resolution';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
   ACTIVE_SESSION_STATUSES,
@@ -434,10 +433,6 @@ export async function createProjectSession(input: {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
-  /** Human-launched UI/mobile/CLI sessions may inherit an attached group's
-   * branch default. Automation and system sessions stay on the project default
-   * unless they pass an explicit base_ref. */
-  useGroupDefault?: boolean;
   /**
    * Sessions default to private (owner-only). Automation callers (triggers,
    * Slack/Telegram channels) pass 'project' — those sessions belong to the
@@ -479,23 +474,7 @@ export async function createProjectSession(input: {
     };
   }
 
-  const explicitBaseRef = normalizeString(body.base_ref ?? body.baseRef);
-  const baseRefResolution = input.useGroupDefault
-    ? await resolveEffectiveSessionBaseRef({
-        userId,
-        accountId,
-        projectId,
-        projectDefaultRef: project.defaultBranch,
-        explicitRef: explicitBaseRef,
-      })
-    : {
-        ref: explicitBaseRef ?? project.defaultBranch,
-        source: explicitBaseRef ? ('explicit' as const) : ('project' as const),
-        groups: [],
-        conflict: false,
-        conflictingRefs: [],
-      };
-  const baseRef = baseRefResolution.ref;
+  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   // Explicit request wins; otherwise fall back to the project's default agent
   // (a v2 kortix.yaml's top-level `default_agent`, or a legacy v1 kortix.toml's
   // `[opencode] default_agent` — synced to project metadata, or a UI/Slack

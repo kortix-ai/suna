@@ -167,7 +167,7 @@ jobs:
               KORTIX_URL: $api,
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
-              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
+              ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum,e2b",
               KORTIX_WARM_SNAPSHOT_ENABLED: "false"
             }')"
 
@@ -216,6 +216,32 @@ jobs:
             exit 1
           fi
           pnpm --filter @kortix/db migrate
+
+  # Roll staging ECS Fargate (api + gateway) alongside the EKS deploy. The script
+  # skips gracefully until the staging ECS infra exists (Terraform greenfield), so
+  # this is safe to keep wired now and auto-activates the moment the services exist.
+  deploy-ecs:
+    name: Deploy API + gateway to staging (ECS Fargate)
+    needs: [preflight, sync-secret, migrate-db]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC → ECS deploy role
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      SHA8: ${{ needs.preflight.outputs.sha8 }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll staging ECS (api + gateway) from the staging-env blob
+        run: |
+          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}"
+          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway
 
   deploy-k8s:
     name: Deploy API and gateway to staging

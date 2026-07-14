@@ -142,6 +142,30 @@ test('project(id).gateway hits the gateway observability + budget + key endpoint
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).gateway.routing binds policy CRUD and preview to the project', async () => {
+  await kortix.project('PID123').gateway.routing.get();
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy');
+  expect(last().method).toBe('GET');
+
+  await kortix.project('PID123').gateway.routing.set({
+    defaultModel: 'codex/gpt-5.6-sol',
+    visionModel: null,
+    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    rules: [],
+  });
+  expect(last().method).toBe('PUT');
+
+  await kortix.project('PID123').gateway.routing.preview({
+    requestedModel: 'auto',
+    imageInput: false,
+  });
+  expect(last().url).toContain('/projects/PID123/gateway/routing-policy/preview');
+  expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').gateway.routing.reset();
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).channels covers slack, email and meet', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
@@ -170,6 +194,12 @@ test('project(id).modelDefaults gets/sets/clears the default model', async () =>
 
   await kortix.project('PID123').modelDefaults.clear({ scope: 'project' });
   expect(last().method).toBe('DELETE');
+});
+
+test('project(id).modelPicker loads the compact selector catalog', async () => {
+  await kortix.project('PID123').modelPicker();
+  expect(last().url).toContain('/projects/PID123/model-picker');
+  expect(last().method).toBe('GET');
 });
 
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
@@ -404,52 +434,6 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
 
   await kortix.billing.tierConfigurations();
   expect(last().url).toContain('/billing/tier-configurations');
-});
-
-test('project(id).marketplace covers list/install/updates/update/updateAll/remove', async () => {
-  await kortix.project('PID123').marketplace.list();
-  expect(last().url).toContain('/projects/PID123/marketplace');
-  expect(last().method).toBe('GET');
-
-  await kortix.project('PID123').marketplace.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updates();
-  expect(last().url).toContain('/projects/PID123/marketplace/updates');
-
-  await kortix.project('PID123').marketplace.update('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/update');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').marketplace.updateAll();
-  expect(last().url).toContain('/projects/PID123/marketplace/update-all');
-
-  await kortix.project('PID123').marketplace.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/marketplace/researcher');
-  expect(last().method).toBe('DELETE');
-});
-
-test('project(id).registry is the compatibility alias of marketplace (same paths, /registry prefix)', async () => {
-  await kortix.project('PID123').registry.list();
-  expect(last().url).toContain('/projects/PID123/registry');
-
-  await kortix.project('PID123').registry.install('kortix:researcher');
-  expect(last().url).toContain('/projects/PID123/registry/install');
-  expect(last().method).toBe('POST');
-
-  await kortix.project('PID123').registry.updates();
-  expect(last().url).toContain('/projects/PID123/registry/updates');
-
-  await kortix.project('PID123').registry.update('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/update');
-
-  await kortix.project('PID123').registry.updateAll();
-  expect(last().url).toContain('/projects/PID123/registry/update-all');
-
-  await kortix.project('PID123').registry.remove('researcher');
-  expect(last().url).toContain('/projects/PID123/registry/researcher');
-  expect(last().method).toBe('DELETE');
 });
 
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {

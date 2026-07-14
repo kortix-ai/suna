@@ -66,6 +66,7 @@ import { resolveExperimentalFeature } from '../../experimental/features';
 import { PROJECT_ACTIONS } from '../../iam';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
+import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
 import {
   invalidateAccountModelDefaults,
   isModelServableForAccount,
@@ -77,7 +78,9 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
+import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
+import { listProjectSecretsSnapshot } from '../secrets';
 import {
   discoverExecutionKeepAliveEndpoint,
   releaseExecutionLease,
@@ -128,6 +131,8 @@ const TRIGGER_MANIFEST_KEYS = [
   'secretEnv',
   'session_mode',
   'sessionMode',
+  'session_id',
+  'sessionId',
 ] as const;
 
 interface SlackAuthTest {
@@ -472,6 +477,27 @@ projectsApp.openapi(
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
 
+    // A `pinned` trigger may only target a session that belongs to THIS project —
+    // never a nonexistent or another project's session.
+    if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+      const [pinned] = await db
+        .select({ sessionId: projectSessions.sessionId })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, draft.pinnedSessionId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!pinned) {
+        return c.json(
+          { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
+          400,
+        );
+      }
+    }
+
     let manifest: ParsedManifest;
     try {
       manifest = await loadManifestForEdit(loaded.row);
@@ -609,6 +635,26 @@ projectsApp.openapi(
         { existingSlug: slug },
       );
       if ('error' in draft) return c.json({ error: draft.error }, 400);
+
+      // A `pinned` trigger may only target a session that belongs to THIS project.
+      if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
+        const [pinned] = await db
+          .select({ sessionId: projectSessions.sessionId })
+          .from(projectSessions)
+          .where(
+            and(
+              eq(projectSessions.sessionId, draft.pinnedSessionId),
+              eq(projectSessions.projectId, projectId),
+            ),
+          )
+          .limit(1);
+        if (!pinned) {
+          return c.json(
+            { error: `Pinned session "${draft.pinnedSessionId}" was not found in this project.` },
+            400,
+          );
+        }
+      }
 
       const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
       const result = await commitManifest(loaded.row, next, `chore: update trigger ${slug}`);
@@ -2149,6 +2195,60 @@ projectsApp.openapi(
         ? accountIsFreeTierForModels(await getCachedAccountTier(ownerAccountId))
         : false;
     const models = gatewayModelCatalog(projectId, { freeManagedOnly });
+    return c.json({ models });
+  },
+);
+
+// GET /v1/projects/:projectId/model-picker
+// UI-specific, connection-aware projection of the runtime catalog. The full
+// /llm-catalog response remains available for sandbox/OpenCode configuration;
+// interactive selectors should use this bounded payload instead.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/model-picker',
+    tags: ['projects'],
+    summary: 'GET /:projectId/model-picker',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: { description: 'OK', content: { 'application/json': { schema: z.any() } } },
+      ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
+
+    const accountId = loaded.row.accountId as string;
+    const freeManagedOnly = config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? accountIsFreeTierForModels(await getCachedAccountTier(accountId))
+      : false;
+    const [secrets, defaults, routing] = await Promise.all([
+      listProjectSecretsSnapshot(projectId).catch(() => ({ names: [] as string[] })),
+      getAccountModelDefaults(accountId),
+      getProjectRoutingPolicy(projectId),
+    ]);
+    const requiredModels = [
+      defaults.projects[projectId],
+      defaults.account,
+      config.LLM_GATEWAY_DEFAULT_MODEL,
+      routing?.visionModel,
+      ...(routing?.defaultFallback?.models ?? []),
+      ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
+    ].filter((model): model is string => !!model);
+    const models = projectPickerCatalog(
+      gatewayModelCatalog(projectId, { freeManagedOnly }),
+      new Set(secrets.names.map((name) => name.toUpperCase())),
+      requiredModels,
+    );
     return c.json({ models });
   },
 );

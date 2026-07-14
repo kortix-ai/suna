@@ -118,6 +118,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     secret_env: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
+    session_id: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
@@ -162,6 +163,19 @@ describe('ProjectSchema', () => {
       projectFixture({ project_role: null, effective_project_role: 'member' }),
     );
     expect(parsed.project_role).toBeNull();
+  });
+
+  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'e2b',
+      available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+    }))).not.toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'managed',
+    }))).toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      available_sandbox_providers: ['daytona', 'local_docker'],
+    }))).toThrow();
   });
 
   test('rejects an unknown status', () => {
@@ -243,7 +257,7 @@ describe('SessionStartResultSchema', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'local_docker', 'justavps', 'platinum']) {
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();

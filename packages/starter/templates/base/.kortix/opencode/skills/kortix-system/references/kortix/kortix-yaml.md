@@ -6,9 +6,8 @@ Any repo with a valid `kortix.yaml` (or, for legacy v1 projects, a
 `kortix.toml`) at the root is a Kortix project.
 
 The platform parser is permissive: it never throws on a bad entry.
-Instead, bad triggers and apps go into an `errors` list returned
-alongside the good ones, so a single typo doesn't break the whole
-file.
+Instead, bad triggers go into an `errors` list returned alongside the
+good ones, so a single typo doesn't break the whole file.
 
 **This page documents `kortix_version: 2`** — the current, YAML-only
 manifest schema (`agents:` is a governance-only name→block **map**,
@@ -309,6 +308,7 @@ output — UI ordering is stable, not authoring-order.
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `session_mode` | no     | string  | `"fresh"`   | `"fresh"` (new session every fire, no prior history) or `"reuse"` (re-prompts the same long-lived session, resuming its sandbox and accumulated context). See `<scheduling>` in this skill's SKILL.md for when to pick each. |
 
 The parser accepts only the canonical trigger field names shown here.
 
@@ -399,6 +399,16 @@ Manifest is the source of truth for **config**. The
 would amplify the scheduler tick into a flood of git commits.
 If you need to know when a trigger last fired, check the dashboard,
 not the repo.
+
+### Project-wide kill switch
+
+There is no "paused" state for a single trigger — only `enabled`
+on/off, or removing the entry entirely. Separately, the **project**
+has a server-side kill-switch, `triggers_paused`, toggled from the
+dashboard: when set, the sweep skips *every* trigger on the project
+and inbound webhooks are ignored, regardless of each trigger's own
+`enabled`. Use it when the same repo is deployed to two environments
+and only one should actually fire.
 
 ### Common gotchas
 

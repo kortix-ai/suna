@@ -58,7 +58,7 @@ async function main() {
   });
 
   // 6. Send. Per-send overrides let you pick the model and the agent for
-  //    just this prompt (ids come from projects.llmCatalog() and
+  //    just this prompt (ids come from projects.modelPicker() and
   //    projects.detail().config.agents).
   await session.send('What files are in this repo?', {
     model: { providerID: 'kortix', modelID: 'claude-sonnet-4.6' },
@@ -147,6 +147,8 @@ console.log(
 
 // LLM gateway observability — cost, latency, per-model breakdown
 const overview = await project.gateway.overview(7);
+const routing = await project.gateway.routing.get();
+const preview = await project.gateway.routing.preview({ requestedModel: 'auto', imageInput: false });
 
 // Channels: connect the project to Slack, email, or a meeting bot
 const slack = await project.channels.slack.installation();

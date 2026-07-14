@@ -5,7 +5,7 @@ import { resolveSessionProvider, warmPrebakeProviders } from './provider-precede
 // `allowed` + `isEnabled` are injected (they model config.ALLOWED_SANDBOX_PROVIDERS
 // + config.isProviderEnabled), so no env/DB. Precedence under test:
 //   explicit request › per-project pin (if enabled) › fallback (weighted balancer).
-const ALLOWED = ['daytona', 'platinum'] as const;
+const ALLOWED = ['daytona', 'platinum', 'e2b'] as const;
 const bothEnabled = (_p: string) => true;
 
 describe('resolveSessionProvider (per-project provider override)', () => {
@@ -65,10 +65,10 @@ describe('resolveSessionProvider (per-project provider override)', () => {
 // the parity fix — an unpinned project (or one that never used to warm Platinum)
 // now pre-warms BOTH backends, while a pinned project warms only what it uses.
 describe('warmPrebakeProviders (build-on-push provider parity)', () => {
-  test('no pin → EVERY enabled provider (daytona + platinum) — full parity', () => {
+  test('no pin → EVERY enabled provider (daytona + platinum + e2b) — full parity', () => {
     expect(
       warmPrebakeProviders({ projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['daytona', 'platinum']);
+    ).toEqual(['daytona', 'platinum', 'e2b']);
   });
 
   test('enabled pin → ONLY that provider (no wasted bake on the one it never uses)', () => {
@@ -96,7 +96,7 @@ describe('warmPrebakeProviders (build-on-push provider parity)', () => {
     // pin a provider that has since left ALLOWED → all-enabled.
     expect(
       warmPrebakeProviders({ projectPin: 'gcp', allowed: ALLOWED, isEnabled: bothEnabled }),
-    ).toEqual(['daytona', 'platinum']);
+    ).toEqual(['daytona', 'platinum', 'e2b']);
   });
 
   test('single-provider deploy → exactly that one (platinum-only)', () => {

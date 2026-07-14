@@ -4,6 +4,9 @@
 
 image:
   repository: kortix/kortix-api
+  # Enterprise stable releases set an immutable sha256 digest. When present it
+  # takes precedence over tag and the rendered pod never follows a moving tag.
+  digest: ""
   # Overridden per deploy with the released version (e.g. 0.9.36). :latest is the
   # safe default but prod CI always pins an explicit tag.
   tag: latest
@@ -18,6 +21,9 @@ kortixVersion: ""
 createNamespace: false
 
 containerPort: 8000
+
+service:
+  annotations: {}
 
 # HA + autoscaling. replicas is the floor the HPA scales from.
 replicas: 3
@@ -88,6 +94,7 @@ health:
   readinessPeriodSeconds: 10
 
 serviceAccount:
+  create: true
   name: kortix-api
   # IRSA role ARN that can read the Secrets Manager bundle (from TF output
   # app_irsa_role_arn). REQUIRED.
@@ -102,8 +109,9 @@ externalSecrets:
   targetSecretName: kortix-api-env # synced k8s Secret
   refreshInterval: 1h
 
-# Drizzle migrations as an Argo CD PreSync hook (templates/migrate-job.yaml):
-# runs `db:migrate` before the Deployment rolls, gating the release on schema.
+# Canonical node-pg-migrate ledger as an Argo CD PreSync/Helm hook
+# (templates/migrate-job.yaml): runs `bun scripts/migrate.ts up` before the
+# Deployment rolls, gating the release on schema.
 # Enable in the env that OWNS the data plane (true for prod); leave false for a
 # pre-prod/canary that shares another env's DB and must never migrate it.
 migrate:

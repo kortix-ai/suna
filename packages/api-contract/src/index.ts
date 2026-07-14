@@ -75,18 +75,11 @@ export const PROJECT_ROLES = ['manager', 'editor', 'member'] as const;
 export const ProjectRoleSchema = z.enum(PROJECT_ROLES);
 export type ProjectRole = z.infer<typeof ProjectRoleSchema>;
 
-/** Every provider that can appear on session/sandbox rows. 'daytona' is the
- *  managed cloud backend's identity (default / first-class); 'managed' is kept as
- *  an accepted value only because the DB sandbox_provider enum still carries it
- *  (from the reverted daytona→managed rename) — a DB-derived provider can read
- *  back 'managed', and the dual-accept guards resolve it to the Daytona adapter.
- *  Nothing DEFAULTS to or normalizes toward 'managed'. */
+/** Every sandbox provider the current platform can select or emit. */
 export const SANDBOX_PROVIDERS = [
   'daytona',
-  'managed',
-  'local_docker',
-  'justavps',
   'platinum',
+  'e2b',
 ] as const;
 export const SandboxProviderSchema = z.enum(SANDBOX_PROVIDERS);
 export type SandboxProvider = z.infer<typeof SandboxProviderSchema>;
@@ -129,7 +122,7 @@ export const ProjectSchema = z.object({
   experimental: ExperimentalFeatureMapSchema,
   experimental_features: z.array(ExperimentalFeatureViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
-  default_sandbox_provider: z.string().nullable(),
+  default_sandbox_provider: SandboxProviderSchema.nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
 });
 export type Project = z.infer<typeof ProjectSchema>;
@@ -452,7 +445,9 @@ export const TriggerSchema = z.object({
   timezone: z.string(),
   secret_env: z.string().nullable(),
   prompt_template: z.string(),
-  session_mode: z.enum(['fresh', 'reuse']),
+  session_mode: z.enum(['fresh', 'reuse', 'pinned']),
+  /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
+  session_id: z.string().nullable(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

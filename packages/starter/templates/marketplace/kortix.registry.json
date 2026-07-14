@@ -6,7 +6,10 @@
       "type": "registry:skill",
       "title": "Agent Browser",
       "description": "Browser automation skill for using the baked agent-browser runtime from an OpenCode agent.",
-      "categories": ["kortix-runtime", "browser"],
+      "categories": [
+        "kortix-runtime",
+        "browser"
+      ],
       "files": [
         {
           "path": "runtime/skills/agent-browser",
@@ -17,290 +20,17 @@
       "meta": {
         "source": "kortix",
         "defaultProjectInstall": true,
-        "defaultProjectInstallOrder": 90,
-        "capabilities": {
-          "tools": ["agent-browser"]
-        }
-      }
-    },
-    {
-      "name": "ar-chaser-agent",
-      "type": "registry:agent",
-      "title": "AR chaser agent",
-      "description": "Accounts-receivable agent persona: reviews Stripe invoices, sends escalating reminders, holds risky balances for a human.",
-      "categories": ["finance"],
-      "files": [
-        {
-          "path": "runtime/agents/ar-chaser.md",
-          "type": "registry:file",
-          "target": "@agents/ar-chaser.md"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "invoice-math",
-      "type": "registry:skill",
-      "title": "Invoice math",
-      "description": "Aging buckets, reminder tiers, and dunning cadence for chasing overdue invoices.",
-      "categories": ["finance"],
-      "files": [
-        {
-          "path": "runtime/skills/invoice-math",
-          "type": "registry:file",
-          "target": "@skills/invoice-math"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "ar-chaser",
-      "type": "registry:template",
-      "title": "Overdue-invoice chaser",
-      "description": "Chases overdue Stripe invoices with escalating email reminders, reconciles payments, and posts a daily summary — holding large or disputed balances for a human.",
-      "categories": ["finance", "use-case"],
-      "registryDependencies": ["ar-chaser-agent", "invoice-math"],
-      "envVars": {
-        "STRIPE_KEY": "Stripe restricted key with read access to invoices"
-      },
-      "inputs": [
-        {
-          "key": "cadence",
-          "label": "How often to check",
-          "type": "cron",
-          "default": "0 0 9 * * 1-5",
-          "help": "Defaults to every weekday at 9:00 AM.",
-          "required": true
-        },
-        {
-          "key": "alert_channel",
-          "label": "Slack channel for the daily summary",
-          "type": "channel",
-          "help": "Where the daily list and approvals are posted.",
-          "required": true
-        }
-      ],
-      "meta": {
-        "source": "kortix",
-        "icon": "ar-chaser",
-        "capabilities": {
-          "connectors": ["stripe"]
-        },
-        "template": {
-          "agents": {
-            "ar-chaser": {
-              "connectors": ["stripe"],
-              "secrets": ["STRIPE_KEY"],
-              "skills": ["invoice-math"]
-            }
-          },
-          "connectors": [{ "slug": "stripe", "provider": "pipedream", "app": "stripe" }],
-          "channels": ["slack"],
-          "triggers": [
-            {
-              "slug": "daily-check",
-              "name": "Daily invoice check",
-              "type": "cron",
-              "agent": "ar-chaser",
-              "cron": "{{cadence}}",
-              "prompt": "Review overdue and soon-due Stripe invoices, send the appropriate reminder for each per the invoice-math skill, reconcile anything paid since the last run, and post the summary to {{alert_channel}}. Hold balances over the approval threshold, and anything disputed or heading to legal, for a human."
-            }
-          ],
-          "env_optional": ["STRIPE_KEY"]
-        }
-      }
-    },
-    {
-      "name": "dep-upgrader-agent",
-      "type": "registry:agent",
-      "title": "Dependency upgrade agent",
-      "description": "Reusable-session agent that keeps a repo's dependencies current: applies upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a PR — never merging.",
-      "categories": ["engineering"],
-      "files": [
-        {
-          "path": "runtime/agents/dep-upgrader.md",
-          "type": "registry:file",
-          "target": "@agents/dep-upgrader.md"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "dependency-upgrade-skill",
-      "type": "registry:skill",
-      "title": "Dependency upgrade",
-      "description": "The weekly dependency-upgrade runbook: upgrade tiers, the verification gate, breaking-change handling, the ledger, and guardrails.",
-      "categories": ["engineering"],
-      "files": [
-        {
-          "path": "runtime/skills/dependency-upgrade",
-          "type": "registry:file",
-          "target": "@skills/dependency-upgrade"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "dependency-upgrades",
-      "type": "registry:template",
-      "title": "Dependency upgrades on autopilot",
-      "description": "A weekly agent that keeps a repo's dependencies current: it applies patch, minor, and safe major upgrades on an isolated branch, proves the full suite green in the sandbox, and opens a reviewable PR only when everything passes — never merging on its own.",
-      "categories": ["engineering", "use-case"],
-      "registryDependencies": ["dep-upgrader-agent", "dependency-upgrade-skill"],
-      "envVars": {
-        "GH_TOKEN": "GitHub token with PR + issue access to the target repo (used by the gh CLI)"
-      },
-      "inputs": [
-        {
-          "key": "target_repo",
-          "label": "Repository to keep updated",
-          "type": "text",
-          "default": "owner/repo",
-          "help": "The GitHub repo the agent upgrades and opens PRs against.",
-          "required": true
-        },
-        {
-          "key": "cadence",
-          "label": "When to run the weekly sweep",
-          "type": "cron",
-          "default": "0 0 5 * * 2",
-          "help": "Defaults to every Tuesday at 05:00 UTC.",
-          "required": true
-        }
-      ],
-      "meta": {
-        "source": "kortix",
-        "icon": "dependency-upgrades",
-        "template": {
-          "agents": {
-            "dep-upgrader": {
-              "secrets": ["GH_TOKEN"],
-              "skills": ["dependency-upgrade"],
-              "kortix_cli": ["project.cr.open"]
-            }
-          },
-          "triggers": [
-            {
-              "slug": "weekly-upgrades",
-              "name": "Weekly dependency upgrades",
-              "type": "cron",
-              "agent": "dep-upgrader",
-              "cron": "{{cadence}}",
-              "session_mode": "reuse",
-              "prompt": "Load the `dependency-upgrade` skill and run one complete upgrade sweep on {{target_repo}}. This is ONE persistent session re-prompted weekly, so resume prior work first: read `.kortix/memory/dependency-upgrade-log.md`, open upgrade PRs, and in-flight branches. Discover outdated deps; apply patch/minor together and majors one at a time on an isolated branch; prove the FULL suite green in the sandbox (install, typecheck, lint, build, test, integration, audit); and open a PR only when everything passes. A failing upgrade is never pushed — log it and split or defer with a tracked issue. Never merge the PR yourself; a human owns the merge. Update the ledger at the end."
-            }
-          ],
-          "env_optional": ["GH_TOKEN"]
-        }
-      }
-    },
-    {
-      "name": "leaderboard-agent",
-      "type": "registry:agent",
-      "title": "Weekly leaderboard agent",
-      "description": "Posts a weekly ENG/PRODUCT shipping brief to Slack: a ranked merged-PR leaderboard, shipping streaks, what shipped, and the async standup thread.",
-      "categories": ["operations"],
-      "files": [
-        {
-          "path": "runtime/agents/leaderboard.md",
-          "type": "registry:file",
-          "target": "@agents/leaderboard.md"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "weekly-leaderboard-skill",
-      "type": "registry:skill",
-      "title": "Weekly leaderboard",
-      "description": "The weekly shipping-brief runbook: window, PR-count sources, the leaderboard + streak format, the standup thread, the ledger, and Slack posting mechanics.",
-      "categories": ["operations"],
-      "files": [
-        {
-          "path": "runtime/skills/weekly-leaderboard",
-          "type": "registry:file",
-          "target": "@skills/weekly-leaderboard"
-        }
-      ],
-      "meta": { "source": "kortix" }
-    },
-    {
-      "name": "standup-summary",
-      "type": "registry:template",
-      "title": "Weekly shipping leaderboard + standup",
-      "description": "A weekly cron that posts an ENG/PRODUCT shipping brief to Slack — a ranked merged-PR leaderboard with week-on-week deltas and shipping streaks, what shipped, and an async standup thread — and keeps a running ledger. Reads GitHub, posts to Slack.",
-      "categories": ["operations", "use-case"],
-      "registryDependencies": ["leaderboard-agent", "weekly-leaderboard-skill"],
-      "envVars": {
-        "GH_TOKEN": "GitHub token with read access to the repos you count PRs from (used by the gh CLI)"
-      },
-      "inputs": [
-        {
-          "key": "target_repos",
-          "label": "Repos to count merged PRs from",
-          "type": "text",
-          "default": "owner/repo",
-          "help": "Space-separated, e.g. \"acme/app acme/company\".",
-          "required": true
-        },
-        {
-          "key": "slack_channel",
-          "label": "Slack channel to post the brief to",
-          "type": "channel",
-          "default": "#eng",
-          "help": "Where the weekly brief + standup thread land.",
-          "required": true
-        },
-        {
-          "key": "team_mentions",
-          "label": "Who to @-mention on the standup thread",
-          "type": "text",
-          "default": "@here",
-          "help": "e.g. \"@alice @bob @carol\".",
-          "required": false
-        },
-        {
-          "key": "cadence",
-          "label": "When to post the weekly brief",
-          "type": "cron",
-          "default": "0 0 9 * * 1",
-          "help": "Defaults to every Monday at 09:00 UTC.",
-          "required": true
-        }
-      ],
-      "meta": {
-        "source": "kortix",
-        "icon": "standup-summary",
-        "template": {
-          "agents": {
-            "leaderboard": {
-              "secrets": ["GH_TOKEN"],
-              "skills": ["weekly-leaderboard", "kortix-slack"],
-              "kortix_cli": ["project.cr.open"]
-            }
-          },
-          "channels": ["slack"],
-          "triggers": [
-            {
-              "slug": "weekly-leaderboard",
-              "name": "Weekly leaderboard",
-              "type": "cron",
-              "agent": "leaderboard",
-              "cron": "{{cadence}}",
-              "session_mode": "reuse",
-              "prompt": "Load the `weekly-leaderboard` skill and post this week's ENG/PRODUCT shipping brief to {{slack_channel}}. This is ONE persistent session re-prompted weekly, so resume first: read `.kortix/memory/weekly-digests.md` (last week's leaderboard + streaks) and last week's standup thread. Count merged PRs per person across {{target_repos}} with gh (excluding bots), compute deltas and streaks against the ledger, gather Slack context, and post exactly one Block Kit brief (header, snapshot, what shipped, ranked PR leaderboard, streaks, Slack signal). Then reply in-thread with the async standup prompt (mention {{team_mentions}}), update the ledger, and land a scoped `memory: leaderboard` change request."
-            }
-          ],
-          "env_optional": ["GH_TOKEN"]
-        }
+        "defaultProjectInstallOrder": 90
       }
     },
     {
       "name": "support-agent",
       "type": "registry:agent",
       "title": "Customer support agent",
-      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding sensitive actions for approval.",
-      "categories": ["support"],
+      "description": "Triages Plain support threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding sensitive actions for approval.",
+      "categories": [
+        "support"
+      ],
       "files": [
         {
           "path": "runtime/agents/support-agent.md",
@@ -308,15 +38,22 @@
           "target": "@agents/support-agent.md"
         }
       ],
-      "meta": { "source": "kortix" }
+      "meta": {
+        "source": "kortix"
+      }
     },
     {
       "name": "customer-support",
       "type": "registry:template",
       "title": "Customer support on autopilot",
-      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply — holding refunds and account changes for human approval.",
-      "categories": ["support", "use-case"],
-      "registryDependencies": ["support-agent"],
+      "description": "An agent that works the Plain support queue: it checks for new threads, investigates with the codebase and Stripe, and resolves or drafts a reply \u2014 holding refunds and account changes for human approval.",
+      "categories": [
+        "support",
+        "use-case"
+      ],
+      "registryDependencies": [
+        "support-agent"
+      ],
       "envVars": {
         "PLAIN_API_KEY": "Plain API key (read + reply in support threads)",
         "STRIPE_SECRET_KEY": "Stripe secret key with read access to customers and invoices"
@@ -337,7 +74,10 @@
         "template": {
           "agents": {
             "support-agent": {
-              "secrets": ["PLAIN_API_KEY", "STRIPE_SECRET_KEY"]
+              "secrets": [
+                "PLAIN_API_KEY",
+                "STRIPE_SECRET_KEY"
+              ]
             }
           },
           "triggers": [
@@ -350,7 +90,10 @@
               "prompt": "Check Plain for new or unanswered support threads. For each, investigate using the codebase and the customer's Stripe billing state, then resolve the thread directly or draft a reply with the diagnosis attached. Hold refunds, plan changes, and anything touching a customer's money or account state for human approval."
             }
           ],
-          "env_optional": ["PLAIN_API_KEY", "STRIPE_SECRET_KEY"]
+          "env_optional": [
+            "PLAIN_API_KEY",
+            "STRIPE_SECRET_KEY"
+          ]
         }
       }
     }

@@ -40,6 +40,7 @@ jobs:
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
+      enterprise: ${{ steps.filter.outputs.enterprise }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -91,6 +92,87 @@ jobs:
               - 'apps/cli/src/commands/self-host.ts'
               - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
+              # The api Dockerfile bakes the enterprise updater/deployer image; a
+              # change there must re-run the schema-bootstrap gate too.
+              - 'apps/enterprise-updater/**'
+            enterprise:
+              - *pnpm
+              - 'apps/enterprise-updater/**'
+              - 'apps/enterprise-release/**'
+              - 'apps/cli/src/self-host/**'
+              - 'apps/cli/src/commands/self-host.ts'
+              - 'packages/llm-gateway/src/transports/bedrock/**'
+              - 'scripts/appliance-bootstrap.sh'
+              - 'infra/terraform/modules/enterprise-*/**'
+              - 'infra/terraform/environments/enterprise-*/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/promote-enterprise-stable.yml'
+
+  enterprise-release:
+    name: Enterprise updater + bundles
+    needs: changes
+    if: needs.changes.outputs.enterprise == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install workspace dependencies
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --filter "@kortix/enterprise-release..."
+        env:
+          npm_config_engine_strict: "false"
+      - name: Test, typecheck, and compile updater
+        run: |
+          pnpm --filter "@kortix/enterprise-updater" test
+          pnpm --filter "@kortix/enterprise-release" test
+          pnpm --filter "@kortix/enterprise-updater" typecheck
+          pnpm --filter "@kortix/enterprise-release" typecheck
+          BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
+          test -x apps/enterprise-updater/dist/kortix-enterprise-updater
+      # The enterprise deployment is a single-EC2 Docker appliance (Caddy + api +
+      # gateway + frontend + official Supabase), not ECS or Helm. Validate the
+      # reviewed Terraform graph the CLI materializes, run the plan-guard
+      # classifier, checkov-gate the module, and assert the app bundle's migrate
+      # service bootstraps the database before services roll.
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform fmt + validate (enterprise appliance graph)
+        run: |
+          set -euo pipefail
+          terraform fmt -check -recursive infra/terraform/modules/enterprise-vpc
+          terraform fmt -check -recursive infra/terraform/environments/enterprise-vpc-template
+          for dir in \
+            infra/terraform/modules/enterprise-vpc \
+            infra/terraform/environments/enterprise-vpc-template/state \
+            infra/terraform/environments/enterprise-vpc-template/cluster \
+            infra/terraform/environments/enterprise-vpc-template/platform; do
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false -input=false -no-color >/dev/null
+            terraform -chdir="$dir" validate -no-color
+            echo "::endgroup::"
+          done
+      - name: Checkov (enterprise appliance module — hard gate)
+        run: |
+          set -euo pipefail
+          pipx install checkov || pip install --user checkov
+          checkov -d infra/terraform/modules/enterprise-vpc --compact --quiet
+      - name: Enterprise plan-guard classifier
+        run: bun test infra/terraform/scripts/guard-enterprise-plan.test.ts
+      - name: Assert the app bundle migrate service bootstraps the database
+        run: |
+          set -euo pipefail
+          # The appliance runs migrations as a one-off compose service (api image)
+          # before any service rolls; the command lives in the app bundle generator.
+          grep -Fq '"bun", "/app/packages/db/scripts/migrate.ts", "bootstrap"' apps/enterprise-release/src/bundles.ts
 
   api-typecheck:
     name: API typecheck

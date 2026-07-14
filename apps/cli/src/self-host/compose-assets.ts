@@ -3,8 +3,9 @@ import { dirname, join } from 'node:path';
 import { parse, stringify } from 'yaml';
 
 import kortixCompose from './assets/kortix-compose.yml' with { type: 'text' };
-import supabaseCompose from './assets/supabase/docker-compose.yml' with { type: 'text' };
-import supabaseLogsCompose from './assets/supabase/docker-compose.logs.yml' with { type: 'text' };
+import upstreamSupabaseCompose from './assets/supabase/docker-compose.yml' with { type: 'text' };
+import upstreamSupabaseLogsCompose from './assets/supabase/docker-compose.logs.yml' with { type: 'text' };
+import supabaseImageLockText from './assets/supabase/image-lock.json' with { type: 'text' };
 import kongEntrypoint from './assets/supabase/volumes/api/kong-entrypoint.sh' with { type: 'text' };
 import kongConfig from './assets/supabase/volumes/api/kong.yml' with { type: 'text' };
 import supabaseInternalSql from './assets/supabase/volumes/db/_supabase.sql' with { type: 'text' };
@@ -39,6 +40,13 @@ const SERVICE_NAMES: Record<string, string> = {
 
 export const SUPABASE_UPSTREAM_COMMIT = '20649d23740e2facc5d11f7220947b9cddf9480c';
 
+export const supabaseUpstreamDockerAssets: Readonly<Record<string, string>> = {
+  'docker-compose.yml': upstreamSupabaseCompose,
+  'docker-compose.logs.yml': upstreamSupabaseLogsCompose,
+};
+
+export const SUPABASE_IMAGE_DIGESTS = loadSupabaseImageLock(supabaseImageLockText);
+
 export const supabaseVendorAssets: Readonly<Record<string, string>> = {
   'volumes/api/kong-entrypoint.sh': kongEntrypoint,
   'volumes/api/kong.yml': kongConfig,
@@ -56,6 +64,17 @@ export const supabaseVendorAssets: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The pinned official Supabase Docker distribution used on the private EC2
+ * data host. Kortix application containers are intentionally absent: the API,
+ * frontend, gateway, and workers run on EKS in the AWS VPC topology.
+ */
+export const officialSupabaseDockerAssets: Readonly<Record<string, string>> = {
+  'docker-compose.yml': pinSupabaseImages(upstreamSupabaseCompose),
+  'docker-compose.logs.yml': pinSupabaseImages(upstreamSupabaseLogsCompose),
+  ...supabaseVendorAssets,
+};
+
+/**
  * Compose the pinned official Supabase Docker distribution with the Kortix
  * application services. The upstream service definitions and image pins stay
  * intact; we only remove globally-conflicting container names, add legacy
@@ -63,10 +82,10 @@ export const supabaseVendorAssets: Readonly<Record<string, string>> = {
  */
 export function renderFullDockerCompose(composeProject: string): string {
   const base = parse(
-    supabaseCompose.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
+    officialSupabaseDockerAssets['docker-compose.yml']!.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
   ) as YamlRecord;
   const logs = parse(
-    supabaseLogsCompose.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
+    officialSupabaseDockerAssets['docker-compose.logs.yml']!.replaceAll('${POSTGRES_PORT}', '${SUPABASE_POSTGRES_INTERNAL_PORT}'),
   ) as YamlRecord;
   const kortix = parse(
     kortixCompose.replaceAll('__KORTIX_COMPOSE_PROJECT__', composeProject),
@@ -133,7 +152,17 @@ export function renderFullDockerCompose(composeProject: string): string {
 }
 
 export function writeSupabaseVendorAssets(root: string): void {
-  for (const [relativePath, content] of Object.entries(supabaseVendorAssets)) {
+  writeAssets(root, supabaseVendorAssets);
+  writeSupabaseDataDirectories(root);
+}
+
+export function writeOfficialSupabaseDockerAssets(root: string): void {
+  writeAssets(root, officialSupabaseDockerAssets);
+  writeSupabaseDataDirectories(root);
+}
+
+function writeAssets(root: string, assets: Readonly<Record<string, string>>): void {
+  for (const [relativePath, content] of Object.entries(assets)) {
     const path = join(root, relativePath);
     const mode = relativePath.endsWith('.sh') ? 0o755 : 0o644;
     mkdirSync(dirname(path), { recursive: true });
@@ -147,6 +176,9 @@ export function writeSupabaseVendorAssets(root: string): void {
     // too so upgrading repairs assets emitted by an older CLI.
     chmodSync(path, mode);
   }
+}
+
+function writeSupabaseDataDirectories(root: string): void {
   mkdirSync(join(root, 'volumes', 'db', 'data'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'storage'), { recursive: true, mode: 0o700 });
   mkdirSync(join(root, 'volumes', 'snippets'), { recursive: true, mode: 0o700 });
@@ -187,4 +219,41 @@ function asRecord(value: unknown): YamlRecord {
 
 function isRecord(value: unknown): value is YamlRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function loadSupabaseImageLock(value: unknown): Readonly<Record<string, string>> {
+  const parsed = typeof value === 'string' ? JSON.parse(value) as unknown : value;
+  if (!isRecord(parsed)
+    || parsed.schema_version !== 1
+    || parsed.supabase_upstream_commit !== SUPABASE_UPSTREAM_COMMIT
+    || !isRecord(parsed.images)) {
+    throw new Error('Supabase image lock does not match the reviewed upstream distribution');
+  }
+  const images = parsed.images as Record<string, unknown>;
+  for (const [reference, digest] of Object.entries(images)) {
+    if (!/^[a-z0-9][a-z0-9./_-]+:[A-Za-z0-9][A-Za-z0-9._-]*$/.test(reference)
+      || typeof digest !== 'string'
+      || !/^sha256:[a-f0-9]{64}$/.test(digest)) {
+      throw new Error(`invalid immutable Supabase image lock entry: ${reference}`);
+    }
+  }
+  return Object.freeze(images as Record<string, string>);
+}
+
+function pinSupabaseImages(value: string): string {
+  const document = parse(value) as YamlRecord;
+  const services = asRecord(document.services);
+  const used = new Set<string>();
+  for (const [name, rawService] of Object.entries(services)) {
+    const service = asRecord(rawService);
+    if (typeof service.image !== 'string') continue;
+    const digest = SUPABASE_IMAGE_DIGESTS[service.image];
+    if (!digest) throw new Error(`Supabase service ${name} image is absent from the immutable image lock`);
+    used.add(service.image);
+    service.image = `${service.image}@${digest}`;
+  }
+  const unused = Object.keys(SUPABASE_IMAGE_DIGESTS).filter((reference) => !used.has(reference)
+    && !Object.values(supabaseUpstreamDockerAssets).some((compose) => compose.includes(`image: ${reference}`)));
+  if (unused.length > 0) throw new Error(`Supabase image lock contains unused entries: ${unused.join(', ')}`);
+  return `# Generated from Supabase ${SUPABASE_UPSTREAM_COMMIT}; image tags are locked to reviewed OCI digests.\n${stringify(document, { lineWidth: 0 })}`;
 }

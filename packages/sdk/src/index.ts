@@ -260,11 +260,6 @@ export type {
   BillingTransactionsSummary,
   BillingCreditBreakdown,
   BillingTierConfiguration,
-  // Marketplace / registry
-  MarketplaceInstalledItem,
-  MarketplaceInstallResult,
-  MarketplaceUpdateStatusEntry,
-  MarketplaceUpdatesResponse,
   // Account audit
   AuditEvent,
   AuditEventList,
