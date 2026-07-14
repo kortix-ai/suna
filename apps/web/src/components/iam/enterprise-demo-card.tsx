@@ -7,9 +7,8 @@
 // It is explicitly a demo: real production use still requires a signed
 // Enterprise agreement (the "Request access" link below).
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FlaskConical } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,7 +36,7 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
   const toggleMutation = useMutation({
     mutationFn: (enabled: boolean) => setEnterpriseDemo(accountId, enabled),
     onSuccess: (enabled) => {
-      toast.success(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
+      successToast(enabled ? 'Enterprise demo enabled' : 'Enterprise demo disabled');
       // Entitlements changed — refetch account state so the gate (`sso`/`scim`
       // entitlements) flips and the SSO/SCIM cards appear/disappear immediately,
       // plus the enterprise cards that read their own state.
@@ -46,60 +45,56 @@ export function EnterpriseDemoCard({ accountId, canManage }: EnterpriseDemoCardP
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-scim', accountId] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update the demo'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update the demo'),
   });
 
   const enabled = stateQuery.data ?? false;
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
-      <header className="px-6 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
-              <FlaskConical className="text-muted-foreground h-4 w-4" />
-              Enterprise features
-              <Badge
-                variant="outline"
-                size="sm"
-                className="border-amber-500/40 bg-amber-500/10 text-[10px] font-normal text-amber-700 dark:text-amber-300"
-              >
-                demo
-              </Badge>
-            </h2>
-            <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
-              Turn on an interactive preview of the enterprise surface — SSO, SCIM, advanced RBAC,
-              and audit logs — for this account. This is an evaluation demo, not a production plan.
-            </p>
-          </div>
-          {stateQuery.isLoading ? (
-            <Skeleton className="h-6 w-11 shrink-0 rounded-full" />
-          ) : (
-            <Switch
-              checked={enabled}
-              disabled={!canManage || toggleMutation.isPending}
-              onCheckedChange={(next) => toggleMutation.mutate(next)}
-              aria-label="Toggle enterprise features demo"
-              className="shrink-0"
-            />
-          )}
+    <div className="bg-popover rounded-md border">
+      <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+            Enterprise features
+            <Badge variant="beta" size="sm">
+              Demo
+            </Badge>
+          </p>
+          <p className="text-muted-foreground mt-0.5 max-w-prose text-xs">
+            Turn on an interactive preview of SSO, SCIM, advanced RBAC, and audit logs for this
+            account. Evaluation only, not a production plan.
+          </p>
         </div>
-
-        <div className="border-border/60 mt-4 border-t pt-3">
+        {stateQuery.isLoading ? (
+          <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
+        ) : (
+          <Switch
+            checked={enabled}
+            disabled={!canManage || toggleMutation.isPending}
+            onCheckedChange={(next) => toggleMutation.mutate(next)}
+            aria-label="Toggle enterprise features demo"
+            className="shrink-0"
+          />
+        )}
+      </div>
+      {/* The request-enterprise CTA lives on the EnterpriseUpsell panel below —
+          one CTA per intent on the page. `openDemo` stays wired for the
+          entitled state, where the upsell is hidden. */}
+      {enabled ? (
+        <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
           <p className="text-muted-foreground text-xs">
-            For real enterprise use — production SLA, DPA, and support — you must talk to us to
-            upgrade to the Enterprise plan.
+            For production use (SLA, DPA, support) upgrade to the Enterprise plan.
           </p>
           <Button
             variant="outline"
             size="sm"
-            className="mt-3"
+            className="shrink-0"
             onClick={() => openDemo({ source: 'accounts-enterprise-access' })}
           >
             Request enterprise access
           </Button>
         </div>
-      </header>
-    </section>
+      ) : null}
+    </div>
   );
 }
