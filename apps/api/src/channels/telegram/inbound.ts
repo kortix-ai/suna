@@ -96,11 +96,33 @@ export interface TelegramCallbackQuery {
   };
 }
 
+/** A change to the bot's own membership in a chat (added/removed/promoted). */
+export interface TelegramChatMemberUpdate {
+  chat: TelegramChat;
+  from?: TelegramUser;
+  new_chat_member?: { user?: TelegramUser; status?: string };
+  old_chat_member?: { user?: TelegramUser; status?: string };
+}
+
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
   edited_message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
+  my_chat_member?: TelegramChatMemberUpdate;
+}
+
+/** True when this membership change is the bot being freshly added to a group
+ *  (transitioning into member/administrator from a non-present state). Drives
+ *  the one-time group welcome. */
+export function botJustAddedToGroup(update: TelegramChatMemberUpdate): boolean {
+  const type = update.chat.type;
+  if (type !== 'group' && type !== 'supergroup') return false;
+  const now = update.new_chat_member?.status;
+  const before = update.old_chat_member?.status;
+  const present = (s: string | undefined) =>
+    s === 'member' || s === 'administrator' || s === 'creator';
+  return (now === 'member' || now === 'administrator') && !present(before);
 }
 
 // ─── Bot commands ────────────────────────────────────────────────────────────
@@ -267,6 +289,15 @@ export const TELEGRAM_START_TEXT = [
 
 export const TELEGRAM_NEW_TEXT =
   'Fresh start — your next message opens a new conversation with the agent.';
+
+export const TELEGRAM_GROUP_WELCOME_TEXT = [
+  '👋 Thanks for adding me! I connect this group to a Kortix project.',
+  '',
+  'In groups I stay quiet until you need me — @mention me or reply to one of my',
+  'messages and an agent picks the task up, then answers right here.',
+  '',
+  '/help for what I can do · /status for this chat’s agent & model.',
+].join('\n');
 
 export const TELEGRAM_PAIRED_TEXT = [
   "✅ Paired! You're on this project's allowlist now.",

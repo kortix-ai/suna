@@ -156,7 +156,7 @@ export async function telegramSetWebhook(
   const r = await telegramApiCall(token, 'setWebhook', {
     url,
     secret_token: secretToken,
-    allowed_updates: ['message', 'edited_message', 'callback_query'],
+    allowed_updates: ['message', 'edited_message', 'callback_query', 'my_chat_member'],
   });
   return r.ok ? { ok: true } : { ok: false, error: r.description ?? 'unknown error' };
 }

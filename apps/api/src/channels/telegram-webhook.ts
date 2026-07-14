@@ -47,6 +47,7 @@ import {
   postTelegramModelPicker,
 } from './telegram/controls';
 import {
+  TELEGRAM_GROUP_WELCOME_TEXT,
   TELEGRAM_HELP_TEXT,
   TELEGRAM_LOCKED_TEXT,
   TELEGRAM_NEW_TEXT,
@@ -54,8 +55,10 @@ import {
   TELEGRAM_PAIRING_FAILED_TEXT,
   TELEGRAM_START_TEXT,
   type TelegramCallbackQuery,
+  type TelegramChatMemberUpdate,
   type TelegramMessage,
   type TelegramUpdate,
+  botJustAddedToGroup,
   parseTelegramCommand,
   renderTelegramAgentPrompt,
   renderTelegramFollowUpPrompt,
@@ -125,6 +128,16 @@ telegramWebhookApp.openapi(
       if (await claimOnce(`telegram:update:${projectId}:${update.update_id}`)) {
         handleCallbackQuery(projectId, update.callback_query).catch((err) =>
           console.error('[telegram-webhook] callback handle failed', err),
+        );
+      }
+      return c.json({ ok: true });
+    }
+
+    // Bot membership changes (added to / removed from a group). Welcome on add.
+    if (update.my_chat_member) {
+      if (await claimOnce(`telegram:update:${projectId}:${update.update_id}`)) {
+        handleMyChatMember(projectId, update.my_chat_member).catch((err) =>
+          console.error('[telegram-webhook] my_chat_member handle failed', err),
         );
       }
       return c.json({ ok: true });
@@ -258,6 +271,17 @@ async function handleUpdate(
   }
 
   await createOrJoinChatSession({ projectId, botId, botUsername, chatId, message });
+}
+
+// Post the one-time group intro when the bot is freshly added to a group.
+async function handleMyChatMember(
+  projectId: string,
+  update: TelegramChatMemberUpdate,
+): Promise<void> {
+  if (!botJustAddedToGroup(update)) return;
+  const token = await loadTelegramTokenForProject(projectId);
+  if (!token) return;
+  await telegramSendMessage(token, update.chat.id, TELEGRAM_GROUP_WELCOME_TEXT);
 }
 
 // An inline-keyboard tap answering the agent's `question` tool. We recover the

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type TelegramMessage,
+  botJustAddedToGroup,
   describeAttachments,
   messageAttachments,
   parseTelegramCommand,
@@ -220,5 +221,26 @@ describe('renderTelegramStatus', () => {
     expect(html).not.toContain('<b>evil</b>');
     expect(html).toContain('&lt;b&gt;evil&lt;/b&gt;');
     expect(html).toContain('a &amp; b');
+  });
+});
+
+describe('botJustAddedToGroup', () => {
+  const ev = (over: Record<string, unknown> = {}) => ({
+    chat: { id: -100, type: 'supergroup' },
+    new_chat_member: { status: 'member' },
+    old_chat_member: { status: 'left' },
+    ...over,
+  });
+
+  test('true when the bot enters a group from a non-present state', () => {
+    expect(botJustAddedToGroup(ev())).toBe(true);
+    expect(botJustAddedToGroup(ev({ new_chat_member: { status: 'administrator' } }))).toBe(true);
+    expect(botJustAddedToGroup(ev({ old_chat_member: { status: 'kicked' } }))).toBe(true);
+  });
+
+  test('false for re-adds, promotions, leaves, and private chats', () => {
+    expect(botJustAddedToGroup(ev({ old_chat_member: { status: 'member' } }))).toBe(false); // promotion
+    expect(botJustAddedToGroup(ev({ new_chat_member: { status: 'left' } }))).toBe(false); // removed
+    expect(botJustAddedToGroup(ev({ chat: { id: 1, type: 'private' } }))).toBe(false);
   });
 });
