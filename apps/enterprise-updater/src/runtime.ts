@@ -7,11 +7,10 @@ import {
   parseCustomerRepositories,
   type CustomerRepositories,
 } from './artifacts.ts';
+import { assertDigestPinnedCaddy } from './caddy.ts';
 import type { AppBundleInstaller, ImagePreparer, ResolvedImages } from './compose-deploy.ts';
 import type { CommandRunner } from './process.ts';
 import type { EnterpriseReleaseManifest } from './release-contract.ts';
-
-const SHA256 = /^sha256:[a-f0-9]{64}$/;
 
 /**
  * AWS path: the customer ECR is populated by the release pipeline (the instance
@@ -76,10 +75,7 @@ export class PublicImagePreparer implements ImagePreparer {
 }
 
 function assertCaddy(caddyImage: string): void {
-  const at = caddyImage.lastIndexOf('@');
-  if (at < 0 || !SHA256.test(caddyImage.slice(at + 1))) {
-    throw new Error('KORTIX_CADDY_IMAGE must be digest-pinned (…@sha256:<64 hex>)');
-  }
+  assertDigestPinnedCaddy(caddyImage);
 }
 
 export interface AppInstallEnv {

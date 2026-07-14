@@ -8,6 +8,7 @@ import {
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
 } from '../../../cli/src/self-host/compose-assets.ts';
+import { APPLIANCE_CADDY_IMAGE } from '../../../enterprise-updater/src/caddy.ts';
 import {
   materializeAppBundle,
   materializeSupabaseBundle,
@@ -64,6 +65,10 @@ describe('enterprise release bundles', () => {
       }
       const installer = readFileSync(join(root, 'bin', 'install'), 'utf8');
       expect(installer).toContain('aws secretsmanager get-secret-value');
+      // The Supabase bundle reads runtime keys from Secrets Manager (AWS) OR a
+      // local runtime-env JSON file (the VPS bootstrap path — one self-host system).
+      expect(installer).toContain('--runtime-env');
+      expect(installer).toContain('secret_json=$(cat "$runtime_env")');
       expect(installer).toContain('/var/lib/kortix/postgres');
       expect(installer).toContain('/var/lib/kortix/storage');
       expect(installer).toContain('docker compose');
@@ -141,8 +146,17 @@ describe('enterprise release bundles', () => {
       expect(compose).toMatch(/api:[\s\S]*?replicas: 2/);
       // Images are env-substituted; the install script enforces the digest lock.
       expect(compose).toContain('image: ${KORTIX_API_IMAGE}');
-      expect(compose).toContain('image: ${KORTIX_CADDY_IMAGE}');
+      // Caddy is a fixed appliance dependency: pinned by digest as the compose
+      // default so a missing KORTIX_CADDY_IMAGE is never fatal (single source of
+      // truth = the updater's APPLIANCE_CADDY_IMAGE).
+      expect(compose).toContain(`image: \${KORTIX_CADDY_IMAGE:-${APPLIANCE_CADDY_IMAGE}}`);
+      expect(APPLIANCE_CADDY_IMAGE).toMatch(/^docker\.io\/library\/caddy:[\d.]+@sha256:[a-f0-9]{64}$/);
       expect(compose).not.toMatch(/image:\s*supabase\//);
+
+      // Opt-in Route53 DNS-01 Caddy build ships in the bundle (default is stock caddy).
+      const caddyDockerfile = readFileSync(join(root, 'caddy', 'Dockerfile'), 'utf8');
+      expect(caddyDockerfile).toContain('xcaddy build');
+      expect(caddyDockerfile).toContain('github.com/caddy-dns/route53');
 
       // Caddy load-balances ALL api replicas via Docker DNS with passive health.
       const caddyfile = readFileSync(join(root, 'Caddyfile'), 'utf8');

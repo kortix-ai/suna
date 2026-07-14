@@ -304,6 +304,7 @@ resource "aws_instance" "appliance" {
     artifact_bucket        = aws_s3_bucket.artifacts.bucket
     api_domain             = var.api_domain
     frontend_domain        = var.frontend_domain
+    acme_email             = var.acme_email
     route53_zone_id        = var.route53_zone_id
     ecr_repositories       = jsonencode({ for name, repository in aws_ecr_repository.enterprise : name => repository.repository_url })
   })

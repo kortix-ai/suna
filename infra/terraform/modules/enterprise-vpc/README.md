@@ -18,12 +18,19 @@ command.**
   public subnet with a stable Elastic IP. Inbound is 80/443 from `ingress_cidrs`
   only; there is no SSH (SSM is the only management path). It runs everything as
   Docker containers:
-  - Caddy terminates TLS (ACME, DNS-01 through Route 53) and owns host/path
-    routing: `api.<domain>` `/v1/llm*` → gateway:8090, else → api:8008;
-    `<domain>` the Supabase data-plane prefixes (`/rest/v1 /auth/v1 /storage/v1
-    /realtime/v1 /functions/v1 /graphql/v1`) → supabase-kong:8000, else →
-    frontend:3000. api runs 2+ replicas; Caddy load-balances with upstream
-    health checks.
+  - Caddy terminates TLS (ACME) and owns host/path routing: `api.<domain>`
+    `/v1/llm*` → gateway:8090, else → api:8008; `<domain>` the Supabase data-plane
+    prefixes (`/rest/v1 /auth/v1 /storage/v1 /realtime/v1 /functions/v1
+    /graphql/v1`) → the in-box Kong (the runtime secret's `SUPABASE_URL`, i.e. the
+    host `:8000` — never the public URL), else → frontend:3000. api runs 2+
+    replicas; Caddy load-balances with upstream health checks. Caddy is a FIXED
+    appliance dependency pinned by digest in the signed app bundle (the official
+    public `caddy` image); a missing `KORTIX_CADDY_IMAGE` is never fatal. v1 uses
+    ACME **HTTP-01** on every platform (port 80 is open). DNS-01 via Route 53 needs
+    the `caddy-dns/route53` plugin, which the stock image does not bundle; the app
+    bundle ships `caddy/Dockerfile` (xcaddy) for operators who opt in
+    (`KORTIX_ACME_PROVIDER=route53` + a self-built, digest-pinned Caddy image). The
+    instance role's Route 53 grant stays latent until then.
   - The official Supabase Docker stack (systemd `kortix-supabase.service`, seeded
     by user-data) on a separately attached encrypted EBS data volume mounted at
     `/var/lib/kortix`.
@@ -32,11 +39,16 @@ command.**
 - One instance profile replaces every ECS task/exec role. The containers and the
   on-box updater all run under it: read the runtime + updater secrets and customer
   KMS keys; pull digest-pinned images from the customer ECR mirror (read only);
-  read staged bundle tarballs from S3; invoke Bedrock
-  (`bedrock:InvokeModel[WithResponseStream]`, model allowlist variable) so managed
-  Claude resolves to Bedrock via SigV4 with no bearer key and no OpenRouter
-  dependency; manage Route 53 records (ACME DNS-01 + the app A records, zone-scoped);
-  read/write the release breadcrumb; and publish host metrics.
+  read staged bundle tarballs from S3; manage Route 53 records (the app A records,
+  zone-scoped; also usable for opt-in ACME DNS-01); read/write the release
+  breadcrumb; and publish host metrics. The role ALSO holds
+  `bedrock:InvokeModel[WithResponseStream]` (model-allowlist scoped) — but in v1
+  managed Claude resolves to Bedrock via the **`AWS_BEDROCK_API_KEY` bearer key**
+  (an operator-supplied required runtime key), with no OpenRouter dependency. The
+  Bedrock IAM grant is latent and harmless; wiring a SigV4 signing path in the
+  gateway (see `TODO(bedrock-sigv4)` in
+  `packages/llm-gateway/src/transports/bedrock/request.ts`) would let the appliance
+  drop the bearer key and rely solely on the instance role.
 - Customer KMS keys, Secrets Manager (`<instance>/runtime`, `<instance>/updater`),
   immutable ECR mirror repositories, CloudTrail, encrypted logs, alerting, hourly
   AWS Backup recovery points, and vault lock. TLS is the box's job (Caddy/ACME),
@@ -90,6 +102,38 @@ breadcrumb. On a failed health check it keeps the old containers, reports loudly
 and exits nonzero — a failed optional step never takes down healthy containers. A
 concurrent run is guarded by a lockfile + `flock`. Rollback is the same flow
 pointed at an older signed release (`rollback_from` enforced by contract).
+
+## One self-host system (AWS EC2 and any VPS)
+
+The appliance is one artifact: the SAME signed app + Supabase bundles and the SAME
+on-box updater run on this AWS EC2 host and on a plain VPS. There are two
+provisioning paths, not two runtimes:
+
+- **AWS (this module):** Terraform user-data seeds `/etc/kortix/instance.env` and
+  the Supabase unit; the box reads runtime keys from Secrets Manager (instance
+  role); the CLI drives deploys over SSM.
+- **VPS (`scripts/appliance-bootstrap.sh`):** a bootstrap script installs Docker,
+  generates the runtime keys into a local `0600` JSON file, writes the VPS variant
+  of `instance.env` (`KORTIX_RUNTIME_ENV_FILE` instead of a Secrets Manager ARN,
+  `KORTIX_ACME_PROVIDER=http`, no AWS coordinates), installs the updater binary,
+  seeds the Supabase unit, and runs the same `kortix-updater run`. The updater's
+  systemd timer (installed by the app bundle) then keeps the box converged
+  identically. The Supabase and app bundle installers accept either a Secrets
+  Manager ARN (`--runtime-secret-arn`) or a local file (`--runtime-env`).
+
+## v1 limitations
+
+- **Availability = one host.** The whole product (Caddy + api×2 + gateway +
+  frontend + Supabase) runs on a single box, so a host failure is downtime. This
+  never changed the deployment's availability class — Supabase always ran on one
+  EC2. Mitigations: EC2 auto-recovery, the watchdog, and the RTO/RPO restore drill
+  below. Multi-host HA is out of scope for v1.
+- **RPO ~60m / RTO ~60m.** Durability is encrypted EBS + hourly AWS Backup; a
+  restore is a whole-volume restore to the newest recovery point.
+- **Bedrock via bearer key.** Managed Claude uses `AWS_BEDROCK_API_KEY`, not SigV4
+  (see above and the runbook).
+- **HTTP-01 TLS default.** DNS-01/wildcards are opt-in (self-built Caddy).
+- **IPv4 only.** EIPs are IPv4; A records only (no AAAA).
 
 ## Safety contract
 

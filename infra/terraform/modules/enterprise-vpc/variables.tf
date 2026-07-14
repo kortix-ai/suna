@@ -57,6 +57,12 @@ variable "route53_zone_id" {
   }
 }
 
+variable "acme_email" {
+  description = "Contact email Caddy registers with the ACME CA (Let's Encrypt/ZeroSSL) for the appliance certificates. Optional; empty issues anonymously. Recommended so the CA can send expiry/revocation notices."
+  type        = string
+  default     = ""
+}
+
 # ── Ingress ───────────────────────────────────────────────────────────────────
 variable "ingress_cidrs" {
   description = "CIDRs allowed to reach the appliance host on 80/443 (the whole customer-facing surface). Enterprise customers SHOULD restrict this to their corporate egress ranges; the open default exists only for first bring-up."

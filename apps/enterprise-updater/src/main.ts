@@ -3,6 +3,7 @@
 import { join } from 'node:path';
 
 import { DockerHost, UPDATER_LOCK_PATH, APP_PROJECT } from './box.ts';
+import { APPLIANCE_CADDY_IMAGE } from './caddy.ts';
 import { ComposeDeployer, type DeployRequest } from './compose-deploy.ts';
 import { launchSignedUpdaterIfNeeded } from './launcher.ts';
 import { ProcessRunner, type CommandRunner } from './process.ts';
@@ -75,18 +76,19 @@ async function main(): Promise<number> {
   const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
   const apiDomain = envRequired('KORTIX_API_DOMAIN');
   const frontendDomain = envRequired('KORTIX_FRONTEND_DOMAIN');
-  // KORTIX_CADDY_IMAGE is a digest-pinned Caddy build with the caddy-dns/route53
-  // plugin (needed for DNS-01). It is NOT in the base instance.env yet — see the
-  // seam note: user-data/instance.env must supply it (a stock caddy:2 works only
-  // for the HTTP-01 fallback).
-  const caddyImage = envRequired('KORTIX_CADDY_IMAGE');
-  // On AWS the instance role holds zone-scoped Route53 perms, so ACME uses
-  // DNS-01 whenever a hosted zone is provided; a VPS without one falls back to
-  // HTTP-01. KORTIX_ACME_PROVIDER can force either.
+  // Caddy is a FIXED appliance dependency pinned by digest in the app bundle, not
+  // per-customer plumbing: instance.env does NOT carry it. Default to the
+  // bundle-pinned image so a missing env var is never fatal; an operator may still
+  // override KORTIX_CADDY_IMAGE (e.g. a self-built caddy-dns/route53 image for
+  // DNS-01) and it must be digest-pinned.
+  const caddyImage = process.env.KORTIX_CADDY_IMAGE ?? APPLIANCE_CADDY_IMAGE;
+  // ACME challenge. The bundle-pinned Caddy solves HTTP-01 (port 80 is open on the
+  // appliance SG and on any VPS), so HTTP-01 is the v1 default on every platform.
+  // DNS-01 via Route53 needs the caddy-dns/route53 plugin (a self-built Caddy) and
+  // is strictly opt-in: KORTIX_ACME_PROVIDER=route53. The instance role already
+  // holds zone-scoped Route53 perms (latent) for when it is enabled.
   const route53ZoneId = process.env.KORTIX_ROUTE53_ZONE_ID;
-  const acmeProvider = (process.env.KORTIX_ACME_PROVIDER ?? (route53ZoneId ? 'route53' : 'http')) === 'route53'
-    ? 'route53'
-    : 'http';
+  const acmeProvider = process.env.KORTIX_ACME_PROVIDER === 'route53' ? 'route53' : 'http';
 
   const expectedAccountId = process.env.KORTIX_EXPECTED_ACCOUNT_ID;
   const verifyIdentity = expectedAccountId
@@ -110,9 +112,15 @@ async function main(): Promise<number> {
     log: (message) => process.stderr.write(`${message}\n`),
   });
 
+  // Supabase keys come from Secrets Manager on AWS, or the local runtime-env file
+  // on a VPS — the same source the app bundle uses. Exactly one must be present.
+  if (!runtimeSecretArn && !runtimeEnvFilePath) {
+    missing('KORTIX_RUNTIME_SECRET_ARN (AWS) or KORTIX_RUNTIME_ENV_FILE (VPS) for the runtime keys');
+  }
   const supabase = new SupabaseInstaller(runner, {
     instance,
-    runtimeSecretArn: runtimeSecretArn ?? missing('KORTIX_RUNTIME_SECRET_ARN (the Supabase bundle install reads Secrets Manager)'),
+    ...(runtimeSecretArn ? { runtimeSecretArn } : {}),
+    ...(runtimeEnvFilePath ? { runtimeEnvFile: runtimeEnvFilePath } : {}),
     apiDomain,
     frontendDomain,
   });

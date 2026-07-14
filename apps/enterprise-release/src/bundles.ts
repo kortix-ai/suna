@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { APPLIANCE_CADDY_IMAGE } from '../../enterprise-updater/src/caddy.ts';
 import {
   SUPABASE_IMAGE_DIGESTS,
   SUPABASE_UPSTREAM_COMMIT,
@@ -125,6 +126,11 @@ export function materializeAppBundle(
 
   writeFileSync(join(root, 'docker-compose.yml'), appDockerCompose(), { mode: 0o644 });
   writeFileSync(join(root, 'Caddyfile'), appCaddyfile(), { mode: 0o644 });
+  // Opt-in DNS-01: the pinned default Caddy is the stock official image (HTTP-01
+  // only). Operators who need Route53 DNS-01 build THIS image, then set
+  // KORTIX_CADDY_IMAGE to its digest + KORTIX_ACME_PROVIDER=route53 (see runbook).
+  mkdirSync(join(root, 'caddy'), { recursive: true, mode: 0o755 });
+  writeFileSync(join(root, 'caddy', 'Dockerfile'), caddyRoute53Dockerfile(), { mode: 0o644 });
   writeFileSync(join(root, 'bundle.json'), `${JSON.stringify(descriptor, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o644,
@@ -175,7 +181,11 @@ function appDockerCompose(): string {
   return `name: kortix-app
 services:
   caddy:
-    image: \${KORTIX_CADDY_IMAGE}
+    # Caddy is a fixed appliance dependency pinned by digest here (the trustworthy
+    # public official image). The updater passes the same ref via .env; the \`:-\`
+    # default means a missing KORTIX_CADDY_IMAGE is never fatal. Override only with
+    # a digest-pinned self-built caddy-dns/route53 image (see ./caddy/Dockerfile).
+    image: \${KORTIX_CADDY_IMAGE:-${APPLIANCE_CADDY_IMAGE}}
     restart: always
     ports:
       - "80:80"
@@ -311,6 +321,28 @@ function appCaddyfile(): string {
 		}
 	}
 }
+`;
+}
+
+/**
+ * Optional Caddy build that adds the caddy-dns/route53 module so the appliance can
+ * solve ACME DNS-01 (wildcards / networks with port 80 closed). The stock official
+ * image (the pinned default) does NOT bundle DNS plugins. Base + builder are pinned
+ * to the same reviewed Caddy version as APPLIANCE_CADDY_IMAGE. Build + push to a
+ * registry the box can pull, then point KORTIX_CADDY_IMAGE at the digest.
+ */
+function caddyRoute53Dockerfile(): string {
+  return `# syntax=docker/dockerfile:1
+# Route53 DNS-01 Caddy for the Kortix appliance (opt-in; default is stock caddy).
+# Build:  docker build -t <registry>/kortix-appliance-caddy:route53 apps/.../app/caddy
+# Enable: set KORTIX_CADDY_IMAGE=<registry>/kortix-appliance-caddy@sha256:<digest>
+#         and KORTIX_ACME_PROVIDER=route53 in /etc/kortix/instance.env.
+FROM caddy:2.11.4-builder AS builder
+RUN xcaddy build \\
+      --with github.com/caddy-dns/route53
+
+FROM caddy:2.11.4
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 `;
 }
 
@@ -614,6 +646,7 @@ function supabaseHostInstallScript(): string {
     'umask 077',
     '',
     'runtime_secret_arn=',
+    'runtime_env=',
     'release=',
     'instance=',
     'api_domain=',
@@ -621,6 +654,7 @@ function supabaseHostInstallScript(): string {
     'while [ "$#" -gt 0 ]; do',
     '  case "$1" in',
     '    --runtime-secret-arn) runtime_secret_arn="${2:-}"; shift 2 ;;',
+    '    --runtime-env) runtime_env="${2:-}"; shift 2 ;;',
     '    --release) release="${2:-}"; shift 2 ;;',
     '    --instance) instance="${2:-}"; shift 2 ;;',
     '    --api-domain) api_domain="${2:-}"; shift 2 ;;',
@@ -628,14 +662,23 @@ function supabaseHostInstallScript(): string {
     '    *) echo "unsupported install option: $1" >&2; exit 2 ;;',
     '  esac',
     'done',
-    'for value in "$runtime_secret_arn" "$release" "$instance" "$api_domain" "$frontend_domain"; do',
+    'for value in "$release" "$instance" "$api_domain" "$frontend_domain"; do',
     '  [ -n "$value" ] || { echo "missing required Supabase install option" >&2; exit 2; }',
     'done',
+    '# Runtime keys come from AWS Secrets Manager (--runtime-secret-arn) OR a local',
+    '# 0600 JSON file (--runtime-env, the VPS path). Exactly one.',
+    'if [ -n "$runtime_secret_arn" ] && [ -n "$runtime_env" ]; then echo "pass only one of --runtime-secret-arn/--runtime-env" >&2; exit 2; fi',
+    'if [ -z "$runtime_secret_arn" ] && [ -z "$runtime_env" ]; then echo "missing --runtime-secret-arn or --runtime-env" >&2; exit 2; fi',
     'root=$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")',
     '',
     'jq -e --arg release "$release" \'.schema_version == 1 and .kind == "kortix-enterprise-supabase" and .version == $release and (.compose_files == ["docker-compose.yml", "docker-compose.logs.yml", "docker-compose.enterprise.yml"]) and (.persistent_paths["volumes/db/data"] == "/var/lib/kortix/postgres") and (.persistent_paths["volumes/storage"] == "/var/lib/kortix/storage") and (.image_digests | type == "object" and length > 0 and all(to_entries[]; (.key | type == "string") and (.value | test("^sha256:[a-f0-9]{64}$"))))\' "$root/bundle.json" >/dev/null',
     '',
-    'secret_json=$(aws secretsmanager get-secret-value --secret-id "$runtime_secret_arn" --query SecretString --output text)',
+    'if [ -n "$runtime_secret_arn" ]; then',
+    '  secret_json=$(aws secretsmanager get-secret-value --secret-id "$runtime_secret_arn" --query SecretString --output text)',
+    'else',
+    '  test -f "$runtime_env"',
+    '  secret_json=$(cat "$runtime_env")',
+    'fi',
     'jq -e \'type == "object"\' >/dev/null <<<"$secret_json"',
     'required=(POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY DASHBOARD_PASSWORD SECRET_KEY_BASE REALTIME_DB_ENC_KEY VAULT_ENC_KEY PG_META_CRYPTO_KEY LOGFLARE_PUBLIC_ACCESS_TOKEN LOGFLARE_PRIVATE_ACCESS_TOKEN S3_PROTOCOL_ACCESS_KEY_ID S3_PROTOCOL_ACCESS_KEY_SECRET POOLER_TENANT_ID SMTP_ADMIN_EMAIL SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_SENDER_NAME)',
     'for key in "${required[@]}"; do',

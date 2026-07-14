@@ -3,7 +3,10 @@ import type { CommandRunner } from './process.ts';
 
 export interface SupabaseConfig {
   instance: string;
-  runtimeSecretArn: string;
+  /** AWS path: the Supabase bundle reads keys from Secrets Manager (instance role). */
+  runtimeSecretArn?: string;
+  /** VPS path: the Supabase bundle reads keys from this local JSON file (0600). */
+  runtimeEnvFile?: string;
   apiDomain: string;
   frontendDomain: string;
 }
@@ -27,7 +30,8 @@ export class SupabaseInstaller {
       localTar,
       sha256: manifest.artifacts.supabase_bundle.sha256,
       version: manifest.version,
-      runtimeSecretArn: this.config.runtimeSecretArn,
+      ...(this.config.runtimeSecretArn ? { runtimeSecretArn: this.config.runtimeSecretArn } : {}),
+      ...(this.config.runtimeEnvFile ? { runtimeEnvFile: this.config.runtimeEnvFile } : {}),
       instance: this.config.instance,
       apiDomain: this.config.apiDomain,
       frontendDomain: this.config.frontendDomain,
@@ -90,7 +94,9 @@ export function supabaseInstallScript(input: {
   localTar: string;
   sha256: string;
   version: string;
-  runtimeSecretArn: string;
+  /** Exactly one of runtimeSecretArn (AWS) or runtimeEnvFile (VPS) must be set. */
+  runtimeSecretArn?: string;
+  runtimeEnvFile?: string;
   instance: string;
   apiDomain: string;
   frontendDomain: string;
@@ -104,9 +110,19 @@ export function supabaseInstallScript(input: {
       throw new Error('unsafe Supabase installation domain');
     }
   }
-  if (!/^[a-f0-9]{64}$/.test(input.sha256) || !/^arn:[a-z0-9-]+:secretsmanager:[^:]+:\d{12}:secret:[a-zA-Z0-9/_+=.@-]+$/.test(input.runtimeSecretArn)) {
-    throw new Error('unsafe Supabase digest or secret ARN');
+  if (!/^[a-f0-9]{64}$/.test(input.sha256)) throw new Error('unsafe Supabase digest');
+  if (Boolean(input.runtimeSecretArn) === Boolean(input.runtimeEnvFile)) {
+    throw new Error('supply exactly one of runtimeSecretArn or runtimeEnvFile');
   }
+  if (input.runtimeSecretArn && !/^arn:[a-z0-9-]+:secretsmanager:[^:]+:\d{12}:secret:[a-zA-Z0-9/_+=.@-]+$/.test(input.runtimeSecretArn)) {
+    throw new Error('unsafe Supabase secret ARN');
+  }
+  if (input.runtimeEnvFile && !/^\/[a-zA-Z0-9._/-]+$/.test(input.runtimeEnvFile)) {
+    throw new Error('unsafe Supabase runtime env file path');
+  }
+  const runtimeArg = input.runtimeSecretArn
+    ? `--runtime-secret-arn '${input.runtimeSecretArn}'`
+    : `--runtime-env '${input.runtimeEnvFile}'`;
   return `set -euo pipefail
 umask 077
 archive=${input.localTar}
@@ -124,7 +140,7 @@ install -d -m 0700 "$staging"
 (umask 022; tar -xzf "$archive" --directory "$staging" --no-same-owner --no-same-permissions)
 test -x "$staging/bin/install"
 test -f "$staging/bundle.json"
-"$staging/bin/install" --runtime-secret-arn '${input.runtimeSecretArn}' --release '${input.version}' --instance '${input.instance}' --api-domain '${input.apiDomain}' --frontend-domain '${input.frontendDomain}'
+"$staging/bin/install" ${runtimeArg} --release '${input.version}' --instance '${input.instance}' --api-domain '${input.apiDomain}' --frontend-domain '${input.frontendDomain}'
 printf '%s\n' '${input.sha256}' >"$staging/.artifact-sha256"
 if [ -e "$release_dir" ]; then
   test "$(cat "$release_dir/.artifact-sha256")" = '${input.sha256}'

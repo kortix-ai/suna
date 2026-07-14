@@ -20,6 +20,12 @@ output "instance" {
     security_group_id = aws_security_group.appliance.id
     availability_zone = data.aws_subnet.appliance.availability_zone
 
+    # Supabase runs on this same box; server-side callers (api/frontend/gateway)
+    # and Caddy reach the in-box Kong at this private IP:8000 (never the public
+    # URL). `kortix self-host deploy` seeds the runtime secret's SUPABASE_URL and
+    # DATABASE_URL from it, so it MUST be exported here.
+    supabase_private_ip = aws_instance.appliance.private_ip
+
     # Data plane + secrets + release breadcrumb + bundle staging
     permissions_boundary_arn = var.permissions_boundary_arn
     runtime_secret_arn       = aws_secretsmanager_secret.runtime.arn
