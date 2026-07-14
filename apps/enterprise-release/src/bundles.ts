@@ -198,6 +198,7 @@ services:
       KORTIX_API_DOMAIN: \${KORTIX_API_DOMAIN}
       KORTIX_FRONTEND_DOMAIN: \${KORTIX_FRONTEND_DOMAIN}
       KORTIX_ACME_EMAIL: \${KORTIX_ACME_EMAIL}
+      KORTIX_SUPABASE_KONG_ORIGIN: \${KORTIX_SUPABASE_KONG_ORIGIN}
       AWS_REGION: \${AWS_BEDROCK_REGION:-}
     depends_on:
       api:
@@ -409,7 +410,7 @@ function appInstallScript(): string {
     '# Render .env: every string value from the runtime env, plus the pinned image',
     '# refs and the Caddy routing/ACME parameters. 0600, root-only.',
     'jq -r --arg api "$api_image" --arg gateway "$gateway_image" --arg frontend "$frontend_image" --arg caddy "$caddy_image" --arg api_domain "$api_domain" --arg frontend_domain "$frontend_domain" --arg kong "$supabase_kong_origin" --arg acme_email "$acme_email" \\',
-    '  \'(with_entries(select(.value | type == "string")) + {KORTIX_API_IMAGE:$api, KORTIX_GATEWAY_IMAGE:$gateway, KORTIX_FRONTEND_IMAGE:$frontend, KORTIX_CADDY_IMAGE:$caddy, KORTIX_API_DOMAIN:$api_domain, KORTIX_FRONTEND_DOMAIN:$frontend_domain, KORTIX_SUPABASE_KONG_ORIGIN:$kong, KORTIX_ACME_EMAIL:$acme_email}) | to_entries | sort_by(.key)[] | "\\(.key)=\\(.value | @json)"\' <"$runtime_env" >"$root/.env"',
+    '  \'(with_entries(select(.value | type == "string")) + {KORTIX_API_IMAGE:$api, KORTIX_GATEWAY_IMAGE:$gateway, KORTIX_FRONTEND_IMAGE:$frontend, KORTIX_CADDY_IMAGE:$caddy, KORTIX_API_DOMAIN:$api_domain, KORTIX_FRONTEND_DOMAIN:$frontend_domain, KORTIX_SUPABASE_KONG_ORIGIN:$kong, KORTIX_ACME_EMAIL:(if $acme_email == "" then "admin@" + $frontend_domain else $acme_email end)}) | to_entries | sort_by(.key)[] | "\\(.key)=\\(.value | @json)"\' <"$runtime_env" >"$root/.env"',
     'chmod 0600 "$root/.env"',
     '',
     '# ACME provider snippet imported by the Caddyfile globals (runtime, not signed).',
