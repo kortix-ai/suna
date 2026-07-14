@@ -92,18 +92,17 @@ jobs:
               - 'apps/cli/src/commands/self-host.ts'
               - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
+              # The api Dockerfile bakes the enterprise updater/deployer image; a
+              # change there must re-run the schema-bootstrap gate too.
+              - 'apps/enterprise-updater/**'
             enterprise:
               - *pnpm
               - 'apps/enterprise-updater/**'
               - 'apps/enterprise-release/**'
               - 'apps/cli/src/self-host/**'
               - 'infra/terraform/modules/enterprise-*/**'
-              - 'infra/terraform/modules/eks/platform/**'
-              - 'infra/terraform/modules/eks/irsa/**'
-              - 'infra/terraform/environments/enterprise-vpc-template/**'
-              - 'infra/k8s/charts/kortix-api/**'
-              - 'infra/k8s/charts/kortix-gateway/**'
-              - 'infra/k8s/charts/kortix-enterprise-edge/**'
+              - 'infra/terraform/environments/enterprise-*/**'
+              - '.github/workflows/promote-enterprise-stable.yml'
 
   enterprise-release:
     name: Enterprise updater + bundles
@@ -133,39 +132,34 @@ jobs:
           pnpm --filter "@kortix/enterprise-release" typecheck
           BUN_COMPILE_TARGET=bun-linux-x64 pnpm --filter "@kortix/enterprise-updater" build
           test -x apps/enterprise-updater/dist/kortix-enterprise-updater
-      - name: Install checksum-pinned Helm
-        run: |
-          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-            https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz -o /tmp/helm.tar.gz
-          echo 'ee88b3c851ae6466a3de507f7be73fe94d54cbf2987cbaa3d1a3832ea331f2cd  /tmp/helm.tar.gz' | sha256sum --check --strict
-          tar -xzf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
-          sudo install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
-      - name: Render digest-pinned enterprise charts
+      # The enterprise deployment is ECS Fargate, not Helm. Validate the reviewed
+      # Terraform graph the CLI materializes, run the plan-guard classifier, and
+      # assert the migrate task-def bootstraps the database.
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform fmt + validate (enterprise ECS graph)
         run: |
           set -euo pipefail
-          api_digest="sha256:$(printf 'a%.0s' {1..64})"
-          gateway_digest="sha256:$(printf 'b%.0s' {1..64})"
-          frontend_digest="sha256:$(printf 'c%.0s' {1..64})"
-          helm template kortix-api infra/k8s/charts/kortix-api --namespace kortix-app \
-            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/api \
-            --set-string image.digest="$api_digest" --set serviceAccount.create=false \
-            --set-string serviceAccount.name=kortix --set externalSecrets.enabled=false \
-            --set-string externalSecrets.targetSecretName=kortix-runtime --set migrate.enabled=true \
-            --set ingress.enabled=false >/tmp/api.yaml
-          helm template kortix-gateway infra/k8s/charts/kortix-gateway --namespace kortix-app \
-            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/gateway \
-            --set-string image.digest="$gateway_digest" --set-string serviceAccount.name=kortix \
-            --set-string envFromSecret=kortix-runtime --set ingress.enabled=false >/tmp/gateway.yaml
-          helm template kortix-edge infra/k8s/charts/kortix-enterprise-edge --namespace kortix-app \
-            --set-string image.repository=123456789012.dkr.ecr.us-west-2.amazonaws.com/frontend \
-            --set-string image.digest="$frontend_digest" --set-string apiDomain=api.enterprise.example.com \
-            --set-string frontendDomain=enterprise.example.com \
-            --set-string certificateArn=arn:aws:acm:us-west-2:123456789012:certificate/test \
-            --set-string supabasePrivateIp=10.60.128.10 >/tmp/edge.yaml
-          grep -Fq "api@${api_digest}" /tmp/api.yaml
-          grep -Fq "gateway@${gateway_digest}" /tmp/gateway.yaml
-          grep -Fq "frontend@${frontend_digest}" /tmp/edge.yaml
-          grep -Fq 'command: ["bun", "scripts/migrate.ts", "bootstrap"]' /tmp/api.yaml
+          terraform fmt -check -recursive infra/terraform/modules/enterprise-vpc
+          terraform fmt -check -recursive infra/terraform/environments/enterprise-vpc-template
+          for dir in \
+            infra/terraform/modules/enterprise-vpc \
+            infra/terraform/environments/enterprise-vpc-template/state \
+            infra/terraform/environments/enterprise-vpc-template/cluster \
+            infra/terraform/environments/enterprise-vpc-template/platform; do
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false -input=false -no-color >/dev/null
+            terraform -chdir="$dir" validate -no-color
+            echo "::endgroup::"
+          done
+      - name: Enterprise plan-guard classifier
+        run: bun test infra/terraform/scripts/guard-enterprise-plan.test.ts
+      - name: Assert the migrate task-def bootstraps the database
+        run: |
+          set -euo pipefail
+          grep -Fq '"bun", "scripts/migrate.ts", "bootstrap"' infra/terraform/modules/enterprise-vpc/ecs.tf
 
   api-typecheck:
     name: API typecheck
