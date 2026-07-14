@@ -13,12 +13,12 @@ output "instance" {
     route53_zone_id    = var.route53_zone_id
 
     # The one box + its stable public address
-    instance_id        = aws_instance.appliance.id
-    instance_role_arn  = aws_iam_role.appliance.arn
-    public_ip          = aws_eip.appliance.public_ip
-    eip_allocation_id  = aws_eip.appliance.allocation_id
-    security_group_id  = aws_security_group.appliance.id
-    availability_zone  = data.aws_subnet.appliance.availability_zone
+    instance_id       = aws_instance.appliance.id
+    instance_role_arn = aws_iam_role.appliance.arn
+    public_ip         = aws_eip.appliance.public_ip
+    eip_allocation_id = aws_eip.appliance.allocation_id
+    security_group_id = aws_security_group.appliance.id
+    availability_zone = data.aws_subnet.appliance.availability_zone
 
     # Data plane + secrets + release breadcrumb + bundle staging
     permissions_boundary_arn = var.permissions_boundary_arn

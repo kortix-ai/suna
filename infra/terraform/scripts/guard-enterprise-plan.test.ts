@@ -7,21 +7,21 @@ describe('enterprise Terraform plan guard', () => {
     const result = classifyEnterprisePlan({
       resource_changes: [
         { address: 'aws_ecr_repository.enterprise["api"]', type: 'aws_ecr_repository', change: { actions: ['create'] } },
-        { address: 'aws_ecs_service.api', type: 'aws_ecs_service', change: { actions: ['update'] } },
-        { address: 'aws_ecs_task_definition.api', type: 'aws_ecs_task_definition', change: { actions: ['update'] } },
-        { address: 'aws_instance.supabase', type: 'aws_instance', change: { actions: ['no-op'] } },
+        { address: 'aws_route53_record.app["api"]', type: 'aws_route53_record', change: { actions: ['create'] } },
+        { address: 'aws_cloudwatch_log_group.appliance', type: 'aws_cloudwatch_log_group', change: { actions: ['update'] } },
+        { address: 'aws_instance.appliance', type: 'aws_instance', change: { actions: ['no-op'] } },
       ],
     });
 
     expect(result.decision).toBe('auto_apply');
-    expect(result.summary).toEqual({ create: 1, update: 2, delete: 0, replace: 0, read: 0, noop: 1 });
+    expect(result.summary).toEqual({ create: 2, update: 1, delete: 0, replace: 0, read: 0, noop: 1 });
   });
 
   test('blocks deletions and replacements even when another change is safe', () => {
     const result = classifyEnterprisePlan({
       resource_changes: [
         { address: 'aws_s3_bucket.backups', type: 'aws_s3_bucket', change: { actions: ['delete'] } },
-        { address: 'aws_instance.supabase', type: 'aws_instance', change: { actions: ['delete', 'create'] } },
+        { address: 'aws_instance.appliance', type: 'aws_instance', change: { actions: ['delete', 'create'] } },
         { address: 'aws_ecr_repository.runtime', type: 'aws_ecr_repository', change: { actions: ['create'] } },
       ],
     });
@@ -32,13 +32,14 @@ describe('enterprise Terraform plan guard', () => {
     expect(result.reasons).toHaveLength(2);
   });
 
-  test('requires review for IAM, signing roots, ECS cluster, network, and recovery controls', () => {
+  test('requires review for IAM, signing roots, the appliance host, network, and recovery controls', () => {
     const result = classifyEnterprisePlan({
       resource_changes: [
-        { address: 'aws_iam_role.deployer_task', type: 'aws_iam_role', change: { actions: ['update'] } },
+        { address: 'aws_iam_role.appliance', type: 'aws_iam_role', change: { actions: ['update'] } },
         { address: 'aws_kms_key.data', type: 'aws_kms_key', change: { actions: ['update'] } },
-        { address: 'aws_ecs_cluster.this', type: 'aws_ecs_cluster', change: { actions: ['create'] } },
-        { address: 'aws_security_group.tasks', type: 'aws_security_group', change: { actions: ['update'] } },
+        { address: 'aws_instance.appliance', type: 'aws_instance', change: { actions: ['update'] } },
+        { address: 'aws_eip.appliance', type: 'aws_eip', change: { actions: ['update'] } },
+        { address: 'aws_security_group.appliance', type: 'aws_security_group', change: { actions: ['update'] } },
         { address: 'aws_backup_vault.supabase', type: 'aws_backup_vault', change: { actions: ['update'] } },
         {
           address: 'aws_s3_bucket_lifecycle_configuration.backups',

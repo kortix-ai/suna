@@ -260,7 +260,8 @@ resource "aws_ssm_parameter" "release" {
 }
 
 resource "aws_instance" "appliance" {
-  ami                         = local.supabase_ami
+  #checkov:skip=CKV_AWS_88:Public exposure is the product — this single box is the customer-facing edge (Caddy terminates TLS on 80/443). Reach is governed by the appliance security group (ingress_cidrs only); there is no SSH and management is SSM-only.
+  ami                         = local.appliance_ami
   instance_type               = var.appliance_instance_type
   subnet_id                   = data.aws_subnet.appliance.id
   vpc_security_group_ids      = [aws_security_group.appliance.id]

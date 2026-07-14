@@ -9,5 +9,8 @@ release_repository_url = "https://releases.kortix.com"
 tuf_root_sha256        = "0000000000000000000000000000000000000000000000000000000000000000"
 permissions_boundary_arn = "arn:aws:iam::123456789012:policy/customer-name-workload-boundary"
 
-# Optional: restrict who can reach the public ALB (strongly recommended).
-# alb_ingress_cidrs = ["203.0.113.0/24"]
+# Optional: restrict who can reach the appliance host on 80/443 (strongly recommended).
+# ingress_cidrs = ["203.0.113.0/24"]
+
+# Optional: override the appliance instance size (default m7i.2xlarge).
+# appliance_instance_type = "m7i.2xlarge"

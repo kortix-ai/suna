@@ -3,14 +3,14 @@ data "aws_partition" "current" {}
 data "aws_region" "current" {}
 
 data "aws_ssm_parameter" "al2023_ami" {
-  count = var.supabase_ami_id == null ? 1 : 0
+  count = var.appliance_ami_id == null ? 1 : 0
   name  = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 locals {
-  region       = data.aws_region.current.region
-  partition    = data.aws_partition.current.partition
-  supabase_ami = coalesce(var.supabase_ami_id, try(data.aws_ssm_parameter.al2023_ami[0].value, null))
+  region        = data.aws_region.current.region
+  partition     = data.aws_partition.current.partition
+  appliance_ami = coalesce(var.appliance_ami_id, try(data.aws_ssm_parameter.al2023_ami[0].value, null))
   kms_owner_actions = [
     "kms:CancelKeyDeletion",
     "kms:CreateAlias",
