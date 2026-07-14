@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { MirroredImage } from '../artifacts.ts';
 import type { AwsControlPlane } from '../aws.ts';
 import {
   ReleaseInstaller,
+  runtimeExternalSecretsManifest,
   supabaseFinalizeScript,
   supabaseInstallScript,
   supabaseRollbackScript,
@@ -315,6 +316,19 @@ function eventIndex(events: string[], contains: string): number {
 }
 
 describe('release installation transaction', () => {
+  test('renders the customer runtime External Secrets without secret values', () => {
+    const manifest = runtimeExternalSecretsManifest({
+      namespace: 'kortix',
+      region: 'us-west-2',
+      serviceAccountName: 'kortix-runtime',
+      runtimeSecretArn: input.runtimeSecretArn,
+    });
+
+    expect(manifest.items.map((item) => item.kind)).toEqual(['SecretStore', 'ExternalSecret']);
+    expect(JSON.stringify(manifest)).toContain(input.runtimeSecretArn);
+    expect(JSON.stringify(manifest)).not.toContain('cloudflare-token');
+  });
+
   test('polls long-running SSM installs through their 30-minute command timeout', () => {
     const fixture = installerFixture();
     try {
@@ -340,41 +354,24 @@ describe('release installation transaction', () => {
 
       const supabase = eventIndex(fixture.events, 'Install verified Kortix enterprise release');
       const recovery = eventIndex(fixture.events, 'Verify fresh Kortix recovery point before update');
+      const terraform = eventIndex(fixture.events, 'run:terraform -chdir=');
+      const externalSecrets = eventIndex(fixture.events, 'run:kubectl apply --filename');
+      const runtimeSecret = eventIndex(fixture.events, 'run:kubectl --namespace kortix wait --for=condition=Ready externalsecret/kortix-runtime');
       const api = eventIndex(fixture.events, 'run:helm upgrade --install kortix-api');
       const gateway = eventIndex(fixture.events, 'run:helm upgrade --install kortix-gateway');
       const edge = eventIndex(fixture.events, 'run:helm upgrade --install kortix-edge');
       const health = eventIndex(fixture.events, 'api.vpc-demo.kortix.com/v1/health');
       const commit = eventIndex(fixture.events, 'Commit Kortix enterprise release');
       expect(recovery).toBeLessThan(supabase);
-      expect(supabase).toBeLessThan(api);
+      expect(supabase).toBeLessThan(terraform);
+      expect(terraform).toBeLessThan(externalSecrets);
+      expect(externalSecrets).toBeLessThan(runtimeSecret);
+      expect(runtimeSecret).toBeLessThan(api);
       expect(api).toBeLessThan(gateway);
       expect(gateway).toBeLessThan(edge);
       expect(edge).toBeLessThan(health);
       expect(health).toBeLessThan(commit);
       expect(fixture.events.some((event) => event.includes('Rollback Supabase'))).toBe(false);
-    } finally {
-      rmSync(fixture.root, { recursive: true, force: true });
-    }
-  });
-
-  test('creates runtime External Secrets only after Terraform installs their CRDs', () => {
-    const fixture = installerFixture();
-    try {
-      fixture.installer.install(releaseManifest(), '/tmp/platform.tar.gz', '/tmp/supabase.tar.gz', mirroredImages());
-
-      const terraform = eventIndex(fixture.events, 'run:terraform -chdir=');
-      const apply = eventIndex(fixture.events, 'run:kubectl apply --filename');
-      const ready = eventIndex(fixture.events, 'run:kubectl --namespace kortix wait --for=condition=Ready externalsecret/kortix-runtime');
-      const api = eventIndex(fixture.events, 'run:helm upgrade --install kortix-api');
-      expect(terraform).toBeLessThan(apply);
-      expect(apply).toBeLessThan(ready);
-      expect(ready).toBeLessThan(api);
-
-      const manifest = JSON.parse(readFileSync(join(fixture.root, 'runtime-external-secrets.json'), 'utf8')) as {
-        items: Array<{ kind: string; spec: Record<string, unknown> }>;
-      };
-      expect(manifest.items.map((item) => item.kind)).toEqual(['SecretStore', 'ExternalSecret']);
-      expect(JSON.stringify(manifest)).toContain(input.runtimeSecretArn);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

@@ -34,6 +34,46 @@ interface PlatformImages {
   frontend: { repository: string; digest: string };
 }
 
+export function runtimeExternalSecretsManifest(input: {
+  namespace: string;
+  region: string;
+  serviceAccountName: string;
+  runtimeSecretArn: string;
+}) {
+  return {
+    apiVersion: 'v1',
+    kind: 'List',
+    items: [{
+      apiVersion: 'external-secrets.io/v1beta1',
+      kind: 'SecretStore',
+      metadata: { name: 'kortix-runtime', namespace: input.namespace },
+      spec: {
+        provider: {
+          aws: {
+            service: 'SecretsManager',
+            region: input.region,
+            auth: {
+              jwt: {
+                serviceAccountRef: { name: input.serviceAccountName },
+              },
+            },
+          },
+        },
+      },
+    }, {
+      apiVersion: 'external-secrets.io/v1beta1',
+      kind: 'ExternalSecret',
+      metadata: { name: 'kortix-runtime', namespace: input.namespace },
+      spec: {
+        refreshInterval: '5m',
+        secretStoreRef: { kind: 'SecretStore', name: 'kortix-runtime' },
+        target: { name: 'kortix-runtime', creationPolicy: 'Owner' },
+        dataFrom: [{ extract: { key: input.runtimeSecretArn } }],
+      },
+    }],
+  };
+}
+
 type PlatformReleaseName = 'kortix-api' | 'kortix-gateway' | 'kortix-edge';
 
 interface PlatformActivation {
@@ -212,38 +252,12 @@ export class ReleaseInstaller {
     ], { env: applyEnv });
     const kubeEnv = { ...applyEnv, KUBECONFIG: kubeconfig };
     const runtimeExternalSecrets = join(this.config.workDir, 'runtime-external-secrets.json');
-    writeFileSync(runtimeExternalSecrets, `${JSON.stringify({
-      apiVersion: 'v1',
-      kind: 'List',
-      items: [{
-        apiVersion: 'external-secrets.io/v1beta1',
-        kind: 'SecretStore',
-        metadata: { name: 'kortix-runtime', namespace: descriptor.namespace },
-        spec: {
-          provider: {
-            aws: {
-              service: 'SecretsManager',
-              region: this.config.region,
-              auth: {
-                jwt: {
-                  serviceAccountRef: { name: this.config.appServiceAccount },
-                },
-              },
-            },
-          },
-        },
-      }, {
-        apiVersion: 'external-secrets.io/v1beta1',
-        kind: 'ExternalSecret',
-        metadata: { name: 'kortix-runtime', namespace: descriptor.namespace },
-        spec: {
-          refreshInterval: '5m',
-          secretStoreRef: { kind: 'SecretStore', name: 'kortix-runtime' },
-          target: { name: 'kortix-runtime', creationPolicy: 'Owner' },
-          dataFrom: [{ extract: { key: this.config.runtimeSecretArn } }],
-        },
-      }],
-    }, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(runtimeExternalSecrets, `${JSON.stringify(runtimeExternalSecretsManifest({
+      namespace: descriptor.namespace,
+      region: this.config.region,
+      serviceAccountName: this.config.appServiceAccount,
+      runtimeSecretArn: this.config.runtimeSecretArn,
+    }), null, 2)}\n`, { mode: 0o600 });
     this.runner.run('kubectl', ['apply', '--filename', runtimeExternalSecrets], { env: kubeEnv });
     this.runner.run('kubectl', [
       '--namespace', descriptor.namespace, 'wait', '--for=condition=Ready',
