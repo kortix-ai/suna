@@ -22,9 +22,11 @@ export type GuardResult = {
 const REVIEW_TYPES = [
   /^aws_iam_/,
   /^aws_kms_/,
-  /^aws_eks_access_/,
-  /^aws_cloudwatch_event_permission$/,
+  // The ECS cluster is a foundational boundary (like the old EKS cluster);
+  // individual services and task-defs are freely updatable by the deployer.
+  /^aws_ecs_cluster$/,
   /^aws_security_group(_rule)?$/,
+  /^aws_vpc_security_group_(ingress|egress)_rule$/,
   /^aws_vpc_endpoint$/,
   /^aws_route(_table)?$/,
   /^aws_route_table_association$/,

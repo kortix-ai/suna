@@ -1,3 +1,9 @@
+# Platform stage (ECS model): the cluster stage builds the whole runtime plane,
+# including the shared ALB. Under EKS this stage installed Helm controllers,
+# External Secrets, and external-dns. On ECS none of that exists — the only
+# post-cluster step is aliasing the two application domains at the ALB, which
+# replaces what external-dns used to do.
+
 data "terraform_remote_state" "cluster" {
   backend = "s3"
   config = {
@@ -9,52 +15,45 @@ data "terraform_remote_state" "cluster" {
     kms_key_id     = var.state_kms_key_arn
   }
 }
+
 locals {
   instance = data.terraform_remote_state.cluster.outputs.instance
+  app_domains = {
+    api      = local.instance.api_domain
+    frontend = local.instance.frontend_domain
+  }
 }
 
 provider "aws" { region = var.aws_region }
 
-provider "kubernetes" {
-  host                   = local.instance.cluster_endpoint
-  cluster_ca_certificate = base64decode(local.instance.cluster_ca_data)
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", local.instance.cluster_name, "--region", var.aws_region]
+resource "aws_route53_record" "app_alias" {
+  for_each = local.app_domains
+
+  zone_id = local.instance.route53_zone_id
+  name    = each.value
+  type    = "A"
+
+  alias {
+    name                   = local.instance.alb_dns_name
+    zone_id                = local.instance.alb_zone_id
+    evaluate_target_health = true
   }
 }
 
-provider "helm" {
-  kubernetes {
-    host                   = local.instance.cluster_endpoint
-    cluster_ca_certificate = base64decode(local.instance.cluster_ca_data)
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", local.instance.cluster_name, "--region", var.aws_region]
-    }
+resource "aws_route53_record" "app_alias_ipv6" {
+  for_each = local.app_domains
+
+  zone_id = local.instance.route53_zone_id
+  name    = each.value
+  type    = "AAAA"
+
+  alias {
+    name                   = local.instance.alb_dns_name
+    zone_id                = local.instance.alb_zone_id
+    evaluate_target_health = true
   }
 }
 
-module "platform" {
-  source = "../../../modules/enterprise-platform"
-
-  cluster_name             = local.instance.cluster_name
-  aws_region               = var.aws_region
-  vpc_id                   = local.instance.vpc_id
-  oidc_provider_arn        = local.instance.oidc_provider_arn
-  oidc_provider_url        = local.instance.oidc_provider_url
-  api_domain               = local.instance.api_domain
-  frontend_domain          = local.instance.frontend_domain
-  route53_zone_id          = local.instance.route53_zone_id
-  external_dns_role_arn    = local.instance.external_dns_role_arn
-  app_namespace            = local.instance.app_namespace
-  app_service_account      = local.instance.app_service_account
-  app_irsa_role_arn        = local.instance.app_irsa_role_arn
-  alb_controller_role_arn  = local.instance.alb_controller_role_arn
-  autoscaler_role_arn      = local.instance.autoscaler_role_arn
-  argo_rollouts_role_arn   = local.instance.argo_rollouts_role_arn
-  permissions_boundary_arn = local.instance.permissions_boundary_arn
-  tags                     = var.tags
+output "app_dns_records" {
+  value = { for k, r in aws_route53_record.app_alias : k => r.fqdn }
 }
