@@ -120,6 +120,54 @@ module "api" {
   tags                       = local.tags
 }
 
+# ── Gateway (LLM proxy) — its own ECS Fargate service + CF-validated cert ─────
+# The prod gateway leaves EKS onto Fargate too. eu-west-2 has no *.kortix.com
+# wildcard, so it gets a dedicated cert for its ECS origin hostname
+# (gateway-ecs-fargate.kortix.com) — required for Cloudflare Full(strict). Unlike
+# dev/staging it runs on-demand (NOT Spot — it's the LLM path) with an HA floor of
+# 2 across AZs. gateway.kortix.com stays the Worker's hostname (not managed here).
+module "acm_gateway" {
+  source      = "../../modules/acm-cloudflare"
+  domain_name = var.gateway_domain
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
+module "gateway" {
+  source     = "../../modules/ecs-api"
+  name       = "${local.name}-gateway"
+  aws_region = var.aws_region
+
+  vpc_id             = module.network.vpc_id
+  public_subnet_ids  = module.network.public_subnet_ids
+  private_subnet_ids = module.network.private_subnet_ids
+
+  image             = var.gateway_image
+  container_name    = "gateway"
+  container_port    = 8090
+  health_check_path = "/health/live"
+  enable_https      = true
+  certificate_arn   = module.acm_gateway.certificate_arn
+  environment       = merge(var.gateway_environment, { KORTIX_API_URL = "https://api.kortix.com" })
+  secrets           = var.api_secrets
+
+  alb_ingress_cidrs = local.cloudflare_ip_ranges
+
+  # prod gateway: on-demand (no Spot — LLM path), HA floor of 2, insights on
+  task_cpu           = 512
+  task_memory        = 1024
+  desired_count      = 2
+  min_capacity       = 2
+  max_capacity       = 6
+  use_fargate_spot   = false
+  container_insights = true
+  tags               = local.tags
+}
+
 # DNS for the public API hostname. Gated by manage_dns so the stack (VPC/ALB/
 # ECS/cert) can be built and validated WITHOUT touching the live api.kortix.com
 # record — the cutover (repoint api.kortix.com → this ALB) is done deliberately
