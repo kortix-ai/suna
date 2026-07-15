@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   buildSamlAttributeMapping,
+  deleteSupabaseSamlProvider,
   registerSupabaseSamlProvider,
 } from '../accounts/iam/sso-provisioning';
 
@@ -132,6 +133,44 @@ describe('buildSamlAttributeMapping', () => {
       metadataUrl: 'https://idp/meta',
       domains: ['acme.com'],
     });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(502);
+  });
+});
+
+describe('deleteSupabaseSamlProvider', () => {
+  test('DELETEs the provider at the GoTrue admin endpoint', async () => {
+    let captured: { url: string; method: string } | null = null;
+    globalThis.fetch = (async (url: any, init: any) => {
+      captured = { url: String(url), method: String(init?.method) };
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    const r = await deleteSupabaseSamlProvider('prov-123');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.providerId).toBe('prov-123');
+    expect(captured!.url).toContain('/auth/v1/admin/sso/providers/prov-123');
+    expect(captured!.method).toBe('DELETE');
+  });
+
+  test('treats a 404 (already unregistered) as success', async () => {
+    respond(404, 'not found');
+    const r = await deleteSupabaseSamlProvider('gone');
+    expect(r.ok).toBe(true);
+  });
+
+  test('surfaces a non-404 failure as a non-ok result, never a throw', async () => {
+    respond(500, 'boom');
+    const r = await deleteSupabaseSamlProvider('prov-1');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.status).toBe(400);
+  });
+
+  test('a network failure is a 502, never a throw', async () => {
+    globalThis.fetch = (async () => {
+      throw new Error('ECONNREFUSED');
+    }) as unknown as typeof fetch;
+    const r = await deleteSupabaseSamlProvider('prov-1');
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.status).toBe(502);
   });
