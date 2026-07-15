@@ -89,6 +89,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
+import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -311,20 +312,31 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
+  // Self-host single-account mode: no teams, so member/group management has
+  // nothing to manage. Self-host billing-disabled: no Stripe/credit ledger
+  // to show — see isBillingEnabled() (mirrors the backend's
+  // KORTIX_BILLING_INTERNAL_ENABLED) instead of only checking permission.
+  const singleAccountMode = isSingleAccountMode();
+  const billingActive = isBillingEnabled();
+
   // Which rail items this caller can see. Mirrors the per-section gates the
   // content rendering applies below, so a deep link to a section the caller
   // can't use falls back to Members instead of an empty pane.
   const sectionVisible: Record<AccountSection, boolean> = {
-    members: true,
-    groups: true,
+    members: !singleAccountMode,
+    groups: !singleAccountMode,
     roles: canManageRoles === true,
-    billing: canWriteAccount === true,
-    transactions: canWriteAccount === true,
+    billing: canWriteAccount === true && billingActive,
+    transactions: canWriteAccount === true && billingActive,
     git: canWriteAccount === true,
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
   };
-  const activeSection: AccountSection = sectionVisible[requestedTab] ? requestedTab : 'members';
+  const activeSection: AccountSection = sectionVisible[requestedTab]
+    ? requestedTab
+    : sectionVisible.members
+      ? 'members'
+      : 'settings';
   const paneMeta = PANE_META[activeSection];
   const navigate = (section: AccountSection) =>
     router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });
@@ -572,23 +584,28 @@ export default function AccountSettingsPage() {
                   routes enforce the same gate server-side (402 for non-entitled
                   accounts). Keeping the toggle OUTSIDE the entitlement gate
                   avoids a chicken-and-egg where the enabler is hidden behind
-                  the very thing it enables. */}
-                <SettingsGroup
-                  title="Identity"
-                  description="Bring members in from your identity provider."
-                >
-                  <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
-                  {entitlementsLoading ? (
-                    <Skeleton className="h-40 w-full rounded-md" />
-                  ) : enterpriseIdentityEnabled ? (
-                    <>
-                      <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                      <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                    </>
-                  ) : (
-                    <EnterpriseUpsell feature="identity" />
-                  )}
-                </SettingsGroup>
+                  the very thing it enables.
+                  Single-account mode has no other members to bring in from an
+                  IdP or provision via SCIM, so the whole section is moot — hide
+                  it rather than show controls with nothing to act on. */}
+                {!singleAccountMode ? (
+                  <SettingsGroup
+                    title="Identity"
+                    description="Bring members in from your identity provider."
+                  >
+                    <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
+                    {entitlementsLoading ? (
+                      <Skeleton className="h-40 w-full rounded-md" />
+                    ) : enterpriseIdentityEnabled ? (
+                      <>
+                        <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                        <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                      </>
+                    ) : (
+                      <EnterpriseUpsell feature="identity" />
+                    )}
+                  </SettingsGroup>
+                ) : null}
 
                 {/* These cards carry their own title + description headers, so
                   they stand alone — a wrapping group label would double up. */}
