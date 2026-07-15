@@ -57,13 +57,24 @@ const DEFAULT_FRONTEND_IMAGE_REPO = 'kortix/kortix-frontend';
 const DEFAULT_API_IMAGE_REPO = 'kortix/kortix-api';
 const DEFAULT_GATEWAY_IMAGE_REPO = 'kortix/kortix-gateway';
 const DEFAULT_SANDBOX_IMAGE_REPO = 'kortix/kortix-sandbox';
+// Shown whenever an instance is (or is being configured) NOT reachable via a
+// public domain — self-host is VPS-first, and tunnel/local-only are
+// evaluation/development conveniences, not the recommended production setup.
+const VPS_FIRST_NOTICE =
+  'Self-host is designed VPS-first — for reliable production use, deploy on a VPS with a domain.';
 
 const HELP = help`Usage: kortix self-host <subcommand> [options]
 
-Run Kortix on your own infrastructure: one generic Docker Compose stack that
-runs identically on a laptop, any VPS, or a cloud box. There is no separate
-"target" to pick — ${C.cyan}kortix self-host init${C.reset} generates a
-docker-compose.yml + .env, and ${C.cyan}start${C.reset} runs it.
+Run Kortix on your own VPS/server — ${C.bold}recommended: a VPS with a domain${C.reset}.
+This is one generic Docker Compose stack: ${C.cyan}kortix self-host init${C.reset}
+generates a docker-compose.yml + .env, and ${C.cyan}start${C.reset} runs it. It happens
+to run identically on a laptop too, but production self-hosting means a real
+VPS/server plus a persistent domain (${C.cyan}--domain${C.reset}) — the Cloudflare-tunnel and
+local-only modes below exist for evaluation/development only and are NOT
+recommended for real use (ephemeral URLs, browser connection limits on
+plain-HTTP localhost, and — in local-only mode — agent sandboxes can't call
+back to this instance at all). Running it on your laptop is fine to kick the
+tyres; deploying on your own VPS with a persistent domain is the way.
 
 Subcommands:
   init                 Create or refresh this instance's Compose + env config.
@@ -144,21 +155,23 @@ Options:
                        (managed git, sandbox, LLM) unset instead of failing.
                        Local experimentation only — projects/agent sessions
                        will not work until they are set.
-  --domain <domain>    Public domain reachability mode: this instance is
+  --domain <domain>    Public domain reachability mode (RECOMMENDED — the
+                       VPS-first, production path): this instance is
                        reachable at https://<domain> — turns on the bundled
-                       Caddy reverse proxy + ACME TLS. The production path for
-                       a server/VPS/EC2 box with DNS. Same effect as
+                       Caddy reverse proxy + ACME TLS. For a server/VPS/EC2 box
+                       with DNS pointed at it. Same effect as
                        ${C.cyan}env set KORTIX_DOMAIN=<domain>${C.reset}. Pass an empty string
                        to clear a previously configured domain.
   --tunnel cloudflare  Cloudflare-tunnel reachability mode: no public domain —
                        a ${C.cyan}cloudflared${C.reset} tunnel exposes the API to the internet so
-                       cloud (Daytona) sandboxes can call back to it. THE
-                       laptop path when there is no public IP/DNS. Zero-config
-                       by default (a free quick tunnel whose URL is ephemeral
-                       — reassigned on every restart and re-captured
-                       automatically); set CLOUDFLARE_TUNNEL_TOKEN +
+                       cloud (Daytona) sandboxes can call back to it. For
+                       evaluation on a laptop when there is no public IP/DNS —
+                       NOT recommended for production (the free quick-tunnel
+                       URL is ephemeral, reassigned on every restart and
+                       re-captured automatically; set CLOUDFLARE_TUNNEL_TOKEN +
                        CLOUDFLARE_TUNNEL_HOSTNAME for a stable named tunnel
-                       instead (see the runbook).
+                       instead — see the runbook — but a VPS + domain is still
+                       the recommended path for real use).
   --org <name>         GitHub org to create/install the ${C.cyan}connect-github${C.reset} App
                        under (omit, or pass "." for a personal account).
   --manual             ${C.cyan}connect-github${C.reset}: headless mode — print URLs and accept
@@ -171,26 +184,29 @@ Options:
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
 
-Reachability (required for agent sandboxes — see --domain/--tunnel above): a
-cloud (Daytona) sandbox calls back to this instance's API over the public
-internet via KORTIX_URL, which can never be a loopback/internal address.
-${C.cyan}kortix self-host init${C.reset}/${C.cyan}configure${C.reset} ask interactively; non-interactively pass
-${C.cyan}--domain${C.reset} (server/VPS/EC2 with DNS) or ${C.cyan}--tunnel cloudflare${C.reset} (laptop, no DNS). Neither
-flag: local-only — loopback URLs, agent sandboxes and external callbacks
-(webhooks, Slack/Teams OAuth, git-proxy clone) will not work, only
-browser-local flows will.
+Reachability — VPS-first (required for agent sandboxes — see --domain/--tunnel
+above): a cloud (Daytona) sandbox calls back to this instance's API over the
+public internet via KORTIX_URL, which can never be a loopback/internal
+address. Production self-hosting is a VPS/server plus a persistent domain:
+${C.cyan}--domain${C.reset} (server/VPS/EC2 with DNS). ${C.cyan}--tunnel cloudflare${C.reset} (laptop, no DNS)
+and running with neither flag (local-only) are evaluation/development paths
+only and are NOT recommended for production — the tunnel URL is ephemeral,
+and in local-only mode agent sandboxes and other external callbacks
+(webhooks, Slack/Teams OAuth, git-proxy clone) will not work at all, only
+browser-local flows will. ${C.cyan}kortix self-host init${C.reset}/${C.cyan}configure${C.reset} ask
+interactively and default to the domain path.
 
-Public domain + TLS (optional): set KORTIX_DOMAIN (and optionally
-KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via ${C.cyan}--domain${C.reset} or
+Public domain + TLS (recommended for production): set KORTIX_DOMAIN (and
+optionally KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via ${C.cyan}--domain${C.reset} or
 ${C.cyan}kortix self-host env set${C.reset} to turn on the bundled Caddy
 reverse proxy, which terminates TLS via ACME HTTP-01 on ports 80/443. Leave it
-unset for the default loopback-port laptop setup.
+unset only for a laptop/local evaluation setup on loopback ports.
 
 Examples:
   kortix self-host init
   kortix self-host start
-  kortix self-host init --domain kortix.example.com  # server/VPS/EC2 with DNS
-  kortix self-host init --tunnel cloudflare          # laptop, no domain/DNS
+  kortix self-host init --domain kortix.example.com  # recommended: VPS/server with DNS
+  kortix self-host init --tunnel cloudflare          # laptop evaluation only, not for production
   kortix self-host update                         # pull + apply the stable channel
   kortix self-host init --version 0.9.72          # pin to a specific released version
   kortix self-host update --channel latest        # track :latest instead
@@ -457,7 +473,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   // instance shouldn't re-ask single-account/landing-page/license/reachability
   // every time `init` happens to run again. `configure` always asks (see below).
   if (shouldPrompt(flags) && existing === null) {
-    await promptReachability(env, flags);
+    await promptReachability(env, flags, true);
     await promptFeatureFlags(env, flags);
   }
 
@@ -492,7 +508,11 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n`);
   process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n\n`);
+  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  if (reachabilityMode(env) !== 'domain') {
+    process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
+  }
+  process.stdout.write('\n');
   renderIntegrationSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -799,26 +819,34 @@ function applyReachabilityFlags(env: SelfHostEnv, flags: GlobalFlags): void {
  * Interactive follow-up to applyReachabilityFlags: ask how this instance is
  * reachable from the internet — the setting that decides whether agent
  * sandboxes (which always run on a remote cloud Daytona VM) can call back to
- * it at all. Defaults to whatever is already configured, so re-running
- * `configure` doesn't reset a prior answer. No-ops under --yes / non-TTY.
+ * it at all. Self-host is VPS-first: the domain path is the recommended,
+ * production-ready default. On a genuinely fresh init (`isFreshInit`) the
+ * picker itself defaults to "domain"; otherwise (e.g. `configure` on an
+ * already-set-up instance) it defaults to whatever is already configured, so
+ * re-running `configure` doesn't reset a prior answer. No-ops under --yes /
+ * non-TTY.
  */
-async function promptReachability(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+async function promptReachability(env: SelfHostEnv, flags: GlobalFlags, isFreshInit = false): Promise<void> {
   if (!shouldPrompt(flags)) return;
 
   process.stdout.write(`\n  ${C.bold}Reachability${C.reset}\n`);
   process.stdout.write(
-    `  ${C.dim}Agent sandboxes run on a remote cloud (Daytona) VM and must call back to${C.reset}\n` +
-      `  ${C.dim}this API over the public internet — a loopback/internal URL can never work.${C.reset}\n`,
+    `  ${C.dim}Kortix self-host is VPS-first: agent sandboxes run on a remote cloud${C.reset}\n` +
+      `  ${C.dim}(Daytona) VM and must call back to this API over the public internet —${C.reset}\n` +
+      `  ${C.dim}a loopback/internal URL can never work.${C.reset}\n\n` +
+      `  ${C.cyan}domain${C.reset}  ${C.dim}Enter your domain (recommended — VPS + DNS, the production path)${C.reset}\n` +
+      `  ${C.cyan}tunnel${C.reset}  ${C.dim}Cloudflare tunnel — evaluation on a laptop (ephemeral URL, not for production)${C.reset}\n` +
+      `  ${C.cyan}local ${C.reset}  ${C.dim}Local-only — development only, agent sandboxes will NOT work${C.reset}\n`,
   );
 
   const mode = await selectFrom(
     'How is this instance reachable from the internet?',
     ['domain', 'tunnel', 'local'] as const,
-    reachabilityMode(env),
+    isFreshInit ? 'domain' : reachabilityMode(env),
   );
 
   if (mode === 'domain') {
-    env.KORTIX_DOMAIN = await prompt('Public domain (its DNS A/AAAA record — and the API subdomain\'s — must already point at this box)', env.KORTIX_DOMAIN || '');
+    env.KORTIX_DOMAIN = await prompt('Enter your domain (recommended — VPS + DNS; its A/AAAA record — and the API subdomain\'s — must already point at this box)', env.KORTIX_DOMAIN || '');
     env.KORTIX_REACHABILITY_MODE = 'domain';
   } else if (mode === 'tunnel') {
     env.KORTIX_DOMAIN = '';
@@ -834,6 +862,7 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags): Promise
       env.CLOUDFLARE_TUNNEL_TOKEN = '';
       env.CLOUDFLARE_TUNNEL_HOSTNAME = '';
     }
+    process.stdout.write(`\n  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n\n`);
   } else {
     env.KORTIX_DOMAIN = '';
     env.KORTIX_REACHABILITY_MODE = 'local';
@@ -842,6 +871,7 @@ async function promptReachability(env: SelfHostEnv, flags: GlobalFlags): Promise
         `           ${C.dim}Slack/Teams OAuth, git-proxy clone URLs) will NOT be reachable — only${C.reset}\n` +
         `           ${C.dim}browser-local flows (e.g. creating a GitHub App) still work.${C.reset}\n\n`,
     );
+    process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n\n`);
   }
 }
 
@@ -1348,7 +1378,11 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
-  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n\n`);
+  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n`);
+  if (reachabilityMode(env) !== 'domain') {
+    process.stdout.write(`  ${C.dim}${VPS_FIRST_NOTICE}${C.reset}\n`);
+  }
+  process.stdout.write('\n');
   renderIntegrationSummary(env);
   return 0;
 }
