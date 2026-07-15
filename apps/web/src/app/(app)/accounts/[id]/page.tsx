@@ -7,6 +7,7 @@ import {
   Coins,
   CreditCard,
   ExternalLink,
+  Fingerprint,
   GitBranch,
   Github,
   Info,
@@ -152,42 +153,66 @@ const MEMBER_ROW = 'bg-popover flex items-center gap-3 rounded-md border px-4 py
 
 const VALID_TABS = [
   'members',
-  'groups',
-  'roles',
+  'git',
+  'tokens',
+  'settings',
   'billing',
   'transactions',
-  'git',
+  'groups',
+  'roles',
+  'identity',
   'audit',
-  'settings',
 ] as const;
 type AccountSection = (typeof VALID_TABS)[number];
 
-// Grouped like the reference: people & access, money, account plumbing.
-const NAV_GROUPS: Array<
-  Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>
-> = [
-  [
-    { id: 'members', label: 'Members', icon: Users },
-    { id: 'groups', label: 'Groups', icon: Network },
-    { id: 'roles', label: 'Roles', icon: Shield },
-  ],
-  [
-    { id: 'billing', label: 'Billing', icon: CreditCard },
-    { id: 'transactions', label: 'Credits', icon: Coins },
-  ],
-  [
-    { id: 'git', label: 'Git', icon: GitBranch },
-    { id: 'audit', label: 'Audit log', icon: ScrollText },
-    { id: 'settings', label: 'Settings', icon: CogOne },
-  ],
+// Three labeled groups: day-to-day account plumbing, money, and the
+// enterprise IAM surface (Groups / Roles / Identity / Audit all share the
+// same entitlement story, so they live together under one "Enterprise"
+// heading instead of being scattered across the rail and the Settings tab).
+const NAV_GROUPS: Array<{
+  label?: string;
+  items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
+}> = [
+  {
+    items: [
+      { id: 'members', label: 'Members', icon: Users },
+      { id: 'git', label: 'Git', icon: GitBranch },
+      { id: 'tokens', label: 'Tokens', icon: KeyRound },
+      { id: 'settings', label: 'Settings', icon: CogOne },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      { id: 'billing', label: 'Plan', icon: CreditCard },
+      { id: 'transactions', label: 'Credits', icon: Coins },
+    ],
+  },
+  {
+    label: 'Enterprise',
+    items: [
+      { id: 'groups', label: 'Groups', icon: Network },
+      { id: 'roles', label: 'Roles', icon: Shield },
+      { id: 'identity', label: 'Identity', icon: Fingerprint },
+      { id: 'audit', label: 'Audit log', icon: ScrollText },
+    ],
+  },
 ];
 
 // Header block for sections whose content doesn't carry its own title.
 const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
   members: { title: 'Members', description: 'People with access to this account.' },
-  billing: { title: 'Billing', description: 'Plan, wallet, and spend for this account.' },
+  billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
   transactions: { title: 'Credits', description: 'Every credit movement on this account.' },
-  settings: { title: 'Settings', description: 'Name, security, and access for this account.' },
+  tokens: {
+    title: 'Tokens',
+    description: 'Token policy and machine identities for CI and automations.',
+  },
+  identity: {
+    title: 'Identity',
+    description: 'Bring members in from your identity provider.',
+  },
+  settings: { title: 'Settings', description: 'Name and security for this account.' },
 };
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
@@ -327,9 +352,11 @@ export default function AccountSettingsPage() {
     members: !singleAccountMode,
     groups: !singleAccountMode,
     roles: canManageRoles === true,
+    identity: canWriteAccount === true && !singleAccountMode,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true && billingActive,
     git: canWriteAccount === true,
+    tokens: canWriteAccount === true,
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
   };
@@ -398,11 +425,19 @@ export default function AccountSettingsPage() {
               className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0"
             >
               {NAV_GROUPS.map((group, gi) => {
-                const items = group.filter((item) => sectionVisible[item.id]);
+                const items = group.items.filter((item) => sectionVisible[item.id]);
                 if (items.length === 0) return null;
                 return (
-                  <div key={gi} className="contents lg:block lg:space-y-0.5">
-                    {gi > 0 ? <div className="hidden lg:block lg:h-3" aria-hidden /> : null}
+                  <div key={group.label ?? gi} className="contents lg:block lg:space-y-0.5">
+                    {gi > 0 ? <div className="hidden lg:block lg:h-4" aria-hidden /> : null}
+                    {group.label ? (
+                      // Same label dialect as the project sidebar's group
+                      // headings. Hidden on the mobile horizontal strip —
+                      // there the items flow as one row of chips.
+                      <p className="text-muted-foreground/60 hidden px-2.5 pb-1 text-xs font-medium tracking-wider uppercase lg:block">
+                        {group.label}
+                      </p>
+                    ) : null}
                     {items.map((item) => {
                       const active = item.id === activeSection;
                       return (
@@ -525,13 +560,21 @@ export default function AccountSettingsPage() {
             ) : null}
 
             {activeSection === 'audit' && canReadAudit ? (
-              entitlementsLoading ? (
-                <Skeleton className="h-64 w-full rounded-md" />
-              ) : auditEnabled ? (
-                <AuditTab accountId={account.account_id} />
-              ) : (
-                <EnterpriseUpsell feature="audit" />
-              )
+              <div className="space-y-10">
+                {entitlementsLoading ? (
+                  <Skeleton className="h-64 w-full rounded-md" />
+                ) : auditEnabled ? (
+                  <AuditTab accountId={account.account_id} />
+                ) : (
+                  <EnterpriseUpsell feature="audit" />
+                )}
+                {/* Webhooks ship the same events the log above shows, so they
+                    live on this tab rather than buried in Settings. Only
+                    rendered entitled + writable — the card is all mutations. */}
+                {!entitlementsLoading && auditEnabled && canWriteAccount ? (
+                  <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
+                ) : null}
+              </div>
             ) : null}
 
             {activeSection === 'git' && canWriteAccount ? (
@@ -544,6 +587,41 @@ export default function AccountSettingsPage() {
                     self-hosts, so the cloud guard lives inside the card. */}
                 <GitHubAppSetupCard canManage={canWriteAccount} />
                 <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              </div>
+            ) : null}
+
+            {/* Tokens — the machine-access surface: PAT lifecycle policy +
+                service accounts. Both cards carry their own title/description
+                headers, so the pane header above is the only chrome. */}
+            {activeSection === 'tokens' && canWriteAccount ? (
+              <div className="space-y-10">
+                <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
+                <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
+              </div>
+            ) : null}
+
+            {/* Identity — SAML SSO + SCIM under the Enterprise nav group. The
+                enterprise-demo toggle is ALWAYS shown to account admins so
+                they can unlock the surface self-serve. SAML SSO + SCIM only
+                render once the entitlement is on (the demo flag OR a real
+                enterprise tier); their API routes enforce the same gate
+                server-side (402 for non-entitled accounts). Keeping the
+                toggle OUTSIDE the entitlement gate avoids a chicken-and-egg
+                where the enabler is hidden behind the very thing it
+                enables. */}
+            {activeSection === 'identity' && canWriteAccount ? (
+              <div className="space-y-3">
+                <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
+                {entitlementsLoading ? (
+                  <Skeleton className="h-40 w-full rounded-md" />
+                ) : enterpriseIdentityEnabled ? (
+                  <>
+                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                  </>
+                ) : (
+                  <EnterpriseUpsell feature="identity" />
+                )}
               </div>
             ) : null}
 
@@ -586,42 +664,6 @@ export default function AccountSettingsPage() {
                     </DisclosureContent>
                   </Disclosure>
                 </SettingsGroup>
-
-                {/* The enterprise-demo toggle is ALWAYS shown to account admins
-                  so they can unlock the surface self-serve. SAML SSO + SCIM
-                  are Enterprise features and only render once the entitlement
-                  is on (the demo flag OR a real enterprise tier); their API
-                  routes enforce the same gate server-side (402 for non-entitled
-                  accounts). Keeping the toggle OUTSIDE the entitlement gate
-                  avoids a chicken-and-egg where the enabler is hidden behind
-                  the very thing it enables.
-                  Single-account mode has no other members to bring in from an
-                  IdP or provision via SCIM, so the whole section is moot — hide
-                  it rather than show controls with nothing to act on. */}
-                {!singleAccountMode ? (
-                  <SettingsGroup
-                    title="Identity"
-                    description="Bring members in from your identity provider."
-                  >
-                    <EnterpriseDemoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    {entitlementsLoading ? (
-                      <Skeleton className="h-40 w-full rounded-md" />
-                    ) : enterpriseIdentityEnabled ? (
-                      <>
-                        <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                        <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                      </>
-                    ) : (
-                      <EnterpriseUpsell feature="identity" />
-                    )}
-                  </SettingsGroup>
-                ) : null}
-
-                {/* These cards carry their own title + description headers, so
-                  they stand alone — a wrapping group label would double up. */}
-                <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
-                <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
-                <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
 
                 {canDeleteAccount ? (
                   <SettingsGroup title="Danger zone">
