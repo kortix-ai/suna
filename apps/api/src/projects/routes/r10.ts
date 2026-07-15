@@ -14,7 +14,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { findCatalogEntryByName, getCatalogEntry } from '../../marketplace/catalog';
+import { getCatalogEntry } from '../../marketplace/catalog';
 import { buildTemplateInstallPrompt } from './marketplace-install-prompts';
 import { auth, errors, json } from '../../openapi';
 import { readManifestFromRepo } from '../git/files';
@@ -131,25 +131,6 @@ function buildItemInstallPrompt(
   return lines.join('\n');
 }
 
-/** Resolve a template's `registryDependencies` to their files (with inlined
- *  content) so the install prompt carries the agent + skill directly — no fetching. */
-async function resolveTemplateDepFiles(
-  entry: NonNullable<Awaited<ReturnType<typeof getCatalogEntry>>>,
-): Promise<Array<{ path: string; content: string }>> {
-  const deps = (entry.item as { registryDependencies?: string[] }).registryDependencies ?? [];
-  const resolved = await Promise.all(deps.map((name) => findCatalogEntryByName(name)));
-  const out: Array<{ path: string; content: string }> = [];
-  for (const dep of resolved) {
-    for (const f of dep?.item.files ?? []) {
-      const file = f as { path?: string; target?: string; content?: string };
-      if (typeof file.content === 'string') {
-        out.push({ path: file.target ?? file.path ?? '', content: file.content });
-      }
-    }
-  }
-  return out;
-}
-
 async function handleMarketplaceInstallSession(c: any) {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -171,10 +152,7 @@ async function handleMarketplaceInstallSession(c: any) {
     if (entry.item.type === 'registry:project') {
       prompt = buildRegistryProjectInstallPrompt(entry, await manifestRawOrNull(project));
     } else if (entry.item.type === 'registry:template') {
-      // Inline the template's parts (its agent + skill files, with content) so the
-      // install prompt is self-contained — the agent writes them directly instead
-      // of hunting for the marketplace source.
-      prompt = buildTemplateInstallPrompt(entry, id, await resolveTemplateDepFiles(entry));
+      prompt = buildTemplateInstallPrompt(entry, id);
     } else {
       prompt = buildItemInstallPrompt(entry, id);
     }

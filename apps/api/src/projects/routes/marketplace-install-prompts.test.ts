@@ -29,23 +29,28 @@ function templateEntry(over: Record<string, unknown> = {}) {
 }
 
 describe('buildTemplateInstallPrompt', () => {
-  test('names the template, its id, and asks for each declared input with defaults', () => {
+  test('tells the agent to read the template via its marketplace CLI', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     expect(p).toContain('Customer support on autopilot');
-    expect(p).toContain('kortix-starter:customer-support');
-    expect(p).toContain('cadence');
-    expect(p).toContain('0 */15 * * * *');
+    expect(p).toContain('kortix marketplace show kortix-starter:customer-support');
   });
 
-  test('embeds the trigger + agent grant to wire, shipping it DISABLED', () => {
+  test('gives dependency parts as fully-qualified ids so nothing is searched for', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
-    expect(p).toContain('support-triage');
-    expect(p).toContain('{{cadence}}');
+    // namespaced from the template id, not a bare "support-agent"
+    expect(p).toContain('kortix-starter:support-agent');
+    expect(p).toContain('through the marketplace');
+  });
+
+  test('wires the trigger from meta.template and ships it DISABLED', () => {
+    const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
+    expect(p).toContain('meta.template.triggers');
+    expect(p).toContain('{{key}}');
     expect(p).toContain('enabled: false');
     expect(p).toContain('DISABLED');
   });
 
-  test('walks through the required secrets and holds the run behind a confirmation', () => {
+  test('walks the required secrets and holds the run behind a confirmation', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     expect(p).toContain('PLAIN_API_KEY');
     expect(p).toContain('STRIPE_SECRET_KEY');
@@ -53,24 +58,9 @@ describe('buildTemplateInstallPrompt', () => {
     expect(p).toContain("don't run anything until I say go");
   });
 
-  test('lists the parts to install from registryDependencies when no files are inlined', () => {
-    const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
-    expect(p).toContain('support-agent');
-  });
-
-  test('inlines resolved dependency file content (resolved path + body) so nothing is fetched', () => {
-    const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support', [
-      { path: '@agents/support-agent.md', content: 'You are the support agent for {{projectName}}.' },
-      { path: '@skills/support-playbook/SKILL.md', content: '# playbook' },
-    ]);
-    expect(p).toContain('.kortix/opencode/agents/support-agent.md');
-    expect(p).toContain('You are the support agent for {{projectName}}.');
-    expect(p).toContain('.kortix/opencode/skills/support-playbook/SKILL.md');
-    expect(p).not.toContain("fetch each one's source");
-  });
-
-  test('handles a template with no inputs without erroring', () => {
-    const p = buildTemplateInstallPrompt(templateEntry({ inputs: [] }), 'kortix-starter:x');
-    expect(p).toContain('no inputs to collect');
+  test('handles a template with no dependencies without erroring', () => {
+    const p = buildTemplateInstallPrompt(templateEntry({ registryDependencies: [] }), 'kortix-starter:x');
+    expect(p).toContain('kortix marketplace show kortix-starter:x');
+    expect(p).not.toContain('Install its parts');
   });
 });
