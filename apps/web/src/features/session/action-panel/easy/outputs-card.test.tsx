@@ -6,9 +6,6 @@ import { OutputRows, OutputsCard } from './outputs-card';
 describe('OutputRows display (W3/W11)', () => {
   test('title wins over filename; kind label rides right; fresh mark shows', () => {
     const html = renderToStaticMarkup(
-      // The row's hover DownloadButton (Task 14) renders a `Hint`, which needs
-      // a `TooltipProvider` ancestor — the app root supplies one in `layout.tsx`;
-      // a static render needs its own.
       <TooltipProvider>
         <OutputRows
           outputs={[
@@ -31,8 +28,8 @@ describe('OutputRows display (W3/W11)', () => {
     expect(html).toContain('Updated');
   });
 
-  test('row download affordance: DownloadButton renders only when the output has a path', () => {
-    const withPath = renderToStaticMarkup(
+  test('a row carries no hover download affordance — opening the detail is the only row action', () => {
+    const html = renderToStaticMarkup(
       <TooltipProvider>
         <OutputRows
           outputs={[{ callID: 'c1', name: 'a.pdf', kind: 'file', path: 'a.pdf' }]}
@@ -40,17 +37,7 @@ describe('OutputRows display (W3/W11)', () => {
         />
       </TooltipProvider>,
     );
-    expect(withPath).toContain('Download');
-
-    const withoutPath = renderToStaticMarkup(
-      <TooltipProvider>
-        <OutputRows
-          outputs={[{ callID: 'c2', name: 'Generated image', kind: 'image' }]}
-          onOpenOutput={() => {}}
-        />
-      </TooltipProvider>,
-    );
-    expect(withoutPath).not.toContain('Download');
+    expect(html).not.toContain('aria-label="Download"');
   });
 });
 
@@ -100,7 +87,7 @@ describe('OutputsCard "download all" header action (W15)', () => {
     expect(html).toContain('aria-label="Download all"');
   });
 
-  test('a single downloadable output → no header download-all (the row affordance already covers it)', () => {
+  test('a single downloadable output → no header download-all (opening the row covers it)', () => {
     const html = renderToStaticMarkup(
       <TooltipProvider>
         <OutputsCard
