@@ -57,6 +57,16 @@ describe('sortOutputs', () => {
     expect(names(sorted)).toEqual(['r.pdf', 'shot.png', 'app.tsx']);
   });
 
+  it('ranks an HTML page above source code and images, but below a PDF', () => {
+    const sorted = sortOutputs([
+      file('main.ts'),
+      file('hero.png', 'image'),
+      file('index.html'),
+      file('report.pdf'),
+    ]);
+    expect(names(sorted)).toEqual(['report.pdf', 'index.html', 'hero.png', 'main.ts']);
+  });
+
   it('is stable — equal-rank files keep the order the agent made them in', () => {
     const sorted = sortOutputs([
       file('one.tsx'),
@@ -150,6 +160,7 @@ describe('deliverableKindLabel (W3)', () => {
     expect(deliverableKindLabel({ name: 'photo.png', kind: 'image' })).toBe('Image');
     expect(deliverableKindLabel({ name: 'clip.mp4', kind: 'video' })).toBe('Video');
     expect(deliverableKindLabel({ name: 'Dashboard', kind: 'app' })).toBe('Web app');
+    expect(deliverableKindLabel({ name: 'index.html', kind: 'file' })).toBe('Web page');
     expect(deliverableKindLabel({ name: 'main.ts', kind: 'file' })).toBe('File');
   });
 });

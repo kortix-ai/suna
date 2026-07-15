@@ -7,9 +7,10 @@
  * `layout.tsx`, `Navbar.tsx`. Every one of those rows is truthful and none of
  * them is what the user came for.
  *
- * So documents lead, media follows, source code goes last. Nothing is hidden —
- * hiding would be a lie about what the agent did — but the thing they asked for
- * is the thing they see first, and the first row is always safe to click.
+ * So user-facing document kinds lead — the spreadsheet, the write-up, the deck,
+ * the page — media follows, source code goes last. Nothing is hidden — hiding
+ * would be a lie about what the agent did — but the thing they asked for is the
+ * thing they see first, and the first row is always safe to click.
  */
 
 import type { OutputItem } from './derive-panels';
@@ -30,15 +31,18 @@ const RANK_BY_EXT: Record<string, number> = {
   pptx: 4,
   ppt: 4,
   key: 4,
+  // The page.
+  html: 5,
+  htm: 5,
 };
 
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'heic', 'bmp']);
 const MEDIA_EXT = new Set(['mp4', 'mov', 'webm', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'ogg']);
 
-const RANK_IMAGE = 5;
-const RANK_MEDIA = 6;
+const RANK_IMAGE = 6;
+const RANK_MEDIA = 7;
 /** Everything else: source, config, styles — the making-of, not the thing. */
-const RANK_OTHER = 7;
+const RANK_OTHER = 8;
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf('.');
@@ -71,6 +75,7 @@ export function deliverableKindLabel(output: Pick<OutputItem, 'name' | 'kind'>):
   if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || ext === 'tsv') return 'Spreadsheet';
   if (ext === 'docx' || ext === 'doc') return 'Document';
   if (ext === 'pptx' || ext === 'ppt' || ext === 'key') return 'Slides';
+  if (ext === 'html' || ext === 'htm') return 'Web page';
   if (MEDIA_EXT.has(ext)) return 'Video';
   return 'File';
 }
