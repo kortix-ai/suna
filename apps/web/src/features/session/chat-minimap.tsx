@@ -1,92 +1,71 @@
 'use client';
 
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
-import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
-import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
-import { isTextPart, type MessageWithParts, type TextPart, type Turn } from '@/ui';
+import type { Turn } from '@/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  downsampleDashes,
+  extractUserText,
+  nearestDashIndex,
+  type MinimapItem,
+} from './chat-minimap-items';
 
 interface ChatMinimapProps {
   turns: Turn[];
   scrollRef: React.RefObject<HTMLDivElement>;
   contentRef: React.RefObject<HTMLDivElement>;
-  messages: MessageWithParts[];
-}
-
-interface MinimapItem {
-  id: string;
-  text: string;
-}
-
-// How many dashes the collapsed rail shows at most. Longer sessions are
-// down-sampled to this many so the rail stays quiet — every message is still
-// listed in the expanded view.
-const MAX_DASHES = 12;
-
-function extractUserText(turn: Turn): string {
-  const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
-  const raw = textParts.map((p) => p.text).join(' ');
-  return stripHtmlTags(stripKortixSystemTags(raw)).trim();
-}
-
-function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen).trimEnd() + '…';
 }
 
 export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [hovered, setHovered] = useState(false);
+  // Mirrors the hover card's open state so the active row can be scrolled
+  // into view when the list mounts.
+  const [open, setOpen] = useState(false);
 
   const activeRowRef = useRef<HTMLButtonElement | null>(null);
-  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A user message's text never changes after it's sent — extract once per
+  // message id instead of re-stripping every turn on every streaming update.
+  const textCacheRef = useRef(new Map<string, string>());
 
   // One entry per user turn that actually has text.
-  const items = useMemo<MinimapItem[]>(
-    () =>
-      turns
-        .map((turn) => ({ id: turn.userMessage.info.id, text: extractUserText(turn) }))
-        .filter((item) => item.text.length > 0),
-    [turns],
-  );
-
-  // Down-sampled set of dashes for the collapsed rail (evenly spaced).
-  const dashes = useMemo<{ item: MinimapItem; index: number }[]>(() => {
-    if (items.length <= MAX_DASHES) {
-      return items.map((item, index) => ({ item, index }));
+  const items = useMemo<MinimapItem[]>(() => {
+    const cache = textCacheRef.current;
+    const result: MinimapItem[] = [];
+    for (const turn of turns) {
+      const id = turn.userMessage.info.id;
+      let text = cache.get(id);
+      if (text === undefined) {
+        text = extractUserText(turn);
+        cache.set(id, text);
+      }
+      if (text.length > 0) result.push({ id, text });
     }
-    return Array.from({ length: MAX_DASHES }, (_, d) => {
-      const index = Math.round((d * (items.length - 1)) / (MAX_DASHES - 1));
-      return { item: items[index], index };
-    });
-  }, [items]);
+    return result;
+  }, [turns]);
+
+  const dashes = useMemo(() => downsampleDashes(items), [items]);
 
   const activeIndex = useMemo(
     () => items.findIndex((item) => item.id === activeId),
     [items, activeId],
   );
+  const activeDashIndex = useMemo(
+    () => nearestDashIndex(dashes, activeIndex),
+    [dashes, activeIndex],
+  );
 
-  // Which dash to light up — the one nearest the active turn.
-  const activeDashIndex = useMemo(() => {
-    if (activeIndex < 0) return -1;
-    let best = -1;
-    let bestDist = Infinity;
-    for (const dash of dashes) {
-      const dist = Math.abs(dash.index - activeIndex);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = dash.index;
-      }
-    }
-    return best;
-  }, [dashes, activeIndex]);
+  // The observer only cares about which turns exist, not about streaming
+  // updates inside them — key it on the id list, not the array identity.
+  const idsKey = useMemo(() => items.map((item) => item.id).join('\n'), [items]);
 
   // Track which turn is currently in view so we can highlight it.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     const contentEl = contentRef.current;
-    if (!scrollEl || !contentEl || items.length === 0) return;
+    if (!scrollEl || !contentEl || idsKey.length === 0) return;
 
+    const ids = new Set(idsKey.split('\n'));
     const visibleMap = new Map<string, number>();
     const observer = new IntersectionObserver(
       (entries) => {
@@ -108,106 +87,84 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
       { root: scrollEl, threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
 
-    contentEl.querySelectorAll<HTMLElement>('[data-turn-id]').forEach((el) => observer.observe(el));
+    contentEl.querySelectorAll<HTMLElement>('[data-turn-id]').forEach((el) => {
+      const id = el.getAttribute('data-turn-id');
+      if (id && ids.has(id)) observer.observe(el);
+    });
 
     return () => observer.disconnect();
-  }, [scrollRef, contentRef, items]);
+  }, [scrollRef, contentRef, idsKey]);
 
   // Keep the active row visible in the expanded jump list.
   useEffect(() => {
-    if (!hovered) return;
+    if (!open) return;
     activeRowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [hovered, activeId]);
+  }, [open, activeId]);
 
   const handleJump = useCallback(
     (id: string) => {
       const contentEl = contentRef.current;
       const scrollEl = scrollRef.current;
       if (!contentEl || !scrollEl) return;
-      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${id}"]`);
+      const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(id)}"]`);
       if (!target) return;
       const offset =
         target.getBoundingClientRect().top -
         scrollEl.getBoundingClientRect().top +
         scrollEl.scrollTop -
         24;
-      scrollEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      scrollEl.scrollTo({ top: Math.max(0, offset), behavior: reduceMotion ? 'auto' : 'smooth' });
     },
     [contentRef, scrollRef],
-  );
-
-  const handleMouseEnter = useCallback(() => {
-    if (leaveTimerRef.current) {
-      clearTimeout(leaveTimerRef.current);
-      leaveTimerRef.current = null;
-    }
-    setHovered(true);
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    leaveTimerRef.current = setTimeout(() => {
-      setHovered(false);
-      leaveTimerRef.current = null;
-    }, 180);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
-    },
-    [],
   );
 
   if (items.length < 3) return null;
 
   return (
-    <div
+    <nav
+      aria-label="Jump to message"
       className="pointer-events-none absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-4"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
-      {/* Collapsed rail — a few quiet dashes */}
-      <div
-        className={cn(
-          'flex flex-col items-end py-1',
-          'transition-opacity duration-200 ease-out',
-          hovered ? 'pointer-events-none opacity-0' : 'opacity-100',
-        )}
-      >
-        {dashes.map(({ item, index }) => {
-          const isActive = index === activeDashIndex;
-          return (
-            <button
-              key={`${item.id}-${index}`}
-              type="button"
-              onClick={() => handleJump(item.id)}
-              title={truncate(item.text, 60)}
-              className="group pointer-events-auto flex cursor-pointer items-center justify-end px-1.5 py-[3px]"
-            >
+      <HoverCard openDelay={100} closeDelay={150} onOpenChange={setOpen}>
+        {/* Collapsed rail — a quiet position indicator, like a scrollbar.
+            Fades out while the jump list is open so the card reads as the
+            rail's expanded form. */}
+        <HoverCardTrigger asChild>
+          <button
+            type="button"
+            aria-label="Jump to message"
+            className={cn(
+              'hit-area-x-3 hit-area-y-5 pointer-events-auto flex cursor-default flex-col items-end gap-2 rounded-sm px-1.5 py-2',
+              'transition-opacity duration-150 ease-out data-[state=open]:opacity-0',
+              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+            )}
+          >
+            {dashes.map(({ item, index }) => (
               <span
+                key={item.id}
+                aria-hidden
                 className={cn(
-                  'h-[3px] w-4 rounded-full transition-all duration-150',
-                  isActive
-                    ? 'bg-foreground/60'
-                    : 'bg-muted-foreground/20 group-hover:bg-muted-foreground/40',
+                  'h-[3px] w-4 origin-right rounded-full',
+                  'transition-[background-color,transform] duration-150 ease-out',
+                  'motion-reduce:transition-[background-color]',
+                  index === activeDashIndex
+                    ? 'bg-foreground/60 scale-x-125'
+                    : 'bg-muted-foreground/25',
                 )}
               />
-            </button>
-          );
-        })}
-      </div>
+            ))}
+          </button>
+        </HoverCardTrigger>
 
-      {/* Expanded jump list — every message, on hover */}
-      <div
-        className={cn(
-          'absolute top-1/2 right-0 origin-right -translate-y-1/2',
-          'transition-all duration-200 ease-out',
-          hovered
-            ? 'pointer-events-auto scale-100 opacity-100'
-            : 'pointer-events-none scale-95 opacity-0',
-        )}
-      >
-        <div className="scrollbar-hide border-border/40 bg-popover/95 flex max-h-[60vh] w-[268px] flex-col gap-0.5 overflow-y-auto rounded-2xl border p-1.5 shadow-xl backdrop-blur-md">
+        {/* Expanded jump list — every message, on hover */}
+        <HoverCardContent
+          side="left"
+          align="center"
+          sideOffset={0}
+          collisionPadding={16}
+          className="scrollbar-hide flex max-h-[60vh] w-64 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-lg p-1"
+        >
           {items.map((item) => {
             const isActive = item.id === activeId;
             return (
@@ -215,31 +172,22 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
                 key={item.id}
                 type="button"
                 ref={isActive ? activeRowRef : undefined}
+                aria-current={isActive || undefined}
                 onClick={() => handleJump(item.id)}
                 className={cn(
-                  'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-100',
-                  isActive ? 'bg-muted' : 'hover:bg-muted/50',
+                  'cursor-pointer rounded-sm px-2 py-1.5 text-left text-xs leading-snug',
+                  'transition-colors duration-100 ease-out',
+                  isActive
+                    ? 'bg-primary/[0.06] text-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-primary/[0.05] hover:text-foreground',
                 )}
               >
-                <span
-                  className={cn(
-                    'h-[3px] w-3 flex-shrink-0 rounded-full',
-                    isActive ? 'bg-foreground/70' : 'bg-muted-foreground/30',
-                  )}
-                />
-                <span
-                  className={cn(
-                    'flex-1 truncate text-xs leading-snug',
-                    isActive ? 'text-foreground font-medium' : 'text-muted-foreground',
-                  )}
-                >
-                  {truncate(item.text, 44)}
-                </span>
+                <span className="block truncate">{item.text}</span>
               </button>
             );
           })}
-        </div>
-      </div>
-    </div>
+        </HoverCardContent>
+      </HoverCard>
+    </nav>
   );
 }
