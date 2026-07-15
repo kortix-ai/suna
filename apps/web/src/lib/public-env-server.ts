@@ -20,7 +20,6 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     BILLING_ENABLED: read('BILLING_ENABLED') === 'true',
     MANAGED_PROVIDER_ENABLED: read('MANAGED_PROVIDER_ENABLED') === 'true',
     CONNECTORS_ENABLED: read('CONNECTORS_ENABLED') !== 'false',
-    SINGLE_ACCOUNT_MODE: read('SINGLE_ACCOUNT_MODE') === 'true',
     DISABLE_LANDING_PAGE: read('DISABLE_LANDING_PAGE') === 'true',
     APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: read('SANDBOX_ID') || undefined,

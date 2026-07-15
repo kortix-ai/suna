@@ -91,7 +91,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
-import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
+import { isBillingEnabled } from '@/lib/config';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -343,21 +343,19 @@ export default function AccountSettingsPage() {
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
   const requestedTab: AccountSection =
     tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
-  // Self-host single-account mode: no teams, so member/group management has
-  // nothing to manage. Self-host billing-disabled: no Stripe/credit ledger
-  // to show — see isBillingEnabled() (mirrors the backend's
-  // KORTIX_BILLING_INTERNAL_ENABLED) instead of only checking permission.
-  const singleAccountMode = isSingleAccountMode();
+  // Self-host billing-disabled: no Stripe/credit ledger to show — see
+  // isBillingEnabled() (mirrors the backend's KORTIX_BILLING_INTERNAL_ENABLED)
+  // instead of only checking permission.
   const billingActive = isBillingEnabled();
 
   // Which rail items this caller can see. Mirrors the per-section gates the
   // content rendering applies below, so a deep link to a section the caller
   // can't use falls back to Members instead of an empty pane.
   const sectionVisible: Record<AccountSection, boolean> = {
-    members: !singleAccountMode,
-    groups: !singleAccountMode,
+    members: true,
+    groups: true,
     roles: canManageRoles === true,
-    identity: canWriteAccount === true && !singleAccountMode,
+    identity: canWriteAccount === true,
     billing: canWriteAccount === true && billingActive,
     transactions: canWriteAccount === true && billingActive,
     git: canWriteAccount === true,
@@ -365,11 +363,7 @@ export default function AccountSettingsPage() {
     audit: canReadAudit === true,
     settings: canWriteAccount === true,
   };
-  const activeSection: AccountSection = sectionVisible[requestedTab]
-    ? requestedTab
-    : sectionVisible.members
-      ? 'members'
-      : 'settings';
+  const activeSection: AccountSection = sectionVisible[requestedTab] ? requestedTab : 'members';
   const paneMeta = PANE_META[activeSection];
   const navigate = (section: AccountSection) =>
     router.replace(`/accounts/${accountId}?tab=${section}`, { scroll: false });

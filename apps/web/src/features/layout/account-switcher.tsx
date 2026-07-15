@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { isBillingEnabled, isSingleAccountMode } from '@/lib/config';
+import { isBillingEnabled } from '@/lib/config';
 import { listAccounts, type KortixAccount } from '@kortix/sdk/projects-client';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
@@ -220,14 +220,12 @@ export function AccountSwitcher({
           </span>
         </DropdownMenuItem> */}
 
-        {!isSingleAccountMode() && (
-          <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
-            <Icon.Plus className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium">
-              {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
-            </span>
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
+          <Icon.Plus className="size-3.5" />
+          <span className="flex-1 truncate text-sm font-medium">
+            {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line286JsxTextNewAccount')}
+          </span>
+        </DropdownMenuItem>
         {billingActive && canManageBilling && (
           <DropdownMenuItem
             onSelect={() =>
