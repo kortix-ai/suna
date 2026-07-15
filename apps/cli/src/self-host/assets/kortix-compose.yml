@@ -9,9 +9,11 @@ services:
       KORTIX_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       KORTIX_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
-      KORTIX_PUBLIC_BILLING_ENABLED: "false"
+      KORTIX_PUBLIC_BILLING_ENABLED: ${KORTIX_PUBLIC_BILLING_ENABLED}
       KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
       KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
+      KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: ${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}
+      KORTIX_PUBLIC_DISABLE_LANDING_PAGE: ${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}
       SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_SERVER_URL: http://supabase-kong:8000
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
@@ -65,7 +67,14 @@ services:
       SANDBOX_IMAGE: ${SANDBOX_IMAGE}
       SANDBOX_NETWORK: __KORTIX_COMPOSE_PROJECT___default
       KORTIX_ROUTER_INTERNAL_ENABLED: "false"
-      KORTIX_BILLING_INTERNAL_ENABLED: "false"
+      # KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_SINGLE_ACCOUNT_MODE, and
+      # ENTERPRISE_LICENSE_AVAILABLE are NOT listed here on purpose — this
+      # service already has `env_file: .env` above, which loads every key in
+      # .env (including these) as container env. An explicit `environment:`
+      # entry would take precedence over env_file and silently pin the value
+      # regardless of what `kortix self-host configure`/`env set` writes —
+      # exactly the bug this fixes (billing used to be hard-pinned "false"
+      # here no matter what .env said).
       LLM_GATEWAY_ENABLED: "true"
       LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}

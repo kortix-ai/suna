@@ -174,4 +174,88 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(stdout).not.toContain('--target');
     expect(stdout).not.toContain('Terraform');
   });
+
+  describe('configuration feature flags (single-account / landing / enterprise-license / billing)', () => {
+    test('default to off, and are explicit in .env (not just hard-coded in the compose template)', async () => {
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('false');
+      expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('false');
+      expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
+      expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
+      expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
+      expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
+    });
+
+    test('--single-account sets both the backend and frontend flags', async () => {
+      const { code } = await run(['init', '--yes', '--single-account']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
+      expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('true');
+    });
+
+    test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE', async () => {
+      const { code } = await run(['init', '--yes', '--no-landing']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
+    });
+
+    test('--enterprise-license sets ENTERPRISE_LICENSE_AVAILABLE', async () => {
+      const { code } = await run(['init', '--yes', '--enterprise-license']);
+      expect(code).toBe(0);
+      expect(readEnv().ENTERPRISE_LICENSE_AVAILABLE).toBe('true');
+    });
+
+    test('a re-run of init without the flag does not reset a previously-set flag', async () => {
+      await run(['init', '--yes', '--single-account']);
+      expect(readEnv().KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
+
+      // Plain re-init (e.g. a config refresh) must not silently turn it back off.
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_SINGLE_ACCOUNT_MODE).toBe('true');
+    });
+
+    // Note: `kortix self-host update` shells out to a real `docker compose`
+    // (zero-downtime rollout) and isn't exercised by this black-box CLI
+    // harness for that reason — same scope limit as the rest of this file,
+    // which never invokes `start`/`update` either. Preservation across a
+    // later invocation is instead proven via `init` above and `env set`
+    // below: `update` merges env with the exact same
+    // `{ ...defaultEnv(flags), ...existing }` pattern (loadEnvWithDefaults)
+    // and the exact same `applyFeatureFlags()` conditional-overwrite helper
+    // as `init` — see selfHostUpdate() in commands/self-host.ts.
+
+    test('env set also works directly and survives a later plain init', async () => {
+      await run(['init', '--yes']);
+      await run(['env', 'set', 'KORTIX_BILLING_INTERNAL_ENABLED=true', 'KORTIX_PUBLIC_BILLING_ENABLED=true']);
+      expect(readEnv().KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
+
+      const { code } = await run(['init', '--yes']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('true');
+      expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('true');
+    });
+
+    test('the rendered compose passes the flags through as runtime env, not hard-coded literals', async () => {
+      await run(['init', '--yes']);
+      const compose = readCompose();
+      const frontendEnv = (compose.services.frontend as any).environment;
+      expect(frontendEnv.KORTIX_PUBLIC_BILLING_ENABLED).toBe('${KORTIX_PUBLIC_BILLING_ENABLED}');
+      expect(frontendEnv.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}');
+      expect(frontendEnv.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}');
+
+      // kortix-api gets these via `env_file: .env` (loads every .env key) —
+      // no explicit `environment:` entry, since one would win over env_file
+      // and re-introduce the old "billing hard-pinned false" bug.
+      const apiEnv = (compose.services['kortix-api'] as any).environment;
+      expect(apiEnv.KORTIX_BILLING_INTERNAL_ENABLED).toBeUndefined();
+      expect(apiEnv.KORTIX_SINGLE_ACCOUNT_MODE).toBeUndefined();
+      expect(apiEnv.ENTERPRISE_LICENSE_AVAILABLE).toBeUndefined();
+      expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
+    });
+  });
 });

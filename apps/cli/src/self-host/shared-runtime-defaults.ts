@@ -35,8 +35,29 @@ export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
   DAYTONA_TARGET: 'us',
 };
 
+/**
+ * Configuration feature flags: single-account mode, landing-page
+ * disable, enterprise license, and billing. Off by default — a fresh
+ * self-host is multi-account-capable, shows the marketing landing page,
+ * runs on the free-tier entitlement set, and has billing disabled (no
+ * Stripe keys to configure). `kortix self-host configure` / the init wizard
+ * / --single-account, --no-landing, --enterprise-license flip these; they
+ * are ordinary runtime env, so they survive `kortix self-host update`
+ * unchanged (only the image tags move) and are explicit in .env instead of
+ * only hard-coded into the compose template.
+ */
+export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
+  KORTIX_SINGLE_ACCOUNT_MODE: 'false',
+  KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: 'false',
+  KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'false',
+  ENTERPRISE_LICENSE_AVAILABLE: 'false',
+  KORTIX_BILLING_INTERNAL_ENABLED: 'false',
+  KORTIX_PUBLIC_BILLING_ENABLED: 'false',
+};
+
 /** Every target-agnostic default in one object, for a single spread. */
 export const SHARED_SELF_HOST_DEFAULTS: Record<string, string> = {
   ...SHARED_AUTH_DEFAULTS,
   ...SHARED_SANDBOX_DEFAULTS,
+  ...SHARED_FEATURE_FLAG_DEFAULTS,
 };

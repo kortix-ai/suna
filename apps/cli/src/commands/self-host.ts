@@ -83,6 +83,14 @@ Options:
                        zero-downtime rolling swap — only needed for a release
                        whose migration is not backward-compatible. Use during
                        a maintenance window (sets KORTIX_ALLOW_DOWNTIME=1).
+  --single-account     This deployment is for exactly one account — hide
+                       "New account" and team-management UI, and block
+                       creating additional accounts (403).
+  --no-landing         Send unauthenticated visitors hitting "/" straight to
+                       sign-in instead of the marketing landing page.
+  --enterprise-license You hold a Kortix Enterprise license — unlock SSO,
+                       SCIM, RBAC, and audit-log access platform-wide
+                       (kortix.com/enterprise).
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
@@ -133,9 +141,13 @@ interface SelfHostEnv {
   GATEWAY_IMAGE: string;
   SANDBOX_IMAGE: string;
   // KORTIX_PUBLIC_AUTH_METHODS, ALLOWED_SANDBOX_PROVIDERS, DAYTONA_SERVER_URL,
-  // and DAYTONA_TARGET are covered by the [key: string] index signature below —
-  // their defaults come from the SHARED_SELF_HOST_DEFAULTS spread in
-  // defaultEnv(), not a literal here, so TS can't see them as named properties.
+  // DAYTONA_TARGET, KORTIX_SINGLE_ACCOUNT_MODE, KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE,
+  // KORTIX_PUBLIC_DISABLE_LANDING_PAGE, ENTERPRISE_LICENSE_AVAILABLE,
+  // KORTIX_BILLING_INTERNAL_ENABLED, and KORTIX_PUBLIC_BILLING_ENABLED are
+  // covered by the [key: string] index signature below — their defaults come
+  // from the SHARED_SELF_HOST_DEFAULTS spread in defaultEnv() (see
+  // shared-runtime-defaults.ts), not a literal here, so TS can't see them as
+  // named properties.
   GATEWAY_INTERNAL_TOKEN: string;
   OPENROUTER_API_KEY: string;
   POSTGRES_PASSWORD: string;
@@ -244,6 +256,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const updateTime = takeFlagValue(args, ['--update-time']);
   const updateTz = takeFlagValue(args, ['--update-tz']);
   const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
+  const singleAccount = takeFlagBool(args, ['--single-account']);
+  const noLanding = takeFlagBool(args, ['--no-landing']);
+  const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -268,6 +283,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     updateTime,
     updateTz,
     allowDowntime: allowDowntime || undefined,
+    singleAccount: singleAccount || undefined,
+    disableLanding: noLanding || undefined,
+    enterpriseLicense: enterpriseLicense || undefined,
     yes,
     json,
   };
@@ -286,9 +304,17 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, existing));
+  applyFeatureFlags(env, flags);
 
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env);
+  }
+  // Only walk through the deployment-configuration wizard on a genuinely
+  // first-time init (no prior .env) — a refresh of an already-configured
+  // instance shouldn't re-ask single-account/landing-page/license every time
+  // `init` happens to run again. `configure` always asks (see below).
+  if (shouldPrompt(flags) && existing === null) {
+    await promptFeatureFlags(env, flags);
   }
 
   writeEnv(flags.instance, env);
@@ -481,6 +507,11 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, env));
+  // Runtime feature flags (single-account/landing-page/enterprise-license)
+  // are ordinary env — an update only ever moves image tags, so an explicit
+  // flag is honored (non-interactively; `update` never prompts) but nothing
+  // here resets a value the operator already set via `configure`/`env set`.
+  applyFeatureFlags(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
 
@@ -519,6 +550,62 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
   env.KORTIX_UPDATE_TZ ||= DEFAULT_UPDATE_TZ;
   if (flags.allowDowntime !== undefined) env.KORTIX_ALLOW_DOWNTIME = flags.allowDowntime ? '1' : '0';
   env.KORTIX_ALLOW_DOWNTIME ||= '0';
+}
+
+/**
+ * Apply --single-account / --no-landing / --enterprise-license onto env,
+ * non-interactively. Each only overwrites when the flag was actually passed
+ * (undefined = "not passed", never a literal false — see parseGlobalFlags),
+ * so a bare `init`/`update` with no flags never resets a value the operator
+ * set via `configure` or `env set`. Applied on every init/configure/update so
+ * an explicit flag always wins, same convention as
+ * applyChannelAndUpdatePolicy above.
+ */
+function applyFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): void {
+  if (flags.singleAccount !== undefined) {
+    env.KORTIX_SINGLE_ACCOUNT_MODE = flags.singleAccount ? 'true' : 'false';
+    env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
+  }
+  if (flags.disableLanding !== undefined) {
+    env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE = flags.disableLanding ? 'true' : 'false';
+  }
+  if (flags.enterpriseLicense !== undefined) {
+    env.ENTERPRISE_LICENSE_AVAILABLE = flags.enterpriseLicense ? 'true' : 'false';
+  }
+}
+
+/**
+ * Interactive follow-up to applyFeatureFlags: ask yes/no for anything not
+ * already pinned by a flag this run, defaulting to whatever is currently in
+ * .env (so re-running `configure` doesn't reset a prior answer). No-ops
+ * under --yes / non-TTY (see shouldPrompt).
+ */
+async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+  if (!shouldPrompt(flags)) return;
+
+  process.stdout.write(`\n  ${C.bold}Deployment configuration${C.reset}\n`);
+
+  const singleAccount = await selectFrom(
+    'Single-account mode? (no teams — hides "New account" and team management)',
+    ['no', 'yes'] as const,
+    env.KORTIX_SINGLE_ACCOUNT_MODE === 'true' ? 'yes' : 'no',
+  );
+  env.KORTIX_SINGLE_ACCOUNT_MODE = singleAccount === 'yes' ? 'true' : 'false';
+  env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE = env.KORTIX_SINGLE_ACCOUNT_MODE;
+
+  const disableLanding = await selectFrom(
+    'Disable the marketing landing page? (send visitors straight to sign-in)',
+    ['no', 'yes'] as const,
+    env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE === 'true' ? 'yes' : 'no',
+  );
+  env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE = disableLanding === 'yes' ? 'true' : 'false';
+
+  const enterpriseLicense = await selectFrom(
+    'Do you have an Enterprise license? (SSO / RBAC / Directory Sync / Groups — kortix.com/enterprise)',
+    ['no', 'yes'] as const,
+    env.ENTERPRISE_LICENSE_AVAILABLE === 'true' ? 'yes' : 'no',
+  );
+  env.ENTERPRISE_LICENSE_AVAILABLE = enterpriseLicense === 'yes' ? 'true' : 'false';
 }
 
 /** Point every Kortix app image (and the tracked version) at the given tag. */
@@ -671,6 +758,8 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     return 1;
   }
   await configureIntegrations(env);
+  applyFeatureFlags(env, flags);
+  await promptFeatureFlags(env, flags);
   await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
