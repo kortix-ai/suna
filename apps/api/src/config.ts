@@ -107,6 +107,21 @@ const envSchema = z.object({
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
   KORTIX_TEMPLATES_ENABLED:         optBoolFalse,
+  // Self-host single-account mode: this deployment is meant for exactly one
+  // account (no teams). Blocks POST /v1/accounts (creating additional
+  // accounts) with 403 — see registerAccountRoutes(). The frontend mirrors
+  // this with KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE to hide the "New account" UI.
+  // Off by default (cloud + multi-account self-host both need it false).
+  KORTIX_SINGLE_ACCOUNT_MODE:       optBoolFalse,
+  // Self-host enterprise license: when the operator has purchased/holds a
+  // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
+  // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
+  // audit access) regardless of the account's billing tier — see
+  // getAccountEntitlements()/accountHasEntitlement() in
+  // billing/services/entitlements.ts. Off by default; billing is irrelevant
+  // for a self-host license check, unlike the `demoEnterprise` per-account
+  // preview toggle this mirrors.
+  ENTERPRISE_LICENSE_AVAILABLE:     optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -608,6 +623,8 @@ export const config = {
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
+  KORTIX_SINGLE_ACCOUNT_MODE: env.KORTIX_SINGLE_ACCOUNT_MODE,
+  ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
