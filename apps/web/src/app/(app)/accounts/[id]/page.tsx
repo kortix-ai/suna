@@ -29,7 +29,7 @@ import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { EnterpriseDemoCard } from '@/components/iam/enterprise-demo-card';
 import { EnterpriseUpsell } from '@/components/iam/enterprise-upsell';
-import { GitHubAppSetupCard } from '@/components/iam/github-app-setup-card';
+import { GitHubAppSetupCard, useGitHubAppStatus } from '@/components/iam/github-app-setup-card';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
@@ -324,6 +324,11 @@ export default function AccountSettingsPage() {
     { allowed: canManageRoles },
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
+  // Lifted (rather than read only inside GitHubAppSetupCard) so the Git tab
+  // can also gate the cloud GitHubConnectionCard on it below — same query,
+  // same cache entry, so this doesn't add a second network round-trip.
+  const githubAppStatusQuery = useGitHubAppStatus(canWriteAccount === true);
+
   const prefersReducedMotion = useReducedMotion();
 
   if (authLoading || !user) {
@@ -579,14 +584,20 @@ export default function AccountSettingsPage() {
 
             {activeSection === 'git' && canWriteAccount ? (
               <div className="space-y-8">
-                {/* Self-host in-app GitHub App creation. Rendered for any admin;
-                    the card self-hides on cloud, where the App is env-configured
-                    (status.source === 'env') and the installations card below
-                    covers per-account install management. Gating here on
-                    single-account mode would wrongly hide it on multi-account
-                    self-hosts, so the cloud guard lives inside the card. */}
+                {/* One coherent managed-git card covering all three setup
+                    methods (manifest App, pasted App, PAT) — rendered for any
+                    admin regardless of source. The cloud per-account
+                    installations card below is a DIFFERENT thing (per-account
+                    App installs on the hosted deployment) and only makes
+                    sense when managed-git itself is env-configured (source
+                    'env'); on self-host (source 'db' | 'pat' | 'none') it
+                    would just confusingly show "No connections yet" next to
+                    the card above, so it's hidden until the status query
+                    resolves to 'env'. */}
                 <GitHubAppSetupCard canManage={canWriteAccount} />
-                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+                {githubAppStatusQuery.data?.source === 'env' ? (
+                  <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+                ) : null}
               </div>
             ) : null}
 

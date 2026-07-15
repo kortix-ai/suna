@@ -1,31 +1,53 @@
 'use client';
 
-// Self-host: create + connect the platform's GitHub App entirely from the web
-// UI — click "Create GitHub App" → GitHub's create+install flow → back here,
-// connected. No CLI, no SSH. Only relevant in single-account mode; on cloud
-// the App is env-configured (`configured` is always true and `source` is
-// 'env'), so the create-form branch never renders there — see the
-// isSingleAccountMode() gate at the call site in accounts/[id]/page.tsx.
+// Self-host: one coherent "managed-git" setup card covering all three ways
+// to configure it — create a GitHub App in-app (manifest flow, recommended),
+// paste in credentials for an App that already exists, or a personal/
+// fine-grained access token for the quickest path. No CLI, no SSH.
+//
+// On the hosted Kortix deployment (source 'env') the App is configured by
+// the operator via env vars — this card still renders there, but as a
+// read-only "Connected via environment" summary; the separate cloud
+// `GitHubConnectionCard` (per-account App installs) is what a hosted
+// customer actually uses, gated on `source === 'env'` at the call site in
+// accounts/[id]/page.tsx.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Github } from 'lucide-react';
+import { ExternalLink, FileCode2, Github, KeyRound } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   type GitHubAppStatus,
+  disconnectGitHubApp,
   getGitHubAppStatus,
+  setGitHubAppFromExisting,
+  setGitHubAppPat,
   startGitHubAppManifest,
 } from '@kortix/sdk/platform-client';
 
-const GITHUB_APP_STATUS_KEY = ['github-app-status'];
+export const GITHUB_APP_STATUS_KEY = ['github-app-status'];
+
+/** Shared so the accounts page can gate the cloud `GitHubConnectionCard` on
+ *  the same status this card renders from — one query, one source of truth. */
+export function useGitHubAppStatus(enabled = true) {
+  return useQuery({
+    queryKey: GITHUB_APP_STATUS_KEY,
+    queryFn: () => getGitHubAppStatus(),
+    staleTime: 10_000,
+    enabled,
+  });
+}
 
 /**
  * Build + submit a same-window POST form to GitHub's "create app from
@@ -53,6 +75,21 @@ function submitManifestForm(
   form.submit();
 }
 
+type SetupMethod = 'manifest' | 'existing-app' | 'pat';
+
+function methodLabel(source: GitHubAppStatus['source']): string {
+  switch (source) {
+    case 'db':
+      return 'GitHub App';
+    case 'env':
+      return 'GitHub App (environment)';
+    case 'pat':
+      return 'Personal access token';
+    default:
+      return '';
+  }
+}
+
 interface GitHubAppSetupCardProps {
   canManage: boolean;
 }
@@ -62,14 +99,20 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [org, setOrg] = useState('');
-  const [reconfiguring, setReconfiguring] = useState(false);
 
-  const statusQuery = useQuery({
-    queryKey: GITHUB_APP_STATUS_KEY,
-    queryFn: () => getGitHubAppStatus(),
-    staleTime: 10_000,
-  });
+  const [org, setOrg] = useState('');
+  const [method, setMethod] = useState<SetupMethod>('manifest');
+  const [reconfiguring, setReconfiguring] = useState(false);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+
+  const [appId, setAppId] = useState('');
+  const [appPrivateKey, setAppPrivateKey] = useState('');
+  const [appInstallationId, setAppInstallationId] = useState('');
+
+  const [patToken, setPatToken] = useState('');
+  const [patOwner, setPatOwner] = useState('');
+
+  const statusQuery = useGitHubAppStatus(canManage);
 
   // GitHub's install flow ends with the backend 302-ing back here with
   // `?github=connected` once the app is created + installed. Surface it once,
@@ -95,6 +138,49 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     onError: (err: Error) => errorToast(err.message || 'Failed to start GitHub App setup'),
   });
 
+  function onSetupSuccess(message: string) {
+    successToast(message);
+    setReconfiguring(false);
+    queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
+  }
+
+  const appMutation = useMutation({
+    mutationFn: () =>
+      setGitHubAppFromExisting({
+        appId: appId.trim(),
+        privateKey: appPrivateKey.trim(),
+        installationId: appInstallationId.trim(),
+      }),
+    onSuccess: () => {
+      setAppId('');
+      setAppPrivateKey('');
+      setAppInstallationId('');
+      onSetupSuccess('GitHub App connected');
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to connect the GitHub App'),
+  });
+
+  const patMutation = useMutation({
+    mutationFn: () => setGitHubAppPat({ token: patToken.trim(), owner: patOwner.trim() }),
+    onSuccess: () => {
+      setPatToken('');
+      setPatOwner('');
+      onSetupSuccess('GitHub token connected');
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to connect the token'),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => disconnectGitHubApp(),
+    onSuccess: () => {
+      successToast('GitHub disconnected');
+      setConfirmDisconnectOpen(false);
+      setReconfiguring(false);
+      queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
+    },
+    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
+  });
+
   if (!canManage) return null;
 
   if (statusQuery.isLoading) {
@@ -109,88 +195,215 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
     );
   }
 
-  // Non-fatal: the existing GitHub connections card below runs off its own
-  // query, so a hiccup here just hides this summary rather than blocking the
+  // Non-fatal: a hiccup here just hides this card rather than blocking the
   // whole Git tab.
   if (statusQuery.isError || !statusQuery.data) return null;
 
   const status: GitHubAppStatus = statusQuery.data;
-
-  // Cloud guard: when the App is configured from the environment (the hosted
-  // Kortix deployment), this in-app creation surface is irrelevant — the
-  // existing installations card handles per-account installs. Only self-host
-  // (source 'db' once created, or 'none' when unconfigured) shows this card.
-  if (status.configured && status.source === 'env') return null;
-
-  const showCreateForm = !status.configured || reconfiguring;
+  const showSetup = !status.configured || reconfiguring;
 
   return (
     <div className="space-y-4">
       <div className="space-y-0.5">
-        <p className="text-foreground text-sm font-medium">GitHub App</p>
+        <p className="text-foreground text-sm font-medium">Managed GitHub</p>
         <p className="text-muted-foreground text-xs">
           {status.configured
-            ? 'The GitHub App that powers repository imports and installs for this instance.'
-            : "Creates a GitHub App owned by your org; you'll pick which repos to grant at install."}
+            ? 'Powers repository creation and pushes for this instance.'
+            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf — connect GitHub to enable projects.'}
         </p>
       </div>
 
-      {showCreateForm ? (
-        <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
-          <div className="space-y-1.5">
-            <Label className="text-xs">GitHub organization (optional)</Label>
-            <Input
-              value={org}
-              onChange={(e) => setOrg(e.target.value)}
-              placeholder="e.g. Essentia-Innovation"
-              disabled={startMutation.isPending}
-              variant="popover"
-            />
-            <p className="text-muted-foreground text-xs">
-              Leave blank to create the App under your personal GitHub account instead of an
-              organization.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              className="gap-1.5"
-              disabled={startMutation.isPending}
-              onClick={() => startMutation.mutate()}
-            >
-              {startMutation.isPending ? (
-                <Loading className="size-4 shrink-0" />
-              ) : (
-                <Github className="size-4" />
-              )}
-              {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
-            </Button>
-            {reconfiguring ? (
+      {showSetup ? (
+        <div className="space-y-3">
+          {reconfiguring ? (
+            <div className="flex items-center justify-end">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={startMutation.isPending}
                 onClick={() => setReconfiguring(false)}
               >
                 Cancel
               </Button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
+
+          <Tabs value={method} onValueChange={(v) => setMethod(v as SetupMethod)}>
+            <TabsList type="underline" className="flex w-full items-center justify-start">
+              <TabsTrigger value="manifest" className="w-fit flex-none gap-1.5">
+                Create GitHub App
+                <Badge variant="highlight" size="xs">
+                  Recommended
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="existing-app" className="w-fit flex-none">
+                Paste an existing App
+              </TabsTrigger>
+              <TabsTrigger value="pat" className="w-fit flex-none">
+                Use a token
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="manifest" className="space-y-3 pt-4">
+              <p className="text-muted-foreground text-xs">
+                Creates a GitHub App owned by your org — scoped permissions, revocable anytime, no
+                long-lived token to leak. You&apos;ll pick which repos to grant at install.
+              </p>
+              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">GitHub organization (optional)</Label>
+                  <Input
+                    value={org}
+                    onChange={(e) => setOrg(e.target.value)}
+                    placeholder="e.g. Essentia-Innovation"
+                    disabled={startMutation.isPending}
+                    variant="popover"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Leave blank to create the App under your personal GitHub account instead of an
+                    organization.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={startMutation.isPending}
+                  onClick={() => startMutation.mutate()}
+                >
+                  {startMutation.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : (
+                    <Github className="size-4" />
+                  )}
+                  {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="existing-app" className="space-y-3 pt-4">
+              <p className="text-muted-foreground text-xs">
+                Already have a GitHub App — created by hand, or shared from another instance? Paste
+                its credentials and installation below.
+              </p>
+              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">App ID</Label>
+                  <Input
+                    value={appId}
+                    onChange={(e) => setAppId(e.target.value)}
+                    placeholder="123456"
+                    disabled={appMutation.isPending}
+                    variant="popover"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Private key (PEM)</Label>
+                  <Textarea
+                    value={appPrivateKey}
+                    onChange={(e) => setAppPrivateKey(e.target.value)}
+                    placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                    disabled={appMutation.isPending}
+                    rows={5}
+                    className="resize-y font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Installation ID</Label>
+                  <Input
+                    value={appInstallationId}
+                    onChange={(e) => setAppInstallationId(e.target.value)}
+                    placeholder="987654"
+                    disabled={appMutation.isPending}
+                    variant="popover"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    From the App&apos;s installation URL:
+                    github.com/settings/installations/&lt;id&gt;
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={
+                    appMutation.isPending ||
+                    !appId.trim() ||
+                    !appPrivateKey.trim() ||
+                    !appInstallationId.trim()
+                  }
+                  onClick={() => appMutation.mutate()}
+                >
+                  {appMutation.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : (
+                    <FileCode2 className="size-4" />
+                  )}
+                  {appMutation.isPending ? 'Connecting' : 'Connect App'}
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="pat" className="space-y-3 pt-4">
+              <p className="text-muted-foreground text-xs">
+                Quickest to set up, but a plain token rather than a scoped, revocable App. Create a
+                dedicated fine-grained token scoped to only the repos you want (GitHub → Settings →
+                Developer settings → Fine-grained tokens) — don&apos;t paste your everyday personal
+                token.
+              </p>
+              <div className="bg-popover space-y-4 rounded-md border px-4 py-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Personal / fine-grained access token</Label>
+                  <Input
+                    type="password"
+                    value={patToken}
+                    onChange={(e) => setPatToken(e.target.value)}
+                    placeholder="github_pat_..."
+                    disabled={patMutation.isPending}
+                    variant="popover"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">GitHub owner (user or org)</Label>
+                  <Input
+                    value={patOwner}
+                    onChange={(e) => setPatOwner(e.target.value)}
+                    placeholder="e.g. Essentia-Innovation"
+                    disabled={patMutation.isPending}
+                    variant="popover"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={patMutation.isPending || !patToken.trim() || !patOwner.trim()}
+                  onClick={() => patMutation.mutate()}
+                >
+                  {patMutation.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : (
+                    <KeyRound className="size-4" />
+                  )}
+                  {patMutation.isPending ? 'Connecting' : 'Connect token'}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       ) : (
         <div className="bg-popover flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3.5">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-foreground truncate text-sm font-medium">
-                {status.owner ?? 'GitHub App'}
+                {status.owner ?? 'Managed GitHub'}
               </span>
               <Badge variant="success" size="sm">
                 Connected
               </Badge>
             </div>
             <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+              <span>{methodLabel(status.source)}</span>
               {status.slug ? (
                 <a
                   href={`https://github.com/apps/${status.slug}`}
@@ -205,15 +418,42 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
               {status.installation_id ? <span>Installation {status.installation_id}</span> : null}
             </div>
           </div>
-          {status.source !== 'env' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setReconfiguring(true)}>
-              Reconfigure
-            </Button>
-          ) : (
+          {status.source === 'env' ? (
             <span className="text-muted-foreground text-xs">Configured via environment</span>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setReconfiguring(true)}
+              >
+                Reconfigure
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setConfirmDisconnectOpen(true)}
+              >
+                Disconnect
+              </Button>
+            </div>
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDisconnectOpen}
+        onOpenChange={setConfirmDisconnectOpen}
+        title="Disconnect GitHub?"
+        description="Projects that already have a repo keep working, but Kortix won't be able to create new managed repos until you reconnect."
+        confirmLabel="Disconnect"
+        confirmVariant="destructive"
+        onConfirm={() => disconnectMutation.mutate()}
+        isPending={disconnectMutation.isPending}
+      />
     </div>
   );
 }
