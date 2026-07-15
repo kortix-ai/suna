@@ -310,6 +310,7 @@ export function AppPreview({
             disabled={!hasPreview}
             aria-label="Copy link"
             onClick={() => previewUrl && copy(previewUrl)}
+            className="active:scale-[0.96]"
           >
             {/* Morph, not a hard swap — same box, cross-faded (kortix-design-system
                 → "Button icon-swap"). */}
