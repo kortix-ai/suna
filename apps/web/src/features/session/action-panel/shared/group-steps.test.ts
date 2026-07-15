@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { collectAllToolParts } from './collect-tool-parts';
 import { groupSteps } from './group-steps';
+import type { StepFamily } from './narration';
 
 function part(
   tool: string,
@@ -97,5 +98,13 @@ describe('groupSteps', () => {
     expect(steps).toHaveLength(1);
     expect(steps[0].family).toBe('explore');
     expect(steps[0].label).toBe('Read 3 files');
+  });
+});
+
+describe('error handling (W7)', () => {
+  it('an errored step is labeled with failure phrasing, not success wording', () => {
+    const steps = groupSteps([part('write', 'error', { filePath: 'budget.csv' })]);
+    expect(steps[0].status).toBe('error');
+    expect(steps[0].label).toBe("Couldn't write budget.csv");
   });
 });

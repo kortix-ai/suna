@@ -730,3 +730,53 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
     }
   }
 }
+
+/**
+ * The failure phrasing for a step whose status is 'error' (W7). Same rules as
+ * `narrateStep` — plain language, never a raw identifier, never an error code.
+ * Grouped steps can mix one failure among successes; the step-level status is
+ * already 'error' (see group-steps.statusOf), so the sentence owns the whole
+ * step: vague-but-true beats specific-but-false here exactly as everywhere else.
+ */
+export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string {
+  const arg = firstArg(parts);
+  switch (family) {
+    case 'explore':
+      return "Couldn't read your files";
+    case 'edit': {
+      if (parts.length === 1) {
+        const verb = normalizeName(parts[0].tool) === 'write' ? 'write' : 'update';
+        return arg ? `Couldn't ${verb} ${arg}` : `Couldn't ${verb} a file`;
+      }
+      return "Couldn't update some files";
+    }
+    case 'run':
+      return 'A command failed';
+    case 'web':
+      return "Couldn't finish searching the web";
+    case 'create':
+      return "Couldn't finish making that";
+    case 'plan':
+      return "Couldn't update the plan";
+    case 'delegate':
+      return 'A helper agent hit a problem';
+    case 'sessions':
+      return "Couldn't check earlier work";
+    case 'memory':
+      return "Couldn't reach its memory";
+    case 'apps':
+      return "Couldn't reach a connected app";
+    case 'automations':
+      return 'Hit a problem with your automations';
+    case 'projects':
+      return 'Hit a problem with your project';
+    case 'skills':
+      return "Couldn't use a skill";
+    case 'ask':
+      return "Couldn't ask you a question";
+    case 'retired':
+      return 'Used an integration that has since been removed';
+    case 'other':
+      return `Couldn't finish using ${humanizeToolName(parts[0].tool)}`;
+  }
+}

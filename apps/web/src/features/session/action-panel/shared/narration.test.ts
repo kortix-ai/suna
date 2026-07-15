@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
-import { familyForTool, humanizeToolName, narrateStep } from './narration';
+import { familyForTool, humanizeToolName, narrateStep, narrateFailedStep } from './narration';
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
@@ -632,3 +632,30 @@ describe('narrateStep - task_update/agent_task_update resolve their own action f
     expect(line.toLowerCase()).toContain('instructions');
   });
 });
+
+describe('narrateFailedStep (W7)', () => {
+  const FAMILIES = [
+    'explore', 'edit', 'run', 'web', 'create', 'plan', 'delegate', 'sessions',
+    'memory', 'apps', 'automations', 'projects', 'skills', 'ask', 'retired', 'other',
+  ];
+
+  it('every family produces failure phrasing with no raw identifiers', () => {
+    for (const family of FAMILIES) {
+      const sentence = narrateFailedStep(family as any, [part('grep', {})]);
+      expect(sentence.length).toBeGreaterThan(0);
+      expect(sentence).not.toMatch(/[_/]/); // no snake_case, no path separators
+    }
+  });
+
+  it('a failed write names the file', () => {
+    expect(narrateFailedStep('edit', [part('write', { filePath: 'budget.csv' })])).toBe(
+      "Couldn't write budget.csv",
+    );
+  });
+
+  it('a failed MCP tool humanizes, never leaks', () => {
+    const s = narrateFailedStep('other', [part('mcp__linear__create_issue', {})]);
+    expect(s).toBe("Couldn't finish using Create Issue");
+  });
+});
+

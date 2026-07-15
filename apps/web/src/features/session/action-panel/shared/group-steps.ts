@@ -10,7 +10,7 @@
 
 import type { ToolPart } from '@/ui';
 import { isNoGroupActivityTool } from '../../session-activity-groups';
-import { type StepFamily, familyForTool, narrateStep } from './narration';
+import { type StepFamily, familyForTool, narrateFailedStep, narrateStep } from './narration';
 
 export interface Step {
   /** Stable across re-renders: the callID of the step's first part. */
@@ -51,7 +51,9 @@ function finalize(family: StepFamily, parts: ToolPart[]): Step {
   return {
     id: parts[0].callID,
     family,
-    label: narrateStep(family, parts),
+    // A failed step must never wear success wording — "Wrote budget.csv" for a
+    // write that errored is the panel lying (W7).
+    label: status === 'error' ? narrateFailedStep(family, parts) : narrateStep(family, parts),
     parts,
     status,
     // A duration must never sit next to a live spinner — a running step may
