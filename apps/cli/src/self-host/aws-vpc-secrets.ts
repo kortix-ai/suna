@@ -159,6 +159,10 @@ export function generateRuntimeDefaults(
     KORTIX_PUBLIC_BACKEND_URL: `${apiUrl}/v1`,
     KORTIX_PUBLIC_SUPABASE_URL: frontendUrl,
     KORTIX_PUBLIC_SUPABASE_ANON_KEY: anonKey,
+    // Lead the sign-in UI with password (not magic-link) so a fresh appliance
+    // works with NO SMTP configured — pairs with ENABLE_EMAIL_AUTOCONFIRM=true.
+    // Operators add 'magic' once SMTP is set up. Matches the docker self-host.
+    KORTIX_PUBLIC_AUTH_METHODS: 'password',
     INTERNAL_KORTIX_ENV: 'prod',
     KORTIX_BILLING_INTERNAL_ENABLED: 'false',
   };
@@ -214,7 +218,12 @@ function generatedInternalDefaults(instance: string, region: string): Record<str
     DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
     DAYTONA_TARGET: 'us',
     ENABLE_EMAIL_SIGNUP: 'true',
-    ENABLE_EMAIL_AUTOCONFIRM: 'false',
+    // Auto-confirm email signups by default so a fresh appliance works with NO
+    // SMTP configured (matches the local docker self-host default). GoTrue only
+    // sends confirmation/magic-link email once an operator sets real SMTP creds
+    // and flips this to 'false'; until then, requiring email would make the very
+    // first account impossible (chicken-and-egg). Maps to GOTRUE_MAILER_AUTOCONFIRM.
+    ENABLE_EMAIL_AUTOCONFIRM: 'true',
     ENABLE_ANONYMOUS_USERS: 'false',
     ENABLE_PHONE_SIGNUP: 'false',
     ENABLE_PHONE_AUTOCONFIRM: 'false',

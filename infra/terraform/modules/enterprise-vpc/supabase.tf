@@ -41,6 +41,18 @@ resource "aws_security_group" "appliance" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Supabase Auth (GoTrue) sends confirmation/magic-link emails via the
+  # configured SMTP relay. Without submission-port egress, every email-based
+  # signup/sign-in hangs and returns 504. 587 (STARTTLS) + 465 (implicit TLS).
+  #trivy:ignore:AVD-AWS-0104
+  egress {
+    description = "SMTP submission for GoTrue auth email (587 STARTTLS, 465 TLS)"
+    protocol    = "tcp"
+    from_port   = 465
+    to_port     = 587
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     description = "DNS to the VPC resolver"
     protocol    = "udp"
