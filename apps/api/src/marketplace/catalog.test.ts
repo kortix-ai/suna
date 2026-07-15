@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   clampMarketplaceItemsLimit,
+  getCatalogItemDetail,
   pageCatalogItems,
   selectTemplateItems,
   type CatalogItem,
@@ -59,6 +60,17 @@ describe('template + agent browse visibility (flag-gated)', () => {
       .items.map((i) => i.type)
       .sort();
     expect(types).toEqual(['registry:agent', 'registry:skill', 'registry:template']);
+  });
+
+  test('item detail carries the full template declaration (inputs, envVars, template block)', async () => {
+    process.env.KORTIX_TEMPLATES_ENABLED = 'true';
+    const detail = await getCatalogItemDetail('kortix-starter:customer-support');
+    expect(detail).not.toBeNull();
+    expect(detail!.type).toBe('registry:template');
+    expect((detail!.inputs as Array<{ key: string }>).map((i) => i.key)).toContain('cadence');
+    expect(Object.keys(detail!.envVars ?? {})).toContain('PLAIN_API_KEY');
+    const tpl = detail!.template as { triggers?: Array<{ slug: string }> };
+    expect(tpl.triggers?.map((t) => t.slug)).toContain('support-triage');
   });
 });
 

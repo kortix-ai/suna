@@ -103,6 +103,14 @@ export interface CatalogItemDetail extends CatalogItem {
   /** For a `registry:project`: its agents + triggers, parsed from kortix.yaml. */
   projectAgents?: ProjectAgent[];
   projectTriggers?: ProjectTrigger[];
+  /** For a `registry:template`: the full declaration an install needs — the
+   *  declared inputs, required secret env vars, and the `meta.template` block
+   *  (agent grants, connectors, channels, triggers). Surfaced here so
+   *  `kortix marketplace show <id> --json` gives an installing agent everything
+   *  in one shot. */
+  inputs?: unknown[];
+  envVars?: Record<string, string>;
+  template?: Record<string, unknown>;
 }
 
 /** Parse a project item's `kortix.yaml` (+ each agent's own `.md` frontmatter)
@@ -1902,6 +1910,17 @@ export async function getCatalogItemDetail(
       ? projectAgentsAndTriggers(entry.item.files ?? [])
       : { agents: [], triggers: [] };
 
+  const templateDecl =
+    base.type === "registry:template"
+      ? {
+          ...(entry.item.inputs ? { inputs: entry.item.inputs as unknown[] } : {}),
+          ...(entry.item.envVars ? { envVars: entry.item.envVars } : {}),
+          ...(entry.item.meta?.template
+            ? { template: entry.item.meta.template as Record<string, unknown> }
+            : {}),
+        }
+      : {};
+
   return {
     ...base,
     files,
@@ -1909,6 +1928,7 @@ export async function getCatalogItemDetail(
     dependencyItems,
     ...(projectAgents.length ? { projectAgents } : {}),
     ...(projectTriggers.length ? { projectTriggers } : {}),
+    ...templateDecl,
   };
 }
 

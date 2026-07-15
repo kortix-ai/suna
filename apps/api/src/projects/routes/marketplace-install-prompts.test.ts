@@ -29,22 +29,26 @@ function templateEntry(over: Record<string, unknown> = {}) {
 }
 
 describe('buildTemplateInstallPrompt', () => {
-  test('tells the agent to read the template via its marketplace CLI', () => {
+  test('tells the agent to read the full declaration from one show --json call', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     expect(p).toContain('Customer support on autopilot');
-    expect(p).toContain('kortix marketplace show kortix-starter:customer-support');
+    expect(p).toContain('kortix marketplace show kortix-starter:customer-support --json');
+    expect(p).toContain('.inputs');
+    expect(p).toContain('.template');
+    expect(p).toContain('do not search');
   });
 
-  test('gives dependency parts as fully-qualified ids so nothing is searched for', () => {
+  test('gives dependency parts as fully-qualified ids + the exact file-content endpoint', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     // namespaced from the template id, not a bare "support-agent"
     expect(p).toContain('kortix-starter:support-agent');
-    expect(p).toContain('through the marketplace');
+    expect(p).toContain('$KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>');
+    expect(p).toContain('.kortix/opencode/agents/');
   });
 
-  test('wires the trigger from meta.template and ships it DISABLED', () => {
+  test('wires the trigger from the show output and ships it DISABLED', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
-    expect(p).toContain('meta.template.triggers');
+    expect(p).toContain('.template.triggers');
     expect(p).toContain('{{key}}');
     expect(p).toContain('enabled: false');
     expect(p).toContain('DISABLED');

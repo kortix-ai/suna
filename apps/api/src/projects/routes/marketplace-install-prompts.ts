@@ -54,16 +54,16 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
   const channels = tpl.channels ?? [];
 
   const steps: string[] = [
-    `Read the template first with the marketplace CLI — \`kortix marketplace show ${id}\` — to see its declared inputs, its scheduled trigger and agent grants (under \`meta.template\`), and the secrets/connectors it needs. Then tell me in a line or two what it adds and what you'll need from me.`,
+    `Read the template first: \`kortix marketplace show ${id} --json\`. The response carries the full declaration — \`.inputs\` (what to ask me), \`.envVars\` (required secrets), and \`.template\` (the trigger to wire, agent grants, connectors, channels). Everything you need is in that one response; do not search the repo or the web for it. Then tell me in a line or two what it adds and what you'll need from me.`,
     'Ask me for each input the template declares, pre-filling its default.',
   ];
   if (depIds.length) {
     steps.push(
-      `Install its parts through the marketplace — the items ${depIds.map((d) => `\`${d}\``).join(', ')} — exactly the way you install any marketplace item with the CLI. They are the agent + skill this template runs on; don't hunt for them elsewhere.`,
+      `Install its parts — ${depIds.map((d) => `\`${d}\``).join(', ')} — from the marketplace: \`kortix marketplace show <part-id> --json\` lists its \`.files[].target\`, and each file's content comes from \`GET $KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>\` (the \`.content\` field). Write each file to its conventional path (\`@agents/x.md\` → \`.kortix/opencode/agents/x.md\`, \`@skills/y\` → \`.kortix/opencode/skills/y\`), rendering \`{{projectName}}\` to this project's name.`,
     );
   }
   steps.push(
-    'Wire the template\'s trigger (from `meta.template.triggers`) into this project\'s `kortix.yaml`, rendering my input values into it (replace every `{{key}}` with what I gave you), and ship it **DISABLED** (`enabled: false`). Add the matching agent grant under `agents:`.',
+    "Wire the template's trigger (`.template.triggers` from the show output) into this project's `kortix.yaml`, rendering my input values into it (replace every `{{key}}` with what I gave you), and ship it **DISABLED** (`enabled: false`). Add the matching agent grant (`.template.agents`) under `agents:`.",
   );
   const needs = [
     secrets.length ? `secrets ${secrets.join(', ')} (Settings → Secrets)` : null,
