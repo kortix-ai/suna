@@ -125,8 +125,12 @@ echo "Running: kortix self-host init $${INIT_ARGS[*]}"
 %{ endif ~}
 
 # ── 6. Start ─────────────────────────────────────────────────────────────────
+# --allow-missing-secrets here too: `start` re-checks required secrets (the
+# sandbox key etc.) and would otherwise refuse — but this module's whole
+# design is that secrets are NOT Terraform inputs and get set post-boot
+# (kortix self-host secrets set / configure / the dashboard).
 echo "Starting the stack (pulling images — this can take a few minutes on first boot)"
-"$KORTIX_BIN" self-host start --instance "${instance_name}" --yes
+"$KORTIX_BIN" self-host start --instance "${instance_name}" --allow-missing-secrets --yes
 
 echo "=== kortix self-host bootstrap done: $(date -u --iso-8601=seconds) ==="
 echo "Secrets (sandbox provider key, managed git, ...) were NOT set — configure them with:"
