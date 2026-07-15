@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
 import { Icon } from '@/features/icon/icon';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useCopy } from '@/hooks/use-copy';
@@ -284,9 +286,28 @@ export function CliTokensTab() {
           <Skeleton className="h-16 w-full rounded-2xl" />
         </div>
       ) : tokensQuery.error ? (
-        <div className="border-destructive bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">
-          {(tokensQuery.error as Error).message}
-        </div>
+        (tokensQuery.error as { code?: string })?.code === 'account_mfa_required' ? (
+          <InfoBanner
+            tone="warning"
+            title="Multi-factor authentication required"
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.dispatchEvent(new CustomEvent(MFA_REQUIRED_EVENT))}
+              >
+                Verify
+              </Button>
+            }
+          >
+            Verify your second factor to manage API keys. Already verified? This
+            list refreshes automatically once your session steps up.
+          </InfoBanner>
+        ) : (
+          <div className="border-destructive bg-destructive/5 text-destructive rounded-2xl border p-4 text-sm">
+            {(tokensQuery.error as Error).message}
+          </div>
+        )
       ) : tokens.length === 0 && !creating ? (
         <EmptyState
           icon={KeyRound}
