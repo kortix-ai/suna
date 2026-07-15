@@ -14,7 +14,13 @@ import {
   writeInstanceConfig,
 } from '../self-host/config.ts';
 import type { SelfHostCommandFlags } from '../self-host/types.ts';
-import { renderFullDockerCompose, writeKortixRuntimeAssets, writeSupabaseVendorAssets } from '../self-host/compose-assets.ts';
+import {
+  LAPTOP_APP_REPLICAS,
+  PROD_APP_REPLICAS,
+  renderFullDockerCompose,
+  writeKortixRuntimeAssets,
+  writeSupabaseVendorAssets,
+} from '../self-host/compose-assets.ts';
 import { SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 
 const DEFAULT_INSTANCE = 'default';
@@ -22,7 +28,11 @@ const CHANNELS = ['stable', 'latest'] as const;
 type Channel = (typeof CHANNELS)[number];
 const DEFAULT_CHANNEL: Channel = 'stable';
 const DEFAULT_AUTO_UPDATE = 'true';
-const DEFAULT_UPDATE_INTERVAL_SECONDS = '86400'; // daily
+// The auto-updater runs nightly at a fixed local clock time (not a rolling
+// interval from container start) — see assets/updater.sh next_run_epoch().
+const DEFAULT_UPDATE_TIME = '02:00';
+const DEFAULT_UPDATE_TZ = 'America/New_York';
+const UPDATE_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const DEFAULT_HOST_NAME = 'selfhost';
 const DEFAULT_PUBLIC_URL = 'http://localhost:13737';
 const DEFAULT_API_URL = 'http://localhost:13738';
@@ -63,8 +73,16 @@ Options:
                        given: stable or latest (default: stable). The
                        auto-updater tracks whichever channel is configured.
   --auto-update <on|off> Enable/disable the in-compose auto-updater (default: on).
-  --update-interval <seconds> How often the auto-updater checks for new
-                       images (default: 86400, i.e. daily).
+                       Off just idles the updater container; ${C.cyan}update${C.reset}
+                       still applies an on-demand update regardless.
+  --update-time <HH:MM> Local clock time the auto-updater rolls the stack,
+                       once a day (default: ${DEFAULT_UPDATE_TIME}).
+  --update-tz <tz>     IANA timezone --update-time is interpreted in
+                       (default: ${DEFAULT_UPDATE_TZ}).
+  --allow-downtime     Accept a brief downtime window instead of a
+                       zero-downtime rolling swap — only needed for a release
+                       whose migration is not backward-compatible. Use during
+                       a maintenance window (sets KORTIX_ALLOW_DOWNTIME=1).
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
@@ -93,7 +111,13 @@ interface SelfHostEnv {
   KORTIX_VERSION: string;
   KORTIX_CHANNEL: string;
   KORTIX_AUTO_UPDATE: string;
-  KORTIX_UPDATE_INTERVAL: string;
+  KORTIX_UPDATE_TIME: string;
+  KORTIX_UPDATE_TZ: string;
+  KORTIX_ALLOW_DOWNTIME: string;
+  // The app-tier replica count updater.sh rolls to — 2 in domain/prod mode,
+  // 1 in laptop mode. Recomputed from KORTIX_DOMAIN on every write (see
+  // normalizeFullSupabaseEnv), not operator-set.
+  KORTIX_APP_REPLICAS: string;
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
@@ -217,15 +241,20 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const tag = takeFlagValue(args, ['--tag', '--version']);
   const channelRaw = takeFlagValue(args, ['--channel']);
   const autoUpdateRaw = takeFlagValue(args, ['--auto-update']);
-  const updateInterval = takeFlagValue(args, ['--update-interval']);
+  const updateTime = takeFlagValue(args, ['--update-time']);
+  const updateTz = takeFlagValue(args, ['--update-tz']);
+  const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
   if (autoUpdateRaw !== undefined && autoUpdateRaw !== 'on' && autoUpdateRaw !== 'off') {
     throw new Error(`--auto-update must be "on" or "off", got "${autoUpdateRaw}"`);
   }
-  if (updateInterval !== undefined && (!/^\d+$/.test(updateInterval) || Number(updateInterval) <= 0)) {
-    throw new Error('--update-interval must be a positive number of seconds');
+  if (updateTime !== undefined && !UPDATE_TIME_PATTERN.test(updateTime)) {
+    throw new Error('--update-time must be HH:MM in 24h format, e.g. 02:00');
+  }
+  if (updateTz !== undefined && updateTz.trim() === '') {
+    throw new Error('--update-tz must not be empty');
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
@@ -236,7 +265,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     release,
     channel: channelRaw as Channel | undefined,
     autoUpdate: autoUpdateRaw === undefined ? undefined : autoUpdateRaw === 'on',
-    updateInterval,
+    updateTime,
+    updateTz,
+    allowDowntime: allowDowntime || undefined,
     yes,
     json,
   };
@@ -281,7 +312,7 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, every ${env.KORTIX_UPDATE_INTERVAL}s)${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n\n`);
   renderIntegrationSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -428,11 +459,13 @@ function selfHostDoctor(flags: GlobalFlags): number {
  * Update an existing instance: point the image tags at the requested
  * version/channel (default: whatever channel is already configured, i.e. the
  * "stable" moving tag unless the operator switched channels or pinned an
- * explicit version), then down→start. `start` re-pulls the tags and the
- * kortix-migrate one-shot applies any new migrations before the API serves
- * traffic. The Postgres volume is preserved across the restart, so this is a
- * true in-place upgrade. This is exactly what the in-compose auto-updater does
- * on its own schedule — `update`/`reconcile` just runs it once, right now.
+ * explicit version), then run a zero-downtime rollout. This shells out to the
+ * exact same updater.sh the in-compose auto-updater runs nightly (see
+ * assets/updater.sh) with a one-shot `once` argument, so a manual, on-demand
+ * `update`/`reconcile` gets the identical start-first rolling swap — migrate
+ * first, new replicas healthy before old ones stop, a failed rollout leaves
+ * the previous version serving — instead of the stop-everything-then-start
+ * cycle a naive restart would do. The Postgres volume is untouched either way.
  */
 async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   if (!existsSync(envPath(flags.instance)) || !existsSync(composePath(flags.instance))) {
@@ -452,8 +485,16 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   writeCompose(flags.instance, env);
 
   process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`);
-  // down keeps the named Postgres volume; start re-pulls + migrates + recreates.
-  return selfHostRestart(flags);
+
+  // Ensure Supabase/Caddy (and any not-yet-created app-tier container) exist
+  // without recreating anything already running — `--no-recreate` is the key:
+  // it never touches an existing kortix-api/llm-gateway/frontend container
+  // even though writeCompose() just changed its image tag. The zero-downtime
+  // rollout below is what actually rolls those forward.
+  const base = compose(flags.instance, ['up', '-d', '--no-recreate']);
+  if (base !== 0) return base;
+
+  return compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'once']);
 }
 
 /** Resolve the image tag to apply: an explicit pin wins, else the channel. */
@@ -472,8 +513,12 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
   env.KORTIX_CHANNEL ||= DEFAULT_CHANNEL;
   if (flags.autoUpdate !== undefined) env.KORTIX_AUTO_UPDATE = flags.autoUpdate ? 'true' : 'false';
   env.KORTIX_AUTO_UPDATE ||= DEFAULT_AUTO_UPDATE;
-  if (flags.updateInterval) env.KORTIX_UPDATE_INTERVAL = flags.updateInterval;
-  env.KORTIX_UPDATE_INTERVAL ||= DEFAULT_UPDATE_INTERVAL_SECONDS;
+  if (flags.updateTime) env.KORTIX_UPDATE_TIME = flags.updateTime;
+  env.KORTIX_UPDATE_TIME ||= DEFAULT_UPDATE_TIME;
+  if (flags.updateTz) env.KORTIX_UPDATE_TZ = flags.updateTz;
+  env.KORTIX_UPDATE_TZ ||= DEFAULT_UPDATE_TZ;
+  if (flags.allowDowntime !== undefined) env.KORTIX_ALLOW_DOWNTIME = flags.allowDowntime ? '1' : '0';
+  env.KORTIX_ALLOW_DOWNTIME ||= '0';
 }
 
 /** Point every Kortix app image (and the tracked version) at the given tag. */
@@ -544,7 +589,7 @@ async function selfHostVersion(flags: GlobalFlags): Promise<number> {
   const tagNote = !isSemverTag(configured) ? `${C.dim} (tracking :${configured})${C.reset}` : '';
   process.stdout.write(`  ${C.dim}running  ${C.reset}${C.cyan}${running}${C.reset}${tagNote}\n`);
   process.stdout.write(`  ${C.dim}latest   ${C.reset}${latest ?? C.dim + 'unknown (offline?)' + C.reset}\n`);
-  process.stdout.write(`  ${C.dim}channel  ${C.reset}${env.KORTIX_CHANNEL || DEFAULT_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, every ${env.KORTIX_UPDATE_INTERVAL}s)${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}channel  ${C.reset}${env.KORTIX_CHANNEL || DEFAULT_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
 
   // Update hint: only meaningful for a semver pin with a known newer release.
   if (latest) {
@@ -653,8 +698,10 @@ async function configureUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): Prom
   );
   env.KORTIX_CHANNEL = channel;
   if (!isSemverTag(env.KORTIX_VERSION)) applyImagesForTag(env, channel);
-  const interval = await prompt('Check interval in seconds', env.KORTIX_UPDATE_INTERVAL || DEFAULT_UPDATE_INTERVAL_SECONDS);
-  env.KORTIX_UPDATE_INTERVAL = /^\d+$/.test(interval) && Number(interval) > 0 ? interval : DEFAULT_UPDATE_INTERVAL_SECONDS;
+  const updateTime = await prompt('Daily update time (HH:MM, 24h)', env.KORTIX_UPDATE_TIME || DEFAULT_UPDATE_TIME);
+  env.KORTIX_UPDATE_TIME = UPDATE_TIME_PATTERN.test(updateTime) ? updateTime : DEFAULT_UPDATE_TIME;
+  const updateTz = await prompt('Timezone for that time (IANA, e.g. UTC)', env.KORTIX_UPDATE_TZ || DEFAULT_UPDATE_TZ);
+  env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
 async function configureIntegrations(env: SelfHostEnv): Promise<void> {
@@ -905,7 +952,12 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     KORTIX_VERSION: tag,
     KORTIX_CHANNEL: flags.channel ?? (isChannel(tag) ? tag : DEFAULT_CHANNEL),
     KORTIX_AUTO_UPDATE: flags.autoUpdate === undefined ? DEFAULT_AUTO_UPDATE : flags.autoUpdate ? 'true' : 'false',
-    KORTIX_UPDATE_INTERVAL: flags.updateInterval ?? DEFAULT_UPDATE_INTERVAL_SECONDS,
+    KORTIX_UPDATE_TIME: flags.updateTime ?? DEFAULT_UPDATE_TIME,
+    KORTIX_UPDATE_TZ: flags.updateTz ?? DEFAULT_UPDATE_TZ,
+    KORTIX_ALLOW_DOWNTIME: flags.allowDowntime ? '1' : '0',
+    // Recomputed from KORTIX_DOMAIN on every write in normalizeFullSupabaseEnv;
+    // this initial value only matters before that first normalize pass.
+    KORTIX_APP_REPLICAS: String(LAPTOP_APP_REPLICAS),
     KORTIX_DOMAIN: '',
     KORTIX_API_DOMAIN: '',
     KORTIX_ACME_EMAIL: '',
@@ -1070,6 +1122,12 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
     env.API_PUBLIC_URL = `https://${env.KORTIX_API_DOMAIN}`;
     env.SUPABASE_PUBLIC_URL = `https://${env.KORTIX_DOMAIN}`;
   }
+
+  // The app-tier replica count the auto-updater rolls to: 2 (behind Caddy,
+  // no host ports) once a domain is configured, else 1 (loopback host ports,
+  // no LB) — must always track KORTIX_DOMAIN, the same signal
+  // renderFullDockerCompose() uses to decide the Compose-side topology.
+  env.KORTIX_APP_REPLICAS = String(env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS);
 
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
