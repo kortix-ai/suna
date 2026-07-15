@@ -53,9 +53,20 @@ describe('buildTemplateInstallPrompt', () => {
     expect(p).toContain("don't run anything until I say go");
   });
 
-  test('lists the parts to install from registryDependencies', () => {
+  test('lists the parts to install from registryDependencies when no files are inlined', () => {
     const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support');
     expect(p).toContain('support-agent');
+  });
+
+  test('inlines resolved dependency file content (resolved path + body) so nothing is fetched', () => {
+    const p = buildTemplateInstallPrompt(templateEntry(), 'kortix-starter:customer-support', [
+      { path: '@agents/support-agent.md', content: 'You are the support agent for {{projectName}}.' },
+      { path: '@skills/support-playbook/SKILL.md', content: '# playbook' },
+    ]);
+    expect(p).toContain('.kortix/opencode/agents/support-agent.md');
+    expect(p).toContain('You are the support agent for {{projectName}}.');
+    expect(p).toContain('.kortix/opencode/skills/support-playbook/SKILL.md');
+    expect(p).not.toContain("fetch each one's source");
   });
 
   test('handles a template with no inputs without erroring', () => {

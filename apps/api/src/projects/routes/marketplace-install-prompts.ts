@@ -33,14 +33,33 @@ interface TemplateCatalogEntry {
   };
 }
 
+/** `@agents/x.md` → `.kortix/opencode/agents/x.md` etc. — the conventional layout
+ *  so the agent writes files to the right place without guessing. */
+function opencodePath(target: string): string {
+  return target
+    .replace(/^@agents\//, '.kortix/opencode/agents/')
+    .replace(/^@skills\//, '.kortix/opencode/skills/')
+    .replace(/^@commands\//, '.kortix/opencode/command/')
+    .replace(/^@memory\//, '.kortix/memory/');
+}
+
 /** A use-case template: its `registryDependencies` (an agent + a skill) plus a
  *  `meta.template` block (agent grants, connectors, a scheduled trigger whose
  *  string fields carry `{{input}}` placeholders) and declared `inputs`. Installed
- *  conversationally — the agent collects the inputs, installs the parts, wires the
- *  schedule + grants + secrets, and ships the trigger DISABLED until the user says
- *  go. This is the one place that understands template semantics (inputs, trigger
- *  wiring) that a plain item install ignores. */
-export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: string): string {
+ *  conversationally — the agent collects the inputs, writes the parts (their file
+ *  content is inlined below — no fetching/guessing), wires the schedule + grants +
+ *  secrets, and ships the trigger DISABLED until the user says go. This is the one
+ *  place that understands template semantics (inputs, trigger wiring) that a plain
+ *  item install ignores.
+ *
+ *  `depFiles` are the resolved files of the template's `registryDependencies`
+ *  (agent .md + skill files, with content), so everything the install needs is in
+ *  the prompt itself. */
+export function buildTemplateInstallPrompt(
+  entry: TemplateCatalogEntry,
+  id: string,
+  depFiles: Array<{ path: string; content: string }> = [],
+): string {
   const item = entry.item;
   const tpl = item.meta?.template ?? {};
   const inputs = item.inputs ?? [];
@@ -71,7 +90,14 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
     lines.push('2. This template has no inputs to collect.');
   }
 
-  if (deps.length) {
+  if (depFiles.length) {
+    lines.push(
+      "3. Write these files into the project exactly as given — they are the agent + skill this template needs. Render any `{{projectName}}` to this project's name; don't rename or hunt for them elsewhere:",
+    );
+    for (const f of depFiles) {
+      lines.push('', `--- ${opencodePath(f.path)} ---`, '```', f.content, '```');
+    }
+  } else if (deps.length) {
     lines.push(
       `3. Install its parts — the marketplace items ${deps.map((d) => `\`${d}\``).join(', ')}: fetch each one's source and place its files into this project, following the project's existing conventions.`,
     );
