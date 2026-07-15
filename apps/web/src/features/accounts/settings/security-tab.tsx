@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { invalidateTokenCache } from '@/lib/auth-token';
 import { createClient } from '@/lib/supabase/client';
 import { supabaseMFAService } from '@/lib/supabase/mfa';
 
@@ -113,6 +114,10 @@ export function SecurityTab() {
       await supabaseMFAService.challengeAndVerify({ factor_id: enrolling.factorId, code });
     },
     onSuccess: () => {
+      // Verifying the first factor elevates this session to aal2. Bust the
+      // 30s token cache so the next gated request uses the new token instead
+      // of replaying the stale aal1 one.
+      invalidateTokenCache();
       successToast('Authenticator enrolled — this session is now MFA-verified');
       setEnrolling(null);
       setCode('');

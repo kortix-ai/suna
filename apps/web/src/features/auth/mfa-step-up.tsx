@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { invalidateTokenCache } from '@/lib/auth-token';
 import { supabaseMFAService } from '@/lib/supabase/mfa';
 
 export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
@@ -60,10 +61,20 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       await supabaseMFAService.challengeAndVerify({ factor_id: factor.id, code });
     },
     onSuccess: () => {
-      successToast('Verified — retry what you were doing');
+      // challengeAndVerify minted a fresh aal2 JWT into Supabase storage, but
+      // the api-client caches the access token for 30s — without busting it the
+      // retried request would replay the stale aal1 token and be denied again,
+      // making step-up look broken for up to 30s. Invalidate so the next call
+      // reads the aal2 token.
+      invalidateTokenCache();
+      successToast('Verified');
       setOpen(false);
       setCode('');
-      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
+      // Refetch active queries so reads that failed while the session was aal1
+      // recover on their own — the screen the user was on repopulates without a
+      // manual reload. (Mutations still need a manual retry; react-query dedupes
+      // the refetch storm.)
+      queryClient.invalidateQueries();
       window.dispatchEvent(new CustomEvent(MFA_VERIFIED_EVENT));
     },
     onError: (err: Error) => errorToast(err.message || 'Code did not verify'),
