@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import type { ToolPart } from '@/ui';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 
@@ -109,19 +109,57 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 }
 
+/** What a Tab press can land on inside the dialog. Standard selector — no
+ *  dependency needed for a list this short. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
 /**
  * Desktop-only keyboard for the open detail — ArrowLeft/Right walks siblings,
- * Escape closes back to home. One document listener carries both: a
- * focused-element listener would miss most of the detail's body, since that
- * body can put focus anywhere — a code block, an iframe's surrounding
- * chrome, a button — same reasoning as the reference browser chrome this
- * pages next to. Desktop-only because mobile is a vaul drawer, which already
- * owns Escape/swipe-down itself; a second listener there would double-fire.
+ * Escape closes back to home, and Tab wraps inside the dialog (aria-modal
+ * promises containment, so the listener has to deliver it; the inert home
+ * blocks the backward walk, this blocks the forward one). One document
+ * listener carries all three: a focused-element listener would miss most of
+ * the detail's body, since that body can put focus anywhere — a code block,
+ * an iframe's surrounding chrome, a button — same reasoning as the reference
+ * browser chrome this pages next to. Desktop-only because mobile is a vaul
+ * drawer, which already owns Escape/swipe-down itself; a second listener
+ * there would double-fire.
  */
-function useDetailKeyboard(detail: Detail | null, isMobile: boolean, onBack: () => void) {
+function useDetailKeyboard(
+  detail: Detail | null,
+  isMobile: boolean,
+  onBack: () => void,
+  detailRef: RefObject<HTMLDivElement | null>,
+) {
   useEffect(() => {
     if (isMobile || !detail) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // Tab wraps even from inputs — a text field mid-dialog must not be a
+      // hole in the containment — so it's checked before the typing guard.
+      if (event.key === 'Tab') {
+        const dialog = detailRef.current;
+        if (!dialog) return;
+        const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !dialog.contains(active)) {
+          // Focus leaked outside the modal somehow — pull it back in.
+          event.preventDefault();
+          (first ?? dialog).focus();
+        } else if (!first || !last) {
+          // Nothing tabbable inside: the container itself is the only stop.
+          event.preventDefault();
+        } else if (event.shiftKey && (active === first || active === dialog)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       // The AppPreview address bar (and anything else typing-shaped) owns
       // its own Arrow/Escape handling — e.g. its Escape resets-and-blurs.
       if (isTypingTarget(event.target)) return;
@@ -136,7 +174,7 @@ function useDetailKeyboard(detail: Detail | null, isMobile: boolean, onBack: () 
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [detail, isMobile, onBack]);
+  }, [detail, isMobile, onBack, detailRef]);
 }
 
 /**
@@ -164,24 +202,31 @@ export function DetailLayer({
   const transition = reduce ? { duration: 0 } : { duration: DURATION, ease: EASE };
   const detailRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
 
   // Desktop only — mobile has no keyboard to speak of, and the drawer's own
   // buttons (plus vaul's own Escape/swipe handling) carry it instead (see
   // `DetailNav`'s comment).
-  useDetailKeyboard(detail, isMobile, onBack);
+  useDetailKeyboard(detail, isMobile, onBack, detailRef);
 
   // Focus rides the layer: in on open (so Escape and the arrows work
   // immediately, and keyboard focus can never remain inside the aria-hidden
   // home), back to the invoking control on close. Keyed on `detail?.key` so
-  // paging to a sibling (nav) re-focuses the container too — harmless, since
-  // the keyboard listener above is document-level and doesn't care where
-  // focus sits. Harmless on mobile as well: `detailRef` never mounts there,
-  // so `.focus()` is just a no-op on a null ref.
+  // paging to a sibling (nav) re-focuses the fresh container — but capture
+  // and restore happen ONLY on the closed↔open edges (`wasOpenRef`): a nav
+  // step re-runs this effect while the old container is mid-unmount, and
+  // re-capturing `document.activeElement` then would overwrite the invoking
+  // row with a dying node, losing the way home. Harmless on mobile: the
+  // desktop `detailRef` never mounts there, so `.focus()` no-ops.
   useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = detail !== null;
     if (detail) {
-      restoreFocusRef.current = document.activeElement as HTMLElement | null;
+      if (!wasOpen) {
+        restoreFocusRef.current = document.activeElement as HTMLElement | null;
+      }
       requestAnimationFrame(() => detailRef.current?.focus());
-    } else {
+    } else if (wasOpen) {
       restoreFocusRef.current?.focus?.();
       restoreFocusRef.current = null;
     }
