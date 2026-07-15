@@ -725,9 +725,13 @@ function SlackGlyph() {
 
 function ModelStep() {
   const { data: providers, isLoading } = useOpenCodeProviders();
-  const { openConnectProvider, openUpgrade, modal, hasSelectableModels } = useModelConnectionGate(
-    flattenModels(providers),
-  );
+  const {
+    openConnectProvider,
+    openUpgrade,
+    modal,
+    hasSelectableModels,
+    showUpgradeOption,
+  } = useModelConnectionGate(flattenModels(providers));
 
   return (
     <div className="flex flex-col gap-5">
@@ -737,8 +741,9 @@ function ModelStep() {
           Connect a model
         </h1>
         <p className="text-muted-foreground max-w-lg text-[15px] leading-7">
-          Your agent needs an LLM to think with. Upgrade to a Kortix plan for instant access, or
-          bring your own API key from Anthropic, OpenAI, or any other provider.
+          {showUpgradeOption
+            ? 'Your agent needs an LLM to think with. Upgrade to a Kortix plan for instant access, or bring your own API key from Anthropic, OpenAI, or any other provider.'
+            : 'Your agent needs an LLM to think with. Bring your own API key from Anthropic, OpenAI, or any other provider.'}
         </p>
       </div>
 
@@ -760,13 +765,15 @@ function ModelStep() {
             Pick whichever is faster for you right now — both take under a minute.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Button size="lg" className="gap-2" onClick={openUpgrade}>
-              <CreditCard className="size-4" />
-              Upgrade
-            </Button>
+            {showUpgradeOption && (
+              <Button size="lg" className="gap-2" onClick={openUpgrade}>
+                <CreditCard className="size-4" />
+                Upgrade
+              </Button>
+            )}
             <Button
               size="lg"
-              variant="outline"
+              variant={showUpgradeOption ? 'outline' : 'default'}
               className="gap-2"
               onClick={() => openConnectProvider('providers')}
             >
