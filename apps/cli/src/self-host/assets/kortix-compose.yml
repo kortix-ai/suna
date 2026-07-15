@@ -3,9 +3,12 @@ services:
     image: ${FRONTEND_IMAGE}
     ports:
       - "127.0.0.1:${FRONTEND_PORT}:3000"
-    extra_hosts:
-      - "localhost:host-gateway"
     environment:
+      # The Next server's internal /v1 rewrite target. Must be the in-network
+      # api service — the old `extra_hosts: localhost:host-gateway` hack only
+      # worked when the api port happened to be published on the host at :8008,
+      # which is never true in domain mode (500s on every proxied /v1/* path).
+      KORTIX_API_PROXY_TARGET: http://kortix-api:8008
       KORTIX_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       KORTIX_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
