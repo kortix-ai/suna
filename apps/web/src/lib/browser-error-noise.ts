@@ -401,6 +401,124 @@ function isInpageWalletInjectedSource(filename: unknown): boolean {
   return /^app:\/\/\/inpage\.js$/.test(normalized);
 }
 
+// Browser-extension EIP-1193 wallet-provider "disconnected" rejection of a
+// PLAIN OBJECT (not an Error). A wallet extension (e.g. extension id
+// `lgmpcpglpngdoalbgeoldeajfclnhafa`) injects an EIP-1193 provider
+// (`window.ethereum`) whose content script
+// (`chrome-extension://<id>/content-script.js`) rejects pending JSON-RPC
+// requests when the provider disconnects, with a plain object of the shape
+// `{ code: 4900, message: "The provider is disconnected from all chains.",
+// stack: "Error: …\\n    at … (chrome-extension://…/content-script.js)" }`
+// (EIP-1193 / EIP-1474 error code 4900 = "provider is disconnected"). Because
+// the rejected value is NOT an Error instance, Sentry's GlobalHandlers
+// `onunhandledrejection` integration cannot extract a stack from it: it
+// serializes the object's own enumerable keys into `extra.__serialized__` and
+// sets the exception value to the synthetic
+// "Object captured as promise rejection with keys: code, message, stack" with
+// NO stacktrace frames. The extension origin therefore lives ONLY in
+// `extra.__serialized__.stack`, never in `exception.values[0].stacktrace` — so
+// the frame-aware extension-source guards (`isExtensionSource(frame.filename)`,
+// `isInpageWalletStreamNoise`, `isTronLinkProxyNoise`) all miss it (there are
+// no frames to anchor on). Better Stack pattern
+// 0f78b2f8e9efa79fe9b2ea534e275c704f113eafea86bae5470f33174ebacebc, Kortix
+// Frontend (prod, application_id 2346967), `UnhandledRejection`, 2
+// occurrences, 0 identified users, first 2026-07-06 / last 2026-07-15,
+// mechanism `auto.browser.global_handlers.onunhandledrejection`, request URL
+// `https://kortix.com/auth`, Chrome 150.
+//
+// The synthetic "Object captured as promise rejection with keys: …" message is
+// Sentry's generic signature for ANY non-Error plain-object rejection — a
+// first-party `Promise.reject({ code, message, stack })` would produce the SAME
+// signature — so matching on the message alone would swallow a real app bug.
+// Require BOTH the synthetic signature AND the serialized rejection's own
+// `stack` carrying a browser-extension origin (`chrome-extension://`,
+// `moz-extension://`, `safari-web-extension://`, `extension://`), which is
+// definitive proof the rejection originated in an extension content script,
+// not first-party code. A negative guard preserves any event whose stacktrace
+// still resolves to a first-party `apps/web/src/…` frame (our own code rejected
+// a plain object that happens to carry an extension stack — actionable).
+// Returns false when there is no serialized payload to confirm extension origin
+// (keep reporting rather than swallow a possible app plain-object rejection).
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no `extra.__serialized__` context, so a bare-string match there
+// could swallow a real app plain-object rejection; the frame+payload-aware
+// `beforeSend` hook (which calls `shouldIgnoreSentryBrowserNoise`) is the only
+// safe gate.
+const SYNTHETIC_OBJECT_REJECTION_PATTERN =
+  /^Object captured as promise rejection with keys:/;
+
+function extractSerializedRejectionStack(extra: unknown): string {
+  if (!extra || typeof extra !== 'object') return '';
+  const serialized = (extra as Record<string, unknown>).__serialized__;
+  if (!serialized) return '';
+  if (typeof serialized === 'string') return serialized;
+  if (typeof serialized === 'object') {
+    const stack = (serialized as Record<string, unknown>).stack;
+    return typeof stack === 'string' ? stack : '';
+  }
+  return '';
+}
+
+/**
+ * Whether a Sentry event is the browser-extension wallet-provider
+ * plain-object rejection noise class: a synthetic
+ * "Object captured as promise rejection with keys: …" exception (Sentry's
+ * signature for a non-Error rejection) whose serialized rejection payload
+ * (`extra.__serialized__.stack`) traces through a browser-extension content
+ * script. EIP-1193 wallet extensions reject pending requests with a plain
+ * `{ code, message, stack }` object when the provider disconnects; Sentry
+ * cannot extract a stack from a non-Error, so the extension origin appears
+ * ONLY in the serialized payload, never in the stacktrace frames. Requires
+ * BOTH the synthetic signature AND an extension-origin frame inside the
+ * serialized stack so a real first-party `Promise.reject({...})` keeps
+ * reporting. See `SYNTHETIC_OBJECT_REJECTION_PATTERN` for the full rationale.
+ */
+export function isExtensionRejectedObjectNoise(input: {
+  message?: unknown;
+  extra?: unknown;
+  frames?: Array<{ filename?: unknown }>;
+}): boolean {
+  const message = normalizeString(input.message);
+  if (!SYNTHETIC_OBJECT_REJECTION_PATTERN.test(message)) {
+    return false;
+  }
+  // Negative guard: a resolved first-party `apps/web/src/…` frame means our own
+  // code rejected a plain object — actionable, keep reporting so the call site
+  // can be found + fixed.
+  const frames = input.frames ?? [];
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  const stack = extractSerializedRejectionStack(input.extra);
+  if (!stack) {
+    // No serialized payload to confirm extension origin — keep reporting
+    // rather than swallow a possible app plain-object rejection.
+    return false;
+  }
+  return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => stack.includes(prefix));
+}
+
+// Whether a runtime-captured rejected value (the `reason` of an
+// `unhandledrejection` event, or an `error` object) is the browser-extension
+// wallet-provider plain-object rejection: a non-Error object whose own `stack`
+// string traces through a browser-extension content script. This is the
+// runtime-gate mirror of `isExtensionRejectedObjectNoise` (the Sentry `beforeSend`
+// gate sees Sentry's synthetic "Object captured as promise rejection …"
+// message; the runtime gate sees the raw rejected object, whose `message` is
+// the provider's own "The provider is disconnected from all chains." — so the
+// synthetic-signature matcher does not apply here). A real Error thrown by app
+// code has a stack of app/chunk frames, never an extension content-script
+// frame, so anchoring on an extension protocol inside the rejected value's
+// `stack` is conservative.
+function rejectedObjectHasExtensionStack(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const stack = (value as { stack?: unknown }).stack;
+  return (
+    typeof stack === 'string'
+    && EXTENSION_PROTOCOL_PREFIXES.some((prefix) => stack.includes(prefix))
+  );
+}
+
 function containsKnownPattern(message: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => message.includes(pattern));
 }
@@ -856,6 +974,57 @@ export function isAndroidWebViewNativeBridgePostMessageNoise(input: {
 // that gate has no frame context, so a bare-string match there would swallow a
 // real RangeError recursion; the frame-aware `beforeSend` hook (which calls
 // `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+// React #185 = "Maximum update depth exceeded" — the canonical React infinite-
+// setState-loop error. The `@embedpdf/plugin-tiling` `TilingLayer` React
+// component (used by `apps/web/src/components/ui/extend/pdf-viewer.tsx`'s
+// `<TilingLayer>`) subscribes to the tiling plugin's `onTileRendering` event
+// and calls `setTiles(event.tiles[pageIndex] ?? [])` on every emission. Under
+// a rapid zoom/scroll burst the tiling plugin emits `onTileRendering`
+// synchronously inside the React commit phase (a tile render resolves
+// synchronously from cache and re-emits), so `setTiles` is called during
+// commit → re-render → `TileImg` re-renders → `renderTile` → `onTileRendering`
+// → `setTiles` → … → React's 50-nested-update guard trips React #185. The
+// throw is INSIDE @embedpdf's bundled `TilingLayer`/`TileImg` (frame
+// `Object.r [as onTileRendering]` in a `_next/static/chunks/…` bundle), never
+// in first-party `apps/web/src/…` source. Better Stack pattern
+// 366115d4c931a6352fe8f334ff1b366f6d4b2ce9c192769ac681831354521e30
+// (Kortix Frontend prod, application_id 2346967): 1 occurrence, 0 identified
+// users, 2026-07-15 09:36:41 UTC, route `/projects/:id/sessions/:sessionId`,
+// Chrome 142 / Windows 10. A transient third-party render loop, not a
+// deterministic app regression (single occurrence, no identified users, no
+// first-party frame, no spike on a release across browsers).
+//
+// React #185 is ALSO the exact message a REAL first-party infinite-setState
+// loop produces, so this matcher is anchored on BOTH the #185 message AND a
+// frame whose function is `onTileRendering` (the @embedpdf tiling subscription
+// callback — never present in first-party code), AND a NEGATIVE guard: if any
+// frame resolves to a de-minified first-party `apps/web/src/…` source, the
+// event keeps reporting — that means our own component is the looping culprit
+// and is actionable to fix. A real first-party #185 surfaces with a resolved
+// `apps/web/src/…` frame (or at least no `onTileRendering` frame) and is
+// preserved; a #185 from a DIFFERENT third-party lib (no `onTileRendering`
+// frame) is preserved too. Only the @embedpdf-tiling #185 class is dropped.
+// Deliberately NOT added to `sentry.client.config.ts`'s `ignoreErrors` list —
+// that gate has no frame context, so a bare `#185` match there would swallow a
+// real first-party setState loop; the frame-aware `beforeSend` hook (which
+// calls `shouldIgnoreSentryBrowserNoise`) is the only safe gate.
+const REACT_UPDATE_DEPTH_NOISE_PATTERN = /^Minified React error #185\b/;
+
+// The @embedpdf/plugin-tiling `TilingLayer` subscription callback frame. The
+// function name `onTileRendering` is the tiling plugin's own event name (see
+// `@embedpdf/plugin-tiling`'s `TilingLayer` → `tilingProvides.onTileRendering`);
+// it never appears in first-party `apps/web/src/…` source, so its presence is a
+// specific third-party anchor.
+const EMBEDPDF_TILING_CALLBACK_FRAME_MARKER = 'onTileRendering';
+
+function frameMatchesEmbedPdfTilingCallback(
+  frame: { function?: unknown } | undefined,
+): boolean {
+  return normalizeString(frame?.function).includes(
+    EMBEDPDF_TILING_CALLBACK_FRAME_MARKER,
+  );
+}
+
 const STACK_OVERFLOW_NOISE_PATTERN = /^Maximum call stack size exceeded\.?$/;
 
 // A frame/filename that points at a REAL source location: non-empty AND not the
@@ -905,6 +1074,49 @@ export function isUnresolvableStackOverflowNoise(input: {
     return false;
   }
   return true;
+}
+
+/**
+ * Whether a Sentry exception is the `@embedpdf/plugin-tiling` `TilingLayer`
+ * React #185 "Maximum update depth exceeded" render-loop class: a
+ * `Minified React error #185` thrown from inside the tiling plugin's
+ * `onTileRendering` subscription callback (frame `Object.r [as
+ * onTileRendering]` in a `_next/static/chunks/…` bundle) with NO resolved
+ * first-party `apps/web/src/…` frame. The tiling plugin re-emits
+ * `onTileRendering` synchronously during the React commit phase under a rapid
+ * zoom/scroll burst, so its `setTiles` runs during commit → re-render →
+ * `renderTile` → re-emit → React's 50-nested-update guard trips #185. The
+ * throw is in third-party bundled code, never first-party. Requires BOTH the
+ * #185 message AND an `onTileRendering` frame, AND a NEGATIVE guard: if any
+ * frame resolves to a de-minified first-party `apps/web/src/…` source, the
+ * event keeps reporting (our own component is the looping culprit →
+ * actionable). A real first-party #185, or a #185 from a different third-party
+ * lib, is never matched. Returns false when there are no frames (can't confirm
+ * the tiling anchor — keep reporting). See
+ * `REACT_UPDATE_DEPTH_NOISE_PATTERN` for the full rationale.
+ */
+export function isEmbedPdfTilingReactUpdateDepthNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown; function?: unknown } | undefined>;
+}): boolean {
+  const message = stripErrorWrappers(normalizeString(input.message));
+  if (!REACT_UPDATE_DEPTH_NOISE_PATTERN.test(message)) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  if (frames.length === 0) {
+    return false;
+  }
+  // Negative guard: a resolved first-party frame means our own component is the
+  // looping culprit → actionable; keep reporting so the call site can be found.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Anchor: the throw must be inside @embedpdf/plugin-tiling's `onTileRendering`
+  // subscription callback. This frame is never present in first-party code, so a
+  // real first-party #185 (or a #185 from a different third-party lib) is never
+  // matched.
+  return frames.some(frameMatchesEmbedPdfTilingCallback);
 }
 
 export function shouldIgnoreBrowserRuntimeNoise(input: {
@@ -1032,6 +1244,23 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
     return true;
   }
 
+  // Browser-extension EIP-1193 wallet-provider plain-object rejection noise —
+  // a wallet extension rejects a pending request with a plain
+  // `{ code, message, stack }` object (code 4900, "provider is disconnected").
+  // The runtime gate receives the raw rejected object as `reason`/`error`
+  // (whose `message` is the provider's own, NOT Sentry's synthetic "Object
+  // captured as promise rejection …" wording), so anchor on the rejected
+  // value's own `stack` tracing through a browser-extension content script.
+  // A real Error from app code has a stack of app/chunk frames, never an
+  // extension content-script frame, so this is conservative. See
+  // `isExtensionRejectedObjectNoise` / `rejectedObjectHasExtensionStack`.
+  if (
+    rejectedObjectHasExtensionStack(input.reason)
+    || rejectedObjectHasExtensionStack(input.error)
+  ) {
+    return true;
+  }
+
   // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
   // exceeded.` from `window.onerror` with NO resolvable source location (the
   // engine truncated the very stack that overflowed). Requires the canonical
@@ -1047,6 +1276,7 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
 
 export function shouldIgnoreSentryBrowserNoise(event: {
   message?: unknown;
+  extra?: unknown;
   request?: { url?: unknown };
   exception?: {
     values?: Array<{
@@ -1216,6 +1446,21 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
+  // Browser-extension EIP-1193 wallet-provider plain-object rejection noise —
+  // a wallet extension rejects a pending request with a plain
+  // `{ code, message, stack }` object (code 4900, "provider is disconnected"),
+  // and Sentry captures it as a synthetic "Object captured as promise
+  // rejection with keys: …" exception with NO stacktrace frames (the rejected
+  // value is not an Error, so Sentry cannot extract a stack). The extension
+  // origin lives ONLY in `extra.__serialized__.stack`, so the frame-aware
+  // extension guards above miss it. Requires BOTH the synthetic signature AND
+  // an extension-origin frame inside the serialized stack so a real first-party
+  // `Promise.reject({...})` keeps reporting. See
+  // `isExtensionRejectedObjectNoise`.
+  if (isExtensionRejectedObjectNoise({ message, extra: event.extra, frames })) {
+    return true;
+  }
+
   // iOS-WebKit stack-overflow noise — `RangeError: Maximum call stack size
   // exceeded.` from Sentry's `auto.browser.global_handlers.onerror` capture
   // with a single synthetic `{ filename: 'undefined' }` frame (the engine
@@ -1225,6 +1470,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `isUnresolvableStackOverflowNoise`. NOT in `ignoreErrors` (no frame
   // context there).
   if (isUnresolvableStackOverflowNoise({ message, frames })) {
+    return true;
+  }
+
+  // @embedpdf/plugin-tiling `TilingLayer` React #185 "Maximum update depth
+  // exceeded" render loop — the tiling plugin re-emits `onTileRendering`
+  // synchronously during the React commit phase under a rapid zoom/scroll
+  // burst, tripping React's nested-update guard. Requires BOTH the #185 message
+  // AND an `onTileRendering` frame, with a first-party negative guard, so a
+  // real first-party setState loop keeps reporting. See
+  // `isEmbedPdfTilingReactUpdateDepthNoise`.
+  if (isEmbedPdfTilingReactUpdateDepthNoise({ message, frames })) {
     return true;
   }
 
@@ -1259,6 +1515,7 @@ export function shouldIgnoreSentryBrowserNoise(event: {
 
 export function shouldIgnoreSentryNoiseEvent(event: {
   message?: unknown;
+  extra?: unknown;
   environment?: unknown;
   request?: { url?: unknown };
   exception?: {

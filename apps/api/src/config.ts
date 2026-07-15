@@ -106,7 +106,7 @@ const envSchema = z.object({
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
-  KORTIX_TEMPLATES_ENABLED:         optBoolFalse,
+  KORTIX_TEMPLATES_ENABLED:         optBoolTrue,
   // Self-host single-account mode: this deployment is meant for exactly one
   // account (no teams). Blocks POST /v1/accounts (creating additional
   // accounts) with 403 — see registerAccountRoutes(). The frontend mirrors
