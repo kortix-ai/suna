@@ -340,6 +340,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const org = takeFlagValue(args, ['--org']);
   const manual = takeFlagBool(args, ['--manual']);
   const skipGithub = takeFlagBool(args, ['--skip-github']);
+  const adminEmail = takeFlagValue(args, ['--admin-email']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -372,6 +373,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     org,
     manual: manual || undefined,
     skipGithub: skipGithub || undefined,
+    adminEmail,
     yes,
     json,
   };
@@ -1807,6 +1809,10 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     MANAGED_GIT_GITHUB_TOKEN: '',
     MANAGED_GIT_GITHUB_OWNER: '',
     MANAGED_GIT_GITHUB_INSTALL_ID: '',
+    // Operator admin allowlist — these emails are platform admins on this
+    // self-host (so they can configure the managed GitHub App etc. in-app).
+    // Set at init via --admin-email or the guided prompt; the API reads it.
+    KORTIX_PLATFORM_ADMIN_EMAILS: flags.adminEmail ?? '',
     INTEGRATION_AUTH_PROVIDER: 'pipedream',
     KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED: 'false',
     PIPEDREAM_CLIENT_ID: '',

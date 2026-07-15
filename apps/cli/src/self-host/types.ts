@@ -42,6 +42,11 @@ export interface SelfHostCommandFlags {
   /** Skip the guided `connect-github` offer during `init`/`configure` —
    *  drops straight to the advanced "paste an existing App or PAT" menu. */
   skipGithub?: boolean;
+  /** Operator admin email(s), comma-separated. Sets KORTIX_PLATFORM_ADMIN_EMAILS
+   *  so these accounts are platform admins on this self-host (needed to
+   *  configure the managed GitHub App and other server-wide settings in-app).
+   *  `--admin-email you@org.com`. */
+  adminEmail?: string;
   /** Dev mode: run locally-built images (e.g. a branch build) that aren't on
    *  any registry. Sets KORTIX_IMAGE_PULL=never (the updater/`update` skip
    *  `docker compose pull`) and forces auto-update off — combine with
