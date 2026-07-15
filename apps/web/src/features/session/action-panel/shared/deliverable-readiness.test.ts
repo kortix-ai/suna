@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { chipForCompletion, completionYieldsToPendingInput } from './deliverable-readiness';
+import {
+  chipForCompletion,
+  completionYieldsToPendingInput,
+  pendingInputCount,
+} from './deliverable-readiness';
 
 describe('chipForCompletion', () => {
   test('successful run with deliverables → ready chip carrying the primary name', () => {
@@ -29,5 +33,27 @@ describe('completionYieldsToPendingInput', () => {
 
   test('nothing pending → completion announces normally', () => {
     expect(completionYieldsToPendingInput(0)).toBe(false);
+  });
+});
+
+describe('pendingInputCount', () => {
+  test('counts only the permissions and questions belonging to THIS session', () => {
+    const permissions = {
+      p1: { sessionID: 's1' },
+      p2: { sessionID: 's2' },
+    };
+    const questions = {
+      q1: { sessionID: 's1' },
+      q2: { sessionID: 's1' },
+      q3: { sessionID: 's2' },
+    };
+    expect(pendingInputCount(permissions, questions, 's1')).toBe(3);
+    expect(pendingInputCount(permissions, questions, 's2')).toBe(2);
+  });
+
+  test('nothing pending for a session that has no matching records', () => {
+    const permissions = { p1: { sessionID: 's1' } };
+    const questions = { q1: { sessionID: 's1' } };
+    expect(pendingInputCount(permissions, questions, 's3')).toBe(0);
   });
 });

@@ -25,10 +25,12 @@ import {
   useFocusedToolCallId,
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import type { MessageWithParts } from '@/ui';
 import { FileText } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectAllToolParts } from '../shared/collect-tool-parts';
+import { pendingInputCount } from '../shared/deliverable-readiness';
 import { deriveContext, deriveOutputs, type OutputItem } from '../shared/derive-panels';
 import { derivePlan } from '../shared/derive-plan';
 import { groupSteps } from '../shared/group-steps';
@@ -99,6 +101,14 @@ export const EasyPanel = memo(function EasyPanel({
   const isRunning = deriveIsRunning(
     steps.some((s) => s.status === 'running'),
     isSessionBusy,
+  );
+
+  // W9 — the agent is blocked on a pending question/permission for THIS
+  // session. Progress redirects attention to it instead of claiming to be
+  // working or done. Same filter the header's needs-input chip uses (see
+  // `use-deliverable-readiness.ts`), extracted once into `pendingInputCount`.
+  const waitingOnUser = useOpenCodePendingStore(
+    (s) => pendingInputCount(s.permissions, s.questions, sessionId) > 0,
   );
 
   const isMobile = useIsMobile();
@@ -235,7 +245,13 @@ export const EasyPanel = memo(function EasyPanel({
   return (
     <DetailLayer detail={detail} onBack={goHome} isMobile={isMobile}>
       <div className="flex h-full flex-col gap-3 overflow-auto p-3">
-        <ProgressCard plan={plan} isRunning={isRunning} elapsedMs={elapsedMs} outcome={outcome} />
+        <ProgressCard
+          plan={plan}
+          isRunning={isRunning}
+          elapsedMs={elapsedMs}
+          outcome={outcome}
+          waitingOnUser={waitingOnUser}
+        />
         <OutputsCard
           outputs={files}
           defaultExpanded={outputsDefaultOpen}

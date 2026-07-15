@@ -19,7 +19,11 @@ import type { MessageWithParts } from '@/ui';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
 import { collectAllToolParts } from './collect-tool-parts';
-import { chipForCompletion, completionYieldsToPendingInput } from './deliverable-readiness';
+import {
+  chipForCompletion,
+  completionYieldsToPendingInput,
+  pendingInputCount,
+} from './deliverable-readiness';
 import { deriveOutputs } from './derive-panels';
 import { groupSteps } from './group-steps';
 import { latestRunCallIds } from './latest-run';
@@ -43,11 +47,9 @@ export function useDeliverableReadiness(
   // Pending questions/permissions for THIS session — read above the W1 effect
   // because completion has to consult it: a run can settle to idle while a
   // question is still outstanding (idle IS how the agent waits for the answer).
-  const pendingForSession = useOpenCodePendingStore((s) => {
-    const perms = Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length;
-    const questions = Object.values(s.questions).filter((q) => q.sessionID === sessionId).length;
-    return perms + questions;
-  });
+  const pendingForSession = useOpenCodePendingStore((s) =>
+    pendingInputCount(s.permissions, s.questions, sessionId),
+  );
 
   const wasRunningRef = useRef(isRunning);
   useEffect(() => {

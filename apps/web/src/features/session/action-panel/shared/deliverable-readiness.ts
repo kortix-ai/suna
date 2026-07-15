@@ -18,6 +18,17 @@ export function completionYieldsToPendingInput(pendingCount: number): boolean {
   return pendingCount > 0;
 }
 
+/** Pending questions + permissions blocking THIS session. */
+export function pendingInputCount(
+  permissions: Record<string, { sessionID?: string }>,
+  questions: Record<string, { sessionID?: string }>,
+  sessionId: string,
+): number {
+  const p = Object.values(permissions).filter((x) => x.sessionID === sessionId).length;
+  const q = Object.values(questions).filter((x) => x.sessionID === sessionId).length;
+  return p + q;
+}
+
 export function chipForCompletion(
   outcome: RunOutcome,
   count: number,

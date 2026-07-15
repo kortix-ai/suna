@@ -12,28 +12,42 @@ const plan: TodoItem[] = [
 describe('ProgressCard outcomes (W7)', () => {
   test('settled failed run says so, never a bare partial-success count', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard plan={plan} isRunning={false} elapsedMs={5000} outcome="failed" />,
+      <ProgressCard
+        plan={plan}
+        isRunning={false}
+        elapsedMs={5000}
+        outcome="failed"
+        waitingOnUser={false}
+      />,
     );
     expect(html).toContain('Something went wrong');
   });
 
   test('user-stopped run says so', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard plan={plan} isRunning={false} elapsedMs={5000} outcome="stopped" />,
+      <ProgressCard
+        plan={plan}
+        isRunning={false}
+        elapsedMs={5000}
+        outcome="stopped"
+        waitingOnUser={false}
+      />,
     );
     expect(html).toContain('Stopped by you');
   });
 
   test('failed run with NO plan still renders the outcome line (never null)', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard plan={[]} isRunning={false} outcome="failed" />,
+      <ProgressCard plan={[]} isRunning={false} outcome="failed" waitingOnUser={false} />,
     );
     expect(html).toContain('Something went wrong');
   });
 
   test('clean idle run with no plan still renders nothing', () => {
     expect(
-      renderToStaticMarkup(<ProgressCard plan={[]} isRunning={false} outcome="succeeded" />),
+      renderToStaticMarkup(
+        <ProgressCard plan={[]} isRunning={false} outcome="succeeded" waitingOnUser={false} />,
+      ),
     ).toBe('');
   });
 });
@@ -41,9 +55,34 @@ describe('ProgressCard outcomes (W7)', () => {
 describe('ProgressCard step counter (W10)', () => {
   test('running with a plan shows the position', () => {
     const html = renderToStaticMarkup(
-      <ProgressCard plan={plan} isRunning outcome="succeeded" />,
+      <ProgressCard plan={plan} isRunning outcome="succeeded" waitingOnUser={false} />,
     );
     expect(html).toContain('Step 2 of 3');
     expect(html).toContain('Build the workbook');
+  });
+});
+
+describe('ProgressCard waiting state (W9)', () => {
+  test('a pending question reads as waiting, not working, not done', () => {
+    const html = renderToStaticMarkup(
+      <ProgressCard plan={plan} isRunning outcome="succeeded" waitingOnUser />,
+    );
+    expect(html).toContain('Waiting for your answer');
+    expect(html).not.toContain('Step 2 of 3');
+  });
+
+  test('waiting takes precedence even when the agent is not marked as running', () => {
+    const html = renderToStaticMarkup(
+      <ProgressCard plan={plan} isRunning={false} outcome="succeeded" waitingOnUser />,
+    );
+    expect(html).toContain('Waiting for your answer');
+  });
+
+  test('no plan yet, but a question is already pending: waiting replaces the shimmering "Working…" line', () => {
+    const html = renderToStaticMarkup(
+      <ProgressCard plan={[]} isRunning outcome="succeeded" waitingOnUser />,
+    );
+    expect(html).toContain('Waiting for your answer');
+    expect(html).not.toContain('Working…');
   });
 });

@@ -34,6 +34,7 @@ export function ProgressCard({
   isRunning,
   elapsedMs,
   outcome,
+  waitingOnUser,
 }: {
   /** The agent's checklist. Empty when it never made one — many short runs don't. */
   plan: TodoItem[];
@@ -41,29 +42,49 @@ export function ProgressCard({
   elapsedMs?: number;
   /** How the run ended. Only read once settled — a running run has no outcome yet. */
   outcome: RunOutcome;
+  /** The agent is blocked on a pending question/approval — the chat holds the controls; this card redirects attention (W9). */
+  waitingOnUser: boolean;
 }) {
   const { done, total, current } = planProgress(plan);
   const duration = elapsedMs ? formatDuration(elapsedMs) : '';
 
-  // Nothing planned, nothing running, nothing wrong: nothing truthful to say.
-  // But a FAILED or STOPPED run must say so even with no plan — silence here
-  // is the panel claiming a broken run finished fine (W7).
-  if (total === 0 && !isRunning) {
-    if (outcome === 'succeeded') return null;
-    return (
-      <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
-        <span className="text-foreground truncate text-sm">
-          {outcome === 'stopped' ? 'Stopped by you' : 'Something went wrong'}
-        </span>
-        {duration && (
-          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{duration}</span>
-        )}
-      </div>
-    );
-  }
-
-  // No plan, but still working. One live line is the whole message.
+  // No plan yet. Waiting outranks everything else here — the agent can be
+  // "blocked on you" whether or not it's still marked as running, and that is
+  // always the more truthful thing to say than a bare outcome or "Working…".
   if (total === 0) {
+    if (waitingOnUser) {
+      return (
+        <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
+          <span className="text-kortix-orange truncate text-sm">Waiting for your answer</span>
+          {duration && (
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {duration}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    // Nothing planned, nothing running, nothing wrong: nothing truthful to say.
+    // But a FAILED or STOPPED run must say so even with no plan — silence here
+    // is the panel claiming a broken run finished fine (W7).
+    if (!isRunning) {
+      if (outcome === 'succeeded') return null;
+      return (
+        <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
+          <span className="text-foreground truncate text-sm">
+            {outcome === 'stopped' ? 'Stopped by you' : 'Something went wrong'}
+          </span>
+          {duration && (
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+              {duration}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    // No plan, but still working. One live line is the whole message.
     return (
       <div className="border-border bg-popover flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-md border px-4 py-3">
         <TextShimmer as="span" duration={1.8} spread={1.25} className="truncate text-sm">
@@ -82,8 +103,9 @@ export function ProgressCard({
     stopped: 'Stopped by you · ',
   };
 
-  const subtitle =
-    isRunning && current
+  const subtitle = waitingOnUser
+    ? 'Waiting for your answer'
+    : isRunning && current
       ? `Step ${Math.min(done + 1, total)} of ${total} · ${current.content}`
       : `${OUTCOME_PREFIX[outcome]}${done} of ${total} done`;
 
@@ -96,7 +118,9 @@ export function ProgressCard({
       // attention belongs on Outputs.
       defaultExpanded={isRunning}
       subtitle={
-        isRunning ? (
+        waitingOnUser ? (
+          <span className="text-kortix-orange block truncate text-sm">{subtitle}</span>
+        ) : isRunning ? (
           <TextShimmer as="span" duration={1.8} spread={1.25} className="block truncate text-sm">
             {subtitle}
           </TextShimmer>
