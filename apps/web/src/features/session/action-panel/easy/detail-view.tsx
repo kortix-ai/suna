@@ -68,15 +68,15 @@ export interface Detail {
 
 /**
  * The prev/next row, shared by the desktop card and the mobile drawer so the
- * two never drift. Desktop hangs it under the header (or flush to the top
- * when the header is suppressed); mobile pins it above the drawer body,
- * because horizontal swipe is out — vaul already owns the drawer's vertical
- * gesture, and layering a horizontal recognizer inside it is a conflict trap.
- * The buttons carry mobile instead.
+ * two never drift. Both pin it as a slim bar under the scrollable body —
+ * `shrink-0` so it's always in view, never scrolled away with the content —
+ * because horizontal swipe is out on mobile: vaul already owns the drawer's
+ * vertical gesture, and layering a horizontal recognizer inside it is a
+ * conflict trap. The buttons carry mobile instead.
  */
 function DetailNav({ nav }: { nav: NonNullable<Detail['nav']> }) {
   return (
-    <div className="border-border flex shrink-0 items-center justify-end gap-0.5 border-b px-2 py-1">
+    <div className="border-border flex shrink-0 items-center justify-end gap-0.5 border-t px-2 py-1">
       <span className="text-muted-foreground mr-1 text-xs tabular-nums">{nav.position}</span>
       <Button
         variant="ghost"
@@ -255,9 +255,6 @@ export function DetailLayer({
                 </DrawerTitle>
               </DrawerHeader>
             )}
-            {/* Pinned above the drawer body — same row the desktop card
-                shows, so paging reads as one behavior wherever you are. */}
-            {detail?.nav && <DetailNav nav={detail.nav} />}
             <div
               className={cn(
                 'min-h-0 min-w-0 flex-1 overflow-auto',
@@ -266,6 +263,9 @@ export function DetailLayer({
             >
               {detail?.body}
             </div>
+            {/* Pinned below the drawer body — same row the desktop card
+                shows, so paging reads as one behavior wherever you are. */}
+            {detail?.nav && <DetailNav nav={detail.nav} />}
           </DrawerContent>
         </Drawer>
       </>
@@ -330,7 +330,6 @@ export function DetailLayer({
                 <CloseButton onClose={onBack} />
               </div>
             )}
-            {detail.nav && <DetailNav nav={detail.nav} />}
             <div
               className={cn(
                 'min-h-0 min-w-0 flex-1 overflow-auto',
@@ -340,6 +339,7 @@ export function DetailLayer({
             >
               {detail.body}
             </div>
+            {detail.nav && <DetailNav nav={detail.nav} />}
           </motion.div>
         )}
       </AnimatePresence>
