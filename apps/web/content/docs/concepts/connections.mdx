@@ -9,16 +9,17 @@ per-project, and the agent can only use what you connect.
 
 - **Declared as `connectors` in the manifest** — provider is one of
   **Pipedream, MCP, OpenAPI, GraphQL, HTTP, Channel** (chat platforms like
-  Slack), or **Computer** (a connected machine). The definition lives in git; the
+  Slack and Microsoft Teams), or **Computer** (a connected machine). The definition lives in git; the
   **credentials live in the platform, never in the repo**.
-- **Channel + Computer connectors auto-materialize.** Connecting Slack
-  ([Channels](/docs/concepts/channels)) creates a `kortix_slack` connector
-  (provider `channel`); connecting a machine ([Computers](/docs/concepts/computers))
-  creates the `computer` connector — no manifest entry needed. The plain
-  `slack` slug is reserved and blocked from user-declared connectors so it
-  can't shadow the built-in channel. The Slack credential is the install
-  token; the `computer` connector has no credential at all (the live tunnel is
-  the credential), and per-machine access is granted in Computers.
+- **Channel + Computer connectors auto-materialize.** Connecting Slack or
+  Microsoft Teams ([Channels](/docs/concepts/channels)) creates a `kortix_slack`
+  or `kortix_teams` connector (provider `channel`); connecting a machine
+  ([Computers](/docs/concepts/computers)) creates the `computer` connector — no
+  manifest entry needed. The `kortix_slack` / `kortix_teams` slugs are reserved
+  and blocked from user-declared connectors so they can't shadow the built-in
+  channel. The chat credential is the install token; the `computer` connector
+  has no credential at all (the live tunnel is the credential), and per-machine
+  access is granted in Computers.
 - **Connection profiles choose the concrete identity behind a connector.** Each
   connector has a default project-owned profile, and the platform can also store
   additional project-scoped profiles owned by an agent, member, subject, or

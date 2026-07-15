@@ -306,7 +306,7 @@ server / LLM-gateway catalog rather than a sandbox-local OpenCode provider list.
 
 ## `triggers:` / `[[triggers]]`
 
-Each entry fires a session that runs `prompt` as its initial message — a fresh session by default, or the trigger's prior session when `session_mode: reuse` (see below). Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
+Each entry fires a session that runs `prompt` as its initial message — a fresh session by default, the trigger's prior session when `session_mode: reuse`, or a specific session first when `session_mode: pinned` + `session_id` is set (see below). Sorted alphabetically by slug in the parsed output, so UI ordering is stable. Full reference: [Triggers](/docs/reference/triggers).
 
 ```yaml
 triggers:
@@ -327,7 +327,8 @@ triggers:
 | `agent`        | no       | string | `"default"` | Agent name. Legacy projects resolve this through OpenCode discovery; declarative projects should use a registered `[[agents]]` name. |
 | `enabled`      | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
 | `model`        | no       | string | —           | Wire form `provider/model` (e.g. `anthropic/claude-sonnet-5`). Pins the fired session to that model, taking precedence over the agent/account/platform default chain. Unlike the dead v1 `[[agents]].model`, this one is live. |
-| `session_mode` | no       | string | `"fresh"`   | `"fresh"` or `"reuse"` (camelCase `sessionMode` also accepted). `"reuse"` continues the trigger's existing session on each fire instead of spawning a new one. |
+| `session_mode` | no       | string | `"fresh"`   | `"fresh"`, `"reuse"`, or `"pinned"` (camelCase `sessionMode` also accepted). `"reuse"` continues the trigger's existing session on each fire; `"pinned"` first tries the exact `session_id`. |
+| `session_id`   | for `pinned` | string | —         | Exact project session to re-prompt when `session_mode` is `"pinned"` (camelCase `sessionId` also accepted). |
 
 Cron-only: `cron` (6-field croner `second minute hour day month weekday`) or a one-off `run_at` (camelCase `runAt`, an ISO-8601 datetime, e.g. `2026-06-01T09:00:00Z`) — exactly one of the two is required; `run_at` fires the trigger once at that instant instead of on a recurring schedule. `timezone` (IANA name, default `"UTC"`) applies to `cron`. Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 
@@ -335,11 +336,11 @@ The parser accepts only canonical trigger field names. Slug uniqueness is per-se
 
 ## Channels — removed in v2 [#channels-removed-in-v2]
 
-**v2 removes `channels:` from the schema outright.** Channel↔agent routing (Slack today; Teams/Discord/etc. later) is live operational state — the dashboard's Channels page or Slack's own slash commands — not declarative config, the same boundary rule that keeps credentials out of git. The channel *integration* itself still shows up as a `connectors` entry with `provider: channel` once you connect one; only the routing table moved out of the manifest.
+**v2 removes `channels:` from the schema outright.** Channel↔agent routing (Slack and Microsoft Teams today; Discord/etc. later) is live operational state — the dashboard's Channels page or chat slash commands — not declarative config, the same boundary rule that keeps credentials out of git. The channel *integration* itself still shows up as a `connectors` entry with `provider: channel` once you connect one; only the routing table moved out of the manifest.
 
 ### `[[channels]]` (v1, legacy)
 
-Array of tables. Each entry documents a chat platform (Slack today) connected to the project. **Validated but not wired to any runtime behavior** — declaring one, or editing `enabled`/`agent`/`events`/`prompt_prefix`, changes nothing about how the platform actually routes messages. The live channel→agent binding is the `chat_channel_bindings` database row, set from inside Slack (its slash commands) or the dashboard's Channels page, not from this file.
+Array of tables. Each entry documents a chat platform (Slack or Microsoft Teams today) connected to the project. **Validated but not wired to any runtime behavior** — declaring one, or editing `enabled`/`agent`/`events`/`prompt_prefix`, changes nothing about how the platform actually routes messages. The live channel→agent binding is the `chat_channel_bindings` database row, set from the chat app's commands or the dashboard's Channels page, not from this file.
 
 ```toml
 [[channels]]
@@ -362,7 +363,7 @@ You're working on {{ project.name }}.
 | `prompt_prefix` | no       | string     | —       | Parsed. Not consumed.                                                   |
 
 <Callout type="warn" title="Declared but inert">
-Connecting Slack from the dashboard writes the install (bot token, signing secret) into the project's secrets and creates the live `chat_channel_bindings` row — that row, not this manifest block, decides which agent answers in which channel. A hand-written `[[channels]]` entry documents intent for readers of the repo but has no effect on running behavior. Manage channel routing from Slack or the dashboard's Channels page.
+Connecting Slack or Microsoft Teams from the dashboard writes the install into the project's live channel state and creates the `chat_channel_bindings` row — that row, not this manifest block, decides which agent answers in which channel. A hand-written `[[channels]]` entry documents intent for readers of the repo but has no effect on running behavior. Manage channel routing from the chat app's commands or the dashboard's Channels page.
 </Callout>
 
 ## `connectors:` / `[[connectors]]`
@@ -397,7 +398,7 @@ Provider-specific fields:
 - **openapi** — `spec` (required: URL or repo-relative path).
 - **graphql** — `endpoint` (required), `spec` (optional SDL).
 - **http** — `base_url` (required), `spec` (optional).
-- **channel** — `platform` (required) = `slack` \| `email` \| `meet`. Chat
+- **channel** — `platform` (required) = `slack` \| `teams` \| `email` \| `meet`. Chat
   platforms. You rarely declare these by hand — connecting one
   ([Channels](/docs/concepts/channels)) **auto-materializes** the connector
   (credential = the install token, resolved server-side), so the agent can call
@@ -408,7 +409,7 @@ Provider-specific fields:
   connector that fronts all your machines (it has no credential — the live tunnel
   is the credential; per-machine access is granted in Computers).
 
-Reserved slugs: `kortix_slack`, `kortix_email`, `kortix_meet` (each locked to
+Reserved slugs: `kortix_slack`, `kortix_teams`, `kortix_email`, `kortix_meet` (each locked to
 `provider: channel`) and `computer` (locked to `provider: computer`) are
 platform-owned — declaring one of these slugs with any other provider is a
 validation error, the same rule that keeps `computer` synth-only above.

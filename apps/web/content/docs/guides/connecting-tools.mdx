@@ -9,7 +9,7 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 
 ## How a connection works
 
-- **Declared as `connectors` in the manifest.** The `provider` is one of `pipedream`, `mcp`, `openapi`, `graphql`, `http`, `channel` (chat platforms like Slack), or `computer` (a connected machine). The definition lives in git; the credential lives on the platform, never in your repo.
+- **Declared as `connectors` in the manifest.** The `provider` is one of `pipedream`, `mcp`, `openapi`, `graphql`, `http`, `channel` (chat platforms like Slack and Microsoft Teams), or `computer` (a connected machine). The definition lives in git; the credential lives on the platform, never in your repo.
 - **Connecting is per project**, like [secrets](/docs/guides/managing-secrets). Connecting a tool for one project doesn't make it available to another.
 - **A connector isn't automatically usable by every agent.** Each agent's `connectors` field in the manifest (`all`, `none`, or a list of slugs) grants — or withholds — access to what's connected. Connecting a tool to the project is a separate step from letting a given agent call it.
 - **Each tool call can be policed.** A connector's `policies` mark a tool `always_run`, `require_approval`, or `block`.
@@ -49,7 +49,7 @@ spec     = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec
 
 Pipedream connectors round-trip the same way once connected, but you rarely hand-write them — the dashboard's one-click flow creates the entry for you.
 
-See the [manifest reference](/docs/reference/manifest#connectors--connectors) for every field, and [Connections](/docs/concepts/connections) for how `channel` and `computer` connectors auto-materialize (connecting Slack or a machine creates their connector for you — no manifest entry needed).
+See the [manifest reference](/docs/reference/manifest#connectors--connectors) for every field, and [Connections](/docs/concepts/connections) for how `channel` and `computer` connectors auto-materialize (connecting Slack, Microsoft Teams, or a machine creates their connector for you — no manifest entry needed).
 </Step>
 
 <Step>
