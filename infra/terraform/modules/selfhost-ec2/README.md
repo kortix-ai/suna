@@ -31,7 +31,9 @@ mechanism to keep in sync with the updater, on purpose.
   (`0.0.0.0/0` by default — restrict it), all egress. SSH stays closed unless
   you set `ssh_ingress_cidrs` (and `key_name`).
 - **Elastic IP** (stable across instance replacement) + optional **Route53 A
-  records** for `var.domain` and the API hostname when `zone_id` is set;
+  records** for `var.domain` and the API hostname when `zone_id` is set
+  (`allow_overwrite = true`, so this cleanly takes over a zone that already
+  has an A record under these names — e.g. replacing a hand-deployed box);
   otherwise point your own DNS at the `public_ip` output.
 - **EBS snapshots** of the data volume (`aws_dlm_lifecycle_policy`) on a
   configurable schedule — `backup_interval_hours` (default 24, i.e. once

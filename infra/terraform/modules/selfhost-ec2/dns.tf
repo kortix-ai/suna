@@ -20,6 +20,11 @@ resource "aws_route53_record" "root" {
   type    = "A"
   ttl     = var.dns_ttl
   records = [aws_eip.this.public_ip]
+
+  # Lets this module take over a zone that already has an A record for this
+  # name (e.g. replacing a hand-deployed box with this same module) instead of
+  # failing on "record already exists" — the new value simply wins.
+  allow_overwrite = true
 }
 
 resource "aws_route53_record" "api" {
@@ -29,4 +34,6 @@ resource "aws_route53_record" "api" {
   type    = "A"
   ttl     = var.dns_ttl
   records = [aws_eip.this.public_ip]
+
+  allow_overwrite = true
 }
