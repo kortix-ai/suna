@@ -280,7 +280,7 @@ export function coerceQuestions(rawQuestions: unknown[]): QuestionInfo[] {
       header: obj.header ? String(obj.header) : undefined,
       options,
       multiple: !!obj.multiple,
-      custom: obj.custom === false ? false : true,
+      custom: obj.custom !== false,
     });
   }
   return out;
@@ -313,5 +313,86 @@ export async function postTelegramQuestionCard(
     disableWebPagePreview: true,
     replyToMessageId: handle.triggerMessageId,
   });
+  return sent != null;
+}
+
+// ─── Permissions (opencode tool-approval — blocking, same relay as questions) ──
+// The agent asking to run bash/edit/write/… BLOCKS the turn (like a question);
+// we relay it as an Approve/Always/Deny card and the tap replies once/always/
+// reject to unblock. Callback carries the verb + the opencode permission id.
+
+export type PermissionVerb = 'once' | 'always' | 'reject';
+const PERMISSION_PREFIX = 'kxp';
+
+/** `kxp:<verb>:<requestID>` — the reply verb + the opencode permission id. */
+export function encodePermissionCallback(verb: PermissionVerb, requestID: string): string {
+  return `${PERMISSION_PREFIX}:${verb}:${requestID}`;
+}
+
+export function decodePermissionCallback(
+  data: string | undefined,
+): { verb: PermissionVerb; requestID: string } | null {
+  if (!data) return null;
+  const m = /^kxp:(once|always|reject):(.+)$/.exec(data);
+  if (!m) return null;
+  return { verb: m[1] as PermissionVerb, requestID: m[2] };
+}
+
+export function isPermissionCallback(data: string | undefined): boolean {
+  return decodePermissionCallback(data) !== null;
+}
+
+/** opencode permission types → a human phrase for the card. */
+const PERMISSION_LABELS: Record<string, string> = {
+  bash: 'run a command',
+  edit: 'edit a file',
+  write: 'write a file',
+  read: 'read a file',
+  webfetch: 'fetch a URL',
+  mcp: 'use an MCP tool',
+};
+
+export function buildPermissionKeyboard(requestID: string): TelegramInlineButton[][] {
+  return [
+    [
+      { text: '✅ Approve', callbackData: encodePermissionCallback('once', requestID) },
+      { text: '🔁 Always', callbackData: encodePermissionCallback('always', requestID) },
+    ],
+    [{ text: '🚫 Deny', callbackData: encodePermissionCallback('reject', requestID) }],
+  ];
+}
+
+export function renderPermissionHtml(permission: string, detail: string): string {
+  const what = PERMISSION_LABELS[permission] ?? `use ${telegramHtml(permission)}`;
+  const lines = [`🔐 <b>The agent wants to ${what}</b>`];
+  if (detail) lines.push('', `<code>${telegramHtml(detail)}</code>`);
+  lines.push('', '<i>Approve to let it continue, or deny.</i>');
+  return lines.join('\n');
+}
+
+/** Post a blocking permission-approval card. Like postTelegramQuestionCard it does
+ *  NOT finalize the turn — the agent is blocked awaiting the reply. Plain params
+ *  (no shared type) to avoid a cycle with question-relay.ts. */
+export async function postTelegramPermissionCard(
+  sessionId: string,
+  requestID: string,
+  permission: string,
+  detail: string,
+): Promise<boolean> {
+  const handle = await loadTelegramTurnForQuestion(sessionId);
+  if (!handle) return false;
+  const token = await loadTelegramTokenForProject(handle.projectId);
+  if (!token) return false;
+  const sent = await telegramSendMessage(
+    token,
+    handle.chatId,
+    renderPermissionHtml(permission, detail),
+    {
+      parseMode: 'HTML',
+      keyboard: buildPermissionKeyboard(requestID),
+      disableWebPagePreview: true,
+      replyToMessageId: handle.triggerMessageId,
+    },
+  );
   return sent != null;
 }

@@ -78,18 +78,21 @@ import {
   telegramPairingMatches,
 } from './telegram/pairing';
 import {
+  hasPendingTelegramQuestion,
+  startTelegramQuestionWatch,
+  submitTelegramPermissionReply,
+  submitTelegramQuestionReply,
+} from './telegram/question-relay';
+import {
   answerLabelFromKeyboard,
+  decodePermissionCallback,
+  isPermissionCallback,
   isQuestionCallback,
   isSubmitCallback,
   isToggleCallback,
   selectedLabelsFromKeyboard,
   toggleKeyboardOption,
 } from './telegram/questions';
-import {
-  hasPendingTelegramQuestion,
-  startTelegramQuestionWatch,
-  submitTelegramQuestionReply,
-} from './telegram/question-relay';
 import { applyTelegramReviewVerdict, isReviewCallback } from './telegram/review';
 import {
   finalizeTelegramTurnDirect,
@@ -372,6 +375,46 @@ async function handleCallbackQuery(projectId: string, cb: TelegramCallbackQuery)
         chatId,
         message: { ...syntheticTap, text: result.decisionLine },
       });
+    }
+    return;
+  }
+
+  // Permission-approval taps (Approve / Always / Deny): reply to opencode to
+  // unblock the blocked agent turn. Allowlist-gated — an unpaired tapper can't
+  // approve tool runs. The requestID rides in the callback; the reply resolves
+  // the sandbox fresh, so it survives an API restart.
+  if (isPermissionCallback(cb.data) && cbMessage?.chat) {
+    const chatId = String(cbMessage.chat.id);
+    const syntheticTap: TelegramMessage = {
+      message_id: cbMessage.message_id,
+      chat: cbMessage.chat,
+      from: cb.from,
+      text: '',
+    };
+    if (await telegramSenderLocked(projectId, syntheticTap)) {
+      if (token)
+        await telegramAnswerCallbackQuery(token, cb.id, 'Pair with the bot first (/start <code>).');
+      return;
+    }
+    const decoded = decodePermissionCallback(cb.data);
+    const sessionId = decoded ? await chatSessionId(botId, chatId) : null;
+    const outcome =
+      decoded?.verb === 'reject'
+        ? 'Denied'
+        : decoded?.verb === 'always'
+          ? 'Always allowed'
+          : 'Approved';
+    if (token) await telegramAnswerCallbackQuery(token, cb.id, outcome);
+    if (decoded && sessionId) {
+      await submitTelegramPermissionReply(sessionId, decoded.requestID, decoded.verb);
+      if (token) {
+        await telegramEditMessageText(
+          token,
+          chatId,
+          cbMessage.message_id,
+          `${decoded.verb === 'reject' ? '🚫' : '✅'} ${outcome}`,
+        ).catch(() => {});
+      }
     }
     return;
   }

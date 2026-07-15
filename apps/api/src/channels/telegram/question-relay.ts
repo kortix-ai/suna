@@ -27,7 +27,8 @@ import {
   KORTIX_USER_CONTEXT_HEADER,
   encodeKortixUserContext,
 } from '../../shared/kortix-user-context';
-import { postTelegramQuestionCard } from './questions';
+import { postTelegramPermissionCard, postTelegramQuestionCard } from './questions';
+import type { PermissionVerb } from './questions';
 import { telegramTurnExists } from './turn';
 
 const SANDBOX_PORT = 8000;
@@ -167,6 +168,108 @@ async function fetchPendingQuestions(info: SessionSandboxInfo): Promise<PendingQ
   }
 }
 
+// ─── Permissions (opencode tool-approval — blocking, polled alongside questions) ─
+
+export interface PendingPermission {
+  requestID: string;
+  sessionID: string | null;
+  permission: string;
+  detail: string;
+}
+
+/** `${sessionId}:${requestID}` already relayed so we never repost the same card. */
+const permissionRelayed = new Set<string>();
+
+/** opencode's GET /permission may be an array or a map; each item carries id +
+ *  sessionID + permission type + patterns/metadata. Defensive, like questions. */
+export function normalizePendingPermissions(body: unknown): PendingPermission[] {
+  const raw: unknown[] = Array.isArray(body)
+    ? body
+    : body && typeof body === 'object'
+      ? Object.values(body as Record<string, unknown>)
+      : [];
+  const out: PendingPermission[] = [];
+  for (const it of raw) {
+    if (!it || typeof it !== 'object') continue;
+    const o = it as Record<string, unknown>;
+    const requestID = String(o.id ?? o.requestID ?? '');
+    if (!requestID) continue;
+    const sessionRaw = o.sessionID ?? o.sessionId;
+    const sessionID = typeof sessionRaw === 'string' ? sessionRaw : null;
+    const permission =
+      typeof o.permission === 'string'
+        ? o.permission
+        : typeof o.type === 'string'
+          ? o.type
+          : 'action';
+    const patterns = Array.isArray(o.patterns)
+      ? o.patterns.filter((p): p is string => typeof p === 'string')
+      : [];
+    const metaTitle = (o.metadata as Record<string, unknown> | undefined)?.title;
+    const detail = patterns.length
+      ? patterns.join('  ')
+      : typeof metaTitle === 'string'
+        ? metaTitle
+        : '';
+    out.push({ requestID, sessionID, permission, detail });
+  }
+  return out;
+}
+
+async function fetchPendingPermissions(info: SessionSandboxInfo): Promise<PendingPermission[]> {
+  const ctx = await sandboxCall(info);
+  if (!ctx) return [];
+  try {
+    const res = await fetch(`${ctx.url}/permission`, {
+      headers: ctx.headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.warn('[telegram-question] GET /permission ->', res.status);
+      return [];
+    }
+    return normalizePendingPermissions(await res.json());
+  } catch (err) {
+    console.warn('[telegram-question] GET /permission error', err);
+    return [];
+  }
+}
+
+/** Reply to an opencode permission (once/always/reject) to unblock the agent.
+ *  The requestID comes from the tapped button; the sandbox is resolved fresh so
+ *  it survives an API restart. Also usable by the Review Center approval action. */
+export async function submitTelegramPermissionReply(
+  sessionId: string,
+  requestID: string,
+  reply: PermissionVerb,
+): Promise<boolean> {
+  const info = await loadSessionSandbox(sessionId);
+  if (!info) return false;
+  const ctx = await sandboxCall(info);
+  if (!ctx) return false;
+  try {
+    const res = await fetch(`${ctx.url}/permission/${encodeURIComponent(requestID)}/reply`, {
+      method: 'POST',
+      headers: { ...ctx.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reply }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      permissionRelayed.delete(`${sessionId}:${requestID}`);
+      return true;
+    }
+    console.warn(
+      '[telegram-question] permission reply rejected',
+      res.status,
+      await res.text().catch(() => ''),
+    );
+    return false;
+  } catch (err) {
+    console.warn('[telegram-question] permission reply error', err);
+    return false;
+  }
+}
+
 /** True while a telegram session has a question awaiting the user's tap. */
 export function hasPendingTelegramQuestion(sessionId: string): boolean {
   return pendingReplyTarget.has(sessionId);
@@ -236,6 +339,20 @@ export function startTelegramQuestionWatch(sessionId: string): void {
           console.log('[telegram-question] relaying question', sessionId, q.requestID);
           await postTelegramQuestionCard(sessionId, q.questions).catch((err) =>
             console.warn('[telegram-question] postCard failed', err),
+          );
+        }
+        // Also relay blocking permission asks (bash/edit/write/…) from the same poll.
+        const perms = await fetchPendingPermissions(info);
+        for (const p of perms) {
+          if (info.opencodeSessionId && p.sessionID && p.sessionID !== info.opencodeSessionId) {
+            continue;
+          }
+          const pkey = `${sessionId}:${p.requestID}`;
+          if (permissionRelayed.has(pkey)) continue;
+          permissionRelayed.add(pkey);
+          console.log('[telegram-question] relaying permission', sessionId, p.requestID);
+          await postTelegramPermissionCard(sessionId, p.requestID, p.permission, p.detail).catch(
+            (err) => console.warn('[telegram-question] permission card failed', err),
           );
         }
       }
