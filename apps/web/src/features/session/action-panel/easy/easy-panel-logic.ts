@@ -4,7 +4,18 @@
  */
 
 import type { OutputItem } from '../shared/derive-panels';
+import type { Step } from '../shared/group-steps';
 import type { RunOutcome } from '../shared/run-outcome';
+
+/**
+ * The step that owns a given tool call — what the chat→panel focus effect
+ * needs to turn "user clicked this call in the chat" into "open this step's
+ * detail". Pulled out of the effect body so it's testable without mounting
+ * `EasyPanel` (see `mode-gate.test.tsx`).
+ */
+export function stepForCallId(steps: Step[], callId: string): Step | undefined {
+  return steps.find((s) => s.parts.some((p) => p.callID === callId));
+}
 
 /**
  * React key for one Outputs row.

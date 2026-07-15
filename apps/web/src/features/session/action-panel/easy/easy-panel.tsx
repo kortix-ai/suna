@@ -52,6 +52,7 @@ import {
   outputKey,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  stepForCallId,
 } from './easy-panel-logic';
 import { FilePreview } from './file-preview';
 import { OutputsCard } from './outputs-card';
@@ -344,7 +345,7 @@ export const EasyPanel = memo(function EasyPanel({
   const clearFocusedToolCall = useClearFocusedToolCall();
   useEffect(() => {
     if (!focusedToolCallId) return;
-    const step = steps.find((s) => s.parts.some((p) => p.callID === focusedToolCallId));
+    const step = stepForCallId(steps, focusedToolCallId);
     if (step) {
       track('panel_opened', { source: 'chat_tool' });
       setDetail({

@@ -815,6 +815,107 @@ const EMPTY_MESSAGES: MessageWithParts[] = [
   } as any,
 ];
 
+// ---------------------------------------------------------------------------
+// Task 21 fixtures — the three states the earlier tasks' reviews explicitly
+// deferred to this live visual pass: a completed run with real deliverables
+// (W2/W3/W11), a failed run (W7), and a stopped run (W7).
+// ---------------------------------------------------------------------------
+
+const REPORT_DRAFT = `# Quarterly report (draft)
+
+Numbers pending the Q4 close.
+`;
+
+const REPORT_FINAL = `# Quarterly report
+
+## Q4
+
+Revenue: $4.2M (+18% QoQ). SSO attach rate up 6pts.
+`;
+
+// A prior run wrote the report once; the latest run rewrites the SAME path.
+// `deriveOutputs`' last-write-wins dedup must collapse this to one Outputs
+// row, marked "Updated" — not two rows, and not silently still "New".
+const COMPLETED_PRIOR_RUN_PARTS = [
+  part(
+    'write',
+    done({ filePath: '/workspace/reports/quarterly-report.md', content: REPORT_DRAFT }, ''),
+  ),
+];
+
+const COMPLETED_LATEST_RUN_PARTS = [
+  // The re-write (asserts one row + "Updated").
+  part(
+    'write',
+    done({ filePath: '/workspace/reports/quarterly-report.md', content: REPORT_FINAL }, ''),
+  ),
+  // A `show` with a title + a PDF path — the row must read "Quarterly report"
+  // (title, not filename) with a "PDF" kind label and the file glyph.
+  part(
+    'show',
+    done(
+      { type: 'file', title: 'Quarterly report', path: '/workspace/reports/quarterly-report.pdf' },
+      '',
+    ),
+  ),
+  // A `show` carrying a URL — Outputs/Apps must offer it as a running app,
+  // not a file row.
+  part(
+    'show',
+    done(
+      {
+        type: 'url',
+        title: 'Live dashboard',
+        description: 'The report, rendered as a shareable page.',
+        url: 'http://localhost:3000',
+      },
+      '',
+    ),
+  ),
+];
+
+const COMPLETED_MESSAGES: MessageWithParts[] = [
+  { info: { id: 'm_completed_1', role: 'assistant' }, parts: COMPLETED_PRIOR_RUN_PARTS } as any,
+  { info: { id: 'm_completed_2', role: 'user' }, parts: [] } as any,
+  { info: { id: 'm_completed_3', role: 'assistant' }, parts: COMPLETED_LATEST_RUN_PARTS } as any,
+];
+
+// A run that ended in a genuine failure: the last assistant message carries
+// `info.error`, plus a `write` call that itself errored (its step must narrate
+// "Couldn't write budget.csv", never claim the file exists in Outputs).
+const FAILED_PARTS = [
+  part('read', done({ filePath: '/workspace/reports/budget-template.csv' }, '<content/>')),
+  part(
+    'write',
+    errored({ filePath: '/workspace/reports/budget.csv' }, 'ENOSPC: no space left on device'),
+  ),
+];
+
+const FAILED_MESSAGES: MessageWithParts[] = [
+  {
+    info: {
+      id: 'm_failed',
+      role: 'assistant',
+      error: { name: 'ProviderError', data: { message: 'boom' } },
+    },
+    parts: FAILED_PARTS,
+  } as any,
+];
+
+// Same underlying content as the failed fixture, but the error is an abort —
+// `deriveRunOutcome`'s abort heuristic must read this as "stopped by you", not
+// "something went wrong", even though a step still ended in error.
+const STOPPED_MESSAGES: MessageWithParts[] = [
+  {
+    info: {
+      id: 'm_stopped',
+      role: 'assistant',
+      error: { name: 'MessageAbortedError' },
+    },
+    parts: FAILED_PARTS,
+  } as any,
+];
+
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -874,6 +975,42 @@ export default function DebugToolsPage() {
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
               <EasyPanel sessionId="debug-easy-empty" messages={EMPTY_MESSAGES} />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — completed with deliverables (W2/W3/W11)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-completed"
+                messages={COMPLETED_MESSAGES}
+                isSessionBusy={false}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — failed run (W7)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-failed"
+                messages={FAILED_MESSAGES}
+                isSessionBusy={false}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs tracking-wide uppercase">
+              Easy — stopped by you (W7)
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-2xl border">
+              <EasyPanel
+                sessionId="debug-easy-stopped"
+                messages={STOPPED_MESSAGES}
+                isSessionBusy={false}
+              />
             </div>
           </div>
         </div>

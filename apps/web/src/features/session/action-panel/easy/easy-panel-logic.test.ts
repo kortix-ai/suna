@@ -1,11 +1,13 @@
 import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
+import type { Step } from '../shared/group-steps';
 import {
   deriveIsRunning,
   neighborOutputs,
   outputKey,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
+  stepForCallId,
 } from './easy-panel-logic';
 
 type FileOutputItem = Exclude<OutputItem, { kind: 'app' }> & { kind: 'file' };
@@ -120,6 +122,18 @@ describe('shouldAutoOpenPayoff (W2)', () => {
   test('never steals from a user who is (or was) looking at a detail this run', () => {
     expect(shouldAutoOpenPayoff({ ...base, detailOpen: true })).toBe(false);
     expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
+  });
+});
+
+describe('stepForCallId (chat -> panel focus)', () => {
+  const steps = [
+    { id: 's1', parts: [{ callID: 'c1' }, { callID: 'c2' }] },
+    { id: 's2', parts: [{ callID: 'c3' }] },
+  ] as unknown as Step[];
+
+  it('finds the step owning a given call, and returns undefined for an unknown call', () => {
+    expect(stepForCallId(steps, 'c2')?.id).toBe('s1');
+    expect(stepForCallId(steps, 'zz')).toBeUndefined();
   });
 });
 
