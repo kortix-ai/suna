@@ -15,10 +15,19 @@ export interface SessionPrefill {
 }
 
 interface SessionComposerPrefillState {
-  /** sessionId → the latest prefill for that session. Held, not consumed —
-   *  the composer's own id-keyed effect is what makes application one-shot. */
+  /** sessionId → the latest prefill for that session. Held, not consumed by
+   *  the composer's own id-keyed effect (that's what makes ONE APPLICATION
+   *  one-shot) — but held forever would mean every later remount of
+   *  SessionChat (tab switch, panel toggle) re-hands the SAME value to a
+   *  freshly-mounted composer, whose prefill effect sees a "new" id it has
+   *  never applied and stuffs the old text back into the textarea, ghosting
+   *  over whatever the user typed since. `clearPrefill` is how the session
+   *  (not the composer) declares "already delivered, forget it". */
   prefillBySession: Record<string, SessionPrefill>;
   setPrefill: (sessionId: string, text: string) => void;
+  /** Called once the composer has been handed this session's prefill —
+   *  removes it so a later remount doesn't re-apply stale text. */
+  clearPrefill: (sessionId: string) => void;
 }
 
 let nextId = 0;
@@ -29,6 +38,12 @@ export const useSessionComposerPrefillStore = create<SessionComposerPrefillState
     set((s) => ({
       prefillBySession: { ...s.prefillBySession, [sessionId]: { text, id: ++nextId } },
     })),
+  clearPrefill: (sessionId) =>
+    set((s) => {
+      if (!(sessionId in s.prefillBySession)) return s;
+      const { [sessionId]: _removed, ...rest } = s.prefillBySession;
+      return { prefillBySession: rest };
+    }),
 }));
 
 export const useSessionPrefill = (sessionId: string): SessionPrefill | null =>

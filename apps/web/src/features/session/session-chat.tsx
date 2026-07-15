@@ -128,7 +128,10 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { useSessionPrefill } from '@/stores/session-composer-prefill-store';
+import {
+  useSessionComposerPrefillStore,
+  useSessionPrefill,
+} from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
   type KortixSendError,
@@ -3526,6 +3529,14 @@ export function SessionChat({
   // starter line. Held (not one-shot) in the store; the composer's own
   // `prefill.id` effect below is what makes application happen exactly once.
   const sessionPrefill = useSessionPrefill(sessionId);
+  // Held (not consumed) by the store so a fresh id always reaches the
+  // composer's own id-keyed effect — but held forever ghosts stale text back
+  // in on a later remount (tab switch, panel toggle): SessionChatInput's
+  // prefill effect runs before this one in the same commit (child before
+  // parent), so the text has already landed by the time we clear it here.
+  useEffect(() => {
+    if (sessionPrefill) useSessionComposerPrefillStore.getState().clearPrefill(sessionId);
+  }, [sessionPrefill?.id, sessionId]);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
   const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());

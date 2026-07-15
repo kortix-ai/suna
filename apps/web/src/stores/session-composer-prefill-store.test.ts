@@ -21,4 +21,25 @@ describe('session composer prefill (W12)', () => {
       'In deck.pptx, ',
     );
   });
+
+  // ─── IMPORTANT 5 — held-forever prefill ghosts back in on a later remount
+  // (tab switch, panel toggle) unless the session clears it once delivered. ──
+  test('set → clear → gone', () => {
+    const s = useSessionComposerPrefillStore.getState();
+    s.setPrefill('s1', 'In report.pdf, ');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['s1']).toBeDefined();
+    s.clearPrefill('s1');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['s1']).toBeUndefined();
+  });
+
+  test('clearing one session never touches another', () => {
+    const s = useSessionComposerPrefillStore.getState();
+    s.setPrefill('s1', 'In report.pdf, ');
+    s.setPrefill('s2', 'In deck.pptx, ');
+    s.clearPrefill('s2');
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['s1']?.text).toBe(
+      'In report.pdf, ',
+    );
+    expect(useSessionComposerPrefillStore.getState().prefillBySession['s2']).toBeUndefined();
+  });
 });
