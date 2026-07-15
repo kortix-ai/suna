@@ -19,7 +19,7 @@ import type { MessageWithParts } from '@/ui';
 import { useEffect, useMemo, useRef } from 'react';
 import { deriveIsRunning } from '../easy/easy-panel-logic';
 import { collectAllToolParts } from './collect-tool-parts';
-import { chipForCompletion } from './deliverable-readiness';
+import { chipForCompletion, completionYieldsToPendingInput } from './deliverable-readiness';
 import { deriveOutputs } from './derive-panels';
 import { groupSteps } from './group-steps';
 import { latestRunCallIds } from './latest-run';
@@ -40,11 +40,25 @@ export function useDeliverableReadiness(
     isSessionBusy,
   );
 
+  // Pending questions/permissions for THIS session — read above the W1 effect
+  // because completion has to consult it: a run can settle to idle while a
+  // question is still outstanding (idle IS how the agent waits for the answer).
+  const pendingForSession = useOpenCodePendingStore((s) => {
+    const perms = Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length;
+    const questions = Object.values(s.questions).filter((q) => q.sessionID === sessionId).length;
+    return perms + questions;
+  });
+
   const wasRunningRef = useRef(isRunning);
   useEffect(() => {
     const settledNow = wasRunningRef.current && !isRunning;
     wasRunningRef.current = isRunning;
     if (!settledNow || isPanelOpen) return;
+    // A standing needs-input chip outranks run completion: if the agent is
+    // blocked on the user, being blocked IS the news — writing a ready chip
+    // here would silently clobber the needs_input chip the W9 effect owns
+    // (which won't re-run on this render if pendingForSession didn't change).
+    if (completionYieldsToPendingInput(pendingForSession)) return;
 
     const outcome = deriveRunOutcome(messages, steps[steps.length - 1]?.status);
     const outputs = deriveOutputs(parts, { latestRun: latestRunCallIds(messages) });
@@ -60,16 +74,11 @@ export function useDeliverableReadiness(
       sessionId,
     );
     if (chip) useKortixComputerStore.getState().setReadyChip(chip);
-  }, [isRunning, isPanelOpen, messages, parts, steps, sessionId]);
+  }, [isRunning, isPanelOpen, messages, parts, steps, sessionId, pendingForSession]);
 
   // W9 — the agent is blocked on the user. This is not a transition: the chip
   // holds for as long as the question does, and yields to nothing (a
   // needs-input chip outranks a ready chip; being blocked outranks being done).
-  const pendingForSession = useOpenCodePendingStore((s) => {
-    const perms = Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length;
-    const questions = Object.values(s.questions).filter((q) => q.sessionID === sessionId).length;
-    return perms + questions;
-  });
   useEffect(() => {
     if (isPanelOpen) return;
     const store = useKortixComputerStore.getState();
