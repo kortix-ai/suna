@@ -776,7 +776,17 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
       return "Couldn't ask you a question";
     case 'retired':
       return 'Used an integration that has since been removed';
-    case 'other':
-      return `Couldn't finish using ${humanizeToolName(parts[0].tool)}`;
+    case 'other': {
+      // 'other' is the catch-all family, so a grouped step can hold several
+      // distinct tools of which only one errored — naming parts[0] would blame
+      // the wrong tool by name. Prefer the parts that actually failed, and
+      // name every distinct one, mirroring narrateStep's own 'other' handling.
+      const failed = parts.filter(
+        (p) => (p.state as { status?: string } | undefined)?.status === 'error',
+      );
+      const source = failed.length ? failed : parts;
+      const names = Array.from(new Set(source.map((p) => humanizeToolName(p.tool))));
+      return `Couldn't finish using ${joinWithAnd(names)}`;
+    }
   }
 }

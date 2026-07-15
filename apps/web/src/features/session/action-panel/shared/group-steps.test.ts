@@ -2,7 +2,6 @@ import { describe, expect, it } from 'bun:test';
 import type { MessageWithParts, ToolPart } from '@/ui';
 import { collectAllToolParts } from './collect-tool-parts';
 import { groupSteps } from './group-steps';
-import type { StepFamily } from './narration';
 
 function part(
   tool: string,

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import type { ToolPart } from '@/ui';
-import { familyForTool, humanizeToolName, narrateStep, narrateFailedStep } from './narration';
+import {
+  type StepFamily,
+  familyForTool,
+  humanizeToolName,
+  narrateFailedStep,
+  narrateStep,
+} from './narration';
 import { ToolRegistry } from '../../tool/tool-renderers';
 import '../../tool/tools/register';
 
@@ -634,14 +640,14 @@ describe('narrateStep - task_update/agent_task_update resolve their own action f
 });
 
 describe('narrateFailedStep (W7)', () => {
-  const FAMILIES = [
+  const FAMILIES: StepFamily[] = [
     'explore', 'edit', 'run', 'web', 'create', 'plan', 'delegate', 'sessions',
     'memory', 'apps', 'automations', 'projects', 'skills', 'ask', 'retired', 'other',
   ];
 
   it('every family produces failure phrasing with no raw identifiers', () => {
     for (const family of FAMILIES) {
-      const sentence = narrateFailedStep(family as any, [part('grep', {})]);
+      const sentence = narrateFailedStep(family, [part('grep', {})]);
       expect(sentence.length).toBeGreaterThan(0);
       expect(sentence).not.toMatch(/[_/]/); // no snake_case, no path separators
     }
@@ -656,6 +662,21 @@ describe('narrateFailedStep (W7)', () => {
   it('a failed MCP tool humanizes, never leaks', () => {
     const s = narrateFailedStep('other', [part('mcp__linear__create_issue', {})]);
     expect(s).toBe("Couldn't finish using Create Issue");
+  });
+
+  it("names the tool that actually failed in a grouped 'other' step, not parts[0]", () => {
+    // group-steps groups consecutive same-family calls, and 'other' is the
+    // catch-all — a step can hold several distinct tools of which only one
+    // errored. Blaming parts[0] by name would be a factual misattribution.
+    const errored = {
+      type: 'tool',
+      tool: 'mcp__linear__create_issue',
+      callID: `c-err-${Math.random()}`,
+      state: { status: 'error', input: {} },
+    } as unknown as ToolPart;
+    const s = narrateFailedStep('other', [part('mcp__slack__send_message'), errored]);
+    expect(s).toBe("Couldn't finish using Create Issue");
+    expect(s).not.toContain('Send Message');
   });
 });
 
