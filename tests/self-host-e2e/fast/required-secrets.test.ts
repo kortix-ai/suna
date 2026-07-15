@@ -28,17 +28,21 @@ describe.skipIf(!caps.allowMissingSecrets)(
 
     afterEach(() => sandbox.cleanup());
 
-    test('init --yes with required secrets missing fails non-zero and names what is missing', async () => {
+    // Contract as of the frontend-first CLI simplification: the CLI's
+    // init-time gate is narrow — ONLY the agent sandbox runtime (Daytona) is
+    // required. Managed git (GitHub) and the LLM key (OpenRouter) are BOTH
+    // configured in the web dashboard after `start` (Settings → Git / the
+    // model picker, BYOK) — neither blocks init/start anymore. See
+    // missingRequiredSecrets() in apps/cli/src/commands/self-host.ts.
+    test('init --yes with the sandbox runtime missing fails non-zero and names it', async () => {
       const { code, stderr } = await sandbox.run(['init', '--yes']);
 
       expect(code).not.toBe(0);
-      // Managed-git (GitHub), Daytona API key, and an LLM (OpenRouter) key are
-      // the three required-secret groups this deployment can't function
-      // without — the failure message must name all three so an operator knows
-      // exactly what to fix, not just that "something" is missing.
       expect(stderr.toLowerCase()).toContain('daytona');
-      expect(stderr.toLowerCase()).toContain('managed git');
-      expect(stderr.toLowerCase()).toContain('openrouter');
+      // Managed git / LLM are dashboard-configured now — the failure message
+      // must NOT claim they're required.
+      expect(stderr.toLowerCase()).not.toContain('managed git');
+      expect(stderr.toLowerCase()).not.toContain('openrouter');
       expect(stderr).toContain('--allow-missing-secrets');
     });
 
@@ -47,45 +51,37 @@ describe.skipIf(!caps.allowMissingSecrets)(
 
       expect(code).toBe(0);
       expect(stdout.toLowerCase()).toContain('missing');
-      // The env is still written even though secrets are missing — a follow-up
-      // `secrets set` / `env set` has something to build on.
+      // The env is still written even though the secret is missing — a
+      // follow-up `secrets set` / `env set` has something to build on.
       const env = sandbox.readEnv();
-      expect(env.OPENROUTER_API_KEY).toBe('');
       expect(env.DAYTONA_API_KEY).toBe('');
     });
 
-    test('a fully-configured env passes without --allow-missing-secrets', async () => {
+    test('Daytona alone (no managed git, no OpenRouter) passes without --allow-missing-secrets', async () => {
       // Secrets can't be supplied in the same non-interactive `init` call (no
       // flags for them) — the realistic flow is: render once with the escape
-      // hatch, backfill the secrets via `env set`, then a plain re-init (or
+      // hatch, backfill the secret via `env set`, then a plain re-init (or
       // `start`) re-validates and should now pass.
       const first = await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
       expect(first.code).toBe(0);
 
-      const envSet = await sandbox.run([
-        'env',
-        'set',
-        'OPENROUTER_API_KEY=sk-or-test-key',
-        'DAYTONA_API_KEY=dtn-test-key',
-        'MANAGED_GIT_GITHUB_OWNER=acme-corp',
-        'MANAGED_GIT_GITHUB_TOKEN=ghp-test-token',
-      ]);
+      const envSet = await sandbox.run(['env', 'set', 'DAYTONA_API_KEY=dtn-test-key']);
       expect(envSet.code).toBe(0);
 
       const second = await sandbox.run(['init', '--yes']);
       expect(second.code).toBe(0);
       const env = sandbox.readEnv();
-      expect(env.OPENROUTER_API_KEY).toBe('sk-or-test-key');
       expect(env.DAYTONA_API_KEY).toBe('dtn-test-key');
-      expect(env.MANAGED_GIT_GITHUB_OWNER).toBe('acme-corp');
+      // Neither was set, and neither blocks success.
+      expect(env.OPENROUTER_API_KEY).toBe('');
+      expect(env.MANAGED_GIT_GITHUB_OWNER).toBe('');
     });
 
-    test('a GitHub App (instead of a PAT) also satisfies the managed-git requirement', async () => {
+    test('managed git / OpenRouter left unset never blocks init, with or without a GitHub App configured', async () => {
       await sandbox.run(['init', '--yes', '--allow-missing-secrets']);
       await sandbox.run([
         'env',
         'set',
-        'OPENROUTER_API_KEY=sk-or-test-key',
         'DAYTONA_API_KEY=dtn-test-key',
         'MANAGED_GIT_GITHUB_OWNER=acme-corp',
         'KORTIX_GITHUB_APP_ID=12345',

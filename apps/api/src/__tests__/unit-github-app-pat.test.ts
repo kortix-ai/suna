@@ -16,30 +16,66 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import { resolveManagedGitSource, verifyPastedGithubAppInstallation } from '../platform/routes/github-app';
+import {
+  resolveInstallationOwnerType,
+  resolveManagedGitSource,
+  verifyPastedGithubAppInstallation,
+} from '../platform/routes/github-app';
+
+describe('resolveInstallationOwnerType', () => {
+  test('"User" -> User (personal-account installs, e.g. a throwaway bot account)', () => {
+    expect(resolveInstallationOwnerType('User')).toBe('User');
+  });
+
+  test('"Organization" -> Organization', () => {
+    expect(resolveInstallationOwnerType('Organization')).toBe('Organization');
+  });
+
+  test('missing/unexpected values default to Organization (the historical assumption)', () => {
+    expect(resolveInstallationOwnerType(undefined)).toBe('Organization');
+    expect(resolveInstallationOwnerType('Bot')).toBe('Organization');
+    expect(resolveInstallationOwnerType('')).toBe('Organization');
+  });
+});
 
 describe('resolveManagedGitSource', () => {
   test('none when nothing is configured', () => {
     expect(
-      resolveManagedGitSource({ dbAppConfigured: false, envAppConfigured: false, patConfigured: false }),
+      resolveManagedGitSource({
+        dbAppConfigured: false,
+        envAppConfigured: false,
+        patConfigured: false,
+      }),
     ).toBe('none');
   });
 
   test('pat when only a token is configured', () => {
     expect(
-      resolveManagedGitSource({ dbAppConfigured: false, envAppConfigured: false, patConfigured: true }),
+      resolveManagedGitSource({
+        dbAppConfigured: false,
+        envAppConfigured: false,
+        patConfigured: true,
+      }),
     ).toBe('pat');
   });
 
   test('env App wins over a PAT', () => {
     expect(
-      resolveManagedGitSource({ dbAppConfigured: false, envAppConfigured: true, patConfigured: true }),
+      resolveManagedGitSource({
+        dbAppConfigured: false,
+        envAppConfigured: true,
+        patConfigured: true,
+      }),
     ).toBe('env');
   });
 
   test('DB App (manifest flow or pasted) wins over both an env App and a PAT', () => {
     expect(
-      resolveManagedGitSource({ dbAppConfigured: true, envAppConfigured: true, patConfigured: true }),
+      resolveManagedGitSource({
+        dbAppConfigured: true,
+        envAppConfigured: true,
+        patConfigured: true,
+      }),
     ).toBe('db');
   });
 });
@@ -57,14 +93,27 @@ describe('verifyPastedGithubAppInstallation', () => {
     const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
       capturedUrl = String(url);
       capturedAuth = (init?.headers as Record<string, string>)?.Authorization ?? '';
-      return new Response(JSON.stringify({ id: 987, account: { login: 'acme-corp' } }), { status: 200 });
+      return new Response(JSON.stringify({ id: 987, account: { login: 'acme-corp' } }), {
+        status: 200,
+      });
     }) as typeof fetch;
 
     const result = await verifyPastedGithubAppInstallation('12345', pem, '987', fetchImpl);
 
-    expect(result).toEqual({ owner: 'acme-corp' });
+    expect(result).toEqual({ owner: 'acme-corp', ownerType: 'Organization' });
     expect(capturedUrl).toBe('https://api.github.com/app/installations/987');
     expect(capturedAuth).toMatch(/^Bearer /);
+  });
+
+  test('resolves ownerType: User for a personal-account installation', async () => {
+    const pem = keyPair();
+    const fetchImpl = (async (_url: string | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify({ id: 987, account: { login: 'agent-kortix', type: 'User' } }), {
+        status: 200,
+      })) as typeof fetch;
+
+    const result = await verifyPastedGithubAppInstallation('12345', pem, '987', fetchImpl);
+    expect(result).toEqual({ owner: 'agent-kortix', ownerType: 'User' });
   });
 
   test('URL-encodes the installation id', async () => {
@@ -76,7 +125,9 @@ describe('verifyPastedGithubAppInstallation', () => {
     }) as typeof fetch;
 
     await verifyPastedGithubAppInstallation('12345', pem, 'weird/id?', fetchImpl);
-    expect(capturedUrl).toBe(`https://api.github.com/app/installations/${encodeURIComponent('weird/id?')}`);
+    expect(capturedUrl).toBe(
+      `https://api.github.com/app/installations/${encodeURIComponent('weird/id?')}`,
+    );
   });
 
   test('rejects a malformed private key before ever calling GitHub', async () => {

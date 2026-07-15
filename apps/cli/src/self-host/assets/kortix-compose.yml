@@ -3,9 +3,12 @@ services:
     image: ${FRONTEND_IMAGE}
     ports:
       - "127.0.0.1:${FRONTEND_PORT}:3000"
-    extra_hosts:
-      - "localhost:host-gateway"
     environment:
+      # The Next server's internal /v1 rewrite target. Must be the in-network
+      # api service — the old `extra_hosts: localhost:host-gateway` hack only
+      # worked when the api port happened to be published on the host at :8008,
+      # which is never true in domain mode (500s on every proxied /v1/* path).
+      KORTIX_API_PROXY_TARGET: http://kortix-api:8008
       KORTIX_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       KORTIX_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
@@ -85,7 +88,19 @@ services:
       # exactly the bug this fixes (billing used to be hard-pinned "false"
       # here no matter what .env said).
       LLM_GATEWAY_ENABLED: "true"
-      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
+      # Deliberately NOT set: LLM_GATEWAY_BASE_URL is what gets handed straight
+      # to sandboxes as KORTIX_LLM_BASE_URL (see session-sandbox.ts /
+      # sandbox-env-sync.ts). It used to be pinned here to the compose-internal
+      # `llm-gateway` service (http://llm-gateway:8090/v1/llm) — a hostname a
+      # remote Daytona sandbox VM can never resolve, so every BYOK model call
+      # failed with opencode's "Cannot connect to API: Was there a typo in the
+      # url or port?" the moment a session tried to actually run a turn. Left
+      # unset, the fallback in session-sandbox.ts correctly resolves to
+      # `${KORTIX_URL}/v1/llm` — kortix-api's own in-process gateway mount,
+      # already reachable through the SAME public tunnel/domain origin every
+      # other sandbox call already uses. The standalone `llm-gateway` container
+      # below still runs (control-plane RPC at /internal/gateway), it's just
+      # never the sandbox-facing base URL in self-host.
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     depends_on:
@@ -171,8 +186,15 @@ services:
   # service, and kortix-api already answers every /v1* route the sandbox and
   # any external caller need.
   #
-  # Two sub-modes, branched at container start (not at compose-render time) so
-  # flipping between them is just an env change + restart:
+  # Two sub-modes, branched at COMPOSE-RENDER time (see renderFullDockerCompose
+  # in compose-assets.ts, driven by namedTunnelConfigured() in
+  # self-host/tunnel.ts) — NOT at container start: the official
+  # cloudflare/cloudflared image is a distroless-style image with no shell at
+  # all (no /bin/sh), so a `entrypoint: [/bin/sh, -c, ...]` branch can never
+  # start (`exec: "/bin/sh": stat /bin/sh: no such file or directory`). The
+  # command/environment below are the zero-config quick-tunnel default;
+  # renderFullDockerCompose() overwrites both when a named tunnel is
+  # configured.
   #   - Zero-config quick tunnel (default, no CLOUDFLARE_TUNNEL_TOKEN set): a
   #     fresh https://<random>.trycloudflare.com URL is minted on every start —
   #     EPHEMERAL. `kortix self-host start`/`update` read it back out of this
@@ -181,19 +203,12 @@ services:
   #   - Named tunnel (CLOUDFLARE_TUNNEL_TOKEN + a hostname bound to it in the
   #     Cloudflare Zero Trust dashboard, via CLOUDFLARE_TUNNEL_HOSTNAME): a
   #     STABLE URL that never changes across restarts — no log-scraping.
+  #     cloudflared reads its auth token from the TUNNEL_TOKEN env var natively
+  #     (no shell/script needed) when running `tunnel run` with no positional
+  #     tunnel name/ID.
   cloudflared:
     image: cloudflare/cloudflared:2026.7.2
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -n "$$CLOUDFLARE_TUNNEL_TOKEN" ]; then
-          exec cloudflared tunnel --no-autoupdate run --token "$$CLOUDFLARE_TUNNEL_TOKEN"
-        else
-          exec cloudflared tunnel --no-autoupdate --url http://kortix-api:8008
-        fi
-    environment:
-      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: ["tunnel", "--no-autoupdate", "--url", "http://kortix-api:8008"]
     depends_on:
       kortix-api:
         condition: service_started
