@@ -6,7 +6,7 @@ How to connect a Microsoft Entra ID (Azure AD) tenant to a Kortix account so tha
 - **Users & Groups sync from Entra** (SCIM), and
 - **Entra group membership drives Kortix access** (a group → a Kortix IAM group → a project role).
 
-This is the setup an enterprise (e.g. essentia-inc.com) runs once. Everything is
+This is the setup an enterprise (e.g. acme-inc.com) runs once. Everything is
 account-scoped and gated on the `sso` entitlement.
 
 ---
@@ -100,15 +100,15 @@ is registered **with Supabase**, and Kortix stores the resulting provider id.
    the UUID into the same dialog under **Advanced: Supabase UUID**:
    ```
    supabase sso add --type saml --metadata-url "<entra federation metadata url>" \
-     --domains essentia-inc.com
+     --domains acme-inc.com
    # → SSO provider UUID
    PUT https://<api>/v1/accounts/{accountId}/iam/sso/provider
    { "supabase_sso_provider_id": "<uuid>", "name": "Azure AD",
-     "primary_domain": "essentia-inc.com", "group_claim_name": "memberOf",
+     "primary_domain": "acme-inc.com", "group_claim_name": "memberOf",
      "auto_create_members": false }
    ```
 
-   Either way: `primary_domain` lets the sign-in page route `you@essentia-inc.com`
+   Either way: `primary_domain` lets the sign-in page route `you@acme-inc.com`
    straight to this IdP, and `group_claim_name` MUST match the claim Entra actually
    emits (Part B).
 

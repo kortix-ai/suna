@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { MarketplacePublicDetail } from '@/features/marketplace/marketplace-public-detail';
+import { MarketplaceDetailPublic } from '@/features/marketplace/marketplace-detail-public';
+import { PublicMarketplaceProvider } from '@/features/marketplace/marketplace-public-surface';
 import {
   getPublicMarketplaceItem,
   listPublicMarketplaceItems,
@@ -65,5 +66,16 @@ export default async function MarketplaceItemPage({ params }: { params: Promise<
 
   const companySummary = marketplacesPage.marketplaces.find((m) => m.id === detail.marketplaceId);
 
-  return <MarketplacePublicDetail data={detail} company={companySummary} />;
+  // Cross-link discovery for a whole-project item: server-rendered (not
+  // client-fetched) so "Other projects" is part of the same static/ISR page.
+  const otherProjects =
+    detail.type === 'registry:project'
+      ? (await listPublicMarketplaceItems({ type: 'project' })).items.filter((it) => it.id !== id)
+      : [];
+
+  return (
+    <PublicMarketplaceProvider>
+      <MarketplaceDetailPublic data={detail} company={companySummary} otherProjects={otherProjects} />
+    </PublicMarketplaceProvider>
+  );
 }

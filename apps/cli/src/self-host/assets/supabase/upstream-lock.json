@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/supabase/supabase",
+  "commit": "20649d23740e2facc5d11f7220947b9cddf9480c",
+  "commit_date": "2026-07-13T12:06:15Z",
+  "license": "Apache-2.0",
+  "files": {
+    "docker-compose.logs.yml": "c1c386ee49680a8cd10b6f5a336097f5f4db72608cbbfa211053f146f3785a55",
+    "docker-compose.yml": "3b295bf43c4f01edbbafa2a8aa8642746fd4caab948c64313e474df4a50b7fa0",
+    "volumes/api/kong-entrypoint.sh": "399394576635f7477dfee32e870f509567fc496f0dc86a5a6611f58d1099031f",
+    "volumes/api/kong.yml": "3d6db996d43d4bb9ef119058dfb2806e2ad74c0509991680a4f6f54a06a39174",
+    "volumes/db/_supabase.sql": "9dce462adc04137d6afabcf28efa60a6c355270a4b32d7af58891ac4eb964c5f",
+    "volumes/db/jwt.sql": "1cc94a4f16f6e2932b383cd68e211a96bcae298437ca4120d8a5106396c58465",
+    "volumes/db/logs.sql": "f0463ce5030907acef49326d2bffd36002df0718035071be7c99bd7fc897c63d",
+    "volumes/db/pooler.sql": "df97ebe148d94cfb92a5e37ebf972dfd496be195f0915ecf14396b2cf50efecb",
+    "volumes/db/realtime.sql": "7e9e442e7fc4dae05544c07b67bede37a00d84644304dfce4d937134cb4c8f88",
+    "volumes/db/roles.sql": "3ad717b225daa38aa982da26750f35641eb404e1eb5e69a763c22236ab96c1b2",
+    "volumes/db/webhooks.sql": "b584aaaa0c393f27218f81e01e76e1d07d42f947083249adcd6097ad471cde62",
+    "volumes/functions/hello/index.ts.txt": "924360da7a031b0c649d870863aa69cfa7436550169e7cc0d163bb15de2b0e3f",
+    "volumes/functions/main/index.ts.txt": "5fb63babd5ebe7fda6f2e541fa9b4e3513a7514f8fa511ad7fdb37f46d2b9a95",
+    "volumes/logs/vector.yml": "8f9fa080e3cd8107ac3e6d3bf8d6aa8959b6845d3cd8d5144fb8f28a45607a41",
+    "volumes/pooler/pooler.exs": "d844e49f8915021ccbf6af6b769fef7909a723346bfc8f94ddb0433a328e49b1"
+  }
+}

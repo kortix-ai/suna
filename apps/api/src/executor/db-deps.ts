@@ -28,6 +28,9 @@ import {
   loadMeetTokenForProject,
   loadSlackInstall,
   loadSlackTokenForProject,
+  loadTeamsBotCredentials,
+  loadTeamsInstall,
+  loadTeamsTenantForProject,
 } from '../channels/install-store';
 import { meetRealtimeJoinPatch } from '../channels/meet-realtime';
 import { deriveWakeWord, resolveProjectBotName } from '../channels/meet-voices';
@@ -66,6 +69,7 @@ import {
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
 } from './manifest-crud';
+import { graphToken } from '../channels/teams-auth';
 import {
   browsePipedreamApps,
   finalizePipedreamConnection,
@@ -307,6 +311,12 @@ async function channelToken(
   slug?: string | null,
 ): Promise<string | null> {
   if (platform === 'slack') return loadSlackTokenForProject(projectId);
+  if (platform === 'teams') {
+    const tenant = await loadTeamsTenantForProject(projectId);
+    if (!tenant) return null;
+    const creds = await loadTeamsBotCredentials(projectId);
+    return graphToken(tenant, creds).catch(() => null);
+  }
   if (platform === 'email')
     return resolveAgentMailApiKey(await loadAgentMailApiKeyForProject(projectId, slug));
   if (platform === 'meet') return loadMeetTokenForProject(projectId);
@@ -320,6 +330,7 @@ async function channelInstalled(
   slug?: string | null,
 ): Promise<boolean> {
   if (platform === 'slack') return (await loadSlackInstall(projectId).catch(() => null)) != null;
+  if (platform === 'teams') return (await loadTeamsInstall(projectId).catch(() => null)) != null;
   if (platform === 'email')
     return (await loadAgentMailInstall(projectId, slug).catch(() => null)) != null;
   if (platform === 'meet') return (await loadMeetInstall(projectId).catch(() => null)) != null;

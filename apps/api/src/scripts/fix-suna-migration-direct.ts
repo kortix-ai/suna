@@ -9,7 +9,6 @@
  * stamp the row 'completed' atomically only once the project + sessions exist.
  *
  * Usage:
- *   FREESTYLE_API_URL="$(dotenvx get FREESTYLE_API_URL -f .env)" \
  *   dotenvx run -f .env.prod --quiet -- \
  *   bun run src/scripts/fix-suna-migration-direct.ts --account-id <uuid> [--limit 25]
  */

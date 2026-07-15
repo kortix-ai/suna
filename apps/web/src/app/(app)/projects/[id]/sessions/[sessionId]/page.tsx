@@ -27,6 +27,10 @@ import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  shouldShowSessionSwitchLoading,
+  useSessionSwitchStore,
+} from '@/stores/session-switch-store';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import { formatOpenCodeRuntimeError } from '@kortix/sdk/opencode-errors';
@@ -94,6 +98,8 @@ export default function ProjectSessionPage() {
   });
   const sandbox = session.sandbox;
   const startStage = session.stage ?? 'provisioning';
+  const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
+  const completeSessionSwitch = useSessionSwitchStore((state) => state.completeSwitch);
 
   // ── Auto-resume a hibernated-but-resumable sandbox ────────────────────────
   // On the first /start of an idle-stopped session the backend can race into a
@@ -195,6 +201,25 @@ export default function ProjectSessionPage() {
     !!user &&
     !!sandbox &&
     (sandbox.status === 'error' || sandbox.status === 'stopped');
+  const sessionSwitchLoading = shouldShowSessionSwitchLoading(
+    switchingToSessionId,
+    sessionId,
+    session.switched,
+  );
+  useEffect(() => {
+    if (switchingToSessionId !== sessionId) return;
+    if (session.switched || session.startError || fatal || gated) {
+      completeSessionSwitch(sessionId);
+    }
+  }, [
+    switchingToSessionId,
+    sessionId,
+    session.switched,
+    session.startError,
+    fatal,
+    gated,
+    completeSessionSwitch,
+  ]);
   // The chat subtree mounts once useSession reports the runtime is switched in.
   const canMountChat = session.switched;
   // For a fresh session, hold the real chat until the user actually sends their
@@ -203,6 +228,16 @@ export default function ProjectSessionPage() {
 
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
+    if (sessionSwitchLoading) {
+      return (
+        <SessionStartingLoader
+          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+          projectId={projectId}
+          sessionId={switchingToSessionId ?? sessionId}
+        />
+      );
+    }
+
     if (gated) {
       return (
         <InlineSessionError

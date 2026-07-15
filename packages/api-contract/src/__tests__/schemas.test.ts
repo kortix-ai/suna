@@ -40,7 +40,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     effective_project_role: 'manager',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
-      apps: false,
       agent_tunnel: false,
       marketplace: false,
       agentmail_email: false,
@@ -48,18 +47,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       review_center: false,
     },
-    experimental_features: [
-      {
-        key: 'apps',
-        name: 'Apps',
-        description: 'Deploy apps.',
-        stability: 'experimental',
-        available: true,
-        enabled: false,
-        overridden: false,
-      },
-    ],
-    apps_enabled: false,
+    experimental_features: [],
     default_sandbox_provider: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
@@ -130,6 +118,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     secret_env: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
+    session_id: null,
     last_fired_at: NOW,
     last_status: 'queued',
     last_error: null,
@@ -174,6 +163,19 @@ describe('ProjectSchema', () => {
       projectFixture({ project_role: null, effective_project_role: 'member' }),
     );
     expect(parsed.project_role).toBeNull();
+  });
+
+  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'e2b',
+      available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+    }))).not.toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      default_sandbox_provider: 'managed',
+    }))).toThrow();
+    expect(() => ProjectSchema.parse(projectFixture({
+      available_sandbox_providers: ['daytona', 'local_docker'],
+    }))).toThrow();
   });
 
   test('rejects an unknown status', () => {
@@ -255,7 +257,7 @@ describe('SessionStartResultSchema', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'local_docker', 'justavps', 'platinum']) {
+    for (const provider of ['daytona', 'platinum', 'e2b']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -348,7 +350,6 @@ describe('envelopes', () => {
 
   test('experimental keys stay in sync with the map schema', () => {
     expect(EXPERIMENTAL_FEATURE_KEYS).toEqual([
-      'apps',
       'agent_tunnel',
       'marketplace',
       'agentmail_email',

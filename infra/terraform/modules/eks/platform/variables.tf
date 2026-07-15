@@ -50,6 +50,30 @@ variable "cloudflare_api_token" {
   description = "Cloudflare API token external-dns uses to manage the record (DNS edit on the kortix.com zone)."
   type        = string
   sensitive   = true
+  default     = ""
+}
+
+variable "external_dns_provider" {
+  description = "DNS provider used by external-dns. Existing Kortix environments default to Cloudflare; enterprise VPC uses AWS Route 53."
+  type        = string
+  default     = "cloudflare"
+
+  validation {
+    condition     = contains(["cloudflare", "aws"], var.external_dns_provider)
+    error_message = "external_dns_provider must be cloudflare or aws."
+  }
+}
+
+variable "route53_zone_id" {
+  description = "Route 53 hosted zone ID used when external_dns_provider is aws."
+  type        = string
+  default     = ""
+}
+
+variable "external_dns_role_arn" {
+  description = "Pre-created external-dns IRSA role used by customer-owned Route 53 deployments."
+  type        = string
+  default     = ""
 }
 
 # ── Pinned chart versions ─────────────────────────────────────────────────────
@@ -81,6 +105,12 @@ variable "cluster_autoscaler_chart_version" {
 variable "argo_cd_chart_version" {
   type    = string
   default = "7.6.12" # app v2.12.x
+}
+
+variable "argo_cd_enabled" {
+  description = "Install Argo CD as the GitOps deployment authority. Disable it when an external signed-release reconciler owns Helm state."
+  type        = bool
+  default     = true
 }
 
 variable "argo_rollouts_chart_version" {
@@ -159,4 +189,28 @@ variable "cloudflare_inbound_cidrs" {
 variable "tags" {
   type    = map(string)
   default = {}
+}
+
+variable "permissions_boundary_arn" {
+  description = "Optional customer workload boundary for controller IRSA roles that do not manage VPC trust."
+  type        = string
+  default     = null
+}
+
+variable "alb_controller_role_arn" {
+  description = "Optional reviewed pre-created ALB controller IRSA role. Null lets this module create it."
+  type        = string
+  default     = null
+}
+
+variable "cluster_autoscaler_role_arn" {
+  description = "Optional reviewed pre-created cluster-autoscaler IRSA role. Null lets this module create it."
+  type        = string
+  default     = null
+}
+
+variable "argo_rollouts_role_arn" {
+  description = "Optional reviewed pre-created Argo Rollouts IRSA role. Null lets this module create it."
+  type        = string
+  default     = null
 }

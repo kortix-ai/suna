@@ -12,30 +12,32 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, Loader2, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
+import { Copy, Lock, Pencil, Plus, Search, Shield, Trash2 } from 'lucide-react';
 
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
-import { ENTERPRISE_PAGE_URL } from '@/components/iam/enterprise-upsell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { ErrorState } from '@/features/layout/section/error-state';
 import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SectionCard } from '@/components/ui/section-card';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -44,6 +46,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
   type ActionCatalogEntry,
@@ -84,6 +94,7 @@ interface RolePrefill {
 }
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
+  const openDemo = useRequestDemo();
   return (
     <div className="space-y-6">
       {canManage && !rbacEnabled && (
@@ -91,10 +102,12 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           tone="info"
           title="Enterprise feature"
           action={
-            <Button asChild variant="outline" size="sm">
-              <a href={ENTERPRISE_PAGE_URL} target="_blank" rel="noreferrer">
-                Contact sales
-              </a>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openDemo({ source: 'accounts-roles' })}
+            >
+              Contact sales
             </Button>
           }
         >
@@ -130,15 +143,15 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
 
   const newRoleButton = canManage && (
     rbacEnabled ? (
-      <Button size="sm" onClick={() => openCreate(null)} className="gap-1.5">
-        <Plus className="h-4 w-4" />
+      <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
+        <Plus className="size-4" />
         New role
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" className="gap-1.5" disabled>
-            <Plus className="h-4 w-4" />
+          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
+            <Plus className="size-4" />
             New role
           </Button>
           <Badge variant="outline" size="sm">
@@ -150,65 +163,72 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   );
 
   return (
-    <SectionCard
-      title="Roles"
-      description="Custom roles deactivate capabilities by omitting their permissions."
-      action={newRoleButton}
-      flush
-    >
-      {rolesQuery.isError ? (
-        <div className="px-6 py-5">
-          <InfoBanner
-            tone="destructive"
-            title="Failed to load roles"
-            action={
-              <Button variant="outline" size="sm" onClick={() => rolesQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(rolesQuery.error as Error)?.message}
-          </InfoBanner>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <p className="text-foreground text-sm font-medium">
+            Roles{!rolesQuery.isLoading && !rolesQuery.isError ? ` · ${roles.length}` : ''}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            Custom roles deactivate capabilities by omitting their permissions.
+          </p>
         </div>
+        {newRoleButton}
+      </div>
+
+      {rolesQuery.isError ? (
+        <ErrorState
+          size="sm"
+          title="Failed to load roles"
+          description={(rolesQuery.error as Error)?.message}
+          action={
+            <Button variant="outline" size="sm" onClick={() => rolesQuery.refetch()}>
+              Retry
+            </Button>
+          }
+        />
       ) : rolesQuery.isLoading ? (
-        <div className="px-6 py-4">
-          <Skeleton className="h-16 w-full" />
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-[58px] w-full rounded-md" />
+          ))}
         </div>
       ) : roles.length === 0 ? (
         <EmptyState
           icon={Shield}
+          size="sm"
           title="No roles yet"
           description="Create a custom role to scope what a member, group, or agent can do."
           action={newRoleButton}
         />
       ) : (
-        <div className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/60 bg-muted/20 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <th className="px-6 py-2.5 font-medium">Name</th>
-                <th className="px-3 py-2.5 font-medium">Type</th>
-                <th className="px-3 py-2.5 font-medium">Origin</th>
-                <th className="px-3 py-2.5 font-medium">Used by</th>
-                <th className="w-28 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {roles.map((role) => (
-                <RoleRow
-                  key={role.role_id}
-                  accountId={accountId}
-                  role={role}
-                  canManage={canManage}
-                  rbacEnabled={rbacEnabled}
-                  onEdit={() => setEditTarget(role)}
-                  onDelete={() => setDeleteTarget(role)}
-                  onDuplicate={(prefill) => openCreate(prefill)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Origin</TableHead>
+              <TableHead>Used by</TableHead>
+              <TableHead className="w-28">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {roles.map((role) => (
+              <RoleRow
+                key={role.role_id}
+                accountId={accountId}
+                role={role}
+                canManage={canManage}
+                rbacEnabled={rbacEnabled}
+                onEdit={() => setEditTarget(role)}
+                onDelete={() => setDeleteTarget(role)}
+                onDuplicate={(prefill) => openCreate(prefill)}
+              />
+            ))}
+          </TableBody>
+        </Table>
       )}
 
       {createOpen && (
@@ -243,7 +263,7 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
           onClose={() => setDeleteTarget(null)}
         />
       )}
-    </SectionCard>
+    </div>
   );
 }
 
@@ -289,32 +309,35 @@ function RoleRow({
         actions: perms.actions,
       });
     } catch (err) {
-      toast.error((err as Error)?.message || 'Failed to load role permissions');
+      errorToast((err as Error)?.message || 'Failed to load role permissions');
     } finally {
       setDuplicating(false);
     }
   }
 
   return (
-    <tr className="hover:bg-muted/20">
-      <td className="px-6 py-2">
-        <div className="font-medium text-foreground">{role.name}</div>
-        <div className="font-mono text-xs text-muted-foreground">{role.key}</div>
+    <TableRow>
+      <TableCell className="whitespace-normal">
+        <div className="text-foreground text-sm font-medium">{role.name}</div>
+        <div className="text-muted-foreground font-mono text-xs">{role.key}</div>
         {role.description && (
-          <div className="mt-0.5 text-xs text-muted-foreground">{role.description}</div>
+          <div className="text-muted-foreground mt-0.5 text-xs">{role.description}</div>
         )}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <Badge variant="outline" size="sm" className="font-normal capitalize">
           {role.resource_type}
         </Badge>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         {role.is_system ? (
-          <Hint label="Built-in roles are managed by Kortix and can't be edited or deleted. Duplicate one to start a custom role." side="top">
+          <Hint
+            label="Built-in roles are managed by Kortix and can't be edited or deleted. Duplicate one to start a custom role."
+            side="top"
+          >
             <span className="inline-flex">
               <Badge variant="muted" size="sm" className="gap-1 font-normal">
-                <Lock className="h-3 w-3" />
+                <Lock className="size-3" />
                 Built-in
               </Badge>
             </span>
@@ -324,8 +347,8 @@ function RoleRow({
             Custom
           </Badge>
         )}
-      </td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">
+      </TableCell>
+      <TableCell className="text-muted-foreground text-xs">
         {!isCustom
           ? '—'
           : usageQuery.isError
@@ -333,8 +356,8 @@ function RoleRow({
             : usageQuery.isLoading
               ? '…'
               : (usageQuery.data?.policy_count ?? 0)}
-      </td>
-      <td className="px-3 py-2 text-right">
+      </TableCell>
+      <TableCell>
         {canManage && (
           <div className="flex justify-end gap-1.5">
             {isCustom ? (
@@ -348,12 +371,12 @@ function RoleRow({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      className="text-muted-foreground hover:text-foreground"
                       onClick={onEdit}
                       disabled={!rbacEnabled}
                       aria-label={`Edit role ${role.name}`}
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      <Pencil className="size-3.5" />
                     </Button>
                   </span>
                 </Hint>
@@ -361,11 +384,11 @@ function RoleRow({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="text-muted-foreground hover:text-destructive"
                     onClick={onDelete}
                     aria-label={`Delete role ${role.name}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="size-3.5" />
                   </Button>
                 </Hint>
               </>
@@ -385,15 +408,15 @@ function RoleRow({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 gap-1.5 px-2.5 text-xs"
+                    className="gap-1.5"
                     onClick={handleDuplicate}
                     disabled={duplicating || !rbacEnabled}
                     aria-label={`Duplicate role ${role.name}`}
                   >
                     {duplicating ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loading className="size-3.5 shrink-0" />
                     ) : (
-                      <Copy className="h-3.5 w-3.5" />
+                      <Copy className="size-3.5" />
                     )}
                     Duplicate
                   </Button>
@@ -402,8 +425,8 @@ function RoleRow({
             )}
           </div>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -534,11 +557,11 @@ function RoleDialog({
         actions: [...selected],
       }),
     onSuccess: () => {
-      toast.success('Role created');
+      successToast('Role created');
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create role'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to create role'),
   });
 
   const updateMutation = useMutation({
@@ -554,14 +577,14 @@ function RoleDialog({
       await updateRolePermissions(accountId, role!.role_id, [...selected]);
     },
     onSuccess: () => {
-      toast.success('Role updated');
+      successToast('Role updated');
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       queryClient.invalidateQueries({
         queryKey: ['iam-role-permissions', accountId, role!.role_id],
       });
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update role'),
   });
 
   const mutation = isEdit ? updateMutation : createMutation;
@@ -576,17 +599,17 @@ function RoleDialog({
     isPending || !nameValid || (!isEdit && !keyValid) || matrixLoading || matrixError;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !isPending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? 'Edit role' : 'New role'}</DialogTitle>
-          <DialogDescription>
+    <Modal open={open} onOpenChange={(o) => !isPending && onOpenChange(o)}>
+      <ModalContent className="max-h-[90vh] lg:max-h-[85vh] lg:max-w-2xl">
+        <ModalHeader>
+          <ModalTitle>{isEdit ? 'Edit role' : 'New role'}</ModalTitle>
+          <ModalDescription>
             Pick the capabilities this role grants. Anything left unchecked is deactivated for
             principals assigned this role.
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="space-y-4">
+        <ModalBody className="max-h-[65vh] space-y-4 overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="role-name">Name</Label>
@@ -613,7 +636,7 @@ function RoleDialog({
                 className="font-mono"
               />
               {!isEdit && keyValue.length > 0 && !keyValid && (
-                <p className="text-xs text-destructive">
+                <p className="text-destructive text-xs">
                   Lowercase letters, digits and underscores, 2–64 chars.
                 </p>
               )}
@@ -654,10 +677,10 @@ function RoleDialog({
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="role-capability-search">Capabilities</Label>
-              <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+              <span className="text-muted-foreground text-xs">{selected.size} selected</span>
             </div>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
               <Input
                 id="role-capability-search"
                 value={search}
@@ -667,11 +690,12 @@ function RoleDialog({
                 disabled={matrixDisabled}
               />
             </div>
-            <div className="max-h-[420px] space-y-4 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <div className="bg-popover max-h-[420px] space-y-4 overflow-y-auto rounded-md border px-4 py-3">
               {matrixError ? (
-                <InfoBanner
-                  tone="destructive"
+                <ErrorState
+                  size="sm"
                   title="Failed to load capabilities"
+                  description={((actionsQuery.error || permsQuery.error) as Error)?.message}
                   action={
                     <Button
                       variant="outline"
@@ -684,17 +708,15 @@ function RoleDialog({
                       Retry
                     </Button>
                   }
-                >
-                  {((actionsQuery.error || permsQuery.error) as Error)?.message}
-                </InfoBanner>
+                />
               ) : matrixLoading ? (
-                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-24 w-full rounded-md" />
               ) : matrixActions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   No capabilities are available for this scope.
                 </p>
               ) : filteredGroups.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   No capabilities match your search.
                 </p>
               ) : (
@@ -703,14 +725,14 @@ function RoleDialog({
                   return (
                     <div key={group.label} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                        <div className="text-muted-foreground text-xs font-medium">
                           {group.label}
                         </div>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          className="text-muted-foreground hover:text-foreground h-6 px-2 text-xs"
                           onClick={() => setGroupSelected(group.entries, !allOn)}
                           disabled={matrixDisabled}
                         >
@@ -722,7 +744,7 @@ function RoleDialog({
                           <label
                             key={entry.action}
                             className={cn(
-                              'flex cursor-pointer items-center gap-2 text-sm text-foreground',
+                              'text-foreground flex cursor-pointer items-center gap-2 text-sm',
                               matrixDisabled && 'pointer-events-none opacity-60',
                             )}
                           >
@@ -741,23 +763,24 @@ function RoleDialog({
               )}
             </div>
           </div>
-        </div>
+        </ModalBody>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+        <ModalFooter className="sm:justify-between">
+          <Button
+            type="button"
+            variant="outline-ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
             Cancel
           </Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={submitDisabled}
-            className="gap-1.5"
-          >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button onClick={() => mutation.mutate()} disabled={submitDisabled} className="gap-1.5">
+            {isPending && <Loading className="size-4 shrink-0" />}
             {isEdit ? 'Save changes' : 'Create role'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -783,11 +806,11 @@ function DeleteRoleConfirm({
   const deleteMutation = useMutation({
     mutationFn: () => deleteRole(accountId, role.role_id),
     onSuccess: () => {
-      toast.success('Role deleted');
+      successToast('Role deleted');
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       onClose();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to delete role'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to delete role'),
   });
 
   const count = usageQuery.data?.policy_count ?? 0;

@@ -133,13 +133,6 @@
     "cases": 38
   },
   {
-    "domain": "apps",
-    "flows": 4,
-    "passed": 4,
-    "skipped": 0,
-    "cases": 17
-  },
-  {
     "domain": "audit",
     "flows": 4,
     "passed": 4,

@@ -3,6 +3,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
 import { accountMembers, accounts, projects } from "@kortix/db";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
+import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import {
@@ -123,10 +124,21 @@ export function registerAccountRoutes(): void {
       },
       responses: {
         201: json(AccountSummarySchema, "The newly created account"),
-        ...errors(400, 401),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
+      // Self-host single-account mode: this deployment is scoped to exactly
+      // one account — creating additional accounts is disallowed outright.
+      // Mirrors KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE, which hides the "New
+      // account" UI on the frontend so this 403 is rarely reached in
+      // practice.
+      if (config.KORTIX_SINGLE_ACCOUNT_MODE) {
+        return c.json(
+          { error: "Creating additional accounts is disabled on this deployment (single-account mode)" },
+          403,
+        );
+      }
       const userId = c.get("userId") as string;
       const body = await readBody(c);
       const name = normalizeString(body.name);

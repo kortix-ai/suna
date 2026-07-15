@@ -1,7 +1,7 @@
 'use client';
 
-import { PackageSearch, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Plus, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -10,37 +10,27 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { MarketplaceCompanyFilter } from '@/features/marketplace/marketplace-company-filter';
-import { MarketplaceExploreCard } from '@/features/marketplace/marketplace-explore-card';
+import { AddMarketplaceModal } from './add-marketplace-modal';
+import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
+import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
-import {
-  defaultProjectMarketplaceItems,
-  type MarketplaceItem,
-  type MarketplaceSummary,
-} from '@/lib/marketplace-client';
+import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-projects-grid';
+import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace-client';
+import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
+import { cn } from '@/lib/utils';
 import {
   MARKETPLACE_GRID_COLUMNS,
-  resolveMarketplaceExploreViewMode,
   resolveMarketplaceTypeSectionTotal,
-  shouldOfferMarketplaceSeeAll,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
+import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
 
-const TYPE_ORDER = [
-  'registry:skill',
-  'registry:agent',
-  'registry:command',
-  'registry:bundle',
-  'registry:tool',
-  'registry:rules',
-  'registry:file',
-];
+// Only skills are browseable alongside Projects today (agents/commands/
+// bundles are hidden from browse — see MARKETPLACE_VISIBLE_TYPES on the API).
+const TYPE_ORDER = ['registry:skill'];
 
-const FEATURED_ID = 'featured';
-const PREVIEW_COUNT = 9;
-const SEARCH_GRID_COLUMNS = 2;
+const ALL_SOURCES = 'all';
 
 function sectionId(type: string): string {
   return `type-${type.replace('registry:', '')}`;
@@ -50,110 +40,134 @@ function pluralize(label: string): string {
   return label.endsWith('s') ? label : `${label}s`;
 }
 
-function pickFeatured(items: MarketplaceItem[]): MarketplaceItem[] {
-  const curated = defaultProjectMarketplaceItems(items);
-  if (curated.length) return curated.slice(0, 8);
-  const kortix = items.filter((i) => i.marketplaceId === 'kortix');
-  return (kortix.length ? kortix : items).slice(0, 8);
+function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="mb-4 space-y-1">
+      <h2 className="text-foreground text-xl font-medium tracking-tight text-balance">{title}</h2>
+      {subtitle ? (
+        <p className="text-muted-foreground text-sm leading-relaxed text-pretty">{subtitle}</p>
+      ) : null}
+    </div>
+  );
 }
 
-function ExploreSection({
-  id,
-  title,
-  items,
-  type,
-  total,
-  showSource,
-  initial = PREVIEW_COUNT,
+/** One row in the left-rail source filter. */
+function SourceRow({
+  label,
+  count,
+  active,
+  avatar,
+  onClick,
 }: {
-  id: string;
-  title: string;
-  items: MarketplaceItem[];
-  /** The type filter this section maps to — when set, "See all" routes
-   *  through the server-scoped paged/virtualized view instead of mounting
-   *  every card (A4). Omitted for the curated Featured rail, which never
-   *  expands (it's already capped at 8). */
-  type?: string;
-  /** True item count for this type across the whole catalog (from marketplace
-   *  summaries), not just the SSR-bounded preview — sizes the "See all N"
-   *  affordance correctly even when more items exist than made it into the
-   *  bounded landing fetch. */
-  total?: number;
-  showSource?: boolean;
-  initial?: number;
+  label: string;
+  count?: number;
+  active: boolean;
+  avatar?: React.ReactNode;
+  onClick: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = items.slice(0, initial);
-  const effectiveTotal = total ?? items.length;
-  const canExpand = shouldOfferMarketplaceSeeAll({
-    hasPagedView: !!type,
-    renderedCount: visible.length,
-    total: effectiveTotal,
-  });
-
   return (
-    <section id={id} className="scroll-mt-28">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <h2 className="text-foreground text-lg font-medium tracking-tight text-balance">{title}</h2>
-        {canExpand ? (
-          <Button
-            variant="transparent"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? 'Show less' : `See all ${effectiveTotal}`}
-          </Button>
-        ) : null}
-      </div>
-      {expanded && type ? (
-        <MarketplacePagedGrid
-          type={type}
-          columns={MARKETPLACE_GRID_COLUMNS}
-          gridClassName="sm:grid-cols-3"
-          showSource={showSource}
-          emptyTitle="No matches"
-          emptyDescription="No items match this type right now."
-        />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {visible.map((item) => (
-            <MarketplaceExploreCard key={item.id} item={item} showSource={showSource} />
-          ))}
-        </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-sm transition-colors',
+        active
+          ? 'bg-primary/[0.06] text-foreground font-medium'
+          : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5',
       )}
-    </section>
+    >
+      {avatar ? <span className="shrink-0">{avatar}</span> : null}
+      <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+      {count !== undefined ? (
+        <span className="text-muted-foreground/60 shrink-0 text-xs tabular-nums">{count}</span>
+      ) : null}
+    </button>
   );
 }
 
 export function MarketplaceExplore({
   items: catalogItems,
   marketplaces,
+  projectItems,
+  embedded = false,
+  syncUrl = true,
+  publicOnly = true,
+  scrollContainerRef,
 }: {
-  /** SSR-bounded first page of the catalog (`MARKETPLACE_EXPLORE_LANDING_LIMIT`
-   *  items, not the full catalog) — sized to fill the per-type previews below
-   *  in the common case. "See all" and search results are server-scoped
-   *  separately and aren't limited to this set (A4). */
+  /** SSR-bounded first page of the catalog (all sources) — feeds the
+   *  "All sources" sectioned preview + Featured rail. */
   items: MarketplaceItem[];
   marketplaces: MarketplaceSummary[];
+  /** Every `registry:project` item, server-rendered (not client-fetched) so
+   *  the Projects showcase is fully indexed/static. */
+  projectItems: MarketplaceItem[];
+  /** Render inside a panel (Customize tab) — drops the marketing page chrome. */
+  embedded?: boolean;
+  /** Mirror the source filter to the URL (`?source=`). Off when embedded. */
+  syncUrl?: boolean;
+  /** Unauthenticated catalog reads (public). Off for the in-project view. */
+  publicOnly?: boolean;
+  /** Ancestor scroll element to virtualize the grids against (in-project). */
+  scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
+  // Source filter lives in the left rail — one surface, filtered in place. On
+  // the public page ('all') stays fully SSR'd and a deep-linked `?source=` is
+  // picked up after hydration; embedded (Customize) keeps it purely local.
+  const [source, setSource] = useState<string>(ALL_SOURCES);
+
+  useEffect(() => {
+    if (!syncUrl) return;
+    const slug = new URLSearchParams(window.location.search).get('source');
+    if (slug) setSource(companyIdFromSlug(slug));
+  }, [syncUrl]);
+
+  const selectSource = useCallback(
+    (id: string) => {
+      setSource(id);
+      if (syncUrl) {
+        window.history.replaceState(null, '', marketplaceSourceHref(id));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        scrollContainerRef?.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    },
+    [syncUrl, scrollContainerRef],
+  );
+
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
-
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 250);
     return () => clearTimeout(t);
   }, [query]);
 
+  // Adding/activating sources is an authenticated action — the public marketing
+  // page stays browse-only. The featured list + custom git URL live in the
+  // "Add a source" modal so the rail stays short (just enabled sources).
+  const canManageSources = !publicOnly;
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
+
   const searching = debounced.length > 0;
+  const isAll = source === ALL_SOURCES;
+  const showProjects = !searching && (isAll || source === 'kortix');
+  const sourceLabel = isAll
+    ? null
+    : displayCompanyLabel(source, marketplaces.find((m) => m.id === source)?.label);
 
-  const featured = useMemo(() => pickFeatured(catalogItems), [catalogItems]);
-
+  // Hide items that ship inside a project (e.g. the Kortix Starter skills) from
+  // the main grid — the project represents them here. They stay fully browseable
+  // by id and addable individually (project detail, add-to-project), just not as
+  // their own tiles on the landing grid.
+  const componentItems = useMemo(
+    () => catalogItems.filter((it) => it.type !== 'registry:project' && !it.partOfProject),
+    [catalogItems],
+  );
   const typeCounts = useMemo(() => sumMarketplaceTypeCounts(marketplaces), [marketplaces]);
 
   const groups = useMemo(() => {
     const byType = new Map<string, MarketplaceItem[]>();
-    for (const it of catalogItems) {
+    for (const it of componentItems) {
       const arr = byType.get(it.type) ?? [];
       arr.push(it);
       byType.set(it.type, arr);
@@ -173,89 +187,186 @@ export function MarketplaceExplore({
           total: resolveMarketplaceTypeSectionTotal(type, typeCounts, items.length),
         };
       });
-  }, [catalogItems, typeCounts]);
+  }, [componentItems, typeCounts]);
 
-  const viewMode = resolveMarketplaceExploreViewMode({
-    catalogEmpty: catalogItems.length === 0,
-    searching,
-  });
-
-  const scrollTo = (id: string) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    history.replaceState(null, '', `#${id}`);
-  };
+  // Embedded: the fixed top bar already says "Marketplace", so the lone
+  // "Marketplace" crumb on the all-sources view is redundant — drop it. A
+  // selected source still gets a crumb for the back-to-all affordance.
+  const crumbs: MarketplaceCrumb[] = isAll
+    ? embedded
+      ? []
+      : [{ label: 'Marketplace' }]
+    : [
+        embedded
+          ? { label: 'Marketplace', onClick: () => selectSource(ALL_SOURCES) }
+          : { label: 'Marketplace', href: '/marketplace' },
+        { label: sourceLabel ?? source },
+      ];
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-16 pt-28 pb-24 lg:px-0 lg:pt-40">
-      <div className="flex flex-col gap-2">
-        <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <MarketplaceShell
+      embedded={embedded}
+      scrollRef={scrollContainerRef}
+      crumbs={crumbs}
+      sidebar={
+        <>
           <div className="space-y-2">
-            <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance">
-              Marketplace
+            <h1 className="text-foreground text-2xl font-semibold tracking-tight text-balance">
+              Install a project, or add a skill
             </h1>
+            <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
+              Install a full, working Kortix project in one click — or add skills from every source
+              into a project you already have.
+            </p>
           </div>
-          <div className="w-full sm:w-80">
-            <InputGroupSearch>
-              <InputGroupSearchIcon>
-                <Search />
-              </InputGroupSearchIcon>
-              <InputGroupSearchInput
-                placeholder="Search the marketplace"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                variant="popover"
-              />
-              <InputGroupSearchClear onClick={() => setQuery('')} />
-            </InputGroupSearch>
-          </div>
-        </header>
 
-        <MarketplaceCompanyFilter marketplaces={marketplaces} activeId="all" className="mb-8" />
+          <InputGroupSearch>
+            <InputGroupSearchIcon>
+              <Search />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              placeholder="Search the marketplace"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              variant="popover"
+            />
+            <InputGroupSearchClear onClick={() => setQuery('')} />
+          </InputGroupSearch>
 
-        {viewMode === 'empty' ? (
-          <EmptyState
-            icon={PackageSearch}
-            title="Nothing here yet"
-            description="The catalog is empty right now — check back soon."
-          />
-        ) : viewMode === 'search' ? (
-          <MarketplacePagedGrid
-            query={debounced}
-            columns={SEARCH_GRID_COLUMNS}
-            gridClassName="sm:grid-cols-2"
-            emptyTitle="No matches"
-            emptyDescription={`No items match "${debounced}".`}
-            emptyAction={
-              <Button variant="outline" size="sm" onClick={() => setQuery('')}>
-                Clear search
-              </Button>
-            }
-            header={({ total }) => (
-              <div className="text-muted-foreground text-sm">
-                <span className="tabular-nums">{total}</span> {total === 1 ? 'result' : 'results'}{' '}
-                for &ldquo;{debounced}&rdquo;
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2 px-2.5 pb-1">
+              <div className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
+                Sources
               </div>
-            )}
-          />
-        ) : (
-          <div className="space-y-12">
-            <ExploreSection id={FEATURED_ID} title="Featured" items={featured} initial={8} />
-            {groups.map((g) => (
-              <ExploreSection
-                key={g.type}
-                id={sectionId(g.type)}
-                title={g.label}
-                items={g.items}
-                type={g.type}
-                total={g.total}
+              {canManageSources ? (
+                <button
+                  type="button"
+                  onClick={() => setAddSourceOpen(true)}
+                  className="text-muted-foreground/70 hover:text-foreground -mr-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs font-medium transition-colors"
+                >
+                  <Plus className="size-3.5 shrink-0" />
+                  Add
+                </button>
+              ) : null}
+            </div>
+            <SourceRow
+              label="All sources"
+              active={isAll}
+              onClick={() => selectSource(ALL_SOURCES)}
+            />
+            {marketplaces.map((m) => (
+              <SourceRow
+                key={m.id}
+                label={displayCompanyLabel(m.id, m.label)}
+                count={m.count}
+                active={source === m.id}
+                avatar={
+                  <MarketplaceAvatar
+                    id={m.id}
+                    owner={m.owner}
+                    sourceUrl={m.sourceUrl}
+                    label={m.label}
+                    size="xs"
+                  />
+                }
+                onClick={() => selectSource(m.id)}
               />
             ))}
           </div>
-        )}
+
+          {canManageSources ? (
+            <AddMarketplaceModal open={addSourceOpen} onOpenChange={setAddSourceOpen} />
+          ) : null}
+        </>
+      }
+    >
+      <div className="space-y-16">
+        {showProjects ? (
+          <section className="scroll-mt-28">
+            <SectionHeading
+              title="Install a project"
+              subtitle="A full, working Kortix project — spun up as its own project and set up for you in one session."
+            />
+            <MarketplaceProjectsGrid items={projectItems} query={debounced} size="featured" />
+          </section>
+        ) : null}
+
+        {/* Hidden entirely when there's nothing to show — no empty-state placeholder. */}
+        {searching || !isAll || componentItems.length > 0 ? (
+        <div className="space-y-12">
+          <SectionHeading
+            title={sourceLabel ?? 'Skills'}
+            subtitle="Add these into a project you already have."
+          />
+
+          {searching ? (
+            <MarketplacePagedGrid
+              query={debounced}
+              source={isAll ? undefined : source}
+              publicOnly={publicOnly}
+              scrollContainerRef={scrollContainerRef}
+              columns={MARKETPLACE_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-3"
+              showSource={isAll}
+              emptyTitle="No matches"
+              emptyDescription={`No items match "${debounced}".`}
+              emptyAction={
+                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                  Clear search
+                </Button>
+              }
+              header={({ total }) => (
+                <div className="text-muted-foreground text-sm">
+                  <span className="tabular-nums">{total}</span> {total === 1 ? 'result' : 'results'}{' '}
+                  for &ldquo;{debounced}&rdquo;
+                </div>
+              )}
+            />
+          ) : isAll ? (
+            // Show the whole catalog at once — one virtualized, scrollable grid
+            // per type. Single type (skills) → no redundant per-type heading
+            // (the "Skills" section heading above already names it). When there's
+            // nothing here, the section is hidden entirely (see the wrapper below).
+            <div className="space-y-12">
+              {groups.map((g) => (
+                <section key={g.type} id={sectionId(g.type)} className="scroll-mt-28">
+                  {groups.length > 1 ? (
+                    <h2 className="text-foreground mb-3 text-lg font-medium tracking-tight text-balance">
+                      {g.label}
+                    </h2>
+                  ) : null}
+                  <MarketplacePagedGrid
+                    type={g.type}
+                    publicOnly={publicOnly}
+                    scrollContainerRef={scrollContainerRef}
+                    columns={MARKETPLACE_GRID_COLUMNS}
+                    gridClassName="sm:grid-cols-3"
+                    emptyTitle=""
+                    emptyDescription=""
+                  />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <MarketplacePagedGrid
+              source={source}
+              publicOnly={publicOnly}
+              scrollContainerRef={scrollContainerRef}
+              columns={MARKETPLACE_GRID_COLUMNS}
+              gridClassName="sm:grid-cols-3"
+              showSource={false}
+              emptyTitle="Nothing here yet"
+              emptyDescription="This source has no browseable items right now."
+              emptyAction={
+                <Button variant="outline" size="sm" onClick={() => selectSource(ALL_SOURCES)}>
+                  Browse all sources
+                </Button>
+              }
+            />
+          )}
+        </div>
+        ) : null}
       </div>
-    </div>
+    </MarketplaceShell>
   );
 }

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
+import {
+  DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
+  parseFallbackPolicies,
+} from './llm-gateway/routing/policy-config';
 
 /**
  * Running sandbox version.
@@ -12,7 +16,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'platinum';
+export type SandboxProviderName = 'daytona' | 'platinum' | 'e2b';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -48,6 +52,23 @@ const optBoolFalse = z
   .default('false')
   .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
 
+/** Declarative, operator-defined model fallback policies. */
+const optFallbackPolicies = z
+  .string()
+  .optional()
+  .default(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES)
+  .transform((raw, ctx) => {
+    try {
+      return parseFallbackPolicies(raw);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return z.NEVER;
+  });
+
 // ─── Env Schema ─────────────────────────────────────────────────────────────
 //
 // Every env var that kortix-api reads is declared here.
@@ -82,15 +103,25 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  // EXPERIMENTAL: turns on the `apps:` section in kortix.yaml — manifest
-  // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
-  // by default until the wire is hardened.
-  KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
-
   // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
   // routes plus the use-case-page button + install wizard. Single kill-switch;
   // off by default so it stays hidden in prod while templates are authored.
-  KORTIX_TEMPLATES_ENABLED:         optBoolFalse,
+  KORTIX_TEMPLATES_ENABLED:         optBoolTrue,
+  // Self-host single-account mode: this deployment is meant for exactly one
+  // account (no teams). Blocks POST /v1/accounts (creating additional
+  // accounts) with 403 — see registerAccountRoutes(). The frontend mirrors
+  // this with KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE to hide the "New account" UI.
+  // Off by default (cloud + multi-account self-host both need it false).
+  KORTIX_SINGLE_ACCOUNT_MODE:       optBoolFalse,
+  // Self-host enterprise license: when the operator has purchased/holds a
+  // Kortix Enterprise license, this bypasses the sales-assigned `enterprise`
+  // tier check and unlocks every enterprise entitlement (SSO, SCIM, RBAC,
+  // audit access) regardless of the account's billing tier — see
+  // getAccountEntitlements()/accountHasEntitlement() in
+  // billing/services/entitlements.ts. Off by default; billing is irrelevant
+  // for a self-host license check, unlike the `demoEnterprise` per-account
+  // preview toggle this mirrors.
+  ENTERPRISE_LICENSE_AVAILABLE:     optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -107,10 +138,6 @@ const envSchema = z.object({
   REPLICATE_API_TOKEN:         optStr,
   CONTEXT7_API_URL:            optUrl('https://context7.com'),
   CONTEXT7_API_KEY:            optStr,
-
-  // ── Freestyle / Deployments (optional) ───────────────────────────────────
-  FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
-  FREESTYLE_API_KEY:           optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
@@ -170,14 +197,6 @@ const envSchema = z.object({
   // behavior (absence of `[[agents]]` → unrestricted) untouched.
   KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
 
-  // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
-  // The new backend has no JustAVPS provider, but it must reach legacy VMs to
-  // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
-  // exec goes through the Daytona toolbox API on that host. JUSTAVPS_API_* are
-  // only needed to refresh an expired per-sandbox proxy token.
-  JUSTAVPS_PROXY_DOMAIN:       optStrDefault('kortix.cloud'),
-  JUSTAVPS_API_URL:            optStrDefault('http://localhost:3001'),
-  JUSTAVPS_API_KEY:            optStr,
   // Supabase Storage bucket holding the durable per-sandbox backup bundle
   // (workspace files + OpenCode chat-history store). Source for rehydrate.
   LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
@@ -221,6 +240,23 @@ const envSchema = z.object({
   ELEVENLABS_BASE_URL:         optUrl('https://api.elevenlabs.io'),
   ELEVENLABS_API_KEY:          optStr,
 
+  // ── Channels — Microsoft Teams adapter (optional) ────────────────────────
+  // One Kortix-owned multi-tenant Azure AD bot app. The same app id/password
+  // serve every tenant; the per-conversation tenant id arrives on each inbound
+  // activity. Outbound auth is a short-lived AAD token minted per scope at call
+  // time (channels/teams-auth.ts) — there is no static bot token to store.
+  MICROSOFT_APP_ID:            optStr,
+  MICROSOFT_APP_PASSWORD:      optStr,
+  // The bot's home tenant. Multi-tenant bots authenticate against the shared
+  // `botframework.com` tenant; single-tenant deployments set their own.
+  MICROSOFT_APP_TENANT:        optStrDefault('botframework.com'),
+  // OpenID metadata used to validate the signed JWT on every inbound activity
+  // (the Teams analog of Slack signature verification).
+  MICROSOFT_BOT_OPENID_METADATA: optUrl('https://login.botframework.com/v1/.well-known/openidconfiguration'),
+  TEAMS_REQUIRE_USER_IDENTITY: optBoolTrue,
+  TEAMS_CHANNEL_ENABLED: optBoolFalse,
+  TEAMS_APP_NAME: optStrDefault('Kortix'),
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
@@ -230,6 +266,18 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // CLOUD-ONLY. Whether KORTIX's own managed model lineup (Claude/GLM/Qwen/
+  // DeepSeek/…, routed through Kortix's SHARED Bedrock/OpenRouter credentials
+  // and billed as platform credits — "Managed · Included with your plan" in
+  // the picker) exists at all on this deployment. Independent of
+  // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
+  // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
+  // must never see or route to Kortix's shared credentials. Off by default;
+  // Kortix Cloud sets this true in its own env. See RUNTIME_MANAGED_MODELS
+  // (managed-models.ts) and managedCandidates() (descriptors.ts) — both are
+  // gated on this and read NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY
+  // for managed routing when it's off.
+  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolFalse,
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
@@ -241,6 +289,19 @@ const envSchema = z.object({
   // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
   // gateway's public base (…/v1/llm) to route every sandbox model call there.
   LLM_GATEWAY_BASE_URL:        optStr,
+  // Runtime routing is control-plane configuration, not a model-catalog
+  // constant baked into the gateway binary. Operators can replace the default
+  // and define any number of exact-match fallback policies without code changes.
+  LLM_GATEWAY_DEFAULT_MODEL:   optStrDefault('codex/gpt-5.6-sol'),
+  LLM_GATEWAY_VISION_MODEL:    optStrDefault('claude-sonnet-4.6'),
+  LLM_GATEWAY_FALLBACK_POLICIES: optFallbackPolicies,
+  // Optional JSON array replacing the platform managed-model overlay (transport,
+  // upstream id, pricing ref, capabilities). Empty uses the bundled last-known
+  // defaults; managed routes are otherwise fully operator-defined.
+  LLM_GATEWAY_MANAGED_MODELS: optStr,
+  // Runtime source for provider/model metadata. The API keeps the last known
+  // snapshot if this source is temporarily unavailable.
+  LLM_GATEWAY_CATALOG_URL:     optUrl('https://models.dev/api.json'),
   // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
   // billing error (429/402/403), fall over to THIS managed model (billed as
   // Kortix credits) so the turn survives instead of erroring. Empty disables.
@@ -311,6 +372,12 @@ const envSchema = z.object({
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET:     optStr,
 
+  // ── E2B Cloud — sandbox provisioning (conditional: required if enabled) ──
+  // E2B_TEMPLATE is an optional ready fallback template. Project-specific
+  // templates built by the shared snapshot system take precedence.
+  E2B_API_KEY:                 optStr,
+  E2B_TEMPLATE:                optStr,
+
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
@@ -379,6 +446,7 @@ const envSchema = z.object({
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN:       optInt(10),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
@@ -394,6 +462,8 @@ const envSchema = z.object({
   MAILTRAP_API_TOKEN:          optStr,
   MAILTRAP_FROM_EMAIL:         optStrDefault('noreply@kortix.com'),
   MAILTRAP_FROM_NAME:          optStrDefault('Kortix'),
+  // Where public demo-request / "book a demo" lead notifications are sent.
+  DEMO_LEAD_NOTIFY_EMAIL:      optStrDefault('marko@kortix.ai'),
 
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN:   optStr,  // Logtail source token for structured logs
@@ -414,7 +484,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'platinum', 'e2b'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona,platinum"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
@@ -458,6 +528,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (providers.includes('platinum')) {
     if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
     if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+  }
+  if (providers.includes('e2b') && !raw.E2B_API_KEY) {
+    issues.push({ var: 'E2B_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "e2b"', level: 'error' });
   }
 
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
@@ -561,8 +634,9 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
-  KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
   KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
+  KORTIX_SINGLE_ACCOUNT_MODE: env.KORTIX_SINGLE_ACCOUNT_MODE,
+  ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
@@ -597,10 +671,6 @@ export const config = {
   CONTEXT7_API_URL: env.CONTEXT7_API_URL,
   CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
 
-  // ─── Freestyle (Deployments) ──────────────────────────────────────────────
-  FREESTYLE_API_URL: env.FREESTYLE_API_URL,
-  FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
-
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
   MANAGED_GIT_GITHUB_OWNER: env.MANAGED_GIT_GITHUB_OWNER,
@@ -613,9 +683,6 @@ export const config = {
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
-  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
-  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
-  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
   LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
@@ -641,12 +708,27 @@ export const config = {
   ELEVENLABS_BASE_URL: env.ELEVENLABS_BASE_URL,
   ELEVENLABS_API_KEY: env.ELEVENLABS_API_KEY,
 
+  // ─── Channels (Microsoft Teams) ───────────────────────────────────────────
+  MICROSOFT_APP_ID: env.MICROSOFT_APP_ID,
+  MICROSOFT_APP_PASSWORD: env.MICROSOFT_APP_PASSWORD,
+  MICROSOFT_APP_TENANT: env.MICROSOFT_APP_TENANT,
+  MICROSOFT_BOT_OPENID_METADATA: env.MICROSOFT_BOT_OPENID_METADATA,
+  TEAMS_REQUIRE_USER_IDENTITY: env.TEAMS_REQUIRE_USER_IDENTITY,
+  TEAMS_CHANNEL_ENABLED: env.TEAMS_CHANNEL_ENABLED,
+  TEAMS_APP_NAME: env.TEAMS_APP_NAME,
+
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  KORTIX_MANAGED_PROVIDER_ENABLED: env.KORTIX_MANAGED_PROVIDER_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,
+  LLM_GATEWAY_VISION_MODEL: env.LLM_GATEWAY_VISION_MODEL,
+  LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
+  LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
+  LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
   LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
@@ -686,6 +768,8 @@ export const config = {
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
+  E2B_API_KEY: env.E2B_API_KEY,
+  E2B_TEMPLATE: env.E2B_TEMPLATE,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
@@ -762,6 +846,8 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
+  KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
@@ -778,6 +864,7 @@ export const config = {
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
+  DEMO_LEAD_NOTIFY_EMAIL: env.DEMO_LEAD_NOTIFY_EMAIL,
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
@@ -792,6 +879,7 @@ export const config = {
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'platinum': return !!this.PLATINUM_API_KEY;
+      case 'e2b': return !!this.E2B_API_KEY;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -802,9 +890,8 @@ export const config = {
   /**
    * Default sandbox provider for new sessions. First entry of
    * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
-   * empty list. The single-provider invariant means there's no resolution
-   * order today, but the function is the contract callers depend on —
-   * adding a new provider later just changes what the list can contain.
+   * empty list. The ordering is the automatic-selection preference; callers
+   * that explicitly choose a provider bypass that preference.
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
@@ -816,6 +903,10 @@ export const config = {
 
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
+  },
+
+  isE2BEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
   },
 
 };
@@ -908,11 +999,6 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_context7: {
     baseCost: 0.001,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_freestyle_deploy: {
-    baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

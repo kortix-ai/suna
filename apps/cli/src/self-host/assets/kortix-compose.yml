@@ -1,0 +1,237 @@
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT}:3000"
+    extra_hosts:
+      - "localhost:host-gateway"
+    environment:
+      KORTIX_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      KORTIX_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      KORTIX_PUBLIC_BACKEND_URL: ${API_PUBLIC_URL}/v1
+      KORTIX_PUBLIC_BILLING_ENABLED: ${KORTIX_PUBLIC_BILLING_ENABLED}
+      KORTIX_PUBLIC_CONNECTORS_ENABLED: ${KORTIX_PUBLIC_CONNECTORS_ENABLED}
+      KORTIX_PUBLIC_APP_URL: ${PUBLIC_URL}
+      KORTIX_PUBLIC_AUTH_METHODS: ${KORTIX_PUBLIC_AUTH_METHODS}
+      KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE: ${KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE}
+      KORTIX_PUBLIC_DISABLE_LANDING_PAGE: ${KORTIX_PUBLIC_DISABLE_LANDING_PAGE}
+      SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_SERVER_URL: http://supabase-kong:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      BACKEND_URL: ${API_PUBLIC_URL}/v1
+      NODE_OPTIONS: "--max-http-header-size=131072"
+    depends_on:
+      kortix-api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  kortix-migrate:
+    image: ${API_IMAGE}
+    user: "0:0"
+    command: ["bun", "/app/packages/db/scripts/migrate.ts", "bootstrap"]
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_healthy
+    restart: "no"
+
+  kortix-api:
+    image: ${API_IMAGE}
+    user: "0:0"
+    ports:
+      - "127.0.0.1:${API_PORT}:8008"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      PORT: "8008"
+      SUPABASE_URL: http://supabase-kong:8000
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ALLOWED_SANDBOX_PROVIDERS: ${ALLOWED_SANDBOX_PROVIDERS}
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY}
+      DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL}
+      DAYTONA_TARGET: ${DAYTONA_TARGET}
+      # The PUBLIC origin cloud (Daytona) sandboxes call back to — never the
+      # internal Docker hostname, which a remote cloud VM can never resolve or
+      # reach. Set per reachability mode by the CLI (see reachabilityMode() in
+      # self-host/tunnel.ts): the https://api.<domain> origin in domain mode,
+      # the cloudflared tunnel's public URL in tunnel mode (captured from the
+      # `cloudflared` service's logs after `docker compose up` — see
+      # reconcileTunnelReachability() in commands/self-host.ts), or a loopback
+      # URL in local-only mode (agent sandboxes will not work in that mode).
+      KORTIX_URL: ${KORTIX_URL}
+      FRONTEND_URL: ${PUBLIC_URL}
+      CORS_ALLOWED_ORIGINS: ${PUBLIC_URL},${API_PUBLIC_URL}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE}
+      SANDBOX_NETWORK: __KORTIX_COMPOSE_PROJECT___default
+      KORTIX_ROUTER_INTERNAL_ENABLED: "false"
+      # KORTIX_BILLING_INTERNAL_ENABLED, KORTIX_SINGLE_ACCOUNT_MODE, and
+      # ENTERPRISE_LICENSE_AVAILABLE are NOT listed here on purpose — this
+      # service already has `env_file: .env` above, which loads every key in
+      # .env (including these) as container env. An explicit `environment:`
+      # entry would take precedence over env_file and silently pin the value
+      # regardless of what `kortix self-host configure`/`env set` writes —
+      # exactly the bug this fixes (billing used to be hard-pinned "false"
+      # here no matter what .env said).
+      LLM_GATEWAY_ENABLED: "true"
+      LLM_GATEWAY_BASE_URL: http://llm-gateway:8090/v1/llm
+      GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-kong:
+        condition: service_healthy
+      kortix-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:8008/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  llm-gateway:
+    image: ${GATEWAY_IMAGE}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      PORT: "8090"
+      KORTIX_API_URL: http://kortix-api:8008
+      GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
+    depends_on:
+      kortix-api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://localhost:8090/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  # Auto-updater: once a day, at a fixed local clock time, pulls this stack's
+  # image tags and, if anything actually changed, runs the migrate one-shot
+  # and rolls the app tier forward with a zero-downtime start-first swap (see
+  # assets/updater.sh). This is the entire "update mechanism" — there is no
+  # separate systemd/SSM updater. Gated by KORTIX_AUTO_UPDATE (checked by the
+  # script itself; off just idles the container — `kortix self-host update`
+  # still runs an on-demand pass via the same script regardless). Always
+  # present; tzdata is installed on start so KORTIX_UPDATE_TZ (a DST-aware IANA
+  # zone, e.g. America/New_York) resolves correctly on the Alpine base image.
+  kortix-updater:
+    image: docker:cli
+    working_dir: /workspace
+    # The trailing "sh" is a placeholder $0 for the `-c` script below; anything
+    # `docker compose run kortix-updater <args>` appends lands in "$@" and is
+    # forwarded to updater.sh — e.g. `run --rm --no-deps kortix-updater once`
+    # runs a single on-demand pass instead of starting the daily scheduler
+    # (see `kortix self-host update`, which shells out to exactly this).
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache tzdata >/dev/null 2>&1 || true; exec /bin/sh /updater/updater.sh \"$@\"", "sh"]
+    environment:
+      KORTIX_AUTO_UPDATE: ${KORTIX_AUTO_UPDATE}
+      KORTIX_UPDATE_TIME: ${KORTIX_UPDATE_TIME:-02:00}
+      KORTIX_UPDATE_TZ: ${KORTIX_UPDATE_TZ:-America/New_York}
+      KORTIX_ALLOW_DOWNTIME: ${KORTIX_ALLOW_DOWNTIME:-0}
+      KORTIX_COMPOSE_PROJECT: __KORTIX_COMPOSE_PROJECT__
+      # Target replica count for the api/gateway/frontend start-first roll —
+      # decided once at render time by applyReplicaTopology() in
+      # compose-assets.ts (2 in domain/prod mode, 1 in laptop mode) so the
+      # updater never has to re-derive prod-vs-laptop topology itself.
+      KORTIX_APP_REPLICAS: ${KORTIX_APP_REPLICAS:-1}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ./.env:/workspace/.env:ro
+      - ./updater.sh:/updater/updater.sh:ro
+      - kortix-updater-state:/state
+    restart: unless-stopped
+
+  # Cloudflare tunnel (opt-in): the "tunnel" reachability mode's zero-config
+  # default for exposing kortix-api's public API routes to the internet with
+  # no domain/DNS/public IP at all — the laptop path for cloud (Daytona)
+  # sandboxes to call back to this instance. Only present in the rendered
+  # Compose file when tunnel mode is selected — see renderFullDockerCompose()
+  # in compose-assets.ts and reachabilityMode() in self-host/tunnel.ts.
+  #
+  # Tunnels directly to kortix-api (not through Caddy): Caddy itself is only
+  # ever rendered in domain mode, so it is never present alongside this
+  # service, and kortix-api already answers every /v1* route the sandbox and
+  # any external caller need.
+  #
+  # Two sub-modes, branched at container start (not at compose-render time) so
+  # flipping between them is just an env change + restart:
+  #   - Zero-config quick tunnel (default, no CLOUDFLARE_TUNNEL_TOKEN set): a
+  #     fresh https://<random>.trycloudflare.com URL is minted on every start —
+  #     EPHEMERAL. `kortix self-host start`/`update` read it back out of this
+  #     container's logs and rewrite KORTIX_URL — see
+  #     reconcileTunnelReachability() in commands/self-host.ts.
+  #   - Named tunnel (CLOUDFLARE_TUNNEL_TOKEN + a hostname bound to it in the
+  #     Cloudflare Zero Trust dashboard, via CLOUDFLARE_TUNNEL_HOSTNAME): a
+  #     STABLE URL that never changes across restarts — no log-scraping.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.2
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+          exec cloudflared tunnel --no-autoupdate run --token "$$CLOUDFLARE_TUNNEL_TOKEN"
+        else
+          exec cloudflared tunnel --no-autoupdate --url http://kortix-api:8008
+        fi
+    environment:
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      kortix-api:
+        condition: service_started
+    restart: unless-stopped
+
+  # Reverse proxy + TLS (opt-in). Only present in the rendered Compose file
+  # when KORTIX_DOMAIN is set — see renderFullDockerCompose() in
+  # compose-assets.ts. Terminates ACME HTTP-01 TLS on 80/443 and routes
+  # api.<domain> -> kortix-api/llm-gateway and <domain> -> frontend/Kong.
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - kortix-caddy-data:/data
+    environment:
+      KORTIX_DOMAIN: ${KORTIX_DOMAIN}
+      KORTIX_API_DOMAIN: ${KORTIX_API_DOMAIN}
+      KORTIX_ACME_EMAIL: ${KORTIX_ACME_EMAIL}
+    depends_on:
+      kortix-api:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_started
+      frontend:
+        condition: service_started
+      supabase-kong:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  kortix-updater-state:
+  kortix-caddy-data:

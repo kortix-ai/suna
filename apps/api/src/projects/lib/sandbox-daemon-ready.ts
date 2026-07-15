@@ -21,15 +21,6 @@ export interface DaemonReadyDeps {
   now?: () => number;
 }
 
-export function daytonaPreviewHeaders(previewToken: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
-  return headers;
-}
-
 /**
  * Read the daemon's `/kortix/health` once. Returns the opencode/runtime state,
  * or null when the probe itself failed (transient — the caller keeps polling).
@@ -38,13 +29,13 @@ export function daytonaPreviewHeaders(previewToken: string | null): Record<strin
  */
 async function fetchDaemonOpencodeState(
   previewUrl: string,
-  previewToken: string | null,
+  providerHeaders: Record<string, string>,
   fetchImpl: typeof fetch,
 ): Promise<{ opencode: string | null; status: string | null } | null> {
   try {
     const res = await fetchImpl(`${previewUrl.replace(/\/$/, '')}/kortix/health`, {
       method: 'GET',
-      headers: daytonaPreviewHeaders(previewToken),
+      headers: providerHeaders,
       signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
@@ -68,7 +59,7 @@ async function fetchDaemonOpencodeState(
  */
 export async function waitForDaemonOpencodeReady(args: {
   previewUrl: string;
-  previewToken: string | null;
+  providerHeaders?: Record<string, string>;
   budgetMs?: number;
   deps?: DaemonReadyDeps;
 }): Promise<boolean> {
@@ -77,7 +68,7 @@ export async function waitForDaemonOpencodeReady(args: {
   const now = args.deps?.now ?? Date.now;
   const deadline = now() + (args.budgetMs ?? OPENCODE_READY_WAIT_BUDGET_MS);
   for (;;) {
-    const state = await fetchDaemonOpencodeState(args.previewUrl, args.previewToken, fetchImpl);
+    const state = await fetchDaemonOpencodeState(args.previewUrl, args.providerHeaders ?? {}, fetchImpl);
     if (state?.opencode === 'ok') return true;
     // A repo/initial-session boot error won't clear by waiting — bail and let the
     // forward surface the real failure instead of burning the whole budget.

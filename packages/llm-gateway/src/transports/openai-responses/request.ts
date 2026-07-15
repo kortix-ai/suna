@@ -132,7 +132,10 @@ export function chatToResponses(body: Json, descriptor: UpstreamDescriptor): Jso
   const payload: Json = {
     model: descriptor.resolvedModel || body.model,
     input,
-    stream: body.stream === true,
+    // The ChatGPT Codex backend is stream-only (`stream:false` returns 400).
+    // The response transport collects that SSE back into JSON when the client
+    // requested a non-streaming chat completion.
+    stream: descriptor.provider === 'openai-codex' ? true : body.stream === true,
     store: false,
   };
 

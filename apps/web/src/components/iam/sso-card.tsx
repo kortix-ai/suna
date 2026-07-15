@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
 // SAML SSO config on the Settings tab. The Supabase auth.sso_providers
 // row is created out-of-band (Studio or auth admin API) — admins paste
 // the resulting UUID + primary email domain here, plus the JWT claim
@@ -8,25 +7,27 @@ import { useTranslations } from 'next-intl';
 // triggers JIT membership + group sync in the auth middleware.
 
 import { getEnv } from '@/lib/env-config';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, Copy, Loader2, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, Copy, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -53,9 +54,9 @@ import { type SamlSpUrls, buildSamlSpUrls } from '@/lib/saml-sp';
 async function copyToClipboard(value: string, successMsg = 'Copied to clipboard') {
   try {
     await navigator.clipboard.writeText(value);
-    toast.success(successMsg);
+    successToast(successMsg);
   } catch {
-    toast.warning('Copy failed — select and copy manually');
+    errorToast('Copy failed — select and copy manually');
   }
 }
 
@@ -70,14 +71,14 @@ function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }
   return (
     <div className={className}>
       <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
-      <p className="text-muted-foreground mt-0.5 text-[11px]">
+      <p className="text-muted-foreground mt-0.5 text-xs">
         Paste these into your identity provider's SAML configuration.
       </p>
       <div className="mt-3 space-y-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Identifier (Entity ID)</Label>
           <div className="flex items-center gap-2">
-            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+            <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
               {urls.entityId}
             </code>
             <Button
@@ -86,14 +87,14 @@ function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }
               aria-label="Copy Identifier (Entity ID)"
               onClick={() => copyToClipboard(urls.entityId, 'Entity ID copied')}
             >
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="size-3.5 shrink-0" />
             </Button>
           </div>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Reply URL (ACS)</Label>
           <div className="flex items-center gap-2">
-            <code className="border-border/60 bg-muted/30 min-w-0 flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+            <code className="bg-muted/30 min-w-0 flex-1 truncate rounded-md border px-3 py-2 font-mono text-xs">
               {urls.acsUrl}
             </code>
             <Button
@@ -102,7 +103,7 @@ function SpDetails({ urls, className }: { urls: SamlSpUrls; className?: string }
               aria-label="Copy Reply URL (ACS)"
               onClick={() => copyToClipboard(urls.acsUrl, 'Reply URL copied')}
             >
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="size-3.5 shrink-0" />
             </Button>
           </div>
         </div>
@@ -117,7 +118,6 @@ interface SsoCardProps {
 }
 
 export function SsoCard({ accountId, canManage }: SsoCardProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -140,22 +140,22 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const deleteMutation = useMutation({
     mutationFn: () => deleteSsoProvider(accountId),
     onSuccess: () => {
-      toast.success('SSO provider removed');
+      successToast('SSO provider removed');
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
       setDeleteOpen(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove provider'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove provider'),
   });
 
   const deleteMappingMutation = useMutation({
     mutationFn: (mappingId: string) => deleteSsoGroupMapping(accountId, mappingId),
     onSuccess: () => {
-      toast.success('Mapping removed');
+      successToast('Mapping removed');
       queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
       setMapDeleteTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove mapping'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to remove mapping'),
   });
 
   const provider = providerQuery.data;
@@ -163,199 +163,181 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
   return (
-    <section className="border-border/70 bg-card rounded-xl border">
-      <header className={provider || spUrls ? 'border-border/60 border-b px-6 py-4' : 'px-6 py-4'}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-foreground flex items-center gap-2 text-base font-semibold">
-              <ShieldCheck className="text-muted-foreground h-4 w-4" />
-              {tHardcodedUi.raw('componentsIamSsoCard.line103JsxTextSAMLSSO')}
-              {provider && (
-                <Badge
-                  variant="outline"
-                  size="sm"
-                  className="border-emerald-500/40 bg-emerald-500/10 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
-                >
-                  connected
-                </Badge>
-              )}
-            </h2>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {provider
-                ? tHardcodedUi.raw(
-                    'componentsIamSsoCard.line106JsxTextConnectYourIdPUsersSigningInViaSAML',
-                  )
-                : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
-            </p>
-          </div>
-          {canManage &&
-            (provider ? (
-              <Button
-                variant="outline"
-                onClick={() => setEditOpen(true)}
-                size="sm"
-                className="shrink-0"
-              >
-                Edit
-              </Button>
-            ) : (
-              // New providers go through the guided setup wizard (per-IdP
-              // steps + inline import) instead of the bare dialog.
-              <Button asChild size="sm" className="shrink-0">
-                <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
-              </Button>
-            ))}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 space-y-0.5">
+          <p className="text-foreground flex items-center gap-2 text-sm font-medium">
+            SAML SSO
+            {provider && (
+              <Badge variant="success" size="sm">
+                connected
+              </Badge>
+            )}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {provider
+              ? 'Connect your IdP. Users signing in via SAML are auto-provisioned and their IAM groups are kept in sync from a JWT claim.'
+              : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
+          </p>
         </div>
-      </header>
-
-      {!provider && spUrls && <SpDetails urls={spUrls} className="px-6 py-4" />}
-
-      {provider && (
-        <div className="px-6 py-4">
-          {providerQuery.isLoading ? (
-            <Skeleton className="h-16 w-full" />
+        {canManage &&
+          (provider ? (
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(true)}
+              size="sm"
+              className="shrink-0"
+            >
+              Edit
+            </Button>
           ) : (
-            <dl className="text-sm">
-              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
-                <dt className="text-muted-foreground shrink-0">Provider</dt>
-                <dd className="text-foreground min-w-0 truncate text-right font-medium">
-                  {provider.name}
-                </dd>
-              </div>
-              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
-                <dt className="text-muted-foreground shrink-0">
-                  {tHardcodedUi.raw('componentsIamSsoCard.line135JsxTextPrimaryDomain')}
-                </dt>
-                <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
-                  {provider.primary_domain}
-                </dd>
-              </div>
-              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
-                <dt className="text-muted-foreground shrink-0">
-                  {tHardcodedUi.raw('componentsIamSsoCard.line137JsxTextGroupClaim')}
-                </dt>
-                <dd className="min-w-0 truncate text-right">
-                  <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-[11px]">
-                    {provider.group_claim_name}
-                  </code>
-                </dd>
-              </div>
-              <div className="border-border/40 flex items-center justify-between gap-4 border-b py-2">
-                <dt className="text-muted-foreground shrink-0">
-                  {tHardcodedUi.raw('componentsIamSsoCard.line139JsxTextAutoCreateMembers')}
-                </dt>
-                <dd className="text-right">
-                  {provider.auto_create_members ? (
-                    <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-3.5 w-3.5" />
-                      Yes
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">No</span>
-                  )}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-4 py-2">
-                <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
-                <dd className="text-right">
-                  {provider.auto_provision_groups ? (
-                    <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-3.5 w-3.5" />
-                      Yes
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">No</span>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          )}
-        </div>
-      )}
+            // New providers go through the guided setup wizard (per-IdP
+            // steps + inline import) instead of the bare dialog.
+            <Button asChild size="sm" variant="secondary" className="shrink-0">
+              <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
+            </Button>
+          ))}
+      </div>
 
-      {provider && (
-        <>
-          <header className="border-border/60 flex items-center justify-between border-t px-6 py-3">
-            <h3 className="text-foreground text-sm font-medium">
-              {tHardcodedUi.raw('componentsIamSsoCard.line154JsxTextGroupMappings')}
-            </h3>
-            {canManage && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setMapOpen(true)}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {tHardcodedUi.raw('componentsIamSsoCard.line163JsxTextAddMapping')}
-              </Button>
-            )}
-          </header>
-          <div className="px-6 pb-5">
-            {mappingsQuery.isLoading ? (
-              <Skeleton className="h-12 w-full" />
-            ) : mappings.length === 0 ? (
-              <p className="text-muted-foreground text-xs">
-                {tHardcodedUi.raw(
-                  'componentsIamSsoCard.line172JsxTextNoMappingsYetMapIdPGroupRoleValues',
-                )}{' '}
-                <span className="font-mono">{provider.group_claim_name}</span>{' '}
-                {tHardcodedUi.raw(
-                  'componentsIamSsoCard.line173JsxTextClaimToIAMGroupsSoUsersLandIn',
-                )}
-              </p>
+      <div className="bg-popover rounded-md border">
+        {!provider && spUrls && (
+          <div className="px-4 py-5">
+            <SpDetails urls={spUrls} />
+          </div>
+        )}
+
+        {provider && (
+          <div className="px-4 py-5">
+            {providerQuery.isLoading ? (
+              <Skeleton className="h-16 w-full rounded-md" />
             ) : (
-              <ul className="space-y-1.5">
-                {mappings.map((m) => (
-                  <li
-                    key={m.mapping_id}
-                    className="border-border/60 bg-muted/20 flex items-center gap-2.5 rounded-lg border px-3 py-2"
-                  >
-                    <code
-                      title={m.claim_value}
-                      className="text-foreground max-w-[42%] truncate font-mono text-xs"
-                    >
-                      {m.claim_value}
+              <dl className="divide-border divide-y text-sm">
+                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                  <dt className="text-muted-foreground shrink-0">Provider</dt>
+                  <dd className="text-foreground min-w-0 truncate text-right font-medium">
+                    {provider.name}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                  <dt className="text-muted-foreground shrink-0">Primary domain</dt>
+                  <dd className="text-foreground min-w-0 truncate text-right font-mono text-xs">
+                    {provider.primary_domain}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                  <dt className="text-muted-foreground shrink-0">Group claim</dt>
+                  <dd className="min-w-0 truncate text-right">
+                    <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
+                      {provider.group_claim_name}
                     </code>
-                    <ArrowRight className="text-muted-foreground/50 h-3.5 w-3.5 shrink-0" />
-                    <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
-                      {m.group_name}
-                    </Badge>
-                    <span className="flex-1" />
-                    {canManage && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-muted-foreground hover:text-destructive h-7 w-7 shrink-0"
-                        onClick={() => setMapDeleteTarget(m)}
-                        aria-label={tHardcodedUi.raw(
-                          'componentsIamSsoCard.line201JsxAttrAriaLabelRemoveMapping',
-                        )}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                  <dt className="text-muted-foreground shrink-0">Auto-create members</dt>
+                  <dd className="text-right">
+                    {provider.auto_create_members ? (
+                      <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
+                        <Check className="size-3.5 shrink-0" />
+                        Yes
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No</span>
                     )}
-                  </li>
-                ))}
-              </ul>
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-2 first:pt-0 last:pb-0">
+                  <dt className="text-muted-foreground shrink-0">Auto-provision groups</dt>
+                  <dd className="text-right">
+                    {provider.auto_provision_groups ? (
+                      <span className="text-kortix-green inline-flex items-center gap-1 font-medium">
+                        <Check className="size-3.5 shrink-0" />
+                        Yes
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
             )}
           </div>
-        </>
-      )}
+        )}
 
-      {provider && canManage && (
-        <footer className="border-border/60 flex justify-end border-t px-6 py-3">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            {tHardcodedUi.raw('componentsIamSsoCard.line225JsxTextRemoveSSOProvider')}
-          </Button>
-        </footer>
-      )}
+        {provider && (
+          <div className="border-border border-t">
+            <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <p className="text-foreground text-sm font-medium">Group mappings</p>
+              {canManage && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setMapOpen(true)}
+                >
+                  <Plus className="size-3.5 shrink-0" />
+                  Add mapping
+                </Button>
+              )}
+            </div>
+            <div className="border-border border-t">
+              {mappingsQuery.isLoading ? (
+                <div className="px-4 py-3">
+                  <Skeleton className="h-8 w-full rounded-md" />
+                </div>
+              ) : mappings.length === 0 ? (
+                <p className="text-muted-foreground px-4 py-4 text-xs">
+                  No mappings yet. Map IdP group/role values (from the{' '}
+                  <span className="font-mono">{provider.group_claim_name}</span> claim) to IAM
+                  groups so users land in the right group on sign-in.
+                </p>
+              ) : (
+                <div className="divide-border divide-y">
+                  {mappings.map((m) => (
+                    <div key={m.mapping_id} className="flex items-center gap-2.5 px-4 py-3">
+                      <code
+                        title={m.claim_value}
+                        className="text-foreground max-w-[42%] truncate font-mono text-xs"
+                      >
+                        {m.claim_value}
+                      </code>
+                      <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
+                      <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
+                        {m.group_name}
+                      </Badge>
+                      <span className="flex-1" />
+                      {canManage && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={() => setMapDeleteTarget(m)}
+                          aria-label="Remove mapping"
+                        >
+                          <X className="size-3.5 shrink-0" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {provider && canManage && (
+          <div className="border-border flex justify-end border-t px-4 py-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive gap-1.5"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="size-3.5 shrink-0" />
+              Remove SSO provider
+            </Button>
+          </div>
+        )}
+      </div>
 
       <EditProviderDialog
         accountId={accountId}
@@ -380,13 +362,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title={tHardcodedUi.raw('componentsIamSsoCard.line253JsxAttrTitleRemoveSSOProvider')}
-        description={tHardcodedUi.raw(
-          'componentsIamSsoCard.line254JsxAttrDescriptionExistingMembersKeepTheirAccessNewSignIns',
-        )}
-        confirmLabel={tHardcodedUi.raw(
-          'componentsIamSsoCard.line255JsxAttrConfirmLabelRemoveProvider',
-        )}
+        title="Remove SSO provider?"
+        description="Existing members keep their access; new sign-ins via SAML stop being provisioned and group sync no longer runs."
+        confirmLabel="Remove provider"
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
@@ -397,22 +375,20 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         onOpenChange={(o) => {
           if (!o) setMapDeleteTarget(null);
         }}
-        title={tHardcodedUi.raw('componentsIamSsoCard.line266JsxAttrTitleRemoveMapping')}
+        title="Remove mapping?"
         description={
           mapDeleteTarget
             ? `Users with the "${mapDeleteTarget.claim_value}" claim will no longer auto-join "${mapDeleteTarget.group_name}".`
             : ''
         }
-        confirmLabel={tHardcodedUi.raw(
-          'componentsIamSsoCard.line272JsxAttrConfirmLabelRemoveMapping',
-        )}
+        confirmLabel="Remove mapping"
         confirmVariant="destructive"
         isPending={deleteMappingMutation.isPending}
         onConfirm={() => {
           if (mapDeleteTarget) deleteMappingMutation.mutate(mapDeleteTarget.mapping_id);
         }}
       />
-    </section>
+    </div>
   );
 }
 
@@ -431,12 +407,13 @@ function EditProviderDialog({
   existing: SsoProvider | null;
   onSaved: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState(existing?.name ?? '');
   const [domain, setDomain] = useState(existing?.primary_domain ?? '');
   const [claim, setClaim] = useState(existing?.group_claim_name ?? 'groups');
   const [autoCreate, setAutoCreate] = useState(existing?.auto_create_members ?? true);
-  const [autoProvision, setAutoProvision] = useState(existing?.auto_provision_groups ?? false);
+  // New connections default auto-provision ON (groups appear without
+  // hand-mapping); an existing provider keeps whatever the admin chose.
+  const [autoProvision, setAutoProvision] = useState(existing ? existing.auto_provision_groups : true);
   // New providers register by importing the IdP metadata (XML or URL) — the
   // backend handles the identity-provider registration; no internals surface in
   // the UI. Edits reuse the stored provider id under the hood.
@@ -451,7 +428,7 @@ function EditProviderDialog({
       setDomain(existing?.primary_domain ?? '');
       setClaim(existing?.group_claim_name ?? 'groups');
       setAutoCreate(existing?.auto_create_members ?? true);
-      setAutoProvision(existing?.auto_provision_groups ?? false);
+      setAutoProvision(existing ? existing.auto_provision_groups : true);
       setMetaKind('xml');
       setMetaXml('');
       setMetaUrl('');
@@ -483,11 +460,11 @@ function EditProviderDialog({
             auto_provision_groups: autoProvision,
           }),
     onSuccess: () => {
-      toast.success(existing ? 'SSO provider updated' : 'SSO provider configured');
+      successToast(existing ? 'SSO provider updated' : 'SSO provider configured');
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to save provider'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to save provider'),
   });
 
   const metadataReady =
@@ -500,32 +477,28 @@ function EditProviderDialog({
   const spUrls = useMemo(() => buildSamlSpUrls(getEnv().SUPABASE_URL), []);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</DialogTitle>
-          <DialogDescription>
+    <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{existing ? 'Edit SAML provider' : 'Configure SAML SSO'}</ModalTitle>
+          <ModalDescription>
             {existing
               ? 'Update the display name, sign-in domain, and group-claim settings for your identity provider.'
               : 'Paste your IdP’s SAML metadata (Entra → “App Federation Metadata XML”) and we register it for you.'}
-          </DialogDescription>
-        </DialogHeader>
+          </ModalDescription>
+        </ModalHeader>
 
-        {spUrls && (
-          <SpDetails
-            urls={spUrls}
-            className="border-border/60 bg-muted/20 rounded-lg border px-3 py-3"
-          />
-        )}
+        <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+          {spUrls && <SpDetails urls={spUrls} className="bg-muted/20 rounded-md border px-3 py-3" />}
 
-        <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line350JsxTextDisplayName')}</Label>
+            <Label>Display name</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Azure AD"
               disabled={mutation.isPending}
+              variant="popover"
             />
           </div>
 
@@ -533,7 +506,7 @@ function EditProviderDialog({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>IdP SAML metadata</Label>
-                <div className="border-border/70 inline-flex overflow-hidden rounded-md border">
+                <div className="border-border inline-flex overflow-hidden rounded-md border">
                   {(
                     [
                       ['xml', 'Paste XML'],
@@ -547,8 +520,8 @@ function EditProviderDialog({
                       disabled={mutation.isPending}
                       className={
                         metaKind === k
-                          ? 'bg-secondary text-foreground px-2.5 py-1 text-[11px] font-medium'
-                          : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-[11px]'
+                          ? 'bg-secondary text-foreground px-2.5 py-1 text-xs font-medium'
+                          : 'text-muted-foreground hover:bg-muted/50 px-2.5 py-1 text-xs'
                       }
                     >
                       {label}
@@ -563,7 +536,7 @@ function EditProviderDialog({
                   placeholder="<EntityDescriptor …>…</EntityDescriptor>"
                   disabled={mutation.isPending}
                   rows={5}
-                  className="border-border bg-background focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-[11px] outline-none focus-visible:ring-1"
+                  className="border-border bg-popover focus-visible:ring-ring w-full resize-y rounded-md border px-3 py-2 font-mono text-xs outline-none focus-visible:ring-1"
                 />
               ) : (
                 <Input
@@ -572,53 +545,51 @@ function EditProviderDialog({
                   placeholder="https://login.microsoftonline.com/<tenant>/federationmetadata/…"
                   className="text-xs"
                   disabled={mutation.isPending}
+                  variant="popover"
                 />
               )}
-              <p className="text-muted-foreground text-[11px]">
+              <p className="text-muted-foreground text-xs">
                 From Entra: Enterprise App → Single sign-on → SAML → “App Federation Metadata XML”.
               </p>
             </div>
           )}
 
           <div className="space-y-1.5">
-            <Label>
-              {tHardcodedUi.raw('componentsIamSsoCard.line371JsxTextPrimaryEmailDomain')}
-            </Label>
+            <Label>Primary email domain</Label>
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="acme.com"
               disabled={mutation.isPending}
+              variant="popover"
             />
-            <p className="text-muted-foreground text-[11px]">
-              {tHardcodedUi.raw('componentsIamSsoCard.line379JsxTextUsedToRouteSignInFlowsForThis')}
+            <p className="text-muted-foreground text-xs">
+              Used to route sign-in flows for this domain through your IdP.
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line384JsxTextGroupClaimName')}</Label>
+            <Label>Group claim name</Label>
             <Input
               value={claim}
               onChange={(e) => setClaim(e.target.value)}
               placeholder="groups"
               className="font-mono text-xs"
               disabled={mutation.isPending}
+              variant="popover"
             />
-            <p className="text-muted-foreground text-[11px]">
-              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextCommonValues')}
-              <span className="font-mono">groups</span>{' '}
-              {tHardcodedUi.raw('componentsIamSsoCard.line393JsxTextOkta')}{' '}
-              <span className="font-mono">memberOf</span>{' '}
-              {tHardcodedUi.raw('componentsIamSsoCard.line394JsxTextAzureAD')}
+            <p className="text-muted-foreground text-xs">
+              Common values: <span className="font-mono">groups</span> (Okta),{' '}
+              <span className="font-mono">memberOf</span> (Azure AD).
             </p>
-            <p className="text-muted-foreground text-[11px] leading-relaxed">
+            <p className="text-muted-foreground text-xs leading-relaxed">
               <span className="text-kortix-yellow">Entra tip:</span> set your SAML{' '}
               <span className="font-mono">emailaddress</span> claim source to{' '}
-              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com
-              users have no <span className="font-mono">mail</span>, and an empty email
-              breaks sign-in. Entra also emits group <span className="font-mono">Object IDs</span>{' '}
-              by default: map those, or emit names via “Groups assigned to the
-              application” (needs Entra ID P1/P2).
+              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have
+              no <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra
+              also emits group <span className="font-mono">Object IDs</span> by default: map
+              those, or emit names via “Groups assigned to the application” (needs Entra ID
+              P1/P2).
             </p>
           </div>
 
@@ -627,17 +598,14 @@ function EditProviderDialog({
               type="checkbox"
               checked={autoCreate}
               onChange={(e) => setAutoCreate(e.target.checked)}
-              className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+              className="border-border accent-primary mt-0.5 size-3.5 rounded"
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">
-                {tHardcodedUi.raw('componentsIamSsoCard.line407JsxTextAutoCreateMembers')}
-              </span>
-              <span className="text-muted-foreground block text-[11px]">
-                {tHardcodedUi.raw(
-                  'componentsIamSsoCard.line409JsxTextWhenOffOnlyUsersAnAdminHasAlready',
-                )}
+              <span className="font-medium">Auto-create members</span>
+              <span className="text-muted-foreground block text-xs">
+                When off, only users an admin has already invited can sign in via SAML. Group
+                sync still runs for those members.
               </span>
             </span>
           </label>
@@ -647,38 +615,41 @@ function EditProviderDialog({
               type="checkbox"
               checked={autoProvision}
               onChange={(e) => setAutoProvision(e.target.checked)}
-              className="border-border accent-primary mt-0.5 h-3.5 w-3.5 rounded"
+              className="border-border accent-primary mt-0.5 size-3.5 rounded"
               disabled={mutation.isPending}
             />
             <span>
               <span className="font-medium">Auto-provision groups</span>
-              <span className="text-muted-foreground block text-[11px]">
-                Create an IAM group for every group the IdP sends and add users to it — no per-group
-                mapping. You just attach project roles to the auto-created groups.
+              <span className="text-muted-foreground block text-xs">
+                Create an IAM group for every group the IdP sends and add users to it — no
+                per-group mapping. You just attach project roles to the auto-created groups.
               </span>
             </span>
           </label>
-        </div>
+        </ModalBody>
 
-        <DialogFooter>
+        <ModalFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            type="button"
+            variant="outline-ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => mutation.mutate()}
             disabled={!ready || mutation.isPending}
             className="gap-1.5"
           >
-            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
             {existing ? 'Save changes' : 'Import & configure'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
@@ -695,7 +666,6 @@ function AddMappingDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [claimValue, setClaimValue] = useState('');
   const [groupId, setGroupId] = useState('');
 
@@ -721,67 +691,57 @@ function AddMappingDialog({
         group_id: groupId,
       }),
     onSuccess: () => {
-      toast.success('Mapping added');
+      successToast('Mapping added');
       onCreated();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add mapping'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to add mapping'),
   });
 
   const groups = groupsQuery.data ?? [];
   const ready = claimValue.trim().length > 0 && groupId.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {tHardcodedUi.raw('componentsIamSsoCard.line490JsxTextAddGroupMapping')}
-          </DialogTitle>
-          <DialogDescription>
-            {tHardcodedUi.raw(
-              'componentsIamSsoCard.line492JsxTextUsersWithThisClaimValueInTheirSAML',
-            )}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <ModalContent className="lg:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>Add group mapping</ModalTitle>
+          <ModalDescription>
+            Users with this claim value in their SAML token will be added to the chosen IAM group
+            on sign-in.
+          </ModalDescription>
+        </ModalHeader>
 
-        <div className="space-y-4">
+        <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line499JsxTextClaimValue')}</Label>
+            <Label>Claim value</Label>
             <Input
               value={claimValue}
               onChange={(e) => setClaimValue(e.target.value)}
               placeholder="Engineers"
               className="font-mono text-xs"
               disabled={mutation.isPending}
+              variant="popover"
             />
-            <p className="text-muted-foreground text-[11px]">
-              {tHardcodedUi.raw(
-                'componentsIamSsoCard.line508JsxTextExactCaseSensitiveMatchAgainstAnEntryIn',
-              )}
+            <p className="text-muted-foreground text-xs">
+              Exact, case-sensitive match against an entry in the group claim your IdP sends.
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>{tHardcodedUi.raw('componentsIamSsoCard.line514JsxTextIAMGroup')}</Label>
+            <Label>IAM group</Label>
             <Select
               value={groupId || undefined}
               onValueChange={setGroupId}
               disabled={mutation.isPending || groupsQuery.isLoading}
             >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={tHardcodedUi.raw(
-                    'componentsIamSsoCard.line521JsxAttrPlaceholderPickAGroup',
-                  )}
-                />
+              <SelectTrigger variant="popover">
+                <SelectValue placeholder="Pick a group..." />
               </SelectTrigger>
               <SelectContent>
                 {groups.length === 0 ? (
                   <div className="text-muted-foreground px-2 py-1.5 text-xs">
-                    {tHardcodedUi.raw(
-                      'componentsIamSsoCard.line526JsxTextNoGroupsInThisAccountYetCreateOne',
-                    )}
+                    No groups in this account yet. Create one first.
                   </div>
                 ) : (
                   groups.map((g) => (
@@ -793,26 +753,29 @@ function AddMappingDialog({
               </SelectContent>
             </Select>
           </div>
-        </div>
+        </ModalBody>
 
-        <DialogFooter>
+        <ModalFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            type="button"
+            variant="outline-ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => mutation.mutate()}
             disabled={!ready || mutation.isPending}
             className="gap-1.5"
           >
-            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {tHardcodedUi.raw('componentsIamSsoCard.line554JsxTextAddMapping')}
+            {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
+            Add mapping
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

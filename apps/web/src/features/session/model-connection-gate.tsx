@@ -20,7 +20,7 @@ export function ModelConnectionGate({
   size?: 'sm' | 'default';
   className?: string;
 }) {
-  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
 
   return (
     <>
@@ -30,23 +30,40 @@ export function ModelConnectionGate({
         icon={KeyRound}
         size={size}
         title="Connect a model to start chatting"
-        description="This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
+        description={
+          showUpgradeOption
+            ? "This session needs an LLM connected before it can respond. Upgrade for instant access to Kortix's managed models, or bring your own API key from any provider."
+            : 'This session needs an LLM connected before it can respond. Bring your own API key from any provider.'
+        }
         action={
-          <Button type="button" size="sm" onClick={openUpgrade}>
-            <CreditCard className="size-3.5" />
-            Upgrade
-          </Button>
+          showUpgradeOption ? (
+            <Button type="button" size="sm" onClick={openUpgrade}>
+              <CreditCard className="size-3.5" />
+              Upgrade
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => openConnectProvider('providers')}
+            >
+              <KeyRound className="size-3.5" />
+              Bring your own key
+            </Button>
+          )
         }
         secondaryAction={
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => openConnectProvider('providers')}
-          >
-            <KeyRound className="size-3.5" />
-            Bring your own key
-          </Button>
+          showUpgradeOption ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => openConnectProvider('providers')}
+            >
+              <KeyRound className="size-3.5" />
+              Bring your own key
+            </Button>
+          ) : undefined
         }
       />
     </>
@@ -70,7 +87,7 @@ const BAR_EXIT = { type: 'spring', duration: 0.35, bounce: 0 } as const;
  * animation assumes it renders once with the final answer, not per-query.
  */
 export function ModelConnectionBar({ show }: { show: boolean }) {
-  const { openConnectProvider, openUpgrade, modal } = useModelConnectionGate();
+  const { openConnectProvider, openUpgrade, modal, showUpgradeOption } = useModelConnectionGate();
   const reduceMotion = useReducedMotion();
 
   return (
@@ -97,7 +114,7 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
               initial={reduceMotion ? false : { y: '-100%' }}
               animate={reduceMotion ? undefined : { y: '0%', transition: BAR_ENTER }}
               exit={reduceMotion ? undefined : { y: '-100%', transition: BAR_EXIT }}
-              className="border-border bg-accent mx-3 -mt-3 rounded-b-xl border"
+              className="border-border bg-foreground/10 dark:bg-accent mx-3 -mt-3 rounded-b-xl border"
             >
               <div className="flex items-center justify-between gap-3 pt-[18px] pr-2 pb-1.5 pl-4">
                 <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-xs">
@@ -108,14 +125,16 @@ export function ModelConnectionBar({ show }: { show: boolean }) {
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={openUpgrade}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
-                  >
-                    <CreditCard className="size-3.5" />
-                    Upgrade
-                  </button>
+                  {showUpgradeOption && (
+                    <button
+                      type="button"
+                      onClick={openUpgrade}
+                      className="text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,transform] active:scale-[0.96]"
+                    >
+                      <CreditCard className="size-3.5" />
+                      Upgrade
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => openConnectProvider('providers')}

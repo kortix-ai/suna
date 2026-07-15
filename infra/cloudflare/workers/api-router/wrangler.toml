@@ -18,35 +18,59 @@ compatibility_date = "2026-06-01"
 workers_dev = false
 account_id = "9785405a992435bb0c7bd19f9b6d26d5"
 
-# ── PROD: api.kortix.com ──────────────────────────────────────────────────────
+# ── PROD: api.kortix.com + gateway.kortix.com ─────────────────────────────────
 [env.prod]
 name = "api-kortix-router"
-routes = [{ pattern = "api.kortix.com", custom_domain = true }]
+routes = [
+  { pattern = "api.kortix.com", custom_domain = true },
+  { pattern = "gateway.kortix.com/*", zone_name = "kortix.com" },
+]
 
 [env.prod.vars]
 # EKS (eu-west-2, colocated with the Supabase DB) is the active backend; ECS
 # Fargate is the warm standby. Flip with `--var ACTIVE_BACKEND:ecs-fargate`
-# (instant, reversible). Both kept current by CI.
-ACTIVE_BACKEND = "eks"
+# (instant, reversible). Both kept current by CI. The gateway has its OWN toggle
+# (GATEWAY_ACTIVE_BACKEND) so it flips independently of the API.
+ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
+GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+GATEWAY_BACKEND_EKS = "https://gateway-eks.kortix.com"
+GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-ecs-fargate.kortix.com"
 
-# ── STAGING: staging-api.kortix.com ───────────────────────────────────────────
+# ── STAGING: staging-api.kortix.com + gateway-staging.kortix.com ──────────────
 [env.staging]
 name = "staging-api-kortix-router"
-routes = [{ pattern = "staging-api.kortix.com", custom_domain = true }]
+# staging-api is a Worker ROUTE over a proxied (cfargotunnel) record — NOT a
+# custom domain like dev/prod — so keep it a route to avoid clobbering that DNS.
+routes = [
+  { pattern = "staging-api.kortix.com/*", zone_name = "kortix.com" },
+  { pattern = "gateway-staging.kortix.com/*", zone_name = "kortix.com" },
+]
 
 [env.staging.vars]
-ACTIVE_BACKEND = "eks"
+ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://staging-api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://staging-api-ecs-fargate.kortix.com"
+GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+GATEWAY_BACKEND_EKS = "https://gateway-staging-eks.kortix.com"
+GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-staging-ecs-fargate.kortix.com"
 
-# ── DEV: dev-api.kortix.com ───────────────────────────────────────────────────
+# ── DEV: dev-api.kortix.com + gateway-dev.kortix.com ──────────────────────────
 [env.dev]
 name = "dev-api-kortix-router"
-routes = [{ pattern = "dev-api.kortix.com", custom_domain = true }]
+routes = [
+  { pattern = "dev-api.kortix.com", custom_domain = true },
+  { pattern = "gateway-dev.kortix.com/*", zone_name = "kortix.com" },
+]
 
 [env.dev.vars]
 ACTIVE_BACKEND = "ecs-fargate"
 BACKEND_EKS = "https://dev-api-eks.kortix.com"
 BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"
+# Dev gateway is flipped to ECS. GATEWAY_BACKEND_EKS is the rollback origin
+# (needs gateway-dev-eks on the EKS ingress + wildcard cert to serve; today rollback
+# = remove the gateway-dev route → external-dns record falls back to EKS directly).
+GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+GATEWAY_BACKEND_EKS = "https://gateway-dev-eks.kortix.com"
+GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"

@@ -22,7 +22,7 @@ kortix cr ls                        # open change requests
 kortix cr open --title "..."        # propose merging your branch into main
 ```
 
-The sandbox token is project-scoped: read+write anything on *this* project (secrets, sessions, triggers, change requests, apps), but it can't list other projects or touch account-level resources. See [Token scope](#token-scope).
+The sandbox token is project-scoped: read+write anything on *this* project (secrets, sessions, triggers, and change requests), but it can't list other projects or touch account-level resources. See [Token scope](#token-scope).
 
 ## On your laptop
 
@@ -72,29 +72,55 @@ One Kortix login can belong to many accounts (personal, a company account, …).
 
 ### Self-host
 
-`kortix self-host start` creates and starts a production-style local Kortix stack
-using Docker Compose. On first interactive setup it always collects a Daytona
-API key (the sandbox runtime — required, or agent sessions can't start) and
-managed GitHub access (a PAT or GitHub App — required to create projects), plus
-the optional integrations you may not need yet: Freestyle for app deployments
-and Pipedream for app connectors. Local ports, Supabase, generated secrets, and
-Docker defaults are handled automatically. `start` prints a warning if the
-sandbox provider or git provider still isn't configured.
+`kortix self-host` is one generic Docker-native system — no separate "target"
+to pick. `init` generates a `docker-compose.yml` + `.env` (plus a `Caddyfile`
+and `updater.sh` when a domain is configured) into
+`~/.config/kortix/self-host/<instance>/`, and `start` pulls the images and
+runs `docker compose up`. It's identical on a laptop, any VPS, or a cloud VM —
+there is no AWS profile, no Terraform, no TUF/signing, no SSM.
+
+`start` creates config if needed, starts Supabase/API/gateway/frontend
+locally, and collects the Daytona sandbox key, managed GitHub access, and
+optional Pipedream connector integration via the `configure` wizard. Local
+ports, generated secrets, and image tags are handled automatically. A public
+domain + TLS is opt-in: set `KORTIX_DOMAIN` (and optionally
+`KORTIX_API_DOMAIN`, default `api.<domain>`) via `env set` to turn on the
+bundled Caddy reverse proxy, which terminates TLS via ACME HTTP-01 on ports
+80/443 — leave it unset for the default loopback-port setup.
+
+An always-present in-compose `kortix-updater` service (gated by
+`KORTIX_AUTO_UPDATE`, on by default) pulls the configured channel's images on
+an interval (`KORTIX_UPDATE_INTERVAL`, default daily) and rolls the stack
+forward when anything actually changed — `update`/`reconcile` just runs that
+same logic once, immediately. The full operator runbook lives at
+`docs/runbooks/self-hosting.md` in the repository, and the architecture is
+documented at [Self-hosting architecture](/docs/reference/self-hosting-architecture).
+
+For a bare Linux box (VPS/EC2), `scripts/kortix-selfhost-up.sh` installs
+Docker + the CLI and runs `init`/`start` for you — see the runbook.
 
 | Command | Effect |
 | --- | --- |
-| `kortix self-host init` | Create the self-host config with production defaults, without starting the stack. |
-| `kortix self-host start` | Create config if needed, start the local stack, and register the `selfhost` host. |
-| `kortix self-host update [--tag <v>]` | Pull a newer version (default: `latest`), apply migrations, and recreate the stack in place — preserves the Postgres volume. |
-| `kortix self-host version` | Show the running version and image tags. |
+| `kortix self-host init` | Create or refresh the self-host config, without starting the stack. Non-mutating to a running stack. |
+| `kortix self-host configure` | Interactive wizard for integrations (Daytona, GitHub, Pipedream) and update policy (channel, auto-update, interval). |
+| `kortix self-host doctor` | Validate local Docker tooling and the rendered Compose config. Non-mutating. |
+| `kortix self-host start` | Create config if needed, start the stack, and register the `selfhost` host. |
+| `kortix self-host update [--tag <v> \| --channel stable\|latest]` | Pull the configured (or given) channel/tag's images and recreate the stack in place — migrates first, then rolls forward. |
+| `kortix self-host reconcile` | Alias for `update` — converge to the configured channel/version right now. |
+| `kortix self-host rollback --release <v>` | Roll back to an explicit older version (same mechanics as `update`, pinned). |
+| `kortix self-host version` | Show the running version, configured channel, and whether a newer release is available. |
 | `kortix self-host restart` | Restart the stack. |
 | `kortix self-host status` | Show Docker Compose service status. |
-| `kortix self-host open` | Open the local dashboard in your browser. |
-| `kortix self-host configure` | Re-run the Daytona, Freestyle, GitHub, and Pipedream credential wizard. |
+| `kortix self-host open` | Open the dashboard in your browser. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
-| `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |
+| `kortix self-host env set KEY=VALUE …` | Update persistent env values (domain, integrations, update policy, …) before the next start. |
 | `kortix self-host logs [service]` | Tail Docker Compose logs. |
 | `kortix self-host stop` | Stop the stack. |
+
+Common flags: `--instance <name>` (default `default`), `--tag <version>` /
+`--release <version>` (pin an explicit image tag), `--channel stable|latest`
+(default `stable`), `--auto-update on|off` (default `on`),
+`--update-interval <seconds>` (default `86400`), `--json`, and `--yes`.
 
 ### Projects
 
@@ -135,8 +161,8 @@ Encrypted env vars stored on the project, injected as plain env into every sessi
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secret names + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`); marks required-but-missing. |
-| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
+| `kortix secrets ls` | List secrets by identifier + manifest `env` spec (`env:` in `kortix.yaml`, `[env]` in legacy `kortix.toml`), showing `→ KEY` when the injected env key differs; marks required-but-missing. |
+| `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). Add `--identifier <id>` (alias `--id`) with exactly one `KEY=VALUE` pair to store a second value under the same env key. |
 | `kortix secrets request NAME [NAME …] [--scope runtime\|connector] [--expires <min>]` | Mint a short-lived link for a human to **enter** the value(s) directly — you never see or handle the raw value. Surface the URL (web: fill-in modal; Slack: tappable link). |
 | `kortix secrets unset NAME …` | Remove. |
 
@@ -204,22 +230,6 @@ Manages the project's sandbox images — the same surface as the dashboard's Cus
 
 Options for `add`/`update`: `--image <ref>` (mutually exclusive with `--dockerfile`), `--dockerfile <path>` (repo-relative), `--name <label>` (default: slug), `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
-### Apps (experimental)
-
-Manages deployable [apps](/docs/concepts/apps) — the same surface as the dashboard's Apps page. Apps are declared in `[[apps]]` in the manifest and deployed to a provider. Hidden from `kortix help` and refuses to run unless `KORTIX_APPS_EXPERIMENTAL=true` is set locally, in addition to the platform-side apps feature being enabled for the project.
-
-| Command | Effect |
-| --- | --- |
-| `kortix apps ls [--json]` | List apps + latest deployment status. |
-| `kortix apps add <slug> --repo <url> [options]` | Create an app in the manifest. |
-| `kortix apps update <slug> [options]` | Update an app's fields. |
-| `kortix apps rm <slug>` | Remove an app from the manifest. |
-| `kortix apps deploy <slug>` | Deploy now (bypasses the drift check). |
-| `kortix apps stop <slug>` | Tear down the latest deployment. |
-| `kortix apps logs <slug> [--json]` | Fetch provider logs for the latest deploy. |
-
-Options for `add`/`update`: `--name <label>`, `--framework <f>` (e.g. `next`, `vite`, `static`), `--repo <url>` (git source), `--branch <b>`, `--root-path <p>` (subdir to deploy), `--tar <url>` (tarball source, alternative to `--repo`), `--build-command <cmd>`, `--out-dir <dir>`, `--domains <d,d>` (comma-separated), `--disable` (set `enabled=false`). Global: `--project <id>`, `--host <name>`.
-
 ### Marketplace
 
 Browse and install items (skills, etc.) from the Kortix marketplace into a linked cloud project.
@@ -269,7 +279,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions log [<id>] [--limit <n>] [--json]` | Print a session's recent messages, read-only — peek at what an agent is doing without sending it anything. Alias: `messages`. |
 | `kortix sessions digest [--since <7d>] [--json]` | Compact multi-session review for reflection: metadata + compressed transcript snippets with tool outputs stripped. Aliases: `review`, `summary`. |
 | `kortix sessions preview <id> [port] [--port <n>] [--json]` | Print a clickable, root-served preview URL for a port in the session's sandbox (default `3000`). |
-| `kortix sessions restart <id>` | Re-provision a session in place. |
+| `kortix sessions restart <id>` | Restart the session's sandbox. An already materialized provider runtime is stop/started in place; a replacement is allocated only if the original sandbox never materialized. |
 | `kortix sessions rename <id> <name>` | Set a session's name. Pass `""` to clear it and revert to the automatic title. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
@@ -440,7 +450,7 @@ Run OpenCode locally against this project's `.kortix/opencode` config — the sa
 
 ### Ship
 
-Stage everything, commit, and push your current branch to the project's git repo — in one command. Run it once to create the project, then run it again any time to sync. Alias: `kortix deploy` — despite the name, it's a git push, not app deployment.
+Stage everything, commit, and push your current branch to the project's git repo — in one command. Run it once to create the project, then run it again any time to sync. Alias: `kortix deploy`; it performs the same git sync as `kortix ship`.
 
 Every run: (1) verify `kortix.yaml` parses + validates (skip with `--no-verify`); (2) `git add -A` + commit (skipped if nothing changed); (3) offer to set any `[env]` secret not yet set (skip with `--no-env`); (4) push the branch you're on to the same-named branch on the project's repo; (5) connect any declared connector that still needs auth (skip with `--no-connect`).
 
@@ -476,7 +486,7 @@ Two token types, both with the `kortix_pat_…` prefix, distinguished by an inte
 | Type | Scope | Issued by | Typical use |
 | --- | --- | --- | --- |
 | **User token** | All projects on accounts the user belongs to + account-level routes (`/v1/accounts/me`, billing, etc.) | `kortix login` browser flow → minted via `POST /v1/accounts/tokens` | The CLI on your laptop |
-| **Project token** | Read + write everything on one project — secrets, sessions, triggers, change requests, apps. Cannot list other projects or hit account-level routes. | Auto-minted at session create; surfaced via `POST /v1/projects/:id/cli-token` | The CLI inside a sandbox |
+| **Project token** | Read + write everything on one project — secrets, sessions, triggers, and change requests. Cannot list other projects or hit account-level routes. | Auto-minted at session create; surfaced via `POST /v1/projects/:id/cli-token` | The CLI inside a sandbox |
 
 Enforcement: every project route checks the token's `project_id` against the URL's `:projectId`. Mismatch → 403. Account routes (`/v1/accounts/*`) reject any project-scoped token outright.
 
@@ -496,7 +506,7 @@ The CLI reads `KORTIX_CLI_TOKEN` automatically (falling back to `KORTIX_EXECUTOR
 
 ### Rotating
 
-A sandbox's project token is minted at session create and lives for that sandbox. Restarting re-provisions and issues a fresh token; an existing sandbox keeps its token until it restarts.
+A sandbox's project token is minted for the session sandbox and remains the token for that sandbox across restart of an already materialized runtime. Restarting stop/starts that same provider runtime in place. A replacement runtime is allocated only if the original sandbox never materialized.
 
 ## Common workflows
 
@@ -578,6 +588,6 @@ The `KORTIX_*` prefix is reserved for platform-injected values. Don't declare pr
 
 ## What the CLI is not
 
-- **Not a separate runtime.** Use `kortix self-host start` to run your own local Kortix Cloud stack, then switch between Cloud and local APIs with `kortix hosts use`.
+- **Not a separate runtime.** Use `kortix self-host start` to run the generic Docker self-host stack (laptop, VPS, or cloud VM — all identical), then switch between Cloud and self-hosted APIs with `kortix hosts use`.
 - **Not a `git` replacement.** `kortix cr` composes with `git` rather than wrapping it.
 - **Not the runtime.** OpenCode executes the agent in the sandbox; the CLI is the control plane. See [Kortix vs OpenCode config](/docs/reference/config-boundary).

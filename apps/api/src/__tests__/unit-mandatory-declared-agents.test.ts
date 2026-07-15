@@ -56,7 +56,7 @@ describe('resolveGovernedAgentGrant — non-subject preserves today\'s exact beh
     const loaded = loadAgents(`
 [[agents]]
 name = "release-bot"
-kortix_cli = ["project.deploy"]
+kortix_cli = ["project.trigger.create"]
 `);
     const result = resolveGovernedAgentGrant('rogue-agent', loaded, {
       subject: false,

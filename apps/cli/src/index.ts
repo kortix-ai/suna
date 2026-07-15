@@ -3,7 +3,6 @@ import { printBanner } from './banner.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
-import { appsExperimentalEnabled, runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
@@ -26,6 +25,7 @@ import { runSelfHost } from './commands/self-host.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
+import { runSkills } from './commands/skills.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -61,9 +61,7 @@ interface CommandTier {
 // what lives OUTSIDE any project (who you are, which cloud/account, which
 // projects exist), what operates ON the linked project (its code, its agents &
 // integrations, its sessions, its access), and the CLI tool itself. Order +
-// membership here IS the layout. `apps` is spliced into "Agents & integrations"
-// only when its experimental flag is on (see appsExperimentalEnabled in
-// ./commands/apps.ts), staying hidden without touching registration/dispatch.
+// membership here IS the layout.
 const TIERS: readonly CommandTier[] = [
   {
     label: 'Account',
@@ -152,13 +150,15 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Search, show, install, and inspect marketplace items',
           },
           {
+            name: 'skills',
+            args: '<subcommand>',
+            blurb: 'Load Kortix system skills (how Kortix works) live from the CLI',
+          },
+          {
             name: 'executor',
             args: '<subcommand>',
             blurb: 'Call connectors as tools (discover/describe/call) + run the MCP server',
           },
-          ...(appsExperimentalEnabled()
-            ? [{ name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' }]
-            : []),
         ],
       },
       {
@@ -364,6 +364,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
+  if (argv[0] === 'skills') {
+    return runSkills(argv.slice(1));
+  }
   if (argv[0] === 'registry') {
     process.stderr.write(
       `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
@@ -372,9 +375,6 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'sandboxes') {
     return runSandboxes(argv.slice(1));
-  }
-  if (argv[0] === 'apps') {
-    return runApps(argv.slice(1));
   }
   if (argv[0] === 'cr') {
     return runCr(argv.slice(1));
@@ -433,9 +433,9 @@ const KNOWN_COMMANDS = [
   'channels',
   'sandboxes',
   'marketplace',
+  'skills',
   'executor',
   'registry',
-  'apps',
   'agents',
   'access',
   'roles',

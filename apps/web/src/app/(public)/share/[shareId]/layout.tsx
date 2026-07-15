@@ -1,12 +1,16 @@
-import { Metadata } from 'next';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { Metadata } from 'next';
 
-export async function generateMetadata({ params }: { params: Promise<{ shareId: string }> }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ shareId: string }>;
+}): Promise<Metadata> {
   const { shareId } = await params;
 
   const title = 'Shared Conversation | Kortix';
   const description = 'Replay this Worker conversation on Kortix';
-  const url = getServerPublicEnv().APP_URL || 'https://www.kortix.com';
+  const url = getServerPublicEnv().APP_URL || 'https://kortix.com';
 
   return {
     title,

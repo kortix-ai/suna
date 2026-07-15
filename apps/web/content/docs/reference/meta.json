@@ -4,6 +4,7 @@
     "index",
     "manifest",
     "cli",
+    "self-hosting-architecture",
     "change-requests",
     "session-runtime",
     "secrets",

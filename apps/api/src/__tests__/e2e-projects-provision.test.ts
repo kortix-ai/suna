@@ -95,21 +95,6 @@ mock.module('../projects/git-backends', () => ({
   managedGithubToken: () => managedPat,
 }));
 
-// Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
-// git) so loading the projects module graph doesn't drag real deployment code —
-// and its transitive DB imports — into this lightweight test.
-mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-freestyle-key',
-  getFreestyleApiUrl: () => 'https://freestyle.example.test',
-  callFreestyle: async () => new Response('{}', { status: 200 }),
-  freestyleProvider: {
-    name: 'freestyle',
-    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
-    stop: async () => {},
-    logs: async () => ({}),
-  },
-}));
-
 const realAuthMiddleware = await import('../middleware/auth');
 mock.module('../middleware/auth', () => ({
   ...realAuthMiddleware,
@@ -169,6 +154,8 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickRoutedPreBuild: () => {},
+  templateBuildProviders: () => ['daytona', 'platinum', 'e2b'],
   kickProjectTemplatePrebuilds: () => {},
   kickStartupPreBuild: () => {},
   reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
@@ -297,6 +284,9 @@ mock.module('../shared/db', () => ({
           return Promise.resolve([]);
         },
         onConflictDoUpdate: () => {
+          if (table === projects) {
+            throw new Error('managed project provisioning must insert a fresh project row');
+          }
           if (table === projectMembers) {
             grantedProjectRole = values;
             return Promise.resolve([]);
@@ -444,7 +434,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(insertedProject).toBeNull();
   });
 
-  test('seeds selected marketplace skills into the initial managed repo setup commit', async () => {
+  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
+    // The deterministic install/lock engine is gone (see
+    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
+    // the plain starter scaffold. `marketplace_items` is accepted for API
+    // back-compat but no longer installs anything at provision time; adding a
+    // marketplace item to a project is now an agent import
+    // (POST /:projectId/marketplace/install-session), which needs the project
+    // (and a session) to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -465,36 +462,22 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(res.status).toBe(201);
     expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    expect(seedFilePaths).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).toContain('registry-lock.json');
+    // No lock is ever produced — the engine that wrote it is deleted.
+    expect(seedFilePaths).not.toContain('registry-lock.json');
+    // The requested marketplace skills are NOT deterministically installed —
+    // only the always-present kortix-system skill (part of the base minimal
+    // scaffold) is present.
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/deep-research/SKILL.md');
+    expect(seedFilePaths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(seedFilePaths).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(seedFilePaths).toContain('kortix.yaml');
 
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/show.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/plugins/pty.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/web_search.ts');
     expect(seedBaseFilePaths).toContain('.kortix/opencode/tools/lib/get-env.ts');
     expect(seedBaseFilePaths).not.toContain('registry-lock.json');
-
-    const lock = JSON.parse(seedFilesByPath.get('registry-lock.json') ?? '{}');
-    expect(lock.version).toBe(2);
-    expect(Object.keys(lock.items).sort()).toContain('agent-browser');
-    expect(Object.keys(lock.items).sort()).toContain('deep-research');
-    expect(Object.keys(lock.items).sort()).toContain('pdf');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-system');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-memory');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-executor');
-    expect(Object.keys(lock.items).sort()).toContain('kortix-slack');
-    expect(Object.keys(lock.items).sort()).not.toContain('account-research');
-    // kortix-computer now lives in the marketplace tier (opt-in), not the base
-    // floor — it's absent here because this request didn't select it.
-    expect(Object.keys(lock.items).sort()).not.toContain('kortix-computer');
-    expect(lock.items['agent-browser'].type).toBe('registry:skill');
-    expect(lock.items['agent-browser'].source).toBe('kortix-starter');
-    expect(lock.items['agent-browser'].sourceType).toBe('local');
-    expect(lock.items['agent-browser'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/agent-browser/SKILL.md');
-    expect(lock.items['kortix-system'].source).toBe('kortix-starter');
-    expect(lock.items['kortix-system'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
-    expect(lock.items['deep-research'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/deep-research/SKILL.md');
-    expect(lock.items['pdf'].files.map((file: { target: string }) => file.target)).toContain('.kortix/opencode/skills/pdf/SKILL.md');
   });
 
   test('returns 503 when managed git is not configured', async () => {
@@ -517,5 +500,30 @@ describe('POST /v1/projects/provision (managed git)', () => {
       body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent', provider: 'gitlab' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// GET /v1/projects/managed-git/status — lets the create-project UI pre-check
+// whether the managed-git ("Create project") path is usable before hitting
+// the 503, so it can disable/annotate that option gracefully instead of
+// surfacing a raw server error (self-host with no MANAGED_GIT_* configured is
+// the primary case this exists for).
+describe('GET /v1/projects/managed-git/status', () => {
+  beforeEach(() => {
+    setTestAuth();
+    backendConfigured = true;
+  });
+
+  test('reports configured: true when the managed backend is configured', async () => {
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: true, provider: 'github' });
+  });
+
+  test('reports configured: false when the managed backend is not configured', async () => {
+    backendConfigured = false;
+    const res = await createApp().request('/v1/projects/managed-git/status');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ configured: false, provider: 'github' });
   });
 });

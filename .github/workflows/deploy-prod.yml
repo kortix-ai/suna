@@ -7,7 +7,9 @@ name: Deploy Prod
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
-#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds).
+#      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
+#      self-host `:stable` channel is promoted SEPARATELY and manually via
+#      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
@@ -162,7 +164,12 @@ jobs:
               echo "::error::$IMAGE: no staging/dev image is published for this release source."
               exit 1
             fi
-            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
+            # A prod release publishes :X.Y.Z + :latest only. The self-host
+            # `:stable` channel — the tag self-hosted boxes auto-update to — is
+            # CURATED, not automatic: a human promotes a proven version to
+            # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
+            # Released != auto-shipped to every self-hosted customer overnight.
+            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
@@ -655,6 +662,34 @@ jobs:
   # This job WATCHES that roll finish on exactly :VERSION, then announces to Slack.
   # kortixVersion comes from the values bump, so /v1/health reports the clean
   # X.Y.Z — no task-def version stamping like the old ECS roll needed.
+  # Roll prod ECS Fargate (api + gateway) to the release image, keeping it current
+  # alongside EKS. The script skips gracefully until the prod ECS gateway infra
+  # exists, and keeps each service's task-def current WITHOUT changing its desired
+  # count — so prod ECS stays a scaled-to-zero standby (no extra cost) until the
+  # gated prod traffic flip deliberately scales it up. Deploy ≠ flip.
+  deploy-ecs:
+    name: Deploy API + gateway to prod (ECS Fargate)
+    needs: [version, retag-images, migrate-db]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC → ECS deploy role
+      contents: read
+    env:
+      AWS_REGION: eu-west-2
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Roll prod ECS (api + gateway) from the prod-env blob
+        run: |
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-api:${VERSION}"
+          bash infra/scripts/ecs-deploy.sh prod "kortix/kortix-gateway:${VERSION}" --service gateway
+
   deploy-api:
     name: Deploy API to prod (EKS / GitOps)
     needs: [version, retag-images, migrate-db]

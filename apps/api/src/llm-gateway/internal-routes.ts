@@ -1,4 +1,9 @@
-import type { AuthedPrincipal, GatewayTrace, UsageEvent } from '@kortix/llm-gateway';
+import type {
+  AuthedPrincipal,
+  GatewayTrace,
+  ModelRouteInput,
+  UsageEvent,
+} from '@kortix/llm-gateway';
 import { Hono } from 'hono';
 import { assertBillingActive } from '../billing/services/billing-gate';
 import { checkBudget } from './budgets';
@@ -11,6 +16,7 @@ import {
 import { matchesInternalToken } from './internal-auth';
 import { gatewayModelCatalog } from './models/catalog-models';
 import { resolveCandidates } from './resolution/resolve-candidates';
+import { resolveGatewayRoute } from './routing';
 import { logger } from '../lib/logger';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
@@ -57,6 +63,15 @@ export function createInternalGatewayRoutes() {
       typeof model === 'string' ? model : '',
     );
     return c.json({ candidates });
+  });
+
+  app.post('/resolve-route', async (c) => {
+    const { principal, input } = await c.req.json();
+    const route = await resolveGatewayRoute(
+      principal as AuthedPrincipal,
+      input as ModelRouteInput,
+    );
+    return c.json({ route });
   });
 
   app.post('/budget-check', async (c) => {

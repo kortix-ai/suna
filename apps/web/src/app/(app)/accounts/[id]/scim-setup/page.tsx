@@ -25,8 +25,8 @@ export default function ScimSetupPage() {
   }
 
   return (
-    <main className="px-6 py-10">
+    <div className="px-6 py-10">
       <ScimSetupWizard accountId={accountId} />
-    </main>
+    </div>
   );
 }
