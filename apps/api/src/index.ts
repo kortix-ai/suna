@@ -69,6 +69,7 @@ import { scimRouter } from './scim';
 import { setupApp } from './setup';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { auditStateChangingRequest } from './shared/audit';
+import { GitOperationError, isGitOperationError } from './projects/git/mirror';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -871,6 +872,27 @@ app.onError((err, c) => {
     });
     c.header('Retry-After', '10');
     return c.json({ error: true, message: 'sandbox is not running', status: 503 }, 503);
+  }
+
+  // A bare-clone / fetch of a project's git mirror that exceeds its timeout
+  // (SIGTERM mid-transfer, large repo, transient network) is EXPECTED and
+  // retryable — the mirror already retries once internally before surfacing.
+  // Previously these surfaced as the opaque Better Stack pattern `8d0cffbb…`
+  // ("Cloning into bare repository '/tmp/kortix/git-cache/….git'…" — git's
+  // progress line captured on stderr before the kill, masking the real cause).
+  // `runGit` now throws a typed `GitOperationError` (kind 'timeout') whose
+  // message names the timeout; classify the transient kind into a retryable
+  // 503 + Retry-After WITHOUT paging Sentry (mirroring Platinum /
+  // request-deadline), while a real `failed` kind (auth / missing repo) still
+  // falls through to Sentry with a meaningful `fatal:` message. See
+  // projects/git/mirror.ts.
+  if (isGitOperationError(err) && err.kind === 'timeout') {
+    appLogger.warn(`${method} ${path} -> 503 [GitOperationError:timeout] ${err.message}`, {
+      method, path, errorType: 'GitOperationError', gitKind: 'timeout',
+      gitArgs: err.gitArgs, signal: err.signal,
+    });
+    c.header('Retry-After', '10');
+    return c.json({ error: true, message: 'git mirror is temporarily unavailable', status: 503 }, 503);
   }
 
   if (err instanceof BillingError) {
