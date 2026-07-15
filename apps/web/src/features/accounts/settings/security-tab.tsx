@@ -50,7 +50,9 @@ export function FactorRow({
           <div className="text-foreground truncate text-sm font-medium">
             {factor.friendly_name || (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
           </div>
-          <div className="text-muted-foreground text-xs capitalize">{factor.factor_type}</div>
+          <div className="text-muted-foreground text-xs">
+            {factor.factor_type === 'phone' ? 'SMS' : 'Authenticator app (TOTP)'}
+          </div>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -121,8 +123,11 @@ export function SecurityTab() {
       successToast('Authenticator enrolled — this session is now MFA-verified');
       setEnrolling(null);
       setCode('');
-      queryClient.invalidateQueries({ queryKey: ['mfa-factors'] });
-      queryClient.invalidateQueries({ queryKey: ['mfa-aal'] });
+      // Verifying the first factor elevates this session to aal2. Refetch every
+      // active query so data that 403'd while aal1 (projects, API keys, members)
+      // repopulates on its own — no manual page reload, and the MFA error banners
+      // on those screens clear.
+      queryClient.invalidateQueries();
     },
     onError: (err: Error) => errorToast(err.message || 'Code did not verify'),
   });
