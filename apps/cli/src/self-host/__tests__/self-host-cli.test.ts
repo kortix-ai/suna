@@ -228,13 +228,15 @@ describe('kortix self-host (generic Docker CLI)', () => {
   });
 
   describe('configuration feature flags (single-account / landing / enterprise-license / billing)', () => {
-    test('default to off, and are explicit in .env (not just hard-coded in the compose template)', async () => {
+    test('default to off (except the landing page, off by default too), and are explicit in .env (not just hard-coded in the compose template)', async () => {
       const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
       expect(code).toBe(0);
       const env = readEnv();
       expect(env.KORTIX_SINGLE_ACCOUNT_MODE).toBe('false');
       expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('false');
-      expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
+      // Self-host is an app deployment, not a marketing site — the marketing
+      // landing page is DISABLED by default (unlike Kortix Cloud).
+      expect(env.KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
       expect(env.ENTERPRISE_LICENSE_AVAILABLE).toBe('false');
       expect(env.KORTIX_BILLING_INTERNAL_ENABLED).toBe('false');
       expect(env.KORTIX_PUBLIC_BILLING_ENABLED).toBe('false');
@@ -248,10 +250,25 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect(env.KORTIX_PUBLIC_SINGLE_ACCOUNT_MODE).toBe('true');
     });
 
-    test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE', async () => {
+    test('--no-landing sets KORTIX_PUBLIC_DISABLE_LANDING_PAGE (redundant with the default, kept for scripts)', async () => {
       const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--no-landing']);
       expect(code).toBe(0);
       expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('true');
+    });
+
+    test('--landing re-enables the marketing landing page (the inverse of the self-host default)', async () => {
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--landing']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
+    });
+
+    test('a re-run of init without --landing does not reset a previously-enabled landing page', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets', '--landing']);
+      expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
+
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_PUBLIC_DISABLE_LANDING_PAGE).toBe('false');
     });
 
     test('--enterprise-license sets ENTERPRISE_LICENSE_AVAILABLE', async () => {

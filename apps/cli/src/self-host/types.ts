@@ -17,8 +17,11 @@ export interface SelfHostCommandFlags {
    *  frontend flag (--single-account). */
   singleAccount?: boolean;
   /** Redirect unauthenticated visitors hitting "/" straight to /auth instead
-   *  of the marketing landing page (KORTIX_PUBLIC_DISABLE_LANDING_PAGE,
-   *  --no-landing). */
+   *  of the marketing landing page (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) — this
+   *  is the self-host DEFAULT (a self-host is an app deployment, not a
+   *  marketing site). `--no-landing` sets this explicitly (redundant with the
+   *  default, kept for scripts); `--landing` sets it to `false` to
+   *  re-enable the marketing site. */
   disableLanding?: boolean;
   /** Operator holds a Kortix Enterprise license: unlocks SSO/SCIM/RBAC/audit
    *  entitlements platform-wide regardless of billing tier
@@ -28,6 +31,17 @@ export interface SelfHostCommandFlags {
    *  instead of failing — local experimentation only, never for a real
    *  deployment (managed git / sandbox / LLM calls will fail at runtime). */
   allowMissingSecrets?: boolean;
+  /** GitHub org (or omit for a personal account) to create/install the
+   *  self-host GitHub App under — `connect-github`, and the guided `init`/
+   *  `configure` GitHub step. */
+  org?: string;
+  /** Force the headless/manual GitHub App connect flow (print URLs, accept
+   *  pasted-back code/installation_id) instead of auto-opening a browser.
+   *  Automatic on a non-TTY even without this flag. */
+  manual?: boolean;
+  /** Skip the guided `connect-github` offer during `init`/`configure` —
+   *  drops straight to the advanced "paste an existing App or PAT" menu. */
+  skipGithub?: boolean;
   /** Dev mode: run locally-built images (e.g. a branch build) that aren't on
    *  any registry. Sets KORTIX_IMAGE_PULL=never (the updater/`update` skip
    *  `docker compose pull`) and forces auto-update off — combine with

@@ -33,6 +33,7 @@ import {
   servicesForKeys,
   type SecretDef,
 } from '../self-host/secrets-registry.ts';
+import { createPastePrompt, runConnectGithubFlow } from '../self-host/connect-github.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const CHANNELS = ['stable', 'latest'] as const;
@@ -73,6 +74,10 @@ Subcommands:
   logs [service]       Tail logs.
   open                 Open the dashboard in a browser.
   configure            Interactively configure integrations and update policy.
+  connect-github       Create + install a GitHub App owned by your org (or
+                       personal account) and wire it in as managed git — the
+                       easiest GitHub setup, no personal-access-token needed.
+                       This runs automatically as part of ${C.cyan}init${C.reset} on a TTY.
   env ls              Show persistent environment values.
   env set KEY=VALUE    Update persistent environment values.
   secrets [ls]         Show every secret, grouped by category (masked by
@@ -120,8 +125,13 @@ Options:
   --single-account     This deployment is for exactly one account — hide
                        "New account" and team-management UI, and block
                        creating additional accounts (403).
-  --no-landing         Send unauthenticated visitors hitting "/" straight to
-                       sign-in instead of the marketing landing page.
+  --landing            Re-enable the marketing landing page for
+                       unauthenticated visitors hitting "/" — self-host
+                       defaults this OFF (straight to sign-in): a self-host
+                       is an app deployment, not a marketing site.
+  --no-landing         Explicitly send unauthenticated visitors hitting "/"
+                       to sign-in instead of the marketing landing page
+                       (redundant with the default — kept for scripts).
   --enterprise-license You hold a Kortix Enterprise license — unlock SSO,
                        SCIM, RBAC, and audit-log access platform-wide
                        (kortix.com/enterprise).
@@ -129,6 +139,14 @@ Options:
                        (managed git, sandbox, LLM) unset instead of failing.
                        Local experimentation only — projects/agent sessions
                        will not work until they are set.
+  --org <name>         GitHub org to create/install the ${C.cyan}connect-github${C.reset} App
+                       under (omit, or pass "." for a personal account).
+  --manual             ${C.cyan}connect-github${C.reset}: headless mode — print URLs and accept
+                       pasted-back code/installation_id instead of opening a
+                       local browser. Automatic on a non-TTY.
+  --skip-github        Skip the guided ${C.cyan}connect-github${C.reset} offer during ${C.cyan}init${C.reset}/
+                       ${C.cyan}configure${C.reset} — drop straight to the advanced "paste an
+                       existing App or PAT" menu.
   --json               Emit machine-readable output where supported.
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
@@ -150,6 +168,9 @@ Examples:
   kortix self-host version
   kortix self-host env set KORTIX_DOMAIN=kortix.example.com
   kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
+  kortix self-host connect-github
+  kortix self-host connect-github --org my-org
+  kortix self-host connect-github --manual        # no local browser (remote box)
   kortix self-host secrets ls
   kortix self-host secrets set OPENROUTER_API_KEY=sk-or-...
   kortix self-host secrets rotate DASHBOARD_PASSWORD
@@ -281,6 +302,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
     case 'configure':
     case 'config':
       return selfHostConfigure(flags);
+    case 'connect-github':
+      return selfHostConnectGithub(args, flags);
     case 'env':
       return selfHostEnv(args, flags);
     case 'secrets':
@@ -303,10 +326,20 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const updateTz = takeFlagValue(args, ['--update-tz']);
   const allowDowntime = takeFlagBool(args, ['--allow-downtime']);
   const singleAccount = takeFlagBool(args, ['--single-account']);
+  // Self-host defaults the marketing/landing site to OFF (an app deployment,
+  // not a marketing site — see SHARED_FEATURE_FLAG_DEFAULTS). `--landing`
+  // re-enables it; `--no-landing` is kept (now redundant with the default,
+  // but harmless) for anyone who already scripted it. Both are "undefined
+  // unless passed" so a bare re-init never resets a prior explicit choice;
+  // if both are somehow passed at once, the explicit disable wins.
+  const landingOn = takeFlagBool(args, ['--landing']);
   const noLanding = takeFlagBool(args, ['--no-landing']);
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
   const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
   const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
+  const org = takeFlagValue(args, ['--org']);
+  const manual = takeFlagBool(args, ['--manual']);
+  const skipGithub = takeFlagBool(args, ['--skip-github']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -332,10 +365,13 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     updateTz,
     allowDowntime: allowDowntime || undefined,
     singleAccount: singleAccount || undefined,
-    disableLanding: noLanding || undefined,
+    disableLanding: noLanding ? true : landingOn ? false : undefined,
     enterpriseLicense: enterpriseLicense || undefined,
     allowMissingSecrets: allowMissingSecrets || undefined,
     localImages: localImages || undefined,
+    org,
+    manual: manual || undefined,
+    skipGithub: skipGithub || undefined,
     yes,
     json,
   };
@@ -357,7 +393,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyFeatureFlags(env, flags);
 
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env);
+    await configureIntegrations(env, flags);
   }
   // Only walk through the deployment-configuration wizard on a genuinely
   // first-time init (no prior .env) — a refresh of an already-configured
@@ -412,7 +448,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
 
   const env = loadEnvWithDefaults(flags)!;
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
-    await configureIntegrations(env);
+    await configureIntegrations(env, flags);
   }
 
   // `init` and `start` can run on separate invocations (init non-interactively,
@@ -644,7 +680,7 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
 }
 
 /**
- * Apply --single-account / --no-landing / --enterprise-license onto env,
+ * Apply --single-account / --landing / --no-landing / --enterprise-license onto env,
  * non-interactively. Each only overwrites when the flag was actually passed
  * (undefined = "not passed", never a literal false — see parseGlobalFlags),
  * so a bare `init`/`update` with no flags never resets a value the operator
@@ -1121,7 +1157,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
     process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
     return 1;
   }
-  await configureIntegrations(env);
+  await configureIntegrations(env, flags);
   applyFeatureFlags(env, flags);
   await promptFeatureFlags(env, flags);
   await configureUpdatePolicy(env, flags);
@@ -1130,6 +1166,58 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
   renderIntegrationSummary(env);
   return 0;
+}
+
+/**
+ * `kortix self-host connect-github` — the standalone entry point for the
+ * GitHub App manifest flow (also invoked inline from the `init`/`configure`
+ * guided flow via `runConnectGithubInteractive`). Since this is an explicit,
+ * directly-invoked command, it runs unconditionally (no "want to connect
+ * GitHub?" confirm) — the operator already said so by typing the command.
+ * `--manual` forces the headless/paste-back path; it's also forced
+ * automatically on a non-TTY (no local browser to open).
+ */
+async function selfHostConnectGithub(args: string[], flags: GlobalFlags): Promise<number> {
+  const org = takeFlagValue(args, ['--org']) ?? flags.org;
+  const manualFlag = takeFlagBool(args, ['--manual']) || Boolean(flags.manual);
+  const isTTY = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  const manual = manualFlag || !isTTY;
+
+  const env = loadEnvWithDefaults(flags);
+  if (!env) {
+    process.stderr.write(`${status.err('Self-host is not initialized. Run `kortix self-host init` first.')}\n`);
+    return 1;
+  }
+
+  process.stdout.write(`\n  ${C.bold}kortix self-host connect-github${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
+  process.stdout.write(`  ${C.dim}org      ${C.reset}${org?.trim() || '(personal account)'}\n`);
+  if (manual) process.stdout.write(`  ${C.dim}mode     ${C.reset}manual (headless)\n`);
+
+  const result = await runConnectGithubFlow({
+    org,
+    manual,
+    publicUrl: env.PUBLIC_URL || 'https://kortix.ai',
+    currentStateSecret: env.KORTIX_GITHUB_APP_STATE_SECRET,
+    persist: (patch) => {
+      Object.assign(env, patch);
+      writeEnv(flags.instance, env);
+      writeCompose(flags.instance, env);
+    },
+    openBrowser: openInBrowser,
+    print: (msg) => process.stdout.write(`${msg}\n`),
+    findFreePort,
+    promptPaste: manual ? createPastePrompt : undefined,
+  });
+
+  if (!result.ok) {
+    process.stderr.write(`\n${status.err(result.error ?? 'GitHub App connection failed.')}\n`);
+    return 1;
+  }
+
+  process.stdout.write(`\n${status.ok(`GitHub connected: ${result.owner} (installation ${result.installationId})`)}\n`);
+  process.stdout.write(`${C.dim}  Project creation now works against this GitHub App.${C.reset}\n\n`);
+  return restartServicesForKeys(flags.instance, ['MANAGED_GIT_GITHUB_OWNER']);
 }
 
 /** Interactive (or flag-driven) auto-update channel/interval configuration. */
@@ -1157,7 +1245,7 @@ async function configureUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): Prom
   env.KORTIX_UPDATE_TZ = updateTz.trim() || DEFAULT_UPDATE_TZ;
 }
 
-async function configureIntegrations(env: SelfHostEnv): Promise<void> {
+async function configureIntegrations(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`\n  ${C.bold}Kortix self-host integrations${C.reset}\n`);
   process.stdout.write(`  ${C.dim}These power the agent runtime, GitHub repo access, and app connectors.${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Press enter to skip anything you do not use yet.${C.reset}\n\n`);
@@ -1170,12 +1258,59 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
   env.DAYTONA_SERVER_URL = await prompt('Daytona server URL', env.DAYTONA_SERVER_URL || 'https://app.daytona.io/api');
   env.DAYTONA_TARGET = await prompt('Daytona target/region', env.DAYTONA_TARGET || 'us');
 
-  // Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
-  // git repo the server provisions. A PAT is the quickest path; a GitHub App is
-  // the richer one. The API reads MANAGED_GIT_* (not KORTIX_GITHUB_* alone), so
-  // we set both. "none" leaves projects unavailable.
+  await configureManagedGit(env, flags);
+
+  const pdMode = await selectFrom('Pipedream connectors: skip/configure', ['skip', 'configure'] as const, pipedreamConfigured(env) ? 'configure' : 'skip');
+  if (pdMode === 'configure') {
+    env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
+    env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
+    env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
+    env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
+    env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
+    env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+  }
+  env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
+}
+
+/**
+ * Managed git (GitHub) — REQUIRED to create/CRUD projects: every project is a
+ * git repo the server provisions. `connect-github`'s GitHub App manifest flow
+ * is the default, recommended path (no personal-access-token): it creates a
+ * brand-new App owned by the operator's org and lets them pick the repo(s) at
+ * install time. A low-key "advanced" menu still lets an operator paste an
+ * existing App's credentials or a PAT instead, or leave it unconfigured.
+ */
+async function configureManagedGit(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
   process.stdout.write(`  ${C.dim}GitHub (managed git) is required to create projects.${C.reset}\n`);
-  const githubMode = await selectFrom('GitHub for projects: pat/app/none', ['pat', 'app', 'none'] as const, inferGithubMode(env) === 'none' ? 'pat' : inferGithubMode(env));
+
+  const alreadyConfigured = gitProviderConfigured(env);
+  if (alreadyConfigured) {
+    process.stdout.write(`  ${C.dim}Already configured: ${describeGithubMode(env)}.${C.reset}\n`);
+  }
+
+  const wantsChange = alreadyConfigured ? await confirm('Change the GitHub setup?', false) : true;
+  if (!wantsChange) return;
+
+  const connectNow =
+    !flags.skipGithub &&
+    (await confirm(
+      'Connect GitHub now? (creates + installs a GitHub App owned by your org — recommended, no PAT needed)',
+      true,
+    ));
+
+  let connected = false;
+  if (connectNow) {
+    connected = await runConnectGithubInteractive(env, flags);
+  }
+  if (connected) return;
+
+  // Advanced escape hatch: paste an existing App's credentials, a PAT, or
+  // leave managed git unconfigured.
+  const githubMode = await selectFrom(
+    'GitHub for projects (advanced): pat/app/none',
+    ['pat', 'app', 'none'] as const,
+    inferGithubMode(env) === 'none' ? 'none' : inferGithubMode(env),
+  );
   if (githubMode === 'app') {
     env.KORTIX_GITHUB_APP_ID = await prompt('GitHub App ID', env.KORTIX_GITHUB_APP_ID);
     env.KORTIX_GITHUB_APP_SLUG = await prompt('GitHub App slug', env.KORTIX_GITHUB_APP_SLUG);
@@ -1197,7 +1332,7 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
     env.KORTIX_GITHUB_APP_SLUG = '';
     env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
     env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
-  } else {
+  } else if (!alreadyConfigured) {
     env.KORTIX_GITHUB_APP_ID = '';
     env.KORTIX_GITHUB_APP_SLUG = '';
     env.KORTIX_GITHUB_APP_PRIVATE_KEY = '';
@@ -1207,17 +1342,41 @@ async function configureIntegrations(env: SelfHostEnv): Promise<void> {
     env.MANAGED_GIT_GITHUB_OWNER = '';
     env.MANAGED_GIT_GITHUB_INSTALL_ID = '';
   }
+}
 
-  const pdMode = await selectFrom('Pipedream connectors: skip/configure', ['skip', 'configure'] as const, pipedreamConfigured(env) ? 'configure' : 'skip');
-  if (pdMode === 'configure') {
-    env.INTEGRATION_AUTH_PROVIDER = 'pipedream';
-    env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
-    env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
-    env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
-    env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
-    env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+function describeGithubMode(env: SelfHostEnv): string {
+  const mode = inferGithubMode(env);
+  if (mode === 'app') return `GitHub App "${env.KORTIX_GITHUB_APP_SLUG || env.KORTIX_GITHUB_APP_ID}" on ${env.MANAGED_GIT_GITHUB_OWNER || '(unknown owner)'}`;
+  if (mode === 'pat') return `PAT on ${env.MANAGED_GIT_GITHUB_OWNER || '(unknown owner)'}`;
+  return 'not configured';
+}
+
+/**
+ * Runs the `connect-github` GitHub App manifest flow inline (used by the
+ * `init`/`configure` guided flow — as opposed to `selfHostConnectGithub`,
+ * which is the same flow driven directly from the `connect-github`
+ * subcommand). Returns whether it completed successfully; on failure the
+ * caller falls through to the advanced paste-credentials menu instead.
+ */
+async function runConnectGithubInteractive(env: SelfHostEnv, flags: GlobalFlags): Promise<boolean> {
+  const manual = Boolean(flags.manual);
+  const result = await runConnectGithubFlow({
+    org: flags.org,
+    manual,
+    publicUrl: env.PUBLIC_URL || 'https://kortix.ai',
+    currentStateSecret: env.KORTIX_GITHUB_APP_STATE_SECRET,
+    persist: (patch) => Object.assign(env, patch),
+    openBrowser: openInBrowser,
+    print: (msg) => process.stdout.write(`${msg}\n`),
+    findFreePort,
+    promptPaste: manual ? createPastePrompt : undefined,
+  });
+  if (result.ok) {
+    process.stdout.write(`\n${status.ok(`GitHub connected: ${result.owner} (installation ${result.installationId})`)}\n\n`);
+    return true;
   }
-  env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED = 'true';
+  process.stdout.write(`\n${C.yellow}  GitHub App connect failed: ${result.error}${C.reset}\n\n`);
+  return false;
 }
 
 async function promptSecret(label: string, current: string): Promise<string> {
@@ -1362,7 +1521,7 @@ async function ensureRequiredSecrets(env: SelfHostEnv, flags: GlobalFlags): Prom
     process.stdout.write(`\n  ${C.dim}Let's set them now.${C.reset}\n`);
 
     while (missing.length > 0) {
-      await configureIntegrations(env);
+      await configureIntegrations(env, flags);
       missing = missingRequiredSecrets(env);
       if (missing.length === 0) break;
       process.stdout.write(`\n  ${C.yellow}Still missing:${C.reset}\n`);
@@ -1518,7 +1677,7 @@ function portAvailable(port: number): Promise<boolean> {
   });
 }
 
-function findFreePort(): Promise<number> {
+export function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once('error', reject);
@@ -1793,7 +1952,7 @@ function b64url(value: string): string {
   return Buffer.from(value).toString('base64url');
 }
 
-function openInBrowser(url: string): void {
+export function openInBrowser(url: string): void {
   const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
   spawnSync(cmd, args, { stdio: 'ignore' });
