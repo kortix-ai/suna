@@ -266,6 +266,18 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // CLOUD-ONLY. Whether KORTIX's own managed model lineup (Claude/GLM/Qwen/
+  // DeepSeek/…, routed through Kortix's SHARED Bedrock/OpenRouter credentials
+  // and billed as platform credits — "Managed · Included with your plan" in
+  // the picker) exists at all on this deployment. Independent of
+  // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
+  // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
+  // must never see or route to Kortix's shared credentials. Off by default;
+  // Kortix Cloud sets this true in its own env. See RUNTIME_MANAGED_MODELS
+  // (managed-models.ts) and managedCandidates() (descriptors.ts) — both are
+  // gated on this and read NEITHER AWS_BEDROCK_API_KEY NOR OPENROUTER_API_KEY
+  // for managed routing when it's off.
+  KORTIX_MANAGED_PROVIDER_ENABLED: optBoolFalse,
   // Fleet default for projects with no explicit per-project override. Defaults
   // ON: wherever the gateway is available (master switch above), the managed
   // gateway is the default routing mechanism and every project inherits it
@@ -709,6 +721,7 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  KORTIX_MANAGED_PROVIDER_ENABLED: env.KORTIX_MANAGED_PROVIDER_ENABLED,
   LLM_GATEWAY_DEFAULT_ENABLED: env.LLM_GATEWAY_DEFAULT_ENABLED,
   LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
   LLM_GATEWAY_DEFAULT_MODEL: env.LLM_GATEWAY_DEFAULT_MODEL,

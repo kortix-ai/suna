@@ -27,11 +27,14 @@ async function resolveCachedAccountTier(accountId: string): Promise<string> {
 }
 
 // A managed model to fall over to when a BYOK key hits a limit (429/402/403).
-// Gated on the managed gateway being on + a configured, resolvable fallback
-// model. managedCandidates() is itself empty when no managed key is set, so a
-// self-host with no Bedrock/OpenRouter key naturally has no fallback.
+// Gated on the managed gateway being on + the managed provider being on (CLOUD-
+// ONLY) + a configured, resolvable fallback model. getRuntimeManagedModel()/
+// managedCandidates() are themselves empty when KORTIX_MANAGED_PROVIDER_ENABLED
+// is off, so a self-host naturally has no managed fallback — the explicit check
+// here is redundant belt-and-suspenders (never a silent fallback to Kortix's
+// shared credentials), not load-bearing on its own.
 function byokFallbackCandidates(): UpstreamDescriptor[] {
-  if (!config.LLM_GATEWAY_ENABLED) return [];
+  if (!config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const fallbackId = config.LLM_GATEWAY_BYOK_FALLBACK_MODEL;
   if (!fallbackId) return [];
   const managed = getRuntimeManagedModel(fallbackId);
@@ -89,14 +92,17 @@ export async function resolveCandidates(
     }
   }
 
-  // The platform's MANAGED route, for the curated single-segment model set
-  // (Bedrock on Kortix-cloud, OpenRouter on self-host — decided inside
-  // managedDescriptor by which key is configured). A BYOK catalog model (bare
-  // `provider/model`) is handled above and requires the user's own key; it never
-  // falls through here. A non-managed, non-connected model yields no candidate →
-  // clear "model not available" error.
+  // The platform's MANAGED route (Bedrock or OpenRouter on KORTIX'S OWN shared
+  // credentials — decided inside managedDescriptor by transport). CLOUD-ONLY:
+  // getRuntimeManagedModel() only ever matches when KORTIX_MANAGED_PROVIDER_ENABLED
+  // is on (RUNTIME_MANAGED_MODELS is empty otherwise — see managed-models.ts), so
+  // a self-host never reaches this branch for an explicitly-named managed model;
+  // it falls through to the final `return []` below → a clear "model not
+  // available on this deployment" error, never a silent fallback to Kortix
+  // credits. A BYOK catalog model (bare `provider/model`) is handled above and
+  // requires the user's own key; it never falls through here.
   const managed = getRuntimeManagedModel(effectiveModel);
-  if (managed && config.LLM_GATEWAY_ENABLED) {
+  if (managed && config.LLM_GATEWAY_ENABLED && config.KORTIX_MANAGED_PROVIDER_ENABLED) {
     if (principal.freeModelsOnly) return [];
     if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
       const tier = await resolveCachedAccountTier(principal.accountId);
