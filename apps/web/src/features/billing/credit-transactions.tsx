@@ -22,9 +22,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useTransactions } from '@/hooks/billing/use-transactions';
+import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
-import { RefreshCw } from 'lucide-react';
+import { Coins, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 interface Props {
@@ -36,8 +37,25 @@ export default function CreditTransactions({ accountId }: Props) {
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const limit = 50;
+  const billingActive = isBillingEnabled();
 
-  const { data, isLoading, error, refetch } = useTransactions(limit, offset, typeFilter);
+  // Billing disabled on this deployment (e.g. self-host with
+  // KORTIX_BILLING_INTERNAL_ENABLED=false): there is no credit ledger to show.
+  // Skip the fetch entirely — the endpoint 404s "Billing is not enabled" and
+  // that raw error has no business reaching the UI — and render a friendly
+  // "not available" state instead.
+  const { data, isLoading, error, refetch } = useTransactions(limit, offset, typeFilter, {
+    enabled: billingActive,
+  });
+
+  if (!billingActive) {
+    return (
+      <div className="border-border text-muted-foreground flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-10 text-center text-sm">
+        <Coins className="text-muted-foreground/50 size-5" />
+        <p>Credits and billing are not available on this instance.</p>
+      </div>
+    );
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
