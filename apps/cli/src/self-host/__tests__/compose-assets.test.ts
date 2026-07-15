@@ -101,6 +101,59 @@ describe('full self-host Docker distribution', () => {
     });
   });
 
+  test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, unknown>;
+    };
+    expect(document.services).not.toHaveProperty('cloudflared');
+
+    // Also absent in domain mode alone — the two are independent toggles.
+    const domainOnly = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
+      services: Record<string, unknown>;
+    };
+    expect(domainOnly.services).not.toHaveProperty('cloudflared');
+  });
+
+  test('includes the cloudflared tunnel service only when tunnel mode is configured', () => {
+    const document = parse(renderFullDockerCompose('kortix-default', { tunnelConfigured: true })) as {
+      services: Record<string, {
+        image?: string;
+        environment?: Record<string, string>;
+        depends_on?: Record<string, unknown>;
+        entrypoint?: string[];
+      }>;
+    };
+    const cloudflared = document.services.cloudflared;
+    expect(cloudflared).toBeDefined();
+    // Pinned to a specific version, not :latest — same immutability policy as
+    // every other non-Supabase service image in this stack.
+    expect(cloudflared?.image).toMatch(/^cloudflare\/cloudflared:\d+\.\d+\.\d+$/);
+    expect(cloudflared?.environment).toHaveProperty('CLOUDFLARE_TUNNEL_TOKEN');
+    expect(cloudflared?.depends_on).toHaveProperty('kortix-api');
+    // Tunnels straight to kortix-api — Caddy is never present alongside it
+    // (tunnel mode has no domain), and kortix-api already answers every
+    // /v1* route the sandbox and other external callers need.
+    const script = cloudflared?.entrypoint?.join(' ') ?? '';
+    expect(script).toContain('http://kortix-api:8008');
+    // Named-tunnel branch: the same service supports a stable hostname via
+    // CLOUDFLARE_TUNNEL_TOKEN, decided at container-start (not compose-render)
+    // time so switching sub-modes is just an env change + restart.
+    expect(script).toContain('cloudflared tunnel');
+    expect(script).toContain('run --token');
+  });
+
+  test('cloudflared and caddy are independent — both, either, or neither can be present', () => {
+    const neither = parse(renderFullDockerCompose('kortix-default')) as { services: Record<string, unknown> };
+    expect(neither.services).not.toHaveProperty('caddy');
+    expect(neither.services).not.toHaveProperty('cloudflared');
+
+    const both = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true, tunnelConfigured: true })) as {
+      services: Record<string, unknown>;
+    };
+    expect(both.services).toHaveProperty('caddy');
+    expect(both.services).toHaveProperty('cloudflared');
+  });
+
   test('prod (domain-configured) mode: 2 replicas + no host ports for api/gateway/frontend, Caddy present', () => {
     const document = parse(renderFullDockerCompose('kortix-default', { domainConfigured: true })) as {
       services: Record<string, { ports?: string[]; deploy?: { replicas?: number } }>;

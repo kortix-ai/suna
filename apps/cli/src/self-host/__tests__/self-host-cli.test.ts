@@ -327,4 +327,104 @@ describe('kortix self-host (generic Docker CLI)', () => {
       expect((compose.services['kortix-api'] as any).env_file).toContain('.env');
     });
   });
+
+  describe('reachability (KORTIX_URL, --domain, --tunnel)', () => {
+    test('the rendered compose templates KORTIX_URL instead of hard-coding the internal Docker hostname', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets']);
+      const compose = readCompose();
+      const apiEnv = (compose.services['kortix-api'] as any).environment;
+      expect(apiEnv.KORTIX_URL).toBe('${KORTIX_URL}');
+      expect(apiEnv.KORTIX_URL).not.toContain('kortix-api:8008');
+    });
+
+    test('default (local-only) mode: KORTIX_URL mirrors the loopback API_PUBLIC_URL, not the internal hostname', async () => {
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_URL).toBe(env.API_PUBLIC_URL);
+      expect(env.KORTIX_URL).toStartWith('http://localhost:');
+      expect(env.KORTIX_REACHABILITY_MODE).toBe('local');
+      expect(readCompose().services).not.toHaveProperty('cloudflared');
+    });
+
+    test('--domain sets KORTIX_DOMAIN and KORTIX_URL follows API_PUBLIC_URL (https://api.<domain>)', async () => {
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--domain', 'kortix.example.com']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_DOMAIN).toBe('kortix.example.com');
+      expect(env.API_PUBLIC_URL).toBe('https://api.kortix.example.com');
+      expect(env.KORTIX_URL).toBe('https://api.kortix.example.com');
+      expect(env.KORTIX_REACHABILITY_MODE).toBe('domain');
+      expect(readCompose().services).toHaveProperty('caddy');
+      expect(readCompose().services).not.toHaveProperty('cloudflared');
+    });
+
+    test('--domain= clears a previously configured domain, falling back out of "domain" mode', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets', '--domain', 'kortix.example.com']);
+      expect(readEnv().KORTIX_DOMAIN).toBe('kortix.example.com');
+
+      // The `--flag=value` form (not `--flag value`) is required to pass an
+      // explicit empty string — takeFlagValue treats a bare falsy next-arg as
+      // "no value provided" and errors, but `--domain=` with nothing after
+      // the `=` is unambiguous.
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--domain=']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_DOMAIN).toBe('');
+      // KORTIX_URL always mirrors API_PUBLIC_URL outside tunnel mode — whatever
+      // that resolves to (API_PUBLIC_URL/PUBLIC_URL are otherwise-sticky
+      // operator-configurable values, unrelated to this feature, that are not
+      // reset to loopback just because KORTIX_DOMAIN was cleared).
+      expect(env.KORTIX_URL).toBe(env.API_PUBLIC_URL);
+      expect(readCompose().services).not.toHaveProperty('caddy');
+    });
+
+    test('--tunnel cloudflare renders the cloudflared service and defers KORTIX_URL to the live capture step', async () => {
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--tunnel', 'cloudflare']);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.KORTIX_REACHABILITY_MODE).toBe('tunnel');
+      expect(env.KORTIX_DOMAIN).toBe('');
+      const compose = readCompose();
+      expect(compose.services).toHaveProperty('cloudflared');
+      expect(compose.services).not.toHaveProperty('caddy');
+      // init never runs docker compose, so KORTIX_URL can't be the real tunnel
+      // URL yet — reconcileTunnelReachability() (part of `start`/`update`)
+      // captures and rewrites it after the cloudflared container boots.
+      expect(env.KORTIX_URL).toBeTruthy();
+    });
+
+    test('a re-init does not reset an already-configured reachability mode', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets', '--tunnel', 'cloudflare']);
+      const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
+      expect(code).toBe(0);
+      expect(readEnv().KORTIX_REACHABILITY_MODE).toBe('tunnel');
+      expect(readCompose().services).toHaveProperty('cloudflared');
+    });
+
+    test('rejects an unsupported --tunnel provider', async () => {
+      const { code, stderr } = await run(['init', '--yes', '--allow-missing-secrets', '--tunnel', 'ngrok']);
+      expect(code).not.toBe(0);
+      expect(stderr).toContain('cloudflare');
+    });
+
+    test('a named tunnel (token + hostname) can be configured via env set, restarting only cloudflared when active', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets', '--tunnel', 'cloudflare']);
+      const { code } = await run([
+        'env', 'set',
+        'CLOUDFLARE_TUNNEL_TOKEN=faketoken',
+        'CLOUDFLARE_TUNNEL_HOSTNAME=kortix-tunnel.example.com',
+      ]);
+      expect(code).toBe(0);
+      const env = readEnv();
+      expect(env.CLOUDFLARE_TUNNEL_TOKEN).toBe('faketoken');
+      expect(env.CLOUDFLARE_TUNNEL_HOSTNAME).toBe('kortix-tunnel.example.com');
+    });
+
+    test('setting CLOUDFLARE_TUNNEL_TOKEN via secrets set before tunnel mode is selected does not error (stack not running)', async () => {
+      await run(['init', '--yes', '--allow-missing-secrets']);
+      const { code } = await run(['secrets', 'set', 'CLOUDFLARE_TUNNEL_TOKEN=faketoken']);
+      expect(code).toBe(0);
+    });
+  });
 });
