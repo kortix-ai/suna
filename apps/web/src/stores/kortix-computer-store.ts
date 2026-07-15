@@ -7,6 +7,17 @@ const HIDE_BROWSER_TAB = true;
 
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
+export type ReadyChipOutcome = 'ready' | 'failed' | 'stopped' | 'needs_input';
+
+export interface ReadyChipState {
+  sessionId: string;
+  outcome: ReadyChipOutcome;
+  /** Deliverable count behind the chip (0 for needs_input). */
+  count: number;
+  /** Human name of the primary deliverable, when there is one. */
+  primaryName?: string;
+}
+
 interface KortixComputerState {
   // Main view state
   activeView: ViewType;
@@ -25,6 +36,11 @@ interface KortixComputerState {
   // the user clicks a tool call in the chat. By callID (not index) so it stays
   // correct regardless of ordering.
   focusedToolCallId: string | null;
+
+  // W1 — the deliverable announces itself while the panel is closed.
+  readyChip: ReadyChipState | null;
+  // Chip tap → open the panel WITH the primary deliverable already open.
+  pendingPrimaryOpenSessionId: string | null;
 
   // === ACTIONS ===
 
@@ -57,6 +73,12 @@ interface KortixComputerState {
   setIsExpanded: (expanded: boolean) => void;
   toggleExpanded: () => void;
 
+  // Ready chip state management
+  setReadyChip: (chip: ReadyChipState) => void;
+  clearReadyChip: () => void;
+  requestPrimaryOpen: (sessionId: string) => void;
+  consumePrimaryOpen: (sessionId: string) => boolean;
+
   // Reset all state (full reset)
   reset: () => void;
 }
@@ -70,6 +92,8 @@ const initialState = {
   isExpanded: false,
   pendingToolNavIndex: null as number | null,
   focusedToolCallId: null as string | null,
+  readyChip: null as ReadyChipState | null,
+  pendingPrimaryOpenSessionId: null as string | null,
 };
 
 export const useKortixComputerStore = create<KortixComputerState>()(
@@ -119,6 +143,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           focusedToolCallId: callId,
           activeView: 'tools',
           isSidePanelOpen: true,
+          readyChip: null,
         };
         if (sessionId) {
           update._panelOpenBySession = {
@@ -140,6 +165,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       setIsSidePanelOpen: (open: boolean) => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: open };
+        if (open) update.readyChip = null;
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: open };
         }
@@ -167,7 +193,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       openSidePanel: () => {
         const sessionId = get()._activeSessionId;
-        const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
+        const update: Partial<KortixComputerState> = { isSidePanelOpen: true, readyChip: null };
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
         }
@@ -189,6 +215,24 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       toggleExpanded: () => {
         set((state) => ({ isExpanded: !state.isExpanded }));
+      },
+
+      setReadyChip: (chip: ReadyChipState) => {
+        set({ readyChip: chip });
+      },
+
+      clearReadyChip: () => {
+        if (get().readyChip) set({ readyChip: null });
+      },
+
+      requestPrimaryOpen: (sessionId: string) => {
+        set({ pendingPrimaryOpenSessionId: sessionId });
+      },
+
+      consumePrimaryOpen: (sessionId: string) => {
+        if (get().pendingPrimaryOpenSessionId !== sessionId) return false;
+        set({ pendingPrimaryOpenSessionId: null });
+        return true;
       },
 
       reset: () => {
@@ -235,3 +279,10 @@ export const useIsExpanded = () =>
 
 export const useToggleExpanded = () =>
   useKortixComputerStore((state) => state.toggleExpanded);
+
+// Ready chip state selectors
+export const useReadyChip = () =>
+  useKortixComputerStore((state) => state.readyChip);
+
+export const useClearReadyChip = () =>
+  useKortixComputerStore((state) => state.clearReadyChip);
