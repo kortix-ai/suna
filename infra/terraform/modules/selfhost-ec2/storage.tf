@@ -68,7 +68,9 @@ resource "aws_iam_role_policy_attachment" "dlm" {
 }
 
 resource "aws_dlm_lifecycle_policy" "data" {
-  description        = "${local.name}: snapshots of the data volume (/var/lib/docker, incl. Postgres) every ${var.backup_interval_hours}h, keeping the last ${var.backup_retention_count}"
+  # DLM's description field only allows [0-9A-Za-z _-]+ — no colons,
+  # parens, commas, or slashes.
+  description        = "${local.name} data volume snapshots every ${var.backup_interval_hours}h retain ${var.backup_retention_count}"
   execution_role_arn = aws_iam_role.dlm.arn
   state              = "ENABLED"
 

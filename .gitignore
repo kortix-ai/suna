@@ -135,6 +135,11 @@ kortix-selfhost/terraform/**/.terraform.lock.hcl
 kortix-selfhost/terraform/**/*.tfstate
 kortix-selfhost/terraform/**/*.tfstate.*
 kortix-selfhost/terraform/**/*.tfvars
+deployments/**/.terraform/
+deployments/**/.terraform.lock.hcl
+deployments/**/*.tfstate
+deployments/**/*.tfstate.*
+deployments/**/*.tfvars
 .cursor
 
 apps/mobile/.env.example

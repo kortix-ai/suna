@@ -11,6 +11,11 @@ set -euo pipefail
 exec > >(tee -a /var/log/kortix-bootstrap.log) 2>&1
 echo "=== kortix self-host bootstrap: $(date -u --iso-8601=seconds) ==="
 
+# cloud-init runs this as root but with NO $HOME set — and both the kortix CLI
+# installer (kortix.com/install) and the CLI itself dereference $HOME under
+# `set -u`, so an unset HOME kills the bootstrap ("HOME: unbound variable").
+export HOME="$${HOME:-/root}"
+
 # ── 1. Find + mount the data volume ─────────────────────────────────────────
 # Requested attach point is ${data_volume_device_name}, but Nitro-based
 # instance types (t3, m5, ...) expose EBS volumes as NVMe block devices
