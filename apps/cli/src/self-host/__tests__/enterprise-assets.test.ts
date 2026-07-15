@@ -38,17 +38,17 @@ describe('embedded enterprise Terraform graph', () => {
     expect(REMOTE_STATE_BACKEND).not.toContain('bucket');
   });
 
-  test('does not embed any EKS/Helm-era module (ECS deployment only)', () => {
+  test('is a 100% Docker appliance graph: no EKS/Helm and no ECS/ALB/ACM/deployer module', () => {
     const paths = Object.keys(enterpriseTerraformAssets);
     expect(paths.some((path) => path.startsWith('modules/eks/'))).toBe(false);
     expect(paths.some((path) => path.startsWith('modules/enterprise-platform/'))).toBe(false);
-  });
-
-  test('accepts only the Route 53 apex or a label-bounded subdomain after provider name normalization', () => {
-    const acm = enterpriseTerraformAssets['modules/enterprise-vpc/acm.tf'];
-    expect(acm).toContain('lower(trimsuffix(data.aws_route53_zone.public.name, "."))');
-    expect(acm).toContain('lower(domain) == local.public_zone_name');
-    expect(acm).toContain('endswith(lower(domain), ".${local.public_zone_name}")');
+    // The appliance runs everything as Docker on the Supabase EC2 — Caddy owns
+    // TLS + routing, so ECS/ALB/ACM/deployer Terraform is gone.
+    for (const gone of ['acm.tf', 'alb.tf', 'ecs.tf', 'deployer.tf']) {
+      expect(paths.some((path) => path === `modules/enterprise-vpc/${gone}`)).toBe(false);
+    }
+    // The Supabase EC2 is now the whole appliance host.
+    expect(paths).toContain('modules/enterprise-vpc/supabase.tf');
   });
 
   test('allows CloudTrail to publish through the customer KMS-encrypted alert topic', () => {
@@ -93,43 +93,16 @@ describe('embedded enterprise Terraform graph', () => {
     expect(boundary).toContain('"ec2messages:*"');
   });
 
-  test('embeds three ECS services with the deployment circuit breaker enabled', () => {
-    const ecs = enterpriseTerraformAssets['modules/enterprise-vpc/ecs.tf'];
-    expect(ecs).toContain('resource "aws_ecs_cluster"');
-    for (const role of ['api', 'gateway', 'frontend']) {
-      expect(ecs).toContain(`resource "aws_ecs_service" "${role}"`);
+  test('the appliance runs the app tier as Docker on the box (no embedded ECS/deployer Terraform)', () => {
+    const paths = Object.keys(enterpriseTerraformAssets);
+    // The updater (an on-box binary) + the signed app bundle own the app tier and
+    // its scheduling now; there is no ECS service/task-def or scheduler Terraform.
+    for (const path of paths) {
+      const content = enterpriseTerraformAssets[path]!;
+      expect(content, path).not.toContain('resource "aws_ecs_service"');
+      expect(content, path).not.toContain('resource "aws_ecs_task_definition"');
+      expect(content, path).not.toContain('resource "aws_scheduler_schedule"');
+      expect(content, path).not.toContain('resource "aws_lb"');
     }
-    // circuit breaker owns bad-task-def rollback (the deployer never hand-rolls it)
-    expect(ecs.match(/deployment_circuit_breaker\s*{[^}]*rollback\s*=\s*true/g)?.length).toBe(3);
-    expect(ecs).toContain('resource "aws_ecs_task_definition" "migrate"');
-    expect(ecs).toContain('resource "aws_ecs_task_definition" "deployer"');
-  });
-
-  test('grants the gateway task role Bedrock invoke for managed Claude with no OpenRouter dependency', () => {
-    const ecs = enterpriseTerraformAssets['modules/enterprise-vpc/ecs.tf'];
-    expect(ecs).toContain('resource "aws_iam_role" "gateway_task"');
-    expect(ecs).toContain('bedrock:InvokeModel');
-    expect(ecs).toContain('bedrock:InvokeModelWithResponseStream');
-  });
-
-  test('passes the deployer its ECS naming + release breadcrumb contract by environment', () => {
-    const ecs = enterpriseTerraformAssets['modules/enterprise-vpc/ecs.tf'];
-    for (const key of [
-      'KORTIX_CLUSTER', 'KORTIX_API_SERVICE', 'KORTIX_GATEWAY_SERVICE', 'KORTIX_FRONTEND_SERVICE',
-      'KORTIX_MIGRATE_TASKDEF', 'KORTIX_RELEASE_SSM_PARAM', 'KORTIX_ECR_REPOSITORIES',
-    ]) {
-      expect(ecs).toContain(key);
-    }
-  });
-
-  test('drives auto-updates from a scheduled ecs:RunTask of the deployer, not a state machine', () => {
-    const deployer = enterpriseTerraformAssets['modules/enterprise-vpc/deployer.tf'];
-    expect(deployer).toContain('resource "aws_scheduler_schedule" "deployer"');
-    expect(deployer).toContain('ecs:RunTask');
-    expect(deployer).toContain('resource "aws_ssm_parameter" "release"');
-    // the deployer task role rolls services + reads/writes the release breadcrumb,
-    // it does not carry a Step Functions / CodeBuild reconciler any more
-    expect(deployer).not.toContain('aws_sfn_state_machine');
-    expect(deployer).not.toContain('aws_codebuild_project');
   });
 });

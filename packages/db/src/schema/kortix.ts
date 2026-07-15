@@ -734,6 +734,14 @@ export const projectTriggerRuntime = kortixSchema.table(
     // resolution — `per_user` connector credentials were removed 2026-07-05;
     // every connector resolves the one shared credential regardless of owner.)
     ownerUserId: uuid('owner_user_id'),
+    // For a `session_mode = 'pinned'` trigger: the exact session it loops. FK so
+    // deleting the session auto-clears the pin (the next fire then degrades to
+    // reuse/fresh instead of hard-failing on a dangling id) and for observability
+    // into which session a pinned trigger drives. Portable source of truth is the
+    // manifest `session_id`; this mirrors it for the FK.
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

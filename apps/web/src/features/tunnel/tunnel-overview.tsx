@@ -51,6 +51,7 @@ import { useTunnelRealtimeSync } from '@/hooks/tunnel/use-tunnel-realtime';
 import { useCopy } from '@/hooks/use-copy';
 import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
+import { buildTunnelConnectCommand } from './tunnel-connect-command';
 import { TunnelPermissionRequestDialog } from './tunnel-permission-request-dialog';
 import { TunnelSettingsDialog } from './tunnel-settings-dialog';
 
@@ -312,10 +313,10 @@ export function TunnelOverview({ canWrite = false }: { canWrite?: boolean }) {
 }
 
 function getConnectCommand(): string {
-  const backend = (getEnv().BACKEND_URL || '').replace(/\/+$/, '');
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const absolute = /^https?:\/\//i.test(backend) ? backend : `${origin}${backend}`;
-  return `npx @kortix/agent-tunnel connect --api-url ${absolute}/tunnel`;
+  return buildTunnelConnectCommand({
+    backendUrl: getEnv().BACKEND_URL || '',
+    origin: typeof window !== 'undefined' ? window.location.origin : '',
+  });
 }
 
 function DeleteConnectionDialog({
