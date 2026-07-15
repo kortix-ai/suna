@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { PanelMode } from '@/stores/user-preferences-store';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel } from './index';
@@ -17,30 +18,63 @@ import { ActionPanel } from './index';
  * same trap. Under `renderToStaticMarkup`, `ActionPanel`'s
  * `useUserPreferencesStore((s) => s.preferences.panelMode ?? 'easy')` read
  * therefore always resolves to whatever the store's pristine state was,
- * regardless of any `setState` call made in the test body — confirmed by
- * spiking `getState()` (reads the mutated value) against the rendered HTML
- * (still reflects the original value).
+ * regardless of any `setState` call made in the test body.
  *
- * `AdvancedPanel` compounds this: it calls `useTranslations('hardcodedUi')`
- * with no `NextIntlClientProvider` ancestor, which throws under
- * `renderToStaticMarkup` outside of one.
+ * So instead this file mocks the store module itself (`mock.module`) with a
+ * plain callable `(selector) => selector(state)` stand-in, and drives
+ * `state.preferences.panelMode` per test. This is a genuine fallback test:
+ * `mockPanelMode = undefined` below reproduces exactly what a pre-panelMode
+ * persisted store looks like, and exercises the `?? 'easy'` coalesce inside
+ * `ActionPanel` for real — not a copy of the store's own default.
  *
- * So this file tests what static rendering can actually observe:
- *  - `ActionPanel` with the store's real, untouched default (which IS
- *    'easy' — the only state reachable this way) renders the card home,
- *    proving the default-fallback path end to end.
- *  - `EasyPanel` and `AdvancedPanel`, rendered directly (bypassing the
- *    store-driven gate entirely), each carry their own distinguishing
- *    content — the actual regression risk ("did a refactor blur the two
- *    modes together") — without relying on the SSR-broken selector.
+ * `mock.module` is file-global in Bun (it patches the shared module
+ * registry for the rest of this file's run), so every `ActionPanel` test in
+ * this file goes through this same mock rather than mixing mocked and
+ * unmocked reads of the store.
+ *
+ * `AdvancedPanel` still can't be exercised directly under
+ * `renderToStaticMarkup` without a `NextIntlClientProvider` ancestor (it
+ * calls `useTranslations('hardcodedUi')`), so the advanced-mode case renders
+ * `ActionPanel` wrapped in the provider instead of calling `AdvancedPanel`
+ * directly.
  */
+
+let mockPanelMode: PanelMode | undefined;
+
+mock.module('@/stores/user-preferences-store', () => ({
+  useUserPreferencesStore: (
+    selector: (state: { preferences: { panelMode: PanelMode | undefined } }) => unknown,
+  ) => selector({ preferences: { panelMode: mockPanelMode } }),
+}));
+
 describe('panel mode gate', () => {
-  test('ActionPanel, with the store at its real default, renders the Easy card home', () => {
+  test('missing panelMode (pre-panelMode persisted state) falls back to Easy', () => {
+    mockPanelMode = undefined;
     const html = renderToStaticMarkup(
       <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />,
     );
     expect(html).toContain('Outputs');
     expect(html).toContain('Context');
+  });
+
+  test("panelMode: 'easy' renders the Easy card home", () => {
+    mockPanelMode = 'easy';
+    const html = renderToStaticMarkup(
+      <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />,
+    );
+    expect(html).toContain('Outputs');
+    expect(html).toContain('Context');
+  });
+
+  test("panelMode: 'advanced' renders the stepper through ActionPanel, not the Easy card home", () => {
+    mockPanelMode = 'advanced';
+    const html = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <ActionPanel sessionId="s1" messages={[]} isSessionBusy={false} />
+      </NextIntlClientProvider>,
+    );
+    expect(html).not.toContain('Outputs');
+    expect(html).not.toContain('Context');
   });
 
   test('EasyPanel renders the card home — Progress/Outputs/Context promises, no stepper', () => {
