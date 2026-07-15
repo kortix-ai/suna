@@ -56,6 +56,16 @@ container_image_id() {
   docker inspect --format '{{.Image}}' "$1" 2>/dev/null || true
 }
 
+# Dev mode: `kortix self-host init --local-images` sets KORTIX_IMAGE_PULL=never
+# in the instance .env for a locally-built image that isn't on any registry —
+# `docker compose pull` would just fail (or silently no-op) against it, so skip
+# it entirely and roll using whatever image is already in the local Docker
+# engine. Read straight from /workspace/.env, same as write_breadcrumb reads
+# KORTIX_VERSION below — this script never sees CLI flags, only the env file.
+image_pull_mode() {
+  grep '^KORTIX_IMAGE_PULL=' /workspace/.env 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
 # healthy|running (both count as "up"), or anything else counts as not-ready.
 container_health() {
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || echo gone
@@ -239,8 +249,12 @@ write_breadcrumb() {
 }
 
 perform_update() {
-  log "pulling images"
-  $COMPOSE pull --quiet
+  if [ "$(image_pull_mode)" = "never" ]; then
+    log "skipping registry pull (KORTIX_IMAGE_PULL=never)"
+  else
+    log "pulling images"
+    $COMPOSE pull --quiet
+  fi
 
   changed=""
   for svc in $ROLL_SERVICES; do

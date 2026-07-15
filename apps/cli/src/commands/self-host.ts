@@ -84,14 +84,31 @@ Subcommands:
 
 Options:
   --instance <name>    Instance name (default: ${DEFAULT_INSTANCE}).
-  --tag <tag>          Pin an explicit image tag / version (for example 0.9.84).
-  --release <version>  Alias for --tag.
-  --channel <name>     Which moving tag to track when no explicit --tag is
-                       given: stable or latest (default: stable). The
-                       auto-updater tracks whichever channel is configured.
-  --auto-update <on|off> Enable/disable the in-compose auto-updater (default: on).
-                       Off just idles the updater container; ${C.cyan}update${C.reset}
-                       still applies an on-demand update regardless.
+  --version <ref>      Run any published version or tag — a release
+                       (0.9.107), a moving channel (stable, latest), or a
+                       dev/CI build (dev-<sha>). Works on init/start/update/
+                       configure. Pinning a specific ref (anything other than
+                       stable/latest) defaults auto-update OFF for that
+                       instance — see --auto-update below. Alias: --tag.
+  --tag <tag>          Alias for --version.
+  --release <version>  Alias for --version/--tag.
+  --channel <name>     Which moving tag to track when no explicit --version/
+                       --tag is given: stable or latest (default: stable).
+                       The auto-updater tracks whichever channel is configured.
+  --auto-update <on|off> Enable/disable the in-compose auto-updater. Default
+                       depends on what's pinned: on for a channel (stable/
+                       latest), off for a specific --version/--tag/--release
+                       (pinning means "stay here" — the nightly updater must
+                       not silently move a pinned box). An explicit
+                       --auto-update always wins either way. Off just idles
+                       the updater container; ${C.cyan}update${C.reset} still applies an
+                       on-demand update regardless.
+  --local-images       Dev mode: run images built locally (not on any
+    | --no-pull        registry) — combine with ${C.cyan}--version <localtag>${C.reset} so
+                       *_IMAGE resolves to an image already present in the
+                       local Docker engine. Sets KORTIX_IMAGE_PULL=never (the
+                       updater skips ${C.cyan}docker compose pull${C.reset}) and forces
+                       auto-update off.
   --update-time <HH:MM> Local clock time the auto-updater rolls the stack,
                        once a day (default: ${DEFAULT_UPDATE_TIME}).
   --update-tz <tz>     IANA timezone --update-time is interpreted in
@@ -125,9 +142,11 @@ unset for the default loopback-port laptop setup.
 Examples:
   kortix self-host init
   kortix self-host start
-  kortix self-host update                        # pull + apply the stable channel
-  kortix self-host update --tag 0.9.72            # pin to a specific version
+  kortix self-host update                         # pull + apply the stable channel
+  kortix self-host init --version 0.9.72          # pin to a specific released version
   kortix self-host update --channel latest        # track :latest instead
+  kortix self-host init --version dev-a1b2c3d      # run a dev/CI build (auto-update off)
+  kortix self-host init --version branch-local --local-images  # run a locally-built image
   kortix self-host version
   kortix self-host env set KORTIX_DOMAIN=kortix.example.com
   kortix self-host env set PUBLIC_URL=https://kortix.example.com API_PUBLIC_URL=https://api.example.com
@@ -287,6 +306,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const noLanding = takeFlagBool(args, ['--no-landing']);
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
   const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
+  const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
   if (channelRaw !== undefined && !isChannel(channelRaw)) {
     throw new Error(`--channel must be "stable" or "latest", got "${channelRaw}"`);
   }
@@ -315,6 +335,7 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     disableLanding: noLanding || undefined,
     enterpriseLicense: enterpriseLicense || undefined,
     allowMissingSecrets: allowMissingSecrets || undefined,
+    localImages: localImages || undefined,
     yes,
     json,
   };
@@ -581,6 +602,19 @@ function resolveTag(flags: GlobalFlags, existing: SelfHostEnv | null): string {
   return flags.tag ?? flags.release ?? flags.channel ?? existing?.KORTIX_CHANNEL ?? DEFAULT_CHANNEL;
 }
 
+/**
+ * Default auto-update policy for a given resolved tag, absent an explicit
+ * --auto-update. Channel tracking (stable/latest) defaults ON, unchanged
+ * from historical behavior. A specific pinned ref — a released version, a
+ * `dev-<sha>` build, a local branch build — defaults OFF: pinning means
+ * "stay here," and the nightly updater must not silently move a pinned
+ * dev/test box off of it. An explicit --auto-update still always wins (see
+ * call sites below).
+ */
+function defaultAutoUpdateFor(tag: string): 'true' | 'false' {
+  return isChannel(tag) ? (DEFAULT_AUTO_UPDATE as 'true' | 'false') : 'false';
+}
+
 /** Apply KORTIX_CHANNEL / auto-update policy flags onto env, defaults preserved. */
 function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void {
   const tag = resolveTag(flags, env);
@@ -591,13 +625,22 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
   }
   env.KORTIX_CHANNEL ||= DEFAULT_CHANNEL;
   if (flags.autoUpdate !== undefined) env.KORTIX_AUTO_UPDATE = flags.autoUpdate ? 'true' : 'false';
-  env.KORTIX_AUTO_UPDATE ||= DEFAULT_AUTO_UPDATE;
+  env.KORTIX_AUTO_UPDATE ||= defaultAutoUpdateFor(tag);
   if (flags.updateTime) env.KORTIX_UPDATE_TIME = flags.updateTime;
   env.KORTIX_UPDATE_TIME ||= DEFAULT_UPDATE_TIME;
   if (flags.updateTz) env.KORTIX_UPDATE_TZ = flags.updateTz;
   env.KORTIX_UPDATE_TZ ||= DEFAULT_UPDATE_TZ;
   if (flags.allowDowntime !== undefined) env.KORTIX_ALLOW_DOWNTIME = flags.allowDowntime ? '1' : '0';
   env.KORTIX_ALLOW_DOWNTIME ||= '0';
+
+  // Dev mode: locally-built images aren't on any registry — the updater
+  // can't pull them, so it must not try, and it must never auto-move a local
+  // dev box. --local-images always wins over channel defaults and even an
+  // explicit --auto-update, since "on" would just fail against no registry.
+  if (flags.localImages) {
+    env.KORTIX_IMAGE_PULL = 'never';
+    env.KORTIX_AUTO_UPDATE = 'false';
+  }
 }
 
 /**
@@ -1491,10 +1534,24 @@ function findFreePort(): Promise<number> {
 function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   const jwtSecret = token(64);
   const tag = flags.tag ?? flags.release ?? flags.channel ?? DEFAULT_CHANNEL;
+  // Pin implies no drift (see defaultAutoUpdateFor): a channel tracks and
+  // defaults on; a specific pinned/dev/local ref defaults off. --local-images
+  // always forces this off, even over an explicit --auto-update — "on" would
+  // just fail against images that were never pushed to any registry.
+  const autoUpdate = flags.localImages
+    ? 'false'
+    : flags.autoUpdate === undefined
+      ? defaultAutoUpdateFor(tag)
+      : flags.autoUpdate
+        ? 'true'
+        : 'false';
   return {
     KORTIX_VERSION: tag,
     KORTIX_CHANNEL: flags.channel ?? (isChannel(tag) ? tag : DEFAULT_CHANNEL),
-    KORTIX_AUTO_UPDATE: flags.autoUpdate === undefined ? DEFAULT_AUTO_UPDATE : flags.autoUpdate ? 'true' : 'false',
+    KORTIX_AUTO_UPDATE: autoUpdate,
+    // Dev mode only: locally-built images the updater must never try to pull
+    // from a registry. Empty/unset = normal pull behavior.
+    KORTIX_IMAGE_PULL: flags.localImages ? 'never' : '',
     KORTIX_UPDATE_TIME: flags.updateTime ?? DEFAULT_UPDATE_TIME,
     KORTIX_UPDATE_TZ: flags.updateTz ?? DEFAULT_UPDATE_TZ,
     KORTIX_ALLOW_DOWNTIME: flags.allowDowntime ? '1' : '0',

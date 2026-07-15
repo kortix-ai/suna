@@ -115,6 +115,53 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_CHANNEL).toBe('stable');
   });
 
+  test('--version is an alias for --tag: pins the image ref AND defaults auto-update off (pin implies no drift)', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--version', 'dev-a1b2c3d']);
+    expect(code).toBe(0);
+    const env = readEnv();
+    expect(env.KORTIX_VERSION).toBe('dev-a1b2c3d');
+    expect(env.API_IMAGE).toBe('kortix/kortix-api:dev-a1b2c3d');
+    expect(env.FRONTEND_IMAGE).toBe('kortix/kortix-frontend:dev-a1b2c3d');
+    // A pinned ref is not a channel; the auto-updater must not silently move it.
+    expect(env.KORTIX_AUTO_UPDATE).toBe('false');
+  });
+
+  test('--channel latest (channel tracking, not a pin) keeps auto-update on by default', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--channel', 'latest']);
+    expect(code).toBe(0);
+    expect(readEnv().KORTIX_AUTO_UPDATE).toBe('true');
+  });
+
+  test('an explicit --auto-update on wins even for a pinned --version', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--version', '0.9.99', '--auto-update', 'on']);
+    expect(code).toBe(0);
+    expect(readEnv().KORTIX_AUTO_UPDATE).toBe('true');
+  });
+
+  test('--local-images (dev mode): sets KORTIX_IMAGE_PULL=never and forces auto-update off, even over --auto-update on', async () => {
+    const { code } = await run([
+      'init', '--yes', '--allow-missing-secrets',
+      '--version', 'branch-local', '--local-images', '--auto-update', 'on',
+    ]);
+    expect(code).toBe(0);
+    const env = readEnv();
+    expect(env.KORTIX_IMAGE_PULL).toBe('never');
+    expect(env.KORTIX_AUTO_UPDATE).toBe('false');
+    expect(env.API_IMAGE).toBe('kortix/kortix-api:branch-local');
+  });
+
+  test('--no-pull is an alias for --local-images', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets', '--no-pull']);
+    expect(code).toBe(0);
+    expect(readEnv().KORTIX_IMAGE_PULL).toBe('never');
+  });
+
+  test('without --local-images, KORTIX_IMAGE_PULL stays unset (normal pull behavior)', async () => {
+    const { code } = await run(['init', '--yes', '--allow-missing-secrets']);
+    expect(code).toBe(0);
+    expect(readEnv().KORTIX_IMAGE_PULL).toBe('');
+  });
+
   test('rejects an invalid --channel value', async () => {
     const { code, stderr } = await run(['init', '--yes', '--allow-missing-secrets', '--channel', 'nightly']);
     expect(code).toBe(2);

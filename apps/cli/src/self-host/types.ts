@@ -28,6 +28,12 @@ export interface SelfHostCommandFlags {
    *  instead of failing — local experimentation only, never for a real
    *  deployment (managed git / sandbox / LLM calls will fail at runtime). */
   allowMissingSecrets?: boolean;
+  /** Dev mode: run locally-built images (e.g. a branch build) that aren't on
+   *  any registry. Sets KORTIX_IMAGE_PULL=never (the updater/`update` skip
+   *  `docker compose pull`) and forces auto-update off — combine with
+   *  `--version <localtag>` so *_IMAGE resolves to an image already present
+   *  in the local Docker engine (`--local-images`, alias `--no-pull`). */
+  localImages?: boolean;
   yes: boolean;
   json: boolean;
 }
