@@ -183,8 +183,13 @@ const nextConfig = (): NextConfig => ({
       // copy changes — it's cheap insurance against the shorter form living
       // on in bookmarks, chat history, and muscle memory.
       {
+        source: '/docs/self-hosting',
+        destination: '/docs/guides/self-hosting',
+        permanent: true,
+      },
+      {
         source: '/docs/self-host',
-        destination: '/docs/self-hosting',
+        destination: '/docs/guides/self-hosting',
         permanent: true,
       },
     ];
