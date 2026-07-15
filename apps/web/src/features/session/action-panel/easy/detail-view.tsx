@@ -112,16 +112,17 @@ function isTypingTarget(target: EventTarget | null): boolean {
 /** What a Tab press can land on inside the dialog. Standard selector — no
  *  dependency needed for a list this short. */
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Desktop-only keyboard for the open detail — ArrowLeft/Right walks siblings,
- * Escape closes back to home, and Tab wraps inside the dialog (aria-modal
- * promises containment, so the listener has to deliver it; the inert home
- * blocks the backward walk, this blocks the forward one). One document
- * listener carries all three: a focused-element listener would miss most of
- * the detail's body, since that body can put focus anywhere — a code block,
- * an iframe's surrounding chrome, a button — same reasoning as the reference
+ * Escape closes back to home, and Tab wraps inside the dialog while focus is
+ * IN the dialog (the inert home blocks the backward walk into the dimmed
+ * cards, this blocks the forward one; focus elsewhere — the chat stays live
+ * beside the panel — tabs as normal, untouched). One document listener
+ * carries all three: a focused-element listener would miss most of the
+ * detail's body, since that body can put focus anywhere — a code block, an
+ * iframe's surrounding chrome, a button — same reasoning as the reference
  * browser chrome this pages next to. Desktop-only because mobile is a vaul
  * drawer, which already owns Escape/swipe-down itself; a second listener
  * there would double-fire.
@@ -137,18 +138,22 @@ function useDetailKeyboard(
     const onKeyDown = (event: KeyboardEvent) => {
       // Tab wraps even from inputs — a text field mid-dialog must not be a
       // hole in the containment — so it's checked before the typing guard.
+      // Only while focus is inside the dialog, though: the trap is
+      // panel-scoped, and a Tab pressed over in the chat is none of its
+      // business.
       if (event.key === 'Tab') {
         const dialog = detailRef.current;
-        if (!dialog) return;
-        const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+        const active = document.activeElement as HTMLElement | null;
+        if (!dialog || !active || !dialog.contains(active)) return;
+        // Skip hidden controls (offsetParent === null) — arbitrary tool
+        // content can render collapsed/hidden buttons, and a hidden `last`
+        // would break the wrap.
+        const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (el) => el.offsetParent !== null,
+        );
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
-        const active = document.activeElement as HTMLElement | null;
-        if (!active || !dialog.contains(active)) {
-          // Focus leaked outside the modal somehow — pull it back in.
-          event.preventDefault();
-          (first ?? dialog).focus();
-        } else if (!first || !last) {
+        if (!first || !last) {
           // Nothing tabbable inside: the container itself is the only stop.
           event.preventDefault();
         } else if (event.shiftKey && (active === first || active === dialog)) {
@@ -291,8 +296,11 @@ export function DetailLayer({
         {detail && (
           <motion.div
             key={detail.key}
+            // No aria-modal: the detail replaces only the panel's cards — the
+            // chat beside it stays live, so claiming page modality would lie
+            // to assistive tech. Containment is panel-scoped instead (inert
+            // home + the Tab wrap scoped to focus inside this dialog).
             role="dialog"
-            aria-modal="true"
             aria-label={detail.title}
             tabIndex={-1}
             ref={detailRef}
