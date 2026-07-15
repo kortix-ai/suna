@@ -9,7 +9,7 @@ name: Deploy Prod
 #   1. Retag the promoted staging images (kortix/kortix-*:staging-<sha8>)
 #      → :X.Y.Z + :latest (multi-arch manifest copy, zero rebuilds). The
 #      self-host `:stable` channel is promoted SEPARATELY and manually via
-#      mark-stable.yml — a prod release is not auto-shipped to self-hosts.
+#      promote-self-host-stable.yml — a prod release is not auto-shipped to self-hosts.
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
@@ -167,7 +167,7 @@ jobs:
             # A prod release publishes :X.Y.Z + :latest only. The self-host
             # `:stable` channel — the tag self-hosted boxes auto-update to — is
             # CURATED, not automatic: a human promotes a proven version to
-            # :stable via the "Mark self-host stable" workflow (mark-stable.yml).
+            # :stable via the "Promote Self-Host Stable" workflow (promote-self-host-stable.yml).
             # Released != auto-shipped to every self-hosted customer overnight.
             echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + :latest"
             docker buildx imagetools create \

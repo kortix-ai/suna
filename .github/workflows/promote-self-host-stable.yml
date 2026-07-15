@@ -1,4 +1,4 @@
-name: Mark self-host stable
+name: Promote Self-Host Stable
 
 # Promote a proven released version to the self-host `:stable` channel.
 #

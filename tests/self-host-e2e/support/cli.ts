@@ -69,6 +69,14 @@ export class SelfHostSandbox {
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
     ]);
+    // Surface the CLI's own output when it exits non-zero — otherwise a CI-only
+    // failure is an opaque "expected 0, received 1" with no way to see WHY.
+    if (code !== 0) {
+      // biome-ignore lint/suspicious/noConsole: test diagnostic, CI-visible.
+      console.warn(
+        `[self-host-e2e] \`self-host ${args.join(' ')}\` exited ${code}\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+      );
+    }
     return { code, stdout, stderr };
   }
 
