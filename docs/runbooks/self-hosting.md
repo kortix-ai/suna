@@ -43,20 +43,90 @@ box.
   signups and leads with password auth, so the first account works with zero
   email configuration. Configure SMTP later to enable magic-link sign-in.
 
+## Reachability (required for agent sessions)
+
+Agent sessions run inside a **cloud** Daytona sandbox — a VM outside your
+network — that calls back to this instance's API over the public internet via
+`KORTIX_URL`. That means `KORTIX_URL` can never be a loopback/internal
+address: a sandbox trying to reach `http://localhost:...` or an internal
+Docker hostname like `http://kortix-api:8008` will simply never connect, and
+agent sessions fail with a fast, explicit error (or, before this URL was
+validated, a confusing hang).
+
+`kortix self-host init`/`configure` ask interactively how this instance is
+reachable from the internet; non-interactively, pick one of:
+
+1. **Public domain** (server/VPS/EC2 with DNS) — `--domain kortix.example.com`.
+   The production path: turns on the bundled Caddy reverse proxy + ACME TLS,
+   and `KORTIX_URL` becomes `https://api.<domain>`.
+2. **Cloudflare tunnel** (laptop — no public IP/DNS) — `--tunnel cloudflare`.
+   The recommended laptop path: a `cloudflared` Compose service exposes the
+   API to the internet with zero DNS/firewall setup, and the CLI wires
+   `KORTIX_URL` to the tunnel's public URL automatically. See below.
+3. **Local only** (neither flag) — loopback URLs only, the historical default.
+   Agent sessions and any other external caller (webhooks, Slack/Teams OAuth,
+   the git-proxy clone URL) **will not work**. Browser-local flows (e.g.
+   creating a GitHub App) still do, since the browser runs on the same
+   machine. `start` prints a warning every time this mode is active.
+
+Switch modes any time with `kortix self-host configure` (interactive) or the
+same flags on `init`/`update`. Re-running with neither flag never resets an
+already-configured mode.
+
+### Cloudflare tunnel mechanics (mode 2)
+
+`--tunnel cloudflare` adds a `cloudflared` service to the Compose stack that
+tunnels straight to `kortix-api` (Caddy is never present in this mode — there
+is no domain). By default this is a **zero-config quick tunnel**
+(`cloudflared tunnel --url ...`, no Cloudflare account needed): a fresh
+`https://<random>.trycloudflare.com` URL is minted every time the
+`cloudflared` container starts.
+
+Because that URL is **ephemeral**, `kortix self-host start`/`update` always:
+
+1. Bring the stack (including `cloudflared`) up.
+2. Poll the `cloudflared` container's logs for the URL it just printed
+   (up to 30s).
+3. Write it into `.env` as `KORTIX_URL` and recreate `kortix-api` so the new
+   value actually takes effect.
+
+If `cloudflared` was already running (a plain re-`start` with nothing
+stopped), it keeps its existing tunnel/URL and this is a no-op. A full
+`stop`/`start` (or `down`/`start`) always gets a **new** URL — that's expected
+and handled automatically; there is nothing to reconcile by hand.
+
+For a **stable** URL instead — recommended once you're past kicking the
+tyres — create a named tunnel in the
+[Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/), bind a
+hostname to it, and set:
+
+```sh
+kortix self-host env set CLOUDFLARE_TUNNEL_TOKEN=... CLOUDFLARE_TUNNEL_HOSTNAME=kortix-tunnel.example.com
+kortix self-host start
+```
+
+With both set, `cloudflared` authenticates to that specific tunnel
+(`cloudflared tunnel run --token ...`) instead of opening a quick tunnel, and
+`KORTIX_URL` is derived directly from the hostname — no log-scraping, and it
+never changes across restarts.
+
 ## Quickstart
 
 ### Laptop
 
 ```sh
 curl -fsSL https://kortix.com/install | bash
-kortix self-host init
+kortix self-host init --tunnel cloudflare
 kortix self-host start
 ```
 
-That's it — Supabase, the API, the gateway, and the frontend come up on
-loopback ports (default dashboard: `http://localhost:13737`). `start` prints
-the exact URLs and warns if the sandbox provider or managed git aren't
-configured yet.
+Supabase, the API, the gateway, and the frontend come up on loopback ports
+(default dashboard: `http://localhost:13737`) — the bundled `cloudflared`
+quick tunnel is what makes agent sessions actually work with no domain/DNS at
+all (see Reachability above). `start` prints the exact URLs, the tunnel's
+public URL, and warns if the sandbox provider or managed git aren't configured
+yet. Omit `--tunnel cloudflare` to stay fully local-only (no agent sessions;
+see mode 3 above).
 
 ### VPS / EC2 / any bare Linux box
 
@@ -113,7 +183,8 @@ kortix self-host start           # re-applies env + restarts affected services
 Common flags: `--instance <name>` (default `default` — run multiple isolated
 stacks on one box), `--tag <version>` / `--release <version>` (pin an explicit
 image tag), `--channel stable|latest`, `--auto-update on|off`,
-`--update-interval <seconds>`, `--json`, `--yes`.
+`--update-interval <seconds>`, `--domain <domain>` / `--tunnel cloudflare`
+(reachability — see above), `--json`, `--yes`.
 
 Full reference: [`/docs/reference/cli#self-host`](../../apps/web/content/docs/reference/cli.mdx).
 
@@ -254,6 +325,15 @@ approach), then start.
   `kortix self-host env set DAYTONA_API_KEY=...` then `kortix self-host start`.
 - **Creating a project fails ("provider github not configured")** — managed
   git isn't configured. Same fix, with the `MANAGED_GIT_GITHUB_*` keys above.
+- **Agent sessions fail with "Cannot connect to the API" / a `KORTIX_URL`
+  error, or hang forever** — this instance's reachability mode is `local`
+  (the default absent `--domain`/`--tunnel`), or a Cloudflare quick tunnel's
+  URL wasn't captured yet. Run `kortix self-host configure` to set up a
+  domain or `--tunnel cloudflare`, or re-run `kortix self-host start` — see
+  Reachability above. Check `kortix self-host logs cloudflared` if a tunnel is
+  configured but the URL capture keeps timing out (cloudflared may be missing
+  its image locally yet, or outbound network access to Cloudflare may be
+  blocked).
 - **ACME/TLS cert issuance fails** — confirm the domain's (and API domain's)
   DNS A/AAAA record actually resolves to the box's public IP, and that ports
   80/443 are open in any cloud/VPS firewall or security group — HTTP-01
@@ -265,5 +345,5 @@ approach), then start.
   reflects what's actually published.
 - **Logs** — `kortix self-host logs [service]` (services: `frontend`,
   `kortix-api`, `llm-gateway`, `kortix-updater`, `caddy` when a domain is
-  configured, plus the Supabase services `supabase-db`, `supabase-kong`,
-  `supabase-auth`, etc.).
+  configured, `cloudflared` when tunnel mode is configured, plus the Supabase
+  services `supabase-db`, `supabase-kong`, `supabase-auth`, etc.).
