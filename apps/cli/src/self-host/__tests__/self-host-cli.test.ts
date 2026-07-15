@@ -81,7 +81,12 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.API_IMAGE).toBe('kortix/kortix-api:stable');
     expect(env.GATEWAY_IMAGE).toBe('kortix/kortix-gateway:stable');
     expect(env.KORTIX_AUTO_UPDATE).toBe('true');
-    expect(env.KORTIX_UPDATE_INTERVAL).toBe('86400');
+    expect(env.KORTIX_UPDATE_TIME).toBe('02:00');
+    expect(env.KORTIX_UPDATE_TZ).toBe('America/New_York');
+    expect(env.KORTIX_ALLOW_DOWNTIME).toBe('0');
+
+    // Laptop mode (no domain): single replica, no LB needed.
+    expect(env.KORTIX_APP_REPLICAS).toBe('1');
 
     // No local-source-build leftovers.
     expect(env.KORTIX_LOCAL_IMAGES).toBeUndefined();
@@ -109,6 +114,39 @@ describe('kortix self-host (generic Docker CLI)', () => {
     const { code, stderr } = await run(['init', '--yes', '--channel', 'nightly']);
     expect(code).toBe(2);
     expect(stderr).toContain('--channel must be "stable" or "latest"');
+  });
+
+  test('--update-time / --update-tz configure the nightly auto-update schedule', async () => {
+    const { code } = await run(['init', '--yes', '--update-time', '03:30', '--update-tz', 'UTC']);
+    expect(code).toBe(0);
+    const env = readEnv();
+    expect(env.KORTIX_UPDATE_TIME).toBe('03:30');
+    expect(env.KORTIX_UPDATE_TZ).toBe('UTC');
+  });
+
+  test('rejects an invalid --update-time value', async () => {
+    const { code, stderr } = await run(['init', '--yes', '--update-time', '9pm']);
+    expect(code).toBe(2);
+    expect(stderr).toContain('--update-time must be HH:MM');
+  });
+
+  test('--allow-downtime sets KORTIX_ALLOW_DOWNTIME=1', async () => {
+    await run(['init', '--yes']);
+    expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('0');
+    const { code } = await run(['init', '--yes', '--allow-downtime']);
+    expect(code).toBe(0);
+    expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('1');
+  });
+
+  test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {
+    await run(['init', '--yes']);
+    expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
+
+    await run(['env', 'set', 'KORTIX_DOMAIN=kortix.example.com']);
+    expect(readEnv().KORTIX_APP_REPLICAS).toBe('2');
+
+    await run(['env', 'set', 'KORTIX_DOMAIN=']);
+    expect(readEnv().KORTIX_APP_REPLICAS).toBe('1');
   });
 
   test('the rendered compose has no Caddy service until KORTIX_DOMAIN is set', async () => {
