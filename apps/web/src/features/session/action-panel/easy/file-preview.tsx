@@ -22,6 +22,7 @@ import {
   FileSourceProvider,
   getFileCategory,
 } from '@/features/file-viewer';
+import { isBrowserViewable } from '@/features/files/api/opencode-files';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
@@ -31,7 +32,7 @@ import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store'
 import { FileWarning, Maximize2, Minimize2 } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
-import { DownloadButton, FileViewer } from './file-viewer';
+import { DownloadButton, FileViewer, OpenInNewTabButton } from './file-viewer';
 
 // zustand v5's own hook feeds React's `useSyncExternalStore` a
 // `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
@@ -83,6 +84,7 @@ function PreviewShell({
           <span className="text-foreground truncate text-sm font-medium">{name}</span>
         </span>
         <span className="flex shrink-0 items-center gap-0.5">
+          {isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
           <DownloadButton path={path} fileName={fileName} />
           {/* The store flip is a no-op on mobile — the drawer never reads
               `isExpanded` — so the control was dead weight there. */}

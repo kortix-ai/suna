@@ -5,36 +5,70 @@
  * (one owner, shared by every host). This module only adds the browser-only
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
+import { listFiles, readBlob } from '@kortix/sdk/files';
 import JSZip from 'jszip';
-import { readBlob, listFiles } from '@kortix/sdk/files';
 
 // Data operations — single source of truth in the SDK. Aliased to the names the
 // file panel components already import.
 export {
-  listFiles,
-  readFile,
-  getFileStatus,
+  copyFile,
+  createFile,
+  deleteFile,
   findFiles,
   findText,
-  uploadFile,
-  createFile,
-  copyFile,
-  deleteFile,
-  renameFile,
   getCurrentProject,
+  getFileStatus,
   getServerHealth,
   isServerReachable,
-  readBlob as readFileAsBlob,
+  isUnderSandboxRoot,
+  listFiles,
   mkdir as mkdirFile,
-  toWorkspaceRelative,
+  readFile,
+  readBlob as readFileAsBlob,
+  renameFile,
+  SANDBOX_FS_ROOTS,
   toDaemonPath,
   toSandboxAbsolutePath,
-  isUnderSandboxRoot,
-  SANDBOX_FS_ROOTS,
+  toWorkspaceRelative,
+  uploadFile,
 } from '@kortix/sdk/files';
 export type { UploadResult } from '@kortix/sdk/files';
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
+
+/** Formats a browser tab renders natively. Everything else gets Download only —
+ * an omitted control beats a disabled one with no explanation (W4). */
+const BROWSER_VIEWABLE_EXT = new Set([
+  'pdf',
+  'html',
+  'htm',
+  'txt',
+  'md',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'svg',
+  'avif',
+  'bmp',
+]);
+
+export function isBrowserViewable(fileName: string): boolean {
+  const dot = fileName.lastIndexOf('.');
+  const ext = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
+  return BROWSER_VIEWABLE_EXT.has(ext);
+}
+
+/** Open a sandbox file in a real browser tab via a blob URL. The URL is only
+ * ever read by the tab we just opened, so a short-lived revoke (matching
+ * `downloadFile`'s own window) is enough — no store, no cleanup on unmount. */
+export async function openFileInNewTab(filePath: string): Promise<void> {
+  const blob = await readBlob(filePath);
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener,noreferrer');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 
 /** Download a single file to the user's machine. */
 export async function downloadFile(filePath: string, fileName?: string): Promise<void> {

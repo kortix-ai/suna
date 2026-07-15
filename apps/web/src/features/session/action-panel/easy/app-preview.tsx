@@ -24,6 +24,7 @@ import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { useCopy } from '@/hooks/use-copy';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
@@ -35,10 +36,13 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Check,
+  Link as LinkIcon,
   Maximize2,
   Minimize2,
   RefreshCw,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { GrRefresh } from 'react-icons/gr';
@@ -107,6 +111,7 @@ export function AppPreview({
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
   const isMobile = useIsMobile();
+  const { copied, copy } = useCopy({ successMessage: 'Link copied' });
 
   const sandboxAlive = useSyncExternalStore(
     useSandboxConnectionStore.subscribe,
@@ -295,6 +300,37 @@ export function AppPreview({
             onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')}
           >
             <TbExternalLink className="size-4" />
+          </Button>
+        </Hint>
+
+        <Hint label={copied ? 'Copied' : 'Copy link'} side="bottom">
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={!hasPreview}
+            aria-label="Copy link"
+            onClick={() => previewUrl && copy(previewUrl)}
+          >
+            {/* Morph, not a hard swap — same box, cross-faded (kortix-design-system
+                → "Button icon-swap"). */}
+            <span className="relative inline-flex size-4 items-center justify-center">
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.span
+                  key={copied ? 'check' : 'link'}
+                  initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+                  className="absolute inset-0 inline-flex items-center justify-center"
+                >
+                  {copied ? (
+                    <Check className="text-kortix-green size-4" />
+                  ) : (
+                    <LinkIcon className="size-4" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
           </Button>
         </Hint>
 

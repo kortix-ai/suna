@@ -25,12 +25,16 @@ import { Button } from '@/components/ui/button';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import Hint from '@/components/ui/hint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { downloadFile } from '@/features/files/api/opencode-files';
+import {
+  downloadFile,
+  isBrowserViewable,
+  openFileInNewTab,
+} from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
-import { Code2, Download, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import { Code2, Download, ExternalLink, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { useState } from 'react';
 import { CloseButton } from './detail-view';
 
@@ -122,6 +126,49 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
   );
 }
 
+/**
+ * Same fetch-then-act shape as `DownloadButton` (and the same reason for a
+ * pending state — a slow sandbox fetch behind a silent click reads as a
+ * broken button and invites a second, overlapping click). Shown only for
+ * formats a tab can actually render (`isBrowserViewable`) — an omitted
+ * control beats a disabled one with no explanation (W4).
+ */
+export function OpenInNewTabButton({ path }: { path: string }) {
+  const [opening, setOpening] = useState(false);
+
+  const handleOpen = async () => {
+    if (opening) return;
+    setOpening(true);
+    try {
+      await openFileInNewTab(path);
+    } catch {
+      // The browser reports its own failure; the button just needs to recover.
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  return (
+    <Hint label="Open in a new tab" side="bottom">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => void handleOpen()}
+        disabled={opening}
+        aria-label="Open in a new tab"
+        aria-busy={opening}
+        className="size-7 active:scale-[0.96] disabled:opacity-100"
+      >
+        {opening ? (
+          <Loader2 className="text-muted-foreground size-3.5 animate-spin motion-reduce:animate-none" />
+        ) : (
+          <ExternalLink className="size-3.5" />
+        )}
+      </Button>
+    </Hint>
+  );
+}
+
 export function FileViewer({
   content,
   fileName,
@@ -184,6 +231,7 @@ export function FileViewer({
         {/* Same actions in the same place for every file — they never move. */}
         <span className="flex shrink-0 items-center gap-0.5">
           <CopyButton code={content} />
+          {path && isBrowserViewable(fileName) && <OpenInNewTabButton path={path} />}
           {path && <DownloadButton path={path} fileName={fileName} />}
           {/* The store flip is a no-op on mobile — the drawer never reads
               `isExpanded` — so the control was dead weight there. */}

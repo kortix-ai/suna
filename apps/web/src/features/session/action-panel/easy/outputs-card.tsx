@@ -25,6 +25,7 @@ import { useState } from 'react';
 import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel } from '../shared/output-priority';
 import { outputKey } from './easy-panel-logic';
+import { DownloadButton } from './file-viewer';
 import { PanelCard } from './panel-card';
 
 const KIND_ICON = {
@@ -97,12 +98,12 @@ export function OutputRows({
     <>
       <ul className="flex flex-col gap-0">
         {visible.map((o) => (
-          <li key={outputKey(o)}>
+          <li key={outputKey(o)} className="group/row relative flex items-center">
             <button
               type="button"
               disabled={!isOpenable(o)}
               onClick={() => isOpenable(o) && onOpenOutput(o)}
-              className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 text-left disabled:cursor-default"
+              className="hover:bg-accent -mx-0.5 flex w-full items-center gap-2.5 rounded-sm px-1 py-1.5 pr-8 text-left disabled:cursor-default"
             >
               <OutputIcon output={o} />
               <span className="text-foreground min-w-0 flex-1 truncate text-sm">
@@ -117,6 +118,18 @@ export function OutputRows({
                 {deliverableKindLabel(o)}
               </span>
             </button>
+            {/* Hover-only download, not the row's default action: clicking the
+                row opens the detail layer (Task 13's onOpenOutput) — this is
+                the one-tap shortcut for someone who just wants the file, and
+                it never overlaps the button's own hit area (`pr-8` above
+                reserves the space). Keyboard users get it via focus-within,
+                not just :hover — a nested button is invalid HTML, so this is
+                a sibling positioned over the reserved space, not a child. */}
+            {o.path && (
+              <span className="absolute right-0 opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100">
+                <DownloadButton path={o.path} fileName={o.name} />
+              </span>
+            )}
           </li>
         ))}
       </ul>
