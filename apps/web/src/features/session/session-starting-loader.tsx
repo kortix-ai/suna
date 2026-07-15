@@ -364,7 +364,7 @@ export function SessionBootChecklistInline({
   const elapsed = formatDuration(now - startRef.current);
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <div aria-label="Starting your Kortix Computer">
+      <div aria-label="Starting your Kortix Session">
         <BootStepList active={active} />
       </div>
       {elapsed ? (
