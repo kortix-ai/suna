@@ -34,6 +34,11 @@ import {
   type SecretDef,
 } from '../self-host/secrets-registry.ts';
 import { createPastePrompt, runConnectGithubFlow } from '../self-host/connect-github.ts';
+import {
+  namedTunnelConfigured,
+  reachabilityMode,
+  resolveTunnelUrl,
+} from '../self-host/tunnel.ts';
 
 const DEFAULT_INSTANCE = 'default';
 const CHANNELS = ['stable', 'latest'] as const;
@@ -139,6 +144,21 @@ Options:
                        (managed git, sandbox, LLM) unset instead of failing.
                        Local experimentation only — projects/agent sessions
                        will not work until they are set.
+  --domain <domain>    Public domain reachability mode: this instance is
+                       reachable at https://<domain> — turns on the bundled
+                       Caddy reverse proxy + ACME TLS. The production path for
+                       a server/VPS/EC2 box with DNS. Same effect as
+                       ${C.cyan}env set KORTIX_DOMAIN=<domain>${C.reset}. Pass an empty string
+                       to clear a previously configured domain.
+  --tunnel cloudflare  Cloudflare-tunnel reachability mode: no public domain —
+                       a ${C.cyan}cloudflared${C.reset} tunnel exposes the API to the internet so
+                       cloud (Daytona) sandboxes can call back to it. THE
+                       laptop path when there is no public IP/DNS. Zero-config
+                       by default (a free quick tunnel whose URL is ephemeral
+                       — reassigned on every restart and re-captured
+                       automatically); set CLOUDFLARE_TUNNEL_TOKEN +
+                       CLOUDFLARE_TUNNEL_HOSTNAME for a stable named tunnel
+                       instead (see the runbook).
   --org <name>         GitHub org to create/install the ${C.cyan}connect-github${C.reset} App
                        under (omit, or pass "." for a personal account).
   --manual             ${C.cyan}connect-github${C.reset}: headless mode — print URLs and accept
@@ -151,8 +171,17 @@ Options:
   --yes                Accept defaults in non-interactive flows.
   -h, --help           Show this help.
 
+Reachability (required for agent sandboxes — see --domain/--tunnel above): a
+cloud (Daytona) sandbox calls back to this instance's API over the public
+internet via KORTIX_URL, which can never be a loopback/internal address.
+${C.cyan}kortix self-host init${C.reset}/${C.cyan}configure${C.reset} ask interactively; non-interactively pass
+${C.cyan}--domain${C.reset} (server/VPS/EC2 with DNS) or ${C.cyan}--tunnel cloudflare${C.reset} (laptop, no DNS). Neither
+flag: local-only — loopback URLs, agent sandboxes and external callbacks
+(webhooks, Slack/Teams OAuth, git-proxy clone) will not work, only
+browser-local flows will.
+
 Public domain + TLS (optional): set KORTIX_DOMAIN (and optionally
-KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via
+KORTIX_API_DOMAIN, default api.<KORTIX_DOMAIN>) via ${C.cyan}--domain${C.reset} or
 ${C.cyan}kortix self-host env set${C.reset} to turn on the bundled Caddy
 reverse proxy, which terminates TLS via ACME HTTP-01 on ports 80/443. Leave it
 unset for the default loopback-port laptop setup.
@@ -160,6 +189,8 @@ unset for the default loopback-port laptop setup.
 Examples:
   kortix self-host init
   kortix self-host start
+  kortix self-host init --domain kortix.example.com  # server/VPS/EC2 with DNS
+  kortix self-host init --tunnel cloudflare          # laptop, no domain/DNS
   kortix self-host update                         # pull + apply the stable channel
   kortix self-host init --version 0.9.72          # pin to a specific released version
   kortix self-host update --channel latest        # track :latest instead
@@ -194,6 +225,22 @@ interface SelfHostEnv {
   KORTIX_DOMAIN: string;
   KORTIX_API_DOMAIN: string;
   KORTIX_ACME_EMAIL: string;
+  // Reachability: how cloud (Daytona) sandboxes and other external callers
+  // reach this instance's API — see reachabilityMode() in self-host/tunnel.ts.
+  // KORTIX_DOMAIN set always means "domain" mode regardless of this value;
+  // otherwise it's the persisted tunnel-vs-local preference (default local,
+  // matching every self-host instance created before this field existed).
+  KORTIX_REACHABILITY_MODE: string;
+  // Public origin cloud sandboxes and webhook/OAuth callers reach this
+  // instance on — see the KORTIX_URL comment in assets/kortix-compose.yml.
+  // Computed by normalizeFullSupabaseEnv() per reachability mode; in tunnel
+  // mode only reconcileTunnelReachability() (post `docker compose up`, since
+  // the URL doesn't exist until cloudflared boots) overwrites it.
+  KORTIX_URL: string;
+  // Cloudflare named-tunnel opt-in (tunnel mode only): both set = a stable
+  // hostname instead of the zero-config ephemeral quick tunnel.
+  CLOUDFLARE_TUNNEL_TOKEN: string;
+  CLOUDFLARE_TUNNEL_HOSTNAME: string;
   PUBLIC_URL: string;
   API_PUBLIC_URL: string;
   SUPABASE_PUBLIC_URL: string;
@@ -337,6 +384,8 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   const enterpriseLicense = takeFlagBool(args, ['--enterprise-license']);
   const allowMissingSecrets = takeFlagBool(args, ['--allow-missing-secrets']);
   const localImages = takeFlagBool(args, ['--local-images', '--no-pull']);
+  const domain = takeFlagValue(args, ['--domain']);
+  const tunnelRaw = takeFlagValue(args, ['--tunnel']);
   const org = takeFlagValue(args, ['--org']);
   const manual = takeFlagBool(args, ['--manual']);
   const skipGithub = takeFlagBool(args, ['--skip-github']);
@@ -352,6 +401,9 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
   }
   if (updateTz !== undefined && updateTz.trim() === '') {
     throw new Error('--update-tz must not be empty');
+  }
+  if (tunnelRaw !== undefined && tunnelRaw !== 'cloudflare') {
+    throw new Error(`--tunnel only supports "cloudflare", got "${tunnelRaw}"`);
   }
   if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(instance)) {
     throw new Error('instance must start with a letter and contain only letters, digits, dots, underscores, or dashes');
@@ -370,6 +422,8 @@ function parseGlobalFlags(args: string[]): GlobalFlags {
     enterpriseLicense: enterpriseLicense || undefined,
     allowMissingSecrets: allowMissingSecrets || undefined,
     localImages: localImages || undefined,
+    domain,
+    tunnel: tunnelRaw as 'cloudflare' | undefined,
     org,
     manual: manual || undefined,
     skipGithub: skipGithub || undefined,
@@ -393,15 +447,17 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, existing));
   applyFeatureFlags(env, flags);
+  applyReachabilityFlags(env, flags);
 
   if (shouldPrompt(flags) && integrationReviewNeeded(env)) {
     await configureIntegrations(env, flags);
   }
   // Only walk through the deployment-configuration wizard on a genuinely
   // first-time init (no prior .env) — a refresh of an already-configured
-  // instance shouldn't re-ask single-account/landing-page/license every time
-  // `init` happens to run again. `configure` always asks (see below).
+  // instance shouldn't re-ask single-account/landing-page/license/reachability
+  // every time `init` happens to run again. `configure` always asks (see below).
   if (shouldPrompt(flags) && existing === null) {
+    await promptReachability(env, flags);
     await promptFeatureFlags(env, flags);
   }
 
@@ -435,7 +491,8 @@ function renderInitSummary(instance: string, dir: string, env: SelfHostEnv, refr
   process.stdout.write(`  ${C.dim}API       ${C.reset}${env.API_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Supabase  ${C.reset}${env.SUPABASE_PUBLIC_URL}\n`);
   process.stdout.write(`  ${C.dim}Images    ${C.reset}${env.FRONTEND_IMAGE}, ${env.API_IMAGE}, ${env.SANDBOX_IMAGE}\n`);
-  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n\n`);
+  process.stdout.write(`  ${C.dim}Channel   ${C.reset}${env.KORTIX_CHANNEL}${C.dim} (auto-update: ${env.KORTIX_AUTO_UPDATE === 'true' ? 'on' : 'off'}, nightly at ${env.KORTIX_UPDATE_TIME} ${env.KORTIX_UPDATE_TZ})${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n\n`);
   renderIntegrationSummary(env);
   process.stdout.write(`  ${C.dim}Start      ${C.reset}${C.cyan}kortix self-host start${instance === DEFAULT_INSTANCE ? '' : ` --instance ${instance}`}${C.reset}\n`);
   process.stdout.write(`  ${C.dim}Configure  ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} or ${C.reset}${C.cyan}kortix self-host env set KEY=VALUE${C.reset}\n`);
@@ -492,12 +549,32 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
     );
   }
 
+  if (reachabilityMode(env) === 'local') {
+    process.stdout.write(
+      `${C.yellow}  warning${C.reset}  ${C.dim}local-only reachability — agent sandboxes and other external callers${C.reset}\n`,
+    );
+    process.stdout.write(
+      `${C.dim}           (webhooks, Slack/Teams OAuth, git-proxy clone) cannot reach this instance.${C.reset}\n`,
+    );
+    process.stdout.write(
+      `${C.dim}           run ${C.reset}${C.cyan}kortix self-host configure${C.reset}${C.dim} to set up a domain or Cloudflare tunnel.${C.reset}\n\n`,
+    );
+  }
+
   const pull = compose(flags.instance, ['pull']);
   if (pull !== 0) return pull;
   const up = compose(flags.instance, ['up', '-d']);
   if (up !== 0) return up;
   const refreshApp = compose(flags.instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api', 'frontend']);
   if (refreshApp !== 0) return refreshApp;
+
+  // Tunnel reachability mode only: the cloudflared quick-tunnel URL is
+  // ephemeral (a fresh one every restart) and doesn't exist until the
+  // container has actually booted, so this can only happen post-`up`, not at
+  // config-write time. Non-fatal on timeout — the stack still comes up, just
+  // unreachable for sandboxes until the next start/update.
+  const tunnelCode = await reconcileTunnelReachability(flags.instance, env);
+  if (tunnelCode !== 0) return tunnelCode;
 
   registerLocalHost(DEFAULT_HOST_NAME, env.API_PUBLIC_URL);
   process.stdout.write(`${status.ok('Self-hosted Kortix is starting')}\n`);
@@ -614,25 +691,38 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
 
   applyChannelAndUpdatePolicy(env, flags);
   applyImagesForTag(env, resolveTag(flags, env));
-  // Runtime feature flags (single-account/landing-page/enterprise-license)
-  // are ordinary env — an update only ever moves image tags, so an explicit
-  // flag is honored (non-interactively; `update` never prompts) but nothing
-  // here resets a value the operator already set via `configure`/`env set`.
+  // Runtime feature flags (single-account/landing-page/enterprise-license) and
+  // reachability (domain/tunnel/local) are ordinary env — an update only ever
+  // moves image tags, so an explicit flag is honored (non-interactively;
+  // `update` never prompts) but nothing here resets a value the operator
+  // already set via `configure`/`env set`.
   applyFeatureFlags(env, flags);
+  applyReachabilityFlags(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
 
   process.stdout.write(`  ${C.dim}version  ${C.reset}${oldVersion} ${C.dim}→${C.reset} ${C.cyan}${env.KORTIX_VERSION}${C.reset}\n\n`);
 
-  // Ensure Supabase/Caddy (and any not-yet-created app-tier container) exist
-  // without recreating anything already running — `--no-recreate` is the key:
-  // it never touches an existing kortix-api/llm-gateway/frontend container
-  // even though writeCompose() just changed its image tag. The zero-downtime
-  // rollout below is what actually rolls those forward.
+  // Ensure Supabase/Caddy/cloudflared (and any not-yet-created app-tier
+  // container) exist without recreating anything already running —
+  // `--no-recreate` is the key: it never touches an existing
+  // kortix-api/llm-gateway/frontend container even though writeCompose() just
+  // changed its image tag. The zero-downtime rollout below is what actually
+  // rolls those forward.
   const base = compose(flags.instance, ['up', '-d', '--no-recreate']);
   if (base !== 0) return base;
 
-  return compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'once']);
+  const rollout = compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'once']);
+  if (rollout !== 0) return rollout;
+
+  // Tunnel reachability mode only, and deliberately AFTER the zero-downtime
+  // rollout above (not before): recreating kortix-api early to pick up a
+  // changed KORTIX_URL would bypass updater.sh's start-first health-checked
+  // swap and apply the new image tag as an ungated forced recreate instead.
+  // Once the rollout is done, kortix-api is already on the new version, so
+  // this is just a fast in-place recreate (like `secrets set` triggers) to
+  // pick up KORTIX_URL — no separate rollout semantics needed for that.
+  return reconcileTunnelReachability(flags.instance, env);
 }
 
 /** Resolve the image tag to apply: an explicit pin wins, else the channel. */
@@ -678,6 +768,80 @@ function applyChannelAndUpdatePolicy(env: SelfHostEnv, flags: GlobalFlags): void
   if (flags.localImages) {
     env.KORTIX_IMAGE_PULL = 'never';
     env.KORTIX_AUTO_UPDATE = 'false';
+  }
+}
+
+/**
+ * Apply --domain / --tunnel onto env, non-interactively. Each only overwrites
+ * when the flag was actually passed (undefined = "not passed"), so a bare
+ * `init`/`update`/`configure` never resets a reachability mode the operator
+ * already set via a prior run or `configure`'s interactive prompt — same
+ * convention as applyChannelAndUpdatePolicy/applyFeatureFlags above.
+ * `--domain ""` explicitly clears a previously configured domain (falls back
+ * to whatever KORTIX_REACHABILITY_MODE otherwise resolves to — tunnel or
+ * local); `--tunnel cloudflare` only ever sets tunnel mode, it never turns
+ * itself off (switch to domain via --domain, or to local via
+ * `env set KORTIX_REACHABILITY_MODE=local` — there's no "un-tunnel" flag
+ * because domain/tunnel/local is a single three-way choice, not independent
+ * toggles). KORTIX_REACHABILITY_MODE always ends up non-empty so
+ * reachabilityMode() never has to guess.
+ */
+function applyReachabilityFlags(env: SelfHostEnv, flags: GlobalFlags): void {
+  if (flags.domain !== undefined) {
+    env.KORTIX_DOMAIN = flags.domain;
+    if (flags.domain.trim()) env.KORTIX_REACHABILITY_MODE = 'domain';
+  }
+  if (flags.tunnel !== undefined) env.KORTIX_REACHABILITY_MODE = 'tunnel';
+  env.KORTIX_REACHABILITY_MODE ||= 'local';
+}
+
+/**
+ * Interactive follow-up to applyReachabilityFlags: ask how this instance is
+ * reachable from the internet — the setting that decides whether agent
+ * sandboxes (which always run on a remote cloud Daytona VM) can call back to
+ * it at all. Defaults to whatever is already configured, so re-running
+ * `configure` doesn't reset a prior answer. No-ops under --yes / non-TTY.
+ */
+async function promptReachability(env: SelfHostEnv, flags: GlobalFlags): Promise<void> {
+  if (!shouldPrompt(flags)) return;
+
+  process.stdout.write(`\n  ${C.bold}Reachability${C.reset}\n`);
+  process.stdout.write(
+    `  ${C.dim}Agent sandboxes run on a remote cloud (Daytona) VM and must call back to${C.reset}\n` +
+      `  ${C.dim}this API over the public internet — a loopback/internal URL can never work.${C.reset}\n`,
+  );
+
+  const mode = await selectFrom(
+    'How is this instance reachable from the internet?',
+    ['domain', 'tunnel', 'local'] as const,
+    reachabilityMode(env),
+  );
+
+  if (mode === 'domain') {
+    env.KORTIX_DOMAIN = await prompt('Public domain (its DNS A/AAAA record — and the API subdomain\'s — must already point at this box)', env.KORTIX_DOMAIN || '');
+    env.KORTIX_REACHABILITY_MODE = 'domain';
+  } else if (mode === 'tunnel') {
+    env.KORTIX_DOMAIN = '';
+    env.KORTIX_REACHABILITY_MODE = 'tunnel';
+    const useNamed = await confirm(
+      'Use a stable named Cloudflare tunnel? (needs a token from the Cloudflare Zero Trust dashboard; otherwise a free zero-config quick tunnel is used, but its URL changes every restart)',
+      namedTunnelConfigured(env),
+    );
+    if (useNamed) {
+      env.CLOUDFLARE_TUNNEL_TOKEN = await promptSecret('Cloudflare tunnel token', env.CLOUDFLARE_TUNNEL_TOKEN);
+      env.CLOUDFLARE_TUNNEL_HOSTNAME = await prompt('Public hostname bound to that tunnel', env.CLOUDFLARE_TUNNEL_HOSTNAME || '');
+    } else {
+      env.CLOUDFLARE_TUNNEL_TOKEN = '';
+      env.CLOUDFLARE_TUNNEL_HOSTNAME = '';
+    }
+  } else {
+    env.KORTIX_DOMAIN = '';
+    env.KORTIX_REACHABILITY_MODE = 'local';
+    process.stdout.write(
+      `\n  ${C.yellow}warning${C.reset}  ${C.dim}Local-only: agent sandboxes and other external callers (webhooks,${C.reset}\n` +
+        `           ${C.dim}Slack/Teams OAuth, git-proxy clone URLs) will NOT be reachable — only${C.reset}\n` +
+        `           ${C.dim}browser-local flows (e.g. creating a GitHub App) still work.${C.reset}\n\n`,
+    );
   }
 }
 
@@ -970,9 +1134,25 @@ function refuseUpdaterManagedKeyMessage(key: string): string {
 }
 
 /** Restart exactly the services a changed key set affects (or tell the
- *  operator the stack isn't running yet, so changes apply on next `start`). */
-function restartServicesForKeys(instance: string, keys: readonly string[]): number {
-  const services = servicesForKeys(keys);
+ *  operator the stack isn't running yet, so changes apply on next `start`).
+ *  Filters out services that are opt-in and not currently rendered into this
+ *  instance's Compose file (`caddy` without a domain, `cloudflared` outside
+ *  tunnel mode) — `docker compose up --no-deps <service>` errors on a service
+ *  name absent from the Compose file, which would otherwise turn e.g.
+ *  `secrets set CLOUDFLARE_TUNNEL_TOKEN=...` (settable ahead of actually
+ *  switching to tunnel mode) into a hard failure instead of a silent no-op. */
+function restartServicesForKeys(instance: string, env: SelfHostEnv, keys: readonly string[]): number {
+  const domainConfigured = Boolean(env.KORTIX_DOMAIN?.trim());
+  const tunnelActive = reachabilityMode(env) === 'tunnel';
+  const services = servicesForKeys(keys).filter((service) => {
+    if (service === 'caddy') return domainConfigured;
+    if (service === 'cloudflared') return tunnelActive;
+    return true;
+  });
+  if (services.length === 0) {
+    process.stdout.write(`${C.dim}  not active in the current reachability mode — nothing to restart.${C.reset}\n\n`);
+    return 0;
+  }
   if (!composeHasRunningServices(instance)) {
     process.stdout.write(`${C.dim}  stack isn't running — this takes effect on the next ${C.reset}${C.cyan}kortix self-host start${C.reset}\n\n`);
     return 0;
@@ -1036,7 +1216,7 @@ async function selfHostSecretsSet(args: string[], flags: GlobalFlags): Promise<n
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok(`Updated ${changedKeys.join(', ')}`)}\n`);
-  return restartServicesForKeys(flags.instance, changedKeys);
+  return restartServicesForKeys(flags.instance, env, changedKeys);
 }
 
 // Generated secrets whose rotation cascades into a derived value elsewhere in
@@ -1150,7 +1330,7 @@ async function selfHostSecretsRotate(args: string[], flags: GlobalFlags): Promis
   if (refused.length > 0) {
     process.stdout.write(`${C.dim}  skipped (not rotatable): ${C.reset}${refused.join(', ')}\n`);
   }
-  return restartServicesForKeys(flags.instance, [...rotated]);
+  return restartServicesForKeys(flags.instance, env, [...rotated]);
 }
 
 async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
@@ -1161,11 +1341,14 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   }
   await configureIntegrations(env, flags);
   applyFeatureFlags(env, flags);
+  applyReachabilityFlags(env, flags);
+  await promptReachability(env, flags);
   await promptFeatureFlags(env, flags);
   await configureUpdatePolicy(env, flags);
   writeEnv(flags.instance, env);
   writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
+  process.stdout.write(`  ${C.dim}Reachability ${C.reset}${describeReachability(env)}\n\n`);
   renderIntegrationSummary(env);
   return 0;
 }
@@ -1219,7 +1402,7 @@ async function selfHostConnectGithub(args: string[], flags: GlobalFlags): Promis
 
   process.stdout.write(`\n${status.ok(`GitHub connected: ${result.owner} (installation ${result.installationId})`)}\n`);
   process.stdout.write(`${C.dim}  Project creation now works against this GitHub App.${C.reset}\n\n`);
-  return restartServicesForKeys(flags.instance, ['MANAGED_GIT_GITHUB_OWNER']);
+  return restartServicesForKeys(flags.instance, env, ['MANAGED_GIT_GITHUB_OWNER']);
 }
 
 /** Interactive (or flag-driven) auto-update channel/interval configuration. */
@@ -1732,6 +1915,18 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     KORTIX_DOMAIN: '',
     KORTIX_API_DOMAIN: '',
     KORTIX_ACME_EMAIL: '',
+    // Reachability preference (tunnel vs local; domain mode is inferred from
+    // KORTIX_DOMAIN instead — see reachabilityMode() in self-host/tunnel.ts).
+    // Defaults to 'local', matching every self-host instance created before
+    // this feature existed — a bare `init` with no flags never silently
+    // starts provisioning a tunnel.
+    KORTIX_REACHABILITY_MODE: flags.tunnel ? 'tunnel' : 'local',
+    // Recomputed per reachability mode in normalizeFullSupabaseEnv; this
+    // initial value only matters before that first normalize pass (and, in
+    // tunnel mode, until the first `start` captures the real tunnel URL).
+    KORTIX_URL: DEFAULT_API_URL,
+    CLOUDFLARE_TUNNEL_TOKEN: '',
+    CLOUDFLARE_TUNNEL_HOSTNAME: '',
     PUBLIC_URL: DEFAULT_PUBLIC_URL,
     API_PUBLIC_URL: DEFAULT_API_URL,
     SUPABASE_PUBLIC_URL: 'http://localhost:13740',
@@ -1839,7 +2034,10 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
   writeKortixRuntimeAssets(root);
   writeFileSync(
     composePath(instance),
-    renderFullDockerCompose(composeProject(instance), { domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()) }),
+    renderFullDockerCompose(composeProject(instance), {
+      domainConfigured: Boolean(env.KORTIX_DOMAIN?.trim()),
+      tunnelConfigured: reachabilityMode(env) === 'tunnel',
+    }),
     { encoding: 'utf8', mode: 0o600 },
   );
 }
@@ -1904,6 +2102,34 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   // renderFullDockerCompose() uses to decide the Compose-side topology.
   env.KORTIX_APP_REPLICAS = String(env.KORTIX_DOMAIN?.trim() ? PROD_APP_REPLICAS : LAPTOP_APP_REPLICAS);
 
+  // KORTIX_URL — the PUBLIC origin cloud (Daytona) sandboxes and other
+  // external callers (webhooks, Slack/Teams OAuth, git-proxy clone) reach this
+  // instance on. Computed per reachability mode (see reachabilityMode() in
+  // self-host/tunnel.ts):
+  //   - domain:  the same https://api.<domain> origin API_PUBLIC_URL was just
+  //              set to above — Caddy already routes its /v1* paths.
+  //   - local:   the loopback API_PUBLIC_URL, same as historical behavior.
+  //              Sandboxes can never reach this — see the `start` warning —
+  //              but it is at least a real, resolvable, honestly-loopback URL
+  //              instead of the old hardcoded internal Docker hostname
+  //              (`http://kortix-api:8008`, unresolvable from outside the
+  //              compose network and NOT recognized as loopback by the API's
+  //              own sandboxCallbackUnreachableReason() guard — so it used to
+  //              fail mysteriously ~60s later instead of failing fast).
+  //   - tunnel:  intentionally left ALONE here. The cloudflared tunnel's
+  //              public URL doesn't exist until its container has actually
+  //              booted (and is ephemeral for the zero-config quick tunnel —
+  //              a fresh one every restart), so only
+  //              reconcileTunnelReachability() (post `docker compose up`) may
+  //              set it; overwriting it here would clobber a value captured
+  //              moments ago by that same `start`/`update` run.
+  const mode = reachabilityMode(env);
+  if (mode !== 'tunnel') {
+    env.KORTIX_URL = env.API_PUBLIC_URL;
+  } else {
+    env.KORTIX_URL ||= env.API_PUBLIC_URL;
+  }
+
   env.API_EXTERNAL_URL = `${env.SUPABASE_PUBLIC_URL.replace(/\/$/, '')}/auth/v1`;
   env.SITE_URL = env.PUBLIC_URL;
   env.POOLER_TENANT_ID ||= composeProject(instance);
@@ -1921,6 +2147,73 @@ function compose(instance: string, args: string[]): number {
     return 1;
   }
   return result.status ?? 1;
+}
+
+/** Read the `cloudflared` service's logs (stdout+stderr) so
+ *  reconcileTunnelReachability can scrape the ephemeral quick-tunnel URL out
+ *  of them. Best-effort: an empty/error result just means "no match yet",
+ *  which the caller's polling loop (see resolveTunnelUrl) already handles. */
+function readComposeLogs(instance: string, service: string): string {
+  const result = spawnSync(
+    'docker',
+    [
+      'compose', '--project-name', composeProject(instance),
+      '--env-file', envPath(instance), '-f', composePath(instance),
+      'logs', '--no-color', '--no-log-prefix', service,
+    ],
+    { cwd: instanceDir(instance), encoding: 'utf8' },
+  );
+  return `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+}
+
+/**
+ * Tunnel reachability mode only (no-op otherwise): capture the cloudflared
+ * tunnel's public URL — instant for a named tunnel (the hostname IS the URL),
+ * polled from the `cloudflared` container's logs for the zero-config quick
+ * tunnel — and rewire KORTIX_URL to it, recreating kortix-api so it actually
+ * picks up the change (env_file is only read at container creation, not
+ * live). Must run on every `start`/`update`, not just the first one: the
+ * quick-tunnel URL is EPHEMERAL — a fresh one is minted whenever the
+ * `cloudflared` container itself restarts (e.g. after `stop`/`start`), even
+ * though an already-running cloudflared container (a plain re-`start` with
+ * nothing stopped) keeps the same URL and this is then a no-op diff.
+ *
+ * Non-fatal on timeout: the stack is still up, just unreachable for
+ * sandboxes until the operator re-runs `start`/`update` (or checks
+ * `kortix self-host logs cloudflared`).
+ */
+async function reconcileTunnelReachability(instance: string, env: SelfHostEnv): Promise<number> {
+  if (reachabilityMode(env) !== 'tunnel') return 0;
+
+  process.stdout.write(`  ${C.dim}Cloudflare tunnel (agent sandbox callback)...${C.reset}\n`);
+  const result = await resolveTunnelUrl(env, () => readComposeLogs(instance, 'cloudflared'));
+  if (!result.ok) {
+    process.stdout.write(`${C.yellow}  warning${C.reset}  ${C.dim}${result.error}${C.reset}\n\n`);
+    return 0;
+  }
+
+  const ephemeralNote = namedTunnelConfigured(env) ? '' : `${C.dim} (ephemeral — changes on next restart)${C.reset}`;
+  process.stdout.write(`  ${C.dim}KORTIX_URL -> ${C.reset}${C.cyan}${result.url}${C.reset}${ephemeralNote}\n\n`);
+
+  if (env.KORTIX_URL === result.url) return 0;
+
+  env.KORTIX_URL = result.url!;
+  writeEnv(instance, env);
+  writeCompose(instance, env);
+  return compose(instance, ['up', '-d', '--force-recreate', '--no-deps', 'kortix-api']);
+}
+
+/** Human-readable one-line summary of the resolved reachability mode, for
+ *  `init`/`configure` summaries. */
+function describeReachability(env: SelfHostEnv): string {
+  const mode = reachabilityMode(env);
+  if (mode === 'domain') return `${C.green}domain${C.reset}${C.dim} — ${env.API_PUBLIC_URL}${C.reset}`;
+  if (mode === 'tunnel') {
+    const via = namedTunnelConfigured(env) ? 'named Cloudflare tunnel (stable)' : 'Cloudflare quick tunnel (ephemeral)';
+    const known = env.KORTIX_URL && !isLocalhostUrlOnPort(env.KORTIX_URL, Number(env.API_PORT)) ? env.KORTIX_URL : '(captured on next start)';
+    return `${C.green}tunnel${C.reset}${C.dim} — ${via} — ${known}${C.reset}`;
+  }
+  return `${C.yellow}local-only${C.reset}${C.dim} — agent sandboxes and external callbacks will not work${C.reset}`;
 }
 
 function registerLocalHost(name: string, apiUrl: string): void {

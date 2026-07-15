@@ -31,6 +31,19 @@ export interface SelfHostCommandFlags {
    *  instead of failing — local experimentation only, never for a real
    *  deployment (managed git / sandbox / LLM calls will fail at runtime). */
   allowMissingSecrets?: boolean;
+  /** Public domain reachability mode: this instance is reachable at
+   *  `https://<domain>` (and `https://api.<domain>`) — sets KORTIX_DOMAIN,
+   *  turning on the bundled Caddy reverse proxy/ACME TLS, same as
+   *  `env set KORTIX_DOMAIN=...` (`--domain <domain>`). Pass an empty string
+   *  to explicitly clear a previously configured domain. */
+  domain?: string;
+  /** Cloudflare-tunnel reachability mode: no public domain, but a
+   *  `cloudflared` tunnel exposes the API to the internet so cloud sandboxes
+   *  can call back to it — the recommended laptop/no-DNS path
+   *  (`--tunnel cloudflare`). See CLOUDFLARE_TUNNEL_TOKEN/
+   *  CLOUDFLARE_TUNNEL_HOSTNAME for the optional stable named-tunnel
+   *  alternative to the zero-config ephemeral quick tunnel. */
+  tunnel?: 'cloudflare';
   /** GitHub org (or omit for a personal account) to create/install the
    *  self-host GitHub App under — `connect-github`, and the guided `init`/
    *  `configure` GitHub step. */

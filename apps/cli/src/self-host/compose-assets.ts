@@ -98,6 +98,14 @@ export interface RenderComposeOptions {
    * disabled — so a domain-less instance never binds 80/443.
    */
   domainConfigured?: boolean;
+  /**
+   * Whether "tunnel" reachability mode is selected (see reachabilityMode() in
+   * self-host/tunnel.ts). When true, the `cloudflared` service is included so
+   * cloud (Daytona) sandboxes can call back to this instance with no public
+   * domain/DNS at all. When false, it is omitted entirely — not merely
+   * disabled — so an instance not using it never runs the container.
+   */
+  tunnelConfigured?: boolean;
 }
 
 /**
@@ -193,6 +201,14 @@ export function renderFullDockerCompose(composeProject: string, options: RenderC
   // instance never even has the option of a port clash on 80/443.
   if (!options.domainConfigured) {
     delete services.caddy;
+  }
+
+  // The Cloudflare tunnel service is likewise opt-in: only present when
+  // tunnel reachability mode is selected. Omitted entirely (not just
+  // stopped) otherwise, so an instance not using it never even pulls the
+  // cloudflared image.
+  if (!options.tunnelConfigured) {
+    delete services.cloudflared;
   }
 
   // Prod (domain-configured) vs laptop replica/port topology. In prod mode

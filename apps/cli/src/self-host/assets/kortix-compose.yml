@@ -62,7 +62,15 @@ services:
       DAYTONA_API_KEY: ${DAYTONA_API_KEY}
       DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL}
       DAYTONA_TARGET: ${DAYTONA_TARGET}
-      KORTIX_URL: http://kortix-api:8008
+      # The PUBLIC origin cloud (Daytona) sandboxes call back to — never the
+      # internal Docker hostname, which a remote cloud VM can never resolve or
+      # reach. Set per reachability mode by the CLI (see reachabilityMode() in
+      # self-host/tunnel.ts): the https://api.<domain> origin in domain mode,
+      # the cloudflared tunnel's public URL in tunnel mode (captured from the
+      # `cloudflared` service's logs after `docker compose up` — see
+      # reconcileTunnelReachability() in commands/self-host.ts), or a loopback
+      # URL in local-only mode (agent sandboxes will not work in that mode).
+      KORTIX_URL: ${KORTIX_URL}
       FRONTEND_URL: ${PUBLIC_URL}
       CORS_ALLOWED_ORIGINS: ${PUBLIC_URL},${API_PUBLIC_URL}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE}
@@ -149,6 +157,46 @@ services:
       - ./.env:/workspace/.env:ro
       - ./updater.sh:/updater/updater.sh:ro
       - kortix-updater-state:/state
+    restart: unless-stopped
+
+  # Cloudflare tunnel (opt-in): the "tunnel" reachability mode's zero-config
+  # default for exposing kortix-api's public API routes to the internet with
+  # no domain/DNS/public IP at all — the laptop path for cloud (Daytona)
+  # sandboxes to call back to this instance. Only present in the rendered
+  # Compose file when tunnel mode is selected — see renderFullDockerCompose()
+  # in compose-assets.ts and reachabilityMode() in self-host/tunnel.ts.
+  #
+  # Tunnels directly to kortix-api (not through Caddy): Caddy itself is only
+  # ever rendered in domain mode, so it is never present alongside this
+  # service, and kortix-api already answers every /v1* route the sandbox and
+  # any external caller need.
+  #
+  # Two sub-modes, branched at container start (not at compose-render time) so
+  # flipping between them is just an env change + restart:
+  #   - Zero-config quick tunnel (default, no CLOUDFLARE_TUNNEL_TOKEN set): a
+  #     fresh https://<random>.trycloudflare.com URL is minted on every start —
+  #     EPHEMERAL. `kortix self-host start`/`update` read it back out of this
+  #     container's logs and rewrite KORTIX_URL — see
+  #     reconcileTunnelReachability() in commands/self-host.ts.
+  #   - Named tunnel (CLOUDFLARE_TUNNEL_TOKEN + a hostname bound to it in the
+  #     Cloudflare Zero Trust dashboard, via CLOUDFLARE_TUNNEL_HOSTNAME): a
+  #     STABLE URL that never changes across restarts — no log-scraping.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.2
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$CLOUDFLARE_TUNNEL_TOKEN" ]; then
+          exec cloudflared tunnel --no-autoupdate run --token "$$CLOUDFLARE_TUNNEL_TOKEN"
+        else
+          exec cloudflared tunnel --no-autoupdate --url http://kortix-api:8008
+        fi
+    environment:
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      kortix-api:
+        condition: service_started
     restart: unless-stopped
 
   # Reverse proxy + TLS (opt-in). Only present in the rendered Compose file

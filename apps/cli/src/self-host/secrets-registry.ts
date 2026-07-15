@@ -15,6 +15,7 @@ export type SecretCategory =
   | 'managed_git'
   | 'llm'
   | 'connectors'
+  | 'reachability'
   | 'internal_tokens';
 
 export const CATEGORY_ORDER: SecretCategory[] = [
@@ -24,6 +25,7 @@ export const CATEGORY_ORDER: SecretCategory[] = [
   'managed_git',
   'llm',
   'connectors',
+  'reachability',
   'internal_tokens',
 ];
 
@@ -34,6 +36,7 @@ export const CATEGORY_LABELS: Record<SecretCategory, string> = {
   managed_git: 'Managed git',
   llm: 'LLM',
   connectors: 'Connectors',
+  reachability: 'Reachability (Cloudflare tunnel)',
   internal_tokens: 'Internal tokens',
 };
 
@@ -110,6 +113,13 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'PIPEDREAM_CLIENT_SECRET', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_PROJECT_ID', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_WEBHOOK_SECRET', category: 'connectors', kind: 'operator', required: false },
+
+  // Reachability (tunnel mode only — see self-host/tunnel.ts). Both optional:
+  // absent, the `cloudflared` service runs a free zero-config quick tunnel
+  // whose URL is ephemeral (re-captured on every start/update). Setting both
+  // switches to a stable named tunnel instead.
+  { key: 'CLOUDFLARE_TUNNEL_TOKEN', category: 'reachability', kind: 'operator', required: false },
+  { key: 'CLOUDFLARE_TUNNEL_HOSTNAME', category: 'reachability', kind: 'operator', required: false },
 
   // Internal tokens
   { key: 'GATEWAY_INTERNAL_TOKEN', category: 'internal_tokens', kind: 'generated', required: true, rotatable: true },
@@ -218,6 +228,10 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   PIPEDREAM_PROJECT_ID: ['kortix-api'],
   PIPEDREAM_ENVIRONMENT: ['kortix-api'],
   PIPEDREAM_WEBHOOK_SECRET: ['kortix-api'],
+
+  // Reachability
+  CLOUDFLARE_TUNNEL_TOKEN: ['cloudflared'],
+  CLOUDFLARE_TUNNEL_HOSTNAME: ['cloudflared'],
 
   // Internal tokens
   GATEWAY_INTERNAL_TOKEN: ['kortix-api', 'llm-gateway'],
