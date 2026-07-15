@@ -143,8 +143,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           focusedToolCallId: callId,
           activeView: 'tools',
           isSidePanelOpen: true,
-          readyChip: null,
         };
+        // Only clear THIS session's own announcement — session B opening its
+        // panel must not destroy session A's unseen ready chip.
+        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
         if (sessionId) {
           update._panelOpenBySession = {
             ...get()._panelOpenBySession,
@@ -165,7 +167,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       setIsSidePanelOpen: (open: boolean) => {
         const sessionId = get()._activeSessionId;
         const update: Partial<KortixComputerState> = { isSidePanelOpen: open };
-        if (open) update.readyChip = null;
+        // Only clear THIS session's own announcement — session B opening its
+        // panel must not destroy session A's unseen ready chip.
+        if (open && get().readyChip?.sessionId === sessionId) update.readyChip = null;
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: open };
         }
@@ -193,7 +197,10 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
       openSidePanel: () => {
         const sessionId = get()._activeSessionId;
-        const update: Partial<KortixComputerState> = { isSidePanelOpen: true, readyChip: null };
+        const update: Partial<KortixComputerState> = { isSidePanelOpen: true };
+        // Only clear THIS session's own announcement — session B opening its
+        // panel must not destroy session A's unseen ready chip.
+        if (get().readyChip?.sessionId === sessionId) update.readyChip = null;
         if (sessionId) {
           update._panelOpenBySession = { ...get()._panelOpenBySession, [sessionId]: true };
         }
