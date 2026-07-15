@@ -89,6 +89,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { isBillingEnabled } from '@/lib/config';
 import { isLlmGatewayAvailable } from '@/lib/llm-gateway';
 import { createClient } from '@/lib/supabase/client';
+import { track } from '@/lib/track';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
@@ -1001,8 +1002,10 @@ export function CommandPalette() {
 
   const handleTogglePanelMode = useCallback(() => {
     close();
+    const nextMode = panelMode === 'easy' ? 'advanced' : 'easy';
+    track('panel_mode_switched', { to: nextMode });
     useUserPreferencesStore.getState().togglePanelMode();
-  }, [close]);
+  }, [close, panelMode]);
 
   const handleOpenSettings = useCallback(
     (tab: SettingsTabId) => {

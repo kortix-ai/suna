@@ -13,6 +13,7 @@
  * the case this chip exists for. No sounds or toasts here, ever.
  */
 
+import { track } from '@/lib/track';
 import { useKortixComputerStore, useIsSidePanelOpen } from '@/stores/kortix-computer-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import type { MessageWithParts } from '@/ui';
@@ -75,7 +76,10 @@ export function useDeliverableReadiness(
       primary ? (primary.title ?? primary.name) : undefined,
       sessionId,
     );
-    if (chip) useKortixComputerStore.getState().setReadyChip(chip);
+    if (chip) {
+      track('ready_chip_shown', { outcome: chip.outcome });
+      useKortixComputerStore.getState().setReadyChip(chip);
+    }
   }, [isRunning, isPanelOpen, messages, parts, steps, sessionId, pendingForSession]);
 
   // W9 — the agent is blocked on the user. This is not a transition: the chip
@@ -85,6 +89,13 @@ export function useDeliverableReadiness(
     if (isPanelOpen) return;
     const store = useKortixComputerStore.getState();
     if (pendingForSession > 0) {
+      // Guard against spamming: this effect re-runs on every pendingForSession
+      // change while the agent stays blocked, but the chip should only be
+      // reported once per needs_input episode — not on every re-render of an
+      // already-showing chip.
+      const alreadyShown =
+        store.readyChip?.outcome === 'needs_input' && store.readyChip.sessionId === sessionId;
+      if (!alreadyShown) track('ready_chip_shown', { outcome: 'needs_input' });
       store.setReadyChip({ sessionId, outcome: 'needs_input', count: 0 });
     } else if (store.readyChip?.outcome === 'needs_input' && store.readyChip.sessionId === sessionId) {
       store.clearReadyChip();

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { downloadFilesAsZip, readFileAsBlob } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
+import { track } from '@/lib/track';
 import {
   AppWindow,
   ChevronDown,
@@ -238,6 +239,7 @@ function DownloadAllAction({ outputs }: { outputs: OutputItem[] }) {
         files.map((f) => ({ path: f.path, name: f.name })),
         'outputs',
       );
+      track('deliverable_downloaded', { scope: 'all', count: files.length });
     } catch {
       // The browser reports its own failure; the control just needs to recover.
     } finally {

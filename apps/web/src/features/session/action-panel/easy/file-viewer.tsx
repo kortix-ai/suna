@@ -32,6 +32,7 @@ import {
 } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import {
@@ -107,6 +108,7 @@ export function DownloadButton({ path, fileName }: { path: string; fileName: str
     setDownloading(true);
     try {
       await downloadFile(path, fileName);
+      track('deliverable_downloaded', { scope: 'one' });
     } catch {
       // The browser reports its own failure; the button just needs to recover.
     } finally {

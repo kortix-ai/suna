@@ -5,6 +5,7 @@ import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/
 import { Switch } from '@/components/ui/switch';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -178,7 +179,10 @@ export function AppearanceTab() {
             aria-label="Easy mode"
             className="text-foreground inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-sm px-3 transition-colors duration-150 ease-out"
             style={{ backgroundColor: panelMode === 'easy' ? 'var(--background)' : 'transparent' }}
-            onClick={() => setPanelMode('easy')}
+            onClick={() => {
+              if (panelMode !== 'easy') track('panel_mode_switched', { to: 'easy' });
+              setPanelMode('easy');
+            }}
           >
             <span className="text-sm font-medium">Easy</span>
           </button>
@@ -189,7 +193,10 @@ export function AppearanceTab() {
             style={{
               backgroundColor: panelMode === 'advanced' ? 'var(--background)' : 'transparent',
             }}
-            onClick={() => setPanelMode('advanced')}
+            onClick={() => {
+              if (panelMode !== 'advanced') track('panel_mode_switched', { to: 'advanced' });
+              setPanelMode('advanced');
+            }}
           >
             <span className="text-sm font-medium">Advanced</span>
           </button>

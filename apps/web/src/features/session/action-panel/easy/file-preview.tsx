@@ -27,6 +27,7 @@ import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
+import { track } from '@/lib/track';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import {
@@ -196,6 +197,7 @@ function CopyImageButton({ mimeType, base64 }: { mimeType: string; base64: strin
         );
       }
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      track('image_copied');
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {

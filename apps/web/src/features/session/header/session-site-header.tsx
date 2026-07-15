@@ -24,6 +24,7 @@ import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/r
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { useReadyChip } from '@/stores/kortix-computer-store';
 import {
@@ -279,7 +280,10 @@ export function SessionSiteHeader({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={onToggleSidePanel}
+                onClick={() => {
+                  if (!isSidePanelOpen) track('panel_opened', { source: 'toggle' });
+                  onToggleSidePanel();
+                }}
                 className={cn('text-foreground cursor-pointer transition-colors')}
               >
                 <span className="relative inline-flex">

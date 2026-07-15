@@ -21,6 +21,7 @@
 
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
+import { track } from '@/lib/track';
 import {
   useClearFocusedToolCall,
   useFocusedToolCallId,
@@ -165,9 +166,18 @@ export const EasyPanel = memo(function EasyPanel({
    *
    * Declared here (not near the JSX) so the payoff/chip-consume effects below
    * can depend on it.
+   *
+   * `source` is telemetry-only (W5): where the open was triggered from — a
+   * row click ('row', the default), the payoff effect ('auto'), the ready
+   * chip's consume effect ('chip'), or a prev/next nav closure ('nav'). Never
+   * read for behavior, only reported alongside `deliverable_opened`.
    */
   const handleOpenOutput = useCallback(
-    (output: OutputItem, siblings?: OutputItem[]) => {
+    (
+      output: OutputItem,
+      siblings?: OutputItem[],
+      source: 'row' | 'auto' | 'chip' | 'nav' = 'row',
+    ) => {
       // The human title, when the output carries one (W3) — never the raw
       // filename in a spot the user reads as the thing's name.
       const displayName = output.title ?? output.name;
@@ -177,6 +187,7 @@ export const EasyPanel = memo(function EasyPanel({
       // parenthetical when it says something the display name didn't already —
       // most outputs have no separate title, so path and name agree.
       const askForChanges = () => {
+        track('ask_for_changes_clicked', { kind: output.kind });
         const pathHint =
           output.path && basenameOf(output.path) !== displayName ? ` (\`${output.path}\`)` : '';
         useSessionComposerPrefillStore
@@ -194,6 +205,7 @@ export const EasyPanel = memo(function EasyPanel({
               const kortixMasterPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10);
               const sandboxBaseUrl = getServiceUrl(kortixMasterPort)?.replace(/\/+$/, '');
               if (!sandboxBaseUrl) return;
+              track('present_opened');
               usePresentationViewerStore
                 .getState()
                 .openPresentation(output.presentationName!, sandboxBaseUrl);
@@ -208,13 +220,14 @@ export const EasyPanel = memo(function EasyPanel({
       const nav =
         prev || next
           ? {
-              prev: prev ? () => handleOpenOutput(prev, siblings) : null,
-              next: next ? () => handleOpenOutput(next, siblings) : null,
+              prev: prev ? () => handleOpenOutput(prev, siblings, 'nav') : null,
+              next: next ? () => handleOpenOutput(next, siblings, 'nav') : null,
               position,
             }
           : undefined;
 
       if (output.kind === 'app' && output.url) {
+        track('deliverable_opened', { kind: output.kind, source });
         setDetail({
           key: `app:${output.url}`,
           title: displayName,
@@ -234,6 +247,7 @@ export const EasyPanel = memo(function EasyPanel({
       }
 
       if (!output.path) return;
+      track('deliverable_opened', { kind: output.kind, source });
       setDetail({
         key: `file:${output.path}`,
         title: displayName,
@@ -301,7 +315,7 @@ export const EasyPanel = memo(function EasyPanel({
     ) {
       // The primary came from whichever list `selectPrimaryDeliverable`
       // actually picked it from — nav must page through that same list.
-      handleOpenOutput(primary, primary.kind === 'app' ? apps : files);
+      handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'auto');
     }
   }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
 
@@ -315,7 +329,7 @@ export const EasyPanel = memo(function EasyPanel({
     if (pendingPrimaryOpenSessionId !== sessionId) return;
     if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
     const primary = selectPrimaryDeliverable(apps, files);
-    if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files);
+    if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files, 'chip');
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
 
   /**
@@ -332,6 +346,7 @@ export const EasyPanel = memo(function EasyPanel({
     if (!focusedToolCallId) return;
     const step = steps.find((s) => s.parts.some((p) => p.callID === focusedToolCallId));
     if (step) {
+      track('panel_opened', { source: 'chat_tool' });
       setDetail({
         key: `step:${step.id}`,
         title: step.label,

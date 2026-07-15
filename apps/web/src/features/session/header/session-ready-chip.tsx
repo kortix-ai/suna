@@ -12,6 +12,7 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { type ReadyChipState, useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { AlertTriangle, CircleHelp, FileCheck, X } from 'lucide-react';
@@ -71,6 +72,8 @@ export function SessionReadyChip({ sessionId }: { sessionId: string }) {
 
   const open = () => {
     const store = useKortixComputerStore.getState();
+    track('ready_chip_clicked', { outcome: chip.outcome });
+    track('panel_opened', { source: 'chip' });
     if (chip.outcome === 'ready') store.requestPrimaryOpen(sessionId);
     store.openSidePanel(); // clears the chip (Task 5 contract)
   };

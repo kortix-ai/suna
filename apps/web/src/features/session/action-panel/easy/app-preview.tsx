@@ -28,6 +28,7 @@ import { useCopy } from '@/hooks/use-copy';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
@@ -317,7 +318,11 @@ export function AppPreview({
             size="icon"
             disabled={!hasPreview}
             aria-label="Open in a new tab"
-            onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')}
+            onClick={() => {
+              if (!previewUrl) return;
+              track('app_opened_new_tab');
+              window.open(previewUrl, '_blank', 'noopener,noreferrer');
+            }}
           >
             <TbExternalLink className="size-4" />
           </Button>
@@ -329,7 +334,11 @@ export function AppPreview({
             size="icon"
             disabled={!hasPreview}
             aria-label="Copy link"
-            onClick={() => previewUrl && copy(previewUrl)}
+            onClick={() => {
+              if (!previewUrl) return;
+              track('app_link_copied');
+              copy(previewUrl);
+            }}
             className="active:scale-[0.96]"
           >
             {/* Morph, not a hard swap — same box, cross-faded (kortix-design-system
