@@ -38,11 +38,17 @@ import { latestRunCallIds, latestRunMessages } from '../shared/latest-run';
 import { selectPrimaryDeliverable, sortOutputs } from '../shared/output-priority';
 import { deriveRunOutcome } from '../shared/run-outcome';
 import { AppPreview } from './app-preview';
+import { AppsCard } from './apps-card';
 import { ContextCard } from './context-card';
 import { type Detail, DetailLayer, ToolParts } from './detail-view';
-import { deriveIsRunning, shouldAutoExpandOutputs, shouldAutoOpenPayoff } from './easy-panel-logic';
+import {
+  deriveIsRunning,
+  neighborOutputs,
+  outputKey,
+  shouldAutoExpandOutputs,
+  shouldAutoOpenPayoff,
+} from './easy-panel-logic';
 import { FilePreview } from './file-preview';
-import { AppsCard } from './apps-card';
 import { OutputsCard } from './outputs-card';
 import { ProgressCard } from './progress-card';
 import { StepIcon } from './step-icon';
@@ -127,13 +133,34 @@ export const EasyPanel = memo(function EasyPanel({
    * (one bar, not two), and both fill the pane, so neither takes the layer's
    * padding.
    *
+   * `siblings` is the list the row came from (files or apps — never both
+   * mixed, so "next" always means what that list's own order means). It's an
+   * argument, not a closed-over card list, so the callback itself stays
+   * dependency-free and every caller supplies its own list explicitly (W10).
+   * Nav is attached only once 2+ openable siblings exist — a lone file earns
+   * no prev/next row.
+   *
    * Declared here (not near the JSX) so the payoff/chip-consume effects below
    * can depend on it.
    */
-  const handleOpenOutput = useCallback((output: OutputItem) => {
+  const handleOpenOutput = useCallback((output: OutputItem, siblings?: OutputItem[]) => {
     // The human title, when the output carries one (W3) — never the raw
     // filename in a spot the user reads as the thing's name.
     const displayName = output.title ?? output.name;
+
+    const openable = (siblings ?? []).filter((s) => s.path || s.url);
+    const { prev, next, position } =
+      openable.length > 1
+        ? neighborOutputs(openable, outputKey(output))
+        : { prev: null, next: null, position: '' };
+    const nav =
+      prev || next
+        ? {
+            prev: prev ? () => handleOpenOutput(prev, siblings) : null,
+            next: next ? () => handleOpenOutput(next, siblings) : null,
+            position,
+          }
+        : undefined;
 
     if (output.kind === 'app' && output.url) {
       setDetail({
@@ -141,6 +168,7 @@ export const EasyPanel = memo(function EasyPanel({
         title: displayName,
         hideHeader: true,
         padded: false,
+        nav,
         body: <AppPreview url={output.url} name={displayName} onClose={() => setDetail(null)} />,
       });
       return;
@@ -153,6 +181,7 @@ export const EasyPanel = memo(function EasyPanel({
       icon: <FileText className="text-muted-foreground size-4 shrink-0" />,
       hideHeader: true,
       padded: false,
+      nav,
       body: (
         <FilePreview
           path={output.path}
@@ -207,7 +236,9 @@ export const EasyPanel = memo(function EasyPanel({
       }) &&
       primary
     ) {
-      handleOpenOutput(primary);
+      // The primary came from whichever list `selectPrimaryDeliverable`
+      // actually picked it from — nav must page through that same list.
+      handleOpenOutput(primary, primary.kind === 'app' ? apps : files);
     }
   }, [isRunning, outcome, detail, apps, files, handleOpenOutput]);
 
@@ -216,14 +247,12 @@ export const EasyPanel = memo(function EasyPanel({
   // consume action: on desktop this panel stays mounted while the side panel
   // is closed, so a chip click must itself re-render us or the handoff
   // silently dead-ends. `consumePrimaryOpen` keeps it one-shot.
-  const pendingPrimaryOpenSessionId = useKortixComputerStore(
-    (s) => s.pendingPrimaryOpenSessionId,
-  );
+  const pendingPrimaryOpenSessionId = useKortixComputerStore((s) => s.pendingPrimaryOpenSessionId);
   useEffect(() => {
     if (pendingPrimaryOpenSessionId !== sessionId) return;
     if (!useKortixComputerStore.getState().consumePrimaryOpen(sessionId)) return;
     const primary = selectPrimaryDeliverable(apps, files);
-    if (primary) handleOpenOutput(primary);
+    if (primary) handleOpenOutput(primary, primary.kind === 'app' ? apps : files);
   }, [pendingPrimaryOpenSessionId, sessionId, apps, files, handleOpenOutput]);
 
   /**
@@ -266,7 +295,7 @@ export const EasyPanel = memo(function EasyPanel({
         <OutputsCard
           outputs={files}
           defaultExpanded={outputsDefaultOpen}
-          onOpenOutput={handleOpenOutput}
+          onOpenOutput={(o) => handleOpenOutput(o, files)}
         />
         <ContextCard
           files={context.files}
@@ -275,7 +304,7 @@ export const EasyPanel = memo(function EasyPanel({
           sessionId={sessionId}
           onOpenDetail={setDetail}
         />
-        {apps.length > 0 && <AppsCard apps={apps} onOpenApp={handleOpenOutput} />}
+        {apps.length > 0 && <AppsCard apps={apps} onOpenApp={(a) => handleOpenOutput(a, apps)} />}
       </div>
     </DetailLayer>
   );

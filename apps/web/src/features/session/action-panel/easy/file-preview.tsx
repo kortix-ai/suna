@@ -13,7 +13,6 @@
  * so they get the same bar from `PreviewShell`.
  */
 
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
@@ -26,7 +25,9 @@ import {
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
 import { getFileIcon } from '@/features/project-files';
+import { useIsMobile } from '@/hooks/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { FileWarning, Maximize2, Minimize2 } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
 import { CloseButton } from './detail-view';
@@ -70,6 +71,7 @@ function PreviewShell({
 }) {
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
+  const isMobile = useIsMobile();
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -82,17 +84,25 @@ function PreviewShell({
         </span>
         <span className="flex shrink-0 items-center gap-0.5">
           <DownloadButton path={path} fileName={fileName} />
-          <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-              className="size-7 active:scale-[0.96]"
-            >
-              {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-            </Button>
-          </Hint>
+          {/* The store flip is a no-op on mobile — the drawer never reads
+              `isExpanded` — so the control was dead weight there. */}
+          {!isMobile && (
+            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleExpanded}
+                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
+                className="size-7 active:scale-[0.96]"
+              >
+                {isExpanded ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </Button>
+            </Hint>
+          )}
           <CloseButton onClose={onClose} />
         </span>
       </div>

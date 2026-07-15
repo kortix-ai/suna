@@ -27,6 +27,7 @@ import Hint from '@/components/ui/hint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { downloadFile } from '@/features/files/api/opencode-files';
 import { getFileIcon } from '@/features/project-files';
+import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
 import { Code2, Download, Eye, Loader2, Maximize2, Minimize2 } from 'lucide-react';
@@ -141,6 +142,7 @@ export function FileViewer({
 
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
+  const isMobile = useIsMobile();
 
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col', className)}>
@@ -183,17 +185,25 @@ export function FileViewer({
         <span className="flex shrink-0 items-center gap-0.5">
           <CopyButton code={content} />
           {path && <DownloadButton path={path} fileName={fileName} />}
-          <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-              className="size-7 active:scale-[0.96]"
-            >
-              {isExpanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-            </Button>
-          </Hint>
+          {/* The store flip is a no-op on mobile — the drawer never reads
+              `isExpanded` — so the control was dead weight there. */}
+          {!isMobile && (
+            <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleExpanded}
+                aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
+                className="size-7 active:scale-[0.96]"
+              >
+                {isExpanded ? (
+                  <Minimize2 className="size-3.5" />
+                ) : (
+                  <Maximize2 className="size-3.5" />
+                )}
+              </Button>
+            </Hint>
+          )}
           {onClose && <CloseButton onClose={onClose} />}
         </span>
       </div>
@@ -275,7 +285,7 @@ function FileBody({
     <CodeBlockCode
       code={content}
       language={languageFor(fileName)}
-      className="[&_pre]:!bg-accent [&_pre]:!px-4 [&_pre]:!pb-4 [&_pre]:rounded-none [&_pre]:!text-[13px]"
+      className="[&_pre]:!bg-accent [&_pre]:rounded-none [&_pre]:!px-4 [&_pre]:!pb-4 [&_pre]:!text-[13px]"
     />
   );
 }

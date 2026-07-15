@@ -19,17 +19,18 @@
  * your sandbox, not a browser.
  */
 
-import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useIsMobile } from '@/hooks/utils';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { parseLocalhostUrl, toInternalUrl } from '@/lib/utils/sandbox-url';
 import { useIsExpanded, useToggleExpanded } from '@/stores/kortix-computer-store';
+import { useSandboxConnectionStore } from '@kortix/sdk/sandbox-connection-store';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -105,6 +106,7 @@ export function AppPreview({
 
   const isExpanded = useIsExpanded();
   const toggleExpanded = useToggleExpanded();
+  const isMobile = useIsMobile();
 
   const sandboxAlive = useSyncExternalStore(
     useSandboxConnectionStore.subscribe,
@@ -208,12 +210,7 @@ export function AppPreview({
     <div className="bg-background flex h-full min-h-0 min-w-0 flex-col">
       <div className="border-border flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
         <Hint label="Back" side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={goBack}
-            disabled={!hasPreview || !canGoBack}
-          >
+          <Button variant="ghost" size="icon" onClick={goBack} disabled={!hasPreview || !canGoBack}>
             <ArrowLeft className="size-4" />
           </Button>
         </Hint>
@@ -295,24 +292,26 @@ export function AppPreview({
             size="icon"
             disabled={!hasPreview}
             aria-label="Open in a new tab"
-            onClick={() =>
-              previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')
-            }
+            onClick={() => previewUrl && window.open(previewUrl, '_blank', 'noopener,noreferrer')}
           >
             <TbExternalLink className="size-4" />
           </Button>
         </Hint>
 
-        <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleExpanded}
-            aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
-          >
-            {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-          </Button>
-        </Hint>
+        {/* The store flip is a no-op on mobile — the drawer never reads
+            `isExpanded` — so the control was dead weight there. */}
+        {!isMobile && (
+          <Hint label={isExpanded ? 'Exit full screen' : 'Full screen'} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleExpanded}
+              aria-label={isExpanded ? 'Exit full screen' : 'Full screen'}
+            >
+              {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+            </Button>
+          </Hint>
+        )}
 
         <CloseButton onClose={onClose} />
       </div>

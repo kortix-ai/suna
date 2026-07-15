@@ -23,6 +23,21 @@ export function outputKey(output: Pick<OutputItem, 'callID' | 'path' | 'name'>):
   return `${output.callID}:${output.path ?? output.name}`;
 }
 
+/** The row before and after the currently open output, in the list's own
+ * order — what makes "next" mean the same thing the card's rows mean (W10). */
+export function neighborOutputs(
+  items: OutputItem[],
+  currentKey: string,
+): { prev: OutputItem | null; next: OutputItem | null; position: string } {
+  const index = items.findIndex((item) => outputKey(item) === currentKey);
+  if (index < 0) return { prev: null, next: null, position: '' };
+  return {
+    prev: index > 0 ? items[index - 1] : null,
+    next: index < items.length - 1 ? items[index + 1] : null,
+    position: `${index + 1} of ${items.length}`,
+  };
+}
+
 /**
  * Whether the Outputs card should flip open on this render — the "payoff"
  * moment: a run just finished (`wasRunning` true, `isRunning` now false) and

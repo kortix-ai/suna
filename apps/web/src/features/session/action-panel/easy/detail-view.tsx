@@ -21,9 +21,9 @@ import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { cn } from '@/lib/utils';
 import type { ToolPart } from '@/ui';
-import { X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { normalizeName } from '../../tool/tool-meta';
 import { ToolPartRenderer, ToolSurfaceContext } from '../../tool/tool-renderers';
 
@@ -61,6 +61,70 @@ export interface Detail {
    * squeezes code and diffs into a narrower column.
    */
   padded?: boolean;
+  /** Move between sibling deliverables without going home (W10). Only set
+   *  when 2+ openable siblings exist — a lone file gets no nav row. */
+  nav?: { prev: (() => void) | null; next: (() => void) | null; position: string };
+}
+
+/**
+ * The prev/next row, shared by the desktop card and the mobile drawer so the
+ * two never drift. Desktop hangs it under the header (or flush to the top
+ * when the header is suppressed); mobile pins it above the drawer body,
+ * because horizontal swipe is out — vaul already owns the drawer's vertical
+ * gesture, and layering a horizontal recognizer inside it is a conflict trap.
+ * The buttons carry mobile instead.
+ */
+function DetailNav({ nav }: { nav: NonNullable<Detail['nav']> }) {
+  return (
+    <div className="border-border flex shrink-0 items-center justify-end gap-0.5 border-b px-2 py-1">
+      <span className="text-muted-foreground mr-1 text-xs tabular-nums">{nav.position}</span>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Previous"
+        disabled={!nav.prev}
+        onClick={() => nav.prev?.()}
+        className="size-7 active:scale-[0.96]"
+      >
+        <ChevronLeft className="size-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Next"
+        disabled={!nav.next}
+        onClick={() => nav.next?.()}
+        className="size-7 active:scale-[0.96]"
+      >
+        <ChevronRight className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
+/** True when the keydown originated in something that itself wants
+ *  ArrowLeft/ArrowRight — the AppPreview address bar keeps its own arrows. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+}
+
+/** Desktop-only ArrowLeft/ArrowRight while a detail with nav is open. A
+ *  document listener (not a focused-element one) because the detail's body
+ *  can put focus anywhere — a code block, an iframe's surrounding chrome, a
+ *  button — and the shortcut should work regardless of which of those has
+ *  focus, same as the reference browser chrome it's paging next to. */
+function useDetailNavKeyboard(nav: Detail['nav'], isMobile: boolean) {
+  useEffect(() => {
+    if (isMobile || !nav) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      if (event.key === 'ArrowLeft' && nav.prev) nav.prev();
+      else if (event.key === 'ArrowRight' && nav.next) nav.next();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [nav, isMobile]);
 }
 
 /**
@@ -87,6 +151,10 @@ export function DetailLayer({
   const reduce = useReducedMotion();
   const transition = reduce ? { duration: 0 } : { duration: DURATION, ease: EASE };
 
+  // Desktop only — mobile has no keyboard to speak of, and the drawer's own
+  // buttons carry it instead (see `DetailNav`'s comment).
+  useDetailNavKeyboard(detail?.nav, isMobile);
+
   // Mobile: the panel is already a bottom drawer. Stack a drawer, not a slide.
   if (isMobile) {
     return (
@@ -105,6 +173,9 @@ export function DetailLayer({
                 </DrawerTitle>
               </DrawerHeader>
             )}
+            {/* Pinned above the drawer body — same row the desktop card
+                shows, so paging reads as one behavior wherever you are. */}
+            {detail?.nav && <DetailNav nav={detail.nav} />}
             <div
               className={cn(
                 'min-h-0 min-w-0 flex-1 overflow-auto',
@@ -146,7 +217,7 @@ export function DetailLayer({
             // what says so. It stays flush to the right edge (and rounds only
             // its left corners) so the slide-in reads as arriving from off-panel
             // rather than as a box that materializes in place.
-            className="bg-popover border-border  absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow"
+            className="bg-popover border-border absolute inset-y-3 right-3 left-3 flex min-w-0 flex-col overflow-hidden rounded-md border shadow"
           >
             {!detail.hideHeader && (
               // No rule under the header: the card's own border already
@@ -163,6 +234,7 @@ export function DetailLayer({
                 <CloseButton onClose={onBack} />
               </div>
             )}
+            {detail.nav && <DetailNav nav={detail.nav} />}
             <div
               className={cn(
                 'min-h-0 min-w-0 flex-1 overflow-auto',

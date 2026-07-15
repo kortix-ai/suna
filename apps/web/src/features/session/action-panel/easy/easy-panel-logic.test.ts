@@ -2,6 +2,7 @@ import { describe, expect, it, test } from 'bun:test';
 import type { OutputItem } from '../shared/derive-panels';
 import {
   deriveIsRunning,
+  neighborOutputs,
   outputKey,
   shouldAutoExpandOutputs,
   shouldAutoOpenPayoff,
@@ -119,5 +120,27 @@ describe('shouldAutoOpenPayoff (W2)', () => {
   test('never steals from a user who is (or was) looking at a detail this run', () => {
     expect(shouldAutoOpenPayoff({ ...base, detailOpen: true })).toBe(false);
     expect(shouldAutoOpenPayoff({ ...base, interactedThisRun: true })).toBe(false);
+  });
+});
+
+describe('neighborOutputs (W10)', () => {
+  const items = [
+    { callID: 'a', name: 'report.pdf', kind: 'file' as const, path: 'report.pdf' },
+    { callID: 'b', name: 'data.csv', kind: 'file' as const, path: 'data.csv' },
+    { callID: 'c', name: 'img.png', kind: 'image' as const, path: 'img.png' },
+  ];
+
+  test('middle item has both neighbors and a position', () => {
+    const { prev, next, position } = neighborOutputs(items, 'b:data.csv');
+    expect(prev?.callID).toBe('a');
+    expect(next?.callID).toBe('c');
+    expect(position).toBe('2 of 3');
+  });
+
+  test('edges have null on their open side; unknown key has neither', () => {
+    expect(neighborOutputs(items, 'a:report.pdf').prev).toBeNull();
+    expect(neighborOutputs(items, 'c:img.png').next).toBeNull();
+    expect(neighborOutputs(items, 'zz').prev).toBeNull();
+    expect(neighborOutputs(items, 'zz').next).toBeNull();
   });
 });
